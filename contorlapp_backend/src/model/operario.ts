@@ -8,4 +8,6 @@ export class Operario extends Usuario{
     super(id, nombre, correo, 'operario');
     this.funciones = funciones;
   }
+
+  
 }
