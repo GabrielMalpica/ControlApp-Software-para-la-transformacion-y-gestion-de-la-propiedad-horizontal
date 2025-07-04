@@ -1,4 +1,4 @@
-import { TipoFuncion } from "./roles/tipoFuncion";
+import { TipoFuncion } from "./enum/tipoFuncion";
 import { Usuario } from "./usuario";
 
 export class Operario extends Usuario{
@@ -9,5 +9,4 @@ export class Operario extends Usuario{
     this.funciones = funciones;
   }
 
-  
 }
