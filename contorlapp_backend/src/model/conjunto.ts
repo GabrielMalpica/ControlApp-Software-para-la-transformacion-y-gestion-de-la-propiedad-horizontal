@@ -8,15 +8,17 @@ export class Conjunto {
   nombre: string;
   direccion: string;
   administrador: Administrador;
+  correo: String;
   operarios: Operario[] = [];
   inventario: Inventario;
   maquinariaPrestada: Maquinaria[] = [];
 
-  constructor(id: number, nombre: string, direccion: string, administrador: Administrador) {
+  constructor(id: number, nombre: string, direccion: string, administrador: Administrador, correo: String) {
     this.id = id;
     this.nombre = nombre;
     this.direccion = direccion;
     this.administrador = administrador;
+    this.correo = correo;
     this.inventario = new Inventario();
     administrador.agregarConjunto(this);
   }
