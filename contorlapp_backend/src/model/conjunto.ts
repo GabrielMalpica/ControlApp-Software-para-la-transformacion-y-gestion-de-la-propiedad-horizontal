@@ -24,57 +24,6 @@ export class Conjunto {
     this.correo = correo;
     this.administrador = administrador;
     this.inventario = new Inventario();
-
     administrador.agregarConjunto(this);
-  }
-
-  // ─── OPERARIOS ─────────────────────────────────────────────
-  asignarOperario(operario: Operario): void {
-    if (!this.operarios.includes(operario)) {
-      this.operarios.push(operario);
-    }
-  }
-
-  // ─── MAQUINARIA ────────────────────────────────────────────
-  agregarMaquinaria(maquina: Maquinaria): void {
-    this.maquinariaPrestada.push(maquina);
-  }
-
-  entregarMaquinaria(nombre: string): Maquinaria | null {
-    const maquina = this.maquinariaPrestada.find(m => m.nombre === nombre);
-    if (!maquina) return null;
-
-    this.maquinariaPrestada = this.maquinariaPrestada.filter(m => m !== maquina);
-    return maquina;
-  }
-
-  // ─── UBICACIONES ───────────────────────────────────────────
-  agregarUbicacion(ubicacion: Ubicacion): void {
-    if (!this.ubicaciones.some(u => u.nombre === ubicacion.nombre)) {
-      this.ubicaciones.push(ubicacion);
-    }
-  }
-
-  buscarUbicacion(nombre: string): Ubicacion | undefined {
-    return this.ubicaciones.find(u => u.nombre === nombre);
-  }
-
-  // ─── CRONOGRAMA ────────────────────────────────────────────
-  agregarTareaACronograma(tarea: Tarea): void {
-    this.cronograma.push(tarea);
-  }
-
-  tareasPorFecha(fecha: Date): Tarea[] {
-    return this.cronograma.filter(t =>
-      fecha >= t.fechaInicio && fecha <= t.fechaFin
-    );
-  }
-
-  tareasPorOperario(operarioId: number): Tarea[] {
-    return this.cronograma.filter(t => t.asignadoA.id === operarioId);
-  }
-
-  tareasPorUbicacion(nombreUbicacion: string): Tarea[] {
-    return this.cronograma.filter(t => t.ubicacion.nombre === nombreUbicacion);
   }
 }

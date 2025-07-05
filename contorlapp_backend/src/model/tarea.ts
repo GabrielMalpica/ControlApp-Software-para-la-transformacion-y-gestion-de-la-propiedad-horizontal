@@ -15,7 +15,7 @@ export class Tarea {
   asignadoA: Operario;
   estado: EstadoTarea = EstadoTarea.ASIGNADA;
 
-  evidencias: string[] = []; // rutas o nombres de archivos
+  evidencias: string[] = [];
   fechaCompletado?: Date;
 
   verificadaPor?: Supervisor;
@@ -40,41 +40,5 @@ export class Tarea {
     this.elemento = elemento;
     this.duracionHoras = duracionHoras;
     this.asignadoA = asignadoA;
-  }
-
-  agregarEvidencia(imagen: string): void {
-    this.evidencias.push(imagen);
-  }
-
-  marcarComoCompletada(): void {
-    this.estado = EstadoTarea.COMPLETADA;
-    this.fechaCompletado = new Date();
-  }
-
-  marcarNoCompletada(): void {
-    this.estado = EstadoTarea.NO_COMPLETADA;
-  }
-
-  aprobarTarea(supervisor: Supervisor): void {
-    this.estado = EstadoTarea.APROBADA;
-    this.verificadaPor = supervisor;
-    this.fechaVerificacion = new Date();
-  }
-
-  rechazarTarea(supervisor: Supervisor, observacion: string): void {
-    this.estado = EstadoTarea.RECHAZADA;
-    this.verificadaPor = supervisor;
-    this.fechaVerificacion = new Date();
-    this.observacionesRechazo = observacion;
-  }
-
-  resumen(): string {
-    return `📝 Tarea: ${this.descripcion}
-👷 Operario: ${this.asignadoA.nombre}
-📍 Ubicación: ${this.ubicacion.nombre}
-🔧 Elemento: ${this.elemento.nombre}
-🕒 Duración estimada: ${this.duracionHoras}h
-📅 Del ${this.fechaInicio.toLocaleDateString()} al ${this.fechaFin.toLocaleDateString()}
-📌 Estado actual: ${this.estado}`;
   }
 }
