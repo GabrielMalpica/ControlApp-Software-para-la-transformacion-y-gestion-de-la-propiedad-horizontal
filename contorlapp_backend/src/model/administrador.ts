@@ -1,5 +1,7 @@
 import { Conjunto } from "./conjunto";
+import { SolicitudTarea } from "./solicitudTarea";
 import { Usuario } from "./usuario";
+
 
 export class Administrador extends Usuario {
   conjuntos: Conjunto[] = [];
@@ -16,5 +18,16 @@ export class Administrador extends Usuario {
 
   listarConjuntos(): string[] {
     return this.conjuntos.map(c => c.nombre);
+  }
+
+  solicitarTarea(
+    id: number,
+    descripcion: string,
+    conjunto: Conjunto,
+    ubicacion: string,
+    elemento: string,
+    duracionHoras: number
+  ): SolicitudTarea {
+    return new SolicitudTarea(id, descripcion, conjunto, ubicacion, elemento, duracionHoras);
   }
 }
