@@ -118,11 +118,11 @@ export class GerenteService {
   }
 
   recibirSolicitud(solicitud: SolicitudTarea): void {
-    this.gerente.solicitudesPendientes.push(solicitud);
+    this.empresa.solicitudesTareas.push(solicitud);
   }
 
   aprobarSolicitud(solicitudId: number, operario: Operario, fechaInicio: Date, fechaFin: Date): void {
-    const solicitud = this.gerente.solicitudesPendientes.find(s => s.id === solicitudId);
+    const solicitud = this.empresa.solicitudesTareas.find(s => s.id === solicitudId);
     if (!solicitud) throw new Error("Solicitud no encontrada");
 
     const solicitudService = new SolicitudTareaService(solicitud);
@@ -147,7 +147,7 @@ export class GerenteService {
     this.asignarTarea(tarea);
     conjuntoService.agregarTareaACronograma(tarea);
 
-    this.gerente.solicitudesPendientes = this.gerente.solicitudesPendientes.filter(s => s.id !== solicitudId);
+    this.empresa.solicitudesTareas = this.empresa.solicitudesTareas.filter(s => s.id !== solicitudId);
   }
 
   verMaquinariaDisponible(): string[] {

@@ -2,7 +2,7 @@ import { Maquinaria } from "./maquinaria";
 import { Gerente } from "./gerente";
 import { JefeOperaciones } from "./jefeOperaciones";
 import { SolicitudTarea } from "./solicitudTarea";
-import { SolicitudInsumo } from "./solicitudInsumo";
+import { SolicitudInsumo } from "./SolicitudInsumo";
 import { SolicitudMaquinaria } from "./SolicitudMaquinaria";
 
 export class Empresa {

@@ -17,7 +17,7 @@ import { Maquinaria } from './model/maquinaria';
 import { TipoMaquinaria } from './model/enum/tipoMaquinaria';
 import { EstadoMaquinaria } from './model/enum/estadoMaquinaria';
 import { Insumo } from './model/insumo';
-import { SolicitudInsumo } from './model/solicitudInsumo';
+import { SolicitudInsumo } from './model/SolicitudInsumo';
 import { InventarioService } from './services/InventarioServices';
 import { SolicitudMaquinaria } from './model/SolicitudMaquinaria';
 import { SolicitudTarea } from './model/solicitudTarea';
@@ -116,7 +116,7 @@ console.log('---------------------------------------')
 console.log(operario.tareas)
 
 const operarioService = new OperarioService(operario)
-operarioService.marcarComoCompletada(1, ["evidencia1.jpg"]);
+operarioService.marcarComoCompletada(1, ["evidencia1.jpg"], new InventarioService(conjunto.inventario));
 console.log("✅ Tarea marcada como completada por operario.");
 console.log('---------------------------------------')
 console.log(operario.tareas)

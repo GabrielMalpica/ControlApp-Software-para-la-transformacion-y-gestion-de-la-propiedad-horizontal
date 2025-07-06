@@ -1,6 +1,8 @@
 import { Operario } from "../model/operario";
 import { Tarea } from "../model/tarea";
 import { TareaService } from "./TareaServices";
+import { Insumo } from "../model/insumo";
+import { InventarioService } from "./InventarioServices";
 
 export class OperarioService {
   constructor(private operario: Operario) {}
@@ -13,11 +15,16 @@ export class OperarioService {
     this.operario.tareas.push(tarea);
   }
 
-  marcarComoCompletada(tareaId: number, evidencias: string[]): void {
+  marcarComoCompletada(
+    tareaId: number,
+    evidencias: string[],
+    inventarioService: InventarioService,
+    insumosUsados: { insumo: Insumo; cantidad: number }[] = []
+  ): void {
     const tarea = this.buscarTarea(tareaId);
     tarea.evidencias = evidencias;
     const tareaService = new TareaService(tarea);
-    tareaService.marcarComoCompletada();
+    tareaService.marcarComoCompletadaConInsumos(insumosUsados, inventarioService);
   }
 
   marcarComoNoCompletada(tareaId: number): void {
