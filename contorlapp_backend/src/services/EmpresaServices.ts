@@ -7,11 +7,33 @@ export class EmpresaService {
   constructor(private empresa: Empresa) {}
 
   agregarMaquinaria(maquina: Maquinaria): void {
-    this.empresa.maquinaria.push(maquina);
+    this.empresa.stockMaquinaria.push(maquina);
   }
 
   listarMaquinariaDisponible(): Maquinaria[] {
-    return this.empresa.maquinaria.filter(m => m.disponible);
+    return this.empresa.stockMaquinaria.filter(m => m.disponible);
+  }
+
+  obtenerMaquinariaDisponible(): Maquinaria[] {
+    return this.empresa.stockMaquinaria.filter(m => m.disponible);
+  }
+
+  obtenerMaquinariaPrestada(): {
+    maquina: Maquinaria;
+    conjunto: string;
+    responsable: string;
+    fechaPrestamo: Date;
+    fechaDevolucionEstimada?: Date;
+  }[] {
+    return this.empresa.stockMaquinaria
+      .filter(m => !m.disponible && m.asignadaA)
+      .map(m => ({
+        maquina: m,
+        conjunto: m.asignadaA?.nombre ?? "Desconocido",
+        responsable: m.responsable?.nombre ?? "Sin asignar",
+        fechaPrestamo: m.fechaPrestamo!,
+        fechaDevolucionEstimada: m.fechaDevolucionEstimada
+      }));
   }
 
   agregarJefeOperaciones(jefe: JefeOperaciones): void {
@@ -22,14 +44,14 @@ export class EmpresaService {
   }
 
   recibirSolicitud(solicitud: SolicitudTarea): void {
-    this.empresa.solicitudesPendientes.push(solicitud);
+    this.empresa.solicitudesTareas.push(solicitud);
   }
 
   eliminarSolicitud(id: number): void {
-    this.empresa.solicitudesPendientes = this.empresa.solicitudesPendientes.filter(s => s.id !== id);
+    this.empresa.solicitudesTareas = this.empresa.solicitudesTareas.filter(s => s.id !== id);
   }
 
   solicitudesPendientes(): SolicitudTarea[] {
-    return this.empresa.solicitudesPendientes;
+    return this.empresa.solicitudesTareas;
   }
 }

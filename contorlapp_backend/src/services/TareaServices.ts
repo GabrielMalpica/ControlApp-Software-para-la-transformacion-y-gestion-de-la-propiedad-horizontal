@@ -1,6 +1,8 @@
 import { Tarea } from "../model/tarea";
 import { Supervisor } from "../model/supervisor";
 import { EstadoTarea } from "../model/enum/estadoTarea";
+import { Insumo } from "../model/insumo";
+import { InventarioService } from "./InventarioServices";
 
 export class TareaService {
   constructor(private tarea: Tarea) {}
@@ -9,7 +11,15 @@ export class TareaService {
     this.tarea.evidencias.push(imagen);
   }
 
-  marcarComoCompletada(): void {
+  marcarComoCompletadaConInsumos(
+    insumosUsados: { insumo: Insumo; cantidad: number }[],
+    inventarioService: InventarioService
+  ): void {
+    insumosUsados.forEach(({ insumo, cantidad }) => {
+      inventarioService.consumirInsumo(insumo.nombre, cantidad);
+    });
+
+    this.tarea.insumosUsados = insumosUsados;
     this.tarea.estado = EstadoTarea.COMPLETADA;
     this.tarea.fechaCompletado = new Date();
   }

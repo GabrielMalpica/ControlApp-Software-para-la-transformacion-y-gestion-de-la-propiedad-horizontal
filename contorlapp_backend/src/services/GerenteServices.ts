@@ -17,6 +17,7 @@ import { MaquinariaService } from "./MaquinariaServices";
 import { OperarioService } from "./OperarioServices";
 import { SolicitudTareaService } from "./SolicitudTareaServices";
 import { Empresa } from "../model/Empresa";
+import { EmpresaService } from "./EmpresaServices";
 
 export class GerenteService {
   constructor(private gerente: Gerente, private empresa: Empresa) {}
@@ -147,5 +148,19 @@ export class GerenteService {
     conjuntoService.agregarTareaACronograma(tarea);
 
     this.gerente.solicitudesPendientes = this.gerente.solicitudesPendientes.filter(s => s.id !== solicitudId);
+  }
+
+  verMaquinariaDisponible(): string[] {
+    const servicio = new EmpresaService(this.empresa);
+    return servicio.obtenerMaquinariaDisponible().map(m =>
+      `🔹 ${m.nombre} (${m.marca}) - ${m.tipo}`
+    );
+  }
+
+  verMaquinariaPrestada(): string[] {
+    const servicio = new EmpresaService(this.empresa);
+    return servicio.obtenerMaquinariaPrestada().map(info =>
+      `🔧 ${info.maquina.nombre} → Conjunto: ${info.conjunto}, Responsable: ${info.responsable}, Prestada desde: ${info.fechaPrestamo.toLocaleDateString()}`
+    );
   }
 }

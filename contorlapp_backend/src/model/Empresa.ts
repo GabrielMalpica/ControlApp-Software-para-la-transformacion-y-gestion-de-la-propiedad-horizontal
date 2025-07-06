@@ -2,6 +2,8 @@ import { Maquinaria } from "./maquinaria";
 import { Gerente } from "./gerente";
 import { JefeOperaciones } from "./jefeOperaciones";
 import { SolicitudTarea } from "./solicitudTarea";
+import { SolicitudInsumo } from "./solicitudInsumo";
+import { SolicitudMaquinaria } from "./SolicitudMaquinaria";
 
 export class Empresa {
   nombre: string;
@@ -9,16 +11,14 @@ export class Empresa {
   stockMaquinaria: Maquinaria[] = [];
   gerente: Gerente;
   jefesOperaciones: JefeOperaciones[] = [];
-  solicitudesPendientes: SolicitudTarea[] = [];
+  solicitudesTareas: SolicitudTarea[] = [];
+  solicitudesInsumos: SolicitudInsumo[] = [];
+  solicitudesMaquinaria: SolicitudMaquinaria[] = [];
 
-  constructor(nombre: string, nit: string, gerente: Gerente, jefesOperaciones: JefeOperaciones[]) {
-    if (jefesOperaciones.length === 0) {
-      throw new Error("Debe haber al menos un Jefe de Operaciones");
-    }
-
+  constructor(nombre: string, nit: string, gerente: Gerente, jefesOperaciones?: JefeOperaciones[]) {
     this.nombre = nombre;
     this.nit = nit;
     this.gerente = gerente;
-    this.jefesOperaciones = jefesOperaciones;
+    this.jefesOperaciones = jefesOperaciones ?? [];
   }
 }

@@ -3,6 +3,7 @@ import { Operario } from "./operario";
 import { Ubicacion } from "./ubicacion";
 import { Supervisor } from "./supervisor";
 import { EstadoTarea } from "./enum/estadoTarea";
+import { Insumo } from "./insumo";
 
 export class Tarea {
   id: number;
@@ -14,6 +15,7 @@ export class Tarea {
   duracionHoras: number;
   asignadoA: Operario;
   estado: EstadoTarea = EstadoTarea.ASIGNADA;
+  insumosUsados: { insumo: Insumo; cantidad: number }[] = [];
 
   evidencias: string[] = [];
   fechaCompletado?: Date;
