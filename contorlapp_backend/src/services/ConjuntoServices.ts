@@ -12,6 +12,10 @@ export class ConjuntoService {
     if (!this.conjunto.operarios.includes(operario)) {
       this.conjunto.operarios.push(operario);
     }
+
+    if (!operario.conjuntos.includes(this.conjunto)) {
+      operario.conjuntos.push(this.conjunto);
+    }
   }
 
   asignarAdministrador(admin: Administrador): void {

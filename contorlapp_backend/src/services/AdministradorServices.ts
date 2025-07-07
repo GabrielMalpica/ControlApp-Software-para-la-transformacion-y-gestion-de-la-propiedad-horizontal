@@ -3,7 +3,7 @@ import { Conjunto } from "../model/conjunto";
 import { Ubicacion } from "../model/ubicacion";
 import { Elemento } from "../model/elemento";
 import { SolicitudTarea } from "../model/solicitudTarea";
-import { SolicitudInsumo } from "../model/solicitudInsumo";
+import { SolicitudInsumo } from "../model/SolicitudInsumo";
 import { SolicitudMaquinaria } from "../model/SolicitudMaquinaria";
 import { Insumo } from "../model/insumo";
 import { Maquinaria } from "../model/maquinaria";
@@ -20,9 +20,14 @@ export class AdministradorService {
     return new SolicitudTarea(id, descripcion, conjunto, ubicacion, elemento, duracionHoras);
   }
 
-  solicitarInsumos(id: number, insumos: Insumo[], conjunto: Conjunto): SolicitudInsumo {
+  solicitarInsumos(
+    id: number,
+    insumos: { insumo: Insumo; cantidad: number }[],
+    conjunto: Conjunto
+  ): SolicitudInsumo {
     return new SolicitudInsumo(id, insumos, conjunto);
   }
+
 
   solicitarMaquinaria(id: number, conjunto: Conjunto, maquinaria: Maquinaria, responsable: Operario, fechaUso: Date, fechaDevolucion: Date): SolicitudMaquinaria {
     return new SolicitudMaquinaria(id, conjunto, maquinaria, responsable, fechaUso, fechaDevolucion);

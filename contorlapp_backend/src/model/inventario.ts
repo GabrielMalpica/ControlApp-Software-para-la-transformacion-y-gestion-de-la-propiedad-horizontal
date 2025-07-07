@@ -1,9 +1,12 @@
+import { Conjunto } from "./conjunto";
 import { Insumo } from "./insumo";
 
 export class Inventario {
-  insumos: Insumo[];
+  conjunto: Conjunto;
+  insumos: { insumo: Insumo; cantidad: number }[] = [];
 
-  constructor() {
+  constructor(conjunto: Conjunto) {
+    this.conjunto = conjunto;
     this.insumos = [];
   }
 }

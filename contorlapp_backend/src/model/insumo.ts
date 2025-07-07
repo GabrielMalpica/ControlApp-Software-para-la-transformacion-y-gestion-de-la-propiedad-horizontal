@@ -1,11 +1,15 @@
 export class Insumo {
+  id: number;
   nombre: string;
-  cantidad: number;
-  unidad: string; // Ej: "litros", "kg", "botellas"
+  unidad: string;
 
-  constructor(nombre: string, cantidad: number, unidad: string) {
+  constructor(id: number, nombre: string, unidad: string) {
+    this.id = id;
     this.nombre = nombre;
-    this.cantidad = cantidad;
     this.unidad = unidad;
+  }
+
+  toString(): string {
+    return `${this.nombre} (${this.unidad})`;
   }
 }

@@ -4,13 +4,13 @@ import { Insumo } from "./insumo";
 
 export class SolicitudInsumo {
   id: number;
-  insumos: Insumo[];
+  insumos: { insumo: Insumo; cantidad: number }[];
   conjunto: Conjunto;
   fechaSolicitud: Date;
   fechaAprobacion?: Date;
   aprobado: boolean = false;
 
-  constructor(id: number, insumos: Insumo[], conjunto: Conjunto) {
+  constructor(id: number, insumos: { insumo: Insumo; cantidad: number }[], conjunto: Conjunto) {
     this.id = id;
     this.insumos = insumos;
     this.conjunto = conjunto;
@@ -22,6 +22,8 @@ export class SolicitudInsumo {
     this.fechaAprobacion = new Date();
 
     const inventarioService = new InventarioService(this.conjunto.inventario);
-    this.insumos.forEach(i => inventarioService.agregarInsumo(i));
+    this.insumos.forEach(({ insumo, cantidad }) => {
+      inventarioService.agregarInsumo(insumo, cantidad);
+    });
   }
 }

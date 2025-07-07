@@ -1,10 +1,14 @@
+import { Conjunto } from "./conjunto";
 import { Elemento } from "./elemento";
 
 export class Ubicacion {
+  conjunto: Conjunto;
   nombre: string;
   elementos: Elemento[] = [];
 
-  constructor(nombre: string) {
+  constructor(nombre: string, conjunto: Conjunto) {
     this.nombre = nombre;
+    this.conjunto = conjunto;
+    conjunto.ubicaciones.push(this);
   }
 }

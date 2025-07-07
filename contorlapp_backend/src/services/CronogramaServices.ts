@@ -11,9 +11,6 @@ export class CronogramaService {
     });
   }
 
-  agregarTarea(tarea: Tarea): void {
-    this.cronograma.tareas.push(tarea);
-  }
 
   tareasPorOperario(operarioId: number): Tarea[] {
     return this.cronograma.tareas.filter(t => t.asignadoA.id === operarioId);

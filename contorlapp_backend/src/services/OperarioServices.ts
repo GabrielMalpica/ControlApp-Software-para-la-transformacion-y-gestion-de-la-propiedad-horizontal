@@ -1,7 +1,6 @@
 import { Operario } from "../model/operario";
 import { Tarea } from "../model/tarea";
 import { TareaService } from "./TareaServices";
-import { Insumo } from "../model/insumo";
 import { InventarioService } from "./InventarioServices";
 
 export class OperarioService {
@@ -19,13 +18,14 @@ export class OperarioService {
     tareaId: number,
     evidencias: string[],
     inventarioService: InventarioService,
-    insumosUsados: { insumo: Insumo; cantidad: number }[] = []
+    insumosUsados: { insumoId: number; cantidad: number }[] = []
   ): void {
     const tarea = this.buscarTarea(tareaId);
     tarea.evidencias = evidencias;
     const tareaService = new TareaService(tarea);
     tareaService.marcarComoCompletadaConInsumos(insumosUsados, inventarioService);
   }
+
 
   marcarComoNoCompletada(tareaId: number): void {
     const tarea = this.buscarTarea(tareaId);

@@ -15,6 +15,6 @@ export class Administrador extends Usuario {
   }
 
   listarConjuntos(): string[] {
-    return this.conjuntos.map(c => c.nombre + ' ' + c.id);
+    return this.conjuntos.map(c => c.nombre + ' ' + c.nit);
   }
 }

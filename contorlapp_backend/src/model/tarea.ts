@@ -15,7 +15,7 @@ export class Tarea {
   duracionHoras: number;
   asignadoA: Operario;
   estado: EstadoTarea = EstadoTarea.ASIGNADA;
-  insumosUsados: { insumo: Insumo; cantidad: number }[] = [];
+  insumosUsados: { insumoId: number; cantidad: number }[] = [];
 
   evidencias: string[] = [];
   fechaCompletado?: Date;

@@ -1,36 +1,49 @@
-import { Inventario } from "../model/inventario";
 import { Insumo } from "../model/insumo";
+import { Inventario } from "../model/inventario";
 
 export class InventarioService {
   constructor(private inventario: Inventario) {}
 
-  agregarInsumo(insumo: Insumo): void {
-    const existente = this.inventario.insumos.find(i => i.nombre === insumo.nombre && i.unidad === insumo.unidad);
-    
+  agregarInsumo(insumo: Insumo, cantidad: number): void {
+    const existente = this.inventario.insumos.find(i => i.insumo.id === insumo.id);
+
     if (existente) {
-      existente.cantidad += insumo.cantidad;
+      existente.cantidad += cantidad;
     } else {
-      this.inventario.insumos.push(insumo);
+      this.inventario.insumos.push({ insumo, cantidad });
     }
   }
 
   listarInsumos(): string[] {
-    return this.inventario.insumos.map(i => `${i.nombre}: ${i.cantidad} ${i.unidad}`);
+    return this.inventario.insumos.map(
+      i => `${i.insumo.nombre}: ${i.cantidad} ${i.insumo.unidad}`
+    );
   }
 
-  buscarInsumo(nombre: string): Insumo | undefined {
-    return this.inventario.insumos.find(i => i.nombre === nombre);
+
+  eliminarInsumo(id: number): void {
+    this.inventario.insumos = this.inventario.insumos.filter(i => i.insumo.id !== id);
   }
 
-  eliminarInsumo(nombre: string): void {
-    this.inventario.insumos = this.inventario.insumos.filter(i => i.nombre !== nombre);
+  buscarInsumoPorId(id: number): { insumo: Insumo; cantidad: number } | undefined {
+    return this.inventario.insumos.find(item => item.insumo.id === id);
   }
 
-  consumirInsumo(nombre: string, cantidad: number): void {
-    const insumo = this.inventario.insumos.find(i => i.nombre === nombre);
-    if (!insumo) throw new Error(`El insumo "${nombre}" no existe.`);
-    if (insumo.cantidad < cantidad) throw new Error(`Cantidad insuficiente de "${nombre}". Disponible: ${insumo.cantidad}`);
+  consumirInsumoPorId(id: number, cantidad: number): void {
+    const entrada = this.buscarInsumoPorId(id);
+    if (!entrada) throw new Error(`El insumo con ID "${id}" no existe.`);
 
-    insumo.cantidad -= cantidad;
+    if (entrada.cantidad < cantidad) {
+      throw new Error(`Cantidad insuficiente de "${entrada.insumo.nombre}". Disponible: ${entrada.cantidad}`);
+    }
+
+    entrada.cantidad -= cantidad;
   }
+
+  listarInsumosBajos(umbral: number = 5): string[] {
+    return this.inventario.insumos
+      .filter(i => i.cantidad <= umbral)
+      .map(i => `⚠️ ${i.insumo.nombre}: ${i.cantidad} ${i.insumo.unidad} (bajo stock)`);
+  }
+
 }

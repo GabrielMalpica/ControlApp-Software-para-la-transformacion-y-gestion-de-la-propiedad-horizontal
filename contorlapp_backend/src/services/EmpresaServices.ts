@@ -1,4 +1,5 @@
 import { Empresa } from "../model/Empresa";
+import { Insumo } from "../model/insumo";
 import { JefeOperaciones } from "../model/jefeOperaciones";
 import { Maquinaria } from "../model/maquinaria";
 import { SolicitudTarea } from "../model/solicitudTarea";
@@ -53,5 +54,19 @@ export class EmpresaService {
 
   solicitudesPendientes(): SolicitudTarea[] {
     return this.empresa.solicitudesTareas;
+  }
+
+  agregarInsumoAlCatalogo(insumo: Insumo): void {
+    const existe = this.empresa.catalogoInsumos.some(i => i.nombre === insumo.nombre && i.unidad === insumo.unidad);
+    if (existe) throw new Error("🚫 Ya existe un insumo con ese nombre y unidad");
+    this.empresa.catalogoInsumos.push(insumo);
+  }
+
+  listarCatalogo(): string[] {
+    return this.empresa.catalogoInsumos.map(i => i.toString());
+  }
+
+  buscarInsumoPorId(id: number): Insumo | undefined {
+    return this.empresa.catalogoInsumos.find(i => i.id === id);
   }
 }

@@ -6,7 +6,7 @@ import { Tarea } from "./tarea";
 import { Ubicacion } from "./ubicacion";
 
 export class Conjunto {
-  id: number;
+  nit: number;
   nombre: string;
   direccion: string;
   correo: string;
@@ -17,13 +17,13 @@ export class Conjunto {
   ubicaciones: Ubicacion[] = [];
   cronograma: Tarea[] = [];
 
-  constructor(id: number, nombre: string, direccion: string, administrador: Administrador, correo: string) {
-    this.id = id;
+  constructor(nit: number, nombre: string, direccion: string, administrador: Administrador, correo: string) {
+    this.nit = nit;
     this.nombre = nombre;
     this.direccion = direccion;
     this.correo = correo;
     this.administrador = administrador;
-    this.inventario = new Inventario();
+    this.inventario = new Inventario(this);
     administrador.agregarConjunto(this);
   }
 }

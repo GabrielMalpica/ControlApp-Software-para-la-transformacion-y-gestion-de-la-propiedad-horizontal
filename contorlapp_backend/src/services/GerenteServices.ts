@@ -48,10 +48,9 @@ export class GerenteService {
     conjuntoService.asignarAdministrador(administrador); 
   }
 
-  agregarInsumoAConjunto(conjunto: Conjunto, nombre: string, cantidad: number, unidad: string): void {
-    const insumo = new Insumo(nombre, cantidad, unidad);
+  agregarInsumoAConjunto(conjunto: Conjunto, insumo: Insumo, cantidad: number): void {
     const inventarioService = new InventarioService(conjunto.inventario);
-    inventarioService.agregarInsumo(insumo);
+    inventarioService.agregarInsumo(insumo, cantidad);
   }
 
   crearMaquinaria(nombre: string, marca: string, tipo: TipoMaquinaria): void {
@@ -94,17 +93,21 @@ export class GerenteService {
     return maquina !== undefined && maquina.disponible;
   }
 
-  asignarTarea(tarea: Tarea): void {
+  asignarTarea(tarea: Tarea, conjunto: Conjunto): void {
     const operario = tarea.asignadoA;
     const operarioService = new OperarioService(operario);
     const horasRestantes = operarioService.horasRestantesEnSemana(tarea.fechaInicio);
-    
+
     if (tarea.duracionHoras > horasRestantes) {
       throw new Error(`❌ El operario ${operario.nombre} solo tiene ${horasRestantes}h disponibles esta semana.`);
     }
 
     operarioService.asignarTarea(tarea);
+
+    const conjuntoService = new ConjuntoService(conjunto);
+    conjuntoService.agregarTareaACronograma(tarea);
   }
+
 
   reprogramarTarea(tarea: Tarea, nuevaFechaInicio: Date, nuevaFechaFin: Date): void {
     tarea.fechaInicio = nuevaFechaInicio;
@@ -121,7 +124,7 @@ export class GerenteService {
     this.empresa.solicitudesTareas.push(solicitud);
   }
 
-  aprobarSolicitud(solicitudId: number, operario: Operario, fechaInicio: Date, fechaFin: Date): void {
+  aprobarSolicitud(solicitudId: number, operario: Operario, conjunto: Conjunto, fechaInicio: Date, fechaFin: Date): void {
     const solicitud = this.empresa.solicitudesTareas.find(s => s.id === solicitudId);
     if (!solicitud) throw new Error("Solicitud no encontrada");
 
@@ -144,7 +147,7 @@ export class GerenteService {
       operario
     );
 
-    this.asignarTarea(tarea);
+    this.asignarTarea(tarea, conjunto);
     conjuntoService.agregarTareaACronograma(tarea);
 
     this.empresa.solicitudesTareas = this.empresa.solicitudesTareas.filter(s => s.id !== solicitudId);

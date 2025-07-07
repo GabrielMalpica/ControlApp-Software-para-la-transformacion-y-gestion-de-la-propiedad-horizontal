@@ -12,17 +12,18 @@ export class TareaService {
   }
 
   marcarComoCompletadaConInsumos(
-    insumosUsados: { insumo: Insumo; cantidad: number }[],
+    insumosUsados: { insumoId: number; cantidad: number }[],
     inventarioService: InventarioService
   ): void {
-    insumosUsados.forEach(({ insumo, cantidad }) => {
-      inventarioService.consumirInsumo(insumo.nombre, cantidad);
+    insumosUsados.forEach(({ insumoId, cantidad }) => {
+      inventarioService.consumirInsumoPorId(insumoId, cantidad);
     });
 
     this.tarea.insumosUsados = insumosUsados;
     this.tarea.estado = EstadoTarea.COMPLETADA;
     this.tarea.fechaCompletado = new Date();
   }
+
 
   marcarNoCompletada(): void {
     this.tarea.estado = EstadoTarea.NO_COMPLETADA;
