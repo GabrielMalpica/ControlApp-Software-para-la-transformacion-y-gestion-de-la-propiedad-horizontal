@@ -1,7 +1,6 @@
 import { Tarea } from "../model/tarea";
 import { Supervisor } from "../model/supervisor";
 import { EstadoTarea } from "../model/enum/estadoTarea";
-import { Insumo } from "../model/insumo";
 import { InventarioService } from "./InventarioServices";
 
 export class TareaService {
@@ -20,7 +19,7 @@ export class TareaService {
     });
 
     this.tarea.insumosUsados = insumosUsados;
-    this.tarea.estado = EstadoTarea.COMPLETADA;
+    this.tarea.estado = EstadoTarea.PENDIENTE_APROBACION;
     this.tarea.fechaCompletado = new Date();
   }
 

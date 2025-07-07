@@ -2,9 +2,11 @@ import { Operario } from "../model/operario";
 import { Tarea } from "../model/tarea";
 import { TareaService } from "./TareaServices";
 import { InventarioService } from "./InventarioServices";
+import { Empresa } from "../model/Empresa";
+import { Insumo } from "../model/insumo";
 
 export class OperarioService {
-  constructor(private operario: Operario) {}
+  constructor(private operario: Operario, private empresa: Empresa) {}
 
   asignarTarea(tarea: Tarea): void {
     const horasSemana = this.horasAsignadasEnSemana(tarea.fechaInicio);
@@ -22,8 +24,17 @@ export class OperarioService {
   ): void {
     const tarea = this.buscarTarea(tareaId);
     tarea.evidencias = evidencias;
+
     const tareaService = new TareaService(tarea);
     tareaService.marcarComoCompletadaConInsumos(insumosUsados, inventarioService);
+
+    insumosUsados.forEach(({ insumoId, cantidad }) => {
+      const insumo = this.empresa.catalogoInsumos.find(i => i.id === insumoId);
+      if (!insumo) {
+        throw new Error(`❌ El insumo con ID ${insumoId} no está registrado en el catálogo de la empresa.`);
+      }
+      this.registrarConsumo(insumo, cantidad);
+    });
   }
 
 
@@ -71,5 +82,9 @@ export class OperarioService {
     const day = fecha.getDay();
     const diff = fecha.getDate() - day + (day === 0 ? -6 : 1); // Lunes como día 1
     return new Date(fecha.getFullYear(), fecha.getMonth(), diff);
+  }
+
+  registrarConsumo(insumo: Insumo, cantidad: number): void {
+    this.empresa.insumosConsumidos.push({ insumo, cantidad, fecha: new Date() });
   }
 }

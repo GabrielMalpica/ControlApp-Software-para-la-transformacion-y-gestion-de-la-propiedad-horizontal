@@ -5,6 +5,7 @@ import { SolicitudTarea } from "./solicitudTarea";
 import { SolicitudInsumo } from "./SolicitudInsumo";
 import { SolicitudMaquinaria } from "./SolicitudMaquinaria";
 import { Insumo } from "./insumo";
+import { Tarea } from "./tarea";
 
 export class Empresa {
   nombre: string;
@@ -16,6 +17,9 @@ export class Empresa {
   solicitudesInsumos: SolicitudInsumo[] = [];
   solicitudesMaquinaria: SolicitudMaquinaria[] = [];
   catalogoInsumos: Insumo[] = [];
+  tareasAprobadas: Tarea[] = [];
+  tareasRechazadas: Tarea[] = [];
+  insumosConsumidos: { insumo: Insumo, cantidad: number, fecha: Date }[] = [];
 
   constructor(nombre: string, nit: string, gerente: Gerente, jefesOperaciones?: JefeOperaciones[]) {
     this.nombre = nombre;

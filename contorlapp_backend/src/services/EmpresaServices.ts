@@ -3,6 +3,7 @@ import { Insumo } from "../model/insumo";
 import { JefeOperaciones } from "../model/jefeOperaciones";
 import { Maquinaria } from "../model/maquinaria";
 import { SolicitudTarea } from "../model/solicitudTarea";
+import { Tarea } from "../model/tarea";
 
 export class EmpresaService {
   constructor(private empresa: Empresa) {}
@@ -69,4 +70,5 @@ export class EmpresaService {
   buscarInsumoPorId(id: number): Insumo | undefined {
     return this.empresa.catalogoInsumos.find(i => i.id === id);
   }
+
 }

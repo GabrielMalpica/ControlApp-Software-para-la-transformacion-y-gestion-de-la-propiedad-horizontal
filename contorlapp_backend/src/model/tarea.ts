@@ -3,7 +3,6 @@ import { Operario } from "./operario";
 import { Ubicacion } from "./ubicacion";
 import { Supervisor } from "./supervisor";
 import { EstadoTarea } from "./enum/estadoTarea";
-import { Insumo } from "./insumo";
 
 export class Tarea {
   id: number;

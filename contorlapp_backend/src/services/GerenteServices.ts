@@ -95,7 +95,7 @@ export class GerenteService {
 
   asignarTarea(tarea: Tarea, conjunto: Conjunto): void {
     const operario = tarea.asignadoA;
-    const operarioService = new OperarioService(operario);
+    const operarioService = new OperarioService(operario, this.empresa);
     const horasRestantes = operarioService.horasRestantesEnSemana(tarea.fechaInicio);
 
     if (tarea.duracionHoras > horasRestantes) {
