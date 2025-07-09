@@ -22,20 +22,20 @@ import { EmpresaService } from "./EmpresaServices";
 export class GerenteService {
   constructor(private gerente: Gerente, private empresa: Empresa) {}
 
-  crearAdministrador(id: number, nombre: string, correo: string): Administrador {
-    return new Administrador(id, nombre, correo);
+  crearAdministrador(id: number, nombre: string, correo: string, constrasena: string): Administrador {
+    return new Administrador(id, nombre, correo, constrasena);
   }
 
   crearConjunto(id: number, nombre: string, direccion: string, admin: Administrador, correo: string): Conjunto {
     return new Conjunto(id, nombre, direccion, admin, correo);
   }
 
-  crearOperario(id: number, nombre: string, correo: string, funciones: TipoFuncion[]): Operario {
-    return new Operario(id, nombre, correo, funciones);
+  crearOperario(id: number, nombre: string, correo: string, constrasena: string, funciones: TipoFuncion[]): Operario {
+    return new Operario(id, nombre, correo, constrasena, funciones);
   }
 
-  crearSupervisor(id: number, nombre: string, correo: string): Supervisor {
-    return new Supervisor(id, nombre, correo);
+  crearSupervisor(id: number, nombre: string, correo: string, constrasena: string): Supervisor {
+    return new Supervisor(id, nombre, correo, constrasena);
   }
 
   asignarOperarioAConjunto(operario: Operario, conjunto: Conjunto): void {

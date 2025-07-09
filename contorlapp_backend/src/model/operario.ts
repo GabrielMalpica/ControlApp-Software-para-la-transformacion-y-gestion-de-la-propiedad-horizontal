@@ -9,8 +9,8 @@ export class Operario extends Usuario {
   conjuntos: Conjunto[] = [];
   static LIMITE_SEMANAL_HORAS = 46;
 
-  constructor(id: number, nombre: string, correo: string, funciones: TipoFuncion[]) {
-    super(id, nombre, correo, 'operario');
+  constructor(id: number, nombre: string, correo: string, contrasena: string, funciones: TipoFuncion[]) {
+    super(id, nombre, correo, 'operario', contrasena);
     this.funciones = funciones;
   }
 }

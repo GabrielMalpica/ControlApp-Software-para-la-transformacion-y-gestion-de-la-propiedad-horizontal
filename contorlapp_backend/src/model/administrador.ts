@@ -4,8 +4,8 @@ import { Usuario } from "./usuario";
 export class Administrador extends Usuario {
   conjuntos: Conjunto[] = [];
 
-  constructor(id: number, nombre: string, correo: string) {
-    super(id, nombre, correo, 'administrador');
+  constructor(id: number, nombre: string, correo: string, contrasena: string) {
+    super(id, nombre, correo, 'administrador', contrasena);
   }
 
   agregarConjunto(conjunto: Conjunto): void {
