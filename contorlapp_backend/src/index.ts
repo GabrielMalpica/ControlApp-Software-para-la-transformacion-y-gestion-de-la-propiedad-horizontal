@@ -29,6 +29,8 @@ import { SupervisorService } from './services/SupervisorServices';
 import { Cronograma } from './model/cronograma';
 import { CronogramaService } from './services/CronogramaServices';
 import { AdministradorService } from './services/AdministradorServices';
+import { ReporteService } from './services/ReporteService';
+import { EstadoTarea } from './model/enum/estadoTarea';
 
 const app = express();
 app.use(express.json());
@@ -83,6 +85,8 @@ const tarea = new Tarea(
 );
 gerenteServices.asignarTarea(tarea, alborada);
 
+console.log(operario.tareas)
+
 
 // Operario completa la tarea usando insumos
 const operarioService = new OperarioService(operario, empresa);
@@ -93,20 +97,15 @@ operarioService.marcarComoCompletada(
   [{ insumoId: 1, cantidad: 2 }]
 );
 
-
 // Supervisor verifica la tarea
 const supervisor = new Supervisor(4, "Sandra", "supervisor@gmail.com");
 const supervisorService = new SupervisorService(supervisor, empresa);
 supervisorService.recibirTareaFinalizada(tarea);
 supervisorService.aprobarTarea(tarea);
 
-// Mostrar resultados
-console.log('🧾 Tareas del operario:', operario.tareas.map(t => `${t.descripcion} - ${t.estado}`));
-console.log('📦 Inventario actual:', new InventarioService(alborada.inventario).listarInsumos());
-console.log('🔍 Tareas verificadas por el supervisor:', supervisor.tareasPorVerificar);
+const reporteService = new ReporteService(empresa);
 
-console.log(empresa.insumosConsumidos)
-
+console.log(reporteService.tareasPorEstado(alborada, EstadoTarea.ASIGNADA, new Date(), new Date()))
 
 app.get('/', (_req: Request, res: Response) => {
   res.send('🚀 Backend funcionando. Verifica la consola para resultados.');

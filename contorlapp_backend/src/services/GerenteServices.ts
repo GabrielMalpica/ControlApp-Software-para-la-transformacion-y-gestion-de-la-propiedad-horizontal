@@ -113,7 +113,7 @@ export class GerenteService {
     tarea.fechaInicio = nuevaFechaInicio;
     tarea.fechaFin = nuevaFechaFin;
     tarea.estado = EstadoTarea.ASIGNADA;
-    tarea.fechaCompletado = undefined;
+    tarea.fechaFinalizarTarea = undefined;
     tarea.verificadaPor = undefined;
     tarea.fechaVerificacion = undefined;
     tarea.observacionesRechazo = undefined;

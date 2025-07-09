@@ -10,6 +10,16 @@ export class TareaService {
     this.tarea.evidencias.push(imagen);
   }
 
+  iniciarTarea(): void {
+    if (this.tarea.estado !== EstadoTarea.ASIGNADA) {
+      throw new Error("Solo se puede iniciar una tarea que esté asignada.");
+    }
+    this.tarea.estado = EstadoTarea.EN_PROCESO;
+    this.tarea.fechaIniciarTarea = new Date();
+  }
+
+
+
   marcarComoCompletadaConInsumos(
     insumosUsados: { insumoId: number; cantidad: number }[],
     inventarioService: InventarioService
@@ -20,7 +30,7 @@ export class TareaService {
 
     this.tarea.insumosUsados = insumosUsados;
     this.tarea.estado = EstadoTarea.PENDIENTE_APROBACION;
-    this.tarea.fechaCompletado = new Date();
+    this.tarea.fechaFinalizarTarea = new Date();
   }
 
 

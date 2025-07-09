@@ -16,6 +16,15 @@ export class OperarioService {
     this.operario.tareas.push(tarea);
   }
 
+    iniciarTarea(tareaId: number): void {
+    const tarea = this.buscarTarea(tareaId);
+
+    const tareaService = new TareaService(tarea);
+    tareaService.iniciarTarea();
+  }
+
+
+
   marcarComoCompletada(
     tareaId: number,
     evidencias: string[],

@@ -9,6 +9,8 @@ export class Tarea {
   descripcion: string;
   fechaInicio: Date;
   fechaFin: Date;
+  fechaIniciarTarea?: Date;
+  fechaFinalizarTarea?: Date;
   ubicacion: Ubicacion;
   elemento: Elemento;
   duracionHoras: number;
@@ -17,7 +19,6 @@ export class Tarea {
   insumosUsados: { insumoId: number; cantidad: number }[] = [];
 
   evidencias: string[] = [];
-  fechaCompletado?: Date;
 
   verificadaPor?: Supervisor;
   fechaVerificacion?: Date;

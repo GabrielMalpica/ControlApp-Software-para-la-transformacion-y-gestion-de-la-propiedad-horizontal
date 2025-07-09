@@ -38,7 +38,14 @@ export class InventarioService {
     }
 
     entrada.cantidad -= cantidad;
+
+    this.inventario.consumos.push({
+      insumo: entrada.insumo,
+      cantidad,
+      fecha: new Date()
+    });
   }
+
 
   listarInsumosBajos(umbral: number = 5): string[] {
     return this.inventario.insumos

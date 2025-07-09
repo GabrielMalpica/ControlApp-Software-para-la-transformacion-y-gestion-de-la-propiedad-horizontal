@@ -1,6 +1,8 @@
 import { Empresa } from "../model/Empresa";
 import { Tarea } from "../model/tarea";
 import { Insumo } from "../model/insumo";
+import { Conjunto } from "../model/conjunto";
+import { EstadoTarea } from "../model/enum/estadoTarea";
 
 export class ReporteService {
   constructor(private empresa: Empresa) {}
@@ -21,9 +23,9 @@ export class ReporteService {
     );
   }
 
-  usoDeInsumosPorFecha(desde: Date, hasta: Date): { insumo: Insumo; cantidad: number }[] {
-    const filtrado = this.empresa.insumosConsumidos.filter(i =>
-      i.fecha >= desde && i.fecha <= hasta
+  usoDeInsumosPorFecha(conjunto: Conjunto, desde: Date, hasta: Date): { insumo: Insumo; cantidad: number }[] {
+    const filtrado = conjunto.inventario.consumos.filter(c =>
+      c.fecha >= desde && c.fecha <= hasta
     );
 
     const resumen = new Map<number, { insumo: Insumo, cantidad: number }>();
@@ -38,5 +40,35 @@ export class ReporteService {
     });
 
     return Array.from(resumen.values());
+  }
+
+
+
+  tareasPorEstado(
+    conjunto: Conjunto,
+    estado: EstadoTarea,
+    desde: Date,
+    hasta: Date
+  ): Tarea[] {
+    return conjunto.cronograma.filter(t =>
+      t.estado === estado &&
+      t.fechaInicio >= desde &&
+      t.fechaFin <= hasta
+    );
+  }
+
+  tareasConDetalle(
+    conjunto: Conjunto,
+    estado: EstadoTarea,
+    desde: Date,
+    hasta: Date
+  ): { descripcion: string; ubicacion: string; elemento: string; responsable: string; estado: EstadoTarea }[] {
+    return this.tareasPorEstado(conjunto, estado, desde, hasta).map(t => ({
+      descripcion: t.descripcion,
+      ubicacion: t.ubicacion.nombre,
+      elemento: t.elemento.nombre,
+      responsable: t.asignadoA.nombre,
+      estado: t.estado
+    }));
   }
 }
