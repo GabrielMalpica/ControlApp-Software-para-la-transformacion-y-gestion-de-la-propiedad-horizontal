@@ -46,6 +46,7 @@ authService.registrarUsuario(gerente, jefe1);
 empresaServices.agregarJefeOperaciones(jefe1);
 
 const admin1 = new Administrador(3, "Patricia", "patricia@gmail.com", "patri123");
+const admin2 = new Administrador(4, "Jaime", "jaime@gmail.com", "patri123");
 authService.registrarUsuario(gerente, admin1);
 const adminServices = new AdministradorService(admin1);
 
@@ -57,15 +58,23 @@ const operario = new Operario(5, 'Jaime', 'jaime@gmail.com', 'claveOperario', [T
 authService.registrarUsuario(gerente, operario);
 
 // ─── 3. Crear Conjunto, Ubicación, Elemento ─────────────
-const alborada = gerenteServices.crearConjunto(101, 'Alborada', 'Carrera x', admin1, 'alborada@gmail.com');
-gerenteServices.asignarOperarioAConjunto(operario, alborada);
+const alborada = gerenteServices.crearConjunto(101, 'Alborada', 'Carrera x', 'alborada@gmail.com');
 
+gerenteServices.asignarAdministradorAConjunto(admin1, alborada)
+gerenteServices.reemplazarAdminEnVariosConjuntos([{
+  conjunto: alborada, nuevoAdmin: admin2
+}]);
+
+gerenteServices.eliminarAdministrador(admin1)
+gerenteServices.eliminarSupervisor(supervisor)
+console.log(authService.usuariosRegistrados)
+
+const conjuntoService = new ConjuntoService(alborada);
 const jardin = new Ubicacion('Salón Comunal', alborada);
 const ubicacionService = new UbicacionService(jardin);
 const puerta = new Elemento('Puerta');
 ubicacionService.agregarElemento(puerta);
 
-const conjuntoService = new ConjuntoService(alborada);
 conjuntoService.agregarUbicacion(jardin);
 
 // ─── 4. Crear Insumos y Asignar al Conjunto ─────────────
@@ -77,8 +86,6 @@ empresaServices.agregarInsumoAlCatalogo(clorox);
 
 gerenteServices.agregarInsumoAConjunto(alborada, detergente, 5);
 gerenteServices.agregarInsumoAConjunto(alborada, clorox, 3);
-
-console.log(alborada.inventario)
 
 // ─── 5. Crear Tarea y asignar ───────────────────────────
 const tarea = new Tarea(
@@ -102,8 +109,6 @@ operarioService.marcarComoCompletada(
   new InventarioService(alborada.inventario),
   [{ insumoId: 1, cantidad: 2 }]
 );
-
-console.log(alborada.inventario)
 
 // ─── 7. Supervisor verifica y aprueba ───────────────────
 supervisorService.recibirTareaFinalizada(tarea);

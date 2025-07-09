@@ -2,24 +2,16 @@ import bcrypt from 'bcrypt';
 import { Gerente } from "../model/gerente";
 import { Usuario } from "../model/usuario";
 
-type UsuarioRegistrado = {
-  correo: string;
-  contrasena: string;
-  rol: string;
-};
+type UsuarioRegistrado = Usuario
 
 export class AuthService {
-  private usuariosRegistrados: UsuarioRegistrado[] = [];
+  public usuariosRegistrados: UsuarioRegistrado[] = [];
 
   constructor(private empresa: any) {} // Puedes tipar mejor si defines una interfaz
 
   // ─── Registro inicial del gerente ─────────────────────
   preRegistrarGerente(gerente: Gerente): void {
-    this.usuariosRegistrados.push({
-      correo: gerente.correo,
-      contrasena: gerente.contrasena,
-      rol: 'Gerente'
-    });
+    this.usuariosRegistrados.push(gerente);
   }
 
   // ─── Registrar nuevos usuarios ────────────────────────
@@ -37,11 +29,7 @@ export class AuthService {
 
     const passwordHash = bcrypt.hashSync(nuevoUsuario.contrasena, 10);
 
-    this.usuariosRegistrados.push({
-      correo: nuevoUsuario.correo,
-      contrasena: passwordHash,
-      rol: nuevoUsuario.constructor.name
-    });
+    this.usuariosRegistrados.push(nuevoUsuario);
   }
 
   // ─── Login de usuario ────────────────────────────────

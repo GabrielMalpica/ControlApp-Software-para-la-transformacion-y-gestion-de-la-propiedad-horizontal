@@ -14,6 +14,10 @@ export class Administrador extends Usuario {
     }
   }
 
+  eliminarConjunto(conjunto: Conjunto): void {
+    this.conjuntos = this.conjuntos.filter(c => c !== conjunto);
+  }
+
   listarConjuntos(): string[] {
     return this.conjuntos.map(c => c.nombre + ' ' + c.nit);
   }

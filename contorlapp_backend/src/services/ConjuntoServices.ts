@@ -23,6 +23,14 @@ export class ConjuntoService {
     admin.agregarConjunto(this.conjunto);
   }
 
+  eliminarAdministrador(): void {
+    const adminActual = this.conjunto.administrador;
+    if (!adminActual) return;
+
+    adminActual.eliminarConjunto(this.conjunto);
+
+    this.conjunto.administrador = null as any;
+  }
 
   agregarMaquinaria(maquina: Maquinaria): void {
     this.conjunto.maquinariaPrestada.push(maquina);
@@ -42,7 +50,7 @@ export class ConjuntoService {
     }
   }
 
-  buscarUbicacion(nombre: String): Ubicacion | undefined {
+  buscarUbicacion(nombre: string): Ubicacion | undefined {
     return this.conjunto.ubicaciones.find(u => u.nombre === nombre);
   }
 

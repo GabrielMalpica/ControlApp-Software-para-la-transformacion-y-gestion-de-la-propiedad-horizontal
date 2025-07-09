@@ -6,12 +6,14 @@ import { SolicitudInsumo } from "./SolicitudInsumo";
 import { SolicitudMaquinaria } from "./SolicitudMaquinaria";
 import { Insumo } from "./insumo";
 import { Tarea } from "./tarea";
+import { Conjunto } from "./conjunto";
 
 export class Empresa {
   nombre: string;
   nit: string;
   stockMaquinaria: Maquinaria[] = [];
   gerente: Gerente;
+  conjuntos: Conjunto[] = [];
   jefesOperaciones: JefeOperaciones[] = [];
   solicitudesTareas: SolicitudTarea[] = [];
   solicitudesInsumos: SolicitudInsumo[] = [];

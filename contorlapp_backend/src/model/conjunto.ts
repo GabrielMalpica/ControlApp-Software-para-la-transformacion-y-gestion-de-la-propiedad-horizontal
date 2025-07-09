@@ -10,20 +10,29 @@ export class Conjunto {
   nombre: string;
   direccion: string;
   correo: string;
-  administrador: Administrador;
+  administrador?: Administrador; // ← ahora es opcional
   operarios: Operario[] = [];
   inventario: Inventario;
   maquinariaPrestada: Maquinaria[] = [];
   ubicaciones: Ubicacion[] = [];
   cronograma: Tarea[] = [];
 
-  constructor(nit: number, nombre: string, direccion: string, administrador: Administrador, correo: string) {
+  constructor(
+    nit: number,
+    nombre: string,
+    direccion: string,
+    correo: string,
+    administrador?: Administrador
+  ) {
     this.nit = nit;
     this.nombre = nombre;
     this.direccion = direccion;
     this.correo = correo;
-    this.administrador = administrador;
     this.inventario = new Inventario(this);
-    administrador.agregarConjunto(this);
+
+    if (administrador) {
+      this.administrador = administrador;
+      administrador.agregarConjunto(this);
+    }
   }
 }
