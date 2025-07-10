@@ -34,8 +34,8 @@ app.use(express.json());
 const gerente = new Gerente(1, "Carlos Gerente", "gerente@empresa.com", bcrypt.hashSync("admin123", 10));
 const empresa = new Empresa("Control Limpieza S.A.S", "900123456", gerente);
 const empresaServices = new EmpresaService(empresa);
-const gerenteServices = new GerenteService(gerente, empresa);
 const authService = new AuthService(empresa);
+const gerenteServices = new GerenteService(gerente, empresa, authService);
 
 // Registrar al gerente (único que se registra manual)
 authService.preRegistrarGerente(gerente); // Se autoincluye como usuario
@@ -65,9 +65,14 @@ gerenteServices.reemplazarAdminEnVariosConjuntos([{
   conjunto: alborada, nuevoAdmin: admin2
 }]);
 
+
+
+console.log('Usuarios antes de borrar: ', authService.usuariosRegistrados)
+
 gerenteServices.eliminarAdministrador(admin1)
 gerenteServices.eliminarSupervisor(supervisor)
-console.log(authService.usuariosRegistrados)
+gerenteServices.eliminarOperario(operario);
+console.log('Usuarios despues de borrar: ', authService.usuariosRegistrados)
 
 const conjuntoService = new ConjuntoService(alborada);
 const jardin = new Ubicacion('Salón Comunal', alborada);

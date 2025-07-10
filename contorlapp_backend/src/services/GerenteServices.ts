@@ -21,12 +21,11 @@ import { EmpresaService } from "./EmpresaServices";
 import { AuthService } from "./authService";
 
 export class GerenteService {
-  constructor(private gerente: Gerente, private empresa: Empresa) {}
+  constructor(private gerente: Gerente, private empresa: Empresa, private authService: AuthService) {}
 
   crearAdministrador(id: number, nombre: string, correo: string, constrasena: string): Administrador {
     const administrador = new Administrador(id, nombre, correo, constrasena);
-    const authService = new AuthService(this.empresa);
-    authService.registrarUsuario(this.gerente, administrador);
+    this.authService.registrarUsuario(this.gerente, administrador);
     return administrador;
   }
 
@@ -38,15 +37,13 @@ export class GerenteService {
 
   crearOperario(id: number, nombre: string, correo: string, constrasena: string, funciones: TipoFuncion[]): Operario {
     const operario = new Operario(id, nombre, correo, constrasena, funciones);
-    const authService = new AuthService(this.empresa);
-    authService.registrarUsuario(this.gerente, operario);
+    this.authService.registrarUsuario(this.gerente, operario);
     return operario;
   }
 
   crearSupervisor(id: number, nombre: string, correo: string, constrasena: string): Supervisor {
     const supervisor = new Supervisor(id, nombre, correo, constrasena);
-    const authService = new AuthService(this.empresa);
-    authService.registrarUsuario(this.gerente, supervisor);
+    this.authService.registrarUsuario(this.gerente, supervisor);
     return supervisor;
   }
 
@@ -188,8 +185,7 @@ export class GerenteService {
       throw new Error(`❌ No se puede eliminar a ${admin.nombre} porque está asignado a un conjunto.`);
     }
 
-    const authService = new AuthService(this.empresa);
-    authService.usuariosRegistrados = authService.usuariosRegistrados.filter(
+    this.authService.usuariosRegistrados = this.authService.usuariosRegistrados.filter(
       u => u.correo !== admin.correo
     );
   }
@@ -208,16 +204,6 @@ export class GerenteService {
       conjuntoService.eliminarAdministrador();     // ✅ elimina vínculo si lo había
       conjuntoService.asignarAdministrador(nuevoAdmin); // ✅ asigna el nuevo
     }
-
-    // Solo eliminamos si ya no tiene conjuntos asignados
-    const sigueEnUso = anteriorAdmin.conjuntos.length > 0;
-
-    if (!sigueEnUso) {
-      const authService = new AuthService(this.empresa);
-      authService.usuariosRegistrados = authService.usuariosRegistrados.filter(
-        u => u !== anteriorAdmin
-      );
-    }
   }
 
 
@@ -230,16 +216,14 @@ export class GerenteService {
       throw new Error(`❌ No se puede eliminar a ${operario.nombre} porque tiene tareas pendientes.`);
     }
 
-    const authService = new AuthService(this.empresa);
-    authService.usuariosRegistrados = authService.usuariosRegistrados.filter(u => u !== operario);
+    this.authService.usuariosRegistrados = this.authService.usuariosRegistrados.filter(u => u !== operario);
     operario.conjuntos.forEach(c => {
       c.operarios = c.operarios.filter(o => o !== operario);
     });
   }
 
   eliminarSupervisor(supervisor: Supervisor): void {
-    const authService = new AuthService(this.empresa);
-    authService.usuariosRegistrados = authService.usuariosRegistrados.filter(
+    this.authService.usuariosRegistrados = this.authService.usuariosRegistrados.filter(
       u => u.correo !== supervisor.correo
     );
   }
