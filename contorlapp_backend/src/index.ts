@@ -12,8 +12,18 @@ import { Ubicacion } from './model/ubicacion';
 import { Elemento } from './model/elemento';
 import { Insumo } from './model/insumo';
 import { Tarea } from './model/tarea';
+
 import { EstadoTarea } from './model/enum/estadoTarea';
 import { TipoFuncion } from './model/enum/tipoFuncion';
+import { EstadoCivil } from './model/enum/estadoCivil';
+import { EPS } from './model/enum/eps';
+import { FondoPension } from './model/enum/fondePensiones';
+import { TallaCamisa } from './model/enum/tallaCamisa';
+import { TallaPantalon } from './model/enum/tallaPantalon';
+import { TallaCalzado } from './model/enum/tallaCalzado';
+import { TipoContrato } from './model/enum/tipoContrato';
+import { JornadaLaboral } from './model/enum/jornadaLaboral';
+import { TipoSangre } from './model/enum/tipoSangre';
 
 import { EmpresaService } from './services/EmpresaServices';
 import { GerenteService } from './services/GerenteServices';
@@ -26,109 +36,116 @@ import { InventarioService } from './services/InventarioServices';
 import { ReporteService } from './services/ReporteService';
 import { AuthService } from './services/authService';
 
-// ─── App Config ───────────────────────────────────────
 const app = express();
 app.use(express.json());
 
-// ─── 1. Crear Gerente y Empresa ───────────────────────
-const gerente = new Gerente(1, "Carlos Gerente", "gerente@empresa.com", bcrypt.hashSync("admin123", 10));
+// ─── Crear Gerente y Empresa ─────────────────────────
+const gerente = new Gerente(1, 'Frank', 'frank@gmail.com', "123", 312, new Date());
+
 const empresa = new Empresa("Control Limpieza S.A.S", "900123456", gerente);
-const empresaServices = new EmpresaService(empresa);
 const authService = new AuthService(empresa);
+const empresaServices = new EmpresaService(empresa);
 const gerenteServices = new GerenteService(gerente, empresa, authService);
+authService.preRegistrarGerente(gerente);
 
-// Registrar al gerente (único que se registra manual)
-authService.preRegistrarGerente(gerente); // Se autoincluye como usuario
-
-// ─── 2. Registrar otros usuarios ───────────────────────
-const jefe1 = new JefeOperaciones(2, "Luis Operaciones", "jefe1@empresa.com", "clave456");
+// ─── Crear y registrar usuarios ───────────────────────
+const jefe1 = new JefeOperaciones(
+  5, 'Jaime', 'jaime@gmail.com', 'claveOperario',
+  3001234567, new Date("1992-08-20"), "Calle Falsa 123", EstadoCivil.CASADO,
+  2, true, TipoSangre.A_NEGATIVO, EPS.SURA, FondoPension.PROTECCION,
+  TallaCamisa.L, TallaPantalon.T_34, TallaCalzado.T_41,
+  TipoContrato.TERMINO_FIJO, JornadaLaboral.MEDIO_TIEMPO
+);
 authService.registrarUsuario(gerente, jefe1);
 empresaServices.agregarJefeOperaciones(jefe1);
 
-const admin1 = new Administrador(3, "Patricia", "patricia@gmail.com", "patri123");
-const admin2 = new Administrador(4, "Jaime", "jaime@gmail.com", "patri123");
+const admin1 = new Administrador(3, "Patricia", "patricia@gmail.com", "patri123", 320000333, new Date("1985-07-10"));
 authService.registrarUsuario(gerente, admin1);
 const adminServices = new AdministradorService(admin1);
 
-const supervisor = new Supervisor(4, "Sandra", "supervisor@gmail.com", "sup321");
+const supervisor = new Supervisor(
+  5, 'Jaime', 'jaimes@gmail.com', 'claveOperario',
+  3001234567, new Date("1992-08-20"), "Calle Falsa 123", EstadoCivil.CASADO,
+  2, true, TipoSangre.A_NEGATIVO, EPS.SURA, FondoPension.PROTECCION,
+  TallaCamisa.L, TallaPantalon.T_34, TallaCalzado.T_41,
+  TipoContrato.TERMINO_FIJO, JornadaLaboral.MEDIO_TIEMPO
+);
 authService.registrarUsuario(gerente, supervisor);
 const supervisorService = new SupervisorService(supervisor, empresa);
 
-const operario = new Operario(5, 'Jaime', 'jaime@gmail.com', 'claveOperario', [TipoFuncion.ASEO]);
+const operario = new Operario(
+  1, 'jaime', 'jaimeo@gmail.com', '123', 123, new Date, 'carrera x',
+  EstadoCivil.SOLTERO, 5, false, TipoSangre.AB_NEGATIVO, EPS.ANAS_WAIMAS,
+  FondoPension.COLFONDOS, TallaCamisa.L, TallaPantalon.T_42, 
+  TallaCalzado.T_41, TipoContrato.OBRA_LABOR, JornadaLaboral.COMPLETA, [TipoFuncion.ASEO],
+  true, 'afsfa', true, 'lsfjdalñf', true, 'fadfafa', new Date()
+);
 authService.registrarUsuario(gerente, operario);
 
-// ─── 3. Crear Conjunto, Ubicación, Elemento ─────────────
-const alborada = gerenteServices.crearConjunto(101, 'Alborada', 'Carrera x', 'alborada@gmail.com');
+// ─── Crear Conjunto y Asignar Admin ──────────────────
+const alborada = gerenteServices.crearConjunto(101, 'Alborada', 'Carrera X', 'alborada@gmail.com');
+gerenteServices.asignarAdministradorAConjunto(admin1, alborada);
 
-gerenteServices.asignarAdministradorAConjunto(admin1, alborada)
-gerenteServices.reemplazarAdminEnVariosConjuntos([{
-  conjunto: alborada, nuevoAdmin: admin2
-}]);
-
-
-
-console.log('Usuarios antes de borrar: ', authService.usuariosRegistrados)
-
-gerenteServices.eliminarAdministrador(admin1)
-gerenteServices.eliminarSupervisor(supervisor)
-gerenteServices.eliminarOperario(operario);
-console.log('Usuarios despues de borrar: ', authService.usuariosRegistrados)
-
-const conjuntoService = new ConjuntoService(alborada);
-const jardin = new Ubicacion('Salón Comunal', alborada);
-const ubicacionService = new UbicacionService(jardin);
-const puerta = new Elemento('Puerta');
+// ─── Ubicaciones y elementos ──────────────────────────
+const salon = new Ubicacion("Salón Comunal", alborada);
+const puerta = new Elemento("Puerta");
+const ubicacionService = new UbicacionService(salon);
 ubicacionService.agregarElemento(puerta);
 
-conjuntoService.agregarUbicacion(jardin);
+const conjuntoService = new ConjuntoService(alborada);
+conjuntoService.agregarUbicacion(salon);
 
-// ─── 4. Crear Insumos y Asignar al Conjunto ─────────────
-const detergente = new Insumo(1, 'Detergente', 'Litros');
-const clorox = new Insumo(2, 'Clorox', 'Litros');
+// ─── Agregar insumos ──────────────────────────────────
+const insumo1 = new Insumo(1, "Detergente", "Litros");
+const insumo2 = new Insumo(2, "Cloro", "Litros");
+empresaServices.agregarInsumoAlCatalogo(insumo1);
+empresaServices.agregarInsumoAlCatalogo(insumo2);
+gerenteServices.agregarInsumoAConjunto(alborada, insumo1, 10);
+gerenteServices.agregarInsumoAConjunto(alborada, insumo2, 5);
 
-empresaServices.agregarInsumoAlCatalogo(detergente);
-empresaServices.agregarInsumoAlCatalogo(clorox);
 
-gerenteServices.agregarInsumoAConjunto(alborada, detergente, 5);
-gerenteServices.agregarInsumoAConjunto(alborada, clorox, 3);
-
-// ─── 5. Crear Tarea y asignar ───────────────────────────
-const tarea = new Tarea(
-  201,
-  'Lavar área común',
-  new Date(),
-  new Date(),
-  alborada.ubicaciones[0],
-  alborada.ubicaciones[0].elementos[0],
-  2,
-  operario
+const tarea = gerenteServices.crearYAsignarTarea(
+  201,                            // ID de la tarea
+  "Limpieza de entrada",         // Descripción
+  new Date(),                    // Fecha inicio
+  new Date(),                    // Fecha fin
+  alborada,                      // Conjunto
+  "Salón Comunal",               // Nombre de ubicación
+  "Puerta",                      // Nombre de elemento
+  2,                             // Duración en horas
+  operario                       // Operario asignado
 );
-gerenteServices.asignarTarea(tarea, alborada);
 
-// ─── 6. Operario realiza la tarea ───────────────────────
+
 const operarioService = new OperarioService(operario, empresa);
+operarioService.iniciarTarea(201);
+console.log(operarioService.listarTareas())
 
+// ─── Finalización y verificación de tarea ─────────────
 operarioService.marcarComoCompletada(
   tarea.id,
-  ['foto1.jpg', 'foto2.jpg'],
+  ["foto1.jpg", "foto2.jpg"],
   new InventarioService(alborada.inventario),
   [{ insumoId: 1, cantidad: 2 }]
 );
 
-// ─── 7. Supervisor verifica y aprueba ───────────────────
 supervisorService.recibirTareaFinalizada(tarea);
 supervisorService.aprobarTarea(tarea);
 
-// ─── 8. Generar Reportes ────────────────────────────────
+// ─── Eliminar usuarios si ya no están asignados ───────
+gerenteServices.reemplazarAdminEnVariosConjuntos([{ conjunto: alborada, nuevoAdmin: admin1 }]);
+gerenteServices.eliminarOperario(operario);
+gerenteServices.eliminarSupervisor(supervisor);
+
+// ─── Reportes ─────────────────────────────────────────
 const reporteService = new ReporteService(empresa);
 
-
-// ─── 9. Ruta básica de prueba ───────────────────────────
+// ─── Ruta de prueba ───────────────────────────────────
 app.get('/', (_req: Request, res: Response) => {
-  res.send('🚀 Backend funcionando. Verifica la consola para resultados.');
+  res.send('🚀 Backend actualizado funcionando.');
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`🟢 Servidor escuchando en http://localhost:${PORT}`);
 });

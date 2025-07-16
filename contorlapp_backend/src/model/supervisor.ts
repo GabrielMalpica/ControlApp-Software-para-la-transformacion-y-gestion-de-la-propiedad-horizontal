@@ -1,10 +1,58 @@
+import { EPS } from "./enum/eps";
+import { EstadoCivil } from "./enum/estadoCivil";
+import { FondoPension } from "./enum/fondePensiones";
+import { JornadaLaboral } from "./enum/jornadaLaboral";
+import { TallaCalzado } from "./enum/tallaCalzado";
+import { TallaCamisa } from "./enum/tallaCamisa";
+import { TallaPantalon } from "./enum/tallaPantalon";
+import { TipoContrato } from "./enum/tipoContrato";
+import { TipoSangre } from "./enum/tipoSangre";
 import { Tarea } from "./tarea";
 import { Usuario } from "./usuario";
 
 export class Supervisor extends Usuario {
   tareasPorVerificar: Tarea[] = [];
 
-  constructor(id: number, nombre: string, correo: string, contrasena: string) {
-    super(id, nombre, correo, 'supervisor', contrasena);
+  constructor(
+      id: number,
+      nombre: string,
+      correo: string,
+      contrasena: string,
+      telefono: number,
+      fechaNacimiento: Date,
+      direccion: string,
+      estadoCivil: EstadoCivil,
+      numeroHijos: number,
+      padresVivos: boolean,
+      tipoSangre: TipoSangre,
+      eps: EPS,
+      fondoPensiones: FondoPension,
+      tallaCamisa: TallaCamisa,
+      tallaPantalon: TallaPantalon,
+      tallaCalzado: TallaCalzado,
+      tipoContrato: TipoContrato,
+      jornadaLaboral: JornadaLaboral,
+    ) {
+    super(
+      id,
+      nombre,
+      correo,
+      contrasena,
+      'supervisor',
+      telefono,
+      fechaNacimiento,
+      direccion,
+      estadoCivil,
+      numeroHijos,
+      padresVivos,
+      tipoSangre,
+      eps,
+      fondoPensiones,
+      tallaCamisa,
+      tallaPantalon,
+      tallaCalzado,
+      tipoContrato,
+      jornadaLaboral
+    );
   }
 }

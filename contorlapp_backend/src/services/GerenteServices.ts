@@ -19,12 +19,22 @@ import { SolicitudTareaService } from "./SolicitudTareaServices";
 import { Empresa } from "../model/Empresa";
 import { EmpresaService } from "./EmpresaServices";
 import { AuthService } from "./authService";
+import { EstadoCivil } from "../model/enum/estadoCivil";
+import { TipoSangre } from "../model/enum/tipoSangre";
+import { EPS } from "../model/enum/eps";
+import { FondoPension } from "../model/enum/fondePensiones";
+import { TallaCamisa } from "../model/enum/tallaCamisa";
+import { TallaPantalon } from "../model/enum/tallaPantalon";
+import { TallaCalzado } from "../model/enum/tallaCalzado";
+import { TipoContrato } from "../model/enum/tipoContrato";
+import { JornadaLaboral } from "../model/enum/jornadaLaboral";
+import { FileStorageService } from "./FileStorageService";
 
 export class GerenteService {
   constructor(private gerente: Gerente, private empresa: Empresa, private authService: AuthService) {}
 
-  crearAdministrador(id: number, nombre: string, correo: string, constrasena: string): Administrador {
-    const administrador = new Administrador(id, nombre, correo, constrasena);
+  crearAdministrador(id: number, nombre: string, correo: string, constrasena: string, telefono: number, fechaNacimiento: Date): Administrador {
+    const administrador = new Administrador(id, nombre, correo, constrasena, telefono, fechaNacimiento);
     this.authService.registrarUsuario(this.gerente, administrador);
     return administrador;
   }
@@ -35,17 +45,133 @@ export class GerenteService {
     return conjunto;
   }
 
-  crearOperario(id: number, nombre: string, correo: string, constrasena: string, funciones: TipoFuncion[]): Operario {
-    const operario = new Operario(id, nombre, correo, constrasena, funciones);
+  async crearOperario(
+    id: number,
+    nombre: string,
+    correo: string,
+    contrasena: string,
+    telefono: number,
+    fechaNacimiento: Date,
+    direccion: string,
+    estadoCivil: EstadoCivil,
+    numeroHijos: number,
+    padresVivos: boolean,
+    tipoSangre: TipoSangre,
+    eps: EPS,
+    fondoPensiones: FondoPension,
+    tallaCamisa: TallaCamisa,
+    tallaPantalon: TallaPantalon,
+    tallaCalzado: TallaCalzado,
+    tipoContrato: TipoContrato,
+    jornadaLaboral: JornadaLaboral,
+    funciones: TipoFuncion[],
+    cursoSalvamentoAcuatico: boolean,
+    cursoAlturas: boolean,
+    examenIngreso: boolean,
+    fechaIngreso: Date,
+    archivos?: {
+      salvamento?: Buffer;
+      alturas?: Buffer;
+      examen?: Buffer;
+    }
+  ): Promise<Operario> {
+    const storage = new FileStorageService();
+
+    let urlSalvamento: string | undefined;
+    let urlAlturas: string | undefined;
+    let urlExamen: string | undefined;
+
+    if (cursoSalvamentoAcuatico && archivos?.salvamento) {
+      urlSalvamento = await storage.subirArchivo(archivos.salvamento, `evidencia-salvamento-${id}.pdf`);
+    }
+
+    if (cursoAlturas && archivos?.alturas) {
+      urlAlturas = await storage.subirArchivo(archivos.alturas, `evidencia-alturas-${id}.pdf`);
+    }
+
+    if (examenIngreso && archivos?.examen) {
+      urlExamen = await storage.subirArchivo(archivos.examen, `evidencia-examen-${id}.pdf`);
+    }
+
+    const operario = new Operario(
+      id,
+      nombre,
+      correo,
+      contrasena,
+      telefono,
+      fechaNacimiento,
+      direccion,
+      estadoCivil,
+      numeroHijos,
+      padresVivos,
+      tipoSangre,
+      eps,
+      fondoPensiones,
+      tallaCamisa,
+      tallaPantalon,
+      tallaCalzado,
+      tipoContrato,
+      jornadaLaboral,
+      funciones,
+      cursoSalvamentoAcuatico,
+      urlSalvamento,
+      cursoAlturas,
+      urlAlturas,
+      examenIngreso,
+      urlExamen,
+      fechaIngreso
+    );
+
     this.authService.registrarUsuario(this.gerente, operario);
     return operario;
   }
 
-  crearSupervisor(id: number, nombre: string, correo: string, constrasena: string): Supervisor {
-    const supervisor = new Supervisor(id, nombre, correo, constrasena);
+
+  crearSupervisor(
+    id: number,
+    nombre: string,
+    correo: string,
+    contrasena: string,
+    telefono: number,
+    fechaNacimiento: Date,
+    direccion: string,
+    estadoCivil: EstadoCivil,
+    numeroHijos: number,
+    padresVivos: boolean,
+    tipoSangre: TipoSangre,
+    eps: EPS,
+    fondoPensiones: FondoPension,
+    tallaCamisa: TallaCamisa,
+    tallaPantalon: TallaPantalon,
+    tallaCalzado: TallaCalzado,
+    tipoContrato: TipoContrato,
+    jornadaLaboral: JornadaLaboral
+  ): Supervisor {
+    const supervisor = new Supervisor(
+      id,
+      nombre,
+      correo,
+      contrasena,
+      telefono,
+      fechaNacimiento,
+      direccion,
+      estadoCivil,
+      numeroHijos,
+      padresVivos,
+      tipoSangre,
+      eps,
+      fondoPensiones,
+      tallaCamisa,
+      tallaPantalon,
+      tallaCalzado,
+      tipoContrato,
+      jornadaLaboral
+    );
+
     this.authService.registrarUsuario(this.gerente, supervisor);
     return supervisor;
   }
+
 
   asignarOperarioAConjunto(operario: Operario, conjunto: Conjunto): void {
     const conjuntoService = new ConjuntoService(conjunto);
@@ -116,6 +242,45 @@ export class GerenteService {
     const conjuntoService = new ConjuntoService(conjunto);
     conjuntoService.agregarTareaACronograma(tarea);
   }
+
+  crearYAsignarTarea(
+    id: number,
+    descripcion: string,
+    fechaInicio: Date,
+    fechaFin: Date,
+    conjunto: Conjunto,
+    nombreUbicacion: string,
+    nombreElemento: string,
+    duracionHoras: number,
+    operario: Operario
+  ): Tarea {
+    // 1. Buscar ubicación existente
+    const ubicacion = conjunto.ubicaciones.find(u => u.nombre === nombreUbicacion);
+    if (!ubicacion) {
+      throw new Error(`❌ La ubicación '${nombreUbicacion}' no existe en el conjunto '${conjunto.nombre}'.`);
+    }
+
+    // 2. Buscar elemento existente en la ubicación
+    const elemento = ubicacion.elementos.find(e => e.nombre === nombreElemento);
+    if (!elemento) {
+      throw new Error(`❌ El elemento '${nombreElemento}' no existe en la ubicación '${nombreUbicacion}'.`);
+    }
+
+    // 3. Crear tarea
+    const nuevaTarea = new Tarea(
+      id,
+      descripcion,
+      fechaInicio,
+      fechaFin,
+      ubicacion,
+      elemento,
+      duracionHoras,
+      operario
+    );
+    this.asignarTarea(nuevaTarea, conjunto);
+    return nuevaTarea;
+  }
+
 
 
   reprogramarTarea(tarea: Tarea, nuevaFechaInicio: Date, nuevaFechaFin: Date): void {
