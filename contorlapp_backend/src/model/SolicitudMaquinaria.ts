@@ -1,8 +1,8 @@
 import { ConjuntoService } from "../services/ConjuntoServices";
 import { MaquinariaService } from "../services/MaquinariaServices";
-import { Conjunto } from "./conjunto";
-import { Maquinaria } from "./maquinaria";
-import { Operario } from "./operario";
+import { Conjunto } from "./Conjunto";
+import { Maquinaria } from "./Maquinaria";
+import { Operario } from "./Operario";
 
 export class SolicitudMaquinaria {
   id: number;

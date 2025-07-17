@@ -1,12 +1,12 @@
-import { Maquinaria } from "./maquinaria";
-import { Gerente } from "./gerente";
-import { JefeOperaciones } from "./jefeOperaciones";
-import { SolicitudTarea } from "./solicitudTarea";
+import { Maquinaria } from "./Maquinaria";
+import { Gerente } from "./Gerente";
+import { JefeOperaciones } from "./JefeOperaciones";
+import { SolicitudTarea } from "./SolicitudTarea";
 import { SolicitudInsumo } from "./SolicitudInsumo";
 import { SolicitudMaquinaria } from "./SolicitudMaquinaria";
-import { Insumo } from "./insumo";
-import { Tarea } from "./tarea";
-import { Conjunto } from "./conjunto";
+import { Insumo } from "./Insumo";
+import { Tarea } from "./Tarea";
+import { Conjunto } from "./Conjunto";
 
 export class Empresa {
   nombre: string;

@@ -1,13 +1,13 @@
-import { Administrador } from "../model/administrador";
-import { Conjunto } from "../model/conjunto";
-import { Ubicacion } from "../model/ubicacion";
-import { Elemento } from "../model/elemento";
-import { SolicitudTarea } from "../model/solicitudTarea";
+import { Administrador } from "../model/Administrador";
+import { Conjunto } from "../model/Conjunto";
+import { Ubicacion } from "../model/Ubicacion";
+import { Elemento } from "../model/Elemento";
+import { SolicitudTarea } from "../model/SolicitudTarea";
 import { SolicitudInsumo } from "../model/SolicitudInsumo";
 import { SolicitudMaquinaria } from "../model/SolicitudMaquinaria";
-import { Insumo } from "../model/insumo";
-import { Maquinaria } from "../model/maquinaria";
-import { Operario } from "../model/operario";
+import { Insumo } from "../model/Insumo";
+import { Maquinaria } from "../model/Maquinaria";
+import { Operario } from "../model/Operario";
 
 export class AdministradorService {
   constructor(private administrador: Administrador) {}

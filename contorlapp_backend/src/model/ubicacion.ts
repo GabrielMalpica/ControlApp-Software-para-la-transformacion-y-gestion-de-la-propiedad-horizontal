@@ -1,5 +1,5 @@
-import { Conjunto } from "./conjunto";
-import { Elemento } from "./elemento";
+import { Conjunto } from "./Conjunto";
+import { Elemento } from "./Elemento";
 
 export class Ubicacion {
   conjunto: Conjunto;

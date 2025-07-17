@@ -1,7 +1,7 @@
-import { Usuario } from "./usuario";
+import { Usuario } from "./Usuario";
 import { TipoFuncion } from "./enum/tipoFuncion";
-import { Tarea } from "./tarea";
-import { Conjunto } from "./conjunto";
+import { Tarea } from "./Tarea";
+import { Conjunto } from "./Conjunto";
 import { EstadoCivil } from "./enum/estadoCivil";
 import { TipoSangre } from "./enum/tipoSangre";
 import { EPS } from "./enum/eps";

@@ -3,15 +3,15 @@ import bcrypt from 'bcrypt';
 
 // ─── Modelos y Servicios ─────────────────────────────
 import { Empresa } from './model/Empresa';
-import { Gerente } from './model/gerente';
-import { JefeOperaciones } from './model/jefeOperaciones';
-import { Administrador } from './model/administrador';
-import { Supervisor } from './model/supervisor';
-import { Operario } from './model/operario';
-import { Ubicacion } from './model/ubicacion';
-import { Elemento } from './model/elemento';
-import { Insumo } from './model/insumo';
-import { Tarea } from './model/tarea';
+import { Gerente } from './model/Gerente';
+import { JefeOperaciones } from './model/JefeOperaciones';
+import { Administrador } from './model/Administrador';
+import { Supervisor } from './model/Supervisor';
+import { Operario } from './model/Operario';
+import { Ubicacion } from './model/Ubicacion';
+import { Elemento } from './model/Elemento';
+import { Insumo } from './model/Insumo';
+import { Tarea } from './model/Tarea';
 
 import { EstadoTarea } from './model/enum/estadoTarea';
 import { TipoFuncion } from './model/enum/tipoFuncion';

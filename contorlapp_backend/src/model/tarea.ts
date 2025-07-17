@@ -1,8 +1,8 @@
-import { Elemento } from "./elemento";
-import { Operario } from "./operario";
-import { Ubicacion } from "./ubicacion";
-import { Supervisor } from "./supervisor";
+import { Elemento } from "./Elemento";
+import { Operario } from "./Operario";
+import { Supervisor } from "./Supervisor";
 import { EstadoTarea } from "./enum/estadoTarea";
+import { Ubicacion } from "./Ubicacion";
 
 export class Tarea {
   id: number;

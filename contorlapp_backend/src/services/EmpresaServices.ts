@@ -1,9 +1,9 @@
 import { Empresa } from "../model/Empresa";
-import { Insumo } from "../model/insumo";
-import { JefeOperaciones } from "../model/jefeOperaciones";
-import { Maquinaria } from "../model/maquinaria";
-import { SolicitudTarea } from "../model/solicitudTarea";
-import { Tarea } from "../model/tarea";
+import { Insumo } from "../model/Insumo";
+import { JefeOperaciones } from "../model/JefeOperaciones";
+import { Maquinaria } from "../model/Maquinaria";
+import { SolicitudTarea } from "../model/SolicitudTarea";
+import { Tarea } from "../model/Tarea";
 
 export class EmpresaService {
   constructor(private empresa: Empresa) {}

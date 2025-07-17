@@ -7,8 +7,8 @@ import { TallaCamisa } from "./enum/tallaCamisa";
 import { TallaPantalon } from "./enum/tallaPantalon";
 import { TipoContrato } from "./enum/tipoContrato";
 import { TipoSangre } from "./enum/tipoSangre";
-import { Tarea } from "./tarea";
-import { Usuario } from "./usuario";
+import { Tarea } from "./Tarea";
+import { Usuario } from "./Usuario";
 
 export class Supervisor extends Usuario {
   tareasPorVerificar: Tarea[] = [];

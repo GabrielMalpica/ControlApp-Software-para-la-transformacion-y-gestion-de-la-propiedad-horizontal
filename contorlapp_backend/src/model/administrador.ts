@@ -1,5 +1,6 @@
-import { Conjunto } from "./conjunto";
-import { Usuario } from "./usuario";
+import { Conjunto } from "./Conjunto";
+import { Usuario } from "./Usuario";
+
 
 export class Administrador extends Usuario {
   conjuntos: Conjunto[] = [];

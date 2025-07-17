@@ -1,7 +1,7 @@
 import { Empresa } from "../model/Empresa";
-import { Tarea } from "../model/tarea";
-import { Insumo } from "../model/insumo";
-import { Conjunto } from "../model/conjunto";
+import { Tarea } from "../model/Tarea";
+import { Insumo } from "../model/Insumo";
+import { Conjunto } from "../model/Conjunto";
 import { EstadoTarea } from "../model/enum/estadoTarea";
 
 export class ReporteService {

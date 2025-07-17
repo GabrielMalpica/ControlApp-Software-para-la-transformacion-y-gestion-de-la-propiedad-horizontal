@@ -1,9 +1,9 @@
-import { Supervisor } from "../model/supervisor";
-import { Tarea } from "../model/tarea";
+import { Supervisor } from "../model/Supervisor";
+import { Tarea } from "../model/Tarea";
 import { EstadoTarea } from "../model/enum/estadoTarea";
 import { TareaService } from "./TareaServices";
 import { Empresa } from "../model/Empresa";
-import { SolicitudTarea } from "../model/solicitudTarea";
+import { SolicitudTarea } from "../model/SolicitudTarea";
 
 export class SupervisorService {
   constructor(private supervisor: Supervisor, private empresa: Empresa) {}

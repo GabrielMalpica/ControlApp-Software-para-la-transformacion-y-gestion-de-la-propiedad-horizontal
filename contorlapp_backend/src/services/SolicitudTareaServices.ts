@@ -1,4 +1,4 @@
-import { SolicitudTarea } from "../model/solicitudTarea";
+import { SolicitudTarea } from "../model/SolicitudTarea";
 import { EstadoSolicitud } from "../model/enum/estadoSolicitud";
 
 export class SolicitudTareaService {

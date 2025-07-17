@@ -1,5 +1,5 @@
-import { Conjunto } from "./conjunto";
-import { Insumo } from "./insumo";
+import { Conjunto } from "./Conjunto";
+import { Insumo } from "./Insumo";
 
 export class Inventario {
   conjunto: Conjunto;

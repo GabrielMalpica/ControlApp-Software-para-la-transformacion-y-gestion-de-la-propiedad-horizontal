@@ -1,5 +1,5 @@
-import { Insumo } from "../model/insumo";
-import { Inventario } from "../model/inventario";
+import { Insumo } from "../model/Insumo";
+import { Inventario } from "../model/Inventario";
 
 export class InventarioService {
   constructor(private inventario: Inventario) {}

@@ -1,5 +1,5 @@
-import { Cronograma } from "../model/cronograma";
-import { Tarea } from "../model/tarea";
+import { Cronograma } from "../model/Cronograma";
+import { Tarea } from "../model/Tarea";
 
 export class CronogramaService {
   constructor(private cronograma: Cronograma) {}

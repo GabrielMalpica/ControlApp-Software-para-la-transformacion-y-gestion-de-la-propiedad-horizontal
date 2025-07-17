@@ -1,9 +1,9 @@
-import { Administrador } from "./administrador";
-import { Inventario } from "./inventario";
-import { Maquinaria } from "./maquinaria";
-import { Operario } from "./operario";
-import { Tarea } from "./tarea";
-import { Ubicacion } from "./ubicacion";
+import { Administrador } from "./Administrador";
+import { Inventario } from "./Inventario";
+import { Maquinaria } from "./Maquinaria";
+import { Operario } from "./Operario";
+import { Tarea } from "./Tarea";
+import { Ubicacion } from "./Ubicacion";
 
 export class Conjunto {
   nit: number;

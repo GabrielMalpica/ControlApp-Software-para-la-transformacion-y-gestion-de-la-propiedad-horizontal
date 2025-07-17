@@ -1,7 +1,7 @@
-import { Conjunto } from "./conjunto";
+import { Conjunto } from "./Conjunto";
 import { EstadoMaquinaria } from "./enum/estadoMaquinaria";
 import { TipoMaquinaria } from "./enum/tipoMaquinaria";
-import { Operario } from "./operario";
+import { Operario } from "./Operario";
 
 export class Maquinaria {
   id: number;

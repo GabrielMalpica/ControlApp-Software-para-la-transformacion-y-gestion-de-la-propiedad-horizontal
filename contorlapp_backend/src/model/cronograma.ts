@@ -1,5 +1,5 @@
-import { Conjunto } from "./conjunto";
-import { Tarea } from "./tarea";
+import { Conjunto } from "./Conjunto";
+import { Tarea } from "./Tarea";
 
 export class Cronograma {
   conjunto: Conjunto;

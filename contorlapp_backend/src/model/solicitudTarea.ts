@@ -1,7 +1,7 @@
-import { Conjunto } from "./conjunto";
-import { Elemento } from "./elemento";
+import { Conjunto } from "./Conjunto";
+import { Elemento } from "./Elemento";
 import { EstadoSolicitud } from "./enum/estadoSolicitud";
-import { Ubicacion } from "./ubicacion";
+import { Ubicacion } from "./Ubicacion";
 
 export class SolicitudTarea {
   id: number;

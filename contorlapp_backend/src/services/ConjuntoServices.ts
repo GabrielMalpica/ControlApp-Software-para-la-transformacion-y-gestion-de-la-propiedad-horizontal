@@ -1,9 +1,9 @@
-import { Administrador } from "../model/administrador";
-import { Conjunto } from "../model/conjunto";
-import { Maquinaria } from "../model/maquinaria";
-import { Operario } from "../model/operario";
-import { Tarea } from "../model/tarea";
-import { Ubicacion } from "../model/ubicacion";
+import { Administrador } from "../model/Administrador";
+import { Conjunto } from "../model/Conjunto";
+import { Maquinaria } from "../model/Maquinaria";
+import { Operario } from "../model/Operario";
+import { Tarea } from "../model/Tarea";
+import { Ubicacion } from "../model/Ubicacion";
 
 export class ConjuntoService {
   constructor(private conjunto: Conjunto) {}

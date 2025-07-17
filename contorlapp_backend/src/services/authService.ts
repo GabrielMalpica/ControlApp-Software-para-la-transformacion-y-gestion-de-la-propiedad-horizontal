@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
-import { Gerente } from "../model/gerente";
-import { Usuario } from "../model/usuario";
+import { Gerente } from "../model/Gerente";
+import { Usuario } from "../model/Usuario";
 
 type UsuarioRegistrado = Usuario
 

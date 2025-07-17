@@ -7,7 +7,7 @@ import { TallaCamisa } from "./enum/tallaCamisa";
 import { TallaPantalon } from "./enum/tallaPantalon";
 import { TipoContrato } from "./enum/tipoContrato";
 import { TipoSangre } from "./enum/tipoSangre";
-import { Usuario } from "./usuario";
+import { Usuario } from "./Usuario";
 
 export class JefeOperaciones extends Usuario{
 

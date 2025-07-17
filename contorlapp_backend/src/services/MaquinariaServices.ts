@@ -1,6 +1,6 @@
-import { Maquinaria } from "../model/maquinaria";
-import { Conjunto } from "../model/conjunto";
-import { Operario } from "../model/operario";
+import { Maquinaria } from "../model/Maquinaria";
+import { Conjunto } from "../model/Conjunto";
+import { Operario } from "../model/Operario";
 
 export class MaquinariaService {
   constructor(private maquinaria: Maquinaria) {}

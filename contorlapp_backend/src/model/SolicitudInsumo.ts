@@ -1,6 +1,6 @@
 import { InventarioService } from "../services/InventarioServices";
-import { Conjunto } from "./conjunto";
-import { Insumo } from "./insumo";
+import { Conjunto } from "./Conjunto";
+import { Insumo } from "./Insumo";
 
 export class SolicitudInsumo {
   id: number;

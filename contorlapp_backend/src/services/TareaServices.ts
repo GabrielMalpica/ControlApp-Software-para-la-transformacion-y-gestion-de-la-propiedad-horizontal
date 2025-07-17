@@ -1,5 +1,5 @@
-import { Tarea } from "../model/tarea";
-import { Supervisor } from "../model/supervisor";
+import { Tarea } from "../model/Tarea";
+import { Supervisor } from "../model/Supervisor";
 import { EstadoTarea } from "../model/enum/estadoTarea";
 import { InventarioService } from "./InventarioServices";
 

@@ -1,5 +1,5 @@
-import { Ubicacion } from "../model/ubicacion";
-import { Elemento } from "../model/elemento";
+import { Ubicacion } from "../model/Ubicacion";
+import { Elemento } from "../model/Elemento";
 
 export class UbicacionService {
   constructor(private ubicacion: Ubicacion) {}

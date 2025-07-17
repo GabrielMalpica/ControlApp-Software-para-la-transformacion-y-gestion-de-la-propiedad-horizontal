@@ -1,9 +1,9 @@
-import { Operario } from "../model/operario";
-import { Tarea } from "../model/tarea";
+import { Operario } from "../model/Operario";
+import { Tarea } from "../model/Tarea";
 import { TareaService } from "./TareaServices";
 import { InventarioService } from "./InventarioServices";
 import { Empresa } from "../model/Empresa";
-import { Insumo } from "../model/insumo";
+import { Insumo } from "../model/Insumo";
 
 export class OperarioService {
   constructor(private operario: Operario, private empresa: Empresa) {}
