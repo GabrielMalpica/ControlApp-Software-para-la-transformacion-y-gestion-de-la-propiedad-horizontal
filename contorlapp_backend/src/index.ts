@@ -88,7 +88,7 @@ gerenteServices.asignarAdministradorAConjunto(admin1, alborada);
 
 // ─── Ubicaciones y elementos ──────────────────────────
 const salon = new Ubicacion("Salón Comunal", alborada);
-const puerta = new Elemento("Puerta");
+const puerta = new Elemento(salon, "Puerta");
 const ubicacionService = new UbicacionService(salon);
 ubicacionService.agregarElemento(puerta);
 

@@ -10,7 +10,7 @@ export class Conjunto {
   nombre: string;
   direccion: string;
   correo: string;
-  administrador?: Administrador; // ← ahora es opcional
+  administrador?: Administrador;
   operarios: Operario[] = [];
   inventario: Inventario;
   maquinariaPrestada: Maquinaria[] = [];

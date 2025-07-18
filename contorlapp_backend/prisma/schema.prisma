@@ -1,0 +1,555 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EPS {
+  SANITAS
+  NUEVA_EPS
+  SALUD_TOTAL
+  SURA
+  COMPENSAR
+  FAMISANAR
+  COOSALUD
+  MUTUAL_SER
+  SAVIA_SALUD
+  CAPITAL_SALUD
+  ASMET_SALUD
+  ECOOPSOS
+  EMSSANAR
+  CAJACOPI
+  COMFENALCO_ANTIOQUIA
+  COMFACHOCO
+  COMPARTA
+  DUSAKAWI
+  MALLAMAS
+  ANAS_WAIMAS
+}
+
+enum EstadoCivil {
+  SOLTERO
+  CASADO
+  UNION_LIBRE
+  VIUDOA
+}
+
+enum EstadoMaquinaria {
+  OPERATIVA
+  EN_REPARACION
+  FUERA_DE_SERVICIO
+}
+
+enum EstadoSolicitud {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+}
+
+enum EstadoTarea {
+  ASIGNADA
+  EN_PROCESO
+  COMPLETADA
+  APROBADA
+  PENDIENTE_APROBACION
+  RECHAZADA
+  NO_COMPLETADA
+}
+
+enum FondoPension {
+  COLPENSIONES
+  PORVENIR
+  PROTECCION
+  COLFONDOS
+  SKANDIA
+  OLD_MUTUAL
+}
+
+enum JornadaLaboral {
+  COMPLETA
+  MEDIO_TIEMPO
+  FINES_DE_SEMANA
+}
+
+enum Rol {
+  gerente
+  administrador
+  jefe_operaciones
+  supervisor
+  operario
+}
+
+enum TallaCalzado {
+  T_34
+  T_35
+  T_36
+  T_37
+  T_38
+  T_39
+  T_40
+  T_41
+  T_42
+  T_43
+  T_44
+}
+
+enum TallaCamisa {
+  XS
+  S
+  M
+  L
+  XL
+  XXL
+  XXXL
+}
+
+enum TallaPantalon {
+  T_28
+  T_30
+  T_32
+  T_34
+  T_36
+  T_38
+  T_40
+  T_42
+  F_6
+  F_8
+  F_10
+  F_12
+  F_14
+  F_16
+}
+
+enum TipoContrato {
+  TERMINO_INDEFINIDO
+  TERMINO_FIJO
+  OBRA_LABOR
+}
+
+enum TipoFuncion {
+  TODERO
+  SALVAVIDAS
+  ASEO
+}
+
+enum TipoMaquinaria {
+  CORTASETOS_MANO
+  CORTASETOS_ALTURA
+  GUADANIA
+  PODADORA_CESPED
+  ESCALERA
+  SOPLADORA
+  FUMIGADORA_MOTOR
+  BOMBA_ESPALDA
+  MOTOSIERRA_MANO
+  MOTOSIERRA_ALTURA
+  HIDROLAVADORA_ELECTRICA
+  HIDROLAVADORA_GASOLINA
+  PULIDORA
+  TALADRO
+  ROTOMARTILLO
+  LAVABRILLADORA
+  COMPRESOR
+  PULVERIZADORA_PINTURA
+  EQUIPO_ALTURAS
+  MEDIA_LUNA
+  CAJA_HERRAMIENTAS
+  OTRO
+}
+
+enum TipoSangre {
+  O_POSITIVO
+  O_NEGATIVO
+  A_POSITIVO
+  A_NEGATIVO
+  B_POSITIVO
+  B_NEGATIVO
+  AB_POSITIVO
+  AB_NEGATIVO
+}
+
+model Usuario {
+  id              Int              @id
+  nombre          String
+  correo          String           @unique
+  contrasena      String
+  rol             String
+  telefono        BigInt
+  fechaNacimiento DateTime
+  direccion       String? 
+  estadoCivil     EstadoCivil? 
+  numeroHijos     Int?
+  padresVivos     Boolean?
+  tipoSangre      TipoSangre?
+  eps             EPS?
+  fondoPensiones  FondoPension?
+  tallaCamisa     TallaCamisa?
+  tallaPantalon   TallaPantalon?
+  tallaCalzado    TallaCalzado?
+  tipoContrato    TipoContrato?
+  jornadaLaboral  JornadaLaboral?
+
+  gerente Gerente?
+  jefeOperaciones JefeOperaciones?
+  supervisor Supervisor?
+  operario Operario?
+  administrador Administrador?
+}
+
+model Gerente {
+  id       Int     @id
+  usuario  Usuario @relation(fields: [id], references: [id], onDelete: Cascade)
+  empresa   Empresa?  @relation(fields: [empresaId], references: [id])
+  empresaId Int?
+
+  @@map("Gerente")
+}
+
+model Administrador {
+  id        Int       @id
+  usuario   Usuario   @relation(fields: [id], references: [id], onDelete: Cascade)
+  conjuntos Conjunto[]
+
+  @@map("Administrador")
+}
+
+
+model JefeOperaciones {
+  id         Int      @id
+  usuario    Usuario  @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  empresa    Empresa? @relation(fields: [empresaId], references: [id])
+  empresaId  Int?
+
+  @@map("JefeOperaciones")
+}
+
+
+model Supervisor {
+  id              Int      @id
+  usuario         Usuario  @relation(fields: [id], references: [id], onDelete: Cascade)
+  tareasPorVerificar Tarea[]
+
+  @@map("Supervisor")
+}
+
+model Operario {
+  id                       Int       @id
+  usuario                  Usuario   @relation(fields: [id], references: [id], onDelete: Cascade)
+  funciones                TipoFuncion[]
+  tareas                   Tarea[]
+  conjuntos                Conjunto[] @relation("OperarioConjuntos")
+  cursoSalvamentoAcuatico  Boolean
+  urlEvidenciaSalvamento   String?
+  cursoAlturas             Boolean
+  urlEvidenciaAlturas      String?
+  examenIngreso            Boolean
+  urlEvidenciaExamenIngreso String?
+  fechaIngreso             DateTime
+  fechaSalida              DateTime?
+  fechaUltimasVacaciones   DateTime?
+  observaciones            String?
+  consumos                 ConsumoInsumo[]
+  maquinariaAsignada Maquinaria[]
+  solicitudesMaquinaria SolicitudMaquinaria[]
+
+  @@map("Operario")
+}
+
+model Tarea {
+  id                  Int       @id @default(autoincrement())
+  descripcion         String
+  fechaInicio         DateTime
+  fechaFin            DateTime
+  fechaIniciarTarea   DateTime?
+  fechaFinalizarTarea DateTime?
+  duracionHoras       Int
+  estado              EstadoTarea   @default(ASIGNADA)
+  evidencias          String[]
+  insumosUsados       Json
+  observacionesRechazo String?
+  consumos            ConsumoInsumo[]
+
+  // Relaciones
+  operario            Operario      @relation(fields: [operarioId], references: [id])
+  operarioId          Int
+
+  supervisor          Supervisor?   @relation(fields: [supervisorId], references: [id])
+  supervisorId        Int?
+
+  ubicacion           Ubicacion     @relation(fields: [ubicacionId], references: [id])
+  ubicacionId         Int
+
+  elemento            Elemento      @relation(fields: [elementoId], references: [id])
+  elementoId          Int
+
+  conjunto            Conjunto?     @relation(fields: [conjuntoId], references: [nit])
+  conjuntoId          Int?
+
+  empresaAprobadaId   Int?
+  empresaAprobada     Empresa? @relation("EmpresaTareasAprobadas", fields: [empresaAprobadaId], references: [id])
+
+  empresaRechazadaId  Int?
+  empresaRechazada    Empresa? @relation("EmpresaTareasRechazadas", fields: [empresaRechazadaId], references: [id])
+
+
+  @@map("Tarea")
+}
+
+model Conjunto {
+  nit              Int            @id
+  nombre           String
+  direccion        String
+  correo           String
+
+  administrador    Administrador? @relation(fields: [administradorId], references: [id])
+  administradorId  Int?
+
+  empresa          Empresa? @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  empresaId        Int?
+
+  operarios        Operario[]     @relation("OperarioConjuntos")
+  inventario       Inventario?
+  maquinariaPrestada Maquinaria[]
+  ubicaciones      Ubicacion[]
+  cronograma       Tarea[]
+  solicitudesTareas SolicitudTarea[]
+  solicitudesInsumos SolicitudInsumo[]
+  solicitudesMaquinaria SolicitudMaquinaria[]
+}
+
+
+model Ubicacion {
+  id         Int        @id @default(autoincrement())
+  nombre     String
+
+  // Relaciones
+  conjunto   Conjunto   @relation(fields: [conjuntoId], references: [nit])
+  conjuntoId Int
+
+  elementos  Elemento[]
+  tareas     Tarea[]
+  solicitudesTareas SolicitudTarea[]
+
+
+  @@map("Ubicacion")
+}
+
+model Elemento {
+  id          Int        @id @default(autoincrement())
+  nombre      String
+
+  // Relaciones
+  ubicacion   Ubicacion  @relation(fields: [ubicacionId], references: [id])
+  ubicacionId Int
+
+  tareas      Tarea[]
+  solicitudesTareas SolicitudTarea[]
+
+  @@map("Elemento")
+}
+
+model Insumo {
+  id             Int                 @id @default(autoincrement())
+  nombre         String
+  unidad         String
+
+  inventarios    InventarioInsumo[]
+  consumos       ConsumoInsumo[]
+  consumosEmpresa InsumoConsumoEmpresa[]
+  solicitudInsumoItem SolicitudInsumoItem[]
+
+  empresa        Empresa? @relation(fields: [empresaId], references: [id])
+  empresaId      Int?
+
+  @@map("Insumo")
+}
+
+model Inventario {
+  id         Int           @id @default(autoincrement())
+  conjunto   Conjunto      @relation(fields: [conjuntoId], references: [nit])
+  conjuntoId Int           @unique
+
+  insumos    InventarioInsumo[]
+  consumos   ConsumoInsumo[]
+
+  @@map("Inventario")
+}
+
+model InventarioInsumo {
+  id           Int        @id @default(autoincrement())
+  inventario   Inventario @relation(fields: [inventarioId], references: [id])
+  inventarioId Int
+
+  insumo       Insumo     @relation(fields: [insumoId], references: [id])
+  insumoId     Int
+
+  cantidad     Int
+
+  @@unique([inventarioId, insumoId])
+}
+
+model ConsumoInsumo {
+  id           Int         @id @default(autoincrement())
+  inventario   Inventario  @relation(fields: [inventarioId], references: [id])
+  inventarioId Int
+
+  insumo       Insumo      @relation(fields: [insumoId], references: [id])
+  insumoId     Int
+
+  operario     Operario?   @relation(fields: [operarioId], references: [id])
+  operarioId   Int?
+
+  tarea        Tarea?      @relation(fields: [tareaId], references: [id])
+  tareaId      Int?
+
+  cantidad     Int
+  fecha        DateTime
+  observacion  String?
+
+  @@map("ConsumoInsumo")
+}
+
+model Maquinaria {
+  id                      Int              @id @default(autoincrement())
+  nombre                  String
+  marca                   String
+  tipo                    TipoMaquinaria
+  estado                  EstadoMaquinaria @default(OPERATIVA)
+  disponible              Boolean          @default(true)
+
+  // Relaciones
+  asignadaA               Conjunto?        @relation(fields: [conjuntoId], references: [nit])
+  conjuntoId              Int?
+
+  responsable             Operario?        @relation(fields: [operarioId], references: [id])
+  operarioId              Int?
+
+  empresa                 Empresa? @relation(fields: [empresaId], references: [id])
+  empresaId               Int?
+
+  fechaPrestamo           DateTime?
+  fechaDevolucionEstimada DateTime?
+
+  solicitudesMaquinaria SolicitudMaquinaria[]
+
+  @@map("Maquinaria")
+}
+
+model Empresa {
+  id                   Int                  @id @default(autoincrement())
+  nombre               String
+  nit                  String               @unique
+
+  gerentes             Gerente[]
+  gerenteId            Int
+
+  jefesOperaciones     JefeOperaciones[]
+  conjuntos            Conjunto[]
+  stockMaquinaria      Maquinaria[]
+  catalogoInsumos      Insumo[]
+
+  solicitudesTareas     SolicitudTarea[]
+  solicitudesInsumos    SolicitudInsumo[]
+  solicitudesMaquinaria SolicitudMaquinaria[]
+
+  tareasAprobadas  Tarea[] @relation("EmpresaTareasAprobadas")
+  tareasRechazadas Tarea[] @relation("EmpresaTareasRechazadas")
+
+
+  insumosConsumidos    InsumoConsumoEmpresa[]
+
+  @@map("Empresa")
+}
+
+model InsumoConsumoEmpresa {
+  id         Int      @id @default(autoincrement())
+  insumo     Insumo   @relation(fields: [insumoId], references: [id])
+  insumoId   Int
+
+  empresa    Empresa  @relation(fields: [empresaId], references: [id])
+  empresaId  Int
+
+
+  cantidad   Int
+  fecha      DateTime
+}
+
+model SolicitudTarea {
+  id             Int             @id @default(autoincrement())
+  descripcion    String
+  duracionHoras  Int
+  estado         EstadoSolicitud @default(PENDIENTE)
+  observaciones  String?
+
+  conjunto       Conjunto        @relation(fields: [conjuntoId], references: [nit])
+  conjuntoId     Int
+
+  ubicacion      Ubicacion       @relation(fields: [ubicacionId], references: [id])
+  ubicacionId    Int
+
+  elemento       Elemento        @relation(fields: [elementoId], references: [id])
+  elementoId     Int
+
+  empresa        Empresa?        @relation(fields: [empresaId], references: [id])
+  empresaId      Int?
+}
+
+model SolicitudInsumo {
+  id               Int                     @id @default(autoincrement())
+  fechaSolicitud   DateTime               @default(now())
+  fechaAprobacion  DateTime?
+  aprobado         Boolean                @default(false)
+
+  conjunto         Conjunto               @relation(fields: [conjuntoId], references: [nit])
+  conjuntoId       Int
+
+  empresa          Empresa?               @relation(fields: [empresaId], references: [id])
+  empresaId        Int?
+
+  insumosSolicitados SolicitudInsumoItem[]
+}
+
+model SolicitudInsumoItem {
+  id              Int              @id @default(autoincrement())
+  solicitud       SolicitudInsumo  @relation(fields: [solicitudId], references: [id])
+  solicitudId     Int
+
+  insumo          Insumo           @relation(fields: [insumoId], references: [id])
+  insumoId        Int
+
+  cantidad        Int
+
+  @@unique([solicitudId, insumoId])
+}
+
+model SolicitudMaquinaria {
+  id                     Int              @id @default(autoincrement())
+  fechaSolicitud         DateTime         @default(now())
+  fechaUso               DateTime
+  fechaDevolucionEstimada DateTime
+  fechaAprobacion        DateTime?
+  aprobado               Boolean          @default(false)
+
+  conjunto               Conjunto         @relation(fields: [conjuntoId], references: [nit])
+  conjuntoId             Int
+
+  maquinaria             Maquinaria       @relation(fields: [maquinariaId], references: [id])
+  maquinariaId           Int
+
+  responsable            Operario         @relation(fields: [operarioId], references: [id])
+  operarioId             Int
+
+  empresa                Empresa?         @relation(fields: [empresaId], references: [id])
+  empresaId              Int?
+}

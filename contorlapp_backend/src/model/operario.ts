@@ -28,6 +28,7 @@ export class Operario extends Usuario {
   urlEvidenciaExamenIngreso?: string;
 
   fechaIngreso: Date;
+  fechaSalida?: Date;
   fechaUltimasVacaciones?: Date;
   observaciones?: string;
 

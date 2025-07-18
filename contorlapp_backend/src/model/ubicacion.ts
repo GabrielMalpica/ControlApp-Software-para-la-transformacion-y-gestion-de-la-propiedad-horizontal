@@ -11,4 +11,10 @@ export class Ubicacion {
     this.conjunto = conjunto;
     conjunto.ubicaciones.push(this);
   }
+
+  agregarElemento(elemento: Elemento): void {
+    if (!this.elementos.includes(elemento)) {
+      this.elementos.push(elemento);
+    }
+  }
 }
