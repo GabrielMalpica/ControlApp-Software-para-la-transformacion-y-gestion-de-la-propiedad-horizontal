@@ -7,32 +7,30 @@ import { TallaCamisa } from "./enum/tallaCamisa";
 import { TallaPantalon } from "./enum/tallaPantalon";
 import { TipoContrato } from "./enum/tipoContrato";
 import { TipoSangre } from "./enum/tipoSangre";
-import { Tarea } from "./Tarea";
 import { Usuario } from "./Usuario";
 
 export class Supervisor extends Usuario {
-  tareasPorVerificar: Tarea[] = [];
 
   constructor(
-      id: number,
-      nombre: string,
-      correo: string,
-      contrasena: string,
-      telefono: number,
-      fechaNacimiento: Date,
-      direccion: string,
-      estadoCivil: EstadoCivil,
-      numeroHijos: number,
-      padresVivos: boolean,
-      tipoSangre: TipoSangre,
-      eps: EPS,
-      fondoPensiones: FondoPension,
-      tallaCamisa: TallaCamisa,
-      tallaPantalon: TallaPantalon,
-      tallaCalzado: TallaCalzado,
-      tipoContrato: TipoContrato,
-      jornadaLaboral: JornadaLaboral,
-    ) {
+    id: number,
+    nombre: string,
+    correo: string,
+    contrasena: string,
+    telefono: number,
+    fechaNacimiento: Date,
+    direccion: string,
+    estadoCivil: EstadoCivil,
+    numeroHijos: number,
+    padresVivos: boolean,
+    tipoSangre: TipoSangre,
+    eps: EPS,
+    fondoPensiones: FondoPension,
+    tallaCamisa: TallaCamisa,
+    tallaPantalon: TallaPantalon,
+    tallaCalzado: TallaCalzado,
+    tipoContrato: TipoContrato,
+    jornadaLaboral: JornadaLaboral,
+  ) {
     super(
       id,
       nombre,

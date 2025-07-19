@@ -1,14 +1,11 @@
-import { Conjunto } from "./Conjunto";
-import { Elemento } from "./Elemento";
 import { EstadoSolicitud } from "./enum/estadoSolicitud";
-import { Ubicacion } from "./Ubicacion";
 
 export class SolicitudTarea {
   id: number;
   descripcion: string;
-  conjunto: Conjunto;
-  ubicacion: Ubicacion;
-  elemento: Elemento;
+  conjuntoId: number;
+  ubicacionId: number;
+  elementoId: number;
   duracionHoras: number;
   estado: EstadoSolicitud = EstadoSolicitud.PENDIENTE;
   observaciones?: string;
@@ -16,16 +13,29 @@ export class SolicitudTarea {
   constructor(
     id: number,
     descripcion: string,
-    conjunto: Conjunto,
-    ubicacion: Ubicacion,
-    elemento: Elemento,
+    conjuntoId: number,
+    ubicacionId: number,
+    elementoId: number,
     duracionHoras: number
   ) {
     this.id = id;
     this.descripcion = descripcion;
-    this.conjunto = conjunto;
-    this.ubicacion = ubicacion;
-    this.elemento = elemento;
+    this.conjuntoId = conjuntoId;
+    this.ubicacionId = ubicacionId;
+    this.elementoId = elementoId;
     this.duracionHoras = duracionHoras;
+  }
+
+  agregarObservaciones(obs: string) {
+    this.observaciones = obs;
+  }
+
+  aprobar() {
+    this.estado = EstadoSolicitud.APROBADA;
+  }
+
+  rechazar(obs: string) {
+    this.estado = EstadoSolicitud.RECHAZADA;
+    this.observaciones = obs;
   }
 }

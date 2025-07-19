@@ -7,7 +7,5 @@ export class Elemento {
   constructor(ubicacion: Ubicacion, nombre: string) {
     this.ubicacion = ubicacion;
     this.nombre = nombre;
-
-    ubicacion.agregarElemento(this);
   }
 }

@@ -1,7 +1,5 @@
 import { Usuario } from "./Usuario";
 import { TipoFuncion } from "./enum/tipoFuncion";
-import { Tarea } from "./Tarea";
-import { Conjunto } from "./Conjunto";
 import { EstadoCivil } from "./enum/estadoCivil";
 import { TipoSangre } from "./enum/tipoSangre";
 import { EPS } from "./enum/eps";
@@ -14,8 +12,6 @@ import { JornadaLaboral } from "./enum/jornadaLaboral";
 
 export class Operario extends Usuario {
   funciones: TipoFuncion[];
-  tareas: Tarea[] = [];
-  conjuntos: Conjunto[] = [];
   static LIMITE_SEMANAL_HORAS = 46;
 
   cursoSalvamentoAcuatico: boolean;

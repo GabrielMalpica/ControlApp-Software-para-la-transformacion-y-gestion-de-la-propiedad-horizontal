@@ -1,35 +1,90 @@
-import { Administrador } from "../model/Administrador";
-import { Conjunto } from "../model/Conjunto";
-import { Ubicacion } from "../model/Ubicacion";
-import { Elemento } from "../model/Elemento";
-import { SolicitudTarea } from "../model/SolicitudTarea";
-import { SolicitudInsumo } from "../model/SolicitudInsumo";
-import { SolicitudMaquinaria } from "../model/SolicitudMaquinaria";
-import { Insumo } from "../model/Insumo";
-import { Maquinaria } from "../model/Maquinaria";
-import { Operario } from "../model/Operario";
+import { PrismaClient } from '../generated/prisma';
 
 export class AdministradorService {
-  constructor(private administrador: Administrador) {}
+  constructor(private prisma: PrismaClient, private administradorId: number) {}
 
-  verConjuntos(): string[] {
-    return this.administrador.listarConjuntos();
+  async verConjuntos() {
+    try {
+      const conjuntos = await this.prisma.conjunto.findMany({
+        where: { administradorId: this.administradorId }
+      });
+      return conjuntos.map(c => `${c.nombre} ${c.nit}`);
+    } catch (error) {
+      console.error("Error al obtener conjuntos:", error);
+      throw new Error("No se pudieron obtener los conjuntos.");
+    }
   }
 
-  solicitarTarea(id: number, descripcion: string, conjunto: Conjunto, ubicacion: Ubicacion, elemento: Elemento, duracionHoras: number): SolicitudTarea {
-    return new SolicitudTarea(id, descripcion, conjunto, ubicacion, elemento, duracionHoras);
+  async solicitarTarea(
+    descripcion: string,
+    conjuntoId: number,
+    ubicacionId: number,
+    elementoId: number,
+    duracionHoras: number
+  ) {
+    try {
+      return await this.prisma.solicitudTarea.create({
+        data: {
+          descripcion,
+          conjunto: { connect: { nit: conjuntoId } },
+          ubicacion: { connect: { id: ubicacionId } },
+          elemento: { connect: { id: elementoId } },
+          duracionHoras,
+          estado: "PENDIENTE"
+        }
+      });
+    } catch (error) {
+      console.error("Error al crear solicitud de tarea:", error);
+      throw new Error("No se pudo registrar la solicitud de tarea.");
+    }
   }
 
-  solicitarInsumos(
-    id: number,
-    insumos: { insumo: Insumo; cantidad: number }[],
-    conjunto: Conjunto
-  ): SolicitudInsumo {
-    return new SolicitudInsumo(id, insumos, conjunto);
+  async solicitarInsumos(
+    conjuntoId: number,
+    insumos: { insumoId: number; cantidad: number }[]
+  ) {
+    try {
+      return await this.prisma.solicitudInsumo.create({
+        data: {
+          conjunto: { connect: { nit: conjuntoId } },
+          insumosSolicitados: {
+            create: insumos.map(({ insumoId, cantidad }) => ({
+              insumo: { connect: { id: insumoId } },
+              cantidad
+            }))
+          },
+          fechaSolicitud: new Date(),
+          aprobado: false
+        }
+      });
+    } catch (error) {
+      console.error("Error al crear solicitud de insumos:", error);
+      throw new Error("No se pudo registrar la solicitud de insumos.");
+    }
   }
 
-
-  solicitarMaquinaria(id: number, conjunto: Conjunto, maquinaria: Maquinaria, responsable: Operario, fechaUso: Date, fechaDevolucion: Date): SolicitudMaquinaria {
-    return new SolicitudMaquinaria(id, conjunto, maquinaria, responsable, fechaUso, fechaDevolucion);
+  async solicitarMaquinaria(
+    conjuntoId: number,
+    maquinariaId: number,
+    responsableId: number,
+    fechaUso: Date,
+    fechaDevolucion: Date
+  ) {
+    try {
+      return await this.prisma.solicitudMaquinaria.create({
+        data: {
+          conjunto: { connect: { nit: conjuntoId } },
+          maquinaria: { connect: { id: maquinariaId } },
+          responsable: { connect: { id: responsableId } },
+          fechaUso,
+          fechaDevolucionEstimada: fechaDevolucion,
+          fechaSolicitud: new Date(),
+          aprobado: false
+        }
+      });
+    } catch (error) {
+      console.error("Error al crear solicitud de maquinaria:", error);
+      throw new Error("No se pudo registrar la solicitud de maquinaria.");
+    }
   }
 }

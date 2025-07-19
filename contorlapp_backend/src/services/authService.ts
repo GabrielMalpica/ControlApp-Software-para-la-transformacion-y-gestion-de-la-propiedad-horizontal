@@ -1,49 +1,29 @@
-import bcrypt from 'bcrypt';
-import { Gerente } from "../model/Gerente";
-import { Usuario } from "../model/Usuario";
-
-type UsuarioRegistrado = Usuario
+import { PrismaClient } from '../generated/prisma';
+import bcrypt from "bcrypt";
 
 export class AuthService {
-  public usuariosRegistrados: UsuarioRegistrado[] = [];
+  constructor(private prisma: PrismaClient) {}
 
-  constructor(private empresa: any) {} // Puedes tipar mejor si defines una interfaz
+  async login(correo: string, contrasena: string) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { correo },
+    });
 
-  // ─── Registro inicial del gerente ─────────────────────
-  preRegistrarGerente(gerente: Gerente): void {
-    this.usuariosRegistrados.push(gerente);
-  }
-
-  // ─── Registrar nuevos usuarios ────────────────────────
-  registrarUsuario(registradoPor: Usuario, nuevoUsuario: Usuario): void {
-    const esGerente = registradoPor instanceof Gerente;
-
-    if (!esGerente) {
-      throw new Error("Solo el gerente puede registrar nuevos usuarios.");
+    if (!usuario) {
+      throw new Error("❌ Usuario no encontrado.");
     }
 
-    const yaExiste = this.usuariosRegistrados.find(u => u.correo === nuevoUsuario.correo);
-    if (yaExiste) {
-      throw new Error("Este correo ya está registrado.");
+    const passwordValida = await bcrypt.compare(contrasena, usuario.contrasena);
+
+    if (!passwordValida) {
+      throw new Error("❌ Contraseña incorrecta.");
     }
 
-    const passwordHash = bcrypt.hashSync(nuevoUsuario.contrasena, 10);
-
-    this.usuariosRegistrados.push(nuevoUsuario);
-  }
-
-  // ─── Login de usuario ────────────────────────────────
-  login(correo: string, password: string): UsuarioRegistrado | null {
-    const usuario = this.usuariosRegistrados.find(u => u.correo === correo);
-
-    if (!usuario) return null;
-
-    const match = bcrypt.compareSync(password, usuario.contrasena);
-    return match ? usuario : null;
-  }
-
-  // ─── Obtener lista de usuarios (opcional para pruebas) ──
-  listarUsuarios(): UsuarioRegistrado[] {
-    return this.usuariosRegistrados;
+    return {
+      id: usuario.id,
+      nombre: usuario.nombre,
+      correo: usuario.correo,
+      rol: usuario.rol,
+    };
   }
 }

@@ -1,74 +1,163 @@
-import { Administrador } from "../model/Administrador";
-import { Conjunto } from "../model/Conjunto";
-import { Maquinaria } from "../model/Maquinaria";
-import { Operario } from "../model/Operario";
-import { Tarea } from "../model/Tarea";
-import { Ubicacion } from "../model/Ubicacion";
+import { PrismaClient } from '../generated/prisma';
 
 export class ConjuntoService {
-  constructor(private conjunto: Conjunto) {}
+  constructor(
+    private prisma: PrismaClient,
+    private conjuntoId: number // corresponde al `nit`
+  ) {}
 
-  asignarOperario(operario: Operario): void {
-    if (!this.conjunto.operarios.includes(operario)) {
-      this.conjunto.operarios.push(operario);
-    }
-
-    if (!operario.conjuntos.includes(this.conjunto)) {
-      operario.conjuntos.push(this.conjunto);
-    }
-  }
-
-  asignarAdministrador(admin: Administrador): void {
-    this.conjunto.administrador = admin;
-    admin.agregarConjunto(this.conjunto);
-  }
-
-  eliminarAdministrador(): void {
-    const adminActual = this.conjunto.administrador;
-    if (!adminActual) return;
-
-    adminActual.eliminarConjunto(this.conjunto);
-
-    this.conjunto.administrador = null as any;
-  }
-
-  agregarMaquinaria(maquina: Maquinaria): void {
-    this.conjunto.maquinariaPrestada.push(maquina);
-  }
-
-  entregarMaquinaria(nombre: string): Maquinaria | null {
-    const maquina = this.conjunto.maquinariaPrestada.find(m => m.nombre === nombre);
-    if (!maquina) return null;
-
-    this.conjunto.maquinariaPrestada = this.conjunto.maquinariaPrestada.filter(m => m !== maquina);
-    return maquina;
-  }
-
-  agregarUbicacion(ubicacion: Ubicacion): void {
-    if (!this.conjunto.ubicaciones.some(u => u.nombre === ubicacion.nombre)) {
-      this.conjunto.ubicaciones.push(ubicacion);
+  async asignarOperario(operarioId: number) {
+    try {
+      // Relación N:N en tabla intermedia
+      await this.prisma.conjunto.update({
+        where: { nit: this.conjuntoId },
+        data: {
+          operarios: {
+            connect: { id: operarioId }
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error al asignar operario:", error);
+      throw new Error("No se pudo asignar el operario.");
     }
   }
 
-  buscarUbicacion(nombre: string): Ubicacion | undefined {
-    return this.conjunto.ubicaciones.find(u => u.nombre === nombre);
+  async asignarAdministrador(administradorId: number) {
+    try {
+      await this.prisma.conjunto.update({
+        where: { nit: this.conjuntoId },
+        data: {
+          administrador: {
+            connect: { id: administradorId }
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error al asignar administrador:", error);
+      throw new Error("No se pudo asignar el administrador.");
+    }
   }
 
-  agregarTareaACronograma(tarea: Tarea): void {
-    this.conjunto.cronograma.push(tarea);
+  async eliminarAdministrador() {
+    try {
+      await this.prisma.conjunto.update({
+        where: { nit: this.conjuntoId },
+        data: {
+          administradorId: null
+        }
+      });
+    } catch (error) {
+      console.error("Error al eliminar administrador:", error);
+      throw new Error("No se pudo eliminar el administrador.");
+    }
   }
 
-  tareasPorFecha(fecha: Date): Tarea[] {
-    return this.conjunto.cronograma.filter(t =>
-      fecha >= t.fechaInicio && fecha <= t.fechaFin
-    );
+  async agregarMaquinaria(maquinariaId: number) {
+    try {
+      await this.prisma.maquinaria.update({
+        where: { id: maquinariaId },
+        data: {
+          conjuntoId: this.conjuntoId
+        }
+      });
+    } catch (error) {
+      console.error("Error al agregar maquinaria al conjunto:", error);
+      throw new Error("No se pudo asignar la maquinaria al conjunto.");
+    }
   }
 
-  tareasPorOperario(operarioId: number): Tarea[] {
-    return this.conjunto.cronograma.filter(t => t.asignadoA.id === operarioId);
+  async entregarMaquinaria(maquinariaId: number) {
+    try {
+      await this.prisma.maquinaria.update({
+        where: { id: maquinariaId },
+        data: {
+          conjuntoId: null
+        }
+      });
+    } catch (error) {
+      console.error("Error al devolver maquinaria:", error);
+      throw new Error("No se pudo devolver la maquinaria.");
+    }
   }
 
-  tareasPorUbicacion(nombreUbicacion: string): Tarea[] {
-    return this.conjunto.cronograma.filter(t => t.ubicacion.nombre === nombreUbicacion);
+  async agregarUbicacion(nombre: string) {
+    try {
+      const yaExiste = await this.prisma.ubicacion.findFirst({
+        where: {
+          nombre,
+          conjuntoId: this.conjuntoId
+        }
+      });
+
+      if (!yaExiste) {
+        await this.prisma.ubicacion.create({
+          data: {
+            nombre,
+            conjunto: {
+              connect: { nit: this.conjuntoId }
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error al agregar ubicación:", error);
+      throw new Error("No se pudo agregar la ubicación.");
+    }
+  }
+
+  async buscarUbicacion(nombre: string) {
+    return this.prisma.ubicacion.findFirst({
+      where: {
+        nombre,
+        conjuntoId: this.conjuntoId
+      }
+    });
+  }
+
+  async agregarTareaACronograma(tareaId: number) {
+    try {
+      await this.prisma.tarea.update({
+        where: { id: tareaId },
+        data: {
+          conjunto: {
+            connect: { nit: this.conjuntoId }
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error al agregar tarea al cronograma:", error);
+      throw new Error("No se pudo agregar la tarea al cronograma.");
+    }
+  }
+
+  async tareasPorFecha(fecha: Date) {
+    return this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        fechaInicio: { lte: fecha },
+        fechaFin: { gte: fecha }
+      }
+    });
+  }
+
+  async tareasPorOperario(operarioId: number) {
+    return this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        operarioId
+      }
+    });
+  }
+
+  async tareasPorUbicacion(nombreUbicacion: string) {
+    return this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        ubicacion: {
+          nombre: nombreUbicacion
+        }
+      }
+    });
   }
 }

@@ -1,39 +1,78 @@
-import { Maquinaria } from "../model/Maquinaria";
-import { Conjunto } from "../model/Conjunto";
-import { Operario } from "../model/Operario";
+import { PrismaClient } from '../generated/prisma';
 
 export class MaquinariaService {
-  constructor(private maquinaria: Maquinaria) {}
+  constructor(private prisma: PrismaClient, private maquinariaId: number) {}
 
-  asignarAConjunto(conjunto: Conjunto, diasPrestamo: number = 7, responsable?: Operario): void {
-    this.maquinaria.asignadaA = conjunto;
-    this.maquinaria.fechaPrestamo = new Date();
-    this.maquinaria.fechaDevolucionEstimada = new Date(
-      this.maquinaria.fechaPrestamo.getTime() + diasPrestamo * 24 * 60 * 60 * 1000
+  async asignarAConjunto(conjuntoId: number, responsableId?: number, diasPrestamo: number = 7) {
+    const fechaPrestamo = new Date();
+    const fechaDevolucionEstimada = new Date(
+      fechaPrestamo.getTime() + diasPrestamo * 24 * 60 * 60 * 1000
     );
-    this.maquinaria.responsable = responsable;
-    this.maquinaria.disponible = false;
+
+    return await this.prisma.maquinaria.update({
+      where: { id: this.maquinariaId },
+      data: {
+        asignadaA: { connect: { nit: conjuntoId } },
+        responsable: responsableId ? { connect: { id: responsableId } } : undefined,
+        fechaPrestamo,
+        fechaDevolucionEstimada,
+        disponible: false,
+      }
+    });
   }
 
-  devolver(): void {
-    this.maquinaria.asignadaA = undefined;
-    this.maquinaria.fechaPrestamo = undefined;
-    this.maquinaria.fechaDevolucionEstimada = undefined;
-    this.maquinaria.responsable = undefined;
-    this.maquinaria.disponible = true;
+  async devolver() {
+    return await this.prisma.maquinaria.update({
+      where: { id: this.maquinariaId },
+      data: {
+        asignadaA: { disconnect: true },
+        responsable: { disconnect: true },
+        fechaPrestamo: null,
+        fechaDevolucionEstimada: null,
+        disponible: true
+      }
+    });
   }
 
-  estaDisponible(): boolean {
-    return this.maquinaria.disponible;
+  async estaDisponible(): Promise<boolean> {
+    const maquinaria = await this.prisma.maquinaria.findUnique({
+      where: { id: this.maquinariaId },
+      select: { disponible: true }
+    });
+
+    return maquinaria?.disponible ?? false;
   }
 
-  obtenerResponsable(): string {
-    return this.maquinaria.responsable?.nombre ?? "Sin asignar";
+  async obtenerResponsable(): Promise<string> {
+    const maquinaria = await this.prisma.maquinaria.findUnique({
+      where: { id: this.maquinariaId },
+      include: {
+        responsable: {
+          include: {
+            usuario: true
+          }
+        }
+      }
+    });
+
+    return maquinaria?.responsable?.usuario?.nombre ?? "Sin asignar";
   }
 
-  resumenEstado(): string {
-    return `🛠️ ${this.maquinaria.nombre} (${this.maquinaria.marca}) - ${this.maquinaria.estado} - ${
-      this.maquinaria.disponible ? "Disponible" : "Prestada"
+  async resumenEstado(): Promise<string> {
+    const maquinaria = await this.prisma.maquinaria.findUnique({
+      where: { id: this.maquinariaId },
+      select: {
+        nombre: true,
+        marca: true,
+        estado: true,
+        disponible: true
+      }
+    });
+
+    if (!maquinaria) throw new Error("🛠️ Maquinaria no encontrada");
+
+    return `🛠️ ${maquinaria.nombre} (${maquinaria.marca}) - ${maquinaria.estado} - ${
+      maquinaria.disponible ? "Disponible" : "Prestada"
     }`;
   }
 }

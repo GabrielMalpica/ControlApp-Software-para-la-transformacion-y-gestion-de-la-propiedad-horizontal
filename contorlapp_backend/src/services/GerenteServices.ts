@@ -1,463 +1,382 @@
-import { Administrador } from "../model/Administrador";
-import { Conjunto } from "../model/Conjunto";
-import { Insumo } from "../model/Insumo";
-import { Maquinaria } from "../model/Maquinaria";
-import { Operario } from "../model/Operario";
-import { SolicitudTarea } from "../model/SolicitudTarea";
-import { Supervisor } from "../model/Supervisor";
-import { Tarea } from "../model/Tarea";
-import { Gerente } from "../model/Gerente";
-import { EstadoMaquinaria } from "../model/enum/estadoMaquinaria";
-import { EstadoTarea } from "../model/enum/estadoTarea";
-import { TipoFuncion } from "../model/enum/tipoFuncion";
-import { TipoMaquinaria } from "../model/enum/tipoMaquinaria";
-import { ConjuntoService } from "./ConjuntoServices";
-import { InventarioService } from "./InventarioServices";
-import { MaquinariaService } from "./MaquinariaServices";
-import { OperarioService } from "./OperarioServices";
-import { SolicitudTareaService } from "./SolicitudTareaServices";
-import { Empresa } from "../model/Empresa";
-import { EmpresaService } from "./EmpresaServices";
-import { AuthService } from "./authService";
-import { EstadoCivil } from "../model/enum/estadoCivil";
-import { TipoSangre } from "../model/enum/tipoSangre";
-import { EPS } from "../model/enum/eps";
-import { FondoPension } from "../model/enum/fondePensiones";
-import { TallaCamisa } from "../model/enum/tallaCamisa";
-import { TallaPantalon } from "../model/enum/tallaPantalon";
-import { TallaCalzado } from "../model/enum/tallaCalzado";
-import { TipoContrato } from "../model/enum/tipoContrato";
-import { JornadaLaboral } from "../model/enum/jornadaLaboral";
+import { PrismaClient, EstadoMaquinaria, EstadoTarea, TipoMaquinaria, TipoFuncion } from '../generated/prisma';
+import bcrypt from "bcrypt";
 import { FileStorageService } from "./FileStorageService";
 
 export class GerenteService {
-  constructor(private gerente: Gerente, private empresa: Empresa, private authService: AuthService) {}
+  constructor(private prisma: PrismaClient) {}
 
-  crearAdministrador(id: number, nombre: string, correo: string, constrasena: string, telefono: number, fechaNacimiento: Date): Administrador {
-    const administrador = new Administrador(id, nombre, correo, constrasena, telefono, fechaNacimiento);
-    this.authService.registrarUsuario(this.gerente, administrador);
-    return administrador;
-  }
-
-  crearConjunto(id: number, nombre: string, direccion: string, correo: string): Conjunto {
-    const conjunto = new Conjunto(id, nombre, direccion, correo);
-    this.empresa.conjuntos.push(conjunto);
-    return conjunto;
-  }
-
-  async crearOperario(
-    id: number,
+  async crearGerenteManual(
+    cedula: number,
     nombre: string,
     correo: string,
-    contrasena: string,
+    contrasenaPlano: string,
     telefono: number,
     fechaNacimiento: Date,
-    direccion: string,
-    estadoCivil: EstadoCivil,
-    numeroHijos: number,
-    padresVivos: boolean,
-    tipoSangre: TipoSangre,
-    eps: EPS,
-    fondoPensiones: FondoPension,
-    tallaCamisa: TallaCamisa,
-    tallaPantalon: TallaPantalon,
-    tallaCalzado: TallaCalzado,
-    tipoContrato: TipoContrato,
-    jornadaLaboral: JornadaLaboral,
-    funciones: TipoFuncion[],
-    cursoSalvamentoAcuatico: boolean,
-    cursoAlturas: boolean,
-    examenIngreso: boolean,
-    fechaIngreso: Date,
-    archivos?: {
-      salvamento?: Buffer;
-      alturas?: Buffer;
-      examen?: Buffer;
-    }
-  ): Promise<Operario> {
-    const storage = new FileStorageService();
+    empresaId?: number
+  ) {
+    const existe = await this.prisma.usuario.findUnique({
+      where: { id: cedula },
+    });
+    if (existe) throw new Error("❌ Ya existe un usuario con esta cédula.");
 
-    let urlSalvamento: string | undefined;
-    let urlAlturas: string | undefined;
-    let urlExamen: string | undefined;
+    const hash = await bcrypt.hash(contrasenaPlano, 10);
 
-    if (cursoSalvamentoAcuatico && archivos?.salvamento) {
-      urlSalvamento = await storage.subirArchivo(archivos.salvamento, `evidencia-salvamento-${id}.pdf`);
-    }
+    // Paso 1: crear usuario
+    await this.prisma.usuario.create({
+      data: {
+        id: cedula,
+        nombre,
+        correo,
+        contrasena: hash,
+        telefono,
+        fechaNacimiento,
+        rol: "GERENTE", // asegúrate de que coincida con tu enum
+      },
+    });
 
-    if (cursoAlturas && archivos?.alturas) {
-      urlAlturas = await storage.subirArchivo(archivos.alturas, `evidencia-alturas-${id}.pdf`);
-    }
+    // Paso 2: crear gerente con el mismo ID
+    const gerente = await this.prisma.gerente.create({
+      data: {
+        id: cedula,
+        ...(empresaId && { empresaId }),
+      },
+      include: {
+        usuario: true,
+        empresa: true,
+      },
+    });
 
-    if (examenIngreso && archivos?.examen) {
-      urlExamen = await storage.subirArchivo(archivos.examen, `evidencia-examen-${id}.pdf`);
-    }
-
-    const operario = new Operario(
-      id,
-      nombre,
-      correo,
-      contrasena,
-      telefono,
-      fechaNacimiento,
-      direccion,
-      estadoCivil,
-      numeroHijos,
-      padresVivos,
-      tipoSangre,
-      eps,
-      fondoPensiones,
-      tallaCamisa,
-      tallaPantalon,
-      tallaCalzado,
-      tipoContrato,
-      jornadaLaboral,
-      funciones,
-      cursoSalvamentoAcuatico,
-      urlSalvamento,
-      cursoAlturas,
-      urlAlturas,
-      examenIngreso,
-      urlExamen,
-      fechaIngreso
-    );
-
-    this.authService.registrarUsuario(this.gerente, operario);
-    return operario;
+    return gerente;
   }
 
+  async crearAdministrador(data: {
+    id: number;
+    nombre: string;
+    correo: string;
+    contrasena: string;
+    telefono: number;
+    fechaNacimiento: Date;
+  }) {
+    const existente = await this.prisma.usuario.findUnique({
+      where: { id: data.id }
+    });
 
-  crearSupervisor(
-    id: number,
-    nombre: string,
-    correo: string,
-    contrasena: string,
-    telefono: number,
-    fechaNacimiento: Date,
-    direccion: string,
-    estadoCivil: EstadoCivil,
-    numeroHijos: number,
-    padresVivos: boolean,
-    tipoSangre: TipoSangre,
-    eps: EPS,
-    fondoPensiones: FondoPension,
-    tallaCamisa: TallaCamisa,
-    tallaPantalon: TallaPantalon,
-    tallaCalzado: TallaCalzado,
-    tipoContrato: TipoContrato,
-    jornadaLaboral: JornadaLaboral
-  ): Supervisor {
-    const supervisor = new Supervisor(
-      id,
-      nombre,
-      correo,
-      contrasena,
-      telefono,
-      fechaNacimiento,
-      direccion,
-      estadoCivil,
-      numeroHijos,
-      padresVivos,
-      tipoSangre,
-      eps,
-      fondoPensiones,
-      tallaCamisa,
-      tallaPantalon,
-      tallaCalzado,
-      tipoContrato,
-      jornadaLaboral
-    );
-
-    this.authService.registrarUsuario(this.gerente, supervisor);
-    return supervisor;
-  }
-
-
-  asignarOperarioAConjunto(operario: Operario, conjunto: Conjunto): void {
-    const conjuntoService = new ConjuntoService(conjunto);
-    conjuntoService.asignarOperario(operario);
-  }
-
-  asignarAdministradorAConjunto(administrador: Administrador, conjunto: Conjunto): void {
-    const conjuntoService = new ConjuntoService(conjunto);
-    conjuntoService.asignarAdministrador(administrador); 
-  }
-
-  agregarInsumoAConjunto(conjunto: Conjunto, insumo: Insumo, cantidad: number): void {
-    const inventarioService = new InventarioService(conjunto.inventario);
-    inventarioService.agregarInsumo(insumo, cantidad);
-  }
-
-  crearMaquinaria(nombre: string, marca: string, tipo: TipoMaquinaria): void {
-    const id = this.empresa.stockMaquinaria.length + 1;
-    const maquina = new Maquinaria(id, nombre, marca, tipo, EstadoMaquinaria.OPERATIVA, true);
-    this.empresa.stockMaquinaria.push(maquina);
-  }
-
-  entregarMaquinariaAConjunto(nombre: string, conjunto: Conjunto): void {
-    const maquina = this.empresa.stockMaquinaria.find(m => m.nombre === nombre && m.disponible);
-    if (!maquina) throw new Error('Maquinaria no disponible u operativa');
-
-    const maquinariaService = new MaquinariaService(maquina);
-    maquinariaService.asignarAConjunto(conjunto);
-
-    const conjuntoService = new ConjuntoService(conjunto);
-    conjuntoService.agregarMaquinaria(maquina);
-
-    this.empresa.stockMaquinaria = this.empresa.stockMaquinaria.filter(m => m !== maquina);
-  }
-
-  recibirMaquinariaDeConjunto(nombre: string, conjunto: Conjunto): void {
-    const conjuntoService = new ConjuntoService(conjunto);
-    const maquina = conjuntoService.entregarMaquinaria(nombre);
-
-    if (!maquina) throw new Error('El conjunto no tiene esa maquinaria');
-
-    const maquinariaService = new MaquinariaService(maquina);
-    maquinariaService.devolver();
-
-    this.empresa.stockMaquinaria.push(maquina);
-  }
-
-  listarMaquinariaDisponible(): Maquinaria[] {
-    return this.empresa.stockMaquinaria.filter(m => m.disponible);
-  }
-
-  maquinariaDisponible(id: number): boolean {
-    const maquina = this.empresa.stockMaquinaria.find(m => m.id === id);
-    return maquina !== undefined && maquina.disponible;
-  }
-
-  asignarTarea(tarea: Tarea, conjunto: Conjunto): void {
-    const operario = tarea.asignadoA;
-    const operarioService = new OperarioService(operario, this.empresa);
-    const horasRestantes = operarioService.horasRestantesEnSemana(tarea.fechaInicio);
-
-    if (tarea.duracionHoras > horasRestantes) {
-      throw new Error(`❌ El operario ${operario.nombre} solo tiene ${horasRestantes}h disponibles esta semana.`);
+    if (existente) {
+      throw new Error(`⚠️ Ya existe un usuario con la cédula ${data.id}`);
     }
 
-    operarioService.asignarTarea(tarea);
-
-    const conjuntoService = new ConjuntoService(conjunto);
-    conjuntoService.agregarTareaACronograma(tarea);
-  }
-
-  crearYAsignarTarea(
-    id: number,
-    descripcion: string,
-    fechaInicio: Date,
-    fechaFin: Date,
-    conjunto: Conjunto,
-    nombreUbicacion: string,
-    nombreElemento: string,
-    duracionHoras: number,
-    operario: Operario
-  ): Tarea {
-    // 1. Buscar ubicación existente
-    const ubicacion = conjunto.ubicaciones.find(u => u.nombre === nombreUbicacion);
-    if (!ubicacion) {
-      throw new Error(`❌ La ubicación '${nombreUbicacion}' no existe en el conjunto '${conjunto.nombre}'.`);
-    }
-
-    // 2. Buscar elemento existente en la ubicación
-    const elemento = ubicacion.elementos.find(e => e.nombre === nombreElemento);
-    if (!elemento) {
-      throw new Error(`❌ El elemento '${nombreElemento}' no existe en la ubicación '${nombreUbicacion}'.`);
-    }
-
-    // 3. Crear tarea
-    const nuevaTarea = new Tarea(
-      id,
-      descripcion,
-      fechaInicio,
-      fechaFin,
-      ubicacion,
-      elemento,
-      duracionHoras,
-      operario
-    );
-    this.asignarTarea(nuevaTarea, conjunto);
-    return nuevaTarea;
-  }
-
-
-
-  reprogramarTarea(tarea: Tarea, nuevaFechaInicio: Date, nuevaFechaFin: Date): void {
-    tarea.fechaInicio = nuevaFechaInicio;
-    tarea.fechaFin = nuevaFechaFin;
-    tarea.estado = EstadoTarea.ASIGNADA;
-    tarea.fechaFinalizarTarea = undefined;
-    tarea.verificadaPor = undefined;
-    tarea.fechaVerificacion = undefined;
-    tarea.observacionesRechazo = undefined;
-    tarea.evidencias = [];
-  }
-
-  recibirSolicitud(solicitud: SolicitudTarea): void {
-    this.empresa.solicitudesTareas.push(solicitud);
-  }
-
-  aprobarSolicitud(solicitudId: number, operario: Operario, conjunto: Conjunto, fechaInicio: Date, fechaFin: Date): void {
-    const solicitud = this.empresa.solicitudesTareas.find(s => s.id === solicitudId);
-    if (!solicitud) throw new Error("Solicitud no encontrada");
-
-    const solicitudService = new SolicitudTareaService(solicitud);
-    solicitudService.aprobar();
-
-    const conjuntoService = new ConjuntoService(solicitud.conjunto);
-    const ubicacion = conjuntoService.buscarUbicacion(solicitud.ubicacion.nombre);
-    const elemento = ubicacion?.elementos.find(e => e.nombre === solicitud.elemento.nombre);
-    if (!ubicacion || !elemento) throw new Error("Ubicación o elemento no encontrado");
-
-    const tarea = new Tarea(
-      solicitudId,
-      solicitud.descripcion,
-      fechaInicio,
-      fechaFin,
-      ubicacion,
-      elemento,
-      solicitud.duracionHoras,
-      operario
-    );
-
-    this.asignarTarea(tarea, conjunto);
-    conjuntoService.agregarTareaACronograma(tarea);
-
-    this.empresa.solicitudesTareas = this.empresa.solicitudesTareas.filter(s => s.id !== solicitudId);
-  }
-
-  verMaquinariaDisponible(): string[] {
-    const servicio = new EmpresaService(this.empresa);
-    return servicio.obtenerMaquinariaDisponible().map(m =>
-      `🔹 ${m.nombre} (${m.marca}) - ${m.tipo}`
-    );
-  }
-
-  verMaquinariaPrestada(): string[] {
-    const servicio = new EmpresaService(this.empresa);
-    return servicio.obtenerMaquinariaPrestada().map(info =>
-      `🔧 ${info.maquina.nombre} → Conjunto: ${info.conjunto}, Responsable: ${info.responsable}, Prestada desde: ${info.fechaPrestamo.toLocaleDateString()}`
-    );
-  }
-
-  // ─── Eliminaciones ──────────────────────────────────────
-
-  eliminarAdministrador(admin: Administrador): void {
-    const sigueAsignado = admin.conjuntos.length > 0;
-
-    if (sigueAsignado) {
-      throw new Error(`❌ No se puede eliminar a ${admin.nombre} porque está asignado a un conjunto.`);
-    }
-
-    this.authService.usuariosRegistrados = this.authService.usuariosRegistrados.filter(
-      u => u.correo !== admin.correo
-    );
-  }
-
-
-  reemplazarAdminEnVariosConjuntos(
-    reemplazos: { conjunto: Conjunto; nuevoAdmin: Administrador }[]
-  ): void {
-    if (reemplazos.length === 0) return;
-
-    const anteriorAdmin = reemplazos[0].conjunto.administrador;
-    if (!anteriorAdmin) return;
-
-    for (const { conjunto, nuevoAdmin } of reemplazos) {
-      const conjuntoService = new ConjuntoService(conjunto);
-      conjuntoService.eliminarAdministrador();     // ✅ elimina vínculo si lo había
-      conjuntoService.asignarAdministrador(nuevoAdmin); // ✅ asigna el nuevo
-    }
-  }
-
-
-  eliminarOperario(operario: Operario): void {
-    const tieneTareasPendientes = operario.tareas.some(t =>
-      [EstadoTarea.ASIGNADA, EstadoTarea.EN_PROCESO, EstadoTarea.PENDIENTE_APROBACION].includes(t.estado)
-    );
-
-    if (tieneTareasPendientes) {
-      throw new Error(`❌ No se puede eliminar a ${operario.nombre} porque tiene tareas pendientes.`);
-    }
-
-    this.authService.usuariosRegistrados = this.authService.usuariosRegistrados.filter(u => u !== operario);
-    operario.conjuntos.forEach(c => {
-      c.operarios = c.operarios.filter(o => o !== operario);
+    return await this.prisma.usuario.create({
+      data: {
+        id: data.id,
+        nombre: data.nombre,
+        correo: data.correo,
+        contrasena: data.contrasena,
+        telefono: data.telefono,
+        fechaNacimiento: data.fechaNacimiento,
+        rol: "ADMINISTRADOR",
+      },
     });
   }
 
-  eliminarSupervisor(supervisor: Supervisor): void {
-    this.authService.usuariosRegistrados = this.authService.usuariosRegistrados.filter(
-      u => u.correo !== supervisor.correo
-    );
+
+
+  async crearConjunto(data: {
+    nit: number;
+    nombre: string;
+    direccion: string;
+    correo: string;
+  }) {
+    return await this.prisma.conjunto.create({
+      data: {
+        nit: data.nit,
+        nombre: data.nombre,
+        direccion: data.direccion,
+        correo: data.correo
+      },
+    });
   }
 
-  eliminarConjunto(conjunto: Conjunto): void {
-    const tieneTareasPendientes = conjunto.cronograma.some(t =>
-      [EstadoTarea.ASIGNADA, EstadoTarea.EN_PROCESO, EstadoTarea.PENDIENTE_APROBACION].includes(t.estado)
-    );
+  async asignarOperarioAConjunto(operarioId: number, conjuntoId: number) {
+    return await this.prisma.operario.update({
+      where: { id: operarioId },
+      data: {
+        conjuntos: {
+          connect: { nit: conjuntoId },
+        },
+      },
+    });
+  }
 
-    const tieneMaquinaria = conjunto.maquinariaPrestada.length > 0;
+  async agregarInsumoAConjunto(conjuntoId: number, insumoId: number, cantidad: number) {
+    // Buscar el inventario del conjunto
+    const inventario = await this.prisma.inventario.findUnique({
+      where: { conjuntoId },
+    });
 
-    if (tieneTareasPendientes) {
-      throw new Error(`❌ No se puede eliminar el conjunto ${conjunto.nombre} porque tiene tareas pendientes.`);
+    if (!inventario) {
+      throw new Error(`❌ No se encontró inventario para el conjunto con ID ${conjuntoId}`);
     }
 
-    if (tieneMaquinaria) {
-      throw new Error(`❌ No se puede eliminar el conjunto ${conjunto.nombre} porque tiene maquinaria prestada.`);
+    // Buscar si ya existe el insumo en el inventario
+    const existente = await this.prisma.inventarioInsumo.findFirst({
+      where: {
+        inventarioId: inventario.id,
+        insumoId: insumoId,
+      },
+    });
+
+    if (existente) {
+      // Incrementar cantidad
+      return await this.prisma.inventarioInsumo.update({
+        where: { id: existente.id },
+        data: {
+          cantidad: {
+            increment: cantidad,
+          },
+        },
+      });
     }
 
-    this.empresa.conjuntos = this.empresa.conjuntos.filter(c => c !== conjunto);
+    // Si no existe, crear nuevo registro
+    return await this.prisma.inventarioInsumo.create({
+      data: {
+        inventarioId: inventario.id,
+        insumoId: insumoId,
+        cantidad: cantidad,
+      },
+    });
+  }
+
+  async crearMaquinaria(nombre: string, marca: string, tipo: TipoMaquinaria, empresaId: number) {
+    return await this.prisma.maquinaria.create({
+      data: {
+        nombre: nombre,
+        marca: marca,
+        tipo,
+        estado: "OPERATIVA", // o EstadoMaquinaria.OPERATIVA si usas enum
+        disponible: true,
+        empresa: {
+          connect: { id: empresaId }
+        }
+      }
+    });
   }
 
 
-  eliminarMaquinaria(maquinariaId: number): void {
-    this.empresa.stockMaquinaria = this.empresa.stockMaquinaria.filter(m => m.id !== maquinariaId);
+  async entregarMaquinariaAConjunto(maquinariaId: number, conjuntoId: number) {
+    return await this.prisma.maquinaria.update({
+      where: { id: maquinariaId },
+      data: {
+        disponible: false,
+        asignadaA: { connect: { nit: conjuntoId } },
+      },
+    });
   }
 
-  eliminarTarea(tarea: Tarea, conjunto: Conjunto): void {
-    conjunto.cronograma = conjunto.cronograma.filter(t => t !== tarea);
-    const operario = tarea.asignadoA;
-    operario.tareas = operario.tareas.filter(t => t !== tarea);
+  async asignarTarea(data: {
+    descripcion: string;
+    fechaInicio: Date;
+    fechaFin: Date;
+    duracionHoras: number;
+    operarioId: number;
+    ubicacionId: number;
+    elementoId: number;
+    conjuntoId: number;
+  }) {
+    return await this.prisma.tarea.create({
+      data: {
+        ...data,
+        estado: "ASIGNADA",
+        insumosUsados: {
+          create: []
+        }
+      },
+    });
   }
 
 
-  // ─── Ediciones ──────────────────────────────────────────
+  async eliminarAdministrador(adminId: number) {
+    const asignaciones = await this.prisma.conjunto.findMany({
+      where: { administradorId: adminId },
+    });
 
-  editarAdministrador(admin: Administrador, nuevosDatos: Partial<Administrador>): void {
-    if (nuevosDatos.nombre) admin.nombre = nuevosDatos.nombre;
-    if (nuevosDatos.correo) admin.correo = nuevosDatos.correo;
+    if (asignaciones.length > 0) {
+      throw new Error("❌ El administrador tiene conjuntos asignados.");
+    }
+
+    await this.prisma.usuario.delete({ where: { id: adminId } });
   }
 
-  editarOperario(operario: Operario, nuevosDatos: Partial<Operario>): void {
-    if (nuevosDatos.nombre) operario.nombre = nuevosDatos.nombre;
-    if (nuevosDatos.correo) operario.correo = nuevosDatos.correo;
-    if (nuevosDatos.funciones) operario.funciones = nuevosDatos.funciones;
+  async reemplazarAdminEnVariosConjuntos(
+    reemplazos: { conjuntoId: number; nuevoAdminId: number }[]
+  ) {
+    if (reemplazos.length === 0) return;
+
+    for (const { conjuntoId, nuevoAdminId } of reemplazos) {
+      await this.prisma.conjunto.update({
+        where: { nit: conjuntoId },
+        data: { administradorId: nuevoAdminId },
+      });
+    }
   }
 
-  editarSupervisor(supervisor: Supervisor, nuevosDatos: Partial<Supervisor>): void {
-    if (nuevosDatos.nombre) supervisor.nombre = nuevosDatos.nombre;
-    if (nuevosDatos.correo) supervisor.correo = nuevosDatos.correo;
+  async eliminarOperario(operarioId: number) {
+    const tareasPendientes = await this.prisma.tarea.findMany({
+      where: {
+        operarioId: operarioId,
+        estado: {
+          in: ["ASIGNADA", "EN_PROCESO", "PENDIENTE_APROBACION"]
+        }
+      }
+    });
+
+    if (tareasPendientes.length > 0) {
+      throw new Error("❌ El operario tiene tareas pendientes.");
+    }
+
+    await this.prisma.operario.delete({ where: { id: operarioId } });
   }
 
-  editarConjunto(conjunto: Conjunto, nuevosDatos: Partial<Conjunto>): void {
-    if (nuevosDatos.nombre) conjunto.nombre = nuevosDatos.nombre;
-    if (nuevosDatos.direccion) conjunto.direccion = nuevosDatos.direccion;
-    if (nuevosDatos.correo) conjunto.correo = nuevosDatos.correo;
+  async eliminarSupervisor(supervisorId: number) {
+    await this.prisma.supervisor.delete({
+      where: { id: supervisorId }
+    });
   }
 
-  editarMaquinaria(maquina: Maquinaria, nuevosDatos: Partial<Maquinaria>): void {
-    if (nuevosDatos.nombre) maquina.nombre = nuevosDatos.nombre;
-    if (nuevosDatos.marca) maquina.marca = nuevosDatos.marca;
-    if (nuevosDatos.tipo) maquina.tipo = nuevosDatos.tipo;
+  async eliminarConjunto(conjuntoId: number) {
+    const tareasPendientes = await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId,
+        estado: {
+          in: ["ASIGNADA", "EN_PROCESO", "PENDIENTE_APROBACION"]
+        }
+      }
+    });
+
+    const maquinariaPrestada = await this.prisma.maquinaria.findMany({
+      where: {
+        id: conjuntoId,
+        disponible: false
+      }
+    });
+
+    if (tareasPendientes.length > 0) {
+      throw new Error("❌ El conjunto tiene tareas pendientes.");
+    }
+
+    if (maquinariaPrestada.length > 0) {
+      throw new Error("❌ El conjunto tiene maquinaria prestada.");
+    }
+
+    await this.prisma.conjunto.delete({
+      where: { nit: conjuntoId }
+    });
   }
 
-  editarTarea(tarea: Tarea, nuevosDatos: Partial<Tarea>): void {
-    if (nuevosDatos.descripcion) tarea.descripcion = nuevosDatos.descripcion;
-    if (nuevosDatos.fechaInicio) tarea.fechaInicio = nuevosDatos.fechaInicio;
-    if (nuevosDatos.fechaFin) tarea.fechaFin = nuevosDatos.fechaFin;
-    if (nuevosDatos.duracionHoras) tarea.duracionHoras = nuevosDatos.duracionHoras;
+  async eliminarMaquinaria(maquinariaId: number) {
+    await this.prisma.maquinaria.delete({
+      where: { id: maquinariaId }
+    });
+  }
+
+  async eliminarTarea(tareaId: number) {
+    await this.prisma.tarea.delete({
+      where: { id: tareaId }
+    });
+  }
+
+  async editarAdministrador(adminId: number, nuevosDatos: Partial<{ nombre: string; correo: string }>) {
+    await this.prisma.usuario.update({
+      where: { id: adminId },
+      data: nuevosDatos
+    });
+  }
+
+  async editarOperario(
+    operarioId: number,
+    nuevosDatos: Partial<{
+      nombre: string;
+      correo: string;
+      funciones: TipoFuncion[];
+    }>
+  ) {
+    const data: any = {};
+
+    if (nuevosDatos.nombre) data.nombre = nuevosDatos.nombre;
+    if (nuevosDatos.correo) data.correo = nuevosDatos.correo;
+
+    if (nuevosDatos.funciones) {
+      // Validamos que cada string sea un valor válido del enum
+      const funcionesValidas = nuevosDatos.funciones.filter(f =>
+        Object.values(TipoFuncion).includes(f as TipoFuncion)
+      );
+
+      data.funciones = funcionesValidas as TipoFuncion[];
+    }
+
+    await this.prisma.operario.update({
+      where: { id: operarioId },
+      data
+    });
+  }
+
+  async editarSupervisor(
+    supervisorId: number,
+    nuevosDatos: Partial<{ nombre: string; correo: string }>
+  ) {
+    const data: any = {};
+
+    if (nuevosDatos.nombre) {
+      data.nombre = nuevosDatos.nombre;
+    }
+
+    if (nuevosDatos.correo) {
+      data.correo = nuevosDatos.correo;
+    }
+
+    if (Object.keys(data).length === 0) {
+      throw new Error("❗ Debes proporcionar al menos un dato para actualizar.");
+    }
+
+    return await this.prisma.supervisor.update({
+      where: { id: supervisorId },
+      data
+    });
+  }
+
+
+  async editarConjunto(conjuntoId: number, nuevosDatos: Partial<{ nombre: string; direccion: string; correo: string }>) {
+    await this.prisma.conjunto.update({
+      where: { nit: conjuntoId },
+      data: nuevosDatos
+    });
+  }
+
+  async editarMaquinaria(
+    maquinariaId: number,
+    nuevosDatos: Partial<{ nombre: string; marca: string; tipo: TipoMaquinaria }>
+  ) {
+    const data: any = {};
+
+    if (nuevosDatos.nombre) data.nombre = nuevosDatos.nombre;
+    if (nuevosDatos.marca) data.marca = nuevosDatos.marca;
+    if (nuevosDatos.tipo) data.tipo = { set: nuevosDatos.tipo };
+
+    if (Object.keys(data).length === 0) {
+      throw new Error("❗ Debes proporcionar al menos un campo para actualizar.");
+    }
+
+    return await this.prisma.maquinaria.update({
+      where: { id: maquinariaId },
+      data
+    });
+  }
+
+  async editarTarea(tareaId: number, nuevosDatos: Partial<{ descripcion: string; fechaInicio: Date; fechaFin: Date; duracionHoras: number }>) {
+    await this.prisma.tarea.update({
+      where: { id: tareaId },
+      data: nuevosDatos
+    });
   }
 
 }

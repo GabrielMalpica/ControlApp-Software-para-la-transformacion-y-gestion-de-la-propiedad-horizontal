@@ -1,63 +1,106 @@
-import { Tarea } from "../model/Tarea";
-import { Supervisor } from "../model/Supervisor";
-import { EstadoTarea } from "../model/enum/estadoTarea";
-import { InventarioService } from "./InventarioServices";
+import { PrismaClient, EstadoTarea } from "../generated/prisma";
 
 export class TareaService {
-  constructor(private tarea: Tarea) {}
+  constructor(private prisma: PrismaClient, private tareaId: number) {}
 
-  agregarEvidencia(imagen: string): void {
-    this.tarea.evidencias.push(imagen);
+  async agregarEvidencia(imagen: string): Promise<void> {
+    const tarea = await this.prisma.tarea.findUnique({ where: { id: this.tareaId } });
+    const nuevasEvidencias = [...(tarea?.evidencias ?? []), imagen];
+
+    await this.prisma.tarea.update({
+      where: { id: this.tareaId },
+      data: { evidencias: nuevasEvidencias }
+    });
   }
 
-  iniciarTarea(): void {
-    if (this.tarea.estado !== EstadoTarea.ASIGNADA) {
+  async iniciarTarea(): Promise<void> {
+    const tarea = await this.prisma.tarea.findUnique({ where: { id: this.tareaId } });
+
+    if (!tarea) throw new Error("Tarea no encontrada.");
+    if (tarea.estado !== EstadoTarea.ASIGNADA) {
       throw new Error("Solo se puede iniciar una tarea que esté asignada.");
     }
-    this.tarea.estado = EstadoTarea.EN_PROCESO;
-    this.tarea.fechaIniciarTarea = new Date();
+
+    await this.prisma.tarea.update({
+      where: { id: this.tareaId },
+      data: {
+        estado: EstadoTarea.EN_PROCESO,
+        fechaIniciarTarea: new Date()
+      }
+    });
+  }
+
+  async marcarComoCompletadaConInsumos(
+    insumosUsados: { insumoId: number; cantidad: number }[],
+    inventarioService: { consumirInsumoPorId: (id: number, cantidad: number) => Promise<void> }
+  ): Promise<void> {
+    for (const { insumoId, cantidad } of insumosUsados) {
+      await inventarioService.consumirInsumoPorId(insumoId, cantidad);
+    }
+
+    await this.prisma.tarea.update({
+      where: { id: this.tareaId },
+      data: {
+        insumosUsados,
+        estado: EstadoTarea.PENDIENTE_APROBACION,
+        fechaFinalizarTarea: new Date()
+      }
+    });
+  }
+
+  async marcarNoCompletada(): Promise<void> {
+    await this.prisma.tarea.update({
+      where: { id: this.tareaId },
+      data: {
+        estado: EstadoTarea.NO_COMPLETADA
+      }
+    });
+  }
+
+  async aprobarTarea(supervisorId: number): Promise<void> {
+    await this.prisma.tarea.update({
+      where: { id: this.tareaId },
+      data: {
+        estado: EstadoTarea.APROBADA,
+        fechaVerificacion: new Date(),
+        supervisor: {
+          connect: { id: supervisorId }
+        }
+      }
+    });
   }
 
 
+  async rechazarTarea(supervisorId: number, observacion: string): Promise<void> {
+    await this.prisma.tarea.update({
+      where: { id: this.tareaId },
+      data: {
+        estado: EstadoTarea.RECHAZADA,
+        supervisorId: supervisorId,
+        fechaVerificacion: new Date(),
+        observacionesRechazo: observacion
+      }
+    });
+  }
 
-  marcarComoCompletadaConInsumos(
-    insumosUsados: { insumoId: number; cantidad: number }[],
-    inventarioService: InventarioService
-  ): void {
-    insumosUsados.forEach(({ insumoId, cantidad }) => {
-      inventarioService.consumirInsumoPorId(insumoId, cantidad);
+  async resumen(): Promise<string> {
+    const tarea = await this.prisma.tarea.findUnique({
+      where: { id: this.tareaId },
+      include: {
+        operario: { include: { usuario: true } },
+        ubicacion: true,
+        elemento: true
+      }
     });
 
-    this.tarea.insumosUsados = insumosUsados;
-    this.tarea.estado = EstadoTarea.PENDIENTE_APROBACION;
-    this.tarea.fechaFinalizarTarea = new Date();
-  }
+    if (!tarea) throw new Error("Tarea no encontrada");
 
-
-  marcarNoCompletada(): void {
-    this.tarea.estado = EstadoTarea.NO_COMPLETADA;
-  }
-
-  aprobarTarea(supervisor: Supervisor): void {
-    this.tarea.estado = EstadoTarea.APROBADA;
-    this.tarea.verificadaPor = supervisor;
-    this.tarea.fechaVerificacion = new Date();
-  }
-
-  rechazarTarea(supervisor: Supervisor, observacion: string): void {
-    this.tarea.estado = EstadoTarea.RECHAZADA;
-    this.tarea.verificadaPor = supervisor;
-    this.tarea.fechaVerificacion = new Date();
-    this.tarea.observacionesRechazo = observacion;
-  }
-
-  resumen(): string {
-    return `📝 Tarea: ${this.tarea.descripcion}
-    👷 Operario: ${this.tarea.asignadoA.nombre}
-    📍 Ubicación: ${this.tarea.ubicacion.nombre}
-    🔧 Elemento: ${this.tarea.elemento.nombre}
-    🕒 Duración estimada: ${this.tarea.duracionHoras}h
-    📅 Del ${this.tarea.fechaInicio.toLocaleDateString()} al ${this.tarea.fechaFin.toLocaleDateString()}
-    📌 Estado actual: ${this.tarea.estado}`;
+    return `📝 Tarea: ${tarea.descripcion}
+👷 Operario: ${tarea.operario?.usuario?.nombre ?? "No asignado"}
+📍 Ubicación: ${tarea.ubicacion?.nombre ?? "Sin ubicación"}
+🔧 Elemento: ${tarea.elemento?.nombre ?? "Sin elemento"}
+🕒 Duración estimada: ${tarea.duracionHoras}h
+📅 Del ${tarea.fechaInicio.toLocaleDateString()} al ${tarea.fechaFin.toLocaleDateString()}
+📌 Estado actual: ${tarea.estado}`;
   }
 }

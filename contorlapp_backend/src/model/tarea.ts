@@ -1,8 +1,4 @@
-import { Elemento } from "./Elemento";
-import { Operario } from "./Operario";
-import { Supervisor } from "./Supervisor";
 import { EstadoTarea } from "./enum/estadoTarea";
-import { Ubicacion } from "./Ubicacion";
 
 export class Tarea {
   id: number;
@@ -11,16 +7,17 @@ export class Tarea {
   fechaFin: Date;
   fechaIniciarTarea?: Date;
   fechaFinalizarTarea?: Date;
-  ubicacion: Ubicacion;
-  elemento: Elemento;
+
+  ubicacionId: number;
+  elementoId: number;
+  operarioId: number;
+
   duracionHoras: number;
-  asignadoA: Operario;
   estado: EstadoTarea = EstadoTarea.ASIGNADA;
   insumosUsados: { insumoId: number; cantidad: number }[] = [];
-
   evidencias: string[] = [];
 
-  verificadaPor?: Supervisor;
+  verificadaPorId?: number;
   fechaVerificacion?: Date;
   observacionesRechazo?: string;
 
@@ -29,18 +26,18 @@ export class Tarea {
     descripcion: string,
     fechaInicio: Date,
     fechaFin: Date,
-    ubicacion: Ubicacion,
-    elemento: Elemento,
+    ubicacionId: number,
+    elementoId: number,
     duracionHoras: number,
-    asignadoA: Operario
+    operarioId: number
   ) {
     this.id = id;
     this.descripcion = descripcion;
     this.fechaInicio = fechaInicio;
     this.fechaFin = fechaFin;
-    this.ubicacion = ubicacion;
-    this.elemento = elemento;
+    this.ubicacionId = ubicacionId;
+    this.elementoId = elementoId;
     this.duracionHoras = duracionHoras;
-    this.asignadoA = asignadoA;
+    this.operarioId = operarioId;
   }
 }

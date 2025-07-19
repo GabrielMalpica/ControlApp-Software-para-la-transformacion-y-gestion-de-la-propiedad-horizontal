@@ -1,25 +1,52 @@
-import { SolicitudTarea } from "../model/SolicitudTarea";
-import { EstadoSolicitud } from "../model/enum/estadoSolicitud";
+import { PrismaClient, EstadoSolicitud } from '../generated/prisma';
 
 export class SolicitudTareaService {
-  constructor(private solicitud: SolicitudTarea) {}
+  constructor(private prisma: PrismaClient, private solicitudId: number) {}
 
-  aprobar(): void {
-    if (this.solicitud.estado !== EstadoSolicitud.PENDIENTE) {
+  async aprobar(): Promise<void> {
+    const solicitud = await this.prisma.solicitudTarea.findUnique({
+      where: { id: this.solicitudId },
+    });
+
+    if (!solicitud) throw new Error("❌ Solicitud no encontrada.");
+    if (solicitud.estado !== EstadoSolicitud.PENDIENTE) {
       throw new Error("❌ Solo se pueden aprobar solicitudes pendientes.");
     }
-    this.solicitud.estado = EstadoSolicitud.APROBADA;
+
+    await this.prisma.solicitudTarea.update({
+      where: { id: this.solicitudId },
+      data: { estado: EstadoSolicitud.APROBADA },
+    });
   }
 
-  rechazar(observacion: string): void {
-    if (this.solicitud.estado !== EstadoSolicitud.PENDIENTE) {
+  async rechazar(observacion: string): Promise<void> {
+    const solicitud = await this.prisma.solicitudTarea.findUnique({
+      where: { id: this.solicitudId },
+    });
+
+    if (!solicitud) throw new Error("❌ Solicitud no encontrada.");
+    if (solicitud.estado !== EstadoSolicitud.PENDIENTE) {
       throw new Error("❌ Solo se pueden rechazar solicitudes pendientes.");
     }
-    this.solicitud.estado = EstadoSolicitud.RECHAZADA;
-    this.solicitud.observaciones = observacion;
+
+    await this.prisma.solicitudTarea.update({
+      where: { id: this.solicitudId },
+      data: {
+        estado: EstadoSolicitud.RECHAZADA,
+        observaciones: observacion,
+      },
+    });
   }
 
-  estadoActual(): string {
-    return `📋 Estado de la solicitud: ${this.solicitud.estado}${this.solicitud.observaciones ? " - Obs: " + this.solicitud.observaciones : ""}`;
+  async estadoActual(): Promise<string> {
+    const solicitud = await this.prisma.solicitudTarea.findUnique({
+      where: { id: this.solicitudId },
+    });
+
+    if (!solicitud) throw new Error("❌ Solicitud no encontrada.");
+
+    return `📋 Estado de la solicitud: ${solicitud.estado}${
+      solicitud.observaciones ? " - Obs: " + solicitud.observaciones : ""
+    }`;
   }
 }

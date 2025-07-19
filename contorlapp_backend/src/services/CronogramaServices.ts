@@ -1,63 +1,88 @@
-import { Cronograma } from "../model/Cronograma";
-import { Tarea } from "../model/Tarea";
+import { PrismaClient } from '../generated/prisma';
 
 export class CronogramaService {
-  constructor(private cronograma: Cronograma) {}
+  constructor(private prisma: PrismaClient, private conjuntoId: number) {}
 
-  inicializarDesdeConjunto(): void {
-    this.cronograma.tareas = [];
-    this.cronograma.conjunto.operarios.forEach(op => {
-      op.tareas.forEach(t => this.cronograma.tareas.push(t));
+  async tareasPorOperario(operarioId: number) {
+    return await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        operarioId: operarioId
+      }
     });
   }
 
-
-  tareasPorOperario(operarioId: number): Tarea[] {
-    return this.cronograma.tareas.filter(t => t.asignadoA.id === operarioId);
+  async tareasPorFecha(fecha: Date) {
+    return await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        fechaInicio: { lte: fecha },
+        fechaFin: { gte: fecha }
+      }
+    });
   }
 
-  tareasPorFecha(fecha: Date): Tarea[] {
-    return this.cronograma.tareas.filter(t =>
-      t.fechaInicio <= fecha && fecha <= t.fechaFin
-    );
+  async tareasEnRango(fechaInicio: Date, fechaFin: Date) {
+    return await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        fechaFin: { gte: fechaInicio },
+        fechaInicio: { lte: fechaFin }
+      }
+    });
   }
 
-  tareasEnRango(fechaInicio: Date, fechaFin: Date): Tarea[] {
-    return this.cronograma.tareas.filter(t =>
-      t.fechaFin >= fechaInicio && t.fechaInicio <= fechaFin
-    );
+  async tareasPorUbicacion(nombreUbicacion: string) {
+    return await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        ubicacion: {
+          nombre: { equals: nombreUbicacion, mode: "insensitive" }
+        }
+      }
+    });
   }
 
-  tareasPorUbicacion(nombreUbicacion: string): Tarea[] {
-    return this.cronograma.tareas.filter(t =>
-      t.ubicacion.nombre.toLowerCase() === nombreUbicacion.toLowerCase()
-    );
-  }
-
-  tareasPorFiltro(opciones: {
+  async tareasPorFiltro(opciones: {
     operarioId?: number;
     fechaExacta?: Date;
     fechaInicio?: Date;
     fechaFin?: Date;
     ubicacion?: string;
-  }): Tarea[] {
-    return this.cronograma.tareas.filter(t => {
-      const porOperario = !opciones.operarioId || t.asignadoA.id === opciones.operarioId;
-      const porUbicacion = !opciones.ubicacion || t.ubicacion.nombre.toLowerCase() === opciones.ubicacion.toLowerCase();
-      const porFechaExacta = !opciones.fechaExacta || (t.fechaInicio <= opciones.fechaExacta && opciones.fechaExacta <= t.fechaFin);
-      const porRango = (!opciones.fechaInicio || t.fechaFin >= opciones.fechaInicio)
-                    && (!opciones.fechaFin || t.fechaInicio <= opciones.fechaFin);
-      return porOperario && porUbicacion && porFechaExacta && porRango;
+  }) {
+    return await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        operarioId: opciones.operarioId,
+        fechaInicio: opciones.fechaExacta ? { lte: opciones.fechaExacta } : opciones.fechaInicio ? { lte: opciones.fechaFin } : undefined,
+        fechaFin: opciones.fechaExacta ? { gte: opciones.fechaExacta } : opciones.fechaFin ? { gte: opciones.fechaInicio } : undefined,
+        ubicacion: opciones.ubicacion
+          ? { nombre: { equals: opciones.ubicacion, mode: "insensitive" } }
+          : undefined
+      }
     });
   }
 
-  exportarComoEventosCalendario() {
-    return this.cronograma.tareas.map(t => ({
-      title: `${t.descripcion} - ${t.asignadoA.nombre}`,
+  async exportarComoEventosCalendario() {
+    const tareas = await this.prisma.tarea.findMany({
+      where: { conjuntoId: this.conjuntoId },
+      include: {
+        ubicacion: true,
+        elemento: true,
+        operario: {
+          include: {
+            usuario: true
+          }
+        }
+      }
+    });
+
+    return tareas.map(t => ({
+      title: `${t.descripcion} - ${t.operario.usuario.nombre}`,
       start: t.fechaInicio.toISOString(),
       end: t.fechaFin.toISOString(),
       resource: {
-        operario: t.asignadoA.nombre,
+        operario: t.operario.usuario.nombre,
         ubicacion: t.ubicacion.nombre,
         elemento: t.elemento.nombre
       }

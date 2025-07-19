@@ -283,6 +283,7 @@ model Tarea {
   // Relaciones
   operario            Operario      @relation(fields: [operarioId], references: [id])
   operarioId          Int
+  fechaVerificacion   DateTime?
 
   supervisor          Supervisor?   @relation(fields: [supervisorId], references: [id])
   supervisorId        Int?

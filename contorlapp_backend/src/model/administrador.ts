@@ -1,9 +1,6 @@
-import { Conjunto } from "./Conjunto";
 import { Usuario } from "./Usuario";
 
-
 export class Administrador extends Usuario {
-  conjuntos: Conjunto[] = [];
 
   constructor(
     id: number,
@@ -14,20 +11,5 @@ export class Administrador extends Usuario {
     fechaNacimiento: Date
   ) {
     super(id, nombre, correo, contrasena, 'administrador', telefono, fechaNacimiento);
-  }
-
-
-  agregarConjunto(conjunto: Conjunto): void {
-    if (!this.conjuntos.includes(conjunto)) {
-      this.conjuntos.push(conjunto);
-    }
-  }
-
-  eliminarConjunto(conjunto: Conjunto): void {
-    this.conjuntos = this.conjuntos.filter(c => c !== conjunto);
-  }
-
-  listarConjuntos(): string[] {
-    return this.conjuntos.map(c => c.nombre + ' ' + c.nit);
   }
 }

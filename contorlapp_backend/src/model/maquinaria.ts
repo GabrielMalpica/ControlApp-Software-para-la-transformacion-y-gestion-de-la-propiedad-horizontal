@@ -1,7 +1,5 @@
-import { Conjunto } from "./Conjunto";
 import { EstadoMaquinaria } from "./enum/estadoMaquinaria";
 import { TipoMaquinaria } from "./enum/tipoMaquinaria";
-import { Operario } from "./Operario";
 
 export class Maquinaria {
   id: number;
@@ -10,10 +8,10 @@ export class Maquinaria {
   tipo: TipoMaquinaria;
   estado: EstadoMaquinaria;
   disponible: boolean;
-  asignadaA?: Conjunto;
+  asignadaAId?: number;
   fechaPrestamo?: Date;
   fechaDevolucionEstimada?: Date;
-  responsable?: Operario;
+  responsableId?: number;
 
   constructor(
     id: number,
@@ -21,7 +19,11 @@ export class Maquinaria {
     marca: string,
     tipo: TipoMaquinaria,
     estado: EstadoMaquinaria = EstadoMaquinaria.OPERATIVA,
-    disponible: boolean = true
+    disponible: boolean = true,
+    asignadaAId?: number,
+    fechaPrestamo?: Date,
+    fechaDevolucionEstimada?: Date,
+    responsableId?: number
   ) {
     this.id = id;
     this.nombre = nombre;
@@ -29,5 +31,9 @@ export class Maquinaria {
     this.tipo = tipo;
     this.estado = estado;
     this.disponible = disponible;
+    this.asignadaAId = asignadaAId;
+    this.fechaPrestamo = fechaPrestamo;
+    this.fechaDevolucionEstimada = fechaDevolucionEstimada;
+    this.responsableId = responsableId;
   }
 }

@@ -1,99 +1,150 @@
-import { Operario } from "../model/Operario";
-import { Tarea } from "../model/Tarea";
+import { PrismaClient } from '../generated/prisma';
 import { TareaService } from "./TareaServices";
 import { InventarioService } from "./InventarioServices";
-import { Empresa } from "../model/Empresa";
-import { Insumo } from "../model/Insumo";
 
 export class OperarioService {
-  constructor(private operario: Operario, private empresa: Empresa) {}
+  constructor(
+    private prisma: PrismaClient,
+    private operarioId: number,
+    private empresaId: number
+  ) {}
 
-  asignarTarea(tarea: Tarea): void {
-    const horasSemana = this.horasAsignadasEnSemana(tarea.fechaInicio);
-    if (horasSemana + tarea.duracionHoras > Operario.LIMITE_SEMANAL_HORAS) {
-      throw new Error(`❌ Supera el límite de 46 horas semanales para ${this.operario.nombre}`);
+  async asignarTarea(tareaId: number): Promise<void> {
+    const tarea = await this.prisma.tarea.findUnique({ where: { id: tareaId } });
+    if (!tarea) throw new Error("❌ Tarea no encontrada");
+
+    const horasSemana = await this.horasAsignadasEnSemana(tarea.fechaInicio);
+    if (horasSemana + tarea.duracionHoras > 46) {
+      const operario = await this.prisma.operario.findUnique({
+        where: { id: this.operarioId },
+        include: { usuario: true }
+      });
+      throw new Error(`❌ Supera el límite de 46 horas semanales para ${operario?.usuario?.nombre ?? "Operario"}`);
     }
-    this.operario.tareas.push(tarea);
+
+    await this.prisma.tarea.update({
+      where: { id: tareaId },
+      data: { operarioId: this.operarioId }
+    });
   }
 
-    iniciarTarea(tareaId: number): void {
-    const tarea = this.buscarTarea(tareaId);
-
-    const tareaService = new TareaService(tarea);
-    tareaService.iniciarTarea();
+  async iniciarTarea(tareaId: number) {
+    const tareaService = new TareaService(this.prisma, tareaId);
+    await tareaService.iniciarTarea();
   }
 
-
-
-  marcarComoCompletada(
+  async marcarComoCompletada(
     tareaId: number,
     evidencias: string[],
     inventarioService: InventarioService,
     insumosUsados: { insumoId: number; cantidad: number }[] = []
-  ): void {
-    const tarea = this.buscarTarea(tareaId);
-    tarea.evidencias = evidencias;
+  ) {
+    const tarea = await this.prisma.tarea.findUnique({
+      where: { id: tareaId },
+      include: {
+        conjunto: true, // Para obtener el conjuntoId
+      },
+    });
 
-    const tareaService = new TareaService(tarea);
-    tareaService.marcarComoCompletadaConInsumos(insumosUsados, inventarioService);
+    if (tarea!.conjuntoId === null) {
+      throw new Error("❌ La tarea no tiene un conjunto asignado.");
+    }
 
-    insumosUsados.forEach(({ insumoId, cantidad }) => {
-      const insumo = this.empresa.catalogoInsumos.find(i => i.id === insumoId);
+    const inventario = await this.prisma.inventario.findUnique({
+      where: { conjuntoId: tarea!.conjuntoId },
+    });
+
+    if (!inventario) throw new Error("❌ No se encontró inventario para el conjunto asignado a la tarea");
+
+    // Consumir insumos usando el servicio
+    await new TareaService(this.prisma, tareaId).marcarComoCompletadaConInsumos(
+      insumosUsados,
+      inventarioService
+    );
+
+    // Registrar cada consumo en la base de datos
+    for (const { insumoId, cantidad } of insumosUsados) {
+      const insumo = await this.prisma.insumo.findUnique({ where: { id: insumoId } });
       if (!insumo) {
-        throw new Error(`❌ El insumo con ID ${insumoId} no está registrado en el catálogo de la empresa.`);
+        throw new Error(`❌ El insumo con ID ${insumoId} no está registrado.`);
       }
-      this.registrarConsumo(insumo, cantidad);
+
+      await this.prisma.consumoInsumo.create({
+        data: {
+          inventarioId: inventario.id,
+          insumoId,
+          cantidad,
+          fecha: new Date(),
+          tareaId: tareaId,
+          // Puedes agregar operarioId u observación si lo deseas
+        },
+      });
+    }
+
+    // Actualizar la tarea con evidencias
+    await this.prisma.tarea.update({
+      where: { id: tareaId },
+      data: { evidencias },
     });
   }
 
 
-  marcarComoNoCompletada(tareaId: number): void {
-    const tarea = this.buscarTarea(tareaId);
-    const tareaService = new TareaService(tarea);
-    tareaService.marcarNoCompletada();
+  async marcarComoNoCompletada(tareaId: number) {
+    const tareaService = new TareaService(this.prisma, tareaId);
+    await tareaService.marcarNoCompletada();
   }
 
-  tareasDelDia(fecha: Date): Tarea[] {
-    return this.operario.tareas.filter(t => fecha >= t.fechaInicio && fecha <= t.fechaFin);
+  async tareasDelDia(fecha: Date) {
+    return await this.prisma.tarea.findMany({
+      where: {
+        operarioId: this.operarioId,
+        fechaInicio: { lte: fecha },
+        fechaFin: { gte: fecha }
+      }
+    });
   }
 
-  listarTareas(): Tarea[] {
-    return this.operario.tareas;
+  async listarTareas() {
+    return await this.prisma.tarea.findMany({
+      where: { operarioId: this.operarioId }
+    });
   }
 
-  horasAsignadasEnSemana(fecha: Date): number {
-    const start = this.inicioSemana(fecha);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
+  async horasAsignadasEnSemana(fecha: Date): Promise<number> {
+    const inicio = this.inicioSemana(fecha);
+    const fin = new Date(inicio);
+    fin.setDate(inicio.getDate() + 6);
 
-    return this.operario.tareas
-      .filter(t => t.fechaInicio <= end && t.fechaFin >= start)
-      .reduce((sum, t) => sum + t.duracionHoras, 0);
+    const tareas = await this.prisma.tarea.findMany({
+      where: {
+        operarioId: this.operarioId,
+        fechaInicio: { lte: fin },
+        fechaFin: { gte: inicio }
+      },
+      select: { duracionHoras: true }
+    });
+
+    return tareas.reduce((sum, t) => sum + t.duracionHoras, 0);
   }
 
-  horasRestantesEnSemana(fecha: Date): number {
-    return Math.max(0, Operario.LIMITE_SEMANAL_HORAS - this.horasAsignadasEnSemana(fecha));
+  async horasRestantesEnSemana(fecha: Date): Promise<number> {
+    const horas = await this.horasAsignadasEnSemana(fecha);
+    return Math.max(0, 46 - horas);
   }
 
-  resumenDeHoras(fecha: Date): string {
-    const horas = this.horasAsignadasEnSemana(fecha);
-    return `🔔 A ${this.operario.nombre} le quedan ${Operario.LIMITE_SEMANAL_HORAS - horas}h disponibles esta semana.`;
-  }
-
-  // ─── Helpers ───────────────────────────────────────────────
-  private buscarTarea(tareaId: number): Tarea {
-    const tarea = this.operario.tareas.find(t => t.id === tareaId);
-    if (!tarea) throw new Error("❌ Tarea no encontrada");
-    return tarea;
+  async resumenDeHoras(fecha: Date): Promise<string> {
+    const horas = await this.horasAsignadasEnSemana(fecha);
+    const operario = await this.prisma.operario.findUnique({
+      where: { id: this.operarioId },
+      include: { usuario: true }
+    });
+    const nombre = operario?.usuario?.nombre ?? "Operario";
+    return `🔔 A ${nombre} le quedan ${46 - horas}h disponibles esta semana.`;
   }
 
   private inicioSemana(fecha: Date): Date {
     const day = fecha.getDay();
-    const diff = fecha.getDate() - day + (day === 0 ? -6 : 1); // Lunes como día 1
+    const diff = fecha.getDate() - day + (day === 0 ? -6 : 1);
     return new Date(fecha.getFullYear(), fecha.getMonth(), diff);
-  }
-
-  registrarConsumo(insumo: Insumo, cantidad: number): void {
-    this.empresa.insumosConsumidos.push({ insumo, cantidad, fecha: new Date() });
   }
 }
