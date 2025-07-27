@@ -209,8 +209,8 @@ model Usuario {
 model Gerente {
   id       Int     @id
   usuario  Usuario @relation(fields: [id], references: [id], onDelete: Cascade)
-  empresa   Empresa?  @relation(fields: [empresaId], references: [id])
-  empresaId Int?
+  empresa   Empresa?  @relation(fields: [empresaId], references: [nit])
+  empresaId String?
 
   @@map("Gerente")
 }
@@ -228,8 +228,8 @@ model JefeOperaciones {
   id         Int      @id
   usuario    Usuario  @relation(fields: [id], references: [id], onDelete: Cascade)
 
-  empresa    Empresa? @relation(fields: [empresaId], references: [id])
-  empresaId  Int?
+  empresa    Empresa? @relation(fields: [empresaId], references: [nit])
+  empresaId  String?
 
   @@map("JefeOperaciones")
 }
@@ -316,8 +316,8 @@ model Conjunto {
   administrador    Administrador? @relation(fields: [administradorId], references: [id])
   administradorId  Int?
 
-  empresa          Empresa? @relation(fields: [empresaId], references: [id], onDelete: Cascade)
-  empresaId        Int?
+  empresa          Empresa? @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
+  empresaId        String?
 
   operarios        Operario[]     @relation("OperarioConjuntos")
   inventario       Inventario?
@@ -370,8 +370,8 @@ model Insumo {
   consumosEmpresa InsumoConsumoEmpresa[]
   solicitudInsumoItem SolicitudInsumoItem[]
 
-  empresa        Empresa? @relation(fields: [empresaId], references: [id])
-  empresaId      Int?
+  empresa        Empresa? @relation(fields: [empresaId], references: [nit])
+  empresaId      String?
 
   @@map("Insumo")
 }
@@ -436,8 +436,8 @@ model Maquinaria {
   responsable             Operario?        @relation(fields: [operarioId], references: [id])
   operarioId              Int?
 
-  empresa                 Empresa? @relation(fields: [empresaId], references: [id])
-  empresaId               Int?
+  empresa                 Empresa? @relation(fields: [empresaId], references: [nit])
+  empresaId               String?
 
   fechaPrestamo           DateTime?
   fechaDevolucionEstimada DateTime?
@@ -453,7 +453,6 @@ model Empresa {
   nit                  String               @unique
 
   gerentes             Gerente[]
-  gerenteId            Int
 
   jefesOperaciones     JefeOperaciones[]
   conjuntos            Conjunto[]
@@ -478,8 +477,8 @@ model InsumoConsumoEmpresa {
   insumo     Insumo   @relation(fields: [insumoId], references: [id])
   insumoId   Int
 
-  empresa    Empresa  @relation(fields: [empresaId], references: [id])
-  empresaId  Int
+  empresa    Empresa  @relation(fields: [empresaId], references: [nit])
+  empresaId  String
 
 
   cantidad   Int
@@ -502,8 +501,8 @@ model SolicitudTarea {
   elemento       Elemento        @relation(fields: [elementoId], references: [id])
   elementoId     Int
 
-  empresa        Empresa?        @relation(fields: [empresaId], references: [id])
-  empresaId      Int?
+  empresa        Empresa?        @relation(fields: [empresaId], references: [nit])
+  empresaId      String?
 }
 
 model SolicitudInsumo {
@@ -515,8 +514,8 @@ model SolicitudInsumo {
   conjunto         Conjunto               @relation(fields: [conjuntoId], references: [nit])
   conjuntoId       Int
 
-  empresa          Empresa?               @relation(fields: [empresaId], references: [id])
-  empresaId        Int?
+  empresa          Empresa?               @relation(fields: [empresaId], references: [nit])
+  empresaId        String?
 
   insumosSolicitados SolicitudInsumoItem[]
 }
@@ -551,6 +550,6 @@ model SolicitudMaquinaria {
   responsable            Operario         @relation(fields: [operarioId], references: [id])
   operarioId             Int
 
-  empresa                Empresa?         @relation(fields: [empresaId], references: [id])
-  empresaId              Int?
+  empresa                Empresa?         @relation(fields: [empresaId], references: [nit])
+  empresaId              String?
 }

@@ -5,40 +5,44 @@ import { FileStorageService } from "./FileStorageService";
 export class GerenteService {
   constructor(private prisma: PrismaClient) {}
 
-  async crearGerenteManual(
-    cedula: number,
+  async crearUsuario(
+    id: number,
     nombre: string,
     correo: string,
     contrasenaPlano: string,
     telefono: number,
     fechaNacimiento: Date,
-    empresaId?: number
+    rol: string
   ) {
-    const existe = await this.prisma.usuario.findUnique({
-      where: { id: cedula },
-    });
-    if (existe) throw new Error("❌ Ya existe un usuario con esta cédula.");
+    const existe = await this.prisma.usuario.findUnique({ where: { id } });
+    if (existe) throw new Error("Ya existe un usuario con esa cédula.");
 
     const hash = await bcrypt.hash(contrasenaPlano, 10);
 
-    // Paso 1: crear usuario
-    await this.prisma.usuario.create({
+    return await this.prisma.usuario.create({
       data: {
-        id: cedula,
+        id,
         nombre,
         correo,
         contrasena: hash,
         telefono,
         fechaNacimiento,
-        rol: "GERENTE", // asegúrate de que coincida con tu enum
+        rol
       },
     });
+  }
 
-    // Paso 2: crear gerente con el mismo ID
+  async asignarGerente(usuarioId: number, nit: string) {
+    const empresa = await this.prisma.empresa.findUnique({
+      where: { nit },
+    });
+
+    if (!empresa) throw new Error("❌ Empresa no encontrada con ese NIT.");
+
     const gerente = await this.prisma.gerente.create({
       data: {
-        id: cedula,
-        ...(empresaId && { empresaId }),
+        id: usuarioId,
+        empresaId: empresa.nit,
       },
       include: {
         usuario: true,

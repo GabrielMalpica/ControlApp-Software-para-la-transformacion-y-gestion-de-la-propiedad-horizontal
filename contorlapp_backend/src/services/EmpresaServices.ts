@@ -1,7 +1,16 @@
 import { EstadoMaquinaria, PrismaClient, TipoMaquinaria } from '../generated/prisma';
 
 export class EmpresaService {
-  constructor(private prisma: PrismaClient, private empresaId: number) {}
+  constructor(private prisma: PrismaClient, private empresaId: string) {}
+
+  async crearEmpresa(nombre: string, nit: string) {
+    const existe = await this.prisma.empresa.findUnique({ where: { nit } });
+    if (existe) throw new Error("Ya existe una empresa con este NIT.");
+
+    return await this.prisma.empresa.create({
+      data: { nombre, nit },
+    });
+  }
 
   async agregarMaquinaria(maquinariaData: {
     nombre: string;
