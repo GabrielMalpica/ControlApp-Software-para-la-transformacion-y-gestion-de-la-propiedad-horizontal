@@ -6,7 +6,6 @@ export class OperarioService {
   constructor(
     private prisma: PrismaClient,
     private operarioId: number,
-    private empresaId: number
   ) {}
 
   async asignarTarea(tareaId: number): Promise<void> {

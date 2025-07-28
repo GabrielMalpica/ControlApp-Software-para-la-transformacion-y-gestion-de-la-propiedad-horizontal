@@ -228,8 +228,8 @@ model JefeOperaciones {
   id         Int      @id
   usuario    Usuario  @relation(fields: [id], references: [id], onDelete: Cascade)
 
-  empresa    Empresa? @relation(fields: [empresaId], references: [nit])
-  empresaId  String?
+  empresa    Empresa @relation(fields: [empresaId], references: [nit])
+  empresaId  String
 
   @@map("JefeOperaciones")
 }
@@ -238,6 +238,10 @@ model JefeOperaciones {
 model Supervisor {
   id              Int      @id
   usuario         Usuario  @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  empresa    Empresa @relation(fields: [empresaId], references: [nit])
+  empresaId  String
+
   tareasPorVerificar Tarea[]
 
   @@map("Supervisor")
@@ -262,6 +266,9 @@ model Operario {
   consumos                 ConsumoInsumo[]
   maquinariaAsignada Maquinaria[]
   solicitudesMaquinaria SolicitudMaquinaria[]
+
+  empresa    Empresa @relation(fields: [empresaId], references: [nit])
+  empresaId  String
 
   @@map("Operario")
 }
@@ -295,7 +302,7 @@ model Tarea {
   elementoId          Int
 
   conjunto            Conjunto?     @relation(fields: [conjuntoId], references: [nit])
-  conjuntoId          Int?
+  conjuntoId          String?
 
   empresaAprobadaId   Int?
   empresaAprobada     Empresa? @relation("EmpresaTareasAprobadas", fields: [empresaAprobadaId], references: [id])
@@ -308,7 +315,7 @@ model Tarea {
 }
 
 model Conjunto {
-  nit              Int            @id
+  nit              String            @id
   nombre           String
   direccion        String
   correo           String
@@ -336,7 +343,7 @@ model Ubicacion {
 
   // Relaciones
   conjunto   Conjunto   @relation(fields: [conjuntoId], references: [nit])
-  conjuntoId Int
+  conjuntoId String
 
   elementos  Elemento[]
   tareas     Tarea[]
@@ -379,7 +386,7 @@ model Insumo {
 model Inventario {
   id         Int           @id @default(autoincrement())
   conjunto   Conjunto      @relation(fields: [conjuntoId], references: [nit])
-  conjuntoId Int           @unique
+  conjuntoId String           @unique
 
   insumos    InventarioInsumo[]
   consumos   ConsumoInsumo[]
@@ -431,7 +438,7 @@ model Maquinaria {
 
   // Relaciones
   asignadaA               Conjunto?        @relation(fields: [conjuntoId], references: [nit])
-  conjuntoId              Int?
+  conjuntoId              String?
 
   responsable             Operario?        @relation(fields: [operarioId], references: [id])
   operarioId              Int?
@@ -455,6 +462,8 @@ model Empresa {
   gerentes             Gerente[]
 
   jefesOperaciones     JefeOperaciones[]
+  supervisores         Supervisor[]
+  operarios            Operario[]
   conjuntos            Conjunto[]
   stockMaquinaria      Maquinaria[]
   catalogoInsumos      Insumo[]
@@ -493,7 +502,7 @@ model SolicitudTarea {
   observaciones  String?
 
   conjunto       Conjunto        @relation(fields: [conjuntoId], references: [nit])
-  conjuntoId     Int
+  conjuntoId     String
 
   ubicacion      Ubicacion       @relation(fields: [ubicacionId], references: [id])
   ubicacionId    Int
@@ -512,7 +521,7 @@ model SolicitudInsumo {
   aprobado         Boolean                @default(false)
 
   conjunto         Conjunto               @relation(fields: [conjuntoId], references: [nit])
-  conjuntoId       Int
+  conjuntoId       String
 
   empresa          Empresa?               @relation(fields: [empresaId], references: [nit])
   empresaId        String?
@@ -542,7 +551,7 @@ model SolicitudMaquinaria {
   aprobado               Boolean          @default(false)
 
   conjunto               Conjunto         @relation(fields: [conjuntoId], references: [nit])
-  conjuntoId             Int
+  conjuntoId             String
 
   maquinaria             Maquinaria       @relation(fields: [maquinariaId], references: [id])
   maquinariaId           Int

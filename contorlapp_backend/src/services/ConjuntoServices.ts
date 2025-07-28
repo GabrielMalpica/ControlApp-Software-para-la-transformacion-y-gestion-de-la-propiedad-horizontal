@@ -3,7 +3,7 @@ import { PrismaClient } from '../generated/prisma';
 export class ConjuntoService {
   constructor(
     private prisma: PrismaClient,
-    private conjuntoId: number // corresponde al `nit`
+    private conjuntoId: string // corresponde al `nit`
   ) {}
 
   async asignarOperario(operarioId: number) {

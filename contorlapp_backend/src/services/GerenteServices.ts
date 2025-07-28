@@ -53,30 +53,112 @@ export class GerenteService {
     return gerente;
   }
 
-  async crearAdministrador(data: {
-    id: number;
-    nombre: string;
-    correo: string;
-    contrasena: string;
-    telefono: number;
-    fechaNacimiento: Date;
-  }) {
+  async asignarAdministrador(usuarioId: number) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: usuarioId },
+    });
+
+    if (!usuario) throw new Error("❌ Usuario no encontrado.");
+
+    const administrador = await this.prisma.administrador.create({
+      data: {
+        id: usuarioId,
+      },
+      include: {
+        usuario: true,
+        conjuntos: true,
+      },
+    });
+
+    return administrador;
+  }
+
+  async asignarJefeOperaciones(usuarioId: number, nit: string) {
+    const empresa = await this.prisma.empresa.findUnique({
+      where: { nit },
+    });
+
+    if (!empresa) throw new Error("❌ Empresa no encontrada con ese NIT.");
+
+    return await this.prisma.jefeOperaciones.create({
+      data: {
+        id: usuarioId,
+        empresaId: empresa.nit,
+      },
+      include: { usuario: true, empresa: true },
+    });
+  }
+
+  async asignarSupervisor(usuarioId: number, nit: string) {
+    const empresa = await this.prisma.empresa.findUnique({
+      where: { nit },
+    });
+
+    if (!empresa) throw new Error("❌ Empresa no encontrada con ese NIT.");
+
+    return await this.prisma.supervisor.create({
+      data: {
+        id: usuarioId,
+        empresaId: empresa.nit,
+      },
+      include: { usuario: true, empresa: true },
+    });
+  }
+
+  async asignarOperario(
+    usuarioId: number,
+    funciones: TipoFuncion[]
+  ) {
+    const nit = '901191875-4'
+    const empresa = await this.prisma.empresa.findUnique({
+      where: { nit },
+    });
+
+    if (!empresa) throw new Error("❌ Empresa no encontrada con ese NIT.");
+
+    return await this.prisma.operario.create({
+      data: {
+        id: usuarioId,
+        empresaId: empresa.nit,
+        funciones,
+        cursoSalvamentoAcuatico: false,
+        cursoAlturas: false,
+        examenIngreso: false,
+        fechaIngreso: new Date(),
+      },
+      include: {
+        usuario: true,
+        empresa: true,
+      },
+    });
+  }
+
+  async crearAdministrador(
+    id: number,
+    nombre: string,
+    correo: string,
+    contrasena: string,
+    telefono: number,
+    fechaNacimiento: Date,
+  ) {
     const existente = await this.prisma.usuario.findUnique({
-      where: { id: data.id }
+      where: { id: id }
     });
 
     if (existente) {
-      throw new Error(`⚠️ Ya existe un usuario con la cédula ${data.id}`);
+      throw new Error(`⚠️ Ya existe un usuario con la cédula ${id}`);
     }
+
+    const hash = await bcrypt.hash(contrasena, 10);
 
     return await this.prisma.usuario.create({
       data: {
-        id: data.id,
-        nombre: data.nombre,
-        correo: data.correo,
-        contrasena: data.contrasena,
-        telefono: data.telefono,
-        fechaNacimiento: data.fechaNacimiento,
+        id: id,
+        nombre: nombre,
+        correo: correo,
+        contrasena: hash,
+        telefono: telefono,
+        fechaNacimiento: fechaNacimiento,
         rol: "ADMINISTRADOR",
       },
     });
@@ -85,7 +167,7 @@ export class GerenteService {
 
 
   async crearConjunto(data: {
-    nit: number;
+    nit: string;
     nombre: string;
     direccion: string;
     correo: string;
@@ -95,12 +177,14 @@ export class GerenteService {
         nit: data.nit,
         nombre: data.nombre,
         direccion: data.direccion,
+        empresaId: '901191875-4',
         correo: data.correo
+        
       },
     });
   }
 
-  async asignarOperarioAConjunto(operarioId: number, conjuntoId: number) {
+  async asignarOperarioAConjunto(operarioId: number, conjuntoId: string) {
     return await this.prisma.operario.update({
       where: { id: operarioId },
       data: {
@@ -111,7 +195,7 @@ export class GerenteService {
     });
   }
 
-  async agregarInsumoAConjunto(conjuntoId: number, insumoId: number, cantidad: number) {
+  async agregarInsumoAConjunto(conjuntoId: string, insumoId: number, cantidad: number) {
     // Buscar el inventario del conjunto
     const inventario = await this.prisma.inventario.findUnique({
       where: { conjuntoId },
@@ -167,7 +251,7 @@ export class GerenteService {
   }
 
 
-  async entregarMaquinariaAConjunto(maquinariaId: number, conjuntoId: number) {
+  async entregarMaquinariaAConjunto(maquinariaId: number, conjuntoId: string) {
     return await this.prisma.maquinaria.update({
       where: { id: maquinariaId },
       data: {
@@ -185,7 +269,7 @@ export class GerenteService {
     operarioId: number;
     ubicacionId: number;
     elementoId: number;
-    conjuntoId: number;
+    conjuntoId: string;
   }) {
     return await this.prisma.tarea.create({
       data: {
@@ -212,7 +296,7 @@ export class GerenteService {
   }
 
   async reemplazarAdminEnVariosConjuntos(
-    reemplazos: { conjuntoId: number; nuevoAdminId: number }[]
+    reemplazos: { conjuntoId: string; nuevoAdminId: number }[]
   ) {
     if (reemplazos.length === 0) return;
 
@@ -247,7 +331,7 @@ export class GerenteService {
     });
   }
 
-  async eliminarConjunto(conjuntoId: number) {
+  async eliminarConjunto(conjuntoId: string) {
     const tareasPendientes = await this.prisma.tarea.findMany({
       where: {
         conjuntoId,
@@ -259,7 +343,7 @@ export class GerenteService {
 
     const maquinariaPrestada = await this.prisma.maquinaria.findMany({
       where: {
-        id: conjuntoId,
+        conjuntoId: conjuntoId,
         disponible: false
       }
     });
@@ -349,7 +433,7 @@ export class GerenteService {
   }
 
 
-  async editarConjunto(conjuntoId: number, nuevosDatos: Partial<{ nombre: string; direccion: string; correo: string }>) {
+  async editarConjunto(conjuntoId: string, nuevosDatos: Partial<{ nombre: string; direccion: string; correo: string }>) {
     await this.prisma.conjunto.update({
       where: { nit: conjuntoId },
       data: nuevosDatos

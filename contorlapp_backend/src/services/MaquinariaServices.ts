@@ -3,7 +3,7 @@ import { PrismaClient } from '../generated/prisma';
 export class MaquinariaService {
   constructor(private prisma: PrismaClient, private maquinariaId: number) {}
 
-  async asignarAConjunto(conjuntoId: number, responsableId?: number, diasPrestamo: number = 7) {
+  async asignarAConjunto(conjuntoId: string, responsableId?: number, diasPrestamo: number = 7) {
     const fechaPrestamo = new Date();
     const fechaDevolucionEstimada = new Date(
       fechaPrestamo.getTime() + diasPrestamo * 24 * 60 * 60 * 1000

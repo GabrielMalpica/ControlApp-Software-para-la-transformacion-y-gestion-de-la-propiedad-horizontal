@@ -1,7 +1,7 @@
 import { PrismaClient } from '../generated/prisma';
 
 export class CronogramaService {
-  constructor(private prisma: PrismaClient, private conjuntoId: number) {}
+  constructor(private prisma: PrismaClient, private conjuntoId: string) {}
 
   async tareasPorOperario(operarioId: number) {
     return await this.prisma.tarea.findMany({

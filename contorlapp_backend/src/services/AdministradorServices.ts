@@ -17,7 +17,7 @@ export class AdministradorService {
 
   async solicitarTarea(
     descripcion: string,
-    conjuntoId: number,
+    conjuntoId: string,
     ubicacionId: number,
     elementoId: number,
     duracionHoras: number
@@ -40,7 +40,7 @@ export class AdministradorService {
   }
 
   async solicitarInsumos(
-    conjuntoId: number,
+    conjuntoId: string,
     insumos: { insumoId: number; cantidad: number }[]
   ) {
     try {
@@ -64,7 +64,7 @@ export class AdministradorService {
   }
 
   async solicitarMaquinaria(
-    conjuntoId: number,
+    conjuntoId: string,
     maquinariaId: number,
     responsableId: number,
     fechaUso: Date,

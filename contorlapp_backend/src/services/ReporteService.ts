@@ -37,7 +37,7 @@ export class ReporteService {
     });
   }
 
-  async usoDeInsumosPorFecha(conjuntoId: number, desde: Date, hasta: Date) {
+  async usoDeInsumosPorFecha(conjuntoId: string, desde: Date, hasta: Date) {
     const inventario = await this.prisma.inventario.findUnique({
       where: { conjuntoId },
       include: {
@@ -75,7 +75,7 @@ export class ReporteService {
   }
 
   async tareasPorEstado(
-    conjuntoId: number,
+    conjuntoId: string,
     estado: EstadoTarea,
     desde: Date,
     hasta: Date
@@ -96,7 +96,7 @@ export class ReporteService {
   }
 
   async tareasConDetalle(
-    conjuntoId: number,
+    conjuntoId: string,
     estado: EstadoTarea,
     desde: Date,
     hasta: Date
