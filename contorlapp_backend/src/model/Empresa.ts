@@ -1,12 +1,46 @@
-import { Gerente } from "./Gerente";
+// src/models/empresa.ts
+import { z } from "zod";
 
-export class Empresa {
+/** Dominio base 1:1 con el modelo Prisma (sin relaciones) */
+export interface EmpresaDominio {
+  id: number;
   nombre: string;
   nit: string;
-  gerente?: Gerente;
+}
 
-  constructor(nombre: string, nit: string) {
-    this.nombre = nombre;
-    this.nit = nit;
-  }
+/** Tipo público (idéntico, sin relaciones) */
+export type EmpresaPublica = EmpresaDominio;
+
+/* ===================== DTOs ===================== */
+
+/** Crear empresa */
+export const CrearEmpresaDTO = z.object({
+  nombre: z.string().min(3),
+  nit: z.string().min(3),
+});
+
+/** Editar empresa */
+export const EditarEmpresaDTO = z.object({
+  nombre: z.string().min(3).optional(),
+  nit: z.string().min(3).optional(), // si planeas permitir cambio de NIT, aunque normalmente no se cambia
+});
+
+/** Filtro de búsqueda de empresas */
+export const FiltroEmpresaDTO = z.object({
+  nit: z.string().optional(),
+  nombre: z.string().optional(),
+});
+
+/* ===================== SELECT BASE PARA PRISMA ===================== */
+export const empresaPublicSelect = {
+  id: true,
+  nombre: true,
+  nit: true,
+} as const;
+
+/** Helper para castear el resultado de Prisma al tipo público */
+export function toEmpresaPublica<
+  T extends Record<keyof typeof empresaPublicSelect, any>
+>(row: T): EmpresaPublica {
+  return row;
 }

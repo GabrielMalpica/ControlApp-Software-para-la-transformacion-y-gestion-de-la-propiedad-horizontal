@@ -1,24 +1,30 @@
-export class SolicitudInsumo {
-  id: number;
-  conjuntoId: number; // Relación por ID
-  insumosSolicitados: { insumoId: number; cantidad: number }[];
-  fechaSolicitud: Date;
-  fechaAprobacion?: Date;
-  aprobado: boolean = false;
+// src/models/solicitudInsumo.ts
+import { z } from "zod";
 
-  constructor(
-    id: number,
-    conjuntoId: number,
-    insumosSolicitados: { insumoId: number; cantidad: number }[]
-  ) {
-    this.id = id;
-    this.conjuntoId = conjuntoId;
-    this.insumosSolicitados = insumosSolicitados;
-    this.fechaSolicitud = new Date();
-  }
+/** Ítem de la solicitud (tabla SolicitudInsumoItem) */
+export const SolicitudInsumoItemDTO = z.object({
+  insumoId: z.number().int().positive(),
+  cantidad: z.number().int().positive(),
+});
 
-  aprobar(fecha: Date = new Date()): void {
-    this.aprobado = true;
-    this.fechaAprobacion = fecha;
-  }
-}
+/** Crear solicitud de insumos para un conjunto (empresa opcional) */
+export const CrearSolicitudInsumoDTO = z.object({
+  conjuntoId: z.string().min(3), // nit
+  empresaId: z.string().min(3).optional(),
+  items: z.array(SolicitudInsumoItemDTO).min(1),
+});
+
+/** Aprobar solicitud de insumos */
+export const AprobarSolicitudInsumoDTO = z.object({
+  empresaId: z.string().min(3).optional(), // si quieres registrar la empresa que aprueba
+  fechaAprobacion: z.coerce.date().optional(), // default en service: new Date()
+});
+
+/** Filtros de consulta */
+export const FiltroSolicitudInsumoDTO = z.object({
+  conjuntoId: z.string().optional(),
+  empresaId: z.string().optional(),
+  aprobado: z.boolean().optional(),
+  fechaDesde: z.coerce.date().optional(),
+  fechaHasta: z.coerce.date().optional(),
+});

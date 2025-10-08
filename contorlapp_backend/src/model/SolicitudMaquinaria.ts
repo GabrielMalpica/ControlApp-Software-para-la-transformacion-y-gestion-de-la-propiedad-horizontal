@@ -1,38 +1,36 @@
-export class SolicitudMaquinaria {
-  id: number;
-  conjuntoId: number;
-  maquinariaId: number;
-  responsableId: number;
-  fechaSolicitud: Date;
-  fechaUso: Date;
-  fechaDevolucionEstimada: Date;
-  fechaAprobacion?: Date;
-  aprobado: boolean = false;
+import { z } from "zod";
 
-  constructor(
-    id: number,
-    conjuntoId: number,
-    maquinariaId: number,
-    responsableId: number,
-    fechaUso: Date,
-    fechaDevolucionEstimada: Date
-  ) {
-    this.id = id;
-    this.conjuntoId = conjuntoId;
-    this.maquinariaId = maquinariaId;
-    this.responsableId = responsableId;
-    this.fechaSolicitud = new Date();
-    this.fechaUso = fechaUso;
-    this.fechaDevolucionEstimada = fechaDevolucionEstimada;
-  }
+/** Crear solicitud de maquinaria */
+export const CrearSolicitudMaquinariaDTO = z.object({
+  conjuntoId: z.string().min(3),       // nit
+  maquinariaId: z.number().int().positive(),
+  operarioId: z.number().int().positive(), // responsable
+  empresaId: z.string().min(3).optional(),
+  fechaUso: z.coerce.date(),
+  fechaDevolucionEstimada: z.coerce.date(),
+});
 
-  aprobar(fecha: Date = new Date()): void {
-    this.aprobado = true;
-    this.fechaAprobacion = fecha;
-  }
+/** Editar solicitud de maquinaria */
+export const EditarSolicitudMaquinariaDTO = z.object({
+  maquinariaId: z.number().int().positive().optional(),
+  operarioId: z.number().int().positive().optional(),
+  empresaId: z.string().min(3).optional().nullable(),
+  fechaUso: z.coerce.date().optional(),
+  fechaDevolucionEstimada: z.coerce.date().optional(),
+});
 
-  diasDePrestamo(): number {
-    const diff = this.fechaDevolucionEstimada.getTime() - this.fechaUso.getTime();
-    return Math.ceil(diff / (1000 * 60 * 60 * 24));
-  }
-}
+/** Aprobar solicitud de maquinaria */
+export const AprobarSolicitudMaquinariaDTO = z.object({
+  fechaAprobacion: z.coerce.date().optional(), // default en service: new Date()
+});
+
+/** Filtros de consulta */
+export const FiltroSolicitudMaquinariaDTO = z.object({
+  conjuntoId: z.string().optional(),
+  empresaId: z.string().optional(),
+  maquinariaId: z.number().int().optional(),
+  operarioId: z.number().int().optional(),
+  aprobado: z.boolean().optional(),
+  fechaDesde: z.coerce.date().optional(),
+  fechaHasta: z.coerce.date().optional(),
+});

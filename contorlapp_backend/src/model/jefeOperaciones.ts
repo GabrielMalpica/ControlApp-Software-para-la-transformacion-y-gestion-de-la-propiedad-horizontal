@@ -1,56 +1,37 @@
-import { EPS } from "./enum/eps";
-import { EstadoCivil } from "./enum/estadoCivil";
-import { FondoPension } from "./enum/fondePensiones";
-import { JornadaLaboral } from "./enum/jornadaLaboral";
-import { TallaCalzado } from "./enum/tallaCalzado";
-import { TallaCamisa } from "./enum/tallaCamisa";
-import { TallaPantalon } from "./enum/tallaPantalon";
-import { TipoContrato } from "./enum/tipoContrato";
-import { TipoSangre } from "./enum/tipoSangre";
-import { Usuario } from "./Usuario";
+// src/models/jefeOperaciones.ts
+import { z } from "zod";
 
-export class JefeOperaciones extends Usuario{
+/** Dominio base según Prisma */
+export interface JefeOperacionesDominio {
+  id: number;          // mismo ID que Usuario.id
+  empresaId: string;   // NIT de la empresa obligatoria
+}
 
-  constructor(
-    id: number,
-    nombre: string,
-    correo: string,
-    contrasena: string,
-    telefono: number,
-    fechaNacimiento: Date,
-    direccion: string,
-    estadoCivil: EstadoCivil,
-    numeroHijos: number,
-    padresVivos: boolean,
-    tipoSangre: TipoSangre,
-    eps: EPS,
-    fondoPensiones: FondoPension,
-    tallaCamisa: TallaCamisa,
-    tallaPantalon: TallaPantalon,
-    tallaCalzado: TallaCalzado,
-    tipoContrato: TipoContrato,
-    jornadaLaboral: JornadaLaboral,
-  ) {
-    super(
-      id,
-      nombre,
-      correo,
-      contrasena,
-      'jefe-operaciones',
-      telefono,
-      fechaNacimiento,
-      direccion,
-      estadoCivil,
-      numeroHijos,
-      padresVivos,
-      tipoSangre,
-      eps,
-      fondoPensiones,
-      tallaCamisa,
-      tallaPantalon,
-      tallaCalzado,
-      tipoContrato,
-      jornadaLaboral
-    );
-  }
+/** Tipo público (igual por ahora) */
+export type JefeOperacionesPublico = JefeOperacionesDominio;
+
+/* ===================== DTOs ===================== */
+
+/** Crear jefe de operaciones */
+export const CrearJefeOperacionesDTO = z.object({
+  id: z.number().int().positive(), // mismo id que Usuario.id
+  empresaId: z.string().min(3),    // NIT de la empresa
+});
+
+/** Editar jefe de operaciones (solo empresa, opcional) */
+export const EditarJefeOperacionesDTO = z.object({
+  empresaId: z.string().min(3).optional(),
+});
+
+/* ===================== SELECT BASE ===================== */
+export const jefeOperacionesPublicSelect = {
+  id: true,
+  empresaId: true,
+} as const;
+
+/** Helper para mapear resultado de Prisma */
+export function toJefeOperacionesPublico<
+  T extends Record<keyof typeof jefeOperacionesPublicSelect, any>
+>(row: T): JefeOperacionesPublico {
+  return row;
 }

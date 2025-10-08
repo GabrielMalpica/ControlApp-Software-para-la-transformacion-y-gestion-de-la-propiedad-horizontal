@@ -1,91 +1,115 @@
-import { PrismaClient } from '../generated/prisma';
+import { PrismaClient } from "../generated/prisma";
+import { z } from "zod";
+
+// DTOs locales de filtros para este servicio
+const OperarioIdDTO = z.object({ operarioId: z.number().int().positive() });
+const FechaDTO = z.object({ fecha: z.coerce.date() });
+const RangoFechasDTO = z.object({
+  fechaInicio: z.coerce.date(),
+  fechaFin: z.coerce.date(),
+}).refine((d) => d.fechaFin >= d.fechaInicio, {
+  message: "fechaFin debe ser mayor o igual a fechaInicio",
+  path: ["fechaFin"],
+});
+
+const TareasPorFiltroDTO = z.object({
+  operarioId: z.number().int().positive().optional(),
+  fechaExacta: z.coerce.date().optional(),
+  fechaInicio: z.coerce.date().optional(),
+  fechaFin: z.coerce.date().optional(),
+  ubicacion: z.string().optional(),
+}).refine((d) => {
+  if (d.fechaExacta) return true;
+  // si no hay fechaExacta, entonces ambos extremos o ninguno
+  return (!d.fechaInicio && !d.fechaFin) || (Boolean(d.fechaInicio) && Boolean(d.fechaFin));
+}, { message: "Debe enviar fechaExacta o un rango (fechaInicio y fechaFin)." });
 
 export class CronogramaService {
   constructor(private prisma: PrismaClient, private conjuntoId: string) {}
 
-  async tareasPorOperario(operarioId: number) {
-    return await this.prisma.tarea.findMany({
-      where: {
-        conjuntoId: this.conjuntoId,
-        operarioId: operarioId
-      }
+  async tareasPorOperario(payload: unknown) {
+    const { operarioId } = OperarioIdDTO.parse(payload);
+    return this.prisma.tarea.findMany({
+      where: { conjuntoId: this.conjuntoId, operarioId },
     });
   }
 
-  async tareasPorFecha(fecha: Date) {
-    return await this.prisma.tarea.findMany({
+  async tareasPorFecha(payload: unknown) {
+    const { fecha } = FechaDTO.parse(payload);
+    return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
         fechaInicio: { lte: fecha },
-        fechaFin: { gte: fecha }
-      }
+        fechaFin: { gte: fecha },
+      },
     });
   }
 
-  async tareasEnRango(fechaInicio: Date, fechaFin: Date) {
-    return await this.prisma.tarea.findMany({
+  async tareasEnRango(payload: unknown) {
+    const { fechaInicio, fechaFin } = RangoFechasDTO.parse(payload);
+    return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
         fechaFin: { gte: fechaInicio },
-        fechaInicio: { lte: fechaFin }
-      }
+        fechaInicio: { lte: fechaFin },
+      },
     });
   }
 
-  async tareasPorUbicacion(nombreUbicacion: string) {
-    return await this.prisma.tarea.findMany({
+  async tareasPorUbicacion(payload: unknown) {
+    const { ubicacion } = z.object({ ubicacion: z.string().min(1) }).parse(payload);
+    return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
-        ubicacion: {
-          nombre: { equals: nombreUbicacion, mode: "insensitive" }
-        }
-      }
+        ubicacion: { nombre: { equals: ubicacion, mode: "insensitive" } },
+      },
     });
   }
 
-  async tareasPorFiltro(opciones: {
-    operarioId?: number;
-    fechaExacta?: Date;
-    fechaInicio?: Date;
-    fechaFin?: Date;
-    ubicacion?: string;
-  }) {
-    return await this.prisma.tarea.findMany({
+  async tareasPorFiltro(payload: unknown) {
+    const f = TareasPorFiltroDTO.parse(payload);
+
+    const fechaInicio =
+      f.fechaExacta ?? f.fechaInicio ?? undefined;
+    const fechaFin =
+      f.fechaExacta ?? f.fechaFin ?? undefined;
+
+    return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
-        operarioId: opciones.operarioId,
-        fechaInicio: opciones.fechaExacta ? { lte: opciones.fechaExacta } : opciones.fechaInicio ? { lte: opciones.fechaFin } : undefined,
-        fechaFin: opciones.fechaExacta ? { gte: opciones.fechaExacta } : opciones.fechaFin ? { gte: opciones.fechaInicio } : undefined,
-        ubicacion: opciones.ubicacion
-          ? { nombre: { equals: opciones.ubicacion, mode: "insensitive" } }
-          : undefined
-      }
+        operarioId: f.operarioId,
+        fechaInicio: fechaInicio ? { lte: fechaFin! } : undefined,
+        fechaFin: fechaFin ? { gte: fechaInicio! } : undefined,
+        ubicacion: f.ubicacion
+          ? { nombre: { equals: f.ubicacion, mode: "insensitive" } }
+          : undefined,
+      },
     });
   }
 
+  /**
+   * Útil para FullCalendar u otros calendarios.
+   * Devuelve eventos con título y metadatos de recurso.
+   */
   async exportarComoEventosCalendario() {
     const tareas = await this.prisma.tarea.findMany({
       where: { conjuntoId: this.conjuntoId },
       include: {
         ubicacion: true,
         elemento: true,
-        operario: {
-          include: {
-            usuario: true
-          }
-        }
-      }
+        operario: { include: { usuario: true } },
+      },
     });
 
-    return tareas.map(t => ({
-      title: `${t.descripcion} - ${t.operario.usuario.nombre}`,
+    return tareas.map((t) => ({
+      title: `${t.descripcion} - ${t.operario?.usuario?.nombre ?? "Sin asignar"}`,
       start: t.fechaInicio.toISOString(),
       end: t.fechaFin.toISOString(),
       resource: {
-        operario: t.operario.usuario.nombre,
-        ubicacion: t.ubicacion.nombre,
-        elemento: t.elemento.nombre
-      }
+        operario: t.operario?.usuario?.nombre ?? null,
+        ubicacion: t.ubicacion?.nombre ?? null,
+        elemento: t.elemento?.nombre ?? null,
+      },
     }));
   }
 }

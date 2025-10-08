@@ -1,15 +1,32 @@
 import { PrismaClient, EstadoTarea } from "../generated/prisma";
+import { z } from "zod";
+
+const EvidenciaDTO = z.object({ imagen: z.string().min(1) });
+const ConsumoItemDTO = z.object({
+  insumoId: z.number().int().positive(),
+  cantidad: z.number().int().positive(),
+});
+const CompletarConInsumosDTO = z.object({
+  insumosUsados: z.array(ConsumoItemDTO).default([]),
+});
+const SupervisorIdDTO = z.object({ supervisorId: z.number().int().positive() });
+const RechazarDTO = z.object({
+  supervisorId: z.number().int().positive(),
+  observacion: z.string().min(3).max(500),
+});
 
 export class TareaService {
   constructor(private prisma: PrismaClient, private tareaId: number) {}
 
-  async agregarEvidencia(imagen: string): Promise<void> {
+  async agregarEvidencia(payload: unknown): Promise<void> {
+    const { imagen } = EvidenciaDTO.parse(payload);
     const tarea = await this.prisma.tarea.findUnique({ where: { id: this.tareaId } });
-    const nuevasEvidencias = [...(tarea?.evidencias ?? []), imagen];
+    if (!tarea) throw new Error("Tarea no encontrada.");
 
+    const nuevasEvidencias = [...(tarea.evidencias ?? []), imagen];
     await this.prisma.tarea.update({
       where: { id: this.tareaId },
-      data: { evidencias: nuevasEvidencias }
+      data: { evidencias: nuevasEvidencias },
     });
   }
 
@@ -25,61 +42,60 @@ export class TareaService {
       where: { id: this.tareaId },
       data: {
         estado: EstadoTarea.EN_PROCESO,
-        fechaIniciarTarea: new Date()
-      }
+        fechaIniciarTarea: new Date(),
+      },
     });
   }
 
   async marcarComoCompletadaConInsumos(
-    insumosUsados: { insumoId: number; cantidad: number }[],
-    inventarioService: { consumirInsumoPorId: (id: number, cantidad: number) => Promise<void> }
+    payload: unknown,
+    inventarioService: { consumirInsumoPorId: (payload: unknown) => Promise<void> }
   ): Promise<void> {
+    const { insumosUsados } = CompletarConInsumosDTO.parse(payload);
+
     for (const { insumoId, cantidad } of insumosUsados) {
-      await inventarioService.consumirInsumoPorId(insumoId, cantidad);
+      await inventarioService.consumirInsumoPorId({ insumoId, cantidad }); // ✅ objeto
     }
 
     await this.prisma.tarea.update({
       where: { id: this.tareaId },
       data: {
         insumosUsados,
-        estado: EstadoTarea.PENDIENTE_APROBACION,
-        fechaFinalizarTarea: new Date()
-      }
+        estado: "PENDIENTE_APROBACION",
+        fechaFinalizarTarea: new Date(),
+      },
     });
   }
 
   async marcarNoCompletada(): Promise<void> {
     await this.prisma.tarea.update({
       where: { id: this.tareaId },
-      data: {
-        estado: EstadoTarea.NO_COMPLETADA
-      }
+      data: { estado: EstadoTarea.NO_COMPLETADA },
     });
   }
 
-  async aprobarTarea(supervisorId: number): Promise<void> {
+  async aprobarTarea(payload: unknown): Promise<void> {
+    const { supervisorId } = SupervisorIdDTO.parse(payload);
     await this.prisma.tarea.update({
       where: { id: this.tareaId },
       data: {
         estado: EstadoTarea.APROBADA,
         fechaVerificacion: new Date(),
-        supervisor: {
-          connect: { id: supervisorId }
-        }
-      }
+        supervisor: { connect: { id: supervisorId } },
+      },
     });
   }
 
-
-  async rechazarTarea(supervisorId: number, observacion: string): Promise<void> {
+  async rechazarTarea(payload: unknown): Promise<void> {
+    const { supervisorId, observacion } = RechazarDTO.parse(payload);
     await this.prisma.tarea.update({
       where: { id: this.tareaId },
       data: {
         estado: EstadoTarea.RECHAZADA,
-        supervisorId: supervisorId,
+        supervisorId,
         fechaVerificacion: new Date(),
-        observacionesRechazo: observacion
-      }
+        observacionesRechazo: observacion,
+      },
     });
   }
 
@@ -89,8 +105,8 @@ export class TareaService {
       include: {
         operario: { include: { usuario: true } },
         ubicacion: true,
-        elemento: true
-      }
+        elemento: true,
+      },
     });
 
     if (!tarea) throw new Error("Tarea no encontrada");

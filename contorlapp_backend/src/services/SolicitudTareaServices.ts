@@ -1,4 +1,10 @@
-import { PrismaClient, EstadoSolicitud } from '../generated/prisma';
+import { PrismaClient, EstadoSolicitud } from "../generated/prisma";
+import { z } from "zod";
+
+const IdDTO = z.object({ id: z.number().int().positive() });
+const RechazarDTO = z.object({
+  observacion: z.string().min(1).max(500),
+});
 
 export class SolicitudTareaService {
   constructor(private prisma: PrismaClient, private solicitudId: number) {}
@@ -19,7 +25,9 @@ export class SolicitudTareaService {
     });
   }
 
-  async rechazar(observacion: string): Promise<void> {
+  async rechazar(payload: unknown): Promise<void> {
+    const { observacion } = RechazarDTO.parse(payload);
+
     const solicitud = await this.prisma.solicitudTarea.findUnique({
       where: { id: this.solicitudId },
     });
@@ -31,10 +39,7 @@ export class SolicitudTareaService {
 
     await this.prisma.solicitudTarea.update({
       where: { id: this.solicitudId },
-      data: {
-        estado: EstadoSolicitud.RECHAZADA,
-        observaciones: observacion,
-      },
+      data: { estado: EstadoSolicitud.RECHAZADA, observaciones: observacion },
     });
   }
 
@@ -42,7 +47,6 @@ export class SolicitudTareaService {
     const solicitud = await this.prisma.solicitudTarea.findUnique({
       where: { id: this.solicitudId },
     });
-
     if (!solicitud) throw new Error("❌ Solicitud no encontrada.");
 
     return `📋 Estado de la solicitud: ${solicitud.estado}${

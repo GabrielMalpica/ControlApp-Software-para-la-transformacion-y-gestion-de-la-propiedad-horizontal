@@ -1,4 +1,11 @@
-import { PrismaClient, EstadoTarea } from '../generated/prisma';
+import { PrismaClient, EstadoTarea } from "../generated/prisma";
+import { z } from "zod";
+
+const TareaIdDTO = z.object({ tareaId: z.number().int().positive() });
+const RechazarDTO = z.object({
+  tareaId: z.number().int().positive(),
+  observaciones: z.string().min(3).max(500),
+});
 
 export class SupervisorService {
   constructor(
@@ -6,18 +13,19 @@ export class SupervisorService {
     private supervisorId: number
   ) {}
 
-  async recibirTareaFinalizada(tareaId: number): Promise<void> {
+  async recibirTareaFinalizada(payload: unknown): Promise<void> {
+    const { tareaId } = TareaIdDTO.parse(payload);
     const tarea = await this.prisma.tarea.findUnique({ where: { id: tareaId } });
 
     if (!tarea) throw new Error("❌ Tarea no encontrada.");
     if (tarea.estado !== EstadoTarea.PENDIENTE_APROBACION) {
       throw new Error("Solo se pueden verificar tareas completadas por el operario.");
     }
-
-    // Podrías registrar este evento si lo deseas
+    // aquí podrías loguear el evento si quieres
   }
 
-  async aprobarTarea(tareaId: number): Promise<void> {
+  async aprobarTarea(payload: unknown): Promise<void> {
+    const { tareaId } = TareaIdDTO.parse(payload);
     const tarea = await this.prisma.tarea.findUnique({ where: { id: tareaId } });
 
     if (!tarea) throw new Error("❌ Tarea no encontrada.");
@@ -28,60 +36,58 @@ export class SupervisorService {
     await this.prisma.tarea.update({
       where: { id: tareaId },
       data: {
-        estado: "APROBADA",
+        estado: EstadoTarea.APROBADA,
         supervisor: { connect: { id: this.supervisorId } },
         fechaVerificacion: new Date(),
       },
     });
   }
 
-  async rechazarTarea(tareaId: number, observaciones: string): Promise<void> {
+  async rechazarTarea(payload: unknown): Promise<void> {
+    const { tareaId, observaciones } = RechazarDTO.parse(payload);
+
     const tarea = await this.prisma.tarea.findUnique({
       where: { id: tareaId },
       include: {
-        ubicacion: {
-          include: {
-            conjunto: true,
-          },
-        },
+        ubicacion: { include: { conjunto: true } },
         elemento: true,
       },
     });
 
     if (!tarea) throw new Error("❌ Tarea no encontrada.");
-    if (tarea.estado !== "PENDIENTE_APROBACION") {
+    if (tarea.estado !== EstadoTarea.PENDIENTE_APROBACION) {
       throw new Error("No se puede rechazar una tarea que no está pendiente de aprobación.");
     }
 
+    // 1) Marcar rechazada
     await this.prisma.tarea.update({
       where: { id: tareaId },
       data: {
-        estado: "RECHAZADA",
+        estado: EstadoTarea.RECHAZADA,
         supervisor: { connect: { id: this.supervisorId } },
         fechaVerificacion: new Date(),
         observacionesRechazo: observaciones,
       },
     });
 
+    // 2) Re-abrir como solicitud (NO reusar id, dejar autoincrement!)
     await this.prisma.solicitudTarea.create({
       data: {
         descripcion: tarea.descripcion,
-        conjuntoId: tarea.ubicacion.conjunto.nit,
-        ubicacionId: tarea.ubicacionId!,
-        elementoId: tarea.elementoId!,
+        conjunto: { connect: { nit: tarea.ubicacion!.conjunto.nit } },
+        ubicacion: { connect: { id: tarea.ubicacionId! } },
+        elemento: { connect: { id: tarea.elementoId! } },
         duracionHoras: tarea.duracionHoras,
         estado: "PENDIENTE",
-        id: tarea.id,
       },
     });
   }
 
-
   async listarTareasPendientes(): Promise<any[]> {
     return this.prisma.tarea.findMany({
       where: {
-        estado: "PENDIENTE_APROBACION",
-        supervisorId: this.supervisorId,
+        estado: EstadoTarea.PENDIENTE_APROBACION,
+        supervisorId: this.supervisorId, // si quieres ver “propias”
       },
     });
   }

@@ -1,55 +1,70 @@
-import { PrismaClient } from '../generated/prisma';
+import { PrismaClient } from "../generated/prisma";
+import { z } from "zod";
+
+const AgregarInsumoDTO = z.object({
+  insumoId: z.number().int().positive(),
+  cantidad: z.number().int().positive(),
+});
+
+const InsumoIdDTO = z.object({
+  insumoId: z.number().int().positive(),
+});
+
+const UmbralDTO = z.object({
+  umbral: z.number().int().min(0).default(5),
+});
 
 export class InventarioService {
   constructor(private prisma: PrismaClient, private inventarioId: number) {}
 
-  async agregarInsumo(insumoId: number, cantidad: number) {
+  async agregarInsumo(payload: unknown) {
+    const { insumoId, cantidad } = AgregarInsumoDTO.parse(payload);
+
     const existente = await this.prisma.inventarioInsumo.findFirst({
-      where: { inventarioId: this.inventarioId, insumoId }
+      where: { inventarioId: this.inventarioId, insumoId },
+      select: { id: true },
     });
 
     if (existente) {
-      return await this.prisma.inventarioInsumo.update({
+      return this.prisma.inventarioInsumo.update({
         where: { id: existente.id },
-        data: { cantidad: { increment: cantidad } }
-      });
-    } else {
-      return await this.prisma.inventarioInsumo.create({
-        data: {
-          inventarioId: this.inventarioId,
-          insumoId,
-          cantidad
-        }
+        data: { cantidad: { increment: cantidad } },
       });
     }
+    return this.prisma.inventarioInsumo.create({
+      data: { inventarioId: this.inventarioId, insumoId, cantidad },
+    });
   }
 
   async listarInsumos(): Promise<string[]> {
     const insumos = await this.prisma.inventarioInsumo.findMany({
       where: { inventarioId: this.inventarioId },
-      include: { insumo: true }
+      include: { insumo: true },
     });
-
-    return insumos.map(i => `${i.insumo.nombre}: ${i.cantidad} ${i.insumo.unidad}`);
+    return insumos.map((i) => `${i.insumo.nombre}: ${i.cantidad} ${i.insumo.unidad}`);
   }
 
-  async eliminarInsumo(insumoId: number) {
+  async eliminarInsumo(payload: unknown) {
+    const { insumoId } = InsumoIdDTO.parse(payload);
     await this.prisma.inventarioInsumo.deleteMany({
-      where: { inventarioId: this.inventarioId, insumoId }
-    });
-  }
-
-  async buscarInsumoPorId(insumoId: number) {
-    return await this.prisma.inventarioInsumo.findFirst({
       where: { inventarioId: this.inventarioId, insumoId },
-      include: { insumo: true }
     });
   }
 
-  async consumirInsumoPorId(insumoId: number, cantidad: number) {
+  async buscarInsumoPorId(payload: unknown) {
+    const { insumoId } = InsumoIdDTO.parse(payload);
+    return this.prisma.inventarioInsumo.findFirst({
+      where: { inventarioId: this.inventarioId, insumoId },
+      include: { insumo: true },
+    });
+  }
+
+  async consumirInsumoPorId(payload: unknown) {
+    const { insumoId, cantidad } = AgregarInsumoDTO.parse(payload); // mismas reglas
+
     const existente = await this.prisma.inventarioInsumo.findFirst({
       where: { inventarioId: this.inventarioId, insumoId },
-      include: { insumo: true }
+      include: { insumo: true },
     });
 
     if (!existente) throw new Error(`El insumo con ID "${insumoId}" no existe en el inventario.`);
@@ -59,7 +74,7 @@ export class InventarioService {
 
     await this.prisma.inventarioInsumo.update({
       where: { id: existente.id },
-      data: { cantidad: { decrement: cantidad } }
+      data: { cantidad: { decrement: cantidad } },
     });
 
     await this.prisma.consumoInsumo.create({
@@ -67,20 +82,20 @@ export class InventarioService {
         inventarioId: this.inventarioId,
         insumoId,
         cantidad,
-        fecha: new Date()
-      }
+        fecha: new Date(),
+      },
     });
   }
 
-  async listarInsumosBajos(umbral: number = 5): Promise<string[]> {
+  async listarInsumosBajos(payload?: unknown): Promise<string[]> {
+    const { umbral } = UmbralDTO.parse(payload ?? {});
     const bajos = await this.prisma.inventarioInsumo.findMany({
-      where: {
-        inventarioId: this.inventarioId,
-        cantidad: { lte: umbral }
-      },
-      include: { insumo: true }
+      where: { inventarioId: this.inventarioId, cantidad: { lte: umbral } },
+      include: { insumo: true },
     });
 
-    return bajos.map(i => `⚠️ ${i.insumo.nombre}: ${i.cantidad} ${i.insumo.unidad} (bajo stock)`);
+    return bajos.map(
+      (i) => `⚠️ ${i.insumo.nombre}: ${i.cantidad} ${i.insumo.unidad} (bajo stock)`
+    );
   }
 }

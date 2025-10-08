@@ -1,90 +1,98 @@
-import { Usuario } from "./Usuario";
-import { TipoFuncion } from "./enum/tipoFuncion";
-import { EstadoCivil } from "./enum/estadoCivil";
-import { TipoSangre } from "./enum/tipoSangre";
-import { EPS } from "./enum/eps";
-import { FondoPension } from "./enum/fondePensiones";
-import { TallaCamisa } from "./enum/tallaCamisa";
-import { TallaPantalon } from "./enum/tallaPantalon";
-import { TallaCalzado } from "./enum/tallaCalzado";
-import { TipoContrato } from "./enum/tipoContrato";
-import { JornadaLaboral } from "./enum/jornadaLaboral";
+import { z } from "zod";
+import {
+  TipoFuncion,
+} from "../generated/prisma";
 
-export class Operario extends Usuario {
-  funciones: TipoFuncion[];
-  static LIMITE_SEMANAL_HORAS = 46;
 
+/** Mismo tipo de ID que en Prisma: Int (misma FK que Usuario.id) */
+export type OperarioId = number;
+
+/** Constante que ya usabas en la clase */
+export const LIMITE_SEMANAL_HORAS = 46 as const;
+
+/** Dominio 1:1 con la tabla Operario (sin relaciones navegadas) */
+export interface OperarioDominio {
+  id: OperarioId;                 // FK a Usuario.id
+  funciones: TipoFuncion[];       // enum[]
   cursoSalvamentoAcuatico: boolean;
-  urlEvidenciaSalvamento?: string;
-
+  urlEvidenciaSalvamento?: string | null;
   cursoAlturas: boolean;
-  urlEvidenciaAlturas?: string;
-
+  urlEvidenciaAlturas?: string | null;
   examenIngreso: boolean;
-  urlEvidenciaExamenIngreso?: string;
-
+  urlEvidenciaExamenIngreso?: string | null;
   fechaIngreso: Date;
-  fechaSalida?: Date;
-  fechaUltimasVacaciones?: Date;
-  observaciones?: string;
+  fechaSalida?: Date | null;
+  fechaUltimasVacaciones?: Date | null;
+  observaciones?: string | null;
 
-  constructor(
-    id: number,
-    nombre: string,
-    correo: string,
-    contrasena: string,
-    telefono: number,
-    fechaNacimiento: Date,
-    direccion: string,
-    estadoCivil: EstadoCivil,
-    numeroHijos: number,
-    padresVivos: boolean,
-    tipoSangre: TipoSangre,
-    eps: EPS,
-    fondoPensiones: FondoPension,
-    tallaCamisa: TallaCamisa,
-    tallaPantalon: TallaPantalon,
-    tallaCalzado: TallaCalzado,
-    tipoContrato: TipoContrato,
-    jornadaLaboral: JornadaLaboral,
-    funciones: TipoFuncion[],
-    cursoSalvamentoAcuatico: boolean,
-    urlEvidenciaSalvamento: string | undefined,
-    cursoAlturas: boolean,
-    urlEvidenciaAlturas: string | undefined,
-    examenIngreso: boolean,
-    urlEvidenciaExamenIngreso: string | undefined,
-    fechaIngreso: Date
-  ) {
-    super(
-      id,
-      nombre,
-      correo,
-      contrasena,
-      'operario',
-      telefono,
-      fechaNacimiento,
-      direccion,
-      estadoCivil,
-      numeroHijos,
-      padresVivos,
-      tipoSangre,
-      eps,
-      fondoPensiones,
-      tallaCamisa,
-      tallaPantalon,
-      tallaCalzado,
-      tipoContrato,
-      jornadaLaboral
-    );
+  empresaId: string;
+}
 
-    this.funciones = funciones;
-    this.cursoSalvamentoAcuatico = cursoSalvamentoAcuatico;
-    this.urlEvidenciaSalvamento = urlEvidenciaSalvamento;
-    this.cursoAlturas = cursoAlturas;
-    this.urlEvidenciaAlturas = urlEvidenciaAlturas;
-    this.examenIngreso = examenIngreso;
-    this.urlEvidenciaExamenIngreso = urlEvidenciaExamenIngreso;
-    this.fechaIngreso = fechaIngreso;
-  }
+/** Lo que puedes devolver públicamente */
+export type OperarioPublico = OperarioDominio;
+
+/* ===================== DTOs (Zod) ===================== */
+
+/**
+ * CrearOperarioDTO: solo campos propios de Operario.
+ * OJO: La creación del Usuario (nombre, correo, etc.) va en su propio DTO/flow.
+ */
+export const CrearOperarioDTO = z.object({
+  id: z.number().int().positive(), // Debe existir/crearse el Usuario con el mismo id
+  funciones: z.array(z.nativeEnum(TipoFuncion)).nonempty(),
+  cursoSalvamentoAcuatico: z.boolean(),
+  urlEvidenciaSalvamento: z.string().url().optional(),
+  cursoAlturas: z.boolean(),
+  urlEvidenciaAlturas: z.string().url().optional(),
+  examenIngreso: z.boolean(),
+  urlEvidenciaExamenIngreso: z.string().url().optional(),
+  fechaIngreso: z.coerce.date(),
+  fechaSalida: z.coerce.date().optional(),
+  fechaUltimasVacaciones: z.coerce.date().optional(),
+  observaciones: z.string().optional(),
+  empresaId: z.string().min(3),
+});
+
+/** Edición parcial */
+export const EditarOperarioDTO = z.object({
+  funciones: z.array(z.nativeEnum(TipoFuncion)).nonempty().optional(),
+  cursoSalvamentoAcuatico: z.boolean().optional(),
+  urlEvidenciaSalvamento: z.string().url().optional().nullable(),
+  cursoAlturas: z.boolean().optional(),
+  urlEvidenciaAlturas: z.string().url().optional().nullable(),
+  examenIngreso: z.boolean().optional(),
+  urlEvidenciaExamenIngreso: z.string().url().optional().nullable(),
+  fechaIngreso: z.coerce.date().optional(),
+  fechaSalida: z.coerce.date().optional().nullable(),
+  fechaUltimasVacaciones: z.coerce.date().optional().nullable(),
+  observaciones: z.string().optional().nullable(),
+  empresaId: z.string().min(3).optional(),
+});
+
+/* ============== Select estándar para Prisma ============== */
+/**
+ * Úsalo en services para no traer relaciones ni campos extra.
+ * (El shape coincide con OperarioPublico.)
+ */
+export const operarioPublicSelect = {
+  id: true,
+  funciones: true,
+  cursoSalvamentoAcuatico: true,
+  urlEvidenciaSalvamento: true,
+  cursoAlturas: true,
+  urlEvidenciaAlturas: true,
+  examenIngreso: true,
+  urlEvidenciaExamenIngreso: true,
+  fechaIngreso: true,
+  fechaSalida: true,
+  fechaUltimasVacaciones: true,
+  observaciones: true,
+  empresaId: true,
+} as const;
+
+/** Helper para castear el resultado del select a tu tipo público */
+export function toOperarioPublico<T extends Record<keyof typeof operarioPublicSelect, any>>(
+  row: T
+): OperarioPublico {
+  return row;
 }
