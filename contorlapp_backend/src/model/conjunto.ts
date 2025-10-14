@@ -1,52 +1,82 @@
-// src/models/conjunto.ts
+// src/model/Conjunto.ts
 import { z } from "zod";
+import { DiaSemana, TipoServicio } from "../generated/prisma";
 
-/** 
- * En Prisma, el campo `nit` es String @id.
- * El campo administradorId es Int? (opcional).
- */
-export type ConjuntoNit = string;
+/** Tipo horario (usar enums de Prisma) */
+export const HorarioDTO = z.object({
+  dia: z.nativeEnum(DiaSemana),
+  horaApertura: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:mm"),
+  horaCierre:   z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:mm"),
+}).refine(
+  ({ horaApertura, horaCierre }) => horaApertura < horaCierre,
+  { message: "horaApertura debe ser menor que horaCierre", path: ["horaCierre"] }
+);
 
-/** Dominio base (1:1 con el modelo Prisma, sin relaciones navegadas) */
+/** Dominio base alineado a Prisma */
 export interface ConjuntoDominio {
-  nit: ConjuntoNit;
+  nit: string;
   nombre: string;
   direccion: string;
   correo: string;
   administradorId?: number | null;
   empresaId?: string | null;
+
+  fechaInicioContrato?: Date | null;
+  fechaFinContrato?: Date | null;
+  activo: boolean;
+  tipoServicio: TipoServicio[];      // enum[]
+  valorMensual?: number | null;      // Decimal en Prisma, number aquí
+  consignasEspeciales: string[];
+  valorAgregado: string[];
 }
 
-/** Tipo público — idéntico al dominio base (por ahora) */
-export type ConjuntoPublico = ConjuntoDominio;
+/** Público: igual que dominio + (opcional) horarios */
+export type ConjuntoPublico = ConjuntoDominio & {
+  horarios?: { dia: DiaSemana; horaApertura: string; horaCierre: string }[];
+};
 
 /* ===================== DTOs ===================== */
 
-/** DTO para creación de un conjunto */
 export const CrearConjuntoDTO = z.object({
-  nit: z.string().min(3), // por ejemplo: "900123456"
+  nit: z.string().min(3),
   nombre: z.string().min(2),
   direccion: z.string().min(3),
   correo: z.string().email(),
   administradorId: z.number().int().optional(),
   empresaId: z.string().min(3).optional(),
+
+  fechaInicioContrato: z.coerce.date().optional(),
+  fechaFinContrato: z.coerce.date().optional(),
+  activo: z.boolean().default(true),
+  tipoServicio: z.array(z.nativeEnum(TipoServicio)).default([]),
+  valorMensual: z.coerce.number().positive().optional(),
+  consignasEspeciales: z.array(z.string()).default([]),
+  valorAgregado: z.array(z.string()).default([]),
+
+  // horarios: opcional al crear
+  horarios: z.array(HorarioDTO).optional().default([]),
 });
 
-/** DTO para edición (todo opcional excepto nit) */
 export const EditarConjuntoDTO = z.object({
   nombre: z.string().min(2).optional(),
   direccion: z.string().min(3).optional(),
   correo: z.string().email().optional(),
   administradorId: z.number().int().optional().nullable(),
   empresaId: z.string().min(3).optional().nullable(),
+
+  fechaInicioContrato: z.coerce.date().optional().nullable(),
+  fechaFinContrato: z.coerce.date().optional().nullable(),
+  activo: z.boolean().optional(),
+  tipoServicio: z.array(z.nativeEnum(TipoServicio)).optional(),
+  valorMensual: z.coerce.number().positive().optional().nullable(),
+  consignasEspeciales: z.array(z.string()).optional(),
+  valorAgregado: z.array(z.string()).optional(),
+
+  horarios: z.array(HorarioDTO).optional(), // si lo mandas, lo reescribimos (ver service)
 });
 
-/* ===================== SELECT PARA PRISMA ===================== */
+/* ===================== SELECT ===================== */
 
-/**
- * Select estándar para obtener los datos base de un conjunto
- * sin incluir relaciones (inventario, operarios, etc.)
- */
 export const conjuntoPublicSelect = {
   nit: true,
   nombre: true,
@@ -54,11 +84,17 @@ export const conjuntoPublicSelect = {
   correo: true,
   administradorId: true,
   empresaId: true,
+  fechaInicioContrato: true,
+  fechaFinContrato: true,
+  activo: true,
+  tipoServicio: true,
+  valorMensual: true,
+  consignasEspeciales: true,
+  valorAgregado: true,
 } as const;
 
-/** Helper para castear el resultado Prisma al tipo público */
-export function toConjuntoPublico<T extends Record<keyof typeof conjuntoPublicSelect, any>>(
-  row: T
-): ConjuntoPublico {
-  return row;
+export function toConjuntoPublico<
+  T extends Record<keyof typeof conjuntoPublicSelect, any>
+>(row: T): ConjuntoPublico {
+  return row as ConjuntoPublico;
 }

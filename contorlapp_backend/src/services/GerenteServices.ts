@@ -1,7 +1,7 @@
 import { PrismaClient, Rol, TipoFuncion, TipoMaquinaria, EstadoMaquinaria } from "../generated/prisma";
 import bcrypt from "bcrypt";
+import { Prisma } from "../generated/prisma";
 
-// DTOs y selects (model layer)
 import {
   CrearUsuarioDTO,
   EditarUsuarioDTO,
@@ -219,28 +219,88 @@ export class GerenteService {
   /* ===================== CONJUNTOS ===================== */
 
   async crearConjunto(payload: unknown) {
-    const dto = CrearConjuntoDTO.parse(payload);
+  const dto = CrearConjuntoDTO.parse(payload);
 
-    const creado = await this.prisma.conjunto.create({
-      data: {
-        nit: dto.nit,
-        nombre: dto.nombre,
-        direccion: dto.direccion,
-        correo: dto.correo,
-        empresaId: dto.empresaId ?? "901191875-4", // default si así lo manejas
-        administradorId: dto.administradorId ?? null,
-      },
-    });
-    return creado;
-  }
+  const creado = await this.prisma.conjunto.create({
+    data: {
+      nit: dto.nit,
+      nombre: dto.nombre,
+      direccion: dto.direccion,
+      correo: dto.correo,
+      empresaId: dto.empresaId ?? "901191875-4",
+      administradorId: dto.administradorId ?? null,
 
-  async editarConjunto(conjuntoId: string, payload: unknown) {
-    const dto = EditarConjuntoDTO.parse(payload);
-    return this.prisma.conjunto.update({
+      fechaInicioContrato: dto.fechaInicioContrato ?? null,
+      fechaFinContrato: dto.fechaFinContrato ?? null,
+      activo: dto.activo,
+      tipoServicio: dto.tipoServicio as any,
+      valorMensual: dto.valorMensual != null ? new Prisma.Decimal(dto.valorMensual) : null,
+      consignasEspeciales: dto.consignasEspeciales,
+      valorAgregado: dto.valorAgregado,
+
+      // Horarios opcionales
+      horarios: dto.horarios && dto.horarios.length
+        ? {
+            create: dto.horarios.map(h => ({
+              dia: h.dia,
+              horaApertura: h.horaApertura,
+              horaCierre: h.horaCierre,
+            })),
+          }
+        : undefined,
+    },
+  });
+
+  return creado;
+}
+
+ async editarConjunto(conjuntoId: string, payload: unknown) {
+  const dto = EditarConjuntoDTO.parse(payload);
+
+  const updated = await this.prisma.$transaction(async (tx) => {
+    // Si llegan horarios, reescribimos el set (sencillo y consistente)
+    if (dto.horarios) {
+      await tx.conjuntoHorario.deleteMany({ where: { conjuntoId } });
+      if (dto.horarios.length) {
+        await tx.conjuntoHorario.createMany({
+          data: dto.horarios.map(h => ({
+            conjuntoId,
+            dia: h.dia,
+            horaApertura: h.horaApertura,
+            horaCierre: h.horaCierre,
+          })),
+        });
+      }
+    }
+
+    const data: any = {
+      nombre: dto.nombre,
+      direccion: dto.direccion,
+      correo: dto.correo,
+      administradorId: dto.administradorId ?? undefined,
+      empresaId: dto.empresaId ?? undefined,
+      fechaInicioContrato: dto.fechaInicioContrato ?? undefined,
+      fechaFinContrato: dto.fechaFinContrato ?? undefined,
+      activo: dto.activo ?? undefined,
+      tipoServicio: dto.tipoServicio ?? undefined,
+      valorMensual:
+        dto.valorMensual === undefined
+          ? undefined
+          : (dto.valorMensual === null ? null : new Prisma.Decimal(dto.valorMensual)),
+      consignasEspeciales: dto.consignasEspeciales ?? undefined,
+      valorAgregado: dto.valorAgregado ?? undefined,
+      supervisorId: dto.supervisorId ?? undefined,
+      jefeOperacionesId: dto.jefeOperacionesId ?? undefined,
+    };
+
+    return tx.conjunto.update({
       where: { nit: conjuntoId },
-      data: dto,
+      data,
     });
-  }
+  });
+
+  return updated;
+}
 
   async asignarOperarioAConjunto(payload: unknown) {
     const dto = AsignarAConjuntoDTO.parse(payload);

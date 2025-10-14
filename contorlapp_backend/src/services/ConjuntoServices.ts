@@ -39,6 +39,13 @@ export class ConjuntoService {
     private conjuntoId: string // nit
   ) {}
 
+  async setActivo(activo: boolean) {
+    await this.prisma.conjunto.update({
+      where: { nit: this.conjuntoId },
+      data: { activo },
+    });
+  }
+
   async asignarOperario(payload: unknown) {
     const { operarioId } = AsignarOperarioDTO.parse(payload);
     try {

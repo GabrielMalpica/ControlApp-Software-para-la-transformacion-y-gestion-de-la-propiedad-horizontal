@@ -1,11 +1,13 @@
-// src/models/insumo.ts
 import { z } from "zod";
+import { CategoriaInsumo } from "../generated/prisma";
 
 /** Dominio base 1:1 con Prisma */
 export interface InsumoDominio {
   id: number;
   nombre: string;
   unidad: string;
+  categoria: CategoriaInsumo;          // NUEVO
+  umbralGlobalMinimo?: number | null;  // NUEVO
   empresaId?: string | null;
 }
 
@@ -18,6 +20,8 @@ export type InsumoPublico = InsumoDominio;
 export const CrearInsumoDTO = z.object({
   nombre: z.string().min(2),
   unidad: z.string().min(1), // ej. "kg", "L", "unidad"
+  categoria: z.nativeEnum(CategoriaInsumo),          // NUEVO (requerido)
+  umbralGlobalMinimo: z.coerce.number().int().min(0).optional(), // NUEVO
   empresaId: z.string().min(3).optional(),
 });
 
@@ -25,6 +29,8 @@ export const CrearInsumoDTO = z.object({
 export const EditarInsumoDTO = z.object({
   nombre: z.string().min(2).optional(),
   unidad: z.string().min(1).optional(),
+  categoria: z.nativeEnum(CategoriaInsumo).optional(),          // NUEVO
+  umbralGlobalMinimo: z.coerce.number().int().min(0).optional(), // NUEVO
   empresaId: z.string().min(3).optional().nullable(),
 });
 
@@ -32,6 +38,7 @@ export const EditarInsumoDTO = z.object({
 export const FiltroInsumoDTO = z.object({
   empresaId: z.string().optional(),
   nombre: z.string().optional(),
+  categoria: z.nativeEnum(CategoriaInsumo).optional(), // NUEVO
 });
 
 /* ===================== SELECT BASE PARA PRISMA ===================== */
@@ -39,6 +46,8 @@ export const insumoPublicSelect = {
   id: true,
   nombre: true,
   unidad: true,
+  categoria: true,            // NUEVO
+  umbralGlobalMinimo: true,   // NUEVO
   empresaId: true,
 } as const;
 
@@ -46,5 +55,5 @@ export const insumoPublicSelect = {
 export function toInsumoPublico<
   T extends Record<keyof typeof insumoPublicSelect, any>
 >(row: T): InsumoPublico {
-  return row;
+  return row as unknown as InsumoPublico;
 }
