@@ -34,6 +34,11 @@ const ReemplazosBody = z.object({
   ),
 });
 
+// Actualizar límite de horas semanales
+const LimiteHorasBody = z.object({
+  limiteHorasSemana: z.coerce.number().int().min(1).max(84),
+});
+
 export class GerenteController {
   private prisma: PrismaClient;
   private service: GerenteService;
@@ -42,6 +47,37 @@ export class GerenteController {
     this.prisma = prisma ?? new PrismaClient();
     this.service = new GerenteService(this.prisma);
   }
+
+  // ── Empresa ────────────────────────────────────────────────────────────────
+  crearEmpresa: RequestHandler = async (req, res, next) => {
+    try {
+      const out = await this.service.crearEmpresa(req.body);
+      res.status(201).json(out);
+    } catch (err) { next(err); }
+  };
+
+  actualizarLimiteHoras: RequestHandler = async (req, res, next) => {
+    try {
+      const { limiteHorasSemana } = LimiteHorasBody.parse(req.body);
+      const out = await this.service.actualizarLimiteHorasEmpresa(limiteHorasSemana);
+      res.json(out);
+    } catch (err) { next(err); }
+  };
+
+  // ── Catálogo de insumos (empresa corporativa) ─────────────────────────────
+  agregarInsumoAlCatalogo: RequestHandler = async (req, res, next) => {
+    try {
+      const out = await this.service.agregarInsumoAlCatalogo(req.body);
+      res.status(201).json(out);
+    } catch (err) { next(err); }
+  };
+
+  listarCatalogoInsumos: RequestHandler = async (_req, res, next) => {
+    try {
+      const out = await this.service.listarCatalogo();
+      res.json(out);
+    } catch (err) { next(err); }
+  };
 
   // ── Usuarios ───────────────────────────────────────────────────────────────
   crearUsuario: RequestHandler = async (req, res, next) => {
@@ -113,7 +149,6 @@ export class GerenteController {
 
   asignarOperarioAConjunto: RequestHandler = async (req, res, next) => {
     try {
-      // Ruta usa :conjuntoId y body { operarioId }
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);
       const { operarioId } = AsignarOperarioBody.parse(req.body);
       await this.service.asignarOperarioAConjunto({ conjuntoId, operarioId });
@@ -153,7 +188,6 @@ export class GerenteController {
 
   entregarMaquinariaAConjunto: RequestHandler = async (req, res, next) => {
     try {
-      // Puedes exponerlo por body o por URL (ver router)
       const out = await this.service.entregarMaquinariaAConjunto(req.body);
       res.status(201).json(out);
     } catch (err) { next(err); }

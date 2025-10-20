@@ -23,47 +23,38 @@ export const MaquinariaPlanItemDTO = z.object({
 export const CrearTareaDTO = z.object({
   descripcion: z.string().min(3),
 
-  // ventana de tiempo y duración en horas (enteras)
   fechaInicio: z.coerce.date(),
   fechaFin: z.coerce.date(),
   duracionHoras: z.number().int().positive(),
 
-  // asignaciones (opcionales según Prisma)
-  operarioId: z.number().int().positive().optional(),
-  supervisorId: z.number().int().positive().optional(),
-  ubicacionId: z.number().int().positive(),
-  elementoId: z.number().int().positive(),
-  conjuntoId: z.string().min(3).optional(), // nit
-
-  // tipo/frecuencia
-  tipo: z.nativeEnum(TipoTarea).default("CORRECTIVA"),
+  // opcionales
+  tipo: z.nativeEnum(TipoTarea).optional(),                 // default lo pones en service si quieres
+  estado: z.nativeEnum(EstadoTarea).optional(),             // default ASIGNADA en service
   frecuencia: z.nativeEnum(Frecuencia).optional(),
 
-  // estado inicial y flags de borrador
-  estado: z.nativeEnum(EstadoTarea).default("ASIGNADA"),
-  borrador: z.boolean().default(false),
-  periodoAnio: z.number().int().optional(),
-  periodoMes: z.number().int().min(1).max(12).optional(),
-
-  // agrupación de bloques
-  grupoPlanId: z.string().uuid().optional(),
-  bloqueIndex: z.number().int().positive().optional(),
-  bloquesTotales: z.number().int().positive().optional(),
-
-  // evidencia/consumos reales
   evidencias: z.array(z.string()).optional().default([]),
-  insumosUsados: z.array(InsumoUsadoItemDTO).optional().default([]),
-
-  // planificación/estimaciones (Decimal en Prisma -> number aquí)
-  tiempoEstimadoHoras: z.coerce.number().min(0).optional(),
-  insumoPrincipalId: z.number().int().positive().optional(),
-  consumoPrincipalPorUnidad: z.coerce.number().min(0).optional(),
-  consumoTotalEstimado: z.coerce.number().min(0).optional(),
-  insumosPlanJson: z.array(InsumoPlanItemDTO).optional(),
-  maquinariaPlanJson: z.array(MaquinariaPlanItemDTO).optional(),
+  insumosUsados: z.any().optional(),                        // JSON libre
 
   observaciones: z.string().optional(),
-});
+  observacionesRechazo: z.string().optional(),
+
+  ubicacionId: z.number().int().positive(),
+  elementoId: z.number().int().positive(),
+
+  conjuntoId: z.string().min(1).nullable().optional(),
+  supervisorId: z.number().int().positive().nullable().optional(),
+
+  /** NUEVO para relación M:N */
+  operariosIds: z.array(z.number().int().positive()).optional(),
+
+  /** Compat: antiguo 1:N */
+  operarioId: z.number().int().positive().optional(),
+})
+.refine(d => {
+  // Si quieres forzar al menos un operario en creación, descomenta esto.
+  // return (d.operariosIds && d.operariosIds.length > 0) || !!d.operarioId;
+  return true;
+}, { message: "Debe indicar al menos un operario (operariosIds u operarioId)." });
 
 /** Editar tarea (parcial) */
 export const EditarTareaDTO = z.object({
@@ -73,35 +64,27 @@ export const EditarTareaDTO = z.object({
   fechaFin: z.coerce.date().optional(),
   duracionHoras: z.number().int().positive().optional(),
 
-  operarioId: z.number().int().positive().optional().nullable(),
-  supervisorId: z.number().int().positive().optional().nullable(),
-  ubicacionId: z.number().int().positive().optional(),
-  elementoId: z.number().int().positive().optional(),
-  conjuntoId: z.string().min(3).optional().nullable(),
-
   tipo: z.nativeEnum(TipoTarea).optional(),
-  frecuencia: z.nativeEnum(Frecuencia).optional().nullable(),
-
   estado: z.nativeEnum(EstadoTarea).optional(),
-  borrador: z.boolean().optional(),
-  periodoAnio: z.number().int().optional().nullable(),
-  periodoMes: z.number().int().min(1).max(12).optional().nullable(),
-
-  grupoPlanId: z.string().uuid().optional().nullable(),
-  bloqueIndex: z.number().int().positive().optional().nullable(),
-  bloquesTotales: z.number().int().positive().optional().nullable(),
+  frecuencia: z.nativeEnum(Frecuencia).optional(),
 
   evidencias: z.array(z.string()).optional(),
-  insumosUsados: z.array(InsumoUsadoItemDTO).optional(),
-  observaciones: z.string().optional().nullable(),
-  observacionesRechazo: z.string().optional().nullable(),
+  insumosUsados: z.any().optional(),
 
-  tiempoEstimadoHoras: z.coerce.number().min(0).optional().nullable(),
-  insumoPrincipalId: z.number().int().positive().optional().nullable(),
-  consumoPrincipalPorUnidad: z.coerce.number().min(0).optional().nullable(),
-  consumoTotalEstimado: z.coerce.number().min(0).optional().nullable(),
-  insumosPlanJson: z.array(InsumoPlanItemDTO).optional().nullable(),
-  maquinariaPlanJson: z.array(MaquinariaPlanItemDTO).optional().nullable(),
+  observaciones: z.string().nullable().optional(),
+  observacionesRechazo: z.string().nullable().optional(),
+
+  ubicacionId: z.number().int().positive().optional(),
+  elementoId: z.number().int().positive().optional(),
+
+  conjuntoId: z.string().min(1).nullable().optional(),
+  supervisorId: z.number().int().positive().nullable().optional(),
+
+  /** NUEVO: para reemplazar asignación de operarios en edición */
+  operariosIds: z.array(z.number().int().positive()).optional(),
+
+  /** Compat (si alguien aún manda este campo, puedes ignorarlo en edición) */
+  operarioId: z.number().int().positive().optional(),
 });
 
 /** Filtros para listar/consultar tareas */
@@ -167,42 +150,20 @@ export const RegistrarInsumosUsadosDTO = z.object({
 export const tareaPublicSelect = {
   id: true,
   descripcion: true,
-
   fechaInicio: true,
   fechaFin: true,
-  fechaIniciarTarea: true,
-  fechaFinalizarTarea: true,
   duracionHoras: true,
-
   estado: true,
   evidencias: true,
   insumosUsados: true,
   observaciones: true,
   observacionesRechazo: true,
-  fechaVerificacion: true,
-
-  operarioId: true,
+  tipo: true,
+  frecuencia: true,
+  conjuntoId: true,
   supervisorId: true,
   ubicacionId: true,
   elementoId: true,
-  conjuntoId: true,
-
-  tipo: true,
-  frecuencia: true,
-
-  borrador: true,
-  periodoAnio: true,
-  periodoMes: true,
-  grupoPlanId: true,
-  bloqueIndex: true,
-  bloquesTotales: true,
-
-  tiempoEstimadoHoras: true,
-  insumoPrincipalId: true,
-  consumoPrincipalPorUnidad: true,
-  consumoTotalEstimado: true,
-  insumosPlanJson: true,
-  maquinariaPlanJson: true,
 } as const;
 
 /** Helper para castear el resultado Prisma */

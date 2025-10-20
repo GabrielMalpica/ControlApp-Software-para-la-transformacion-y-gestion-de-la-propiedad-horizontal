@@ -1,19 +1,28 @@
-import { PrismaClient, EstadoMaquinaria, TipoMaquinaria } from "../generated/prisma";
+// src/services/EmpresaService.ts
+import { PrismaClient, EstadoMaquinaria, TipoMaquinaria, EstadoSolicitud } from "../generated/prisma";
 import { z } from "zod";
+
 import {
   CrearMaquinariaDTO,
   maquinariaPublicSelect,
   toMaquinariaPublica,
 } from "../model/Maquinaria";
+
 import {
   CrearInsumoDTO,
   insumoPublicSelect,
 } from "../model/Insumo";
 
-/** DTOs locales */
-const CrearEmpresaDTO = z.object({
-  nombre: z.string().min(3),
-  nit: z.string().min(3),
+import {
+  CrearEmpresaDTO,
+  EditarEmpresaDTO,
+  empresaPublicSelect,
+  toEmpresaPublica,
+} from "../model/Empresa";
+
+/** Zod local para setear el límite semanal directamente */
+const SetLimiteHorasDTO = z.object({
+  limiteHorasSemana: z.number().int().min(1).max(84),
 });
 
 const AgregarJefeOperacionesDTO = z.object({
@@ -23,7 +32,9 @@ const AgregarJefeOperacionesDTO = z.object({
 const IdNumericoDTO = z.object({ id: z.number().int().positive() });
 
 export class EmpresaService {
-  constructor(private prisma: PrismaClient, private empresaId: string) {} // empresaId = nit
+  constructor(private prisma: PrismaClient, private empresaId: string) {} // empresaId = NIT
+
+  /* ===================== EMPRESA ===================== */
 
   async crearEmpresa(payload: unknown) {
     const dto = CrearEmpresaDTO.parse(payload);
@@ -31,10 +42,71 @@ export class EmpresaService {
     const existe = await this.prisma.empresa.findUnique({ where: { nit: dto.nit } });
     if (existe) throw new Error("Ya existe una empresa con este NIT.");
 
-    return this.prisma.empresa.create({
-      data: { nombre: dto.nombre, nit: dto.nit },
+    const creada = await this.prisma.empresa.create({
+      data: {
+        nombre: dto.nombre,
+        nit: dto.nit,
+        // si no viene, aplica default de Prisma (46)
+        limiteHorasSemana: dto.limiteHorasSemana ?? undefined,
+      },
+      select: empresaPublicSelect,
+    });
+
+    // Si creas y además quieres operar con esa empresa, actualiza el NIT interno
+    this.empresaId = creada.nit;
+
+    return toEmpresaPublica(creada);
+  }
+
+  async editarEmpresa(payload: unknown) {
+    const dto = EditarEmpresaDTO.parse(payload);
+
+    // Actualización parcial por NIT (clave operativa del service)
+    const actualizada = await this.prisma.empresa.update({
+      where: { nit: this.empresaId },
+      data: {
+        nombre: dto.nombre ?? undefined,
+        nit: dto.nit ?? undefined,
+        limiteHorasSemana: dto.limiteHorasSemana ?? undefined,
+      },
+      select: empresaPublicSelect,
+    });
+
+    // Si cambiaste el NIT, mantén el service sincronizado
+    if (dto.nit && dto.nit !== this.empresaId) {
+      this.empresaId = dto.nit;
+    }
+
+    return toEmpresaPublica(actualizada);
+  }
+
+  async getEmpresa() {
+    const empresa = await this.prisma.empresa.findUnique({
+      where: { nit: this.empresaId },
+      select: empresaPublicSelect,
+    });
+    if (!empresa) throw new Error("Empresa no encontrada.");
+    return toEmpresaPublica(empresa);
+  }
+
+  async getLimiteHorasSemana(): Promise<number> {
+    const empresa = await this.prisma.empresa.findUnique({
+      where: { nit: this.empresaId },
+      select: { limiteHorasSemana: true },
+    });
+    if (!empresa) throw new Error("Empresa no encontrada.");
+    return empresa.limiteHorasSemana;
+  }
+
+  async setLimiteHorasSemana(payload: unknown) {
+    const { limiteHorasSemana } = SetLimiteHorasDTO.parse(payload);
+    await this.prisma.empresa.update({
+      where: { nit: this.empresaId },
+      data: { limiteHorasSemana },
     });
   }
+
+  /* ===================== MAQUINARIA ===================== */
 
   async agregarMaquinaria(payload: unknown) {
     // Reutilizamos tu DTO de maquinaria y forzamos empresaId = this.empresaId
@@ -98,6 +170,8 @@ export class EmpresaService {
     }));
   }
 
+  /* ===================== ROLES ===================== */
+
   async agregarJefeOperaciones(payload: unknown) {
     const { usuarioId } = AgregarJefeOperacionesDTO.parse(payload);
 
@@ -116,6 +190,8 @@ export class EmpresaService {
     });
   }
 
+  /* ===================== SOLICITUDES DE TAREA ===================== */
+
   async recibirSolicitudTarea(payload: unknown) {
     const { id } = IdNumericoDTO.parse(payload);
     return this.prisma.solicitudTarea.update({
@@ -131,10 +207,12 @@ export class EmpresaService {
 
   async solicitudesTareaPendientes() {
     return this.prisma.solicitudTarea.findMany({
-      where: { empresaId: this.empresaId, estado: "PENDIENTE" },
+      where: { empresaId: this.empresaId, estado: EstadoSolicitud.PENDIENTE },
       include: { conjunto: true, ubicacion: true, elemento: true },
     });
   }
+
+  /* ===================== CATÁLOGO DE INSUMOS ===================== */
 
   async agregarInsumoAlCatalogo(payload: unknown) {
     // Usa tu DTO de insumo; fuerza empresaId actual
@@ -147,7 +225,13 @@ export class EmpresaService {
     if (existe) throw new Error("🚫 Ya existe un insumo con ese nombre y unidad en el catálogo.");
 
     return this.prisma.insumo.create({
-      data: { nombre: dto.nombre, unidad: dto.unidad, empresaId: this.empresaId },
+      data: {
+        nombre: dto.nombre,
+        unidad: dto.unidad,
+        empresaId: this.empresaId,
+        // Si más adelante agregas `categoria` y `umbralGlobalMinimo` al schema,
+        // acá podrías mapearlos desde el DTO (por ahora no existen en Prisma).
+      },
       select: insumoPublicSelect,
     });
   }

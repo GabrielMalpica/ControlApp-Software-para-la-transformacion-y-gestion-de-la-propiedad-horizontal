@@ -1,10 +1,9 @@
+// src/services/ConjuntoService.ts
 import { PrismaClient } from "../generated/prisma";
 import { z } from "zod";
-
-// DTOs ya definidos en /models (los reutilizamos donde aplica)
 import { CrearUbicacionDTO, FiltroUbicacionDTO } from "../model/Ubicacion";
 
-// DTOs locales (inputs simples de este servicio)
+// DTOs locales
 const AsignarOperarioDTO = z.object({
   operarioId: z.number().int().positive(),
 });
@@ -39,25 +38,34 @@ export class ConjuntoService {
     private conjuntoId: string // nit
   ) {}
 
-  async setActivo(activo: boolean) {
-    await this.prisma.conjunto.update({
+  /** Activa/Inactiva el conjunto y retorna el valor actualizado */
+  async setActivo(activo: boolean): Promise<boolean> {
+    const existe = await this.prisma.conjunto.findUnique({
+      where: { nit: this.conjuntoId },
+      select: { nit: true },
+    });
+    if (!existe) throw new Error("Conjunto no encontrado.");
+
+    const updated = await this.prisma.conjunto.update({
       where: { nit: this.conjuntoId },
       data: { activo },
+      select: { activo: true },
     });
+    return updated.activo;
   }
 
   async asignarOperario(payload: unknown) {
     const { operarioId } = AsignarOperarioDTO.parse(payload);
     try {
-      // opcional: verificar que el operario exista
-      const existeOperario = await this.prisma.operario.findUnique({ where: { id: operarioId }, select: { id: true } });
+      const existeOperario = await this.prisma.operario.findUnique({
+        where: { id: operarioId },
+        select: { id: true },
+      });
       if (!existeOperario) throw new Error("Operario no encontrado.");
 
       await this.prisma.conjunto.update({
         where: { nit: this.conjuntoId },
-        data: {
-          operarios: { connect: { id: operarioId } },
-        },
+        data: { operarios: { connect: { id: operarioId } } },
       });
     } catch (error) {
       console.error("Error al asignar operario:", error);
@@ -68,14 +76,15 @@ export class ConjuntoService {
   async asignarAdministrador(payload: unknown) {
     const { administradorId } = AsignarAdministradorDTO.parse(payload);
     try {
-      const existeAdmin = await this.prisma.administrador.findUnique({ where: { id: administradorId }, select: { id: true } });
+      const existeAdmin = await this.prisma.administrador.findUnique({
+        where: { id: administradorId },
+        select: { id: true },
+      });
       if (!existeAdmin) throw new Error("Administrador no encontrado.");
 
       await this.prisma.conjunto.update({
         where: { nit: this.conjuntoId },
-        data: {
-          administrador: { connect: { id: administradorId } },
-        },
+        data: { administrador: { connect: { id: administradorId } } },
       });
     } catch (error) {
       console.error("Error al asignar administrador:", error);
@@ -103,6 +112,7 @@ export class ConjuntoService {
         select: { id: true, disponible: true, conjuntoId: true },
       });
       if (!maq) throw new Error("Maquinaria no encontrada.");
+      if (!maq.disponible) throw new Error("La maquinaria no está disponible.");
       if (maq.conjuntoId && maq.conjuntoId !== this.conjuntoId) {
         throw new Error("La maquinaria ya está asignada a otro conjunto.");
       }
@@ -140,7 +150,6 @@ export class ConjuntoService {
   }
 
   async agregarUbicacion(payload: unknown) {
-    // Reutilizamos CrearUbicacionDTO (nombre, conjuntoId)
     const dto = CrearUbicacionDTO.parse({ ...(payload as any), conjuntoId: this.conjuntoId });
     try {
       const yaExiste = await this.prisma.ubicacion.findFirst({
@@ -165,10 +174,7 @@ export class ConjuntoService {
   async buscarUbicacion(payload: unknown) {
     const dto = FiltroUbicacionDTO.parse({ ...(payload as any), conjuntoId: this.conjuntoId });
     return this.prisma.ubicacion.findFirst({
-      where: {
-        conjuntoId: this.conjuntoId,
-        nombre: dto.nombre,
-      },
+      where: { conjuntoId: this.conjuntoId, nombre: dto.nombre },
       select: { id: true, nombre: true },
     });
   }
@@ -176,15 +182,15 @@ export class ConjuntoService {
   async agregarTareaACronograma(payload: unknown) {
     const { tareaId } = TareaIdDTO.parse(payload);
     try {
-      // opcional: validar que la tarea existe
-      const tarea = await this.prisma.tarea.findUnique({ where: { id: tareaId }, select: { id: true } });
+      const tarea = await this.prisma.tarea.findUnique({
+        where: { id: tareaId },
+        select: { id: true },
+      });
       if (!tarea) throw new Error("Tarea no encontrada.");
 
       await this.prisma.tarea.update({
         where: { id: tareaId },
-        data: {
-          conjunto: { connect: { nit: this.conjuntoId } },
-        },
+        data: { conjunto: { connect: { nit: this.conjuntoId } } },
       });
     } catch (error) {
       console.error("Error al agregar tarea al cronograma:", error);
@@ -206,7 +212,10 @@ export class ConjuntoService {
   async tareasPorOperario(payload: unknown) {
     const { operarioId } = TareasPorOperarioDTO.parse(payload);
     return this.prisma.tarea.findMany({
-      where: { conjuntoId: this.conjuntoId, operarioId },
+      where: {
+        conjuntoId: this.conjuntoId,
+        operarios: { some: { id: operarioId } },
+      },
     });
   }
 

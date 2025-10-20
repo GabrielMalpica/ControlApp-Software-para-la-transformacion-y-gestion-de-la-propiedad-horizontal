@@ -65,7 +65,7 @@ export class CronogramaController {
   tareasPorFecha: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const { fecha } = FechaSchema.parse({ fecha: req.query.fecha });
+      const { fecha } = FechaSchema.parse({ fecha: req.query.fecha ?? "" });
       const service = new CronogramaService(this.prisma, conjuntoId);
       const tareas = await service.tareasPorFecha({ fecha });
       res.json(tareas);
@@ -76,7 +76,7 @@ export class CronogramaController {
   tareasEnRango: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const { inicio, fin } = RangoSchema.parse({ inicio: req.query.inicio, fin: req.query.fin });
+      const { inicio, fin } = RangoSchema.parse({ inicio: req.query.inicio ?? "", fin: req.query.fin ?? ""});
       const service = new CronogramaService(this.prisma, conjuntoId);
       const tareas = await service.tareasEnRango({ fechaInicio: inicio, fechaFin: fin });
       res.json(tareas);

@@ -5,22 +5,34 @@ import { PrismaClient } from "../generated/prisma";
 import { OperarioService } from "../services/OperarioServices";
 import { InventarioService } from "../services/InventarioServices";
 
+// ── Schemas ─────────────────────────────────────────────────────────────────
 const OperarioIdParam = z.object({ operarioId: z.coerce.number().int().positive() });
-const TareaIdParam = z.object({ tareaId: z.coerce.number().int().positive() });
+const TareaIdParam   = z.object({ tareaId: z.coerce.number().int().positive() });
+
+// Query/body helpers
 const FechaQuery = z.object({ fecha: z.coerce.date() });
 
-const AsignarBody = z.object({ tareaId: z.number().int().positive() });
+const AsignarBody = z.object({
+  tareaId: z.number().int().positive(),
+});
+
 const CompletarBody = z.object({
   tareaId: z.number().int().positive(),
   evidencias: z.array(z.string()).optional().default([]),
-  insumosUsados: z.array(z.object({
-    insumoId: z.number().int().positive(),
-    cantidad: z.number().int().positive(),
-  })).optional().default([]),
+  insumosUsados: z
+    .array(
+      z.object({
+        insumoId: z.number().int().positive(),
+        cantidad: z.number().int().positive(),
+      })
+    )
+    .optional()
+    .default([]),
 });
 
 export class OperarioController {
   private prisma: PrismaClient;
+
   constructor(prisma?: PrismaClient) {
     this.prisma = prisma ?? new PrismaClient();
   }
@@ -29,7 +41,8 @@ export class OperarioController {
   asignarTarea: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
-      const { tareaId } = AsignarBody.parse(req.body);
+      const { tareaId }   = AsignarBody.parse(req.body);
+
       const service = new OperarioService(this.prisma, operarioId);
       await service.asignarTarea({ tareaId });
       res.status(204).send();
@@ -40,7 +53,8 @@ export class OperarioController {
   iniciarTarea: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
-      const { tareaId } = TareaIdParam.parse(req.params);
+      const { tareaId }    = TareaIdParam.parse(req.params);
+
       const service = new OperarioService(this.prisma, operarioId);
       await service.iniciarTarea({ tareaId });
       res.status(204).send();
@@ -53,13 +67,13 @@ export class OperarioController {
       const { operarioId } = OperarioIdParam.parse(req.params);
       const body = CompletarBody.parse(req.body);
 
-      // Obtener inventarioId del conjunto de la tarea
+      // 1) Resolver inventario del conjunto de la tarea
       const tarea = await this.prisma.tarea.findUnique({
         where: { id: body.tareaId },
         select: { conjuntoId: true },
       });
       if (!tarea?.conjuntoId) {
-        const e: any = new Error("La tarea no tiene conjunto asignado o no existe.");
+        const e: any = new Error("La tarea no existe o no tiene conjunto asignado.");
         e.status = 400; throw e;
       }
       const inventario = await this.prisma.inventario.findUnique({
@@ -71,9 +85,11 @@ export class OperarioController {
         e.status = 400; throw e;
       }
 
+      // 2) Ejecutar flujo de cierre con consumo de insumos
       const service = new OperarioService(this.prisma, operarioId);
       const inventarioService = new InventarioService(this.prisma, inventario.id);
       await service.marcarComoCompletada(body, inventarioService);
+
       res.status(204).send();
     } catch (err) { next(err); }
   };
@@ -82,7 +98,8 @@ export class OperarioController {
   marcarComoNoCompletada: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
-      const { tareaId } = TareaIdParam.parse(req.params);
+      const { tareaId }    = TareaIdParam.parse(req.params);
+
       const service = new OperarioService(this.prisma, operarioId);
       await service.marcarComoNoCompletada({ tareaId });
       res.status(204).send();
@@ -93,7 +110,8 @@ export class OperarioController {
   tareasDelDia: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
-      const { fecha } = FechaQuery.parse(req.query);
+      const { fecha }      = FechaQuery.parse(req.query);
+
       const service = new OperarioService(this.prisma, operarioId);
       const tareas = await service.tareasDelDia({ fecha });
       res.json(tareas);
@@ -114,7 +132,8 @@ export class OperarioController {
   horasRestantesEnSemana: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
-      const { fecha } = FechaQuery.parse(req.query);
+      const { fecha }      = FechaQuery.parse(req.query);
+
       const service = new OperarioService(this.prisma, operarioId);
       const horas = await service.horasRestantesEnSemana({ fecha });
       res.json({ horasRestantes: horas });
@@ -125,7 +144,8 @@ export class OperarioController {
   resumenDeHoras: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
-      const { fecha } = FechaQuery.parse(req.query);
+      const { fecha }      = FechaQuery.parse(req.query);
+
       const service = new OperarioService(this.prisma, operarioId);
       const resumen = await service.resumenDeHoras({ fecha });
       res.json({ resumen });

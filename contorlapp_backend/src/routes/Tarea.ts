@@ -1,15 +1,16 @@
-// src/routes/tareas.ts
+// src/routes/tareas.ts (ejemplo)
 import { Router } from "express";
 import { TareaController } from "../controller/TareaController";
 
-const router = Router();
-const controller = new TareaController();
+const r = Router();
+const c = new TareaController();
 
-router.post("/tareas/:tareaId/evidencias", controller.agregarEvidencia);
-router.post("/tareas/:tareaId/iniciar", controller.iniciarTarea);
-router.post("/tareas/:tareaId/no-completada", controller.marcarNoCompletada);
-router.post("/tareas/:tareaId/aprobar", controller.aprobarTarea);
-router.post("/tareas/:tareaId/rechazar", controller.rechazarTarea);
-router.get("/tareas/:tareaId/resumen", controller.resumen);
+r.post("/:tareaId/evidencias", c.agregarEvidencia);
+r.post("/:tareaId/iniciar", c.iniciarTarea);
+r.post("/:tareaId/no-completada", c.marcarNoCompletada);
+r.post("/:tareaId/completar", c.completarConInsumos);
+r.post("/:tareaId/aprobar", c.aprobarTarea);
+r.post("/:tareaId/rechazar", c.rechazarTarea);
+r.get("/:tareaId/resumen", c.resumen);
 
-export default router;
+export default r;

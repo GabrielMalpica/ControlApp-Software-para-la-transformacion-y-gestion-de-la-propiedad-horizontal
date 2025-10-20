@@ -1,41 +1,34 @@
+// src/services/ReporteService.ts
 import { PrismaClient, EstadoTarea } from "../generated/prisma";
 import { z } from "zod";
 
-/** SIN extend: definimos el objeto completo y luego refine */
-const RangoDTO = z
-  .object({
-    desde: z.coerce.date(),
-    hasta: z.coerce.date(),
-  })
-  .refine((d) => d.hasta >= d.desde, {
-    path: ["hasta"],
-    message: "hasta debe ser >= desde",
-  });
+/** Rangos básicos */
+const RangoDTO = z.object({
+  desde: z.coerce.date(),
+  hasta: z.coerce.date(),
+}).refine((d) => d.hasta >= d.desde, {
+  path: ["hasta"],
+  message: "hasta debe ser >= desde",
+});
 
-/** SIN extend: incluimos conjuntoId directamente en el objeto */
-const RangoConConjuntoDTO = z
-  .object({
-    desde: z.coerce.date(),
-    hasta: z.coerce.date(),
-    conjuntoId: z.string().min(1),
-  })
-  .refine((d) => d.hasta >= d.desde, {
-    path: ["hasta"],
-    message: "hasta debe ser >= desde",
-  });
+const RangoConConjuntoDTO = z.object({
+  desde: z.coerce.date(),
+  hasta: z.coerce.date(),
+  conjuntoId: z.string().min(1),
+}).refine((d) => d.hasta >= d.desde, {
+  path: ["hasta"],
+  message: "hasta debe ser >= desde",
+});
 
-/** SIN extend: agregamos estado directamente en el objeto */
-const TareasPorEstadoDTO = z
-  .object({
-    desde: z.coerce.date(),
-    hasta: z.coerce.date(),
-    conjuntoId: z.string().min(1),
-    estado: z.nativeEnum(EstadoTarea),
-  })
-  .refine((d) => d.hasta >= d.desde, {
-    path: ["hasta"],
-    message: "hasta debe ser >= desde",
-  });
+const TareasPorEstadoDTO = z.object({
+  desde: z.coerce.date(),
+  hasta: z.coerce.date(),
+  conjuntoId: z.string().min(1),
+  estado: z.nativeEnum(EstadoTarea),
+}).refine((d) => d.hasta >= d.desde, {
+  path: ["hasta"],
+  message: "hasta debe ser >= desde",
+});
 
 export class ReporteService {
   constructor(private prisma: PrismaClient) {}
@@ -44,7 +37,7 @@ export class ReporteService {
     const { desde, hasta } = RangoDTO.parse(payload);
     return this.prisma.tarea.findMany({
       where: {
-        estado: "APROBADA",
+        estado: EstadoTarea.APROBADA,
         fechaVerificacion: { gte: desde, lte: hasta },
       },
       include: { ubicacion: true, elemento: true, operario: true },
@@ -55,15 +48,20 @@ export class ReporteService {
     const { desde, hasta } = RangoDTO.parse(payload);
     return this.prisma.tarea.findMany({
       where: {
-        estado: "RECHAZADA",
+        estado: EstadoTarea.RECHAZADA,
         fechaVerificacion: { gte: desde, lte: hasta },
       },
       include: { ubicacion: true, elemento: true, operario: true },
     });
   }
 
+  /**
+   * Resumen de insumos consumidos por fecha para un conjunto.
+   * Devuelve: [{ insumoId, nombre, unidad, cantidad }]
+   */
   async usoDeInsumosPorFecha(payload: unknown) {
     const { conjuntoId, desde, hasta } = RangoConConjuntoDTO.parse(payload);
+
     const inventario = await this.prisma.inventario.findUnique({
       where: { conjuntoId },
       include: {
@@ -75,11 +73,24 @@ export class ReporteService {
     });
     if (!inventario) throw new Error("Inventario no encontrado");
 
-    const resumen = new Map<number, { insumo: any; cantidad: number }>();
-    for (const consumo of inventario.consumos) {
-      const ex = resumen.get(consumo.insumo.id);
-      if (ex) ex.cantidad += consumo.cantidad;
-      else resumen.set(consumo.insumo.id, { insumo: consumo.insumo, cantidad: consumo.cantidad });
+    const resumen = new Map<
+      number,
+      { insumoId: number; nombre: string; unidad: string; cantidad: number }
+    >();
+
+    for (const c of inventario.consumos) {
+      const key = c.insumo.id;
+      const prev = resumen.get(key);
+      if (prev) {
+        prev.cantidad += c.cantidad;
+      } else {
+        resumen.set(key, {
+          insumoId: c.insumo.id,
+          nombre: c.insumo.nombre,
+          unidad: c.insumo.unidad,
+          cantidad: c.cantidad,
+        });
+      }
     }
     return Array.from(resumen.values());
   }

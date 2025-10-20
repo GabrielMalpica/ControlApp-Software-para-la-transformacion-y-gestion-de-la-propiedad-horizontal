@@ -1,20 +1,16 @@
-// src/routes/inventarios.ts
 import { Router } from "express";
+import { PrismaClient } from "../generated/prisma";
 import { InventarioController } from "../controller/InventarioController";
 
-const router = Router();
-const controller = new InventarioController();
+const prisma = new PrismaClient();
+const controller = new InventarioController(prisma);
+export const inventarioRouter = Router();
 
-// CRUD de insumos en un inventario
-router.post("/inventarios/:inventarioId/insumos", controller.agregarInsumo);
-router.get("/inventarios/:inventarioId/insumos", controller.listarInsumos);
-router.get("/inventarios/:inventarioId/insumos/:insumoId", controller.buscarInsumoPorId);
-router.delete("/inventarios/:inventarioId/insumos/:insumoId", controller.eliminarInsumo);
-
-// Consumo
-router.post("/inventarios/:inventarioId/insumos/:insumoId/consumir", controller.consumirInsumoPorId);
-
-// Reporte de bajos
-router.get("/inventarios/:inventarioId/insumos-bajos", controller.listarInsumosBajos);
-
-export default router;
+inventarioRouter.post("/inventarios/:inventarioId/insumos", controller.agregarInsumo);
+inventarioRouter.get("/inventarios/:inventarioId/insumos", controller.listarInsumos);
+inventarioRouter.get("/inventarios/:inventarioId/insumos-detalle", controller.listarInsumosDetallado);
+inventarioRouter.get("/inventarios/:inventarioId/insumos/:insumoId", controller.buscarInsumoPorId);
+inventarioRouter.delete("/inventarios/:inventarioId/insumos/:insumoId", controller.eliminarInsumo);
+inventarioRouter.post("/inventarios/:inventarioId/insumos/:insumoId/consumir", controller.consumirInsumoPorId);
+inventarioRouter.get("/inventarios/:inventarioId/insumos-bajos", controller.listarInsumosBajos);
+inventarioRouter.get("/inventarios/:inventarioId/insumos-bajos/detalle", controller.listarInsumosBajosDetallado);

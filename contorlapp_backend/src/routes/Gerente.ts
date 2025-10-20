@@ -1,53 +1,58 @@
-// src/routes/gerente.ts
+// src/routes/gerente.routes.ts
 import { Router } from "express";
 import { GerenteController } from "../controller/GerenteController";
 
 const router = Router();
-const controller = new GerenteController();
+const ctrl = new GerenteController();
 
-// Usuarios
-router.post("/usuarios", controller.crearUsuario);
-router.put("/usuarios/:id", controller.editarUsuario);
+/* Empresa */
+router.post("/empresa", ctrl.crearEmpresa);
+router.patch("/empresa/limite-horas", ctrl.actualizarLimiteHoras); // opcional
 
-// Roles / Perfiles
-router.post("/roles/gerente", controller.asignarGerente);
-router.post("/roles/administrador", controller.asignarAdministrador);
-router.post("/roles/jefe-operaciones", controller.asignarJefeOperaciones);
-router.post("/roles/supervisor", controller.asignarSupervisor);
-router.post("/roles/operario", controller.asignarOperario);
+/* Catálogo insumos (empresa) */
+router.post("/empresa/insumos", ctrl.agregarInsumoAlCatalogo);
+router.get("/empresa/insumos", ctrl.listarCatalogoInsumos);
 
-// Conjuntos
-router.post("/conjuntos", controller.crearConjunto);
-router.put("/conjuntos/:conjuntoId", controller.editarConjunto);
-router.post("/conjuntos/:conjuntoId/operarios", controller.asignarOperarioAConjunto);
+/* Usuarios */
+router.post("/usuarios", ctrl.crearUsuario);
+router.patch("/usuarios/:id", ctrl.editarUsuario);
 
-// Inventario / Insumos
-router.post("/conjuntos/:conjuntoId/inventario/insumos", controller.agregarInsumoAConjunto);
+/* Roles / perfiles */
+router.post("/gerentes", ctrl.asignarGerente);
+router.post("/administradores", ctrl.asignarAdministrador);
+router.post("/jefes-operaciones", ctrl.asignarJefeOperaciones);
+router.post("/supervisores", ctrl.asignarSupervisor);
+router.post("/operarios", ctrl.asignarOperario);
 
-// Maquinaria
-router.post("/maquinaria", controller.crearMaquinaria);
-router.put("/maquinaria/:maquinariaId", controller.editarMaquinaria);
-router.post("/maquinaria/entregar", controller.entregarMaquinariaAConjunto); 
-// (si prefieres REST puro:
-//  router.post("/conjuntos/:conjuntoId/maquinaria/:maquinariaId/entregar", controller.entregarMaquinariaAConjunto);
-//  y en el controller parseas params y construyes el payload)
+/* Conjuntos */
+router.post("/conjuntos", ctrl.crearConjunto);
+router.patch("/conjuntos/:conjuntoId", ctrl.editarConjunto);
+router.post("/conjuntos/:conjuntoId/operarios", ctrl.asignarOperarioAConjunto);
+router.post("/conjuntos/:conjuntoId/insumos", ctrl.agregarInsumoAConjunto);
 
-// Tareas
-router.post("/tareas", controller.asignarTarea);
-router.put("/tareas/:tareaId", controller.editarTarea);
+/* Maquinaria */
+router.post("/maquinaria", ctrl.crearMaquinaria);
+router.patch("/maquinaria/:maquinariaId", ctrl.editarMaquinaria);
+router.post("/maquinaria/entregar", ctrl.entregarMaquinariaAConjunto); // si prefieres por URL, cámbialo
 
-// Eliminaciones con reglas
-router.delete("/administradores/:adminId", controller.eliminarAdministrador);
-router.patch("/conjuntos/reemplazar-admines", controller.reemplazarAdminEnVariosConjuntos);
-router.delete("/operarios/:operarioId", controller.eliminarOperario);
-router.delete("/supervisores/:supervisorId", controller.eliminarSupervisor);
-router.delete("/conjuntos/:conjuntoId", controller.eliminarConjunto);
-router.delete("/maquinaria/:maquinariaId", controller.eliminarMaquinaria);
-router.delete("/tareas/:tareaId", controller.eliminarTarea);
+/* Tareas */
+router.post("/tareas", ctrl.asignarTarea);
+router.patch("/tareas/:tareaId", ctrl.editarTarea);
 
-// Ediciones rápidas
-router.put("/administradores/:adminId", controller.editarAdministrador);
-router.put("/operarios/:operarioId", controller.editarOperario);
-router.put("/supervisores/:supervisorId", controller.editarSupervisor);
+/* Eliminaciones con reglas */
+router.delete("/administradores/:adminId", ctrl.eliminarAdministrador);
+router.post("/administradores/reemplazos", ctrl.reemplazarAdminEnVariosConjuntos);
+
+router.delete("/operarios/:operarioId", ctrl.eliminarOperario);
+router.delete("/supervisores/:supervisorId", ctrl.eliminarSupervisor);
+
+router.delete("/conjuntos/:conjuntoId", ctrl.eliminarConjunto);
+router.delete("/maquinaria/:maquinariaId", ctrl.eliminarMaquinaria);
+router.delete("/tareas/:tareaId", ctrl.eliminarTarea);
+
+/* Ediciones rápidas */
+router.patch("/administradores/:adminId", ctrl.editarAdministrador);
+router.patch("/operarios/:operarioId", ctrl.editarOperario);
+router.patch("/supervisores/:supervisorId", ctrl.editarSupervisor);
 
 export default router;

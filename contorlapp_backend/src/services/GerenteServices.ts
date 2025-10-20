@@ -1,4 +1,11 @@
-import { PrismaClient, Rol, TipoFuncion, TipoMaquinaria, EstadoMaquinaria } from "../generated/prisma";
+// src/services/GerenteServices.ts
+import {
+  PrismaClient,
+  Rol,
+  TipoFuncion,
+  TipoMaquinaria,
+  EstadoMaquinaria,
+} from "../generated/prisma";
 import bcrypt from "bcrypt";
 import { Prisma } from "../generated/prisma";
 
@@ -9,31 +16,13 @@ import {
   toUsuarioPublico,
 } from "../model/Usuario";
 
-import {
-  CrearGerenteDTO,
-} from "../model/Gerente";
+import { CrearGerenteDTO } from "../model/Gerente";
+import { CrearAdministradorDTO } from "../model/Administrador";
+import { CrearJefeOperacionesDTO } from "../model/JefeOperaciones";
+import { CrearSupervisorDTO } from "../model/Supervisor";
+import { CrearOperarioDTO, EditarOperarioDTO } from "../model/Operario";
 
-import {
-  CrearAdministradorDTO,
-} from "../model/Administrador";
-
-import {
-  CrearJefeOperacionesDTO,
-} from "../model/JefeOperaciones";
-
-import {
-  CrearSupervisorDTO,
-} from "../model/Supervisor";
-
-import {
-  CrearOperarioDTO,
-  EditarOperarioDTO,
-} from "../model/Operario";
-
-import {
-  CrearConjuntoDTO,
-  EditarConjuntoDTO,
-} from "../model/Conjunto";
+import { CrearConjuntoDTO, EditarConjuntoDTO } from "../model/Conjunto";
 
 import {
   CrearMaquinariaDTO,
@@ -42,10 +31,9 @@ import {
   toMaquinariaPublica,
 } from "../model/Maquinaria";
 
-import {
-  CrearTareaDTO,
-  EditarTareaDTO,
-} from "../model/Tarea";
+import { CrearTareaDTO, EditarTareaDTO } from "../model/Tarea";
+
+import { CrearInsumoDTO, insumoPublicSelect } from "../model/Insumo";
 
 import { z } from "zod";
 
@@ -68,12 +56,32 @@ const EntregarMaquinariaDTO = z.object({
 export class GerenteService {
   constructor(private prisma: PrismaClient) {}
 
+  /* ===================== EMPRESA ===================== */
+
+  async crearEmpresa(payload: unknown) {
+    const dto = z.object({ nombre: z.string().min(3), nit: z.string().min(3) }).parse(payload);
+
+    const existe = await this.prisma.empresa.findUnique({ where: { nit: dto.nit } });
+    if (existe) throw new Error("Ya existe una empresa con este NIT.");
+
+    return this.prisma.empresa.create({ data: { nombre: dto.nombre, nit: dto.nit } });
+  }
+
+  async actualizarLimiteHorasEmpresa(limiteHorasSemana: number) {
+    const empresa = await this.prisma.empresa.findFirst();
+    if (!empresa) throw new Error("No hay empresa registrada.");
+    return this.prisma.empresa.update({
+      where: { nit: empresa.nit },
+      data: { limiteHorasSemana },
+      select: { nit: true, limiteHorasSemana: true },
+    });
+  }
+
   /* ===================== USUARIOS & ROLES ===================== */
 
   async crearUsuario(payload: unknown) {
     const dto = CrearUsuarioDTO.parse(payload);
 
-    // unicidad por cédula y correo
     const [existeId, existeCorreo] = await Promise.all([
       this.prisma.usuario.findUnique({ where: { id: dto.id } }),
       this.prisma.usuario.findUnique({ where: { correo: dto.correo } }),
@@ -84,11 +92,7 @@ export class GerenteService {
     const hash = await bcrypt.hash(dto.contrasena, 10);
 
     const creado = await this.prisma.usuario.create({
-      data: {
-        ...dto,
-        contrasena: hash,
-        // telefono ya viene como bigint por el DTO (z.coerce.bigint())
-      },
+      data: { ...dto, contrasena: hash },
       select: usuarioPublicSelect,
     });
 
@@ -98,7 +102,6 @@ export class GerenteService {
   async editarUsuario(id: number, payload: unknown) {
     const dto = EditarUsuarioDTO.parse(payload);
 
-    // Validar cambio de correo
     if (dto.correo) {
       const otro = await this.prisma.usuario.findUnique({ where: { correo: dto.correo } });
       if (otro && (otro as any).id !== id) throw new Error("EMAIL_YA_REGISTRADO");
@@ -132,16 +135,13 @@ export class GerenteService {
     if (usuario.rol !== Rol.gerente) throw new Error("El usuario no tiene rol 'gerente'.");
 
     return this.prisma.gerente.create({
-      data: {
-        id: dto.id,
-        empresaId: dto.empresaId!,
-      },
+      data: { id: dto.id, empresaId: dto.empresaId! },
       include: { usuario: true, empresa: true },
     });
   }
 
   async asignarAdministrador(payload: unknown) {
-    const dto = CrearAdministradorDTO.parse(payload); // solo { id }
+    const dto = CrearAdministradorDTO.parse(payload);
     const usuario = await this.prisma.usuario.findUnique({ where: { id: dto.id } });
     if (!usuario) throw new Error("❌ Usuario no encontrado.");
     if (usuario.rol !== Rol.administrador) throw new Error("El usuario no tiene rol 'administrador'.");
@@ -153,7 +153,7 @@ export class GerenteService {
   }
 
   async asignarJefeOperaciones(payload: unknown) {
-    const dto = CrearJefeOperacionesDTO.parse(payload); // { id, empresaId }
+    const dto = CrearJefeOperacionesDTO.parse(payload);
 
     const [empresa, usuario] = await Promise.all([
       this.prisma.empresa.findUnique({ where: { nit: dto.empresaId } }),
@@ -161,7 +161,8 @@ export class GerenteService {
     ]);
     if (!empresa) throw new Error("❌ Empresa no encontrada con ese NIT.");
     if (!usuario) throw new Error("❌ Usuario no encontrado.");
-    if (usuario.rol !== Rol.jefe_operaciones) throw new Error("El usuario no tiene rol 'jefe_operaciones'.");
+    if (usuario.rol !== Rol.jefe_operaciones)
+      throw new Error("El usuario no tiene rol 'jefe_operaciones'.");
 
     return this.prisma.jefeOperaciones.create({
       data: { id: dto.id, empresaId: dto.empresaId },
@@ -170,7 +171,7 @@ export class GerenteService {
   }
 
   async asignarSupervisor(payload: unknown) {
-    const dto = CrearSupervisorDTO.parse(payload); // { id, empresaId }
+    const dto = CrearSupervisorDTO.parse(payload);
     const [empresa, usuario] = await Promise.all([
       this.prisma.empresa.findUnique({ where: { nit: dto.empresaId } }),
       this.prisma.usuario.findUnique({ where: { id: dto.id } }),
@@ -186,7 +187,7 @@ export class GerenteService {
   }
 
   async asignarOperario(payload: unknown) {
-    const dto = CrearOperarioDTO.parse(payload); // { id, funciones[], ... fechaIngreso, empresaId }
+    const dto = CrearOperarioDTO.parse(payload);
 
     const [empresa, usuario] = await Promise.all([
       this.prisma.empresa.findUnique({ where: { nit: dto.empresaId } }),
@@ -219,88 +220,82 @@ export class GerenteService {
   /* ===================== CONJUNTOS ===================== */
 
   async crearConjunto(payload: unknown) {
-  const dto = CrearConjuntoDTO.parse(payload);
+    const dto = CrearConjuntoDTO.parse(payload);
 
-  const creado = await this.prisma.conjunto.create({
-    data: {
-      nit: dto.nit,
-      nombre: dto.nombre,
-      direccion: dto.direccion,
-      correo: dto.correo,
-      empresaId: dto.empresaId ?? "901191875-4",
-      administradorId: dto.administradorId ?? null,
+    const creado = await this.prisma.conjunto.create({
+      data: {
+        nit: dto.nit,
+        nombre: dto.nombre,
+        direccion: dto.direccion,
+        correo: dto.correo,
+        empresaId: dto.empresaId ?? null,
+        administradorId: dto.administradorId ?? null,
+        fechaInicioContrato: dto.fechaInicioContrato ?? null,
+        fechaFinContrato: dto.fechaFinContrato ?? null,
+        activo: dto.activo,
+        tipoServicio: dto.tipoServicio as any,
+        valorMensual: dto.valorMensual != null ? new Prisma.Decimal(dto.valorMensual) : null,
+        consignasEspeciales: dto.consignasEspeciales,
+        valorAgregado: dto.valorAgregado,
+        horarios:
+          dto.horarios && dto.horarios.length
+            ? {
+                create: dto.horarios.map((h) => ({
+                  dia: h.dia,
+                  horaApertura: h.horaApertura,
+                  horaCierre: h.horaCierre,
+                })),
+              }
+            : undefined,
+      },
+    });
 
-      fechaInicioContrato: dto.fechaInicioContrato ?? null,
-      fechaFinContrato: dto.fechaFinContrato ?? null,
-      activo: dto.activo,
-      tipoServicio: dto.tipoServicio as any,
-      valorMensual: dto.valorMensual != null ? new Prisma.Decimal(dto.valorMensual) : null,
-      consignasEspeciales: dto.consignasEspeciales,
-      valorAgregado: dto.valorAgregado,
+    return creado;
+  }
 
-      // Horarios opcionales
-      horarios: dto.horarios && dto.horarios.length
-        ? {
-            create: dto.horarios.map(h => ({
+  async editarConjunto(conjuntoId: string, payload: unknown) {
+    const dto = EditarConjuntoDTO.parse(payload);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (dto.horarios) {
+        await tx.conjuntoHorario.deleteMany({ where: { conjuntoId } });
+        if (dto.horarios.length) {
+          await tx.conjuntoHorario.createMany({
+            data: dto.horarios.map((h) => ({
+              conjuntoId,
               dia: h.dia,
               horaApertura: h.horaApertura,
               horaCierre: h.horaCierre,
             })),
-          }
-        : undefined,
-    },
-  });
-
-  return creado;
-}
-
- async editarConjunto(conjuntoId: string, payload: unknown) {
-  const dto = EditarConjuntoDTO.parse(payload);
-
-  const updated = await this.prisma.$transaction(async (tx) => {
-    // Si llegan horarios, reescribimos el set (sencillo y consistente)
-    if (dto.horarios) {
-      await tx.conjuntoHorario.deleteMany({ where: { conjuntoId } });
-      if (dto.horarios.length) {
-        await tx.conjuntoHorario.createMany({
-          data: dto.horarios.map(h => ({
-            conjuntoId,
-            dia: h.dia,
-            horaApertura: h.horaApertura,
-            horaCierre: h.horaCierre,
-          })),
-        });
+          });
+        }
       }
-    }
 
-    const data: any = {
-      nombre: dto.nombre,
-      direccion: dto.direccion,
-      correo: dto.correo,
-      administradorId: dto.administradorId ?? undefined,
-      empresaId: dto.empresaId ?? undefined,
-      fechaInicioContrato: dto.fechaInicioContrato ?? undefined,
-      fechaFinContrato: dto.fechaFinContrato ?? undefined,
-      activo: dto.activo ?? undefined,
-      tipoServicio: dto.tipoServicio ?? undefined,
-      valorMensual:
-        dto.valorMensual === undefined
-          ? undefined
-          : (dto.valorMensual === null ? null : new Prisma.Decimal(dto.valorMensual)),
-      consignasEspeciales: dto.consignasEspeciales ?? undefined,
-      valorAgregado: dto.valorAgregado ?? undefined,
-      supervisorId: dto.supervisorId ?? undefined,
-      jefeOperacionesId: dto.jefeOperacionesId ?? undefined,
-    };
+      const data: any = {
+        nombre: dto.nombre,
+        direccion: dto.direccion,
+        correo: dto.correo,
+        administradorId: dto.administradorId ?? undefined,
+        empresaId: dto.empresaId ?? undefined,
+        fechaInicioContrato: dto.fechaInicioContrato ?? undefined,
+        fechaFinContrato: dto.fechaFinContrato ?? undefined,
+        activo: dto.activo ?? undefined,
+        tipoServicio: dto.tipoServicio ?? undefined,
+        valorMensual:
+          dto.valorMensual === undefined
+            ? undefined
+            : dto.valorMensual === null
+            ? null
+            : new Prisma.Decimal(dto.valorMensual),
+        consignasEspeciales: dto.consignasEspeciales ?? undefined,
+        valorAgregado: dto.valorAgregado ?? undefined,
+      };
 
-    return tx.conjunto.update({
-      where: { nit: conjuntoId },
-      data,
+      return tx.conjunto.update({ where: { nit: conjuntoId }, data });
     });
-  });
 
-  return updated;
-}
+    return updated;
+  }
 
   async asignarOperarioAConjunto(payload: unknown) {
     const dto = AsignarAConjuntoDTO.parse(payload);
@@ -332,11 +327,38 @@ export class GerenteService {
     }
 
     return this.prisma.inventarioInsumo.create({
+      data: { inventarioId: inventario.id, insumoId: dto.insumoId, cantidad: dto.cantidad },
+    });
+  }
+
+  /** Catálogo corporativo: empresaId = null (ajusta si usas catálogo por empresa) */
+  async agregarInsumoAlCatalogo(payload: unknown) {
+    const dto = CrearInsumoDTO.parse(payload);
+    const empresaId: string | null = null;
+
+    const existe = await this.prisma.insumo.findFirst({
+      where: { empresaId, nombre: dto.nombre, unidad: dto.unidad },
+      select: { id: true },
+    });
+    if (existe) throw new Error("🚫 Ya existe un insumo con ese nombre y unidad en el catálogo.");
+
+    return this.prisma.insumo.create({
       data: {
-        inventarioId: inventario.id,
-        insumoId: dto.insumoId,
-        cantidad: dto.cantidad,
+        nombre: dto.nombre,
+        unidad: dto.unidad,
+        empresaId,
+        categoria: dto.categoria,
+        umbralBajo: dto.umbralGlobalMinimo ?? null,
       },
+      select: insumoPublicSelect,
+    });
+  }
+
+  async listarCatalogo() {
+    const empresaId: string | null = null;
+    return this.prisma.insumo.findMany({
+      where: { empresaId },
+      select: insumoPublicSelect,
     });
   }
 
@@ -377,14 +399,9 @@ export class GerenteService {
 
   async editarMaquinaria(maquinariaId: number, payload: unknown) {
     const dto = EditarMaquinariaDTO.parse(payload);
-
-    const data: any = {
-      ...dto,
-    };
-
     const actualizado = await this.prisma.maquinaria.update({
       where: { id: maquinariaId },
-      data,
+      data: { ...dto },
       select: maquinariaPublicSelect,
     });
     return toMaquinariaPublica(actualizado);
@@ -402,22 +419,50 @@ export class GerenteService {
         duracionHoras: dto.duracionHoras,
         estado: "ASIGNADA",
         evidencias: dto.evidencias ?? [],
-        insumosUsados: dto.insumosUsados ?? [], // JSON array
-        operarioId: dto.operarioId,
+        insumosUsados: dto.insumosUsados ?? [],
         ubicacionId: dto.ubicacionId,
         elementoId: dto.elementoId,
         conjuntoId: dto.conjuntoId ?? null,
         supervisorId: dto.supervisorId ?? null,
+        ...(dto.operariosIds?.length
+          ? { operarios: { connect: dto.operariosIds.map((id) => ({ id })) } }
+          : dto.operarioId
+          ? { operarios: { connect: { id: dto.operarioId } } }
+          : {}),
       },
     });
   }
 
   async editarTarea(tareaId: number, payload: unknown) {
     const dto = EditarTareaDTO.parse(payload);
-    return this.prisma.tarea.update({
-      where: { id: tareaId },
-      data: dto,
-    });
+
+    // Usar TareaUpdateInput (no Unchecked) para poder actualizar relaciones (operarios)
+    const data: Prisma.TareaUpdateInput = {};
+
+    if (dto.descripcion !== undefined) data.descripcion = dto.descripcion;
+    if (dto.fechaInicio !== undefined) data.fechaInicio = dto.fechaInicio as any;
+    if (dto.fechaFin !== undefined) data.fechaFin = dto.fechaFin as any;
+    if (dto.duracionHoras !== undefined) data.duracionHoras = dto.duracionHoras;
+    if (dto.estado !== undefined) data.estado = dto.estado as any;
+    if (dto.evidencias !== undefined) data.evidencias = dto.evidencias as any;
+    if (dto.insumosUsados !== undefined) data.insumosUsados = dto.insumosUsados as any;
+    if (dto.observacionesRechazo !== undefined) data.observacionesRechazo = dto.observacionesRechazo;
+
+    if (dto.supervisorId !== undefined) {
+      data.supervisor = dto.supervisorId === null ? { disconnect: true } : { connect: { id: dto.supervisorId } };
+    }
+    if (dto.ubicacionId !== undefined) data.ubicacion = { connect: { id: dto.ubicacionId } };
+    if (dto.elementoId !== undefined) data.elemento = { connect: { id: dto.elementoId } };
+    if (dto.conjuntoId !== undefined) {
+      data.conjunto = dto.conjuntoId === null ? { disconnect: true } : { connect: { nit: dto.conjuntoId } };
+    }
+
+    // reemplazar asignación de operarios si llega el arreglo
+    if (dto.operariosIds !== undefined) {
+      data.operarios = { set: dto.operariosIds.map((id) => ({ id })) };
+    }
+
+    return this.prisma.tarea.update({ where: { id: tareaId }, data });
   }
 
   /* ===================== ELIMINACIONES con REGLAS ===================== */
@@ -429,13 +474,10 @@ export class GerenteService {
     if (asignaciones.length > 0) {
       throw new Error("❌ El administrador tiene conjuntos asignados.");
     }
-    // Eliminamos el Usuario (por cascade caerá el Administrador)
     await this.prisma.usuario.delete({ where: { id: adminId } });
   }
 
-  async reemplazarAdminEnVariosConjuntos(
-    reemplazos: { conjuntoId: string; nuevoAdminId: number }[]
-  ) {
+  async reemplazarAdminEnVariosConjuntos(reemplazos: { conjuntoId: string; nuevoAdminId: number }[]) {
     if (reemplazos.length === 0) return;
     for (const { conjuntoId, nuevoAdminId } of reemplazos) {
       await this.prisma.conjunto.update({
@@ -446,11 +488,13 @@ export class GerenteService {
   }
 
   async eliminarOperario(operarioId: number) {
+    // Con relación M:N, revisar tareas pendientes donde el operario esté asignado
     const tareasPendientes = await this.prisma.tarea.findMany({
       where: {
-        operarioId,
+        operarios: { some: { id: operarioId } },
         estado: { in: ["ASIGNADA", "EN_PROCESO", "PENDIENTE_APROBACION"] },
       },
+      select: { id: true },
     });
     if (tareasPendientes.length > 0) {
       throw new Error("❌ El operario tiene tareas pendientes.");
@@ -469,8 +513,9 @@ export class GerenteService {
           conjuntoId,
           estado: { in: ["ASIGNADA", "EN_PROCESO", "PENDIENTE_APROBACION"] },
         },
+        select: { id: true },
       }),
-      this.prisma.maquinaria.findMany({ where: { conjuntoId, disponible: false } }),
+      this.prisma.maquinaria.findMany({ where: { conjuntoId, disponible: false }, select: { id: true } }),
     ]);
 
     if (tareasPendientes.length > 0) throw new Error("❌ El conjunto tiene tareas pendientes.");
@@ -506,8 +551,6 @@ export class GerenteService {
     const data: any = {};
     if (dto.funciones) data.funciones = dto.funciones as TipoFuncion[];
 
-    // nombre/correo pertenecen a Usuario (no a Operario)
-    // si deseas editarlos aquí, debes tocar Usuario:
     if ((payload as any).nombre || (payload as any).correo) {
       const uData: any = {};
       if ((payload as any).nombre) uData.nombre = (payload as any).nombre;

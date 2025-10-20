@@ -1,27 +1,27 @@
-// src/routes/conjuntos.ts
 import { Router } from "express";
+import { PrismaClient } from "../generated/prisma";
 import { ConjuntoController } from "../controller/ConjuntoController";
 
-const router = Router();
-const controller = new ConjuntoController();
+const prisma = new PrismaClient();
+const c = new ConjuntoController(prisma);
+export const conjuntoRouter = Router();
 
-// Asignaciones
-router.post("/:nit/operarios", controller.asignarOperario);
-router.put("/:nit/administrador", controller.asignarAdministrador);
-router.delete("/:nit/administrador", controller.eliminarAdministrador);
+conjuntoRouter.put("/conjuntos/:nit/activo", c.setActivo);
 
-// Maquinaria
-router.post("/:nit/maquinaria", controller.agregarMaquinaria);
-router.post("/:nit/maquinaria/entregar", controller.entregarMaquinaria);
+conjuntoRouter.post("/conjuntos/:nit/operarios", c.asignarOperario);
+conjuntoRouter.put("/conjuntos/:nit/administrador", c.asignarAdministrador);
+conjuntoRouter.delete("/conjuntos/:nit/administrador", c.eliminarAdministrador);
 
-// Ubicaciones
-router.post("/:nit/ubicaciones", controller.agregarUbicacion);
-router.get("/:nit/ubicaciones/buscar", controller.buscarUbicacion);
+conjuntoRouter.post("/conjuntos/:nit/maquinaria", c.agregarMaquinaria);
+conjuntoRouter.post("/conjuntos/:nit/maquinaria/entregar", c.entregarMaquinaria);
 
-// Cronograma / Tareas
-router.post("/:nit/cronograma/tareas", controller.agregarTareaACronograma);
-router.get("/:nit/tareas/por-fecha", controller.tareasPorFecha);
-router.get("/:nit/tareas/por-operario/:operarioId", controller.tareasPorOperario);
-router.get("/:nit/tareas/por-ubicacion", controller.tareasPorUbicacion);
+conjuntoRouter.post("/conjuntos/:nit/ubicaciones", c.agregarUbicacion);
+conjuntoRouter.get("/conjuntos/:nit/ubicaciones/buscar", c.buscarUbicacion);
 
-export default router;
+conjuntoRouter.post("/conjuntos/:nit/cronograma/tareas", c.agregarTareaACronograma);
+conjuntoRouter.get("/conjuntos/:nit/tareas/por-fecha", c.tareasPorFecha);
+conjuntoRouter.get("/conjuntos/:nit/tareas/por-operario/:operarioId", c.tareasPorOperario);
+conjuntoRouter.get("/conjuntos/:nit/tareas/por-ubicacion", c.tareasPorUbicacion);
+conjuntoRouter.get("/conjuntos/:nit/tareas/en-rango", c.tareasEnRango);
+conjuntoRouter.get("/conjuntos/:nit/tareas/filtrar", c.tareasPorFiltro);
+conjuntoRouter.get("/conjuntos/:nit/cronograma/eventos-calendario", c.exportarEventosCalendario);

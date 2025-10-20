@@ -299,7 +299,7 @@ model Operario {
   id                        Int                   @id
   usuario                   Usuario               @relation(fields: [id], references: [id], onDelete: Cascade)
   funciones                 TipoFuncion[]
-  tareas                    Tarea[]
+  tareas    Tarea[]  @relation("TareaOperarios")
   conjuntos                 Conjunto[]            @relation("OperarioConjuntos")
   cursoSalvamentoAcuatico   Boolean
   urlEvidenciaSalvamento    String?
@@ -375,8 +375,7 @@ model Tarea {
   fechaVerificacion    DateTime?
 
   // Relaciones existentes
-  operario     Operario?   @relation(fields: [operarioId], references: [id])
-  operarioId   Int?
+  operarios  Operario[] @relation("TareaOperarios")
   supervisor   Supervisor? @relation(fields: [supervisorId], references: [id])
   supervisorId Int?
   ubicacion    Ubicacion   @relation(fields: [ubicacionId], references: [id])
@@ -497,7 +496,8 @@ model Insumo {
   id       Int    @id @default(autoincrement())
   nombre   String
   unidad   String
-  categoria CategoriaInsumo @default(LIMPIEZA)
+  categoria CategoriaInsumo
+  umbralBajo  Int?
 
   inventarios         InventarioInsumo[]
   consumos            ConsumoInsumo[]

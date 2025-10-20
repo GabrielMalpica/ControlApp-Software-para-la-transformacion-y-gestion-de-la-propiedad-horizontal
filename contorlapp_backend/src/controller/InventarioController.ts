@@ -23,8 +23,8 @@ const UmbralQuery = z.object({
 
 // Resolver inventarioId (acepta header x-inventario-id, query ?inventarioId=, o :inventarioId)
 function resolveInventarioId(req: any): number {
-  const headerId = req.header("x-inventario-id");
-  const queryId = typeof req.query.inventarioId === "string" ? req.query.inventarioId : undefined;
+  const headerId = req.header?.("x-inventario-id");
+  const queryId = typeof req.query?.inventarioId === "string" ? req.query.inventarioId : undefined;
   const paramId = req.params?.inventarioId;
   const parsed = InventarioIdParam.safeParse({ inventarioId: paramId ?? headerId ?? queryId });
   if (!parsed.success) {
@@ -36,10 +36,7 @@ function resolveInventarioId(req: any): number {
 }
 
 export class InventarioController {
-  private prisma: PrismaClient;
-  constructor(prisma?: PrismaClient) {
-    this.prisma = prisma ?? new PrismaClient();
-  }
+  constructor(private prisma: PrismaClient) {}
 
   // POST /inventarios/:inventarioId/insumos
   agregarInsumo: RequestHandler = async (req, res, next) => {
@@ -58,7 +55,31 @@ export class InventarioController {
       const inventarioId = resolveInventarioId(req);
       const service = new InventarioService(this.prisma, inventarioId);
       const items = await service.listarInsumos();
-      res.json(items);
+      res.json(items); // devuelve array<string> (tu servicio actual)
+    } catch (err) { next(err); }
+  };
+
+  // GET /inventarios/:inventarioId/insumos-detalle
+  // (opcional) versión para UI con objetos en vez de strings
+  listarInsumosDetallado: RequestHandler = async (req, res, next) => {
+    try {
+      const inventarioId = resolveInventarioId(req);
+      // consulta directa a Prisma para info completa
+      const rows = await this.prisma.inventarioInsumo.findMany({
+        where: { inventarioId },
+        include: { insumo: true },
+        orderBy: [{ insumo: { nombre: "asc" } }],
+      });
+      const data = rows.map(r => ({
+        inventarioInsumoId: r.id,
+        insumoId: r.insumoId,
+        nombre: r.insumo.nombre,
+        unidad: r.insumo.unidad,
+        categoria: r.insumo.categoria ?? null,
+        umbralBajo: r.insumo.umbralBajo ?? null,
+        cantidad: r.cantidad,
+      }));
+      res.json(data);
     } catch (err) { next(err); }
   };
 
@@ -104,7 +125,32 @@ export class InventarioController {
       const { umbral } = UmbralQuery.parse(req.query);
       const service = new InventarioService(this.prisma, inventarioId);
       const list = await service.listarInsumosBajos(umbral !== undefined ? { umbral } : {});
-      res.json(list);
+      res.json(list); // tu servicio devuelve array<string>
+    } catch (err) { next(err); }
+  };
+
+  // GET /inventarios/:inventarioId/insumos-bajos/detalle?umbral=5
+  // (opcional) útil para UI si luego mejoras el service para usar Insumo.umbralBajo
+  listarInsumosBajosDetallado: RequestHandler = async (req, res, next) => {
+    try {
+      const inventarioId = resolveInventarioId(req);
+      const { umbral } = UmbralQuery.parse(req.query);
+      // consulta detalle y aplica umbral simple (como tu service actual)
+      const rows = await this.prisma.inventarioInsumo.findMany({
+        where: { inventarioId },
+        include: { insumo: true },
+      });
+      const th = umbral ?? 5;
+      const bajos = rows
+        .filter(r => r.cantidad <= th)
+        .map(r => ({
+          insumoId: r.insumoId,
+          nombre: r.insumo.nombre,
+          unidad: r.insumo.unidad,
+          cantidad: r.cantidad,
+          umbralUsado: th,
+        }));
+      res.json(bajos);
     } catch (err) { next(err); }
   };
 }
