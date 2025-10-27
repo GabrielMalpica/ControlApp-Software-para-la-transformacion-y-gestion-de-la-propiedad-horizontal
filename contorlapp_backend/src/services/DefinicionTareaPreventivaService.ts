@@ -523,3 +523,4 @@ function inicioSemana(fecha: Date): Date {
   const diff = d.getDate() - day + (day === 0 ? -6 : 1); // lunes
   return new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
 }
+
