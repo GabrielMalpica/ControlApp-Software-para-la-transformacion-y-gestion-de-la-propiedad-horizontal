@@ -17,4 +17,10 @@ router.post("/conjuntos/:nit/cronograma/tareas/filtrar", controller.tareasPorFil
 // Export para calendarios (FullCalendar, etc.)
 router.get("/conjuntos/:nit/cronograma/eventos", controller.exportarComoEventosCalendario);
 
+
+router.get("/:nit/cronograma", controller.cronogramaMensual);
+
+router.get("/:nit/operarios/sugerir", controller.sugerirOperarios);
+
+
 export default router;

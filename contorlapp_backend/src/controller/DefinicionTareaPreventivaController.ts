@@ -74,4 +74,43 @@ export class DefinicionTareaPreventivaController {
     const resultado = await svc.generarCronograma(dto);
     res.status(201).json(resultado);
   };
+
+  // POST /conjuntos/:nit/preventivas/publicar?anio=&mes=&consolidar=true|false
+  publicarCronograma = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const anio = Number(req.query.anio);
+    const mes = Number(req.query.mes);
+    const consolidar = String(req.query.consolidar ?? "false") === "true";
+    if (
+      !Number.isFinite(anio) ||
+      !Number.isFinite(mes) ||
+      mes < 1 ||
+      mes > 12
+    ) {
+      res.status(400).json({ error: "Parámetros anio/mes inválidos." });
+      return;
+    }
+    const svc = new DefinicionTareaPreventivaService(this.prisma);
+    const out = await svc.publicarCronograma({
+      conjuntoId,
+      anio,
+      mes,
+      consolidar,
+    });
+    res.json(out);
+  };
+
+  /** PATCH /conjuntos/:nit/preventivas/borrador/tareas/:id */
+  editarBorrador = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const tareaId = Number(req.params.id);
+    const svc = new DefinicionTareaPreventivaService(this.prisma);
+
+    const out = await svc.editarTareaBorrador({
+      conjuntoId,
+      tareaId,
+      ...req.body, // fechaInicio, fechaFin, duracionHoras, operariosIds
+    });
+    res.json(out);
+  };
 }

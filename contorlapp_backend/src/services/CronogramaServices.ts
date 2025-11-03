@@ -15,6 +15,19 @@ const RangoFechasDTO = z
     path: ["fechaFin"],
   });
 
+const CronoMesDTO = z.object({
+  anio: z.number().int().min(2000).max(2100),
+  mes: z.number().int().min(1).max(12),
+  borrador: z.boolean().optional(), // undefined = todos, true = solo borrador, false = solo operativo
+});
+
+const SugerirDTO = z.object({
+  fechaInicio: z.coerce.date(),
+  fechaFin: z.coerce.date(),
+  max: z.number().int().min(1).max(20).optional().default(5),
+  requiereFuncion: z.string().optional(),
+});
+
 const TareasPorFiltroDTO = z
   .object({
     operarioId: z.number().int().positive().optional(),
@@ -55,6 +68,24 @@ export class CronogramaService {
   constructor(private prisma: PrismaClient, private conjuntoId: string) {}
 
   /* ==================== Consultas básicas ==================== */
+
+  async cronogramaMensual(payload: unknown) {
+    const { anio, mes, borrador } = CronoMesDTO.parse(payload);
+    return this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        periodoAnio: anio,
+        periodoMes: mes,
+        borrador: borrador === undefined ? undefined : borrador,
+      },
+      include: {
+        operarios: { include: { usuario: true } },
+        ubicacion: true,
+        elemento: true,
+      },
+      orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
+    });
+  }
 
   async tareasPorOperario(payload: unknown) {
     const { operarioId } = OperarioIdDTO.parse(payload);
@@ -135,8 +166,24 @@ export class CronogramaService {
 
     if (f.fechaExacta) {
       const d0 = new Date(f.fechaExacta);
-      fechaInicio = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate(), 0, 0, 0, 0);
-      fechaFin = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate(), 23, 59, 59, 999);
+      fechaInicio = new Date(
+        d0.getFullYear(),
+        d0.getMonth(),
+        d0.getDate(),
+        0,
+        0,
+        0,
+        0
+      );
+      fechaFin = new Date(
+        d0.getFullYear(),
+        d0.getMonth(),
+        d0.getDate(),
+        23,
+        59,
+        59,
+        999
+      );
     } else {
       fechaInicio = f.fechaInicio ?? undefined;
       fechaFin = f.fechaFin ?? undefined;
@@ -297,6 +344,70 @@ export class CronogramaService {
     return dias;
   }
 
+  async sugerirOperarios(payload: unknown) {
+    const { fechaInicio, fechaFin, max, requiereFuncion } =
+      SugerirDTO.parse(payload);
+
+    // 1) Traer operarios del conjunto
+    const operarios = await this.prisma.operario.findMany({
+      where: {
+        conjuntos: { some: { nit: this.conjuntoId } },
+        ...(requiereFuncion
+          ? { funciones: { has: requiereFuncion as any } }
+          : {}),
+      },
+      include: { usuario: true },
+    });
+    if (operarios.length === 0) return [];
+
+    // 2) Calcular horas ya asignadas en esa semana y si tienen solape en el intervalo
+    // (en product podrías optimizar con agregaciones)
+    const out: Array<{
+      id: number;
+      nombre: string;
+      horasSemana: number;
+      solapa: boolean;
+    }> = [];
+    for (const op of operarios) {
+      const lunes = mondayOfWeek(fechaInicio);
+      const domingo = new Date(lunes);
+      domingo.setDate(lunes.getDate() + 6);
+
+      const tareasSemana = await this.prisma.tarea.findMany({
+        where: {
+          conjuntoId: this.conjuntoId,
+          operarios: { some: { id: op.id } },
+          fechaFin: { gte: lunes },
+          fechaInicio: { lte: domingo },
+        },
+        select: { fechaInicio: true, fechaFin: true, duracionHoras: true },
+      });
+
+      const horas = tareasSemana.reduce(
+        (acc, t) => acc + (t.duracionHoras ?? 0),
+        0
+      );
+      const solapa = tareasSemana.some(
+        (t) => t.fechaInicio <= fechaFin && fechaInicio <= t.fechaFin
+      );
+
+      out.push({
+        id: op.id,
+        nombre: op.usuario.nombre,
+        horasSemana: horas,
+        solapa,
+      });
+    }
+
+    // 3) Ranking: sin solape primero, menos horas primero
+    out.sort((a, b) => {
+      if (a.solapa !== b.solapa) return a.solapa ? 1 : -1;
+      return a.horasSemana - b.horasSemana;
+    });
+
+    return out.slice(0, max);
+  }
+
   /* ==================== Choques y utilidades ==================== */
 
   /** Devuelve las tareas del operario que se pisan entre sí dentro del rango dado (M:N) */
@@ -374,10 +485,11 @@ export class CronogramaService {
     });
 
     return tareas.map((t) => {
-      const nombresOperarios = t.operarios
-        .map((o) => o.usuario?.nombre)
-        .filter(Boolean)
-        .join(", ") || "Sin asignar";
+      const nombresOperarios =
+        t.operarios
+          .map((o) => o.usuario?.nombre)
+          .filter(Boolean)
+          .join(", ") || "Sin asignar";
 
       return {
         title: `${t.descripcion} - ${nombresOperarios}`,

@@ -27,4 +27,8 @@ router.post(
   asyncHandler(controller.generarCronogramaMensual)
 );
 
+router.post("/:nit/preventivas/publicar",   asyncHandler(controller.publicarCronograma));
+
+router.patch("/conjuntos/:nit/preventivas/borrador/tareas/:id", asyncHandler(controller.editarBorrador));
+
 export default router;

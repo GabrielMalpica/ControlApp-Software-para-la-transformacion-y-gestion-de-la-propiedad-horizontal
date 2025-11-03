@@ -15,8 +15,18 @@ import {
   calcularHorasEstimadas,
 } from "../model/DefinicionTareaPreventiva";
 import { v4 as uuid } from "uuid";
+import { z } from "zod";
 
 type HHmm = `${string}:${string}`;
+
+const EditarBorradorDTO = z.object({
+  conjuntoId: z.string().min(3),
+  tareaId: z.number().int().positive(),
+  fechaInicio: z.coerce.date().optional(),
+  fechaFin: z.coerce.date().optional(),
+  duracionHoras: z.number().int().min(1).optional(),
+  operariosIds: z.array(z.number().int().positive()).optional(),
+});
 
 export class DefinicionTareaPreventivaService {
   constructor(private prisma: PrismaClient) {}
@@ -210,6 +220,158 @@ export class DefinicionTareaPreventivaService {
     return { creadas };
   }
 
+  async publicarCronograma(params: {
+    conjuntoId: string;
+    anio: number;
+    mes: number;
+    consolidar?: boolean; // default=false
+  }) {
+    const { conjuntoId, anio, mes, consolidar = false } = params;
+
+    // 1) Traer todo el borrador del periodo (preventivas)
+    const borradores = await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId,
+        borrador: true,
+        periodoAnio: anio,
+        periodoMes: mes,
+        tipo: TipoTarea.PREVENTIVA,
+      },
+      include: { operarios: true }, // M:N
+      orderBy: [{ grupoPlanId: "asc" }, { bloqueIndex: "asc" }, { id: "asc" }],
+    });
+
+    if (borradores.length === 0) {
+      return { publicadas: 0, gruposConsolidados: 0, publicadasSimples: 0 };
+    }
+
+    // 2) Validación de solapes por operario (en borrador)
+    const porOperario: Record<number, { i: Date; f: Date }[]> = {};
+    for (const t of borradores) {
+      for (const op of t.operarios) {
+        if (!porOperario[op.id]) porOperario[op.id] = [];
+        porOperario[op.id].push({ i: t.fechaInicio, f: t.fechaFin });
+      }
+    }
+    for (const opId of Object.keys(porOperario)) {
+      const arr = porOperario[+opId].sort((a, b) => +a.i - +b.i);
+      for (let i = 1; i < arr.length; i++) {
+        const prev = arr[i - 1],
+          cur = arr[i];
+        const haySolape = prev.i <= cur.f && cur.i <= prev.f;
+        if (haySolape) {
+          throw new Error(
+            `Solape detectado para operario ${opId} en el borrador del período.`
+          );
+        }
+      }
+    }
+
+    // 3A) Publicación simple (sin consolidar): pasar todo a borrador=false
+    if (!consolidar) {
+      const res = await this.prisma.tarea.updateMany({
+        where: {
+          conjuntoId,
+          borrador: true,
+          periodoAnio: anio,
+          periodoMes: mes,
+          tipo: TipoTarea.PREVENTIVA,
+        },
+        data: { borrador: false },
+      });
+      return {
+        publicadas: res.count,
+        gruposConsolidados: 0,
+        publicadasSimples: res.count,
+      };
+    }
+
+    // 3B) Consolidación por grupoPlanId
+    const grupos = new Map<string, typeof borradores>();
+    for (const t of borradores) {
+      if (!t.grupoPlanId) continue; // por seguridad
+      if (!grupos.has(t.grupoPlanId)) grupos.set(t.grupoPlanId, []);
+      grupos.get(t.grupoPlanId)!.push(t);
+    }
+
+    let gruposConsolidados = 0;
+    let publicadasSimples = 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      // Consolidar grupos
+      for (const [, bloques] of grupos) {
+        if (!bloques.length) continue;
+
+        const base = bloques[0];
+        const fechaInicio = new Date(
+          Math.min(...bloques.map((b) => +b.fechaInicio))
+        );
+        const fechaFin = new Date(Math.max(...bloques.map((b) => +b.fechaFin)));
+        const duracionTotal = bloques.reduce(
+          (acc, b) => acc + (b.duracionHoras ?? 0),
+          0
+        );
+
+        const operariosIds = Array.from(
+          new Set(bloques.flatMap((b) => b.operarios.map((o) => o.id)))
+        );
+
+        await tx.tarea.create({
+          data: {
+            descripcion: base.descripcion,
+            fechaInicio,
+            fechaFin,
+            duracionHoras: duracionTotal,
+            estado: EstadoTarea.ASIGNADA,
+            tipo: TipoTarea.PREVENTIVA,
+            frecuencia: base.frecuencia,
+            borrador: false,
+            periodoAnio: base.periodoAnio,
+            periodoMes: base.periodoMes,
+
+            ubicacionId: base.ubicacionId,
+            elementoId: base.elementoId,
+            conjuntoId: base.conjuntoId!,
+            supervisorId: base.supervisorId ?? null,
+
+            tiempoEstimadoHoras: base.tiempoEstimadoHoras ?? null,
+            insumoPrincipalId: base.insumoPrincipalId ?? null,
+            consumoPrincipalPorUnidad: base.consumoPrincipalPorUnidad ?? null,
+            consumoTotalEstimado: base.consumoTotalEstimado ?? null,
+            insumosPlanJson: base.insumosPlanJson ?? undefined,
+            maquinariaPlanJson: base.maquinariaPlanJson ?? undefined,
+
+            operarios: operariosIds.length
+              ? { connect: operariosIds.map((id) => ({ id })) }
+              : undefined,
+          },
+        });
+
+        await tx.tarea.deleteMany({
+          where: { id: { in: bloques.map((b) => b.id) } },
+        });
+
+        gruposConsolidados++;
+      }
+
+      // Publicar (sin consolidar) las que NO tienen grupoPlanId
+      const idsSinGrupo = borradores
+        .filter((t) => !t.grupoPlanId)
+        .map((t) => t.id);
+      if (idsSinGrupo.length) {
+        const res = await tx.tarea.updateMany({
+          where: { id: { in: idsSinGrupo } },
+          data: { borrador: false },
+        });
+        publicadasSimples = res.count;
+      }
+    });
+
+    // total publicadas = consolidadas (1 por grupo) + simples sin grupo
+    const publicadas = gruposConsolidados + publicadasSimples;
+    return { publicadas, gruposConsolidados, publicadasSimples };
+  }
+
   /**
    * Genera tareas PREVENTIVAS en modo "borrador" para un conjunto y mes.
    * - Respeta frecuencia de cada definición activa.
@@ -401,6 +563,37 @@ export class DefinicionTareaPreventivaService {
 
     return creadas;
   }
+
+  async editarTareaBorrador(payload: unknown) {
+    const dto = EditarBorradorDTO.parse(payload);
+
+    const t = await this.prisma.tarea.findUnique({
+      where: { id: dto.tareaId },
+      select: { id: true, borrador: true, conjuntoId: true },
+    });
+    if (!t || !t.borrador || t.conjuntoId !== dto.conjuntoId) {
+      throw new Error(
+        "Tarea no existe, no es borrador o no pertenece a este conjunto."
+      );
+    }
+    if (dto.fechaInicio && dto.fechaFin && dto.fechaFin < dto.fechaInicio) {
+      throw new Error("fechaFin debe ser >= fechaInicio");
+    }
+
+    return this.prisma.tarea.update({
+      where: { id: dto.tareaId },
+      data: {
+        fechaInicio: dto.fechaInicio ?? undefined,
+        fechaFin: dto.fechaFin ?? undefined,
+        duracionHoras: dto.duracionHoras ?? undefined,
+        operarios:
+          dto.operariosIds !== undefined
+            ? { set: dto.operariosIds.map((id) => ({ id })) }
+            : undefined,
+      },
+      include: { operarios: { select: { id: true } } },
+    });
+  }
 }
 
 /* ============== Helpers de tiempo/agenda ============== */
@@ -523,4 +716,3 @@ function inicioSemana(fecha: Date): Date {
   const diff = d.getDate() - day + (day === 0 ? -6 : 1); // lunes
   return new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
 }
-

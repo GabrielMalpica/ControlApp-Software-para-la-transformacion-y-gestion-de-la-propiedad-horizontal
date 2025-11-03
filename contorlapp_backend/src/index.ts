@@ -1,6 +1,7 @@
 // src/index.ts
 import express, { Request, Response, NextFunction } from "express";
 import { PrismaClient } from "./generated/prisma";
+import "./utils/cron";
 
 const app = express();
 app.use(express.json());

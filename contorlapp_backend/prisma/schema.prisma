@@ -299,7 +299,7 @@ model Operario {
   id                        Int                   @id
   usuario                   Usuario               @relation(fields: [id], references: [id], onDelete: Cascade)
   funciones                 TipoFuncion[]
-  tareas    Tarea[]  @relation("TareaOperarios")
+  tareas                    Tarea[]               @relation("TareaOperarios")
   conjuntos                 Conjunto[]            @relation("OperarioConjuntos")
   cursoSalvamentoAcuatico   Boolean
   urlEvidenciaSalvamento    String?
@@ -357,6 +357,15 @@ model DefinicionTareaPreventiva {
   activo        Boolean  @default(true) // puedes desactivar sin borrar
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
+
+  rendimientoId Int?
+  rendimiento   Rendimiento? @relation(fields: [rendimientoId], references: [id])
+
+  cuadrillaSugerida     Int? // 1, 2, 3...
+  factoresSugeridosJson Json? // p.ej. {"sol":"-10%", "pendiente":"-5%"}
+
+  // Si quieres sobreescribir insumos estándar por sitio:
+  insumosSiteOverrideJson Json?
 }
 
 model Tarea {
@@ -375,7 +384,7 @@ model Tarea {
   fechaVerificacion    DateTime?
 
   // Relaciones existentes
-  operarios  Operario[] @relation("TareaOperarios")
+  operarios    Operario[]  @relation("TareaOperarios")
   supervisor   Supervisor? @relation(fields: [supervisorId], references: [id])
   supervisorId Int?
   ubicacion    Ubicacion   @relation(fields: [ubicacionId], references: [id])
@@ -410,11 +419,17 @@ model Tarea {
   maquinariaPlanJson        Json?
   ConsumoInsumo             ConsumoInsumo[]
 
-  @@map("Tarea")
+  rendimientoId       Int?
+  rendimiento         Rendimiento?         @relation(fields: [rendimientoId], references: [id])
+  rendimientoVersion  Int? // redundancia útil para auditoría rápida
+  rendimientoAplicado RendimientoAplicado?
+
   @@index([conjuntoId, fechaInicio])
   @@index([conjuntoId, fechaFin])
   @@index([periodoAnio, periodoMes, conjuntoId])
   @@index([grupoPlanId, bloqueIndex])
+  @@index([rendimientoId])
+  @@map("Tarea")
 }
 
 model Conjunto {
@@ -493,11 +508,11 @@ model Elemento {
 }
 
 model Insumo {
-  id       Int    @id @default(autoincrement())
-  nombre   String
-  unidad   String
-  categoria CategoriaInsumo
-  umbralBajo  Int?
+  id         Int             @id @default(autoincrement())
+  nombre     String
+  unidad     String
+  categoria  CategoriaInsumo
+  umbralBajo Int?
 
   inventarios         InventarioInsumo[]
   consumos            ConsumoInsumo[]
@@ -532,10 +547,11 @@ model InventarioInsumo {
   insumo   Insumo @relation(fields: [insumoId], references: [id])
   insumoId Int
 
-  cantidad Int
+  cantidad     Int
   umbralMinimo Int?
-  @@index([inventarioId, cantidad])
+
   @@unique([inventarioId, insumoId])
+  @@index([inventarioId, cantidad])
 }
 
 model ConsumoInsumo {
@@ -608,6 +624,7 @@ model Empresa {
   tareasRechazadas Tarea[] @relation("EmpresaTareasRechazadas")
 
   insumosConsumidos InsumoConsumoEmpresa[]
+  Rendimiento       Rendimiento[]
 
   @@map("Empresa")
 }
@@ -691,6 +708,75 @@ model SolicitudMaquinaria {
 
   empresa   Empresa? @relation(fields: [empresaId], references: [nit])
   empresaId String?
+}
+
+model Rendimiento {
+  id                         Int           @id @default(autoincrement())
+  actividad                  String // nombre claro como en la hoja
+  tipoServicio               TipoServicio
+  unidadCalculo              UnidadCalculo
+  // Rendimiento base (por operario) p.ej. 120 M2/HORA
+  rendimientoBasePorOperario Decimal       @db.Decimal(14, 4)
+
+  // Curva por tamaño de cuadrilla: [{personas:2, factor:1.75}, {personas:3, factor:2.3}, ...]
+  curvaCuadrillaJson Json?
+
+  // Factores de ajuste (pendiente, sol/sombra, altura, tráfico, clima...). Ej: {sol:"-10%", pendiente:"-15%"}
+  factoresJson Json?
+
+  // Insumos base por unidad (separado de DefinicionTareaPreventiva para estándar empresa)
+  // Ej: [{insumoId: 12, consumoPorUnidad: 0.02, unidad:"L/M2"}]
+  insumosBaseJson Json?
+
+  // Maquinaria/herramientas sugeridas (por tipo o ids)
+  // Ej: [{tipo:"HIDROLAVADORA_ELECTRICA"}, {tipo:"ESCALERA"}]
+  herramientasSugeridasJson Json?
+
+  minutosSetup       Int? // tiempo de alistamiento
+  mermaPorcentaje    Decimal?    @db.Decimal(5, 2) // 0-100
+  frecuenciaSugerida Frecuencia? // si aplica
+  version            Int         @default(1)
+  vigenteDesde       DateTime?   @default(now())
+  vigenteHasta       DateTime?
+
+  empresa   Empresa? @relation(fields: [empresaId], references: [nit])
+  empresaId String?
+
+  // Enganches
+  definiciones    DefinicionTareaPreventiva[]
+  tareasAplicadas RendimientoAplicado[]
+  Tarea           Tarea[]
+
+  @@index([tipoServicio, actividad])
+  @@index([empresaId])
+}
+
+model RendimientoAplicado {
+  id            Int         @id @default(autoincrement())
+  // Dónde se aplicó el estándar (tarea concreta)
+  tarea         Tarea       @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+  tareaId       Int         @unique
+  rendimiento   Rendimiento @relation(fields: [rendimientoId], references: [id])
+  rendimientoId Int
+
+  // Parámetros usados en el cálculo (fotografía del momento)
+  cuadrillaPersonas  Int
+  factoresUsadosJson Json? // p.ej. {"sol":"-10%", "pendiente":"-15%"}
+  areaNumerica       Decimal?       @db.Decimal(14, 4)
+  unidadCalculo      UnidadCalculo?
+  consumoBaseJson    Json? // copia de insumos base con ajustes y merma
+  herramientasJson   Json? // lo que realmente se usó
+
+  // Resultado de cálculo
+  rendimientoCalculadoPorPersona Decimal? @db.Decimal(14, 4) // ya ajustado por factores
+  rendimientoCuadrilla           Decimal? @db.Decimal(14, 4)
+  horasCalculadas                Decimal? @db.Decimal(14, 4) // horas totales estimadas
+  consumoTotalEstimado           Decimal? @db.Decimal(14, 4) // insumo principal total
+
+  creadoEn DateTime @default(now())
+
+  @@index([tareaId])
+  @@index([rendimientoId])
 }
 
 generator erd {

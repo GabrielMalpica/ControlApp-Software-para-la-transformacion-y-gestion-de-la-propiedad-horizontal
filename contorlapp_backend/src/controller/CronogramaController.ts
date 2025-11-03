@@ -6,33 +6,48 @@ import { CronogramaService } from "../services/CronogramaServices";
 
 // Schemas para params/query
 const NitSchema = z.object({ nit: z.string().min(3) });
-const OperarioIdSchema = z.object({ operarioId: z.coerce.number().int().positive() });
-const FechaSchema = z.object({ fecha: z.coerce.date() });
-const RangoSchema = z.object({
-  inicio: z.coerce.date(),
-  fin: z.coerce.date(),
-}).refine((d) => d.fin >= d.inicio, {
-  message: "fin debe ser mayor o igual a inicio",
-  path: ["fin"],
+const OperarioIdSchema = z.object({
+  operarioId: z.coerce.number().int().positive(),
 });
+const FechaSchema = z.object({ fecha: z.coerce.date() });
+const RangoSchema = z
+  .object({
+    inicio: z.coerce.date(),
+    fin: z.coerce.date(),
+  })
+  .refine((d) => d.fin >= d.inicio, {
+    message: "fin debe ser mayor o igual a inicio",
+    path: ["fin"],
+  });
 const UbicacionSchema = z.object({ ubicacion: z.string().min(1) });
 
 // Body para filtro avanzado (empareja tu TareasPorFiltroDTO)
-const FiltroBodySchema = z.object({
-  operarioId: z.number().int().positive().optional(),
-  fechaExacta: z.coerce.date().optional(),
-  fechaInicio: z.coerce.date().optional(),
-  fechaFin: z.coerce.date().optional(),
-  ubicacion: z.string().optional(),
-}).refine((d) => {
-  if (d.fechaExacta) return true;
-  return (!d.fechaInicio && !d.fechaFin) || (Boolean(d.fechaInicio) && Boolean(d.fechaFin));
-}, { message: "Debe enviar fechaExacta o un rango (fechaInicio y fechaFin)." });
+const FiltroBodySchema = z
+  .object({
+    operarioId: z.number().int().positive().optional(),
+    fechaExacta: z.coerce.date().optional(),
+    fechaInicio: z.coerce.date().optional(),
+    fechaFin: z.coerce.date().optional(),
+    ubicacion: z.string().optional(),
+  })
+  .refine(
+    (d) => {
+      if (d.fechaExacta) return true;
+      return (
+        (!d.fechaInicio && !d.fechaFin) ||
+        (Boolean(d.fechaInicio) && Boolean(d.fechaFin))
+      );
+    },
+    { message: "Debe enviar fechaExacta o un rango (fechaInicio y fechaFin)." }
+  );
 
 // Resolver NIT (conjuntoId)
 function resolveConjuntoId(req: any): string {
-  const headerNit = (req.header("x-conjunto-id") ?? req.header("x-nit"))?.trim();
-  const queryNit = typeof req.query.nit === "string" ? req.query.nit : undefined;
+  const headerNit = (
+    req.header("x-conjunto-id") ?? req.header("x-nit")
+  )?.trim();
+  const queryNit =
+    typeof req.query.nit === "string" ? req.query.nit : undefined;
   const paramsNit = req.params?.nit as string | undefined;
   const nit = headerNit || queryNit || paramsNit;
   const parsed = NitSchema.safeParse({ nit });
@@ -50,6 +65,47 @@ export class CronogramaController {
     this.prisma = prisma ?? new PrismaClient();
   }
 
+  // GET /conjuntos/:nit/operarios/sugerir?inicio=...&fin=...&max=5&requiereFuncion=...
+  sugerirOperarios: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const { inicio, fin, max, requiereFuncion } = {
+        inicio: req.query.inicio as string,
+        fin: req.query.fin as string,
+        max: req.query.max ? Number(req.query.max) : undefined,
+        requiereFuncion: req.query.requiereFuncion as string | undefined,
+      };
+      const service = new CronogramaService(this.prisma, conjuntoId);
+      const out = await service.sugerirOperarios({
+        fechaInicio: new Date(inicio),
+        fechaFin: new Date(fin),
+        max,
+        requiereFuncion,
+      });
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /conjuntos/:nit/cronograma?anio=2025&mes=11&borrador=true|false
+  cronogramaMensual: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const anio = Number(req.query.anio);
+      const mes = Number(req.query.mes);
+      const borrador =
+        req.query.borrador === undefined
+          ? undefined
+          : String(req.query.borrador) === "true";
+      const service = new CronogramaService(this.prisma, conjuntoId);
+      const list = await service.cronogramaMensual({ anio, mes, borrador });
+      res.json(list);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   // GET /conjuntos/:nit/cronograma/tareas/por-operario/:operarioId
   tareasPorOperario: RequestHandler = async (req, res, next) => {
     try {
@@ -58,7 +114,9 @@ export class CronogramaController {
       const service = new CronogramaService(this.prisma, conjuntoId);
       const tareas = await service.tareasPorOperario({ operarioId });
       res.json(tareas);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   // GET /conjuntos/:nit/cronograma/tareas/por-fecha?fecha=YYYY-MM-DD
@@ -69,29 +127,43 @@ export class CronogramaController {
       const service = new CronogramaService(this.prisma, conjuntoId);
       const tareas = await service.tareasPorFecha({ fecha });
       res.json(tareas);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   // GET /conjuntos/:nit/cronograma/tareas/en-rango?inicio=YYYY-MM-DD&fin=YYYY-MM-DD
   tareasEnRango: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const { inicio, fin } = RangoSchema.parse({ inicio: req.query.inicio ?? "", fin: req.query.fin ?? ""});
+      const { inicio, fin } = RangoSchema.parse({
+        inicio: req.query.inicio ?? "",
+        fin: req.query.fin ?? "",
+      });
       const service = new CronogramaService(this.prisma, conjuntoId);
-      const tareas = await service.tareasEnRango({ fechaInicio: inicio, fechaFin: fin });
+      const tareas = await service.tareasEnRango({
+        fechaInicio: inicio,
+        fechaFin: fin,
+      });
       res.json(tareas);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   // GET /conjuntos/:nit/cronograma/tareas/por-ubicacion?ubicacion=...
   tareasPorUbicacion: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const { ubicacion } = UbicacionSchema.parse({ ubicacion: req.query.ubicacion });
+      const { ubicacion } = UbicacionSchema.parse({
+        ubicacion: req.query.ubicacion,
+      });
       const service = new CronogramaService(this.prisma, conjuntoId);
       const tareas = await service.tareasPorUbicacion({ ubicacion });
       res.json(tareas);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   // POST /conjuntos/:nit/cronograma/tareas/filtrar
@@ -102,7 +174,9 @@ export class CronogramaController {
       const service = new CronogramaService(this.prisma, conjuntoId);
       const tareas = await service.tareasPorFiltro(filtro);
       res.json(tareas);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   // GET /conjuntos/:nit/cronograma/eventos
@@ -112,6 +186,8 @@ export class CronogramaController {
       const service = new CronogramaService(this.prisma, conjuntoId);
       const eventos = await service.exportarComoEventosCalendario();
       res.json(eventos);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 }
