@@ -28,6 +28,29 @@ const EditarBorradorDTO = z.object({
   operariosIds: z.array(z.number().int().positive()).optional(),
 });
 
+const CrearBloqueBorradorDTO = z.object({
+  descripcion: z.string().min(3),
+  fechaInicio: z.coerce.date(),
+  fechaFin: z.coerce.date(),
+  ubicacionId: z.number().int().positive(),
+  elementoId: z.number().int().positive(),
+  operariosIds: z.array(z.number().int().positive()).optional(),
+  supervisorId: z.number().int().positive().nullable().optional(),
+  tiempoEstimadoHoras: z.number().positive().optional(),
+});
+
+const EditarBloqueBorradorDTO = z.object({
+  descripcion: z.string().min(3).optional(),
+  fechaInicio: z.coerce.date().optional(),
+  fechaFin: z.coerce.date().optional(),
+  duracionHoras: z.number().int().positive().optional(),
+  ubicacionId: z.number().int().positive().optional(),
+  elementoId: z.number().int().positive().optional(),
+  operariosIds: z.array(z.number().int().positive()).optional(),
+  supervisorId: z.number().int().positive().nullable().optional(),
+  tiempoEstimadoHoras: z.number().positive().nullable().optional(),
+});
+
 export class DefinicionTareaPreventivaService {
   constructor(private prisma: PrismaClient) {}
 
@@ -592,6 +615,184 @@ export class DefinicionTareaPreventivaService {
             : undefined,
       },
       include: { operarios: { select: { id: true } } },
+    });
+  }
+
+  async crearBloqueBorrador(conjuntoId: string, payload: unknown) {
+    const dto = CrearBloqueBorradorDTO.parse(payload);
+    if (dto.fechaFin < dto.fechaInicio)
+      throw new Error("fechaFin >= fechaInicio");
+
+    // validar solape básico por operario (solo contra borrador preventivo del mismo conjunto)
+    if (dto.operariosIds?.length) {
+      for (const opId of dto.operariosIds) {
+        const choque = await this.prisma.tarea.findFirst({
+          where: {
+            conjuntoId,
+            borrador: true,
+            tipo: TipoTarea.PREVENTIVA,
+            fechaInicio: { lt: dto.fechaFin },
+            fechaFin: { gt: dto.fechaInicio },
+            operarios: { some: { id: opId } },
+          },
+          select: { id: true },
+        });
+        if (choque) throw new Error(`Solape de agenda con operario ${opId}`);
+      }
+    }
+
+    const anio = dto.fechaInicio.getFullYear();
+    const mes = dto.fechaInicio.getMonth() + 1;
+
+    return this.prisma.tarea.create({
+      data: {
+        descripcion: dto.descripcion,
+        fechaInicio: dto.fechaInicio,
+        fechaFin: dto.fechaFin,
+        duracionHoras: Math.max(
+          1,
+          Math.round((+dto.fechaFin - +dto.fechaInicio) / 3600000)
+        ),
+        estado: EstadoTarea.ASIGNADA,
+        tipo: TipoTarea.PREVENTIVA,
+        frecuencia: null,
+        borrador: true,
+        periodoAnio: anio,
+        periodoMes: mes,
+        grupoPlanId: null,
+
+        ubicacionId: dto.ubicacionId,
+        elementoId: dto.elementoId,
+        conjuntoId,
+        supervisorId: dto.supervisorId ?? null,
+        tiempoEstimadoHoras: dto.tiempoEstimadoHoras
+          ? new Prisma.Decimal(dto.tiempoEstimadoHoras)
+          : null,
+
+        operarios: dto.operariosIds?.length
+          ? { connect: dto.operariosIds.map((id) => ({ id })) }
+          : undefined,
+      },
+    });
+  }
+
+  async editarBloqueBorrador(
+    conjuntoId: string,
+    tareaId: number,
+    payload: unknown
+  ) {
+    const dto = EditarBloqueBorradorDTO.parse(payload);
+
+    const tarea = await this.prisma.tarea.findUnique({
+      where: { id: tareaId },
+      select: { id: true, conjuntoId: true, borrador: true, tipo: true },
+    });
+    if (
+      !tarea ||
+      tarea.conjuntoId !== conjuntoId ||
+      !tarea.borrador ||
+      tarea.tipo !== TipoTarea.PREVENTIVA
+    ) {
+      throw new Error("No es un bloque borrador preventivo de este conjunto.");
+    }
+
+    // determinar operarios finales (para validar solapes si cambian horas)
+    let operariosIdsFinal: number[] | undefined = undefined;
+    if (dto.operariosIds) {
+      operariosIdsFinal = dto.operariosIds;
+    } else {
+      const actuales = await this.prisma.tarea.findUnique({
+        where: { id: tareaId },
+        select: { operarios: { select: { id: true } } },
+      });
+      operariosIdsFinal = actuales?.operarios.map((o) => o.id);
+    }
+
+    const fechaInicio = dto.fechaInicio ?? undefined;
+    const fechaFin = dto.fechaFin ?? undefined;
+
+    if (fechaInicio && fechaFin && operariosIdsFinal?.length) {
+      for (const opId of operariosIdsFinal) {
+        const choque = await this.prisma.tarea.findFirst({
+          where: {
+            id: { not: tareaId },
+            conjuntoId,
+            borrador: true,
+            tipo: TipoTarea.PREVENTIVA,
+            fechaInicio: { lt: fechaFin },
+            fechaFin: { gt: fechaInicio },
+            operarios: { some: { id: opId } },
+          },
+          select: { id: true },
+        });
+        if (choque) throw new Error(`Solape de agenda con operario ${opId}`);
+      }
+    }
+
+    return this.prisma.tarea.update({
+      where: { id: tareaId },
+      data: {
+        descripcion: dto.descripcion ?? undefined,
+        fechaInicio,
+        fechaFin,
+        duracionHoras:
+          dto.duracionHoras ??
+          (fechaInicio && fechaFin
+            ? Math.max(1, Math.round((+fechaFin - +fechaInicio) / 3600000))
+            : undefined),
+        ubicacionId: dto.ubicacionId ?? undefined,
+        elementoId: dto.elementoId ?? undefined,
+        supervisorId: dto.supervisorId ?? undefined,
+        tiempoEstimadoHoras:
+          dto.tiempoEstimadoHoras === undefined
+            ? undefined
+            : dto.tiempoEstimadoHoras === null
+            ? null
+            : new Prisma.Decimal(dto.tiempoEstimadoHoras),
+        operarios:
+          dto.operariosIds === undefined
+            ? undefined
+            : { set: dto.operariosIds.map((id) => ({ id })) },
+      },
+    });
+  }
+
+  async eliminarBloqueBorrador(conjuntoId: string, tareaId: number) {
+    const res = await this.prisma.tarea.deleteMany({
+      where: {
+        id: tareaId,
+        conjuntoId,
+        borrador: true,
+        tipo: TipoTarea.PREVENTIVA,
+      },
+    });
+    if (res.count === 0)
+      throw new Error("Bloque no encontrado o no es borrador preventivo.");
+  }
+
+  async listarBorrador({
+    conjuntoId,
+    anio,
+    mes,
+  }: {
+    conjuntoId: string;
+    anio: number;
+    mes: number;
+  }) {
+    return this.prisma.tarea.findMany({
+      where: {
+        conjuntoId,
+        borrador: true,
+        periodoAnio: anio,
+        periodoMes: mes,
+        tipo: "PREVENTIVA",
+      },
+      include: {
+        operarios: { include: { usuario: true } },
+        ubicacion: true,
+        elemento: true,
+      },
+      orderBy: [{ grupoPlanId: "asc" }, { bloqueIndex: "asc" }, { id: "asc" }],
     });
   }
 }

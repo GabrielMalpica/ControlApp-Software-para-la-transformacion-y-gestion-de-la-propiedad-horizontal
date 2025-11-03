@@ -113,4 +113,51 @@ export class DefinicionTareaPreventivaController {
     });
     res.json(out);
   };
+
+  /** POST /conjuntos/:nit/preventivas/borrador/tarea */
+  crearBloqueBorrador = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const svc = new DefinicionTareaPreventivaService(this.prisma);
+    const out = await svc.crearBloqueBorrador(conjuntoId, req.body);
+    res.status(201).json(out);
+  };
+
+  /** PATCH /conjuntos/:nit/preventivas/borrador/tarea/:id */
+  editarBloqueBorrador = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) throw new Error("ID inválido");
+    const svc = new DefinicionTareaPreventivaService(this.prisma);
+    const out = await svc.editarBloqueBorrador(conjuntoId, id, req.body);
+    res.json(out);
+  };
+
+  /** DELETE /conjuntos/:nit/preventivas/borrador/tarea/:id */
+  eliminarBloqueBorrador = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) throw new Error("ID inválido");
+    const svc = new DefinicionTareaPreventivaService(this.prisma);
+    await svc.eliminarBloqueBorrador(conjuntoId, id);
+    res.status(204).send();
+  };
+
+  /** GET /conjuntos/:nit/preventivas/borrador?anio=&mes= */
+  listarBorrador = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const anio = Number(req.query.anio);
+    const mes = Number(req.query.mes);
+    if (
+      !Number.isFinite(anio) ||
+      !Number.isFinite(mes) ||
+      mes < 1 ||
+      mes > 12
+    ) {
+      res.status(400).json({ error: "Parámetros anio/mes inválidos." });
+      return;
+    }
+    const svc = new DefinicionTareaPreventivaService(this.prisma);
+    const out = await svc.listarBorrador({ conjuntoId, anio, mes }); // método simple en el service
+    res.json(out);
+  };
 }
