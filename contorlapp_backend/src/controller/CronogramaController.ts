@@ -1,8 +1,8 @@
 // src/controllers/CronogramaController.ts
-import { RequestHandler } from "express";
+import { RequestHandler, Request } from "express";
 import { z } from "zod";
 import { PrismaClient } from "../generated/prisma";
-import { CronogramaService } from "../services/CronogramaServices";
+import { CronogramaService } from "../services/CronogramaServices"; // <- singular
 
 // Schemas para params/query
 const NitSchema = z.object({ nit: z.string().min(3) });
@@ -21,7 +21,6 @@ const RangoSchema = z
   });
 const UbicacionSchema = z.object({ ubicacion: z.string().min(1) });
 
-// Body para filtro avanzado (empareja tu TareasPorFiltroDTO)
 const FiltroBodySchema = z
   .object({
     operarioId: z.number().int().positive().optional(),
@@ -42,7 +41,7 @@ const FiltroBodySchema = z
   );
 
 // Resolver NIT (conjuntoId)
-function resolveConjuntoId(req: any): string {
+function resolveConjuntoId(req: Request): string {
   const headerNit = (
     req.header("x-conjunto-id") ?? req.header("x-nit")
   )?.trim();
@@ -69,16 +68,15 @@ export class CronogramaController {
   sugerirOperarios: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const { inicio, fin, max, requiereFuncion } = {
-        inicio: req.query.inicio as string,
-        fin: req.query.fin as string,
-        max: req.query.max ? Number(req.query.max) : undefined,
-        requiereFuncion: req.query.requiereFuncion as string | undefined,
-      };
+      const inicio = new Date(String(req.query.inicio ?? ""));
+      const fin = new Date(String(req.query.fin ?? ""));
+      const max = req.query.max ? Number(req.query.max) : undefined;
+      const requiereFuncion = req.query.requiereFuncion as string | undefined;
+
       const service = new CronogramaService(this.prisma, conjuntoId);
       const out = await service.sugerirOperarios({
-        fechaInicio: new Date(inicio),
-        fechaFin: new Date(fin),
+        fechaInicio: inicio,
+        fechaFin: fin,
         max,
         requiereFuncion,
       });
@@ -101,6 +99,49 @@ export class CronogramaController {
       const service = new CronogramaService(this.prisma, conjuntoId);
       const list = await service.cronogramaMensual({ anio, mes, borrador });
       res.json(list);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /conjuntos/:nit/cronograma/mes?anio=2025&mes=10&operarioId=&tipo=&borrador=
+  calendarioMensual: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const anio = Number(req.query.anio);
+      const mes = Number(req.query.mes);
+      const operarioId = req.query.operarioId
+        ? Number(req.query.operarioId)
+        : undefined;
+      const tipo = req.query.tipo as
+        | "PREVENTIVA"
+        | "CORRECTIVA"
+        | "TODAS"
+        | undefined;
+      const borrador =
+        req.query.borrador == null
+          ? undefined
+          : String(req.query.borrador) === "true";
+
+      if (
+        !Number.isFinite(anio) ||
+        !Number.isFinite(mes) ||
+        mes < 1 ||
+        mes > 12
+      ) {
+        res.status(400).json({ error: "anio/mes inválidos" });
+        return; // <- clave: no retornes el Response
+      }
+
+      const service = new CronogramaService(this.prisma, conjuntoId);
+      const out = await service.calendarioMensual({
+        anio,
+        mes,
+        operarioId,
+        tipo,
+        borrador,
+      });
+      res.json(out);
     } catch (err) {
       next(err);
     }

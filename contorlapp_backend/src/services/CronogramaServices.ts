@@ -408,6 +408,65 @@ export class CronogramaService {
     return out.slice(0, max);
   }
 
+  async calendarioMensual(params: {
+    anio: number;
+    mes: number;
+    operarioId?: number;
+    tipo?: "PREVENTIVA" | "CORRECTIVA" | "TODAS";
+    borrador?: boolean;
+  }) {
+    const { anio, mes, operarioId, tipo, borrador } = params;
+    const start = new Date(anio, mes - 1, 1, 0, 0, 0, 0);
+    const end = new Date(anio, mes, 0, 23, 59, 59, 999); // último día del mes
+
+    const where: any = {
+      conjuntoId: this.conjuntoId,
+      fechaFin: { gte: start },
+      fechaInicio: { lte: end },
+    };
+    if (operarioId) where.operarios = { some: { id: operarioId } };
+    if (borrador !== undefined) where.borrador = borrador;
+    if (tipo && tipo !== "TODAS") where.tipo = tipo;
+
+    const tareas = await this.prisma.tarea.findMany({
+      where,
+      select: { fechaInicio: true, fechaFin: true, tipo: true },
+    });
+
+    // bucket por día (1..31)
+    const daysInMonth = new Date(anio, mes, 0).getDate();
+    const dias = Array.from({ length: daysInMonth }, (_, i) => ({
+      dia: i + 1,
+      total: 0,
+      preventivas: 0,
+      correctivas: 0,
+    }));
+
+    for (const t of tareas) {
+      // marca todos los días que toca (por si cruza)
+      const cur = new Date(Math.max(+t.fechaInicio, +start));
+      cur.setHours(0, 0, 0, 0);
+      const last = new Date(Math.min(+t.fechaFin, +end));
+      last.setHours(0, 0, 0, 0);
+      while (cur <= last) {
+        const d = cur.getDate();
+        const slot = dias[d - 1];
+        slot.total++;
+        if (t.tipo === "PREVENTIVA") slot.preventivas++;
+        else slot.correctivas++;
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+
+    const totalesMes = {
+      total: dias.reduce((a, d) => a + d.total, 0),
+      preventivas: dias.reduce((a, d) => a + d.preventivas, 0),
+      correctivas: dias.reduce((a, d) => a + d.correctivas, 0),
+    };
+
+    return { anio, mes, dias, totalesMes };
+  }
+
   /* ==================== Choques y utilidades ==================== */
 
   /** Devuelve las tareas del operario que se pisan entre sí dentro del rango dado (M:N) */
