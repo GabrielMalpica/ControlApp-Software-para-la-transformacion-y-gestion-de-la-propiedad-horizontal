@@ -90,7 +90,7 @@ export class GerenteController {
   editarUsuario: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParam.parse(req.params);
-      const out = await this.service.editarUsuario(id, req.body);
+      const out = await this.service.editarUsuario(id.toString(), req.body);
       res.json(out);
     } catch (err) { next(err); }
   };

@@ -25,3 +25,5 @@ conjuntoRouter.get("/conjuntos/:nit/tareas/por-ubicacion", c.tareasPorUbicacion)
 conjuntoRouter.get("/conjuntos/:nit/tareas/en-rango", c.tareasEnRango);
 conjuntoRouter.get("/conjuntos/:nit/tareas/filtrar", c.tareasPorFiltro);
 conjuntoRouter.get("/conjuntos/:nit/cronograma/eventos-calendario", c.exportarEventosCalendario);
+
+export default conjuntoRouter;

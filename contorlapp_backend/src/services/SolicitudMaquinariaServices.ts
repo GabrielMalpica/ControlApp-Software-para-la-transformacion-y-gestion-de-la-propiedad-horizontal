@@ -17,7 +17,7 @@ export class SolicitudMaquinariaService {
     const [conjunto, maquinaria, operario] = await Promise.all([
       this.prisma.conjunto.findUnique({ where: { nit: dto.conjuntoId } }),
       this.prisma.maquinaria.findUnique({ where: { id: dto.maquinariaId } }),
-      this.prisma.operario.findUnique({ where: { id: dto.operarioId } }),
+      this.prisma.operario.findUnique({ where: { id: dto.operarioId.toString() } }),
     ]);
     if (!conjunto) throw new Error("Conjunto no existe");
     if (!maquinaria) throw new Error("Maquinaria no existe");
@@ -27,7 +27,7 @@ export class SolicitudMaquinariaService {
       data: {
         conjuntoId: dto.conjuntoId,
         maquinariaId: dto.maquinariaId,
-        operarioId: dto.operarioId,
+        operarioId: dto.operarioId.toString(),
         empresaId: dto.empresaId ?? null,
         fechaUso: dto.fechaUso,
         fechaDevolucionEstimada: dto.fechaDevolucionEstimada,
@@ -43,7 +43,7 @@ export class SolicitudMaquinariaService {
       where: { id },
       data: {
         maquinariaId: dto.maquinariaId ?? undefined,
-        operarioId: dto.operarioId ?? undefined,
+        operarioId: dto.operarioId!.toString() ?? undefined,
         empresaId: dto.empresaId === undefined ? undefined : dto.empresaId,
         fechaUso: dto.fechaUso ?? undefined,
         fechaDevolucionEstimada: dto.fechaDevolucionEstimada ?? undefined,
@@ -105,7 +105,7 @@ export class SolicitudMaquinariaService {
         conjuntoId: f.conjuntoId ?? undefined,
         empresaId: f.empresaId ?? undefined,
         maquinariaId: f.maquinariaId ?? undefined,
-        operarioId: f.operarioId ?? undefined,
+        operarioId: f.operarioId!.toString() ?? undefined,
         aprobado: f.aprobado ?? undefined,
         fechaSolicitud:
           Object.keys(rango).length > 0 ? rango : undefined, // sólo si viene gte/lte

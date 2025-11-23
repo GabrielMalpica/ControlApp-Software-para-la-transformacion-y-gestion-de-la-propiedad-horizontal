@@ -38,7 +38,7 @@ export type OperarioPublico = OperarioDominio;
  * OJO: La creación del Usuario (nombre, correo, etc.) va en su propio DTO/flow.
  */
 export const CrearOperarioDTO = z.object({
-  id: z.number().int().positive(), // Debe existir/crearse el Usuario con el mismo id
+  Id: z.string().min(1, "El id (cédula) del usuario es obligatorio"),
   funciones: z.array(z.nativeEnum(TipoFuncion)).nonempty(),
   cursoSalvamentoAcuatico: z.boolean(),
   urlEvidenciaSalvamento: z.string().url().optional(),
@@ -50,7 +50,6 @@ export const CrearOperarioDTO = z.object({
   fechaSalida: z.coerce.date().optional(),
   fechaUltimasVacaciones: z.coerce.date().optional(),
   observaciones: z.string().optional(),
-  empresaId: z.string().min(3),
 });
 
 /** Edición parcial */

@@ -3,32 +3,38 @@ import { PrismaClient, EstadoTarea } from "../generated/prisma";
 import { z } from "zod";
 
 /** Rangos básicos */
-const RangoDTO = z.object({
-  desde: z.coerce.date(),
-  hasta: z.coerce.date(),
-}).refine((d) => d.hasta >= d.desde, {
-  path: ["hasta"],
-  message: "hasta debe ser >= desde",
-});
+const RangoDTO = z
+  .object({
+    desde: z.coerce.date(),
+    hasta: z.coerce.date(),
+  })
+  .refine((d) => d.hasta >= d.desde, {
+    path: ["hasta"],
+    message: "hasta debe ser >= desde",
+  });
 
-const RangoConConjuntoDTO = z.object({
-  desde: z.coerce.date(),
-  hasta: z.coerce.date(),
-  conjuntoId: z.string().min(1),
-}).refine((d) => d.hasta >= d.desde, {
-  path: ["hasta"],
-  message: "hasta debe ser >= desde",
-});
+const RangoConConjuntoDTO = z
+  .object({
+    desde: z.coerce.date(),
+    hasta: z.coerce.date(),
+    conjuntoId: z.string().min(1),
+  })
+  .refine((d) => d.hasta >= d.desde, {
+    path: ["hasta"],
+    message: "hasta debe ser >= desde",
+  });
 
-const TareasPorEstadoDTO = z.object({
-  desde: z.coerce.date(),
-  hasta: z.coerce.date(),
-  conjuntoId: z.string().min(1),
-  estado: z.nativeEnum(EstadoTarea),
-}).refine((d) => d.hasta >= d.desde, {
-  path: ["hasta"],
-  message: "hasta debe ser >= desde",
-});
+const TareasPorEstadoDTO = z
+  .object({
+    desde: z.coerce.date(),
+    hasta: z.coerce.date(),
+    conjuntoId: z.string().min(1),
+    estado: z.nativeEnum(EstadoTarea),
+  })
+  .refine((d) => d.hasta >= d.desde, {
+    path: ["hasta"],
+    message: "hasta debe ser >= desde",
+  });
 
 export class ReporteService {
   constructor(private prisma: PrismaClient) {}
@@ -40,7 +46,7 @@ export class ReporteService {
         estado: EstadoTarea.APROBADA,
         fechaVerificacion: { gte: desde, lte: hasta },
       },
-      include: { ubicacion: true, elemento: true, operario: true },
+      include: { ubicacion: true, elemento: true, operarios: true },
     });
   }
 
@@ -51,7 +57,7 @@ export class ReporteService {
         estado: EstadoTarea.RECHAZADA,
         fechaVerificacion: { gte: desde, lte: hasta },
       },
-      include: { ubicacion: true, elemento: true, operario: true },
+      include: { ubicacion: true, elemento: true, operarios: true },
     });
   }
 
@@ -96,7 +102,8 @@ export class ReporteService {
   }
 
   async tareasPorEstado(payload: unknown) {
-    const { conjuntoId, estado, desde, hasta } = TareasPorEstadoDTO.parse(payload);
+    const { conjuntoId, estado, desde, hasta } =
+      TareasPorEstadoDTO.parse(payload);
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId,
@@ -104,12 +111,13 @@ export class ReporteService {
         fechaInicio: { gte: desde },
         fechaFin: { lte: hasta },
       },
-      include: { ubicacion: true, elemento: true, operario: true },
+      include: { ubicacion: true, elemento: true, operarios: true },
     });
   }
 
   async tareasConDetalle(payload: unknown) {
-    const { conjuntoId, estado, desde, hasta } = TareasPorEstadoDTO.parse(payload);
+    const { conjuntoId, estado, desde, hasta } =
+      TareasPorEstadoDTO.parse(payload);
     const tareas = await this.prisma.tarea.findMany({
       where: {
         conjuntoId,
@@ -120,16 +128,27 @@ export class ReporteService {
       include: {
         ubicacion: true,
         elemento: true,
-        operario: { include: { usuario: true } },
+        operarios: { include: { usuario: true } },
       },
     });
 
-    return tareas.map((t) => ({
-      descripcion: t.descripcion,
-      ubicacion: t.ubicacion?.nombre ?? "Sin ubicación",
-      elemento: t.elemento?.nombre ?? "Sin elemento",
-      responsable: t.operario?.usuario?.nombre ?? "Sin asignar",
-      estado: t.estado,
-    }));
+    return tareas.map((t) => {
+      const nombresOperarios = t.operarios
+        .map((op) => op.usuario?.nombre)
+        .filter((n): n is string => Boolean(n));
+
+      const responsables =
+        nombresOperarios.length > 0
+          ? nombresOperarios.join(", ")
+          : "Sin asignar";
+
+      return {
+        descripcion: t.descripcion,
+        ubicacion: t.ubicacion?.nombre ?? "Sin ubicación",
+        elemento: t.elemento?.nombre ?? "Sin elemento",
+        responsable: responsables,
+        estado: t.estado,
+      };
+    });
   }
 }

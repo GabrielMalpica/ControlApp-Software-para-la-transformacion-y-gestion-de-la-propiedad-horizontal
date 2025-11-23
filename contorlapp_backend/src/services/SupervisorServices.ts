@@ -37,7 +37,7 @@ export class SupervisorService {
       where: { id: tareaId },
       data: {
         estado: EstadoTarea.APROBADA,
-        supervisor: { connect: { id: this.supervisorId } },
+        supervisor: { connect: { id: this.supervisorId.toString() } },
         fechaVerificacion: new Date(),
       },
     });
@@ -64,7 +64,7 @@ export class SupervisorService {
       where: { id: tareaId },
       data: {
         estado: EstadoTarea.RECHAZADA,
-        supervisor: { connect: { id: this.supervisorId } },
+        supervisor: { connect: { id: this.supervisorId.toString() } },
         fechaVerificacion: new Date(),
         observacionesRechazo: observaciones,
       },
@@ -87,7 +87,7 @@ export class SupervisorService {
     return this.prisma.tarea.findMany({
       where: {
         estado: EstadoTarea.PENDIENTE_APROBACION,
-        supervisorId: this.supervisorId, // si quieres ver “propias”
+        supervisorId: this.supervisorId.toString(), // si quieres ver “propias”
       },
     });
   }

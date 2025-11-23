@@ -23,7 +23,7 @@ export type AdministradorPublico = AdministradorDominio;
  * Requiere un Usuario ya creado con rol = "administrador".
  */
 export const CrearAdministradorDTO = z.object({
-  id: z.number().int().positive(), // mismo ID que Usuario.id
+  Id: z.string().min(1, "El id (cédula) del usuario es obligatorio"),
 });
 
 /**

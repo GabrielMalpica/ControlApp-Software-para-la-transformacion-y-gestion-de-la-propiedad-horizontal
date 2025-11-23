@@ -58,14 +58,14 @@ export class ConjuntoService {
     const { operarioId } = AsignarOperarioDTO.parse(payload);
     try {
       const existeOperario = await this.prisma.operario.findUnique({
-        where: { id: operarioId },
+        where: { id: operarioId.toString() },
         select: { id: true },
       });
       if (!existeOperario) throw new Error("Operario no encontrado.");
 
       await this.prisma.conjunto.update({
         where: { nit: this.conjuntoId },
-        data: { operarios: { connect: { id: operarioId } } },
+        data: { operarios: { connect: { id: operarioId.toString() } } },
       });
     } catch (error) {
       console.error("Error al asignar operario:", error);
@@ -77,14 +77,14 @@ export class ConjuntoService {
     const { administradorId } = AsignarAdministradorDTO.parse(payload);
     try {
       const existeAdmin = await this.prisma.administrador.findUnique({
-        where: { id: administradorId },
+        where: { id: administradorId.toString() },
         select: { id: true },
       });
       if (!existeAdmin) throw new Error("Administrador no encontrado.");
 
       await this.prisma.conjunto.update({
         where: { nit: this.conjuntoId },
-        data: { administrador: { connect: { id: administradorId } } },
+        data: { administrador: { connect: { id: administradorId.toString() } } },
       });
     } catch (error) {
       console.error("Error al asignar administrador:", error);
@@ -214,7 +214,7 @@ export class ConjuntoService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
-        operarios: { some: { id: operarioId } },
+        operarios: { some: { id: operarioId.toString() } },
       },
     });
   }

@@ -31,7 +31,7 @@ export class MaquinariaService {
       where: { id: this.maquinariaId },
       data: {
         asignadaA: { connect: { nit: conjuntoId } },
-        responsable: responsableId ? { connect: { id: responsableId } } : undefined,
+        responsable: responsableId ? { connect: { id: responsableId.toString() } } : undefined,
         fechaPrestamo,
         fechaDevolucionEstimada,
         disponible: false,

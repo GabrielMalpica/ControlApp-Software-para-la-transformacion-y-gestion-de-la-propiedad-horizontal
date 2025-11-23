@@ -20,7 +20,7 @@ import {
  * Nota: En tu Prisma, Usuario.id es Int @id (SIN autoincrement).
  * Por tanto, para crear un usuario debes proveer el id manualmente.
  */
-export type UsuarioId = number;
+export type UsuarioId = string;
 
 /** Tipado de dominio alineado 1:1 con tu modelo (sin relaciones) */
 export interface UsuarioDominio {
@@ -28,7 +28,6 @@ export interface UsuarioDominio {
   nombre: string;
   correo: string;
   contrasena: string; // ¡No exponer hacia fuera!
-  // En Prisma el campo es String; validaremos con enum Rol para homogeneizar valores.
   rol: `${Rol}` | string;
   telefono: bigint; // Prisma BigInt -> JS bigint
   fechaNacimiento: Date;
@@ -57,25 +56,30 @@ export type UsuarioPublico = Omit<UsuarioDominio, "contrasena">;
  * rol en BD es String, pero validamos contra enum Rol para consistencia.
  */
 export const CrearUsuarioDTO = z.object({
-  id: z.number().int().positive(),
-  nombre: z.string().min(2),
-  correo: z.string().email().transform((v) => v.toLowerCase().trim()),
-  contrasena: z.string().min(8),
-  rol: z.nativeEnum(Rol), // si prefieres libre, cambia a z.string().min(3)
+  id: z.string().min(5, "La cédula debe tener al menos 5 caracteres"),
+  nombre: z.string().min(1, "El nombre es obligatorio"),
+  correo: z.string().email("Correo inválido"),
+  contrasena: z.string().min(8, "La contraseña debe tener mínimo 8 caracteres"),
+  rol: z.nativeEnum(Rol),
   telefono: z.coerce.bigint(),
   fechaNacimiento: z.coerce.date(),
-  direccion: z.string().optional(),
-  estadoCivil: z.nativeEnum(EstadoCivil).optional(),
-  numeroHijos: z.number().int().min(0).optional(),
+
+  direccion: z.string().optional().nullable(),
+  estadoCivil: z.nativeEnum(EstadoCivil).optional().nullable(),
+  numeroHijos: z.coerce.number().int().min(0).optional(),
   padresVivos: z.boolean().optional(),
-  tipoSangre: z.nativeEnum(TipoSangre).optional(),
-  eps: z.nativeEnum(EPS).optional(),
-  fondoPensiones: z.nativeEnum(FondoPension).optional(),
-  tallaCamisa: z.nativeEnum(TallaCamisa).optional(),
-  tallaPantalon: z.nativeEnum(TallaPantalon).optional(),
-  tallaCalzado: z.nativeEnum(TallaCalzado).optional(),
-  tipoContrato: z.nativeEnum(TipoContrato).optional(),
-  jornadaLaboral: z.nativeEnum(JornadaLaboral).optional(),
+
+  tipoSangre: z.nativeEnum(TipoSangre).optional().nullable(),
+  eps: z.nativeEnum(EPS).optional().nullable(),
+  fondoPensiones: z.nativeEnum(FondoPension).optional().nullable(),
+
+  // 🔹 Ahora las tallas son OPCIONALES
+  tallaCamisa: z.nativeEnum(TallaCamisa).optional().nullable(),
+  tallaPantalon: z.nativeEnum(TallaPantalon).optional().nullable(),
+  tallaCalzado: z.nativeEnum(TallaCalzado).optional().nullable(),
+
+  tipoContrato: z.nativeEnum(TipoContrato).optional().nullable(),
+  jornadaLaboral: z.nativeEnum(JornadaLaboral).optional().nullable(),
 });
 
 /**

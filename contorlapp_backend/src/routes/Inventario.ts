@@ -14,3 +14,5 @@ inventarioRouter.delete("/inventarios/:inventarioId/insumos/:insumoId", controll
 inventarioRouter.post("/inventarios/:inventarioId/insumos/:insumoId/consumir", controller.consumirInsumoPorId);
 inventarioRouter.get("/inventarios/:inventarioId/insumos-bajos", controller.listarInsumosBajos);
 inventarioRouter.get("/inventarios/:inventarioId/insumos-bajos/detalle", controller.listarInsumosBajosDetallado);
+
+export default inventarioRouter;

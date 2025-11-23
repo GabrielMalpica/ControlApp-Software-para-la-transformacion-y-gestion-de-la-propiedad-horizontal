@@ -4,7 +4,6 @@ import { z } from "zod";
 /** Dominio base según Prisma */
 export interface SupervisorDominio {
   id: number;          // mismo ID que Usuario.id
-  empresaId: string;   // NIT de la empresa obligatoria
 }
 
 /** Tipo público (igual por ahora) */
@@ -14,8 +13,7 @@ export type SupervisorPublico = SupervisorDominio;
 
 /** Crear supervisor */
 export const CrearSupervisorDTO = z.object({
-  id: z.number().int().positive(), // mismo id que Usuario.id
-  empresaId: z.string().min(3),
+  Id: z.string().min(1, "El id (cédula) del usuario es obligatorio"),
 });
 
 /** Editar supervisor (solo empresa por ahora) */

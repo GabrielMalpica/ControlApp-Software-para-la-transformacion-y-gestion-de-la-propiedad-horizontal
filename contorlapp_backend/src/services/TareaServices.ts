@@ -113,7 +113,7 @@ export class TareaService {
       data: {
         estado: EstadoTarea.APROBADA,
         fechaVerificacion: new Date(),
-        supervisor: { connect: { id: supervisorId } },
+        supervisor: { connect: { id: supervisorId.toString() } },
       },
     });
   }
@@ -134,7 +134,7 @@ export class TareaService {
       where: { id: this.tareaId },
       data: {
         estado: EstadoTarea.RECHAZADA,
-        supervisorId,
+        supervisorId: supervisorId == null ? null : supervisorId.toString(),
         fechaVerificacion: new Date(),
         observacionesRechazo: observacion,
       },

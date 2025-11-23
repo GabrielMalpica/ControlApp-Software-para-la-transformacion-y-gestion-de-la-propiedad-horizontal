@@ -1,5 +1,10 @@
 // src/services/EmpresaService.ts
-import { PrismaClient, EstadoMaquinaria, TipoMaquinaria, EstadoSolicitud } from "../generated/prisma";
+import {
+  PrismaClient,
+  EstadoMaquinaria,
+  TipoMaquinaria,
+  EstadoSolicitud,
+} from "../generated/prisma";
 import { z } from "zod";
 
 import {
@@ -8,10 +13,7 @@ import {
   toMaquinariaPublica,
 } from "../model/Maquinaria";
 
-import {
-  CrearInsumoDTO,
-  insumoPublicSelect,
-} from "../model/Insumo";
+import { CrearInsumoDTO, insumoPublicSelect } from "../model/Insumo";
 
 import {
   CrearEmpresaDTO,
@@ -39,7 +41,9 @@ export class EmpresaService {
   async crearEmpresa(payload: unknown) {
     const dto = CrearEmpresaDTO.parse(payload);
 
-    const existe = await this.prisma.empresa.findUnique({ where: { nit: dto.nit } });
+    const existe = await this.prisma.empresa.findUnique({
+      where: { nit: dto.nit },
+    });
     if (existe) throw new Error("Ya existe una empresa con este NIT.");
 
     const creada = await this.prisma.empresa.create({
@@ -121,7 +125,7 @@ export class EmpresaService {
           disponible: base.disponible ?? true,
           empresaId: this.empresaId,
           conjuntoId: base.conjuntoId ?? null,
-          operarioId: base.operarioId ?? null,
+          operarioId: base.operarioId!.toString() ?? null,
           fechaPrestamo: base.fechaPrestamo ?? null,
           fechaDevolucionEstimada: base.fechaDevolucionEstimada ?? null,
         },
@@ -176,16 +180,22 @@ export class EmpresaService {
     const { usuarioId } = AgregarJefeOperacionesDTO.parse(payload);
 
     const existente = await this.prisma.jefeOperaciones.findFirst({
-      where: { id: usuarioId, empresaId: this.empresaId },
+      where: { id: usuarioId.toString(), empresaId: this.empresaId },
     });
-    if (existente) throw new Error("Este jefe ya está registrado en la empresa.");
+    if (existente)
+      throw new Error("Este jefe ya está registrado en la empresa.");
 
     // Debe existir el registro JefeOperaciones por el id (relación 1:1 con Usuario)
-    const jefe = await this.prisma.jefeOperaciones.findUnique({ where: { id: usuarioId } });
-    if (!jefe) throw new Error("El usuario no es Jefe de Operaciones (no existe el rol).");
+    const jefe = await this.prisma.jefeOperaciones.findUnique({
+      where: { id: usuarioId.toString() },
+    });
+    if (!jefe)
+      throw new Error(
+        "El usuario no es Jefe de Operaciones (no existe el rol)."
+      );
 
     return this.prisma.jefeOperaciones.update({
-      where: { id: usuarioId },
+      where: { id: usuarioId.toString() },
       data: { empresaId: this.empresaId },
     });
   }
@@ -215,25 +225,34 @@ export class EmpresaService {
   /* ===================== CATÁLOGO DE INSUMOS ===================== */
 
   async agregarInsumoAlCatalogo(payload: unknown) {
-    // Usa tu DTO de insumo; fuerza empresaId actual
-    const dto = CrearInsumoDTO.parse({ ...(payload as any), empresaId: this.empresaId });
+    const dto = CrearInsumoDTO.parse(payload);
 
     const existe = await this.prisma.insumo.findFirst({
-      where: { empresaId: this.empresaId, nombre: dto.nombre, unidad: dto.unidad },
+      where: {
+        empresaId: this.empresaId,
+        nombre: dto.nombre,
+        unidad: dto.unidad,
+      },
       select: { id: true },
     });
-    if (existe) throw new Error("🚫 Ya existe un insumo con ese nombre y unidad en el catálogo.");
+    if (existe) {
+      throw new Error(
+        "🚫 Ya existe un insumo con ese nombre y unidad en el catálogo."
+      );
+    }
 
-    return this.prisma.insumo.create({
+    const creado = await this.prisma.insumo.create({
       data: {
         nombre: dto.nombre,
         unidad: dto.unidad,
+        categoria: dto.categoria,
+        umbralBajo: dto.umbralBajo ?? null,
         empresaId: this.empresaId,
-        // Si más adelante agregas `categoria` y `umbralGlobalMinimo` al schema,
-        // acá podrías mapearlos desde el DTO (por ahora no existen en Prisma).
       },
       select: insumoPublicSelect,
     });
+
+    return creado;
   }
 
   async listarCatalogo() {

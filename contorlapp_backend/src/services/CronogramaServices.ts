@@ -92,7 +92,7 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
-        operarios: { some: { id: operarioId } },
+        operarios: { some: { id: operarioId.toString() } },
       },
       include: {
         operarios: { include: { usuario: true } },
@@ -192,7 +192,9 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
-        operarios: f.operarioId ? { some: { id: f.operarioId } } : undefined,
+        operarios: f.operarioId
+          ? { some: { id: f.operarioId.toString() } }
+          : undefined,
         fechaInicio: fechaFin ? { lte: fechaFin } : undefined,
         fechaFin: fechaInicio ? { gte: fechaInicio } : undefined,
         ubicacion: f.ubicacion
@@ -360,14 +362,14 @@ export class CronogramaService {
     });
     if (operarios.length === 0) return [];
 
-    // 2) Calcular horas ya asignadas en esa semana y si tienen solape en el intervalo
-    // (en product podrías optimizar con agregaciones)
+    // 2) Calcular horas ya asignadas
     const out: Array<{
-      id: number;
+      id: string; // <- antes number
       nombre: string;
       horasSemana: number;
       solapa: boolean;
     }> = [];
+
     for (const op of operarios) {
       const lunes = mondayOfWeek(fechaInicio);
       const domingo = new Date(lunes);
@@ -376,7 +378,7 @@ export class CronogramaService {
       const tareasSemana = await this.prisma.tarea.findMany({
         where: {
           conjuntoId: this.conjuntoId,
-          operarios: { some: { id: op.id } },
+          operarios: { some: { id: op.id } }, // op.id es string
           fechaFin: { gte: lunes },
           fechaInicio: { lte: domingo },
         },
@@ -392,14 +394,14 @@ export class CronogramaService {
       );
 
       out.push({
-        id: op.id,
+        id: op.id, // ya es string, no hace falta toString()
         nombre: op.usuario.nombre,
         horasSemana: horas,
         solapa,
       });
     }
 
-    // 3) Ranking: sin solape primero, menos horas primero
+    // 3) Ranking
     out.sort((a, b) => {
       if (a.solapa !== b.solapa) return a.solapa ? 1 : -1;
       return a.horasSemana - b.horasSemana;
@@ -482,7 +484,7 @@ export class CronogramaService {
     const tareas = await this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
-        operarios: { some: { id: operarioId } },
+        operarios: { some: { id: operarioId.toString() } },
         fechaFin: { gte: fechaInicio },
         fechaInicio: { lte: fechaFin },
       },

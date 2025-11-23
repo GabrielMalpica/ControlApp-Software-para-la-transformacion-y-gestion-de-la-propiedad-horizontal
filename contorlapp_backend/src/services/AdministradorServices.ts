@@ -16,7 +16,7 @@ export class AdministradorService {
   async verConjuntos() {
     try {
       const conjuntos = await this.prisma.conjunto.findMany({
-        where: { administradorId: this.administradorId },
+        where: { administradorId: this.administradorId.toString() },
         select: { nombre: true, nit: true },
       });
       return conjuntos.map((c) => `${c.nombre} ${c.nit}`);
@@ -132,7 +132,7 @@ export class AdministradorService {
       const [conjunto, maquinaria, operario] = await Promise.all([
         this.prisma.conjunto.findUnique({ where: { nit: dto.conjuntoId }, select: { nit: true } }),
         this.prisma.maquinaria.findUnique({ where: { id: dto.maquinariaId }, select: { id: true } }),
-        this.prisma.operario.findUnique({ where: { id: dto.operarioId }, select: { id: true } }),
+        this.prisma.operario.findUnique({ where: { id: dto.operarioId.toString() }, select: { id: true } }),
       ]);
 
       if (!conjunto) throw new Error("Conjunto no encontrado.");
@@ -143,7 +143,7 @@ export class AdministradorService {
         data: {
           conjunto: { connect: { nit: dto.conjuntoId } },
           maquinaria: { connect: { id: dto.maquinariaId } },
-          responsable: { connect: { id: dto.operarioId } },
+          responsable: { connect: { id: dto.operarioId.toString() } },
           empresa: dto.empresaId ? { connect: { nit: dto.empresaId } } : undefined,
           fechaUso: dto.fechaUso,
           fechaDevolucionEstimada: dto.fechaDevolucionEstimada,

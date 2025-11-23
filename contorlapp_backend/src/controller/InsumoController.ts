@@ -41,7 +41,7 @@ export class InsumoController {
         unidad: dto.unidad,
         empresaId,
         categoria: dto.categoria,
-        umbralBajo: dto.umbralGlobalMinimo ?? null,
+        umbralBajo: dto.umbralBajo ?? null,
       },
       select: insumoPublicSelect,
     });
@@ -66,11 +66,11 @@ export class InsumoController {
         : undefined,
       categoria: dto.categoria ?? undefined,
       umbralBajo:
-        dto.umbralGlobalMinimo === undefined
+        dto.umbralBajo === undefined
           ? undefined
-          : dto.umbralGlobalMinimo === null
+          : dto.umbralBajo === null
           ? null
-          : dto.umbralGlobalMinimo,
+          : dto.umbralBajo,
     };
 
     const actualizado = await this.prisma.insumo.update({

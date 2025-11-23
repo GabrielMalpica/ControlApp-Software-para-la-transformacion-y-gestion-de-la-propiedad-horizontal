@@ -27,7 +27,7 @@ export class OperarioService {
   /** Obtiene el límite semanal (horas) desde la Empresa del operario */
   private async getLimiteHorasSemana(): Promise<number> {
     const op = await this.prisma.operario.findUnique({
-      where: { id: this.operarioId },
+      where: { id: this.operarioId.toString() },
       select: { empresa: { select: { limiteHorasSemana: true } } },
     });
     // fallback defensivo si por alguna razón no hay empresa asociada
@@ -48,7 +48,7 @@ export class OperarioService {
     const horasSemana = await this.horasAsignadasEnSemana(tarea.fechaInicio);
     if (horasSemana + tarea.duracionHoras > limite) {
       const operario = await this.prisma.operario.findUnique({
-        where: { id: this.operarioId },
+        where: { id: this.operarioId.toString() },
         include: { usuario: true },
       });
       const nombre = operario?.usuario?.nombre ?? "Operario";
@@ -59,7 +59,7 @@ export class OperarioService {
 
     await this.prisma.tarea.update({
       where: { id: tareaId },
-      data: { operarios: { connect: { id: this.operarioId } } },
+      data: { operarios: { connect: { id: this.operarioId.toString() } } },
     });
   }
 
@@ -148,7 +148,7 @@ export class OperarioService {
     const { fecha } = FechaDTO.parse(payload);
     return this.prisma.tarea.findMany({
       where: {
-        operarios: { some: { id: this.operarioId } },
+        operarios: { some: { id: this.operarioId.toString() } },
         fechaInicio: { lte: fecha },
         fechaFin: { gte: fecha },
       },
@@ -158,7 +158,7 @@ export class OperarioService {
   async listarTareas() {
     return this.prisma.tarea.findMany({
       where: {
-        operarios: { some: { id: this.operarioId } },
+        operarios: { some: { id: this.operarioId.toString() } },
       },
       orderBy: { fechaInicio: "asc" },
       include: {
@@ -178,7 +178,7 @@ export class OperarioService {
 
     const tareas = await this.prisma.tarea.findMany({
       where: {
-        operarios: { some: { id: this.operarioId } },
+        operarios: { some: { id: this.operarioId.toString() } },
         fechaFin: { gte: inicio },
         fechaInicio: { lte: fin },
       },
@@ -200,7 +200,7 @@ export class OperarioService {
     const limite = await this.getLimiteHorasSemana();
     const horas = await this.horasAsignadasEnSemana(fecha);
     const operario = await this.prisma.operario.findUnique({
-      where: { id: this.operarioId },
+      where: { id: this.operarioId.toString() },
       include: { usuario: true },
     });
     const nombre = operario?.usuario?.nombre ?? "Operario";

@@ -84,7 +84,6 @@ export class DefinicionTareaPreventivaService {
           ? new Prisma.Decimal(dto.consumoPrincipalPorUnidad)
           : null,
 
-      // JSON nullable en create: si viene null/undefined, OMITIR
       insumosPlanJson:
         dto.insumosPlanJson != null
           ? (dto.insumosPlanJson as Prisma.InputJsonValue)
@@ -95,7 +94,7 @@ export class DefinicionTareaPreventivaService {
           : undefined,
 
       responsableSugerido: dto.responsableSugeridoId
-        ? { connect: { id: dto.responsableSugeridoId } }
+        ? { connect: { id: dto.responsableSugeridoId.toString() } } // <---
         : undefined,
 
       activo: dto.activo ?? true,
@@ -140,7 +139,6 @@ export class DefinicionTareaPreventivaService {
   async actualizar(conjuntoId: string, id: number, payload: unknown) {
     const dto = EditarDefinicionPreventivaDTO.parse(payload);
 
-    // validar pertenencia
     const def = await this.prisma.definicionTareaPreventiva.findUnique({
       where: { id },
       select: { id: true, conjuntoId: true },
@@ -185,6 +183,7 @@ export class DefinicionTareaPreventivaService {
           : dto.insumoPrincipalId === null
           ? { disconnect: true }
           : { connect: { id: dto.insumoPrincipalId } },
+
       consumoPrincipalPorUnidad:
         dto.consumoPrincipalPorUnidad === undefined
           ? undefined
@@ -192,7 +191,6 @@ export class DefinicionTareaPreventivaService {
           ? null
           : new Prisma.Decimal(dto.consumoPrincipalPorUnidad),
 
-      // JSON nullable en update: Prisma.JsonNull para forzar NULL
       insumosPlanJson:
         dto.insumosPlanJson === undefined
           ? undefined
@@ -211,7 +209,7 @@ export class DefinicionTareaPreventivaService {
           ? undefined
           : dto.responsableSugeridoId === null
           ? { disconnect: true }
-          : { connect: { id: dto.responsableSugeridoId } },
+          : { connect: { id: dto.responsableSugeridoId.toString() } }, // <---
     };
 
     return this.prisma.definicionTareaPreventiva.update({
@@ -269,7 +267,7 @@ export class DefinicionTareaPreventivaService {
     }
 
     // 2) Validación de solapes por operario (en borrador)
-    const porOperario: Record<number, { i: Date; f: Date }[]> = {};
+    const porOperario: Record<string, { i: Date; f: Date }[]> = {};
     for (const t of borradores) {
       for (const op of t.operarios) {
         if (!porOperario[op.id]) porOperario[op.id] = [];
@@ -431,11 +429,11 @@ export class DefinicionTareaPreventivaService {
       const [hA] = (h.horaApertura as HHmm).split(":").map(Number);
       const [hC] = (h.horaCierre as HHmm).split(":").map(Number);
       const start = hA;
-      const end = hC; // exclusivo
+      const end = hC;
       horariosPorDia.set(h.dia, { start, end });
     }
 
-    // 3) Límite semanal de horas
+    // 3) Límite semanal
     const conjunto = await this.prisma.conjunto.findUnique({
       where: { nit: conjuntoId },
       select: { empresaId: true },
@@ -451,7 +449,7 @@ export class DefinicionTareaPreventivaService {
       }
     }
 
-    // 4) (opcional) limpiar borradores del mismo período
+    // 4) Limpiar borradores previos
     await this.prisma.tarea.deleteMany({
       where: {
         conjuntoId,
@@ -510,16 +508,16 @@ export class DefinicionTareaPreventivaService {
           fechaFin.setHours(fechaInicio.getHours() + tamanoBloqueHoras);
 
           // Intentar asignar responsable sugerido
-          let operarioId: number | null = null;
+          let operarioId: string | null = null; // <-- antes number | null
           if (def.responsableSugeridoId) {
             const horasSemana = await horasAsignadasEnSemana(
               this.prisma,
-              def.responsableSugeridoId,
+              def.responsableSugeridoId, // string
               fechaInicio
             );
             const haySolape = await existeSolapeParaOperario(
               this.prisma,
-              def.responsableSugeridoId,
+              def.responsableSugeridoId, // string
               fechaInicio,
               fechaFin,
               conjuntoId
@@ -532,14 +530,13 @@ export class DefinicionTareaPreventivaService {
             }
           }
 
-          // Crear tarea con IDs escalares + conectar operario (M:N) si corresponde
           await this.prisma.tarea.create({
             data: {
               descripcion: def.descripcion,
               fechaInicio,
               fechaFin,
               duracionHoras: tamanoBloqueHoras,
-              estado: EstadoTarea.ASIGNADA, // o un estado "PLAN"
+              estado: EstadoTarea.ASIGNADA,
               tipo: TipoTarea.PREVENTIVA,
               frecuencia: def.frecuencia,
               borrador: true,
@@ -552,8 +549,8 @@ export class DefinicionTareaPreventivaService {
               ...(operarioId
                 ? { operarios: { connect: { id: operarioId } } }
                 : {}),
-              supervisorId: null,
 
+              supervisorId: null,
               ubicacionId: def.ubicacionId,
               elementoId: def.elementoId,
               conjuntoId,
@@ -566,7 +563,6 @@ export class DefinicionTareaPreventivaService {
                   : null,
               consumoTotalEstimado: null,
 
-              // JSON nullable en create: omitir si es null/undefined
               insumosPlanJson:
                 def.insumosPlanJson != null
                   ? (def.insumosPlanJson as Prisma.InputJsonValue)
@@ -611,7 +607,9 @@ export class DefinicionTareaPreventivaService {
         duracionHoras: dto.duracionHoras ?? undefined,
         operarios:
           dto.operariosIds !== undefined
-            ? { set: dto.operariosIds.map((id) => ({ id })) }
+            ? {
+                set: dto.operariosIds.map((id) => ({ id: id.toString() })),
+              }
             : undefined,
       },
       include: { operarios: { select: { id: true } } },
@@ -623,7 +621,7 @@ export class DefinicionTareaPreventivaService {
     if (dto.fechaFin < dto.fechaInicio)
       throw new Error("fechaFin >= fechaInicio");
 
-    // validar solape básico por operario (solo contra borrador preventivo del mismo conjunto)
+    // validar solape por operario
     if (dto.operariosIds?.length) {
       for (const opId of dto.operariosIds) {
         const choque = await this.prisma.tarea.findFirst({
@@ -633,7 +631,7 @@ export class DefinicionTareaPreventivaService {
             tipo: TipoTarea.PREVENTIVA,
             fechaInicio: { lt: dto.fechaFin },
             fechaFin: { gt: dto.fechaInicio },
-            operarios: { some: { id: opId } },
+            operarios: { some: { id: opId.toString() } }, // <---
           },
           select: { id: true },
         });
@@ -664,13 +662,17 @@ export class DefinicionTareaPreventivaService {
         ubicacionId: dto.ubicacionId,
         elementoId: dto.elementoId,
         conjuntoId,
-        supervisorId: dto.supervisorId ?? null,
+        supervisorId:
+          dto.supervisorId == null ? null : dto.supervisorId.toString(),
+
         tiempoEstimadoHoras: dto.tiempoEstimadoHoras
           ? new Prisma.Decimal(dto.tiempoEstimadoHoras)
           : null,
 
         operarios: dto.operariosIds?.length
-          ? { connect: dto.operariosIds.map((id) => ({ id })) }
+          ? {
+              connect: dto.operariosIds.map((id) => ({ id: id.toString() })),
+            }
           : undefined,
       },
     });
@@ -696,10 +698,12 @@ export class DefinicionTareaPreventivaService {
       throw new Error("No es un bloque borrador preventivo de este conjunto.");
     }
 
-    // determinar operarios finales (para validar solapes si cambian horas)
-    let operariosIdsFinal: number[] | undefined = undefined;
+    // determinar operarios finales
+    let operariosIdsFinal: string[] | undefined = undefined;
+
     if (dto.operariosIds) {
-      operariosIdsFinal = dto.operariosIds;
+      // DTO trae number[] → convertir a string[]
+      operariosIdsFinal = dto.operariosIds.map((id) => id.toString());
     } else {
       const actuales = await this.prisma.tarea.findUnique({
         where: { id: tareaId },
@@ -721,7 +725,7 @@ export class DefinicionTareaPreventivaService {
             tipo: TipoTarea.PREVENTIVA,
             fechaInicio: { lt: fechaFin },
             fechaFin: { gt: fechaInicio },
-            operarios: { some: { id: opId } },
+            operarios: { some: { id: opId } }, // string
           },
           select: { id: true },
         });
@@ -742,7 +746,12 @@ export class DefinicionTareaPreventivaService {
             : undefined),
         ubicacionId: dto.ubicacionId ?? undefined,
         elementoId: dto.elementoId ?? undefined,
-        supervisorId: dto.supervisorId ?? undefined,
+        supervisorId:
+          dto.supervisorId === undefined
+            ? undefined
+            : dto.supervisorId === null
+            ? null
+            : dto.supervisorId.toString(),
         tiempoEstimadoHoras:
           dto.tiempoEstimadoHoras === undefined
             ? undefined
@@ -752,7 +761,9 @@ export class DefinicionTareaPreventivaService {
         operarios:
           dto.operariosIds === undefined
             ? undefined
-            : { set: dto.operariosIds.map((id) => ({ id })) },
+            : {
+                set: dto.operariosIds.map((id) => ({ id: id.toString() })),
+              },
       },
     });
   }
@@ -871,7 +882,7 @@ function pickDaysByFrecuencia(days: Date[], f: Frecuencia): Date[] {
 
 async function horasAsignadasEnSemana(
   prisma: PrismaClient,
-  operarioId: number,
+  operarioId: string,
   fecha: Date
 ): Promise<number> {
   const inicio = inicioSemana(fecha);
@@ -880,7 +891,7 @@ async function horasAsignadasEnSemana(
 
   const tareas = await prisma.tarea.findMany({
     where: {
-      operarios: { some: { id: operarioId } },
+      operarios: { some: { id: operarioId.toString() } },
       fechaInicio: { lte: fin },
       fechaFin: { gte: inicio },
       borrador: true, // contar solo borrador del plan actual
@@ -892,7 +903,7 @@ async function horasAsignadasEnSemana(
 
 async function existeSolapeParaOperario(
   prisma: PrismaClient,
-  operarioId: number,
+  operarioId: string,
   inicio: Date,
   fin: Date,
   conjuntoId: string
@@ -900,7 +911,7 @@ async function existeSolapeParaOperario(
   const overlap = await prisma.tarea.findFirst({
     where: {
       conjuntoId,
-      operarios: { some: { id: operarioId } },
+      operarios: { some: { id: operarioId.toString() } },
       // solape si: inicioA < finB && finA > inicioB
       fechaInicio: { lt: fin },
       fechaFin: { gt: inicio },

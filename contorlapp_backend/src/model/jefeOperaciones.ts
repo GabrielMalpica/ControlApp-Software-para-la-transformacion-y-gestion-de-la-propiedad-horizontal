@@ -4,7 +4,6 @@ import { z } from "zod";
 /** Dominio base según Prisma */
 export interface JefeOperacionesDominio {
   id: number;          // mismo ID que Usuario.id
-  empresaId: string;   // NIT de la empresa obligatoria
 }
 
 /** Tipo público (igual por ahora) */
@@ -14,8 +13,7 @@ export type JefeOperacionesPublico = JefeOperacionesDominio;
 
 /** Crear jefe de operaciones */
 export const CrearJefeOperacionesDTO = z.object({
-  id: z.number().int().positive(), // mismo id que Usuario.id
-  empresaId: z.string().min(3),    // NIT de la empresa
+  Id: z.string().min(1, "El id (cédula) del usuario es obligatorio"),
 });
 
 /** Editar jefe de operaciones (solo empresa, opcional) */

@@ -20,7 +20,7 @@ export type GerentePublico = GerenteDominio;
  * y opcionalmente se asocie a una Empresa.
  */
 export const CrearGerenteDTO = z.object({
-  id: z.number().int().positive(), // mismo id que Usuario.id
+  Id: z.string().min(1, "El id (cédula) del usuario es obligatorio"),
   empresaId: z.string().min(3).optional(),
 });
 

@@ -229,7 +229,7 @@ model ConfiguracionSistema {
 }
 
 model Usuario {
-  id              Int             @id
+  id              String             @id
   nombre          String
   correo          String          @unique
   contrasena      String
@@ -257,7 +257,7 @@ model Usuario {
 }
 
 model Gerente {
-  id        Int      @id
+  id        String      @id
   usuario   Usuario  @relation(fields: [id], references: [id], onDelete: Cascade)
   empresa   Empresa? @relation(fields: [empresaId], references: [nit])
   empresaId String?
@@ -266,7 +266,7 @@ model Gerente {
 }
 
 model Administrador {
-  id        Int        @id
+  id        String        @id
   usuario   Usuario    @relation(fields: [id], references: [id], onDelete: Cascade)
   conjuntos Conjunto[]
 
@@ -274,7 +274,7 @@ model Administrador {
 }
 
 model JefeOperaciones {
-  id      Int     @id
+  id      String     @id
   usuario Usuario @relation(fields: [id], references: [id], onDelete: Cascade)
 
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
@@ -284,7 +284,7 @@ model JefeOperaciones {
 }
 
 model Supervisor {
-  id      Int     @id
+  id      String     @id
   usuario Usuario @relation(fields: [id], references: [id], onDelete: Cascade)
 
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
@@ -296,7 +296,7 @@ model Supervisor {
 }
 
 model Operario {
-  id                        Int                   @id
+  id                        String                   @id
   usuario                   Usuario               @relation(fields: [id], references: [id], onDelete: Cascade)
   funciones                 TipoFuncion[]
   tareas                    Tarea[]               @relation("TareaOperarios")
@@ -351,7 +351,7 @@ model DefinicionTareaPreventiva {
   insumosPlanJson           Json? // [{insumoId, consumoPorUnidad}, ...]
   maquinariaPlanJson        Json? // [{maquinariaId?, tipo?}, ...]
 
-  responsableSugeridoId Int?
+  responsableSugeridoId String?
   responsableSugerido   Operario? @relation(fields: [responsableSugeridoId], references: [id])
 
   activo        Boolean  @default(true) // puedes desactivar sin borrar
@@ -386,7 +386,7 @@ model Tarea {
   // Relaciones existentes
   operarios    Operario[]  @relation("TareaOperarios")
   supervisor   Supervisor? @relation(fields: [supervisorId], references: [id])
-  supervisorId Int?
+  supervisorId String?
   ubicacion    Ubicacion   @relation(fields: [ubicacionId], references: [id])
   ubicacionId  Int
   elemento     Elemento    @relation(fields: [elementoId], references: [id])
@@ -439,7 +439,7 @@ model Conjunto {
   correo    String
 
   administrador   Administrador? @relation(fields: [administradorId], references: [id])
-  administradorId Int?
+  administradorId String?
 
   empresa   Empresa? @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
   empresaId String?
@@ -563,7 +563,7 @@ model ConsumoInsumo {
   insumoId Int
 
   operario   Operario? @relation(fields: [operarioId], references: [id])
-  operarioId Int?
+  operarioId String?
 
   tarea   Tarea? @relation(fields: [tareaId], references: [id])
   tareaId Int?
@@ -588,7 +588,7 @@ model Maquinaria {
   conjuntoId String?
 
   responsable Operario? @relation(fields: [operarioId], references: [id])
-  operarioId  Int?
+  operarioId  String?
 
   empresa   Empresa? @relation(fields: [empresaId], references: [nit])
   empresaId String?
@@ -704,7 +704,7 @@ model SolicitudMaquinaria {
   maquinariaId Int
 
   responsable Operario @relation(fields: [operarioId], references: [id])
-  operarioId  Int
+  operarioId  String
 
   empresa   Empresa? @relation(fields: [empresaId], references: [nit])
   empresaId String?
