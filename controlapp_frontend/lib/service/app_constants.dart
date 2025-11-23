@@ -1,12 +1,18 @@
 class AppConstants {
   static const String baseUrl = "http://localhost:3000";
-  static const String apiUrl = baseUrl; // 👈 alias compatible
 
-  static const String conjuntos = "$baseUrl/conjuntos";
-  static const String ping = "$baseUrl/ping";
+  // 🔹 Prefijo de todo lo que maneja el GerenteController
+  static const String gerenteBase = "$baseUrl/gerente";
 
-  static String operariosPorConjunto(String nit) => "$conjuntos/$nit/operarios";
-  static String administradorPorConjunto(String nit) => "$conjuntos/$nit/administrador";
-  static String maquinariaPorConjunto(String nit) => "$conjuntos/$nit/maquinaria";
-  static String inventarioPorConjunto(String nit) => "$conjuntos/$nit/inventario";
+  // 🔹 Usuarios
+  static const String usuarios = "$gerenteBase/usuarios";
+
+  // 🔹 Asignación de roles
+  static const String operarios = "$gerenteBase/operarios";
+  static const String supervisores = "$gerenteBase/supervisores";
+  static const String administradores = "$gerenteBase/administradores";
+  static const String jefesOperaciones = "$gerenteBase/jefes-operaciones";
+
+  // 🔹 Catálogo de enums para usuario
+  static const String usuarioEnums = "$gerenteBase/enums-usuario";
 }

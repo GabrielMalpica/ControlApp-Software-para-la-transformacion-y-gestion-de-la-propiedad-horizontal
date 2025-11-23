@@ -1,10 +1,7 @@
-// lib/repository/insumo_repository.dart
-
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import '../model/insumo_model.dart';
-import '../../service/api_client.dart';
-import '../../service/app_constants.dart';
+import '../service/api_client.dart';
+import '../service/app_constants.dart';
 
 class InsumoRepository {
   final ApiClient _apiClient = ApiClient();
@@ -12,7 +9,7 @@ class InsumoRepository {
   /// Crear un nuevo insumo
   Future<void> crearInsumo(InsumoModel insumo) async {
     final response = await _apiClient.post(
-      '${AppConstants.baseUrl}/insumos',
+      AppConstants.insumos,
       body: insumo.toJson(),
     );
 
@@ -24,7 +21,7 @@ class InsumoRepository {
   /// Actualizar insumo existente
   Future<void> actualizarInsumo(int id, Map<String, dynamic> body) async {
     final response = await _apiClient.patch(
-      '${AppConstants.baseUrl}/insumos/$id',
+      '${AppConstants.insumos}/$id',
       body: body,
     );
 
@@ -44,7 +41,7 @@ class InsumoRepository {
     if (nombre != null) queryParams['nombre'] = nombre;
     if (categoria != null) queryParams['categoria'] = categoria;
 
-    final uri = Uri.parse('${AppConstants.baseUrl}/insumos')
+    final uri = Uri.parse(AppConstants.insumos)
         .replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
 
     final response = await _apiClient.get(uri.toString());
@@ -59,7 +56,7 @@ class InsumoRepository {
 
   /// Obtener un insumo por ID
   Future<InsumoModel> obtenerInsumoPorId(int id) async {
-    final response = await _apiClient.get('${AppConstants.baseUrl}/insumos/$id');
+    final response = await _apiClient.get('${AppConstants.insumos}/$id');
 
     if (response.statusCode == 200) {
       return InsumoModel.fromJson(json.decode(response.body));
@@ -70,7 +67,7 @@ class InsumoRepository {
 
   /// Eliminar un insumo por ID
   Future<void> eliminarInsumo(int id) async {
-    final response = await _apiClient.delete('${AppConstants.baseUrl}/insumos/$id');
+    final response = await _apiClient.delete('${AppConstants.insumos}/$id');
 
     if (response.statusCode != 200 && response.statusCode != 204) {
       throw Exception('Error al eliminar el insumo');

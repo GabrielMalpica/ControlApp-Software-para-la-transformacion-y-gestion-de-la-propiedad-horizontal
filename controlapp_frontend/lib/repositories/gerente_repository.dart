@@ -1,17 +1,14 @@
-// lib/repository/gerente_repository.dart
-
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import '../model/gerente_model.dart';
-import '../../service/api_client.dart';
-import '../../service/app_constants.dart';
+import '../service/api_client.dart';
+import '../service/app_constants.dart';
 
 class GerenteRepository {
   final ApiClient _apiClient = ApiClient();
 
   /// Obtener todos los gerentes
   Future<List<GerenteModel>> getGerentes() async {
-    final response = await _apiClient.get('${AppConstants.baseUrl}/gerentes');
+    final response = await _apiClient.get(AppConstants.gerentes);
 
     if (response.statusCode == 200) {
       final List<dynamic> data = json.decode(response.body);
@@ -23,7 +20,7 @@ class GerenteRepository {
 
   /// Obtener un gerente por ID
   Future<GerenteModel> getGerenteById(int id) async {
-    final response = await _apiClient.get('${AppConstants.baseUrl}/gerentes/$id');
+    final response = await _apiClient.get('${AppConstants.gerentes}/$id');
 
     if (response.statusCode == 200) {
       return GerenteModel.fromJson(json.decode(response.body));
@@ -35,7 +32,7 @@ class GerenteRepository {
   /// Crear un nuevo gerente
   Future<void> crearGerente(GerenteModel gerente) async {
     final response = await _apiClient.post(
-      '${AppConstants.baseUrl}/gerentes',
+      AppConstants.gerentes,
       body: gerente.toJson(),
     );
 
@@ -51,7 +48,7 @@ class GerenteRepository {
     };
 
     final response = await _apiClient.put(
-      '${AppConstants.baseUrl}/gerentes/$id',
+      '${AppConstants.gerentes}/$id',
       body: body,
     );
 
@@ -62,7 +59,7 @@ class GerenteRepository {
 
   /// Eliminar un gerente por ID
   Future<void> eliminarGerente(int id) async {
-    final response = await _apiClient.delete('${AppConstants.baseUrl}/gerentes/$id');
+    final response = await _apiClient.delete('${AppConstants.gerentes}/$id');
 
     if (response.statusCode != 200 && response.statusCode != 204) {
       throw Exception('Error al eliminar el gerente');

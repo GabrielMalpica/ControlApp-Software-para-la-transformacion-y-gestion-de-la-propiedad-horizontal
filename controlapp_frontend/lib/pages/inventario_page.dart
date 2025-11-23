@@ -41,7 +41,7 @@ class InventarioPage extends StatelessWidget {
               child: ListView.builder(
                 itemCount: inventario.length,
                 itemBuilder: (context, i) {
-                  final inv = inventario[i] as Map<String, dynamic>;
+                  final inv = [i] as Map<String, dynamic>;
                   final item = inv['item']?.toString() ?? '';
                   final stock = inv['stock']?.toString() ?? '0';
                   final estado = inv['estado']?.toString() ?? '';

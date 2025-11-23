@@ -1,8 +1,7 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import '../model/empresa_model.dart';
-import '../../service/api_client.dart';
-import '../../service/app_constants.dart';
+import '../service/api_client.dart';
+import '../service/app_constants.dart';
 
 class EmpresaRepository {
   final ApiClient _apiClient = ApiClient();
@@ -10,7 +9,7 @@ class EmpresaRepository {
   /// Crear una nueva empresa
   Future<EmpresaModel> crearEmpresa(EmpresaModel empresa) async {
     final response = await _apiClient.post(
-      '${AppConstants.baseUrl}/empresa',
+      AppConstants.empresa,
       body: empresa.toJson(),
     );
 
@@ -24,7 +23,7 @@ class EmpresaRepository {
   /// Agregar maquinaria a la empresa
   Future<void> agregarMaquinaria(Map<String, dynamic> body, String nit) async {
     final response = await _apiClient.post(
-      '${AppConstants.baseUrl}/empresa/$nit/maquinaria',
+      '${AppConstants.empresa}/$nit/maquinaria',
       body: body,
     );
 
@@ -36,7 +35,7 @@ class EmpresaRepository {
   /// Listar maquinaria disponible
   Future<List<dynamic>> listarMaquinariaDisponible(String nit) async {
     final response = await _apiClient.get(
-      '${AppConstants.baseUrl}/empresa/$nit/maquinaria/disponible',
+      '${AppConstants.empresa}/$nit/maquinaria/disponible',
     );
 
     if (response.statusCode == 200) {
@@ -49,7 +48,7 @@ class EmpresaRepository {
   /// Obtener maquinaria prestada
   Future<List<dynamic>> obtenerMaquinariaPrestada(String nit) async {
     final response = await _apiClient.get(
-      '${AppConstants.baseUrl}/empresa/$nit/maquinaria/prestada',
+      '${AppConstants.empresa}/$nit/maquinaria/prestada',
     );
 
     if (response.statusCode == 200) {
@@ -62,7 +61,7 @@ class EmpresaRepository {
   /// Agregar jefe de operaciones
   Future<void> agregarJefeOperaciones(Map<String, dynamic> body, String nit) async {
     final response = await _apiClient.post(
-      '${AppConstants.baseUrl}/empresa/$nit/jefe-operaciones',
+      '${AppConstants.empresa}/$nit/jefe-operaciones',
       body: body,
     );
 
@@ -74,7 +73,7 @@ class EmpresaRepository {
   /// Recibir solicitud de tarea
   Future<void> recibirSolicitudTarea(int id, String nit) async {
     final response = await _apiClient.post(
-      '${AppConstants.baseUrl}/empresa/$nit/solicitudes/$id/recibir',
+      '${AppConstants.empresa}/$nit/solicitudes/$id/recibir',
     );
 
     if (response.statusCode != 200) {
@@ -85,7 +84,7 @@ class EmpresaRepository {
   /// Eliminar solicitud de tarea
   Future<void> eliminarSolicitudTarea(int id, String nit) async {
     final response = await _apiClient.delete(
-      '${AppConstants.baseUrl}/empresa/$nit/solicitudes/$id',
+      '${AppConstants.empresa}/$nit/solicitudes/$id',
     );
 
     if (response.statusCode != 204 && response.statusCode != 200) {
@@ -96,7 +95,7 @@ class EmpresaRepository {
   /// Listar solicitudes pendientes
   Future<List<dynamic>> solicitudesTareaPendientes(String nit) async {
     final response = await _apiClient.get(
-      '${AppConstants.baseUrl}/empresa/$nit/solicitudes/pendientes',
+      '${AppConstants.empresa}/$nit/solicitudes/pendientes',
     );
 
     if (response.statusCode == 200) {
@@ -109,7 +108,7 @@ class EmpresaRepository {
   /// Agregar insumo al catálogo
   Future<void> agregarInsumoAlCatalogo(Map<String, dynamic> body, String nit) async {
     final response = await _apiClient.post(
-      '${AppConstants.baseUrl}/empresa/$nit/catalogo',
+      '${AppConstants.empresa}/$nit/catalogo',
       body: body,
     );
 
@@ -121,7 +120,7 @@ class EmpresaRepository {
   /// Listar catálogo de insumos
   Future<List<dynamic>> listarCatalogo(String nit) async {
     final response = await _apiClient.get(
-      '${AppConstants.baseUrl}/empresa/$nit/catalogo',
+      '${AppConstants.empresa}/$nit/catalogo',
     );
 
     if (response.statusCode == 200) {
@@ -134,7 +133,7 @@ class EmpresaRepository {
   /// Buscar insumo por ID
   Future<Map<String, dynamic>?> buscarInsumoPorId(int id, String nit) async {
     final response = await _apiClient.get(
-      '${AppConstants.baseUrl}/empresa/$nit/catalogo/$id',
+      '${AppConstants.empresa}/$nit/catalogo/$id',
     );
 
     if (response.statusCode == 200) {

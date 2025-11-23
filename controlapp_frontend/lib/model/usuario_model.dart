@@ -1,5 +1,5 @@
 class Usuario {
-  final int id;
+  final String cedula;
   final String nombre;
   final String correo;
   final String rol;
@@ -17,9 +17,10 @@ class Usuario {
   final String? tallaCalzado;
   final String? tipoContrato;
   final String? jornadaLaboral;
+  final List<String>? tipoFunciones;
 
   Usuario({
-    required this.id,
+    required this.cedula,
     required this.nombre,
     required this.correo,
     required this.rol,
@@ -37,11 +38,13 @@ class Usuario {
     this.tallaCalzado,
     this.tipoContrato,
     this.jornadaLaboral,
+    this.tipoFunciones,
   });
 
   factory Usuario.fromJson(Map<String, dynamic> json) {
     return Usuario(
-      id: json['id'],
+      // el backend devuelve `id`, que es la cédula
+      cedula: json['id']?.toString() ?? json['cedula']?.toString() ?? '',
       nombre: json['nombre'],
       correo: json['correo'],
       rol: json['rol'],
@@ -59,12 +62,15 @@ class Usuario {
       tallaCalzado: json['tallaCalzado'],
       tipoContrato: json['tipoContrato'],
       jornadaLaboral: json['jornadaLaboral'],
+      tipoFunciones: (json['tipoFunciones'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList(),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
+      'id': cedula, // 👈 así lo espera el DTO (id = cédula)
       'nombre': nombre,
       'correo': correo,
       'rol': rol,
@@ -82,6 +88,8 @@ class Usuario {
       'tallaCalzado': tallaCalzado,
       'tipoContrato': tipoContrato,
       'jornadaLaboral': jornadaLaboral,
+      if (tipoFunciones != null && tipoFunciones!.isNotEmpty)
+        'tipoFunciones': tipoFunciones,
     };
   }
 }

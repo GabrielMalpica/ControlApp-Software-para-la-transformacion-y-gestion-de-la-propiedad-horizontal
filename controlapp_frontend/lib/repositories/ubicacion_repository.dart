@@ -1,22 +1,19 @@
 // lib/repositories/ubicacion_repository.dart
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import '../model/ubicacion_model.dart';
 import '../service/app_constants.dart';
+import '../service/api_client.dart';
 
 class UbicacionRepository {
-  final String baseUrl = '${AppConstants.apiUrl}/ubicaciones';
+  final ApiClient _apiClient = ApiClient();
+  final String baseUrl = AppConstants.ubicaciones;
 
-  /// 🧩 Agregar un elemento dentro de una ubicación
   Future<void> agregarElemento({
     required int ubicacionId,
     required String nombre,
   }) async {
-    final url = Uri.parse('$baseUrl/$ubicacionId/elementos');
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'nombre': nombre}),
+    final response = await _apiClient.post(
+      '$baseUrl/$ubicacionId/elementos',
+      body: {'nombre': nombre},
     );
 
     if (response.statusCode != 201) {
@@ -24,10 +21,8 @@ class UbicacionRepository {
     }
   }
 
-  /// 📋 Listar elementos dentro de una ubicación
   Future<List<Map<String, dynamic>>> listarElementos(int ubicacionId) async {
-    final url = Uri.parse('$baseUrl/$ubicacionId/elementos');
-    final response = await http.get(url);
+    final response = await _apiClient.get('$baseUrl/$ubicacionId/elementos');
 
     if (response.statusCode == 200) {
       final List data = jsonDecode(response.body);
@@ -37,13 +32,13 @@ class UbicacionRepository {
     }
   }
 
-  /// 🔍 Buscar un elemento por nombre dentro de una ubicación
   Future<Map<String, dynamic>?> buscarElementoPorNombre({
     required int ubicacionId,
     required String nombre,
   }) async {
-    final url = Uri.parse('$baseUrl/$ubicacionId/elementos/buscar?nombre=$nombre');
-    final response = await http.get(url);
+    final response = await _apiClient.get(
+      '$baseUrl/$ubicacionId/elementos/buscar?nombre=$nombre',
+    );
 
     if (response.statusCode == 200) {
       return jsonDecode(response.body);

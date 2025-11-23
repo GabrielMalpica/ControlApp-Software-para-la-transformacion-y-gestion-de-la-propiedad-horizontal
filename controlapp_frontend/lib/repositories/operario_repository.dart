@@ -20,6 +20,7 @@ class OperarioRepository {
     }
   }
 
+
   Future<void> asignarTarea(int operarioId, int tareaId) async {
     final body = {'tareaId': tareaId};
     final response = await _apiClient.post(

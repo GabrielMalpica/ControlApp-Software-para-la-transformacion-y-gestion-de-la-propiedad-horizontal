@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 enum EstadoTarea { PENDIENTE, EN_PROCESO, COMPLETADA, CANCELADA }
 enum TipoTarea { CORRECTIVA, PREVENTIVA }
 enum Frecuencia { DIARIA, SEMANAL, MENSUAL, TRIMESTRAL, ANUAL }
