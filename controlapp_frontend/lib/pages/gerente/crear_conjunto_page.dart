@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../service/theme.dart';
-import '../model/conjunto_model.dart';
+import '../../service/theme.dart';
+import '../../model/conjunto_model.dart';
 
 class CrearConjuntoPage extends StatefulWidget {
   final String nit;

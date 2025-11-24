@@ -16,6 +16,20 @@ class UsuarioRepository {
     }
   }
 
+  /// 🔹 LISTAR TODOS LOS USUARIOS
+  Future<List<Usuario>> obtenerUsuarios() async {
+    final res = await _apiClient.get(
+      '${AppConstants.baseUrl}/gerente/usuarios',
+    );
+
+    if (res.statusCode != 200) {
+      throw Exception('Error al obtener usuarios: ${res.body}');
+    }
+
+    final data = jsonDecode(res.body) as List<dynamic>;
+    return data.map((e) => Usuario.fromJson(e)).toList();
+  }
+
   /// 🔹 Obtener usuario por ID
   Future<Usuario> getUsuarioById(int id) async {
     final response = await _apiClient.get('${AppConstants.usuarios}/$id');
@@ -46,24 +60,34 @@ class UsuarioRepository {
     }
   }
 
-  /// 🔹 Editar usuario
-  Future<void> editarUsuario(int id, Map<String, dynamic> data) async {
-    final response = await _apiClient.put(
-      '${AppConstants.usuarios}/$id',
-      body: data,
+  /// 🔹 EDITAR USUARIO
+  Future<Usuario> editarUsuario(
+    String cedula,
+    Map<String, dynamic> cambios,
+  ) async {
+    cambios.removeWhere((key, value) => value == null);
+
+    final res = await _apiClient.put(
+      '${AppConstants.baseUrl}/gerente/usuarios/$cedula',
+      body: cambios,
     );
 
-    if (response.statusCode != 200) {
-      throw Exception('Error al editar usuario: ${response.body}');
+    if (res.statusCode != 200) {
+      throw Exception('Error al editar usuario: ${res.body}');
     }
+
+    final data = jsonDecode(res.body);
+    return Usuario.fromJson(data);
   }
 
-  /// 🔹 Eliminar usuario
-  Future<void> eliminarUsuario(int id) async {
-    final response = await _apiClient.delete('${AppConstants.usuarios}/$id');
+  /// 🔹 ELIMINAR USUARIO
+  Future<void> eliminarUsuario(String cedula) async {
+    final res = await _apiClient.delete(
+      '${AppConstants.baseUrl}/gerente/usuarios/$cedula',
+    );
 
-    if (response.statusCode != 204 && response.statusCode != 200) {
-      throw Exception('Error al eliminar usuario: ${response.body}');
+    if (res.statusCode != 200 && res.statusCode != 204) {
+      throw Exception('Error al eliminar usuario: ${res.body}');
     }
   }
 }
