@@ -14,9 +14,10 @@ import {
   EditarUsuarioDTO,
   usuarioPublicSelect,
   toUsuarioPublico,
+  UsuarioPublico,
 } from "../model/Usuario";
 
-import { CrearGerenteDTO } from "../model/Gerente";
+import { CrearGerenteDTO, ListarUsuariosInput } from "../model/Gerente";
 import { CrearAdministradorDTO } from "../model/Administrador";
 import { CrearJefeOperacionesDTO } from "../model/JefeOperaciones";
 import { CrearSupervisorDTO } from "../model/Supervisor";
@@ -265,6 +266,18 @@ export class GerenteService {
       },
       include: { usuario: true, empresa: true },
     });
+  }
+
+  async listarUsuarios(rol?: Rol): Promise<UsuarioPublico[]> {
+    const where: { rol?: Rol } = rol ? { rol } : {};
+
+    const usuarios = await this.prisma.usuario.findMany({
+      where,
+      select: usuarioPublicSelect,
+      orderBy: { nombre: "asc" },
+    });
+
+    return usuarios.map(toUsuarioPublico);
   }
 
   /* ===================== CONJUNTOS ===================== */
@@ -603,7 +616,7 @@ export class GerenteService {
 
   /* ===================== ELIMINACIONES con REGLAS ===================== */
 
-  async eliminarAdministrador(adminId: number) {
+  async eliminarAdministrador(adminId: string) {
     const asignaciones = await this.prisma.conjunto.findMany({
       where: { administradorId: adminId.toString() },
     });
@@ -625,24 +638,61 @@ export class GerenteService {
     }
   }
 
-  async eliminarOperario(operarioId: number) {
-    // Con relación M:N, revisar tareas pendientes donde el operario esté asignado
+  async eliminarOperario(operarioId: string) {
+    // 1) Verificar tareas pendientes donde el operario esté asignado
     const tareasPendientes = await this.prisma.tarea.findMany({
       where: {
-        operarios: { some: { id: operarioId.toString() } },
-        estado: { in: ["ASIGNADA", "EN_PROCESO", "PENDIENTE_APROBACION"] },
+        operarios: { some: { id: operarioId } }, // ya es string, no hace falta toString()
+        estado: {
+          in: ["ASIGNADA", "EN_PROCESO", "PENDIENTE_APROBACION"],
+        },
       },
       select: { id: true },
     });
+
     if (tareasPendientes.length > 0) {
       throw new Error("❌ El operario tiene tareas pendientes.");
     }
-    await this.prisma.operario.delete({ where: { id: operarioId.toString() } });
+
+    // 2) Borrar operario + usuario dentro de una misma transacción
+    await this.prisma.$transaction(async (tx) => {
+      // Borramos el operario (si existe). deleteMany evita P2025 si ya no está.
+      await tx.operario.deleteMany({
+        where: { id: operarioId },
+      });
+
+      // Borramos el usuario asociado (obligatorio que exista, si no → error lógico)
+      await tx.usuario.delete({
+        where: { id: operarioId },
+      });
+    });
   }
 
-  async eliminarSupervisor(supervisorId: number) {
-    await this.prisma.supervisor.delete({
-      where: { id: supervisorId.toString() },
+  async eliminarSupervisor(supervisorId: string) {
+    await this.prisma.$transaction(async (tx) => {
+      // 1) Borrar el JefeOperaciones (si existe)
+      await tx.supervisor.deleteMany({
+        where: { id: supervisorId },
+      }); // deleteMany NO lanza P2025 si no hay registro
+
+      // 2) Borrar siempre el usuario asociado
+      await tx.usuario.delete({
+        where: { id: supervisorId },
+      });
+    });
+  }
+
+  async eliminarJefeOperaciones(jefeOperacionesId: string) {
+    await this.prisma.$transaction(async (tx) => {
+      // 1) Borrar el JefeOperaciones (si existe)
+      await tx.jefeOperaciones.deleteMany({
+        where: { id: jefeOperacionesId },
+      }); // deleteMany NO lanza P2025 si no hay registro
+
+      // 2) Borrar siempre el usuario asociado
+      await tx.usuario.delete({
+        where: { id: jefeOperacionesId },
+      });
     });
   }
 
@@ -667,6 +717,29 @@ export class GerenteService {
       throw new Error("❌ El conjunto tiene maquinaria prestada.");
 
     await this.prisma.conjunto.delete({ where: { nit: conjuntoId } });
+  }
+
+  async eliminarUsuario(id: string): Promise<void> {
+    const usuario = await this.prisma.usuario.findUnique({ where: { id } });
+    if (!usuario) return;
+
+    switch (usuario.rol as Rol) {
+      case Rol.administrador:
+        await this.eliminarAdministrador(id);
+        break;
+      case Rol.operario:
+        await this.eliminarOperario(id);
+        break;
+      case Rol.supervisor:
+        await this.eliminarSupervisor(id);
+        break;
+      case Rol.jefe_operaciones:
+        await this.eliminarJefeOperaciones(id);
+        break;
+      default:
+        await this.prisma.usuario.delete({ where: { id } });
+        break;
+    }
   }
 
   async eliminarMaquinaria(maquinariaId: number) {

@@ -15,7 +15,9 @@ router.get("/empresa/insumos", ctrl.listarCatalogoInsumos);
 
 /* Usuarios */
 router.post("/usuarios", ctrl.crearUsuario);
-router.patch("/usuarios/:id", ctrl.editarUsuario);
+router.put("/usuarios/:id", ctrl.editarUsuario);
+router.get("/usuarios", ctrl.listarUsuarios);
+router.delete("/usuarios/:id", ctrl.eliminarUsuario);
 
 /* Roles / perfiles */
 router.post("/gerentes", ctrl.asignarGerente);

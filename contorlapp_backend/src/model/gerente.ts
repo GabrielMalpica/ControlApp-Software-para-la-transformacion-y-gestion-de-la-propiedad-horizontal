@@ -1,5 +1,6 @@
 // src/models/gerente.ts
 import { z } from "zod";
+import { Rol } from "../generated/prisma";
 
 /** Tipo base para el ID (mismo que Usuario.id) */
 export type GerenteId = number;
@@ -12,6 +13,10 @@ export interface GerenteDominio {
 
 /** Tipo público — idéntico por ahora */
 export type GerentePublico = GerenteDominio;
+
+export const UsuarioIdParam = z.object({
+  id: z.string().min(1, "El id de usuario (cédula) es obligatorio"),
+});
 
 /* ===================== DTOs ===================== */
 
@@ -41,3 +46,10 @@ export function toGerentePublico<
 >(row: T): GerentePublico {
   return row;
 }
+
+export const ListarUsuariosDTO = z.object({
+  // ?rol=operario | administrador | jefe_operaciones | supervisor | gerente
+  rol: z.nativeEnum(Rol).optional(),
+});
+
+export type ListarUsuariosInput = z.infer<typeof ListarUsuariosDTO>;
