@@ -186,22 +186,36 @@ class GerenteApi {
   }
 
   Future<void> actualizarConjunto(
-    String nit, {
+    String conjuntoNit, {
     String? nombre,
     String? direccion,
     String? correo,
     bool? activo,
     double? valorMensual,
+    DateTime? fechaInicioContrato,
+    DateTime? fechaFinContrato,
+    String? administradorId,
+    List<String>? operariosIds,
+    List<Map<String, dynamic>>? ubicaciones,
   }) async {
-    final body = <String, dynamic>{};
+    final Map<String, dynamic> body = {};
     if (nombre != null) body['nombre'] = nombre;
     if (direccion != null) body['direccion'] = direccion;
     if (correo != null) body['correo'] = correo;
     if (activo != null) body['activo'] = activo;
     if (valorMensual != null) body['valorMensual'] = valorMensual;
+    if (fechaInicioContrato != null) {
+      body['fechaInicioContrato'] = fechaInicioContrato.toIso8601String();
+    }
+    if (fechaFinContrato != null) {
+      body['fechaFinContrato'] = fechaFinContrato.toIso8601String();
+    }
+    if (administradorId != null) body['administradorId'] = administradorId;
+    if (operariosIds != null) body['operariosIds'] = operariosIds;
+    if (ubicaciones != null) body['ubicaciones'] = ubicaciones;
 
     final resp = await _apiClient.patch(
-      '${AppConstants.conjuntosGerente}/$nit',
+      '${AppConstants.conjuntosGerente}/$conjuntoNit',
       body: body,
     );
 

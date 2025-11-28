@@ -726,7 +726,6 @@ class _UbicacionWidget extends StatelessWidget {
   final VoidCallback onEliminar;
 
   const _UbicacionWidget({
-    super.key,
     required this.ubicacion,
     required this.onEliminar,
   });
