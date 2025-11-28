@@ -6,9 +6,9 @@ import 'package:flutter_application_1/pages/gerente/crear_usuario_page.dart';
 import 'editar_usuario_page.dart';
 
 class ListaUsuariosPage extends StatefulWidget {
-  final String nitProyecto; // para crear admin vinculados al conjunto/empresa
+  final String nit; // para crear admin vinculados al conjunto/empresa
 
-  const ListaUsuariosPage({super.key, required this.nitProyecto});
+  const ListaUsuariosPage({super.key, required this.nit});
 
   @override
   State<ListaUsuariosPage> createState() => _ListaUsuariosPageState();
@@ -77,7 +77,7 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
   Future<void> _irACrearUsuario() async {
     final resultado = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => CrearUsuarioPage(nit: widget.nitProyecto),
+        builder: (_) => CrearUsuarioPage(nit: widget.nit),
       ),
     );
 

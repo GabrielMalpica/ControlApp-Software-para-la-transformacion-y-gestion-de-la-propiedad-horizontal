@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
 import 'package:flutter_application_1/repositories/usuario_repository.dart';
 import 'package:flutter_application_1/service/theme.dart';
-import 'package:flutter_application_1/utils/usuario_enums.dart';
-import 'package:flutter_application_1/utils/usuario_enums_service.dart';
+import 'package:flutter_application_1/utils/enums/usuario_enums.dart';
+import 'package:flutter_application_1/utils/enums/usuario_enums_service.dart';
 
 class EditarUsuarioPage extends StatefulWidget {
   final Usuario usuario;

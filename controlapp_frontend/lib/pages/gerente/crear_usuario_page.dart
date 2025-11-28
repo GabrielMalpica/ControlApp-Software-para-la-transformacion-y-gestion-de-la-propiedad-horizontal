@@ -4,8 +4,8 @@ import 'package:flutter_application_1/api/gerente_api.dart';
 import '../../service/theme.dart';
 import '../../model/usuario_model.dart';
 import '../../repositories/usuario_repository.dart';
-import '../../utils/usuario_enums.dart';
-import '../../utils/usuario_enums_service.dart';
+import '../../utils/enums/usuario_enums.dart';
+import '../../utils/enums/usuario_enums_service.dart';
 
 class CrearUsuarioPage extends StatefulWidget {
   final String nit;

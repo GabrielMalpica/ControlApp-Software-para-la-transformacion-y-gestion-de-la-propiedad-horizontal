@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
-import '../service/theme.dart';
+import 'package:flutter_application_1/pages/gerente/lista_conjuntos_page.dart';
+import '../../service/theme.dart';
 
-import 'operarios_page.dart';
-import 'administrador_page.dart';
-import 'jefe_operaciones_page.dart';
-import 'supervisor_page.dart';
-import 'maquinaria_page.dart';
-import 'inventario_page.dart';
-import 'gerente/crear_usuario_page.dart';
-import 'gerente/lista_usuarios_page.dart';
-import 'crear_tarea_page.dart';
-import 'solicitud_insumo_page.dart';
-import 'tareas_page.dart';
-import 'solicitudes_page.dart';
-import 'cronograma_page.dart';
-import 'reportes_page.dart';
-import 'crear_cronograma_page.dart';
-import 'gerente/crear_conjunto_page.dart';
-import 'solicitud_maquinaria_page.dart';
+import '../operarios_page.dart';
+import '../administrador_page.dart';
+import '../jefe_operaciones_page.dart';
+import '../supervisor_page.dart';
+import '../maquinaria_page.dart';
+import '../inventario_page.dart';
+import 'crear_usuario_page.dart';
+import 'lista_usuarios_page.dart';
+import '../crear_tarea_page.dart';
+import '../solicitud_insumo_page.dart';
+import '../tareas_page.dart';
+import '../solicitudes_page.dart';
+import '../cronograma_page.dart';
+import '../reportes_page.dart';
+import '../crear_cronograma_page.dart';
+import 'crear_conjunto_page.dart';
+import '../solicitud_maquinaria_page.dart';
 
 class GerenteDashboardPage extends StatefulWidget {
   const GerenteDashboardPage({super.key});
@@ -100,7 +101,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => ListaUsuariosPage(nitProyecto: nit),
+                builder: (_) => ListaUsuariosPage(nit: nit),
               ),
             ),
           ),
@@ -139,6 +140,16 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => CrearConjuntoPage(nit: nit)),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.apartment),
+            title: const Text("Gestión conjuntos"),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => ListaConjuntosPage(nit: nit,)),
               );
             },
           ),
@@ -284,7 +295,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => ListaUsuariosPage(nitProyecto: nit),
+                        builder: (_) => ListaUsuariosPage(nit: nit),
                       ),
                     );
                   },

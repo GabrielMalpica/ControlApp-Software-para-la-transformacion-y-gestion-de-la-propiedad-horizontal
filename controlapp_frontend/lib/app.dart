@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'service/theme.dart';
 import 'pages/login_page.dart';
-import 'pages/gerente_page.dart';
+import 'pages/gerente/gerente_page.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});

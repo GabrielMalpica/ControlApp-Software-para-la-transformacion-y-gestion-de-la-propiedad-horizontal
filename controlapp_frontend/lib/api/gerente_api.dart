@@ -1,3 +1,7 @@
+import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/model/usuario_model.dart';
+import 'dart:convert';
+
 import '../service/api_client.dart';
 import '../service/app_constants.dart';
 
@@ -75,6 +79,136 @@ class GerenteApi {
     );
     if (res.statusCode != 201 && res.statusCode != 200) {
       throw Exception('Error al asignar jefe de operaciones: ${res.body}');
+    }
+  }
+
+  Future<List<Usuario>> listarUsuarios({String? rol}) async {
+    String url = '${AppConstants.baseUrl}/gerente/usuarios';
+    if (rol != null) {
+      url += '?rol=$rol';
+    }
+
+    final resp = await _apiClient.get(url);
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error obteniendo usuarios: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final List<dynamic> jsonList = jsonDecode(resp.body);
+    return jsonList.map((e) => Usuario.fromJson(e)).toList();
+  }
+
+  Future<void> crearConjunto({
+    required String nitConjunto,
+    required String nombre,
+    required String direccion,
+    required String correo,
+    required String empresaId,
+    String? administradorId,
+    double? valorMensual,
+    required List<String> tiposServicio,
+    required List<String> consignasEspeciales,
+    required List<String> valorAgregado,
+    DateTime? fechaInicioContrato,
+    List<Map<String, String>> horarios = const [],
+    List<Map<String, dynamic>> ubicaciones = const [],
+  }) async {
+    final body = <String, dynamic>{
+      'nit': nitConjunto,
+      'nombre': nombre,
+      'direccion': direccion,
+      'correo': correo,
+      'empresaId': empresaId,
+      if (administradorId != null && administradorId.isNotEmpty)
+        'administradorId': administradorId,
+      if (fechaInicioContrato != null)
+        'fechaInicioContrato': fechaInicioContrato.toIso8601String(),
+      'tipoServicio': tiposServicio,
+      if (valorMensual != null) 'valorMensual': valorMensual,
+      'consignasEspeciales': consignasEspeciales,
+      'valorAgregado': valorAgregado,
+      if (horarios.isNotEmpty) 'horarios': horarios,
+      if (ubicaciones.isNotEmpty) 'ubicaciones': ubicaciones,
+    };
+
+    final resp = await _apiClient.post(
+      '${AppConstants.baseUrl}/gerente/conjuntos',
+      body: body,
+    );
+
+    if (resp.statusCode >= 400) {
+      throw Exception(
+        'Error creando conjunto: ${resp.statusCode} ${resp.body}',
+      );
+    }
+  }
+
+  Future<List<Conjunto>> listarConjuntos() async {
+    final resp = await _apiClient.get(AppConstants.conjuntosGerente);
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error obteniendo conjuntos: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final List<dynamic> jsonList = jsonDecode(resp.body);
+    return jsonList
+        .map((e) => Conjunto.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Conjunto> obtenerConjunto(String nit) async {
+    final resp = await _apiClient.get('${AppConstants.conjuntosGerente}/$nit');
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error obteniendo conjunto: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final Map<String, dynamic> data = jsonDecode(resp.body);
+    return Conjunto.fromJson(data);
+  }
+
+  Future<void> eliminarConjunto(String nit) async {
+    final resp = await _apiClient.delete(
+      '${AppConstants.conjuntosGerente}/$nit',
+    );
+
+    if (resp.statusCode >= 400) {
+      throw Exception(
+        'Error eliminando conjunto: ${resp.statusCode} ${resp.body}',
+      );
+    }
+  }
+
+  Future<void> actualizarConjunto(
+    String nit, {
+    String? nombre,
+    String? direccion,
+    String? correo,
+    bool? activo,
+    double? valorMensual,
+  }) async {
+    final body = <String, dynamic>{};
+    if (nombre != null) body['nombre'] = nombre;
+    if (direccion != null) body['direccion'] = direccion;
+    if (correo != null) body['correo'] = correo;
+    if (activo != null) body['activo'] = activo;
+    if (valorMensual != null) body['valorMensual'] = valorMensual;
+
+    final resp = await _apiClient.patch(
+      '${AppConstants.conjuntosGerente}/$nit',
+      body: body,
+    );
+
+    if (resp.statusCode >= 400) {
+      throw Exception(
+        'Error actualizando conjunto: ${resp.statusCode} ${resp.body}',
+      );
     }
   }
 }

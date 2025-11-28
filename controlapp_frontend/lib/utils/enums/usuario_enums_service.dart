@@ -1,6 +1,6 @@
 import 'dart:convert';
-import '../service/api_client.dart';
-import '../service/app_constants.dart';
+import '../../service/api_client.dart';
+import '../../service/app_constants.dart';
 import 'usuario_enums.dart';
 
 class UsuarioEnumsService {
