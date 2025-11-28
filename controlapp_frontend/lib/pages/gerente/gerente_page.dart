@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/gerente_api.dart';
+import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/gerente/lista_conjuntos_page.dart';
+import 'package:flutter_application_1/pages/gerente/usuarios_conjunto_page.dart';
 import '../../service/theme.dart';
-
-import '../operarios_page.dart';
-import '../administrador_page.dart';
-import '../jefe_operaciones_page.dart';
-import '../supervisor_page.dart';
 import '../maquinaria_page.dart';
 import '../inventario_page.dart';
 import 'crear_usuario_page.dart';
@@ -28,16 +26,46 @@ class GerenteDashboardPage extends StatefulWidget {
 }
 
 class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
-  final List<String> proyectos = ['Proyecto 1', 'Proyecto 2', 'Proyecto 3'];
-  String proyectoSeleccionado = 'Proyecto 1';
+  final GerenteApi _gerenteApi = GerenteApi();
 
-  final Map<String, dynamic> dataPorProyecto = {
-    'Proyecto 1': {'nit': '1111'},
-    'Proyecto 2': {'nit': '2222'},
-    'Proyecto 3': {'nit': '3333'},
-  };
+  List<Conjunto> _conjuntos = [];
+  String? _conjuntoSeleccionadoNit;
+  bool _cargandoConjuntos = true;
+  String? _errorConjuntos;
 
-  String get _nitActual => dataPorProyecto[proyectoSeleccionado]['nit'];
+  Conjunto? get _conjuntoSeleccionado {
+    if (_conjuntoSeleccionadoNit == null) return null;
+    return _conjuntos.firstWhere(
+      (c) => c.nit == _conjuntoSeleccionadoNit,
+      orElse: () => _conjuntos.first,
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarConjuntos();
+  }
+
+  Future<void> _cargarConjuntos() async {
+    try {
+      // Reutiliza el método que usas ya en ListaConjuntosPage
+      final lista = await _gerenteApi.listarConjuntos(); // <-- ya lo tienes
+      setState(() {
+        _conjuntos = lista;
+        _cargandoConjuntos = false;
+        _errorConjuntos = null;
+        if (_conjuntos.isNotEmpty) {
+          _conjuntoSeleccionadoNit = _conjuntos.first.nit;
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _cargandoConjuntos = false;
+        _errorConjuntos = e.toString();
+      });
+    }
+  }
 
   /// 🔹 NUEVO DISEÑO — Tarjetas compactas
   Widget _smallCard(
@@ -100,9 +128,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             title: const Text("Gestión de usuarios"),
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(
-                builder: (_) => ListaUsuariosPage(nit: nit),
-              ),
+              MaterialPageRoute(builder: (_) => ListaUsuariosPage(nit: nit)),
             ),
           ),
           ListTile(
@@ -149,7 +175,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => ListaConjuntosPage(nit: nit,)),
+                MaterialPageRoute(builder: (_) => ListaConjuntosPage(nit: nit)),
               );
             },
           ),
@@ -184,22 +210,65 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    final nit = _nitActual;
+    if (_cargandoConjuntos) {
+      return Scaffold(
+        backgroundColor: AppTheme.background,
+        appBar: AppBar(
+          backgroundColor: AppTheme.primary,
+          title: const Text(
+            "Panel del Gerente",
+            style: TextStyle(color: Colors.white),
+          ),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_errorConjuntos != null) {
+      return Scaffold(
+        backgroundColor: AppTheme.background,
+        appBar: AppBar(
+          backgroundColor: AppTheme.primary,
+          title: const Text(
+            "Panel del Gerente",
+            style: TextStyle(color: Colors.white),
+          ),
+        ),
+        body: Center(child: Text("Error cargando conjuntos: $_errorConjuntos")),
+      );
+    }
+
+    if (_conjuntoSeleccionado == null) {
+      return Scaffold(
+        backgroundColor: AppTheme.background,
+        appBar: AppBar(
+          backgroundColor: AppTheme.primary,
+          title: const Text(
+            "Panel del Gerente",
+            style: TextStyle(color: Colors.white),
+          ),
+        ),
+        body: const Center(
+          child: Text(
+            "No hay conjuntos creados.\nCrea uno desde el menú de atajos.",
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    final Conjunto conjunto = _conjuntoSeleccionado!;
+    final String nit = conjunto.nit;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
-
-      /// 🔹 Drawer lateral derecho
       endDrawer: _drawerAtajos(nit),
-
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
         title: const Text(
           "Panel del Gerente",
           style: TextStyle(color: Colors.white),
         ),
-
-        /// 🔹 Icono para abrir el menú derecho
         actions: [
           Builder(
             builder: (context) {
@@ -218,6 +287,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 🔹 Cabecera Proyecto
+            // 🔹 Cabecera Conjunto
             Card(
               elevation: 1,
               shape: RoundedRectangleBorder(
@@ -230,40 +300,49 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.business, color: AppTheme.primary),
+                    Icon(Icons.apartment, color: AppTheme.primary),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            "Proyecto activo",
+                            "Conjunto seleccionado",
                             style: TextStyle(fontSize: 12, color: Colors.grey),
                           ),
                           Text(
-                            proyectoSeleccionado,
+                            conjunto.nombre,
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
                             ),
                           ),
                           Text(
-                            "NIT: $nit",
+                            "NIT: ${conjunto.nit}",
                             style: const TextStyle(fontSize: 12),
                           ),
                         ],
                       ),
                     ),
                     DropdownButton<String>(
-                      value: proyectoSeleccionado,
+                      value: _conjuntoSeleccionadoNit,
                       underline: const SizedBox.shrink(),
-                      items: proyectos
+                      items: _conjuntos
                           .map(
-                            (p) => DropdownMenuItem(value: p, child: Text(p)),
+                            (c) => DropdownMenuItem<String>(
+                              value: c.nit,
+                              child: Text(
+                                c.nombre,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           )
                           .toList(),
-                      onChanged: (v) =>
-                          setState(() => proyectoSeleccionado = v!),
+                      onChanged: (v) {
+                        setState(() {
+                          _conjuntoSeleccionadoNit = v;
+                        });
+                      },
                     ),
                   ],
                 ),
@@ -295,7 +374,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => ListaUsuariosPage(nit: nit),
+                        builder: (_) => UsuariosConjuntoPage(conjuntoNit: nit),
                       ),
                     );
                   },
@@ -375,88 +454,26 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
                   },
                 ),
                 _smallCard(
-                  "Vistas por rol",
-                  Icons.dashboard_customize,
-                  Colors.blueAccent,
+                  "Definir tarea preventiva",
+                  Icons.build_circle_outlined,
+                  Colors.deepOrange,
                   onTap: () {
-                    // puedes dejar tu dialog anterior si quieres
-                    _mostrarVistasDialog(context, nit);
+                    // TODO: reemplazar por tu página real cuando la tengas
+                    // Por ahora puedes navegar a un placeholder
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ReportesPage(
+                          nit: nit,
+                        ), // o crea una DefinirTareaPreventivaPage(nit: nit)
+                      ),
+                    );
                   },
                 ),
               ],
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  /// — Mantengo tu método original —
-  void _mostrarVistasDialog(BuildContext context, String nit) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text("Seleccionar vista"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.admin_panel_settings),
-              title: const Text("Administrador"),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => AdministradorPage(nit: nit),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.groups),
-              title: const Text("Operarios"),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => OperarioDashboardPage(nit: nit),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.business_center),
-              title: const Text("Jefe de Operaciones"),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => JefeOperacionesPage()),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.supervisor_account),
-              title: const Text("Supervisor"),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => SupervisorPage()),
-                );
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cerrar"),
-          ),
-        ],
       ),
     );
   }

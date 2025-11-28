@@ -4,6 +4,7 @@ import 'package:flutter_application_1/repositories/usuario_repository.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/pages/gerente/crear_usuario_page.dart';
 import 'editar_usuario_page.dart';
+import 'detalle_usuario_page.dart';
 
 class ListaUsuariosPage extends StatefulWidget {
   final String nit; // para crear admin vinculados al conjunto/empresa
@@ -76,9 +77,7 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
 
   Future<void> _irACrearUsuario() async {
     final resultado = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => CrearUsuarioPage(nit: widget.nit),
-      ),
+      MaterialPageRoute(builder: (_) => CrearUsuarioPage(nit: widget.nit)),
     );
 
     // Si en la página de creación devolvemos true al guardar, recargamos lista
@@ -251,40 +250,50 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
       separatorBuilder: (_, __) => const SizedBox(height: 4),
       itemBuilder: (context, index) {
         final u = _usuariosFiltrados[index];
-        return Card(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: AppTheme.primary.withOpacity(0.1),
-              child: Text(
-                u.nombre.isNotEmpty ? u.nombre[0].toUpperCase() : '?',
-                style: TextStyle(color: AppTheme.primary),
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => DetalleUsuarioPage(usuario: u),
               ),
+            );
+          },
+          child: Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
             ),
-            title: Text(
-              u.nombre,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text(
-              "Cédula: ${u.cedula} · Rol: ${_prettyRol(u.rol)}\nCorreo: ${u.correo}",
-            ),
-            isThreeLine: true,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: "Editar",
-                  icon: const Icon(Icons.edit, color: Colors.blueGrey),
-                  onPressed: () => _irAEditarUsuario(u),
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor: AppTheme.primary.withOpacity(0.1),
+                child: Text(
+                  u.nombre.isNotEmpty ? u.nombre[0].toUpperCase() : '?',
+                  style: TextStyle(color: AppTheme.primary),
                 ),
-                IconButton(
-                  tooltip: "Eliminar",
-                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  onPressed: () => _confirmarEliminarUsuario(u),
-                ),
-              ],
+              ),
+              title: Text(
+                u.nombre,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text(
+                "Cédula: ${u.cedula} · Rol: ${_prettyRol(u.rol)}\nCorreo: ${u.correo}",
+              ),
+              isThreeLine: true,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: "Editar",
+                    icon: const Icon(Icons.edit, color: Colors.blueGrey),
+                    onPressed: () => _irAEditarUsuario(u),
+                  ),
+                  IconButton(
+                    tooltip: "Eliminar",
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    onPressed: () => _confirmarEliminarUsuario(u),
+                  ),
+                ],
+              ),
             ),
           ),
         );

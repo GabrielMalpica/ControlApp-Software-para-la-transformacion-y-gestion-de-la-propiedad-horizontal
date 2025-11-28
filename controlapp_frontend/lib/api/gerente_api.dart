@@ -46,6 +46,25 @@ class GerenteApi {
     }
   }
 
+  Future<void> asignarOperarioAConjunto({
+    required String conjuntoNit,
+    required String operarioCedula,
+  }) async {
+    final dynamic operarioIdPayload =
+        int.tryParse(operarioCedula) ?? operarioCedula;
+
+    final resp = await _apiClient.post(
+      '${AppConstants.gerenteBase}/conjuntos/$conjuntoNit/operarios',
+      body: {'operarioId': operarioIdPayload},
+    );
+
+    if (resp.statusCode >= 400) {
+      throw Exception(
+        'Error asignando operario a conjunto: ${resp.statusCode} ${resp.body}',
+      );
+    }
+  }
+
   Future<void> asignarSupervisor({required String usuarioId}) async {
     final res = await _apiClient.post(
       AppConstants.supervisores,

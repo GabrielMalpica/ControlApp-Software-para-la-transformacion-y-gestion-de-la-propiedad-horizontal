@@ -1,0 +1,149 @@
+import 'package:flutter/material.dart';
+import '../../api/gerente_api.dart';
+import '../../model/conjunto_model.dart';
+import '../../service/theme.dart';
+
+class UsuariosConjuntoPage extends StatefulWidget {
+  final String conjuntoNit;
+
+  const UsuariosConjuntoPage({super.key, required this.conjuntoNit});
+
+  @override
+  State<UsuariosConjuntoPage> createState() => _UsuariosConjuntoPageState();
+}
+
+class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
+  final GerenteApi _api = GerenteApi();
+  late Future<Conjunto> _futureConjunto;
+
+  @override
+  void initState() {
+    super.initState();
+    _futureConjunto = _api.obtenerConjunto(widget.conjuntoNit);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      appBar: AppBar(
+        backgroundColor: AppTheme.primary,
+        title: const Text(
+          'Usuarios del conjunto',
+          style: TextStyle(color: Colors.white),
+        ),
+      ),
+      body: FutureBuilder<Conjunto>(
+        future: _futureConjunto,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+
+          final conjunto = snapshot.data!;
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 2,
+                  child: ListTile(
+                    title: Text(
+                      conjunto.nombre,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text('NIT: ${conjunto.nit}'),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ───────── ADMINISTRADOR ─────────
+                Card(
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                  elevation: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Administrador",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (conjunto.administradorNombre == null)
+                          const Text(
+                            "No hay administrador asignado.",
+                            style: TextStyle(color: Colors.grey),
+                          )
+                        else
+                          ListTile(
+                            leading: const Icon(Icons.admin_panel_settings),
+                            title: Text(conjunto.administradorNombre!),
+                            subtitle: conjunto.administradorId != null
+                                ? Text(
+                                    'CC: ${conjunto.administradorId!}',
+                                  )
+                                : null,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // ───────── OPERARIOS ─────────
+                Card(
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                  elevation: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Operarios vinculados",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        if (conjunto.operarios.isEmpty)
+                          const Text(
+                            "No hay operarios asignados a este conjunto.",
+                            style: TextStyle(color: Colors.grey),
+                          )
+                        else
+                          ...conjunto.operarios.map(
+                            (o) => ListTile(
+                              leading: const Icon(Icons.person),
+                              title: Text(o.nombre),
+                              subtitle: Text('CC: ${o.cedula}'),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}

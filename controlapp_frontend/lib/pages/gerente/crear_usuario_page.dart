@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/gerente_api.dart';
+import 'package:flutter_application_1/model/conjunto_model.dart';
 
 import '../../service/theme.dart';
 import '../../model/usuario_model.dart';
@@ -55,10 +56,39 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
 
   bool _isSaving = false;
 
+  List<Conjunto> _conjuntos = [];
+  bool _cargandoConjuntos = true;
+  String? _errorConjuntos;
+  String? _conjuntoSeleccionadoNit;
+
   @override
   void initState() {
     super.initState();
     _cargarEnums();
+    _cargarConjuntos();
+  }
+
+  Future<void> _cargarConjuntos() async {
+    try {
+      final lista = await _gerenteApi
+          .listarConjuntos(); // ya lo tienes en la API
+      setState(() {
+        _conjuntos = lista;
+        // Por defecto, usamos el NIT que viene del dashboard si existe en la lista
+        final fromDashboardNit = widget.nit;
+        final existe = lista.any((c) => c.nit == fromDashboardNit);
+        _conjuntoSeleccionadoNit = existe
+            ? fromDashboardNit
+            : (lista.isNotEmpty ? lista.first.nit : null);
+        _cargandoConjuntos = false;
+        _errorConjuntos = null;
+      });
+    } catch (e) {
+      setState(() {
+        _cargandoConjuntos = false;
+        _errorConjuntos = e.toString();
+      });
+    }
   }
 
   Future<void> _cargarEnums() async {
@@ -173,6 +203,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
       // 2️⃣ Asignar el rol correspondiente usando los endpoints del gerente
       switch (rolSeleccionado) {
         case 'operario':
+          // 1️⃣ Crear el perfil de operario
           await _gerenteApi.asignarOperario(
             usuarioId: usuarioCreado.cedula,
             funciones: funcionesSeleccionadas.toList(),
@@ -182,6 +213,15 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
             fechaIngreso: fechaIngresoOperario!,
             observaciones: _observacionesOperarioCtrl.text,
           );
+
+          // 2️⃣ Si el gerente eligió un conjunto, lo asignamos de una vez
+          if (_conjuntoSeleccionadoNit != null &&
+              _conjuntoSeleccionadoNit!.trim().isNotEmpty) {
+            await _gerenteApi.asignarOperarioAConjunto(
+              conjuntoNit: _conjuntoSeleccionadoNit!,
+              operarioCedula: usuarioCreado.cedula,
+            );
+          }
           break;
         case 'supervisor':
           await _gerenteApi.asignarSupervisor(usuarioId: usuarioCreado.cedula);
@@ -343,8 +383,9 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                           return Column(
                             children: [
                               Flex(
-                                direction:
-                                    isWide ? Axis.horizontal : Axis.vertical,
+                                direction: isWide
+                                    ? Axis.horizontal
+                                    : Axis.vertical,
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
@@ -382,8 +423,9 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                                 ],
                               ),
                               Flex(
-                                direction:
-                                    isWide ? Axis.horizontal : Axis.vertical,
+                                direction: isWide
+                                    ? Axis.horizontal
+                                    : Axis.vertical,
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
@@ -398,8 +440,8 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                                         ),
                                         validator: (v) =>
                                             v == null || !v.contains('@')
-                                                ? 'Correo inválido'
-                                                : null,
+                                            ? 'Correo inválido'
+                                            : null,
                                       ),
                                     ),
                                   ),
@@ -422,16 +464,18 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                                 ],
                               ),
                               Flex(
-                                direction:
-                                    isWide ? Axis.horizontal : Axis.vertical,
+                                direction: isWide
+                                    ? Axis.horizontal
+                                    : Axis.vertical,
                                 children: [
                                   Expanded(
                                     child: Padding(
                                       padding: const EdgeInsets.all(4),
                                       child: InkWell(
                                         onTap: () => _seleccionarFecha(
-                                          onSelected: (d) =>
-                                              setState(() => fechaNacimiento = d),
+                                          onSelected: (d) => setState(
+                                            () => fechaNacimiento = d,
+                                          ),
                                           initial: fechaNacimiento,
                                           helpText: "Fecha de nacimiento",
                                         ),
@@ -724,8 +768,9 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                         Wrap(
                           spacing: 8,
                           children: enums.tiposFuncion.map((tipo) {
-                            final selected =
-                                funcionesSeleccionadas.contains(tipo);
+                            final selected = funcionesSeleccionadas.contains(
+                              tipo,
+                            );
                             return FilterChip(
                               label: Text(prettyEnum(tipo)),
                               selected: selected,
@@ -762,14 +807,12 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                             "Curso de trabajo en alturas (opcional)",
                           ),
                           value: cursoAlturas,
-                          onChanged: (v) =>
-                              setState(() => cursoAlturas = v),
+                          onChanged: (v) => setState(() => cursoAlturas = v),
                         ),
                         SwitchListTile(
                           title: const Text("Examen de ingreso (opcional)"),
                           value: examenIngreso,
-                          onChanged: (v) =>
-                              setState(() => examenIngreso = v),
+                          onChanged: (v) => setState(() => examenIngreso = v),
                         ),
                         const SizedBox(height: 8),
                         InkWell(
@@ -804,6 +847,48 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 20),
+                if (_cargandoConjuntos)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: LinearProgressIndicator(),
+                  )
+                else if (_errorConjuntos != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'Error cargando conjuntos: $_errorConjuntos',
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  )
+                else if (_conjuntos.isNotEmpty)
+                  DropdownButtonFormField<String>(
+                    value: _conjuntoSeleccionadoNit,
+                    decoration: const InputDecoration(
+                      labelText: "Asignar al conjunto",
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _conjuntos
+                        .map(
+                          (c) => DropdownMenuItem<String>(
+                            value: c.nit,
+                            child: Text(c.nombre),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      setState(() {
+                        _conjuntoSeleccionadoNit = v;
+                      });
+                    },
+                  )
+                else
+                  const Text(
+                    "No hay conjuntos creados para asignar.",
+                    style: TextStyle(color: Colors.grey),
+                  ),
+
+                const SizedBox(height: 16),
               ],
 
               const SizedBox(height: 20),
