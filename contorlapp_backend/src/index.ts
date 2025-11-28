@@ -4,7 +4,6 @@ import { PrismaClient } from "./generated/prisma";
 import cors from 'cors';
 import "./utils/cron";
 import rutas from "./routes/Rutas";
-import { empresaPublicSelect } from "./model/Empresa";
 
 const app = express();
 app.use(cors());

@@ -46,6 +46,10 @@ const LimiteHorasBody = z.object({
   limiteHorasSemana: z.coerce.number().int().min(1).max(84),
 });
 
+const QuitarOperarioBody = z.object({
+  operarioId: z.string().min(1),
+});
+
 export class GerenteController {
   private prisma: PrismaClient;
   private service: GerenteService;
@@ -184,6 +188,25 @@ export class GerenteController {
     }
   };
 
+  listarConjuntos: RequestHandler = async (_req, res, next) => {
+    try {
+      const out = await this.service.listarConjuntos();
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  obtenerConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const { conjuntoId } = ConjuntoIdParam.parse(req.params);
+      const out = await this.service.obtenerConjunto(conjuntoId);
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   editarConjunto: RequestHandler = async (req, res, next) => {
     try {
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);
@@ -199,6 +222,18 @@ export class GerenteController {
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);
       const { operarioId } = AsignarOperarioBody.parse(req.body);
       await this.service.asignarOperarioAConjunto({ conjuntoId, operarioId });
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  quitarOperarioDeConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const { conjuntoId } = ConjuntoIdParam.parse(req.params);
+      const { operarioId } = QuitarOperarioBody.parse(req.body);
+
+      await this.service.quitarOperarioDeConjunto({ conjuntoId, operarioId });
       res.status(204).send();
     } catch (err) {
       next(err);

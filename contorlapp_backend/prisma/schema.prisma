@@ -163,7 +163,7 @@ enum TipoContrato {
 }
 
 enum TipoServicio {
-  JARDINERÍA
+  JARDINERIA
   PISCINA
   ASEO
   MANTENIMIENTOS_LOCATIVOS
@@ -480,8 +480,7 @@ model Ubicacion {
   id     Int    @id @default(autoincrement())
   nombre String
 
-  // Relaciones
-  conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit])
+  conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
   conjuntoId String
 
   elementos                 Elemento[]
@@ -496,8 +495,7 @@ model Elemento {
   id     Int    @id @default(autoincrement())
   nombre String
 
-  // Relaciones
-  ubicacion   Ubicacion @relation(fields: [ubicacionId], references: [id])
+  ubicacion   Ubicacion @relation(fields: [ubicacionId], references: [id], onDelete: Cascade)
   ubicacionId Int
 
   tareas                    Tarea[]

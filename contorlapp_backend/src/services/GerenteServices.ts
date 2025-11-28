@@ -23,7 +23,12 @@ import { CrearJefeOperacionesDTO } from "../model/JefeOperaciones";
 import { CrearSupervisorDTO } from "../model/Supervisor";
 import { CrearOperarioDTO, EditarOperarioDTO } from "../model/Operario";
 
-import { CrearConjuntoDTO, EditarConjuntoDTO } from "../model/Conjunto";
+import {
+  conjuntoPublicSelect,
+  CrearConjuntoDTO,
+  EditarConjuntoDTO,
+  toConjuntoPublico,
+} from "../model/Conjunto";
 
 import {
   CrearMaquinariaDTO,
@@ -53,6 +58,8 @@ const EntregarMaquinariaDTO = z.object({
   maquinariaId: z.number().int().positive(),
   conjuntoId: z.string().min(3),
 });
+
+const EMPRESA_ID_FIJA = "901191875-4";
 
 export class GerenteService {
   constructor(private prisma: PrismaClient) {}
@@ -285,14 +292,28 @@ export class GerenteService {
   async crearConjunto(payload: unknown) {
     const dto = CrearConjuntoDTO.parse(payload);
 
+    // ✅ Validar administrador si viene
+    let administradorId: string | null = null;
+    if (dto.administradorId) {
+      const admin = await this.prisma.administrador.findUnique({
+        where: { id: dto.administradorId },
+      });
+      if (!admin) {
+        throw new Error("❌ El administrador seleccionado no existe.");
+      }
+      administradorId = dto.administradorId;
+    }
+
     const creado = await this.prisma.conjunto.create({
       data: {
         nit: dto.nit,
         nombre: dto.nombre,
         direccion: dto.direccion,
         correo: dto.correo,
-        empresaId: dto.empresaId ?? null,
-        administradorId: dto.administradorId!.toString() ?? null,
+
+        empresaId: EMPRESA_ID_FIJA,
+        administradorId,
+
         fechaInicioContrato: dto.fechaInicioContrato ?? null,
         fechaFinContrato: dto.fechaFinContrato ?? null,
         activo: dto.activo,
@@ -303,6 +324,7 @@ export class GerenteService {
             : null,
         consignasEspeciales: dto.consignasEspeciales,
         valorAgregado: dto.valorAgregado,
+
         horarios:
           dto.horarios && dto.horarios.length
             ? {
@@ -313,54 +335,164 @@ export class GerenteService {
                 })),
               }
             : undefined,
+
+        ubicaciones:
+          dto.ubicaciones && dto.ubicaciones.length
+            ? {
+                create: dto.ubicaciones.map((u) => ({
+                  nombre: u.nombre,
+                  elementos:
+                    u.elementos && u.elementos.length
+                      ? {
+                          create: u.elementos.map((nombreElem) => ({
+                            nombre: nombreElem,
+                          })),
+                        }
+                      : undefined,
+                })),
+              }
+            : undefined,
+      },
+      select: conjuntoPublicSelect,
+    });
+
+    return toConjuntoPublico(creado);
+  }
+
+  async listarConjuntos() {
+    const conjuntos = await this.prisma.conjunto.findMany({
+      select: conjuntoPublicSelect,
+      orderBy: { nombre: "asc" },
+    });
+    return conjuntos.map(toConjuntoPublico);
+  }
+
+  async obtenerConjunto(conjuntoId: string) {
+    const conjunto = await this.prisma.conjunto.findUnique({
+      where: { nit: conjuntoId },
+      include: {
+        administrador: {
+          include: {
+            usuario: true,
+          },
+        },
+        operarios: {
+          include: {
+            usuario: true,
+          },
+        },
+        horarios: true,
+        ubicaciones: {
+          include: {
+            elementos: true,
+          },
+        },
       },
     });
 
-    return creado;
+    if (!conjunto) {
+      throw new Error("❌ Conjunto no encontrado.");
+    }
+
+    return conjunto;
   }
 
   async editarConjunto(conjuntoId: string, payload: unknown) {
     const dto = EditarConjuntoDTO.parse(payload);
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      if (dto.horarios) {
-        await tx.conjuntoHorario.deleteMany({ where: { conjuntoId } });
-        if (dto.horarios.length) {
-          await tx.conjuntoHorario.createMany({
-            data: dto.horarios.map((h) => ({
-              conjuntoId,
-              dia: h.dia,
-              horaApertura: h.horaApertura,
-              horaCierre: h.horaCierre,
-            })),
-          });
-        }
-      }
+    const data: Prisma.ConjuntoUpdateInput = {};
 
-      const data: any = {
-        nombre: dto.nombre,
-        direccion: dto.direccion,
-        correo: dto.correo,
-        administradorId: dto.administradorId ?? undefined,
-        empresaId: dto.empresaId ?? undefined,
-        fechaInicioContrato: dto.fechaInicioContrato ?? undefined,
-        fechaFinContrato: dto.fechaFinContrato ?? undefined,
-        activo: dto.activo ?? undefined,
-        tipoServicio: dto.tipoServicio ?? undefined,
-        valorMensual:
-          dto.valorMensual === undefined
-            ? undefined
-            : dto.valorMensual === null
-            ? null
-            : new Prisma.Decimal(dto.valorMensual),
-        consignasEspeciales: dto.consignasEspeciales ?? undefined,
-        valorAgregado: dto.valorAgregado ?? undefined,
-      };
+    if (dto.nombre !== undefined) data.nombre = dto.nombre;
+    if (dto.direccion !== undefined) data.direccion = dto.direccion;
+    if (dto.correo !== undefined) data.correo = dto.correo;
 
-      return tx.conjunto.update({ where: { nit: conjuntoId }, data });
+    // 🔹 Administrador (relación)
+    if (dto.administradorId !== undefined) {
+      data.administrador = dto.administradorId
+        ? {
+            connect: { id: dto.administradorId }, // id del Administrador (String)
+          }
+        : {
+            // si viene null, desconectamos
+            disconnect: true,
+          };
+    }
+
+    // 🔹 Empresa (relación) – si realmente quieres permitir cambiarla
+    if (dto.empresaId !== undefined) {
+      data.empresa = dto.empresaId
+        ? {
+            connect: { nit: dto.empresaId }, // nit de la Empresa
+          }
+        : {
+            disconnect: true,
+          };
+    }
+
+    if (dto.fechaInicioContrato !== undefined) {
+      data.fechaInicioContrato = dto.fechaInicioContrato;
+    }
+    if (dto.fechaFinContrato !== undefined) {
+      data.fechaFinContrato = dto.fechaFinContrato;
+    }
+
+    if (dto.valorMensual !== undefined) {
+      data.valorMensual =
+        dto.valorMensual != null ? new Prisma.Decimal(dto.valorMensual) : null;
+    }
+
+    if (dto.tipoServicio !== undefined) {
+      data.tipoServicio = dto.tipoServicio as any;
+    }
+
+    if (dto.consignasEspeciales !== undefined) {
+      data.consignasEspeciales = dto.consignasEspeciales;
+    }
+
+    if (dto.valorAgregado !== undefined) {
+      data.valorAgregado = dto.valorAgregado;
+    }
+
+    // 🔹 Lógica de ACTIVO
+    if (dto.activo !== undefined) {
+      // Si el front lo manda, lo respetamos
+      data.activo = dto.activo;
+    } else if (dto.fechaFinContrato !== undefined) {
+      // Si no mandan "activo" pero sí cambian fechaFin, lo calculamos
+      const hoy = new Date();
+      data.activo = dto.fechaFinContrato! > hoy;
+    }
+
+    const actualizado = await this.prisma.conjunto.update({
+      where: { nit: conjuntoId },
+      data,
+      select: conjuntoPublicSelect,
     });
 
-    return updated;
+    return toConjuntoPublico(actualizado);
+  }
+
+  async eliminarConjunto(conjuntoId: string) {
+    const [tareasPendientes, maquinariaPrestada] = await Promise.all([
+      this.prisma.tarea.findMany({
+        where: {
+          conjuntoId,
+          estado: { in: ["ASIGNADA", "EN_PROCESO", "PENDIENTE_APROBACION"] },
+        },
+        select: { id: true },
+      }),
+      this.prisma.maquinaria.findMany({
+        where: { conjuntoId, disponible: false },
+        select: { id: true },
+      }),
+    ]);
+
+    if (tareasPendientes.length > 0)
+      throw new Error("❌ El conjunto tiene tareas pendientes.");
+    if (maquinariaPrestada.length > 0)
+      throw new Error("❌ El conjunto tiene maquinaria prestada.");
+
+    await this.prisma.conjunto.delete({ where: { nit: conjuntoId } });
   }
 
   async asignarOperarioAConjunto(payload: unknown) {
@@ -368,6 +500,22 @@ export class GerenteService {
     return this.prisma.operario.update({
       where: { id: dto.operarioId.toString() },
       data: { conjuntos: { connect: { nit: dto.conjuntoId } } },
+    });
+  }
+
+  async quitarOperarioDeConjunto(params: {
+    conjuntoId: string;
+    operarioId: string;
+  }) {
+    const { conjuntoId, operarioId } = params;
+
+    await this.prisma.conjunto.update({
+      where: { nit: conjuntoId },
+      data: {
+        operarios: {
+          disconnect: { id: operarioId },
+        },
+      },
     });
   }
 
@@ -694,29 +842,6 @@ export class GerenteService {
         where: { id: jefeOperacionesId },
       });
     });
-  }
-
-  async eliminarConjunto(conjuntoId: string) {
-    const [tareasPendientes, maquinariaPrestada] = await Promise.all([
-      this.prisma.tarea.findMany({
-        where: {
-          conjuntoId,
-          estado: { in: ["ASIGNADA", "EN_PROCESO", "PENDIENTE_APROBACION"] },
-        },
-        select: { id: true },
-      }),
-      this.prisma.maquinaria.findMany({
-        where: { conjuntoId, disponible: false },
-        select: { id: true },
-      }),
-    ]);
-
-    if (tareasPendientes.length > 0)
-      throw new Error("❌ El conjunto tiene tareas pendientes.");
-    if (maquinariaPrestada.length > 0)
-      throw new Error("❌ El conjunto tiene maquinaria prestada.");
-
-    await this.prisma.conjunto.delete({ where: { nit: conjuntoId } });
   }
 
   async eliminarUsuario(id: string): Promise<void> {

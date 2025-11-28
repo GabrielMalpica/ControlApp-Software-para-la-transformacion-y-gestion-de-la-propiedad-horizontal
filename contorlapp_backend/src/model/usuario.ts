@@ -136,3 +136,11 @@ export function toUsuarioPublico<T extends Record<keyof typeof usuarioPublicSele
 ): UsuarioPublico {
   return row;
 }
+
+export const ListarUsuariosDTO = z.object({
+  rol: z
+    .nativeEnum(Rol)
+    .optional()
+    .nullable()
+    .transform((v) => (v === null ? undefined : v)),
+});

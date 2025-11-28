@@ -29,6 +29,8 @@ router.post("/operarios", ctrl.asignarOperario);
 /* Conjuntos */
 router.post("/conjuntos", ctrl.crearConjunto);
 router.patch("/conjuntos/:conjuntoId", ctrl.editarConjunto);
+router.get("/conjuntos", ctrl.listarConjuntos);        
+router.get("/conjuntos/:conjuntoId", ctrl.obtenerConjunto); 
 router.post("/conjuntos/:conjuntoId/operarios", ctrl.asignarOperarioAConjunto);
 router.post("/conjuntos/:conjuntoId/insumos", ctrl.agregarInsumoAConjunto);
 
