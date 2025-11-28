@@ -406,23 +406,20 @@ export class GerenteService {
     if (dto.direccion !== undefined) data.direccion = dto.direccion;
     if (dto.correo !== undefined) data.correo = dto.correo;
 
-    // 🔹 Administrador (relación)
     if (dto.administradorId !== undefined) {
       data.administrador = dto.administradorId
         ? {
-            connect: { id: dto.administradorId }, // id del Administrador (String)
+            connect: { id: dto.administradorId },
           }
         : {
-            // si viene null, desconectamos
             disconnect: true,
           };
     }
 
-    // 🔹 Empresa (relación) – si realmente quieres permitir cambiarla
     if (dto.empresaId !== undefined) {
       data.empresa = dto.empresaId
         ? {
-            connect: { nit: dto.empresaId }, // nit de la Empresa
+            connect: { nit: dto.empresaId },
           }
         : {
             disconnect: true,
@@ -432,8 +429,18 @@ export class GerenteService {
     if (dto.fechaInicioContrato !== undefined) {
       data.fechaInicioContrato = dto.fechaInicioContrato;
     }
+
     if (dto.fechaFinContrato !== undefined) {
+      // si el front manda fechaFin explícita, la usamos tal cua
       data.fechaFinContrato = dto.fechaFinContrato;
+    }
+
+    if (dto.activo !== undefined) {
+      data.activo = dto.activo;
+
+      if (dto.activo === false && dto.fechaFinContrato === undefined) {
+        data.fechaFinContrato = new Date();
+      }
     }
 
     if (dto.valorMensual !== undefined) {
@@ -453,14 +460,43 @@ export class GerenteService {
       data.valorAgregado = dto.valorAgregado;
     }
 
-    // 🔹 Lógica de ACTIVO
-    if (dto.activo !== undefined) {
-      // Si el front lo manda, lo respetamos
-      data.activo = dto.activo;
-    } else if (dto.fechaFinContrato !== undefined) {
-      // Si no mandan "activo" pero sí cambian fechaFin, lo calculamos
-      const hoy = new Date();
-      data.activo = dto.fechaFinContrato! > hoy;
+    if (dto.horarios !== undefined) {
+      await this.prisma.conjuntoHorario.deleteMany({
+        where: { conjuntoId },
+      });
+
+      if (dto.horarios.length > 0) {
+        data.horarios = {
+          create: dto.horarios.map((h) => ({
+            dia: h.dia,
+            horaApertura: h.horaApertura,
+            horaCierre: h.horaCierre,
+          })),
+        };
+      }
+    }
+
+    if (dto.operariosIds !== undefined) {
+      data.operarios = {
+        set: dto.operariosIds.map((id) => ({ id })),
+      };
+    }
+
+    if (dto.ubicaciones !== undefined) {
+      data.ubicaciones = {
+        deleteMany: {},
+        create: dto.ubicaciones.map((u) => ({
+          nombre: u.nombre,
+          elementos:
+            u.elementos && u.elementos.length
+              ? {
+                  create: u.elementos.map((nombreElem) => ({
+                    nombre: nombreElem,
+                  })),
+                }
+              : undefined,
+        })),
+      };
     }
 
     const actualizado = await this.prisma.conjunto.update({

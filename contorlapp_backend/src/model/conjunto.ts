@@ -92,6 +92,8 @@ export const EditarConjuntoDTO = z.object({
   valorAgregado: z.array(z.string()).optional(),
 
   horarios: z.array(HorarioDTO).optional(),
+  operariosIds: z.array(z.string()).optional(),
+  ubicaciones: z.array(UbicacionConElementosDTO).optional(),
 });
 
 /* ===================== SELECT ===================== */

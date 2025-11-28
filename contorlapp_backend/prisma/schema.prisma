@@ -710,29 +710,17 @@ model SolicitudMaquinaria {
 
 model Rendimiento {
   id                         Int           @id @default(autoincrement())
-  actividad                  String // nombre claro como en la hoja
+  actividad                  String
   tipoServicio               TipoServicio
   unidadCalculo              UnidadCalculo
-  // Rendimiento base (por operario) p.ej. 120 M2/HORA
   rendimientoBasePorOperario Decimal       @db.Decimal(14, 4)
-
-  // Curva por tamaño de cuadrilla: [{personas:2, factor:1.75}, {personas:3, factor:2.3}, ...]
   curvaCuadrillaJson Json?
-
-  // Factores de ajuste (pendiente, sol/sombra, altura, tráfico, clima...). Ej: {sol:"-10%", pendiente:"-15%"}
   factoresJson Json?
-
-  // Insumos base por unidad (separado de DefinicionTareaPreventiva para estándar empresa)
-  // Ej: [{insumoId: 12, consumoPorUnidad: 0.02, unidad:"L/M2"}]
   insumosBaseJson Json?
-
-  // Maquinaria/herramientas sugeridas (por tipo o ids)
-  // Ej: [{tipo:"HIDROLAVADORA_ELECTRICA"}, {tipo:"ESCALERA"}]
   herramientasSugeridasJson Json?
 
-  minutosSetup       Int? // tiempo de alistamiento
-  mermaPorcentaje    Decimal?    @db.Decimal(5, 2) // 0-100
-  frecuenciaSugerida Frecuencia? // si aplica
+  mermaPorcentaje    Decimal?    @db.Decimal(5, 2)
+  frecuenciaSugerida Frecuencia?
   version            Int         @default(1)
   vigenteDesde       DateTime?   @default(now())
   vigenteHasta       DateTime?
@@ -740,7 +728,6 @@ model Rendimiento {
   empresa   Empresa? @relation(fields: [empresaId], references: [nit])
   empresaId String?
 
-  // Enganches
   definiciones    DefinicionTareaPreventiva[]
   tareasAplicadas RendimientoAplicado[]
   Tarea           Tarea[]
@@ -757,19 +744,17 @@ model RendimientoAplicado {
   rendimiento   Rendimiento @relation(fields: [rendimientoId], references: [id])
   rendimientoId Int
 
-  // Parámetros usados en el cálculo (fotografía del momento)
   cuadrillaPersonas  Int
-  factoresUsadosJson Json? // p.ej. {"sol":"-10%", "pendiente":"-15%"}
+  factoresUsadosJson Json?
   areaNumerica       Decimal?       @db.Decimal(14, 4)
   unidadCalculo      UnidadCalculo?
-  consumoBaseJson    Json? // copia de insumos base con ajustes y merma
-  herramientasJson   Json? // lo que realmente se usó
+  consumoBaseJson    Json?
+  herramientasJson   Json?
 
-  // Resultado de cálculo
-  rendimientoCalculadoPorPersona Decimal? @db.Decimal(14, 4) // ya ajustado por factores
+  rendimientoCalculadoPorPersona Decimal? @db.Decimal(14, 4)
   rendimientoCuadrilla           Decimal? @db.Decimal(14, 4)
-  horasCalculadas                Decimal? @db.Decimal(14, 4) // horas totales estimadas
-  consumoTotalEstimado           Decimal? @db.Decimal(14, 4) // insumo principal total
+  horasCalculadas                Decimal? @db.Decimal(14, 4)
+  consumoTotalEstimado           Decimal? @db.Decimal(14, 4)
 
   creadoEn DateTime @default(now())
 
