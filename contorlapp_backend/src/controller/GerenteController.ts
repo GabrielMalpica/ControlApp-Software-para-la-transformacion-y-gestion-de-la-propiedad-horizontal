@@ -221,7 +221,12 @@ export class GerenteController {
     try {
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);
       const { operarioId } = AsignarOperarioBody.parse(req.body);
-      await this.service.asignarOperarioAConjunto({ conjuntoId, operarioId });
+
+      await this.service.asignarOperarioAConjunto({
+        conjuntoId,
+        operarioId,
+      });
+
       res.status(204).send();
     } catch (err) {
       next(err);

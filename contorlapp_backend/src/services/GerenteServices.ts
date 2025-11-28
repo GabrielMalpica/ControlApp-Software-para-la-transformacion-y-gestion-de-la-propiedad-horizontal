@@ -531,11 +531,19 @@ export class GerenteService {
     await this.prisma.conjunto.delete({ where: { nit: conjuntoId } });
   }
 
-  async asignarOperarioAConjunto(payload: unknown) {
-    const dto = AsignarAConjuntoDTO.parse(payload);
+  async asignarOperarioAConjunto(args: {
+    conjuntoId: string;
+    operarioId: string | number;
+  }) {
+    const { conjuntoId, operarioId } = args;
+
     return this.prisma.operario.update({
-      where: { id: dto.operarioId.toString() },
-      data: { conjuntos: { connect: { nit: dto.conjuntoId } } },
+      where: { id: operarioId.toString() },
+      data: {
+        conjuntos: {
+          connect: { nit: conjuntoId },
+        },
+      },
     });
   }
 

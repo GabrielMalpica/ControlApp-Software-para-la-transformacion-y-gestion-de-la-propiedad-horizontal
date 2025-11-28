@@ -738,7 +738,6 @@ model Rendimiento {
 
 model RendimientoAplicado {
   id            Int         @id @default(autoincrement())
-  // Dónde se aplicó el estándar (tarea concreta)
   tarea         Tarea       @relation(fields: [tareaId], references: [id], onDelete: Cascade)
   tareaId       Int         @unique
   rendimiento   Rendimiento @relation(fields: [rendimientoId], references: [id])
