@@ -3,6 +3,7 @@ class AppConstants {
 
   // 🔹 Prefijo de todo lo que maneja el GerenteController
   static const String gerenteBase = "$baseUrl/gerente";
+  static const empresaNit = '901191875-4';
 
   // 🔹 Usuarios
   static const String usuarios = "$gerenteBase/usuarios";

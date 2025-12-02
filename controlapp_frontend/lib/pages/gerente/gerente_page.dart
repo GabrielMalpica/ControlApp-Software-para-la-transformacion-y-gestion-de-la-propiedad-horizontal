@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/pages/gerente/crear_insumo_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_conjuntos_page.dart';
+import 'package:flutter_application_1/pages/gerente/lista_insumos_page.dart';
 import 'package:flutter_application_1/pages/gerente/usuarios_conjunto_page.dart';
 import '../../service/theme.dart';
 import '../maquinaria_page.dart';
@@ -123,85 +125,164 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
               style: TextStyle(color: Colors.white, fontSize: 20),
             ),
           ),
-          ListTile(
+
+          // ---------------------------
+          //        USUARIOS
+          // ---------------------------
+          ExpansionTile(
+            initiallyExpanded: true,
             leading: const Icon(Icons.people_alt_outlined),
-            title: const Text("Gestión de usuarios"),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => ListaUsuariosPage(nit: nit)),
-            ),
+            title: const Text("Usuarios"),
+            children: [
+              ListTile(
+                leading: const Icon(Icons.people),
+                title: const Text("Gestión de usuarios"),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ListaUsuariosPage(nit: nit),
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.person_add_alt_1),
+                title: const Text("Crear usuario"),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => CrearUsuarioPage(nit: nit)),
+                ),
+              ),
+            ],
           ),
-          ListTile(
-            leading: const Icon(Icons.person_add_alt_1),
-            title: const Text("Crear usuario"),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => CrearUsuarioPage(nit: nit)),
-            ),
+
+          // ---------------------------
+          //        CONJUNTOS
+          // ---------------------------
+          ExpansionTile(
+            leading: const Icon(Icons.apartment),
+            title: const Text("Conjuntos"),
+            children: [
+              ListTile(
+                leading: const Icon(Icons.add_business),
+                title: const Text("Crear conjunto"),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CrearConjuntoPage(nit: nit),
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.business),
+                title: const Text("Gestión de conjuntos"),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ListaConjuntosPage(nit: nit),
+                  ),
+                ),
+              ),
+            ],
           ),
-          ListTile(
+
+          // ---------------------------
+          //        INSUMOS
+          // ---------------------------
+          ExpansionTile(
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: const Text("Insumos"),
+            children: [
+              ListTile(
+                leading: const Icon(Icons.inventory),
+                title: const Text("Crear insumos"),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CrearInsumoPage(nit: nit),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.inventory),
+                title: const Text("Catálogo de insumos"),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ListaInsumosPage()),
+                  );
+                },
+              ),
+            ],
+          ),
+
+          // ---------------------------
+          //        TAREAS
+          // ---------------------------
+          ExpansionTile(
             leading: const Icon(Icons.assignment),
-            title: const Text("Crear tarea"),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => CrearTareaPage(nit: nit)),
-            ),
+            title: const Text("Tareas"),
+            children: [
+              ListTile(
+                leading: const Icon(Icons.add_task),
+                title: const Text("Crear tarea"),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => CrearTareaPage(nit: nit)),
+                ),
+              ),
+            ],
           ),
-          ListTile(
+
+          // ---------------------------
+          //        SOLICITUDES
+          // ---------------------------
+          ExpansionTile(
             leading: const Icon(Icons.shopping_cart),
-            title: const Text("Solicitud de insumo"),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => SolicitudInsumoPage(nit: nit),
+            title: const Text("Solicitudes"),
+            children: [
+              ListTile(
+                leading: const Icon(Icons.inventory_2_outlined),
+                title: const Text("Solicitud de insumo"),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SolicitudInsumoPage(nit: nit),
+                  ),
                 ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.apartment),
-            title: const Text("Crear conjunto"),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => CrearConjuntoPage(nit: nit)),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.apartment),
-            title: const Text("Gestión conjuntos"),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => ListaConjuntosPage(nit: nit)),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.precision_manufacturing),
-            title: const Text("Solicitud de maquinaria"),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => SolicitudMaquinariaPage(nit: nit),
+              ),
+              ListTile(
+                leading: const Icon(Icons.precision_manufacturing),
+                title: const Text("Solicitud de maquinaria"),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SolicitudMaquinariaPage(nit: nit),
+                  ),
                 ),
-              );
-            },
+              ),
+            ],
           ),
-          ListTile(
+
+          // ---------------------------
+          //        CRONOGRAMAS
+          // ---------------------------
+          ExpansionTile(
             leading: const Icon(Icons.calendar_month),
-            title: const Text("Crear cronograma"),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CrearCronogramaPage(nit: nit),
+            title: const Text("Cronogramas"),
+            children: [
+              ListTile(
+                leading: const Icon(Icons.calendar_today),
+                title: const Text("Crear cronograma"),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CrearCronogramaPage(nit: nit),
+                  ),
                 ),
-              );
-            },
+              ),
+            ],
           ),
         ],
       ),

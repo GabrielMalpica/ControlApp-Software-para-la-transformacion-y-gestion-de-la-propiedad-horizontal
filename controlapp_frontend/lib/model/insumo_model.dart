@@ -1,57 +1,73 @@
 // lib/model/insumo_model.dart
+enum CategoriaInsumo { LIMPIEZA, JARDINERIA, PISCINA }
 
-/// Categorías de insumos, debe coincidir con el enum del backend `CategoriaInsumo`
-enum CategoriaInsumo {
-  limpieza,
-  jardineria,
-  construccion,
-  seguridad,
-  otro,
+extension CategoriaInsumoExt on CategoriaInsumo {
+  String get label {
+    switch (this) {
+      case CategoriaInsumo.LIMPIEZA:
+        return 'Limpieza';
+      case CategoriaInsumo.JARDINERIA:
+        return 'Jardinería';
+      case CategoriaInsumo.PISCINA:
+        return 'Piscina';
+    }
+  }
+
+  /// Valor que espera el backend (igual al enum de Prisma)
+  String get backendValue => name; // "LIMPIEZA", "JARDINERIA", "PISCINA"
 }
 
-class InsumoModel {
+class InsumoRequest {
+  final String nombre;
+  final String unidad;
+  final CategoriaInsumo categoria;
+  final int? umbralBajo;
+
+  InsumoRequest({
+    required this.nombre,
+    required this.unidad,
+    required this.categoria,
+    this.umbralBajo,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'nombre': nombre,
+      'unidad': unidad,
+      'categoria': categoria.backendValue,
+      if (umbralBajo != null) 'umbralBajo': umbralBajo,
+    };
+  }
+}
+
+class InsumoResponse {
   final int id;
   final String nombre;
   final String unidad;
   final CategoriaInsumo categoria;
-  final int? umbralGlobalMinimo;
-  final String? empresaId;
+  final int? umbralBajo;
 
-  InsumoModel({
+  InsumoResponse({
     required this.id,
     required this.nombre,
     required this.unidad,
     required this.categoria,
-    this.umbralGlobalMinimo,
-    this.empresaId,
+    this.umbralBajo,
   });
 
-  /// Crear desde JSON (backend → app)
-  factory InsumoModel.fromJson(Map<String, dynamic> json) {
-    return InsumoModel(
+  factory InsumoResponse.fromJson(Map<String, dynamic> json) {
+    final catStr = json['categoria'] as String;
+    final cat = CategoriaInsumo.values.firstWhere(
+      (e) => e.name == catStr,
+      orElse: () => CategoriaInsumo.LIMPIEZA,
+    );
+
+    return InsumoResponse(
       id: json['id'] as int,
       nombre: json['nombre'] as String,
       unidad: json['unidad'] as String,
-      categoria: CategoriaInsumo.values.firstWhere(
-        (e) => e.name.toLowerCase() == json['categoria'].toString().toLowerCase(),
-        orElse: () => CategoriaInsumo.otro,
-      ),
-      umbralGlobalMinimo: json['umbralGlobalMinimo'] != null
-          ? json['umbralGlobalMinimo'] as int
-          : null,
-      empresaId: json['empresaId'] as String?,
+      categoria: cat,
+      umbralBajo: json['umbralBajo'] as int?,
     );
-  }
-
-  /// Convertir a JSON (app → backend)
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'nombre': nombre,
-      'unidad': unidad,
-      'categoria': categoria.name,
-      'umbralGlobalMinimo': umbralGlobalMinimo,
-      'empresaId': empresaId,
-    };
   }
 }

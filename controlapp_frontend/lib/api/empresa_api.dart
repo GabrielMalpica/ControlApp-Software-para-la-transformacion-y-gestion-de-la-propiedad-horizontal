@@ -1,0 +1,85 @@
+import 'dart:convert';
+
+import 'package:flutter_application_1/service/app_constants.dart';
+
+import '../model/insumo_model.dart';
+import '../service/api_client.dart';
+
+class EmpresaApi {
+  final ApiClient _client;
+
+  EmpresaApi() : _client = ApiClient();
+
+  String get _empresaNit => AppConstants.empresaNit;
+
+  Future<InsumoResponse> crearInsumoCatalogo(InsumoRequest req) async {
+    final resp = await _client.post(
+      '${AppConstants.baseUrl}/empresa/$_empresaNit/catalogo/insumos',
+      body: req.toJson(),
+    );
+
+    if (resp.statusCode != 201) {
+      throw Exception('Error al crear insumo: ${resp.body}');
+    }
+
+    final Map<String, dynamic> data = jsonDecode(resp.body);
+    return InsumoResponse.fromJson(data);
+  }
+
+  Future<List<InsumoResponse>> listarCatalogo() async {
+    final resp = await _client.get(
+      '${AppConstants.baseUrl}/empresa/$_empresaNit/catalogo',
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception('Error al listar catálogo: ${resp.body}');
+    }
+
+    final List<dynamic> data = jsonDecode(resp.body);
+    return data
+        .map((e) => InsumoResponse.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<InsumoResponse?> buscarInsumoPorId(int id) async {
+    final resp = await _client.get(
+      '${AppConstants.baseUrl}/empresa/$_empresaNit/catalogo/insumos/$id',
+    );
+
+    if (resp.statusCode == 404) {
+      // el backend manda 404 cuando no existe
+      return null;
+    }
+
+    if (resp.statusCode != 200) {
+      throw Exception('Error al buscar insumo: ${resp.body}');
+    }
+
+    final Map<String, dynamic> data = jsonDecode(resp.body);
+    return InsumoResponse.fromJson(data);
+  }
+
+  Future<InsumoResponse> editarInsumo(int id, InsumoRequest req) async {
+    final resp = await _client.patch(
+      '${AppConstants.baseUrl}/empresa/$_empresaNit/catalogo/insumos/$id',
+      body: req.toJson(),
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception('Error al editar insumo: ${resp.body}');
+    }
+
+    final Map<String, dynamic> data = jsonDecode(resp.body);
+    return InsumoResponse.fromJson(data);
+  }
+
+  Future<void> eliminarInsumo(int id) async {
+    final resp = await _client.delete(
+      '${AppConstants.baseUrl}/empresa/$_empresaNit/catalogo/insumos/$id',
+    );
+
+    if (resp.statusCode != 204 && resp.statusCode != 200) {
+      throw Exception('Error al eliminar insumo: ${resp.body}');
+    }
+  }
+}
