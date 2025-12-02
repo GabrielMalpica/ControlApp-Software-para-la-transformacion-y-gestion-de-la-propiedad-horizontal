@@ -25,5 +25,7 @@ router.get("/:nit/solicitudes-tarea/pendientes", controller.solicitudesTareaPend
 router.post("/:nit/catalogo/insumos", controller.agregarInsumoAlCatalogo);
 router.get("/:nit/catalogo", controller.listarCatalogo);
 router.get("/:nit/catalogo/insumos/:id", controller.buscarInsumoPorId);
+router.patch("/:nit/catalogo/insumos/:id", controller.editarInsumoCatalogo);
+router.delete("/:nit/catalogo/insumos/:id", controller.eliminarInsumoCatalogo);
 
 export default router;

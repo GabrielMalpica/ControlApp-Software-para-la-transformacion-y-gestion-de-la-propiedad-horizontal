@@ -13,7 +13,14 @@ import {
   toMaquinariaPublica,
 } from "../model/Maquinaria";
 
-import { CrearInsumoDTO, insumoPublicSelect } from "../model/Insumo";
+import {
+  CrearInsumoDTO,
+  EditarInsumoDTO,
+  FiltroInsumoDTO,
+  InsumoPublico,
+  insumoPublicSelect,
+  toInsumoPublico,
+} from "../model/Insumo";
 
 import {
   CrearEmpresaDTO,
@@ -227,6 +234,19 @@ export class EmpresaService {
   async agregarInsumoAlCatalogo(payload: unknown) {
     const dto = CrearInsumoDTO.parse(payload);
 
+    // 1. Verificar que la empresa exista
+    const empresa = await this.prisma.empresa.findUnique({
+      where: { nit: this.empresaId },
+      select: { nit: true },
+    });
+
+    if (!empresa) {
+      throw new Error(
+        `La empresa con NIT ${this.empresaId} no existe. Debes crearla antes de agregar insumos al catálogo.`
+      );
+    }
+
+    // 2. Validar duplicado
     const existe = await this.prisma.insumo.findFirst({
       where: {
         empresaId: this.empresaId,
@@ -241,6 +261,7 @@ export class EmpresaService {
       );
     }
 
+    // 3. Crear insumo ligado a la empresa
     const creado = await this.prisma.insumo.create({
       data: {
         nombre: dto.nombre,
@@ -255,19 +276,73 @@ export class EmpresaService {
     return creado;
   }
 
-  async listarCatalogo() {
+  async listarCatalogo(filtroRaw?: unknown): Promise<InsumoPublico[]> {
+    const filtro = filtroRaw ? FiltroInsumoDTO.parse(filtroRaw) : {};
+
     const insumos = await this.prisma.insumo.findMany({
-      where: { empresaId: this.empresaId },
+      where: {
+        empresaId: filtro.empresaId ?? this.empresaId,
+        categoria: filtro.categoria ?? undefined,
+        nombre: filtro.nombre
+          ? { contains: filtro.nombre, mode: "insensitive" }
+          : undefined,
+      },
       select: insumoPublicSelect,
+      orderBy: { nombre: "asc" },
     });
-    return insumos.map((i) => `${i.nombre} (${i.unidad})`);
+
+    return insumos.map(toInsumoPublico);
   }
 
-  async buscarInsumoPorId(payload: unknown) {
+  async buscarInsumoPorId(payload: unknown): Promise<InsumoPublico | null> {
     const { id } = IdNumericoDTO.parse(payload);
-    return this.prisma.insumo.findFirst({
+
+    const insumo = await this.prisma.insumo.findFirst({
       where: { id, empresaId: this.empresaId },
       select: insumoPublicSelect,
+    });
+
+    return insumo ? toInsumoPublico(insumo) : null;
+  }
+
+  async editarInsumoCatalogo(id: number, payload: unknown) {
+    const dto = EditarInsumoDTO.parse(payload);
+
+    // validar que el insumo pertenezca a esta empresa
+    const existente = await this.prisma.insumo.findFirst({
+      where: { id, empresaId: this.empresaId },
+      select: { id: true },
+    });
+    if (!existente) {
+      throw new Error("Insumo no encontrado para esta empresa.");
+    }
+
+    const actualizado = await this.prisma.insumo.update({
+      where: { id },
+      data: {
+        nombre: dto.nombre ?? undefined,
+        unidad: dto.unidad ?? undefined,
+        categoria: dto.categoria ?? undefined,
+        umbralBajo: dto.umbralBajo ?? undefined,
+        empresaId: dto.empresaId ?? undefined, // normalmente no lo cambiarás
+      },
+      select: insumoPublicSelect,
+    });
+
+    return toInsumoPublico(actualizado);
+  }
+
+  async eliminarInsumoCatalogo(id: number) {
+    const existente = await this.prisma.insumo.findFirst({
+      where: { id, empresaId: this.empresaId },
+      select: { id: true },
+    });
+    if (!existente) {
+      throw new Error("Insumo no encontrado para esta empresa.");
+    }
+
+    await this.prisma.insumo.delete({
+      where: { id },
     });
   }
 }
