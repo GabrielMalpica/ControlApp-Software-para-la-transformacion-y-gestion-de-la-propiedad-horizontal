@@ -17,6 +17,9 @@ class AppConstants {
   // 🔹 Catálogo de enums para usuario
   static const String usuarioEnums = "$gerenteBase/enums-usuario";
 
-  // 🔹 Conjuntos (nuevo)
   static const String conjuntosGerente = "$gerenteBase/conjuntos";
+
+  static const String definicionPreventivaBase = "$baseUrl/definicion-preventiva";
+
+  static const String cronogramaBase = "$baseUrl/cronograma";
 }

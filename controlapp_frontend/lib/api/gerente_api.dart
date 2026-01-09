@@ -119,6 +119,21 @@ class GerenteApi {
     return jsonList.map((e) => Usuario.fromJson(e)).toList();
   }
 
+  Future<List<Usuario>> listarSupervisores() async {
+    final resp = await _apiClient.get(
+      '${AppConstants.baseUrl}/gerente/supervisores',
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception('Error al listar supervisores: ${resp.body}');
+    }
+
+    final List<dynamic> data = jsonDecode(resp.body);
+    return data
+        .map((e) => Usuario.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<void> crearConjunto({
     required String nitConjunto,
     required String nombre,
@@ -165,16 +180,16 @@ class GerenteApi {
   }
 
   Future<List<Conjunto>> listarConjuntos() async {
-    final resp = await _apiClient.get(AppConstants.conjuntosGerente);
+    final resp = await _apiClient.get(
+      '${AppConstants.baseUrl}/gerente/conjuntos',
+    );
 
     if (resp.statusCode != 200) {
-      throw Exception(
-        'Error obteniendo conjuntos: ${resp.statusCode} ${resp.body}',
-      );
+      throw Exception('Error al listar conjuntos: ${resp.body}');
     }
 
-    final List<dynamic> jsonList = jsonDecode(resp.body);
-    return jsonList
+    final List<dynamic> data = jsonDecode(resp.body);
+    return data
         .map((e) => Conjunto.fromJson(e as Map<String, dynamic>))
         .toList();
   }

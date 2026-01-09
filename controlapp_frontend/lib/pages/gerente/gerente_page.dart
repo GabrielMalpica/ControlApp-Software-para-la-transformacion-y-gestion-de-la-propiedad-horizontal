@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/gerente/crear_insumo_page.dart';
+import 'package:flutter_application_1/pages/gerente/crear_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_conjuntos_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_insumos_page.dart';
+import 'package:flutter_application_1/pages/gerente/lista_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/usuarios_conjunto_page.dart';
+import 'package:flutter_application_1/pages/preventivas_page.dart';
+import 'package:flutter_application_1/pages/tareas_page.dart';
 import '../../service/theme.dart';
 import '../maquinaria_page.dart';
 import '../inventario_page.dart';
@@ -12,7 +16,6 @@ import 'crear_usuario_page.dart';
 import 'lista_usuarios_page.dart';
 import '../crear_tarea_page.dart';
 import '../solicitud_insumo_page.dart';
-import '../tareas_page.dart';
 import '../solicitudes_page.dart';
 import '../cronograma_page.dart';
 import '../reportes_page.dart';
@@ -218,6 +221,40 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           ),
 
           // ---------------------------
+          //        MAQUINARIA
+          // ---------------------------
+          ExpansionTile(
+            leading: const Icon(Icons.precision_manufacturing_outlined),
+            title: const Text("Maquinaria"),
+            children: [
+              ListTile(
+                leading: const Icon(Icons.build),
+                title: const Text("Crear maquinaria"),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const CrearMaquinariaPage(nit: '901191875-4'),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.build),
+                title: const Text("Catálogo de maquinaria"),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ListaMaquinariaPage(),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+
+          // ---------------------------
           //        TAREAS
           // ---------------------------
           ExpansionTile(
@@ -229,7 +266,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
                 title: const Text("Crear tarea"),
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => CrearTareaPage(nit: nit)),
+                  MaterialPageRoute(builder: (_) => CrearTareaPage(nit: nit,)),
                 ),
               ),
             ],
@@ -518,7 +555,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => CronogramaPage(nit: nit),
+                        builder: (_) => CronogramaPage(nit: nit,),
                       ),
                     );
                   },
@@ -539,12 +576,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
                   Icons.build_circle_outlined,
                   Colors.deepOrange,
                   onTap: () {
-                    // TODO: reemplazar por tu página real cuando la tengas
-                    // Por ahora puedes navegar a un placeholder
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => ReportesPage(
+                        builder: (_) => PreventivasPage(
                           nit: nit,
                         ), // o crea una DefinirTareaPreventivaPage(nit: nit)
                       ),

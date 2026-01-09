@@ -1,51 +1,41 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/model/usuario_model.dart';
 
 import '../api/tarea_api.dart';
 import '../api/gerente_api.dart';
-import '../api/empresa_api.dart';
-import '../repositories/maquinaria_repository.dart';
-
 import '../model/conjunto_model.dart';
-import '../model/maquinaria_model.dart';
+import '../model/tarea_model.dart';
+import '../model/usuario_model.dart';
 import '../service/theme.dart';
 
-class CrearTareaPage extends StatefulWidget {
-  final String nit; // NIT del conjunto “preseleccionado”
+class EditarTareaPage extends StatefulWidget {
+  final String nit; // NIT del conjunto
+  final TareaModel tarea; // tarea a editar
 
-  const CrearTareaPage({super.key, required this.nit});
+  const EditarTareaPage({super.key, required this.nit, required this.tarea});
 
   @override
-  State<CrearTareaPage> createState() => _CrearTareaPageState();
+  State<EditarTareaPage> createState() => _EditarTareaPageState();
 }
 
-class _CrearTareaPageState extends State<CrearTareaPage> {
+class _EditarTareaPageState extends State<EditarTareaPage> {
   final _formKey = GlobalKey<FormState>();
 
-  // APIs
   final TareaApi _tareaApi = TareaApi();
   final GerenteApi _gerenteApi = GerenteApi();
-  final EmpresaApi _empresaApi = EmpresaApi();
-  final MaquinariaRepository _maquinariaRepo = MaquinariaRepository();
 
   // Controllers
   final _descripcionCtrl = TextEditingController();
   final _duracionCtrl = TextEditingController();
   final _observacionesCtrl = TextEditingController();
 
-  // Fechas
   DateTime? fechaInicio;
   DateTime? fechaFin;
 
-  // Estado de carga / guardado
   bool _cargandoInicial = true;
   bool _guardando = false;
 
-  // Conjuntos
-  List<Conjunto> _conjuntos = [];
+  // Conjunto / ubicaciones / elementos
   Conjunto? _conjuntoSeleccionado;
-
-  // Ubicaciones / elementos
   List<UbicacionConElementos> _ubicaciones = [];
   UbicacionConElementos? _ubicacionSeleccionada;
 
@@ -54,81 +44,91 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
   // Operarios del conjunto
   List<Usuario> _operarios = [];
-  final List<int> _operariosSeleccionadosIds = []; // usamos cédula como int
+  final List<int> _operariosSeleccionadosIds = []; // 👈 IDs numéricos (cédula)
 
   // Supervisores
   List<Usuario> _supervisores = [];
-  int? _supervisorId; // cédula como int
-
-  // Maquinaria disponible y seleccionada
-  List<MaquinariaResponse> _maquinariaDisponible = [];
-  final List<int> _maquinariaSeleccionadaIds = [];
+  int? _supervisorId; // 👈 también numérico
 
   @override
   void initState() {
     super.initState();
-    _cargarInicial();
+    _initFromTarea();
+    _cargarDatosIniciales();
   }
 
-  /// Carga conjuntos, supervisores y maquinaria disponible
-  Future<void> _cargarInicial() async {
+  void _initFromTarea() {
+    final t = widget.tarea;
+    _descripcionCtrl.text = t.descripcion;
+    _duracionCtrl.text = t.duracionHoras.toString();
+    _observacionesCtrl.text = t.observaciones ?? '';
+
+    fechaInicio = t.fechaInicio;
+    fechaFin = t.fechaFin;
+
+    // supervisorId viene como int? en TareaModel
+    _supervisorId = t.supervisorId;
+
+    // operariosIds viene como List<int> en TareaModel
+    _operariosSeleccionadosIds
+      ..clear()
+      ..addAll(t.operariosIds);
+  }
+
+  Future<void> _cargarDatosIniciales() async {
     try {
-      // 1) Conjuntos con ubicaciones/operarios
+      // 1) Cargar conjuntos (con ubicaciones + operarios)
       final conjuntos = await _gerenteApi.listarConjuntos();
 
-      // 2) Supervisores de la empresa
+      // encontrar el conjunto correspondiente al NIT
+      final conjunto = conjuntos.firstWhere(
+        (c) => c.nit == widget.nit,
+        orElse: () => conjuntos.first,
+      );
+
+      // 2) Supervisores
       final supervisores = await _gerenteApi.listarSupervisores();
 
-      // 3) Maquinaria disponible
-      final maquinariaDisp = await _empresaApi.listarMaquinariaDisponible();
-
-      Conjunto? seleccionado;
-      if (conjuntos.isNotEmpty) {
-        seleccionado = conjuntos.firstWhere(
-          (c) => c.nit == widget.nit,
-          orElse: () => conjuntos.first,
-        );
-      }
-
       setState(() {
-        _conjuntos = conjuntos;
+        _conjuntoSeleccionado = conjunto;
+        _ubicaciones = conjunto.ubicaciones;
+        _operarios = conjunto.operarios;
         _supervisores = supervisores;
-        _maquinariaDisponible = maquinariaDisp;
         _cargandoInicial = false;
       });
 
-      if (seleccionado != null) {
-        _refrescarDatosConjunto(seleccionado);
-      }
+      // 3) Preseleccionar ubicación y elemento de la tarea
+      _preseleccionarUbicacionYElemento();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _cargandoInicial = false);
+      _cargandoInicial = false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error cargando datos iniciales: $e'),
           backgroundColor: Colors.red,
         ),
       );
+      setState(() {});
     }
   }
 
-  /// Cuando cambia el conjunto, refrescamos ubicaciones, elementos y operarios
-  void _refrescarDatosConjunto(Conjunto conjunto) {
-    setState(() {
-      _conjuntoSeleccionado = conjunto;
+  void _preseleccionarUbicacionYElemento() {
+    final t = widget.tarea;
 
-      _ubicaciones = conjunto.ubicaciones;
-      _ubicacionSeleccionada = null;
+    if (_ubicaciones.isEmpty) return;
 
-      _elementos = [];
-      _elementoSeleccionado = null;
+    final ubic = _ubicaciones.where((u) => u.id == t.ubicacionId).toList();
+    if (ubic.isNotEmpty) {
+      _ubicacionSeleccionada = ubic.first;
+      _elementos = _ubicacionSeleccionada!.elementos;
 
-      _operarios = conjunto.operarios;
-      _operariosSeleccionadosIds.clear();
+      final elems = _elementos.where((e) => e.id == t.elementoId).toList();
+      if (elems.isNotEmpty) {
+        _elementoSeleccionado = elems.first;
+      }
+    }
 
-      _maquinariaSeleccionadaIds.clear();
-      _supervisorId = null;
-    });
+    setState(() {});
   }
 
   Future<void> _seleccionarFechaInicio() async {
@@ -155,7 +155,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     }
   }
 
-  /// Selección múltiple de operarios
   Future<void> _mostrarSelectorOperarios() async {
     if (_operarios.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -181,6 +180,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                   itemBuilder: (_, index) {
                     final op = _operarios[index];
 
+                    // Usamos la cédula numérica como ID
                     final opId = int.tryParse(op.cedula) ?? 0;
                     if (opId == 0) return const SizedBox.shrink();
 
@@ -226,81 +226,14 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     }
   }
 
-  /// Selección múltiple de maquinaria
-  Future<void> _mostrarSelectorMaquinaria() async {
-    if (_maquinariaDisponible.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No hay maquinaria disponible')),
-      );
-      return;
-    }
-
-    final seleccionTemp = Set<int>.from(_maquinariaSeleccionadaIds);
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setStateDialog) {
-            return AlertDialog(
-              title: const Text('Maquinaria a prestar'),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _maquinariaDisponible.length,
-                  itemBuilder: (_, index) {
-                    final m = _maquinariaDisponible[index];
-                    final checked = seleccionTemp.contains(m.id);
-                    return CheckboxListTile(
-                      value: checked,
-                      title: Text('${m.nombre} (${m.marca})'),
-                      subtitle: Text(m.tipo.label),
-                      onChanged: (v) {
-                        if (v == true) {
-                          seleccionTemp.add(m.id);
-                        } else {
-                          seleccionTemp.remove(m.id);
-                        }
-                        setStateDialog(() {});
-                      },
-                    );
-                  },
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Cancelar'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('Aceptar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (ok == true) {
-      setState(() {
-        _maquinariaSeleccionadaIds
-          ..clear()
-          ..addAll(seleccionTemp);
-      });
-    }
-  }
-
-  Future<void> _guardarTarea() async {
+  Future<void> _guardarCambios() async {
     if (!_formKey.currentState!.validate()) return;
 
     final conjunto = _conjuntoSeleccionado;
     if (conjunto == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Seleccione un conjunto')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay conjunto seleccionado')),
+      );
       return;
     }
 
@@ -344,36 +277,19 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         ubicacionId: _ubicacionSeleccionada!.id,
         elementoId: _elementoSeleccionado!.id,
         conjuntoId: conjunto.nit,
-        supervisorId: _supervisorId,
-        operariosIds: _operariosSeleccionadosIds,
+        supervisorId: _supervisorId, // 👈 int?
+        operariosIds: _operariosSeleccionadosIds, // 👈 List<int>
         observaciones: _observacionesCtrl.text.trim().isEmpty
             ? null
             : _observacionesCtrl.text.trim(),
       );
 
-      // 1) Crear la tarea
-      await _tareaApi.crearTarea(req);
-
-      // 2) Prestar maquinaria si hay
-      if (_maquinariaSeleccionadaIds.isNotEmpty) {
-        final responsableId = _operariosSeleccionadosIds.isNotEmpty
-            ? _operariosSeleccionadosIds.first
-            : null;
-
-        for (final maqId in _maquinariaSeleccionadaIds) {
-          await _maquinariaRepo.asignarAConjunto(
-            maquinariaId: maqId,
-            conjuntoId: conjunto.nit,
-            responsableId: responsableId,
-            diasPrestamo: 1,
-          );
-        }
-      }
+      await _tareaApi.editarTarea(widget.tarea.id, req);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('✅ Tarea creada correctamente'),
+          content: Text('✅ Tarea actualizada correctamente'),
           backgroundColor: Colors.green,
         ),
       );
@@ -382,7 +298,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error al crear tarea: $e'),
+          content: Text('Error al actualizar tarea: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -399,7 +315,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         appBar: AppBar(
           backgroundColor: AppTheme.primary,
           title: const Text(
-            "Crear tarea correctiva",
+            "Editar tarea",
             style: TextStyle(color: Colors.white),
           ),
         ),
@@ -412,7 +328,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
         title: const Text(
-          "Crear tarea correctiva",
+          "Editar tarea",
           style: TextStyle(color: Colors.white),
         ),
       ),
@@ -423,36 +339,24 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. DÓNDE
               const Text(
                 "1. Dónde se realizará",
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 8),
 
-              DropdownButtonFormField<String>(
-                initialValue: _conjuntoSeleccionado?.nit,
+              // Conjunto (solo lectura, ya viene por NIT)
+              InputDecorator(
                 decoration: const InputDecoration(
                   labelText: "Conjunto",
                   border: OutlineInputBorder(),
                 ),
-                items: _conjuntos
-                    .map(
-                      (c) =>
-                          DropdownMenuItem(value: c.nit, child: Text(c.nombre)),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value == null) return;
-                  final c = _conjuntos.firstWhere((x) => x.nit == value);
-                  _refrescarDatosConjunto(c);
-                },
-                validator: (v) => v == null ? 'Seleccione un conjunto' : null,
+                child: Text(_conjuntoSeleccionado?.nombre ?? widget.nit),
               ),
               const SizedBox(height: 16),
 
               DropdownButtonFormField<int>(
-                initialValue: _ubicacionSeleccionada?.id,
+                value: _ubicacionSeleccionada?.id,
                 decoration: const InputDecoration(
                   labelText: "Ubicación",
                   border: OutlineInputBorder(),
@@ -477,7 +381,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               const SizedBox(height: 16),
 
               DropdownButtonFormField<int>(
-                initialValue: _elementoSeleccionado?.id,
+                value: _elementoSeleccionado?.id,
                 decoration: const InputDecoration(
                   labelText: "Elemento",
                   border: OutlineInputBorder(),
@@ -497,7 +401,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               ),
               const SizedBox(height: 24),
 
-              // 2. QUÉ
               const Text(
                 "2. Qué se va a hacer",
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -577,7 +480,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               ),
               const SizedBox(height: 24),
 
-              // 3. QUIÉNES
               const Text(
                 "3. Quiénes la ejecutan",
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -601,7 +503,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               const SizedBox(height: 16),
 
               DropdownButtonFormField<int>(
-                initialValue: _supervisorId,
+                value: _supervisorId,
                 decoration: const InputDecoration(
                   labelText: "Supervisor (opcional)",
                   border: OutlineInputBorder(),
@@ -618,33 +520,10 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                   setState(() => _supervisorId = value);
                 },
               ),
-              const SizedBox(height: 24),
-
-              // 4. MAQUINARIA
-              const Text(
-                "4. Con qué maquinaria",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-
-              InkWell(
-                onTap: _mostrarSelectorMaquinaria,
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: "Maquinaria a prestar (opcional)",
-                    border: OutlineInputBorder(),
-                  ),
-                  child: Text(
-                    _maquinariaSeleccionadaIds.isEmpty
-                        ? "Sin maquinaria asociada"
-                        : "${_maquinariaSeleccionadaIds.length} máquina(s) seleccionada(s)",
-                  ),
-                ),
-              ),
               const SizedBox(height: 32),
 
               ElevatedButton.icon(
-                onPressed: _guardando ? null : _guardarTarea,
+                onPressed: _guardando ? null : _guardarCambios,
                 icon: _guardando
                     ? const SizedBox(
                         width: 18,
@@ -652,7 +531,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.save),
-                label: Text(_guardando ? "Guardando..." : "Guardar tarea"),
+                label: Text(_guardando ? "Guardando..." : "Guardar cambios"),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primary,
                   padding: const EdgeInsets.symmetric(vertical: 14),

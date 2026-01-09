@@ -39,32 +39,32 @@ class _SolicitudMaquinariaPageState extends State<SolicitudMaquinariaPage> {
     }
   }
 
-  void _guardarSolicitud() {
-    if (!_formKey.currentState!.validate()) return;
+  // void _guardarSolicitud() {
+  //   if (!_formKey.currentState!.validate()) return;
 
-    final maquinaria = Maquinaria(
-      id: 1,
-      nombre: _nombreController.text,
-      marca: _marcaController.text,
-      tipo: _tipoController.text,
-      estado: _estadoController.text,
-      disponible: true,
-      conjuntoId: widget.nit,
-      fechaPrestamo: _fechaPrestamo,
-      fechaDevolucionEstimada: _fechaDevolucion,
-    );
+  //   final maquinaria = Maquinaria(
+  //     id: 1,
+  //     nombre: _nombreController.text,
+  //     marca: _marcaController.text,
+  //     tipo: _tipoController.text,
+  //     estado: _estadoController.text,
+  //     disponible: true,
+  //     conjuntoId: widget.nit,
+  //     fechaPrestamo: _fechaPrestamo,
+  //     fechaDevolucionEstimada: _fechaDevolucion,
+  //   );
 
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Solicitud creada"),
-        content: Text(maquinaria.toJson().toString()),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cerrar")),
-        ],
-      ),
-    );
-  }
+  //   showDialog(
+  //     context: context,
+  //     builder: (_) => AlertDialog(
+  //       title: const Text("Solicitud creada"),
+  //       content: Text(maquinaria.toJson().toString()),
+  //       actions: [
+  //         TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cerrar")),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -117,11 +117,11 @@ class _SolicitudMaquinariaPageState extends State<SolicitudMaquinariaPage> {
                 ],
               ),
               const SizedBox(height: 20),
-              ElevatedButton.icon(
-                onPressed: _guardarSolicitud,
-                icon: const Icon(Icons.save),
-                label: const Text("Enviar Solicitud"),
-              ),
+              // ElevatedButton.icon(
+              //   onPressed: _guardarSolicitud,
+              //   icon: const Icon(Icons.save),
+              //   label: const Text("Enviar Solicitud"),
+              // ),
             ],
           ),
         ),

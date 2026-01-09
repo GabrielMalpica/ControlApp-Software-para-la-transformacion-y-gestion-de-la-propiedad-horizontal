@@ -1,19 +1,91 @@
-// lib/models/maquinaria_model.dart
+enum EstadoMaquinaria { OPERATIVA, EN_REPARACION, FUERA_DE_SERVICIO }
 
-class Maquinaria {
+extension EstadoMaquinariaExt on EstadoMaquinaria {
+  String get label {
+    switch (this) {
+      case EstadoMaquinaria.OPERATIVA:
+        return 'Operativa';
+      case EstadoMaquinaria.EN_REPARACION:
+        return 'En reparación';
+      case EstadoMaquinaria.FUERA_DE_SERVICIO:
+        return 'Fuera de servicio';
+    }
+  }
+}
+
+enum TipoMaquinariaFlutter {
+  CORTASETOS_MANO,
+  CORTASETOS_ALTURA,
+  GUADANIA,
+  PODADORA_CESPED,
+  ESCALERA,
+  SOPLADORA,
+  FUMIGADORA_MOTOR,
+  BOMBA_ESPALDA,
+  MOTOSIERRA_MANO,
+  MOTOSIERRA_ALTURA,
+  HIDROLAVADORA_ELECTRICA,
+  HIDROLAVADORA_GASOLINA,
+  PULIDORA,
+  TALADRO,
+  ROTOMARTILLO,
+  LAVABRILLADORA,
+  COMPRESOR,
+  PULVERIZADORA_PINTURA,
+  EQUIPO_ALTURAS,
+  MEDIA_LUNA,
+  CAJA_HERRAMIENTAS,
+  OTRO,
+}
+
+extension TipoMaquinariaExt on TipoMaquinariaFlutter {
+  String get label {
+    // Puedes ponerlo más bonito después
+    return name.replaceAll('_', ' ').toLowerCase();
+  }
+
+  String get backendValue => name; // Debe coincidir con el enum Prisma
+}
+
+class MaquinariaRequest {
+  final String nombre;
+  final String marca;
+  final TipoMaquinariaFlutter tipo;
+  final EstadoMaquinaria? estado;
+  final bool? disponible;
+
+  MaquinariaRequest({
+    required this.nombre,
+    required this.marca,
+    required this.tipo,
+    this.estado,
+    this.disponible,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'nombre': nombre,
+      'marca': marca,
+      'tipo': tipo.backendValue,
+      if (estado != null) 'estado': estado!.name,
+      if (disponible != null) 'disponible': disponible,
+    };
+  }
+}
+
+class MaquinariaResponse {
   final int id;
   final String nombre;
   final String marca;
-  final String tipo; // TipoMaquinaria (enum en backend)
-  final String estado; // EstadoMaquinaria (enum en backend)
+  final TipoMaquinariaFlutter tipo;
+  final EstadoMaquinaria estado;
   final bool disponible;
   final String? conjuntoId;
-  final int? operarioId;
   final String? empresaId;
-  final DateTime? fechaPrestamo;
-  final DateTime? fechaDevolucionEstimada;
+  final String? conjuntoNombre;   // 👈 nuevo
+  final String? operarioNombre; 
 
-  Maquinaria({
+  MaquinariaResponse({
     required this.id,
     required this.nombre,
     required this.marca,
@@ -21,45 +93,36 @@ class Maquinaria {
     required this.estado,
     required this.disponible,
     this.conjuntoId,
-    this.operarioId,
     this.empresaId,
-    this.fechaPrestamo,
-    this.fechaDevolucionEstimada,
+    this.conjuntoNombre,
+    this.operarioNombre,
   });
 
-  factory Maquinaria.fromJson(Map<String, dynamic> json) {
-    return Maquinaria(
-      id: json['id'],
-      nombre: json['nombre'],
-      marca: json['marca'],
-      tipo: json['tipo'],
-      estado: json['estado'],
-      disponible: json['disponible'],
-      conjuntoId: json['conjuntoId'],
-      operarioId: json['operarioId'],
-      empresaId: json['empresaId'],
-      fechaPrestamo: json['fechaPrestamo'] != null
-          ? DateTime.parse(json['fechaPrestamo'])
-          : null,
-      fechaDevolucionEstimada: json['fechaDevolucionEstimada'] != null
-          ? DateTime.parse(json['fechaDevolucionEstimada'])
-          : null,
-    );
-  }
+  factory MaquinariaResponse.fromJson(Map<String, dynamic> json) {
+    final tipoStr = json['tipo'] as String;
+    final estadoStr = json['estado'] as String;
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'nombre': nombre,
-      'marca': marca,
-      'tipo': tipo,
-      'estado': estado,
-      'disponible': disponible,
-      'conjuntoId': conjuntoId,
-      'operarioId': operarioId,
-      'empresaId': empresaId,
-      'fechaPrestamo': fechaPrestamo?.toIso8601String(),
-      'fechaDevolucionEstimada': fechaDevolucionEstimada?.toIso8601String(),
-    };
+    final tipo = TipoMaquinariaFlutter.values.firstWhere(
+      (e) => e.name == tipoStr,
+      orElse: () => TipoMaquinariaFlutter.OTRO,
+    );
+
+    final estado = EstadoMaquinaria.values.firstWhere(
+      (e) => e.name == estadoStr,
+      orElse: () => EstadoMaquinaria.OPERATIVA,
+    );
+
+    return MaquinariaResponse(
+      id: json['id'] as int,
+      nombre: json['nombre'] as String,
+      marca: json['marca'] as String,
+      tipo: tipo,
+      estado: estado,
+      disponible: json['disponible'] as bool,
+      conjuntoId: json['conjuntoId'] as String?,
+      empresaId: json['empresaId'] as String?,
+      conjuntoNombre: json['conjuntoNombre'] as String?,
+      operarioNombre: json['operarioNombre'] as String?,
+    );
   }
 }

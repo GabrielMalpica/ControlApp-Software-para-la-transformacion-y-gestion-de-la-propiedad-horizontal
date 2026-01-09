@@ -1,6 +1,7 @@
 // lib/repositories/maquinaria_repository.dart
 
 import 'dart:convert';
+
 import '../service/api_client.dart';
 import '../service/app_constants.dart';
 import '../model/maquinaria_model.dart';
@@ -8,53 +9,14 @@ import '../model/maquinaria_model.dart';
 class MaquinariaRepository {
   final ApiClient _apiClient = ApiClient();
 
-  /// 🔹 Listar todas las maquinarias (GET /maquinarias)
-  Future<List<Maquinaria>> listar() async {
-    final response = await _apiClient.get('${AppConstants.baseUrl}/maquinarias');
-    if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
-      return data.map((e) => Maquinaria.fromJson(e)).toList();
-    } else {
-      throw Exception('Error al listar maquinarias');
-    }
-  }
-
-  /// ➕ Crear maquinaria (POST /maquinarias)
-  Future<Maquinaria> crear(Map<String, dynamic> body) async {
-    final response = await _apiClient.post(
-      '${AppConstants.baseUrl}/maquinarias',
-      body: body,
-    );
-
-    if (response.statusCode == 201) {
-      return Maquinaria.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Error al crear maquinaria');
-    }
-  }
-
-  /// ✏️ Editar maquinaria (PATCH /maquinarias/:id)
-  Future<Maquinaria> editar(int id, Map<String, dynamic> body) async {
-    final response = await _apiClient.patch(
-      '${AppConstants.baseUrl}/maquinarias/$id',
-      body: body,
-    );
-
-    if (response.statusCode == 200) {
-      return Maquinaria.fromJson(jsonDecode(response.body));
-    } else {
-      throw Exception('Error al editar maquinaria');
-    }
-  }
-
   /// 🏗️ Asignar maquinaria a conjunto (POST /maquinarias/:id/asignar)
-  Future<Maquinaria> asignarAConjunto({
+  Future<MaquinariaResponse> asignarAConjunto({
     required int maquinariaId,
     required String conjuntoId,
     int? responsableId,
     int? diasPrestamo,
   }) async {
-    final body = {
+    final body = <String, dynamic>{
       'conjuntoId': conjuntoId,
       if (responsableId != null) 'responsableId': responsableId,
       if (diasPrestamo != null) 'diasPrestamo': diasPrestamo,
@@ -66,22 +28,28 @@ class MaquinariaRepository {
     );
 
     if (response.statusCode == 201 || response.statusCode == 200) {
-      return Maquinaria.fromJson(jsonDecode(response.body));
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return MaquinariaResponse.fromJson(json);
     } else {
-      throw Exception('Error al asignar maquinaria');
+      throw Exception(
+        'Error al asignar maquinaria: ${response.statusCode} ${response.body}',
+      );
     }
   }
 
   /// 🔄 Devolver maquinaria (POST /maquinarias/:id/devolver)
-  Future<Maquinaria> devolver(int maquinariaId) async {
+  Future<MaquinariaResponse> devolver(int maquinariaId) async {
     final response = await _apiClient.post(
       '${AppConstants.baseUrl}/maquinarias/$maquinariaId/devolver',
     );
 
     if (response.statusCode == 200) {
-      return Maquinaria.fromJson(jsonDecode(response.body));
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return MaquinariaResponse.fromJson(json);
     } else {
-      throw Exception('Error al devolver maquinaria');
+      throw Exception(
+        'Error al devolver maquinaria: ${response.statusCode} ${response.body}',
+      );
     }
   }
 
@@ -92,10 +60,12 @@ class MaquinariaRepository {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['disponible'] ?? false;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return (data['disponible'] as bool?) ?? false;
     } else {
-      throw Exception('Error al verificar disponibilidad');
+      throw Exception(
+        'Error al verificar disponibilidad: ${response.statusCode} ${response.body}',
+      );
     }
   }
 
@@ -106,24 +76,34 @@ class MaquinariaRepository {
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['responsable'];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      // asumiendo que el backend devuelve { responsable: { ... } }
+      return data['responsable'] as Map<String, dynamic>?;
+    } else if (response.statusCode == 404) {
+      // sin responsable
+      return null;
     } else {
-      throw Exception('Error al obtener responsable de la maquinaria');
+      throw Exception(
+        'Error al obtener responsable de la maquinaria: ${response.statusCode} ${response.body}',
+      );
     }
   }
 
   /// 📊 Resumen del estado (GET /maquinarias/:id/resumen)
-  Future<Map<String, dynamic>?> resumenEstado(int maquinariaId) async {
+  Future<String?> resumenEstado(int maquinariaId) async {
     final response = await _apiClient.get(
       '${AppConstants.baseUrl}/maquinarias/$maquinariaId/resumen',
     );
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['resumen'];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return data['resumen'] as String?;
+    } else if (response.statusCode == 404) {
+      return null;
     } else {
-      throw Exception('Error al obtener resumen del estado');
+      throw Exception(
+        'Error al obtener resumen del estado: ${response.statusCode} ${response.body}',
+      );
     }
   }
 }

@@ -1,6 +1,6 @@
-// lib/models/operario_model.dart
 class OperarioModel {
   final int id;
+
   final List<String> funciones;
   final bool cursoSalvamentoAcuatico;
   final String? urlEvidenciaSalvamento;
@@ -32,7 +32,7 @@ class OperarioModel {
 
   factory OperarioModel.fromJson(Map<String, dynamic> json) {
     return OperarioModel(
-      id: json['id'],
+      id: int.parse(json['id'].toString()),
       funciones: List<String>.from(json['funciones'] ?? []),
       cursoSalvamentoAcuatico: json['cursoSalvamentoAcuatico'] ?? false,
       urlEvidenciaSalvamento: json['urlEvidenciaSalvamento'],
