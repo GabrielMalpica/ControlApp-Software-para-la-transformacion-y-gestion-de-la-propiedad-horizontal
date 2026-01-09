@@ -18,6 +18,8 @@ export interface MaquinariaDominio {
   empresaId?: string | null;    // empresa dueña
   fechaPrestamo?: Date | null;
   fechaDevolucionEstimada?: Date | null;
+  conjuntoNombre?: string | null;
+  operarioNombre?: string | null;
 }
 
 /** Tipo público (idéntico por ahora) */

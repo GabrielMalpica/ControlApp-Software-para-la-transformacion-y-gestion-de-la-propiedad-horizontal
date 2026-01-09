@@ -361,10 +361,25 @@ export class GerenteService {
 
   async listarConjuntos() {
     const conjuntos = await this.prisma.conjunto.findMany({
-      select: conjuntoPublicSelect,
+      where: {
+        empresaId: EMPRESA_ID_FIJA,
+      },
+      include: {
+        administrador: {
+          include: { usuario: true },
+        },
+        operarios: {
+          include: { usuario: true },
+        },
+        horarios: true,
+        ubicaciones: {
+          include: { elementos: true },
+        },
+      },
       orderBy: { nombre: "asc" },
     });
-    return conjuntos.map(toConjuntoPublico);
+
+    return conjuntos;
   }
 
   async obtenerConjunto(conjuntoId: string) {
@@ -635,6 +650,18 @@ export class GerenteService {
     });
   }
 
+  async listarSupervisores() {
+    const supervisores = await this.prisma.usuario.findMany({
+      where: {
+        rol: Rol.supervisor, // ya importaste Rol arriba
+      },
+      select: usuarioPublicSelect,
+      orderBy: { nombre: "asc" },
+    });
+
+    return supervisores.map(toUsuarioPublico);
+  }
+
   /* ===================== MAQUINARIA ===================== */
 
   async crearMaquinaria(payload: unknown) {
@@ -725,6 +752,9 @@ export class GerenteService {
   async asignarTarea(payload: unknown) {
     const dto = CrearTareaDTO.parse(payload);
 
+    const periodoAnio = dto.fechaInicio.getFullYear();
+    const periodoMes = dto.fechaInicio.getMonth() + 1;
+
     return this.prisma.tarea.create({
       data: {
         descripcion: dto.descripcion,
@@ -740,16 +770,19 @@ export class GerenteService {
         supervisorId:
           dto.supervisorId != null ? dto.supervisorId.toString() : null,
 
+        periodoAnio,
+        periodoMes,
+
         ...(dto.operariosIds?.length
           ? {
               operarios: {
-                connect: dto.operariosIds.map((id) => ({ id: id.toString() })), // <--- aquí el cambio
+                connect: dto.operariosIds.map((id) => ({ id: id.toString() })),
               },
             }
           : dto.operarioId
           ? {
               operarios: {
-                connect: { id: dto.operarioId.toString() }, // <--- y aquí
+                connect: { id: dto.operarioId.toString() },
               },
             }
           : {}),
@@ -804,6 +837,59 @@ export class GerenteService {
     }
 
     return this.prisma.tarea.update({ where: { id: tareaId }, data });
+  }
+
+  async listarTareasPorConjunto(conjuntoId: string) {
+    const tareas = await this.prisma.tarea.findMany({
+      where: { conjuntoId, borrador: false },
+      include: {
+        supervisor: {
+          include: {
+            usuario: true,
+          },
+        },
+        operarios: {
+          include: {
+            usuario: true,
+          },
+        },
+      },
+      orderBy: { fechaInicio: "desc" },
+    });
+
+    return tareas.map((t) => {
+      const operariosNombres =
+        t.operarios
+          ?.map((o) => o.usuario?.nombre)
+          .filter((n): n is string => !!n) ?? [];
+
+      const operariosIds = t.operarios?.map((o) => Number(o.id)) ?? [];
+
+      const supervisorNombre = t.supervisor?.usuario?.nombre ?? null;
+
+      return {
+        id: t.id,
+        descripcion: t.descripcion,
+        fechaInicio: t.fechaInicio,
+        fechaFin: t.fechaFin,
+        duracionHoras: t.duracionHoras,
+        estado: t.estado,
+        evidencias: t.evidencias,
+        insumosUsados: t.insumosUsados,
+        observaciones: t.observaciones,
+        observacionesRechazo: t.observacionesRechazo,
+        tipo: t.tipo,
+        frecuencia: t.frecuencia,
+        conjuntoId: t.conjuntoId,
+        supervisorId: t.supervisorId ? Number(t.supervisorId) : null,
+        ubicacionId: t.ubicacionId,
+        elementoId: t.elementoId,
+
+        operariosIds,
+        operariosNombres,
+        supervisorNombre,
+      };
+    });
   }
 
   /* ===================== ELIMINACIONES con REGLAS ===================== */

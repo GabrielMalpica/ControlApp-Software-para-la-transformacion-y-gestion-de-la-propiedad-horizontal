@@ -8,7 +8,7 @@ import {
 export type OperarioId = number;
 
 /** Constante que ya usabas en la clase */
-export const LIMITE_SEMANAL_HORAS = 46 as const;
+export let LIMITE_SEMANAL_HORAS = 42 as const;
 
 /** Dominio 1:1 con la tabla Operario (sin relaciones navegadas) */
 export interface OperarioDominio {

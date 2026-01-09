@@ -169,6 +169,26 @@ export class GerenteController {
     }
   };
 
+  listarSupervisores: RequestHandler = async (_req, res, next) => {
+    try {
+      const supervisores = await this.service.listarSupervisores();
+      res.json(supervisores);
+    } catch (err) {
+      console.error("Error al listar supervisores:", err);
+      next(err);
+    }
+  };
+
+  listarTareasPorConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const { conjuntoId } = ConjuntoIdParam.parse(req.params);
+      const out = await this.service.listarTareasPorConjunto(conjuntoId);
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   asignarOperario: RequestHandler = async (req, res, next) => {
     try {
       const out = await this.service.asignarOperario(req.body);

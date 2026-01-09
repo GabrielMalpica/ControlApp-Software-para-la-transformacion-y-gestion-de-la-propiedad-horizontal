@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { Frecuencia, UnidadCalculo } from "../generated/prisma";
 
-/** Dominio base 1:1 con Prisma */
+/** Dominio base 1:1 (aprox) con Prisma */
 export interface DefinicionTareaPreventivaDominio {
   id: number;
   conjuntoId: string;
@@ -40,6 +40,8 @@ export interface DefinicionTareaPreventivaDominio {
       }[]
     | null;
 
+  // 🔹 OJO: este campo ya NO existe en Prisma,
+  // lo dejamos solo para compatibilidad lógica mientras migras a operarios[]
   responsableSugeridoId?: number | null;
 
   activo: boolean;
@@ -48,8 +50,7 @@ export interface DefinicionTareaPreventivaDominio {
 }
 
 /** Tipo público — igual por ahora */
-export type DefinicionTareaPreventivaPublica =
-  DefinicionTareaPreventivaDominio;
+export type DefinicionTareaPreventivaPublica = DefinicionTareaPreventivaDominio;
 
 /* ===================== DTOs ===================== */
 
@@ -91,7 +92,14 @@ export const CrearDefinicionPreventivaDTO = z
     insumosPlanJson: z.array(InsumoPlanItemDTO).optional(),
     maquinariaPlanJson: z.array(MaquinariaPlanItemDTO).optional(),
 
+    // 🔹 Compatibilidad antigua: un solo responsable sugerido
     responsableSugeridoId: z.number().int().positive().optional(),
+
+    // 🔹 Nuevo: varios operarios sugeridos
+    operariosIds: z.array(z.number().int().positive()).optional(),
+
+    // 🔹 Nuevo: supervisor de la definición
+    supervisorId: z.number().int().positive().optional(),
 
     activo: z.boolean().default(true),
   })
@@ -133,7 +141,13 @@ export const EditarDefinicionPreventivaDTO = z
     insumosPlanJson: z.array(InsumoPlanItemDTO).optional().nullable(),
     maquinariaPlanJson: z.array(MaquinariaPlanItemDTO).optional().nullable(),
 
+    // compat vieja
     responsableSugeridoId: z.number().int().positive().optional().nullable(),
+
+    // nuevo
+    operariosIds: z.array(z.number().int().positive()).optional().nullable(),
+
+    supervisorId: z.number().int().positive().optional().nullable(),
 
     activo: z.boolean().optional(),
   })
@@ -175,7 +189,7 @@ export const GenerarCronogramaDTO = z.object({
   tamanoBloqueHoras: z.coerce.number().int().min(1).max(12).optional(), // default 1h
 });
 
-// Alias opcional por compatibilidad si en algún lugar lo importaste con otro nombre
+// Alias opcional por compatibilidad
 export const GenerarCronogramaMensualDTO = GenerarCronogramaDTO;
 
 /* ===================== SELECT PARA PRISMA ===================== */
@@ -203,7 +217,9 @@ export const definicionPreventivaPublicSelect = {
   insumosPlanJson: true,
   maquinariaPlanJson: true,
 
-  responsableSugeridoId: true,
+  // 👀 OJO: ya no seleccionamos responsableSugeridoId porque NO existe en Prisma.
+  // Si quieres incluir supervisorId, podrías agregarlo aquí:
+  // supervisorId: true,
 
   activo: true,
   creadoEn: true,

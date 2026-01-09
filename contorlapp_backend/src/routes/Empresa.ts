@@ -12,6 +12,9 @@ router.post("/", controller.crearEmpresa);
 router.post("/:nit/maquinaria", controller.agregarMaquinaria);
 router.get("/:nit/maquinaria/disponible", controller.listarMaquinariaDisponible);
 router.get("/:nit/maquinaria/prestada", controller.obtenerMaquinariaPrestada);
+router.get("/:nit/maquinaria", controller.listarMaquinariaCatalogo);
+router.patch("/:nit/maquinaria/:id", controller.editarMaquinaria);
+router.delete("/:nit/maquinaria/:id", controller.eliminarMaquinaria);
 
 // Jefe de Operaciones
 router.post("/:nit/jefe-operaciones", controller.agregarJefeOperaciones);

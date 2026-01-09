@@ -229,7 +229,7 @@ model ConfiguracionSistema {
 }
 
 model Usuario {
-  id              String             @id
+  id              String          @id
   nombre          String
   correo          String          @unique
   contrasena      String
@@ -257,7 +257,7 @@ model Usuario {
 }
 
 model Gerente {
-  id        String      @id
+  id        String   @id
   usuario   Usuario  @relation(fields: [id], references: [id], onDelete: Cascade)
   empresa   Empresa? @relation(fields: [empresaId], references: [nit])
   empresaId String?
@@ -266,7 +266,7 @@ model Gerente {
 }
 
 model Administrador {
-  id        String        @id
+  id        String     @id
   usuario   Usuario    @relation(fields: [id], references: [id], onDelete: Cascade)
   conjuntos Conjunto[]
 
@@ -274,7 +274,7 @@ model Administrador {
 }
 
 model JefeOperaciones {
-  id      String     @id
+  id      String  @id
   usuario Usuario @relation(fields: [id], references: [id], onDelete: Cascade)
 
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
@@ -284,19 +284,20 @@ model JefeOperaciones {
 }
 
 model Supervisor {
-  id      String     @id
+  id      String  @id
   usuario Usuario @relation(fields: [id], references: [id], onDelete: Cascade)
 
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
   empresaId String
 
-  tareasPorVerificar Tarea[]
+  tareasPorVerificar         Tarea[]
+  definicionTareaPreventivas DefinicionTareaPreventiva[]
 
   @@map("Supervisor")
 }
 
 model Operario {
-  id                        String                   @id
+  id                        String                @id
   usuario                   Usuario               @relation(fields: [id], references: [id], onDelete: Cascade)
   funciones                 TipoFuncion[]
   tareas                    Tarea[]               @relation("TareaOperarios")
@@ -315,9 +316,11 @@ model Operario {
   maquinariaAsignada        Maquinaria[]
   solicitudesMaquinaria     SolicitudMaquinaria[]
 
-  empresa                   Empresa                     @relation(fields: [empresaId], references: [nit])
-  empresaId                 String
-  DefinicionTareaPreventiva DefinicionTareaPreventiva[]
+  empresa   Empresa @relation(fields: [empresaId], references: [nit])
+  empresaId String
+
+  // 🔹 Definiciones preventivas en las que este operario está sugerido
+  definicionesPreventivas DefinicionTareaPreventiva[] @relation("DefinicionOperarios")
 
   @@map("Operario")
 }
@@ -332,40 +335,43 @@ model DefinicionTareaPreventiva {
   elemento    Elemento  @relation(fields: [elementoId], references: [id])
   elementoId  Int
 
-  descripcion String // nombre/actividad
+  descripcion String
   frecuencia  Frecuencia
-  prioridad   Int        @default(5) // 1 alta…9 baja (opcional pero útil)
+  prioridad   Int        @default(5)
 
-  // Duración planificada (elige uno de los dos enfoques o usa ambos como opcionales):
-  // A) Por rendimiento y área
-  unidadCalculo     UnidadCalculo? // p.ej. M2
+  // Duración planificada
+  unidadCalculo     UnidadCalculo?
   areaNumerica      Decimal?       @db.Decimal(14, 4)
-  rendimientoBase   Decimal?       @db.Decimal(14, 4) // p.ej. 100 (M2/HORA)
-  // B) Duración fija
-  duracionHorasFija Int? // si no quieres cálculo por rendimiento
+  rendimientoBase   Decimal?       @db.Decimal(14, 4)
+  duracionHorasFija Int?
 
-  // Recursos planeados (simple por ahora; se puede normalizar luego)
+  // Recursos planeados
   insumoPrincipalId         Int?
   insumoPrincipal           Insumo?  @relation(fields: [insumoPrincipalId], references: [id])
-  consumoPrincipalPorUnidad Decimal? @db.Decimal(14, 4) // p.ej. litros por M2
-  insumosPlanJson           Json? // [{insumoId, consumoPorUnidad}, ...]
-  maquinariaPlanJson        Json? // [{maquinariaId?, tipo?}, ...]
+  consumoPrincipalPorUnidad Decimal? @db.Decimal(14, 4)
+  insumosPlanJson           Json?
+  maquinariaPlanJson        Json?
 
-  responsableSugeridoId String?
-  responsableSugerido   Operario? @relation(fields: [responsableSugeridoId], references: [id])
+  // 🔹 Operarios sugeridos (M:N)
+  operarios Operario[] @relation("DefinicionOperarios")
 
-  activo        Boolean  @default(true) // puedes desactivar sin borrar
+  // 🔹 Supervisor responsable de esta definición
+  supervisorId String?
+  supervisor   Supervisor? @relation(fields: [supervisorId], references: [id])
+
+  activo        Boolean  @default(true)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
   rendimientoId Int?
   rendimiento   Rendimiento? @relation(fields: [rendimientoId], references: [id])
 
-  cuadrillaSugerida     Int? // 1, 2, 3...
-  factoresSugeridosJson Json? // p.ej. {"sol":"-10%", "pendiente":"-5%"}
+  cuadrillaSugerida     Int?
+  factoresSugeridosJson Json?
 
-  // Si quieres sobreescribir insumos estándar por sitio:
   insumosSiteOverrideJson Json?
+
+  @@map("DefinicionTareaPreventiva")
 }
 
 model Tarea {
@@ -383,7 +389,6 @@ model Tarea {
   observacionesRechazo String?
   fechaVerificacion    DateTime?
 
-  // Relaciones existentes
   operarios    Operario[]  @relation("TareaOperarios")
   supervisor   Supervisor? @relation(fields: [supervisorId], references: [id])
   supervisorId String?
@@ -402,14 +407,13 @@ model Tarea {
   tipo       TipoTarea   @default(CORRECTIVA)
   frecuencia Frecuencia?
 
-  borrador       Boolean @default(false) // true = aún editable
+  borrador       Boolean @default(false)
   periodoAnio    Int?
   periodoMes     Int?
-  grupoPlanId    String? // mismo valor para todos los bloques de una misma actividad en el periodo
+  grupoPlanId    String?
   bloqueIndex    Int?
   bloquesTotales Int?
 
-  // --- NUEVO: estimaciones (plan) para preparación ---
   tiempoEstimadoHoras       Decimal?        @db.Decimal(14, 4)
   insumoPrincipalId         Int?
   insumoPrincipal           Insumo?         @relation(fields: [insumoPrincipalId], references: [id])
@@ -421,7 +425,7 @@ model Tarea {
 
   rendimientoId       Int?
   rendimiento         Rendimiento?         @relation(fields: [rendimientoId], references: [id])
-  rendimientoVersion  Int? // redundancia útil para auditoría rápida
+  rendimientoVersion  Int?
   rendimientoAplicado RendimientoAplicado?
 
   @@index([conjuntoId, fechaInicio])
@@ -714,10 +718,10 @@ model Rendimiento {
   tipoServicio               TipoServicio
   unidadCalculo              UnidadCalculo
   rendimientoBasePorOperario Decimal       @db.Decimal(14, 4)
-  curvaCuadrillaJson Json?
-  factoresJson Json?
-  insumosBaseJson Json?
-  herramientasSugeridasJson Json?
+  curvaCuadrillaJson         Json?
+  factoresJson               Json?
+  insumosBaseJson            Json?
+  herramientasSugeridasJson  Json?
 
   mermaPorcentaje    Decimal?    @db.Decimal(5, 2)
   frecuenciaSugerida Frecuencia?

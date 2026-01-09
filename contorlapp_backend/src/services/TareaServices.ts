@@ -1,6 +1,13 @@
 // src/services/TareaService.ts
-import { PrismaClient, EstadoTarea } from "../generated/prisma";
+import { PrismaClient, EstadoTarea, TipoTarea } from "../generated/prisma";
 import { z } from "zod";
+import {
+  CrearTareaDTO,
+  EditarTareaDTO,
+  FiltroTareaDTO,
+  tareaPublicSelect,
+  toTareaPublica,
+} from "../model/Tarea";
 
 const EvidenciaDTO = z.object({ imagen: z.string().min(1) });
 
@@ -23,21 +30,11 @@ const RechazarDTO = z.object({
 export class TareaService {
   constructor(private prisma: PrismaClient, private tareaId: number) {}
 
-  async agregarEvidencia(payload: unknown): Promise<void> {
-    const { imagen } = EvidenciaDTO.parse(payload);
+  /* =====================================================
+   *       CRUD GENERAL (CORRECTIVAS POR DEFECTO)
+   * ===================================================== */
 
-    const tarea = await this.prisma.tarea.findUnique({
-      where: { id: this.tareaId },
-      select: { evidencias: true },
-    });
-    if (!tarea) throw new Error("Tarea no encontrada.");
-
-    const evidencias = Array.isArray(tarea.evidencias) ? tarea.evidencias : [];
-    await this.prisma.tarea.update({
-      where: { id: this.tareaId },
-      data: { evidencias: [...evidencias, imagen] },
-    });
-  }
+  // ✅ Crear tarea (correctiva por defecto)
 
   async iniciarTarea(): Promise<void> {
     const tarea = await this.prisma.tarea.findUnique({
@@ -59,10 +56,6 @@ export class TareaService {
     });
   }
 
-  /**
-   * Marca tarea como completada y registra consumos de insumos en una transacción.
-   * Si algún consumo falla (stock insuficiente, etc.), NO se cambia el estado de la tarea.
-   */
   async marcarComoCompletadaConInsumos(
     payload: unknown,
     inventarioService: {
@@ -96,73 +89,198 @@ export class TareaService {
     });
   }
 
-  async aprobarTarea(payload: unknown): Promise<void> {
-    const { supervisorId } = SupervisorIdDTO.parse(payload);
+  static async crearTareaCorrectiva(prisma: PrismaClient, payload: unknown) {
+    const dto = CrearTareaDTO.parse(payload);
 
-    const tarea = await this.prisma.tarea.findUnique({
-      where: { id: this.tareaId },
-      select: { estado: true },
-    });
-    if (!tarea) throw new Error("Tarea no encontrada.");
-    if (tarea.estado !== EstadoTarea.PENDIENTE_APROBACION) {
-      throw new Error("Solo se puede aprobar una tarea PENDIENTE_APROBACION.");
+    // Operarios (M:N)
+    const operariosConnect =
+      dto.operariosIds && dto.operariosIds.length
+        ? dto.operariosIds.map((id) => ({ id: id.toString() }))
+        : dto.operarioId
+        ? [{ id: dto.operarioId.toString() }]
+        : [];
+
+    const data: any = {
+      descripcion: dto.descripcion,
+      fechaInicio: dto.fechaInicio,
+      fechaFin: dto.fechaFin,
+      duracionHoras: dto.duracionHoras,
+
+      tipo: dto.tipo ?? TipoTarea.CORRECTIVA, // 👈 default correctiva
+      estado: dto.estado ?? EstadoTarea.ASIGNADA, // 👈 default ASIGNADA
+      frecuencia: dto.frecuencia ?? null,
+
+      evidencias: dto.evidencias ?? [],
+      insumosUsados: dto.insumosUsados ?? undefined,
+      observaciones: dto.observaciones ?? null,
+      observacionesRechazo: dto.observacionesRechazo ?? null,
+
+      ubicacion: { connect: { id: dto.ubicacionId } },
+      elemento: { connect: { id: dto.elementoId } },
+    };
+
+    // Conjunto (por NIT)
+    if (dto.conjuntoId) {
+      data.conjunto = { connect: { nit: dto.conjuntoId } };
     }
 
-    await this.prisma.tarea.update({
-      where: { id: this.tareaId },
-      data: {
-        estado: EstadoTarea.APROBADA,
-        fechaVerificacion: new Date(),
-        supervisor: { connect: { id: supervisorId.toString() } },
-      },
-    });
-  }
-
-  async rechazarTarea(payload: unknown): Promise<void> {
-    const { supervisorId, observacion } = RechazarDTO.parse(payload);
-
-    const tarea = await this.prisma.tarea.findUnique({
-      where: { id: this.tareaId },
-      select: { estado: true },
-    });
-    if (!tarea) throw new Error("Tarea no encontrada.");
-    if (tarea.estado !== EstadoTarea.PENDIENTE_APROBACION) {
-      throw new Error("Solo se puede rechazar una tarea PENDIENTE_APROBACION.");
+    // Supervisor (id numérico → string)
+    if (dto.supervisorId != null) {
+      data.supervisor = { connect: { id: dto.supervisorId.toString() } };
     }
 
-    await this.prisma.tarea.update({
-      where: { id: this.tareaId },
-      data: {
-        estado: EstadoTarea.RECHAZADA,
-        supervisorId: supervisorId == null ? null : supervisorId.toString(),
-        fechaVerificacion: new Date(),
-        observacionesRechazo: observacion,
-      },
-    });
-  }
+    // Operarios
+    if (operariosConnect.length) {
+      data.operarios = { connect: operariosConnect };
+    }
 
-  async resumen(): Promise<string> {
-    const tarea = await this.prisma.tarea.findUnique({
-      where: { id: this.tareaId },
-      include: {
-        operarios: { include: { usuario: true } },
-        ubicacion: true,
-        elemento: true,
-      },
+    const creada = await prisma.tarea.create({
+      data,
+      select: tareaPublicSelect,
     });
 
-    const operarios =
-      tarea!.operarios?.map((o) => o.usuario?.nombre).filter(Boolean) ?? [];
-    const operariosTxt = operarios.length
-      ? operarios.join(", ")
-      : "No asignados";
-
-    return `📝 Tarea: ${tarea!.descripcion}
-👷 Operarios: ${operariosTxt}
-📍 Ubicación: ${tarea!.ubicacion?.nombre ?? "Sin ubicación"}
-🔧 Elemento: ${tarea!.elemento?.nombre ?? "Sin elemento"}
-🕒 Duración estimada: ${tarea!.duracionHoras}h
-📅 Del ${tarea!.fechaInicio.toLocaleDateString()} al ${tarea!.fechaFin.toLocaleDateString()}
-📌 Estado actual: ${tarea!.estado}`;
+    return toTareaPublica(creada);
   }
+
+  // ✏️ Editar tarea
+  static async editarTarea(prisma: PrismaClient, id: number, payload: unknown) {
+    const dto = EditarTareaDTO.parse(payload);
+
+    const data: any = {
+      descripcion: dto.descripcion ?? undefined,
+      fechaInicio: dto.fechaInicio ?? undefined,
+      fechaFin: dto.fechaFin ?? undefined,
+      duracionHoras: dto.duracionHoras ?? undefined,
+
+      tipo: dto.tipo ?? undefined,
+      estado: dto.estado ?? undefined,
+      frecuencia: dto.frecuencia ?? undefined,
+
+      evidencias: dto.evidencias ?? undefined,
+      insumosUsados: dto.insumosUsados ?? undefined,
+      observaciones:
+        dto.observaciones !== undefined ? dto.observaciones : undefined,
+      observacionesRechazo:
+        dto.observacionesRechazo !== undefined
+          ? dto.observacionesRechazo
+          : undefined,
+    };
+
+    if (dto.ubicacionId != null) {
+      data.ubicacion = { connect: { id: dto.ubicacionId } };
+    }
+    if (dto.elementoId != null) {
+      data.elemento = { connect: { id: dto.elementoId } };
+    }
+
+    if (dto.conjuntoId !== undefined) {
+      data.conjunto = dto.conjuntoId
+        ? { connect: { nit: dto.conjuntoId } }
+        : { disconnect: true };
+    }
+
+    if (dto.supervisorId !== undefined) {
+      data.supervisor =
+        dto.supervisorId != null
+          ? { connect: { id: dto.supervisorId.toString() } }
+          : { disconnect: true };
+    }
+
+    // Reemplazar operarios si viene el array
+    if (dto.operariosIds) {
+      data.operarios = {
+        set: dto.operariosIds.map((id) => ({ id: id.toString() })),
+      };
+    }
+
+    const actualizada = await prisma.tarea.update({
+      where: { id },
+      data,
+      select: tareaPublicSelect,
+    });
+
+    return toTareaPublica(actualizada);
+  }
+
+  // 🔍 Obtener una tarea
+  static async obtenerTarea(prisma: PrismaClient, id: number) {
+    const tarea = await prisma.tarea.findUnique({
+      where: { id },
+      select: tareaPublicSelect,
+    });
+    if (!tarea) throw new Error("Tarea no encontrada.");
+    return toTareaPublica(tarea);
+  }
+
+  // 📋 Listar tareas con filtros
+  static async listarTareas(prisma: PrismaClient, payloadFiltro?: unknown) {
+    const filtro = payloadFiltro ? FiltroTareaDTO.parse(payloadFiltro) : {};
+
+    const where: any = {};
+
+    if (filtro.conjuntoId) where.conjuntoId = filtro.conjuntoId;
+    if (filtro.ubicacionId) where.ubicacionId = filtro.ubicacionId;
+    if (filtro.elementoId) where.elementoId = filtro.elementoId;
+
+    if (filtro.operarioId) {
+      where.operarios = {
+        some: { id: filtro.operarioId.toString() },
+      };
+    }
+
+    if (filtro.supervisorId) {
+      where.supervisorId = filtro.supervisorId.toString();
+    }
+
+    if (filtro.tipo) where.tipo = filtro.tipo;
+    if (filtro.frecuencia) where.frecuencia = filtro.frecuencia;
+    if (filtro.estado) where.estado = filtro.estado;
+    if (filtro.borrador !== undefined) where.borrador = filtro.borrador;
+
+    if (filtro.periodoAnio) where.periodoAnio = filtro.periodoAnio;
+    if (filtro.periodoMes) where.periodoMes = filtro.periodoMes;
+    if (filtro.grupoPlanId) where.grupoPlanId = filtro.grupoPlanId;
+
+    if (filtro.fechaInicio || filtro.fechaFin) {
+      where.fechaInicio = {};
+      if (filtro.fechaInicio) where.fechaInicio.gte = filtro.fechaInicio;
+      if (filtro.fechaFin) where.fechaInicio.lte = filtro.fechaFin;
+    }
+
+    const tareas = await prisma.tarea.findMany({
+      where,
+      select: tareaPublicSelect,
+      orderBy: [{ fechaInicio: "desc" }, { id: "desc" }],
+    });
+
+    return tareas.map(toTareaPublica);
+  }
+
+  // 🗑️ Eliminar tarea (con regla de negocio)
+  static async eliminarTarea(prisma: PrismaClient, id: number) {
+    const tarea = await prisma.tarea.findUnique({
+      where: { id },
+      select: { estado: true },
+    });
+
+    if (!tarea) throw new Error("Tarea no encontrada.");
+
+    if (
+      tarea.estado === EstadoTarea.COMPLETADA ||
+      tarea.estado === EstadoTarea.APROBADA ||
+      tarea.estado === EstadoTarea.PENDIENTE_APROBACION
+    ) {
+      throw new Error(
+        "No se puede eliminar una tarea que ya fue ejecutada o está en aprobación."
+      );
+    }
+
+    await prisma.tarea.delete({ where: { id } });
+  }
+
+  /* =====================================================
+   *  A PARTIR DE AQUÍ, DEJA TUS MÉTODOS EXISTENTES IGUAL:
+   *  agregarEvidencia, iniciarTarea, marcarComoCompletadaConInsumos,
+   *  marcarNoCompletada, aprobarTarea, rechazarTarea, resumen, etc.
+   * ===================================================== */
 }

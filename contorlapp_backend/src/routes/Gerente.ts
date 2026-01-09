@@ -25,6 +25,7 @@ router.post("/administradores", ctrl.asignarAdministrador);
 router.post("/jefes-operaciones", ctrl.asignarJefeOperaciones);
 router.post("/supervisores", ctrl.asignarSupervisor);
 router.post("/operarios", ctrl.asignarOperario);
+router.get("/supervisores", ctrl.listarSupervisores);
 
 /* Conjuntos */
 router.post("/conjuntos", ctrl.crearConjunto);
@@ -42,6 +43,7 @@ router.post("/maquinaria/entregar", ctrl.entregarMaquinariaAConjunto); // si pre
 /* Tareas */
 router.post("/tareas", ctrl.asignarTarea);
 router.patch("/tareas/:tareaId", ctrl.editarTarea);
+router.get("/conjuntos/:conjuntoId/tareas", ctrl.listarTareasPorConjunto);
 
 /* Eliminaciones con reglas */
 router.delete("/administradores/:adminId", ctrl.eliminarAdministrador);

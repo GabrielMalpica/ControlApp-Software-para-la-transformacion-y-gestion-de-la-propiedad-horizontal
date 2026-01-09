@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "../generated/prisma";
+import { EstadoTarea, PrismaClient, TipoTarea } from "../generated/prisma";
 import { DefinicionTareaPreventivaService } from "../services/DefinicionTareaPreventivaService";
 import {
   CrearDefinicionPreventivaDTO,
@@ -75,29 +75,41 @@ export class DefinicionTareaPreventivaController {
     res.status(201).json(resultado);
   };
 
-  // POST /conjuntos/:nit/preventivas/publicar?anio=&mes=&consolidar=true|false
+  /** POST /conjuntos/:nit/preventivas/publicar?anio=&mes=&consolidar=true|false */
   publicarCronograma = async (req: Request, res: Response) => {
     const conjuntoId = req.params.nit;
-    const anio = Number(req.query.anio);
-    const mes = Number(req.query.mes);
-    const consolidar = String(req.query.consolidar ?? "false") === "true";
+
+    const anio = Number(req.body.anio ?? req.query.anio);
+    const mes = Number(req.body.mes ?? req.query.mes);
+
+    const consolidarRaw = (req.body.consolidar ?? req.query.consolidar) as
+      | string
+      | boolean
+      | undefined;
+    const consolidar =
+      consolidarRaw === true || consolidarRaw === "true" ? true : false;
+
     if (
+      !conjuntoId ||
       !Number.isFinite(anio) ||
       !Number.isFinite(mes) ||
       mes < 1 ||
       mes > 12
     ) {
-      res.status(400).json({ error: "Parámetros anio/mes inválidos." });
-      return;
+      return res.status(400).json({
+        error: "conjuntoId (nit), anio y mes son obligatorios y válidos",
+      });
     }
+
     const svc = new DefinicionTareaPreventivaService(this.prisma);
-    const out = await svc.publicarCronograma({
+    const result = await svc.publicarCronograma({
       conjuntoId,
       anio,
       mes,
       consolidar,
     });
-    res.json(out);
+
+    return res.json(result);
   };
 
   /** PATCH /conjuntos/:nit/preventivas/borrador/tareas/:id */

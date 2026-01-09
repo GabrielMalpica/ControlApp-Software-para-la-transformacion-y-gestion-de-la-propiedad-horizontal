@@ -52,6 +52,41 @@ export class EmpresaController {
     }
   };
 
+  listarMaquinariaCatalogo: RequestHandler = async (req, res, next) => {
+    try {
+      const empresaId = resolveEmpresaId(req);
+      const service = new EmpresaService(this.prisma, empresaId);
+      const items = await service.listarMaquinariaCatalogo(req.query);
+      res.json(items);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  editarMaquinaria: RequestHandler = async (req, res, next) => {
+    try {
+      const empresaId = resolveEmpresaId(req);
+      const { id } = IdParamSchema.parse(req.params);
+      const service = new EmpresaService(this.prisma, empresaId);
+      const upd = await service.editarMaquinaria(id, req.body);
+      res.json(upd);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  eliminarMaquinaria: RequestHandler = async (req, res, next) => {
+    try {
+      const empresaId = resolveEmpresaId(req);
+      const { id } = IdParamSchema.parse(req.params);
+      const service = new EmpresaService(this.prisma, empresaId);
+      await service.eliminarMaquinaria(id);
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  };
+
   listarMaquinariaDisponible: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);

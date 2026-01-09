@@ -27,7 +27,7 @@ rutas.use('/definicion-preventiva', DefinicionPreventivaRoutes);
 rutas.use('/empresa', EmpresaRoutes);
 rutas.use('/gerente', GerenteRoutes);
 rutas.use('/inventario', InventarioRoutes);
-rutas.use('/maquinaria', MaquinariaRoutes);
+rutas.use('/maquinarias', MaquinariaRoutes);
 rutas.use('/meta', MetaRoutes)
 rutas.use('/operario', OperarioRoutes);
 rutas.use('/reporte', ReportesRoutes);

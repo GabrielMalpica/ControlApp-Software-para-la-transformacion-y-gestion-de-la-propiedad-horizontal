@@ -71,13 +71,23 @@ export class CronogramaService {
 
   async cronogramaMensual(payload: unknown) {
     const { anio, mes, borrador } = CronoMesDTO.parse(payload);
+
+    // Rango del mes
+    const inicioMes = new Date(anio, mes - 1, 1, 0, 0, 0, 0);
+    const finMes = new Date(anio, mes, 0, 23, 59, 59, 999); // último día del mes
+
+    const where: any = {
+      conjuntoId: this.conjuntoId,
+      fechaFin: { gte: inicioMes },
+      fechaInicio: { lte: finMes },
+    };
+
+    if (borrador !== undefined) {
+      where.borrador = borrador;
+    }
+
     return this.prisma.tarea.findMany({
-      where: {
-        conjuntoId: this.conjuntoId,
-        periodoAnio: anio,
-        periodoMes: mes,
-        borrador: borrador === undefined ? undefined : borrador,
-      },
+      where,
       include: {
         operarios: { include: { usuario: true } },
         ubicacion: true,

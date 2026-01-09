@@ -9,6 +9,8 @@ import { z } from "zod";
 
 import {
   CrearMaquinariaDTO,
+  EditarMaquinariaDTO,
+  FiltroMaquinariaDTO,
   maquinariaPublicSelect,
   toMaquinariaPublica,
 } from "../model/Maquinaria";
@@ -57,7 +59,6 @@ export class EmpresaService {
       data: {
         nombre: dto.nombre,
         nit: dto.nit,
-        // si no viene, aplica default de Prisma (46)
         limiteHorasSemana: dto.limiteHorasSemana ?? undefined,
       },
       select: empresaPublicSelect,
@@ -120,19 +121,20 @@ export class EmpresaService {
   /* ===================== MAQUINARIA ===================== */
 
   async agregarMaquinaria(payload: unknown) {
-    // Reutilizamos tu DTO de maquinaria y forzamos empresaId = this.empresaId
     const base = CrearMaquinariaDTO.parse(payload);
+
     try {
       const creada = await this.prisma.maquinaria.create({
         data: {
           nombre: base.nombre,
           marca: base.marca,
-          tipo: base.tipo as TipoMaquinaria,
+          tipo: base.tipo,
           estado: base.estado ?? EstadoMaquinaria.OPERATIVA,
           disponible: base.disponible ?? true,
           empresaId: this.empresaId,
           conjuntoId: base.conjuntoId ?? null,
-          operarioId: base.operarioId!.toString() ?? null,
+          operarioId:
+            base.operarioId != null ? base.operarioId.toString() : null,
           fechaPrestamo: base.fechaPrestamo ?? null,
           fechaDevolucionEstimada: base.fechaDevolucionEstimada ?? null,
         },
@@ -145,11 +147,135 @@ export class EmpresaService {
     }
   }
 
-  async listarMaquinariaDisponible() {
-    return this.prisma.maquinaria.findMany({
-      where: { empresaId: this.empresaId, disponible: true },
+  async editarMaquinaria(id: number, payload: unknown) {
+    const dto = EditarMaquinariaDTO.parse(payload);
+
+    // validar que pertenezca a esta empresa
+    const existente = await this.prisma.maquinaria.findFirst({
+      where: { id, empresaId: this.empresaId },
+      select: { id: true },
+    });
+    if (!existente) {
+      throw new Error("Maquinaria no encontrada para esta empresa.");
+    }
+
+    const actualizada = await this.prisma.maquinaria.update({
+      where: { id },
+      data: {
+        nombre: dto.nombre ?? undefined,
+        marca: dto.marca ?? undefined,
+        tipo: dto.tipo ?? undefined,
+        estado: dto.estado ?? undefined,
+        disponible: dto.disponible ?? undefined,
+        conjuntoId: dto.conjuntoId ?? undefined,
+        operarioId:
+          dto.operarioId === null
+            ? null
+            : dto.operarioId != null
+            ? dto.operarioId.toString()
+            : undefined,
+        empresaId: dto.empresaId ?? undefined,
+        fechaPrestamo:
+          dto.fechaPrestamo === null ? null : dto.fechaPrestamo ?? undefined,
+        fechaDevolucionEstimada:
+          dto.fechaDevolucionEstimada === null
+            ? null
+            : dto.fechaDevolucionEstimada ?? undefined,
+      },
       select: maquinariaPublicSelect,
     });
+
+    return toMaquinariaPublica(actualizada);
+  }
+
+  async eliminarMaquinaria(id: number) {
+    const existente = await this.prisma.maquinaria.findFirst({
+      where: { id, empresaId: this.empresaId },
+      select: { id: true },
+    });
+    if (!existente) {
+      throw new Error("Maquinaria no encontrada para esta empresa.");
+    }
+
+    await this.prisma.maquinaria.delete({
+      where: { id },
+    });
+  }
+
+  async listarMaquinariaCatalogo(payloadFiltro?: unknown) {
+    const filtro = payloadFiltro
+      ? FiltroMaquinariaDTO.parse(payloadFiltro)
+      : {};
+
+    const items = await this.prisma.maquinaria.findMany({
+      where: {
+        empresaId: filtro.empresaId ?? this.empresaId,
+        conjuntoId: filtro.conjuntoId ?? undefined,
+        estado: filtro.estado ?? undefined,
+        disponible: filtro.disponible ?? undefined,
+        tipo: filtro.tipo ?? undefined,
+      },
+      select: {
+        id: true,
+        nombre: true,
+        marca: true,
+        tipo: true,
+        estado: true,
+        disponible: true,
+        conjuntoId: true,
+        operarioId: true,
+        empresaId: true,
+        fechaPrestamo: true,
+        fechaDevolucionEstimada: true,
+
+        asignadaA: {
+          select: {
+            nombre: true,
+          },
+        },
+        responsable: {
+          select: {
+            usuario: {
+              select: {
+                nombre: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { nombre: "asc" },
+    });
+
+    return items.map((m) => ({
+      id: m.id,
+      nombre: m.nombre,
+      marca: m.marca,
+      tipo: m.tipo,
+      estado: m.estado,
+      disponible: m.disponible,
+      conjuntoId: m.conjuntoId,
+      operarioId: m.operarioId as any,
+      empresaId: m.empresaId,
+      fechaPrestamo: m.fechaPrestamo,
+      fechaDevolucionEstimada: m.fechaDevolucionEstimada,
+
+      // 👇 estos dos son nuevos, para el frontend
+      conjuntoNombre: m.asignadaA?.nombre ?? null,
+      operarioNombre: m.responsable?.usuario?.nombre ?? null,
+    }));
+  }
+
+  async listarMaquinariaDisponible() {
+    const items = await this.prisma.maquinaria.findMany({
+      where: {
+        empresaId: this.empresaId,
+        disponible: true,
+      },
+      select: maquinariaPublicSelect,
+      orderBy: { nombre: "asc" },
+    });
+
+    return items.map(toMaquinariaPublica);
   }
 
   async obtenerMaquinariaPrestada() {
