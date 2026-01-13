@@ -2,7 +2,6 @@
 import { z } from "zod";
 import { EstadoTarea, TipoTarea, Frecuencia } from "../generated/prisma";
 
-/** Items de insumos usados (se guardarán en el JSON `insumosUsados`) */
 export const InsumoUsadoItemDTO = z.object({
   insumoId: z.number().int().positive(),
   cantidad: z.number().int().positive(),
@@ -20,41 +19,49 @@ export const MaquinariaPlanItemDTO = z.object({
 });
 
 /** Crear tarea (correctiva o preventiva ya instanciada) */
-export const CrearTareaDTO = z.object({
-  descripcion: z.string().min(3),
+export const CrearTareaDTO = z
+  .object({
+    descripcion: z.string().min(3),
 
-  fechaInicio: z.coerce.date(),
-  fechaFin: z.coerce.date(),
-  duracionHoras: z.number().int().positive(),
+    fechaInicio: z.coerce.date(),
+    fechaFin: z.coerce.date(),
 
-  // opcionales
-  tipo: z.nativeEnum(TipoTarea).optional(),                 // default lo pones en service si quieres
-  estado: z.nativeEnum(EstadoTarea).optional(),             // default ASIGNADA en service
-  frecuencia: z.nativeEnum(Frecuencia).optional(),
+    duracionMinutos: z.number().int().min(1),
 
-  evidencias: z.array(z.string()).optional().default([]),
-  insumosUsados: z.any().optional(),                        // JSON libre
+    duracionHoras: z.coerce.number().positive().optional(),
 
-  observaciones: z.string().optional(),
-  observacionesRechazo: z.string().optional(),
+    prioridad: z.number().int().min(1).max(3).optional(),
 
-  ubicacionId: z.number().int().positive(),
-  elementoId: z.number().int().positive(),
+    tipo: z.nativeEnum(TipoTarea).optional(),
+    estado: z.nativeEnum(EstadoTarea).optional(),
+    frecuencia: z.nativeEnum(Frecuencia).optional(),
 
-  conjuntoId: z.string().min(1).nullable().optional(),
-  supervisorId: z.number().int().positive().nullable().optional(),
+    evidencias: z.array(z.string()).optional().default([]),
+    insumosUsados: z.any().optional(),
 
-  /** NUEVO para relación M:N */
-  operariosIds: z.array(z.number().int().positive()).optional(),
+    observaciones: z.string().optional(),
+    observacionesRechazo: z.string().optional(),
 
-  /** Compat: antiguo 1:N */
-  operarioId: z.number().int().positive().optional(),
-})
-.refine(d => {
-  // Si quieres forzar al menos un operario en creación, descomenta esto.
-  // return (d.operariosIds && d.operariosIds.length > 0) || !!d.operarioId;
-  return true;
-}, { message: "Debe indicar al menos un operario (operariosIds u operarioId)." });
+    ubicacionId: z.number().int().positive(),
+    elementoId: z.number().int().positive(),
+
+    conjuntoId: z.string().min(1).nullable().optional(),
+    supervisorId: z.number().int().positive().nullable().optional(),
+
+    operariosIds: z.array(z.number().int().positive()).optional(),
+    operarioId: z.number().int().positive().optional(),
+  })
+  .refine(
+    (d) => {
+      const okDur = d.duracionMinutos != null || d.duracionHoras != null;
+      if (!okDur) return false;
+
+      if (d.duracionMinutos != null) return d.duracionMinutos >= 1;
+
+      return (d.duracionHoras ?? 0) > 0;
+    },
+    { message: "Debe indicar duracionMinutos o duracionHoras (>0)." }
+  );
 
 /** Editar tarea (parcial) */
 export const EditarTareaDTO = z.object({
@@ -62,7 +69,11 @@ export const EditarTareaDTO = z.object({
 
   fechaInicio: z.coerce.date().optional(),
   fechaFin: z.coerce.date().optional(),
-  duracionHoras: z.number().int().positive().optional(),
+
+  duracionMinutos: z.number().int().min(1).optional(),
+  duracionHoras: z.coerce.number().positive().optional(),
+
+  prioridad: z.number().int().min(1).max(3).optional(),
 
   tipo: z.nativeEnum(TipoTarea).optional(),
   estado: z.nativeEnum(EstadoTarea).optional(),
@@ -80,10 +91,7 @@ export const EditarTareaDTO = z.object({
   conjuntoId: z.string().min(1).nullable().optional(),
   supervisorId: z.number().int().positive().nullable().optional(),
 
-  /** NUEVO: para reemplazar asignación de operarios en edición */
   operariosIds: z.array(z.number().int().positive()).optional(),
-
-  /** Compat (si alguien aún manda este campo, puedes ignorarlo en edición) */
   operarioId: z.number().int().positive().optional(),
 });
 
@@ -152,7 +160,10 @@ export const tareaPublicSelect = {
   descripcion: true,
   fechaInicio: true,
   fechaFin: true,
-  duracionHoras: true,
+
+  duracionMinutos: true,
+  prioridad: true,
+
   estado: true,
   evidencias: true,
   insumosUsados: true,

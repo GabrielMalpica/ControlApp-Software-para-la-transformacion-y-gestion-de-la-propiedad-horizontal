@@ -30,7 +30,6 @@ export class OperarioService {
       where: { id: this.operarioId.toString() },
       select: { empresa: { select: { limiteHorasSemana: true } } },
     });
-    // fallback defensivo si por alguna razón no hay empresa asociada
     return op?.empresa?.limiteHorasSemana ?? 46;
   }
 
@@ -40,13 +39,13 @@ export class OperarioService {
 
     const tarea = await this.prisma.tarea.findUnique({
       where: { id: tareaId },
-      select: { fechaInicio: true, duracionHoras: true, id: true },
+      select: { fechaInicio: true, duracionMinutos: true, id: true },
     });
     if (!tarea) throw new Error("❌ Tarea no encontrada");
 
     const limite = await this.getLimiteHorasSemana();
     const horasSemana = await this.horasAsignadasEnSemana(tarea.fechaInicio);
-    if (horasSemana + tarea.duracionHoras > limite) {
+    if (horasSemana + tarea.duracionMinutos > limite) {
       const operario = await this.prisma.operario.findUnique({
         where: { id: this.operarioId.toString() },
         include: { usuario: true },
@@ -182,10 +181,10 @@ export class OperarioService {
         fechaFin: { gte: inicio },
         fechaInicio: { lte: fin },
       },
-      select: { duracionHoras: true },
+      select: { duracionMinutos: true },
     });
 
-    return tareas.reduce((sum, t) => sum + t.duracionHoras, 0);
+    return tareas.reduce((sum, t) => sum + t.duracionMinutos, 0);
   }
 
   async horasRestantesEnSemana(payload: unknown): Promise<number> {

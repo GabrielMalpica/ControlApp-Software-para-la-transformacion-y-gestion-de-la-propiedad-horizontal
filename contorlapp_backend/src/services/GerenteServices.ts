@@ -42,10 +42,20 @@ import { CrearTareaDTO, EditarTareaDTO } from "../model/Tarea";
 import { CrearInsumoDTO, insumoPublicSelect } from "../model/Insumo";
 
 import { z } from "zod";
+import {
+  buscarSolapesEnConjunto,
+  sugerirHuecoDia,
+  toMinOfDay,
+} from "../utils/schedulerUtils";
 
 const AsignarAConjuntoDTO = z.object({
   operarioId: z.number().int().positive(),
   conjuntoId: z.string().min(3),
+});
+
+export const AsignarConReemplazoDTO = z.object({
+  tarea: CrearTareaDTO,
+  reemplazarIds: z.array(z.number().int().positive()).min(1),
 });
 
 const AgregarInsumoAConjuntoDTO = z.object({
@@ -292,7 +302,6 @@ export class GerenteService {
   async crearConjunto(payload: unknown) {
     const dto = CrearConjuntoDTO.parse(payload);
 
-    // ✅ Validar administrador si viene
     let administradorId: string | null = null;
     if (dto.administradorId) {
       const admin = await this.prisma.administrador.findUnique({
@@ -332,6 +341,9 @@ export class GerenteService {
                   dia: h.dia,
                   horaApertura: h.horaApertura,
                   horaCierre: h.horaCierre,
+
+                  descansoInicio: h.descansoInicio ?? null,
+                  descansoFin: h.descansoFin ?? null,
                 })),
               }
             : undefined,
@@ -476,9 +488,7 @@ export class GerenteService {
     }
 
     if (dto.horarios !== undefined) {
-      await this.prisma.conjuntoHorario.deleteMany({
-        where: { conjuntoId },
-      });
+      await this.prisma.conjuntoHorario.deleteMany({ where: { conjuntoId } });
 
       if (dto.horarios.length > 0) {
         data.horarios = {
@@ -486,6 +496,9 @@ export class GerenteService {
             dia: h.dia,
             horaApertura: h.horaApertura,
             horaCierre: h.horaCierre,
+
+            descansoInicio: h.descansoInicio ?? null,
+            descansoFin: h.descansoFin ?? null,
           })),
         };
       }
@@ -755,20 +768,124 @@ export class GerenteService {
     const periodoAnio = dto.fechaInicio.getFullYear();
     const periodoMes = dto.fechaInicio.getMonth() + 1;
 
+    const inicio = dto.fechaInicio;
+
+    const durMin =
+      dto.duracionMinutos ??
+      Math.max(
+        1,
+        Math.round((dto.fechaFin.getTime() - dto.fechaInicio.getTime()) / 60000)
+      );
+
+    const fin = dto.fechaFin ?? new Date(inicio.getTime() + durMin * 60000);
+
+    // Operarios
+    const operariosIds =
+      dto.operariosIds?.map(String) ??
+      (dto.operarioId ? [String(dto.operarioId)] : []);
+
+    // ✅ 1) sugerencia de hueco (si hay conjunto)
+    let sugerencia: null | {
+      startMin: number;
+      endMin: number;
+      suggestedInicio: Date;
+      suggestedFin: Date;
+      startHHmm: string;
+    } = null;
+
+    if (dto.conjuntoId && operariosIds.length) {
+      const desiredStartMin = toMinOfDay(inicio);
+
+      const sug = await sugerirHuecoDia({
+        prisma: this.prisma,
+        conjuntoId: dto.conjuntoId,
+        fechaDia: inicio,
+        desiredStartMin,
+        durMin,
+        operariosIds,
+        incluirBorradorAgenda: true,
+        excluirEstadosAgenda: ["PENDIENTE_REPROGRAMACION"],
+      });
+
+      if (sug.ok) {
+        const sugIni = new Date(
+          inicio.getFullYear(),
+          inicio.getMonth(),
+          inicio.getDate(),
+          Math.floor(sug.startMin / 60),
+          sug.startMin % 60,
+          0,
+          0
+        );
+        const sugFin = new Date(sugIni.getTime() + durMin * 60000);
+
+        sugerencia = {
+          startMin: sug.startMin,
+          endMin: sug.endMin,
+          suggestedInicio: sugIni,
+          suggestedFin: sugFin,
+          startHHmm: `${String(Math.floor(sug.startMin / 60)).padStart(
+            2,
+            "0"
+          )}:${String(sug.startMin % 60).padStart(2, "0")}`,
+        };
+      }
+    }
+
+    // ✅ 2) solapes reales
+    const solapes = dto.conjuntoId
+      ? await buscarSolapesEnConjunto(this.prisma, {
+          conjuntoId: dto.conjuntoId,
+          fechaInicio: inicio,
+          fechaFin: fin,
+          incluirBorrador: true,
+          excluirEstados: ["PENDIENTE_REPROGRAMACION"],
+        })
+      : [];
+
+    if (solapes.length) {
+      const esCorrectivaP1 =
+        dto.tipo === "CORRECTIVA" && (dto.prioridad ?? 2) === 1;
+
+      if (!esCorrectivaP1) {
+        throw new Error("HAY_SOLAPE_CON_TAREAS_EXISTENTES");
+      }
+
+      const reemplazables = solapes.filter(
+        (t) => t.tipo === "PREVENTIVA" && (t.prioridad ?? 2) > 1
+      );
+
+      return {
+        needsReplacement: true,
+        message:
+          "La correctiva prioridad 1 se solapa. Puedes reemplazar una preventiva (prioridad 2 o 3) o usar el horario sugerido.",
+        solapes,
+        reemplazables,
+        suggestedInicio: sugerencia?.suggestedInicio ?? null,
+        suggestedFin: sugerencia?.suggestedFin ?? null,
+        startHHmm: sugerencia?.startHHmm ?? null,
+      };
+    }
+
+    // ✅ 3) crear si no hay solape
     return this.prisma.tarea.create({
       data: {
         descripcion: dto.descripcion,
-        fechaInicio: dto.fechaInicio,
-        fechaFin: dto.fechaFin,
-        duracionHoras: dto.duracionHoras,
+        fechaInicio: inicio,
+        fechaFin: fin,
+        duracionMinutos: durMin,
         estado: EstadoTarea.ASIGNADA,
+        tipo: (dto.tipo ?? "CORRECTIVA") as any,
+        prioridad: dto.prioridad ?? 2,
+        borrador: false,
+
         evidencias: dto.evidencias ?? [],
         insumosUsados: dto.insumosUsados ?? [],
         ubicacionId: dto.ubicacionId,
         elementoId: dto.elementoId,
         conjuntoId: dto.conjuntoId ?? null,
         supervisorId:
-          dto.supervisorId != null ? dto.supervisorId.toString() : null,
+          dto.supervisorId != null ? String(dto.supervisorId) : null,
 
         periodoAnio,
         periodoMes,
@@ -776,17 +893,115 @@ export class GerenteService {
         ...(dto.operariosIds?.length
           ? {
               operarios: {
-                connect: dto.operariosIds.map((id) => ({ id: id.toString() })),
+                connect: dto.operariosIds.map((id) => ({ id: String(id) })),
               },
             }
           : dto.operarioId
-          ? {
-              operarios: {
-                connect: { id: dto.operarioId.toString() },
-              },
-            }
+          ? { operarios: { connect: { id: String(dto.operarioId) } } }
           : {}),
       },
+    });
+  }
+
+  async asignarTareaConReemplazo(payload: unknown) {
+    const { tarea, reemplazarIds } = AsignarConReemplazoDTO.parse(payload);
+    const dto = CrearTareaDTO.parse(tarea);
+
+    if (dto.tipo !== "CORRECTIVA" || (dto.prioridad ?? 2) !== 1) {
+      throw new Error("Solo aplica para CORRECTIVA prioridad 1.");
+    }
+    if (!dto.conjuntoId) throw new Error("conjuntoId requerido.");
+
+    return this.prisma.$transaction(async (tx) => {
+      const targets = await tx.tarea.findMany({
+        where: {
+          id: { in: reemplazarIds },
+          conjuntoId: dto.conjuntoId!,
+          tipo: "PREVENTIVA" as any,
+          borrador: false,
+        },
+        select: {
+          id: true,
+          fechaInicio: true,
+          fechaFin: true,
+          prioridad: true,
+          tipo: true,
+          descripcion: true,
+        },
+      });
+
+      if (targets.length !== reemplazarIds.length) {
+        throw new Error(
+          "Algunas tareas a reemplazar no existen o no son preventivas publicadas."
+        );
+      }
+
+      // Exigir que sean prioridad 2 o 3 y que choquen
+      for (const t of targets) {
+        if ((t.prioridad ?? 2) <= 1) {
+          throw new Error(
+            `La tarea ${t.id} es prioridad 1; NO se permite reemplazar.`
+          );
+        }
+        const choca =
+          t.fechaInicio < dto.fechaFin && t.fechaFin > dto.fechaInicio;
+        if (!choca) {
+          throw new Error(
+            `La tarea ${t.id} no se solapa; no se puede reemplazar.`
+          );
+        }
+      }
+
+      await tx.tarea.updateMany({
+        where: { id: { in: reemplazarIds } },
+        data: {
+          estado: EstadoTarea.PENDIENTE_REPROGRAMACION,
+          observaciones: "Reemplazada por correctiva prioridad 1",
+        },
+      });
+
+      // Crear correctiva
+      const periodoAnio = dto.fechaInicio.getFullYear();
+      const periodoMes = dto.fechaInicio.getMonth() + 1;
+
+      const creada = await tx.tarea.create({
+        data: {
+          descripcion: dto.descripcion,
+          fechaInicio: dto.fechaInicio,
+          fechaFin: dto.fechaFin,
+          duracionMinutos: dto.duracionMinutos,
+          estado: EstadoTarea.ASIGNADA,
+          tipo: "CORRECTIVA" as any,
+          prioridad: 1,
+          borrador: false,
+
+          evidencias: dto.evidencias ?? [],
+          insumosUsados: dto.insumosUsados ?? [],
+          ubicacionId: dto.ubicacionId,
+          elementoId: dto.elementoId,
+          conjuntoId: dto.conjuntoId ?? null,
+          supervisorId:
+            dto.supervisorId != null ? String(dto.supervisorId) : null,
+          periodoAnio,
+          periodoMes,
+
+          ...(dto.operariosIds?.length
+            ? {
+                operarios: {
+                  connect: dto.operariosIds.map((id) => ({ id: String(id) })),
+                },
+              }
+            : dto.operarioId
+            ? { operarios: { connect: { id: String(dto.operarioId) } } }
+            : {}),
+        },
+      });
+
+      return {
+        ok: true,
+        creada,
+        reemplazadas: targets,
+      };
     });
   }
 
@@ -798,7 +1013,8 @@ export class GerenteService {
     if (dto.fechaInicio !== undefined)
       data.fechaInicio = dto.fechaInicio as any;
     if (dto.fechaFin !== undefined) data.fechaFin = dto.fechaFin as any;
-    if (dto.duracionHoras !== undefined) data.duracionHoras = dto.duracionHoras;
+    if (dto.duracionMinutos !== undefined)
+      data.duracionMinutos = dto.duracionMinutos;
     if (dto.estado !== undefined) data.estado = dto.estado as any;
     if (dto.evidencias !== undefined) data.evidencias = dto.evidencias as any;
     if (dto.insumosUsados !== undefined)
@@ -872,7 +1088,7 @@ export class GerenteService {
         descripcion: t.descripcion,
         fechaInicio: t.fechaInicio,
         fechaFin: t.fechaFin,
-        duracionHoras: t.duracionHoras,
+        duracionMinutos: t.duracionMinutos,
         estado: t.estado,
         evidencias: t.evidencias,
         insumosUsados: t.insumosUsados,

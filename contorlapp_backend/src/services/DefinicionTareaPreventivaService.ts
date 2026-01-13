@@ -12,12 +12,13 @@ import {
   EditarDefinicionPreventivaDTO,
   FiltroDefinicionPreventivaDTO,
   GenerarCronogramaDTO,
-  calcularHorasEstimadas,
+  calcularMinutosEstimados,
 } from "../model/DefinicionTareaPreventiva";
 import { z } from "zod";
+import { Bloqueo, HorarioDia } from "../utils/agenda";
+import { buildAgendaPorOperarioDia, buscarHuecoDia, getFestivosSet, ymdLocal } from "../utils/schedulerUtils";
 
 type HHmm = `${string}:${string}`;
-const DEFAULT_LIMITE_HORAS_SEMANA = 42;
 
 /* ============== DTOs internos (Zod) ============== */
 
@@ -39,7 +40,7 @@ const EditarBorradorDTO = z.object({
   tareaId: z.number().int().positive(),
   fechaInicio: z.coerce.date().optional(),
   fechaFin: z.coerce.date().optional(),
-  duracionHoras: z.number().int().min(1).optional(),
+  duracionMinutos: z.number().int().min(1).optional(),
   operariosIds: z.array(z.number().int().positive()).optional(),
 });
 
@@ -51,7 +52,7 @@ const CrearBloqueBorradorDTO = z.object({
   elementoId: z.number().int().positive(),
   operariosIds: z.array(z.number().int().positive()).optional(),
   supervisorId: z.number().int().positive().nullable().optional(),
-  tiempoEstimadoHoras: z.number().positive().optional(),
+  tiempoEstimadoMinutos: z.number().positive().optional(),
 });
 
 const DividirBloqueDTO = z.object({
@@ -65,12 +66,12 @@ const EditarBloqueBorradorDTO = z.object({
   descripcion: z.string().min(3).optional(),
   fechaInicio: z.coerce.date().optional(),
   fechaFin: z.coerce.date().optional(),
-  duracionHoras: z.number().int().positive().optional(),
+  duracionMinutos: z.number().int().positive().optional(),
   ubicacionId: z.number().int().positive().optional(),
   elementoId: z.number().int().positive().optional(),
   operariosIds: z.array(z.number().int().positive()).optional(),
   supervisorId: z.number().int().positive().nullable().optional(),
-  tiempoEstimadoHoras: z.number().positive().nullable().optional(),
+  tiempoEstimadoMinutos: z.number().positive().nullable().optional(),
 });
 
 /* ============== SERVICE ============== */
@@ -83,13 +84,38 @@ export class DefinicionTareaPreventivaService {
   async crear(payload: unknown) {
     const dto = CrearDefinicionPreventivaDTO.parse(payload);
 
+    // Nuevo campo (si ya lo agregaste): POR_MINUTO | MIN_POR_UNIDAD | POR_HORA
+    const rendimientoTiempoBase: string = (
+      (dto as any).rendimientoTiempoBase ?? "POR_HORA"
+    ).toString();
+
+    // 1) Duración fija en minutos (preferida)
+    const durMinFijaRaw = (dto as any).duracionMinutosFija;
+
+    // 2) Legacy: horas fijas -> minutos
+    const durHorasFijaRaw = (dto as any).duracionHorasFija;
+
+    // 3) Calcular si no viene fija
+    const duracionMinutosFija =
+      (dto as any).duracionMinutosFija ??
+      ((dto as any).duracionHorasFija != null
+        ? Math.round(Number((dto as any).duracionHorasFija) * 60)
+        : null);
+
     const data: Prisma.DefinicionTareaPreventivaCreateInput = {
       conjunto: { connect: { nit: dto.conjuntoId } },
       ubicacion: { connect: { id: dto.ubicacionId } },
       elemento: { connect: { id: dto.elementoId } },
       descripcion: dto.descripcion,
       frecuencia: dto.frecuencia,
-      prioridad: dto.prioridad ?? 5,
+      prioridad: dto.prioridad ?? 2,
+
+      diaSemanaProgramado: (dto as any).diaSemanaProgramado ?? null,
+      diaMesProgramado: (dto as any).diaMesProgramado ?? null,
+
+      duracionMinutosFija: duracionMinutosFija,
+
+      rendimientoTiempoBase: (dto as any).rendimientoTiempoBase ?? "POR_MINUTO",
 
       unidadCalculo: dto.unidadCalculo ?? null,
       areaNumerica:
@@ -98,7 +124,6 @@ export class DefinicionTareaPreventivaService {
         dto.rendimientoBase != null
           ? new Prisma.Decimal(dto.rendimientoBase)
           : null,
-      duracionHorasFija: dto.duracionHorasFija ?? null,
 
       insumoPrincipal: dto.insumoPrincipalId
         ? { connect: { id: dto.insumoPrincipalId } }
@@ -117,7 +142,6 @@ export class DefinicionTareaPreventivaService {
           ? (dto.maquinariaPlanJson as Prisma.InputJsonValue)
           : undefined,
 
-      // supervisor de la definición
       supervisor:
         (dto as any).supervisorId == null
           ? undefined
@@ -126,28 +150,24 @@ export class DefinicionTareaPreventivaService {
       activo: dto.activo ?? true,
     };
 
-    // Operarios sugeridos:
-    // - Si viene operariosIds → conectamos todos.
-    // - Si solo viene responsableSugeridoId (modo viejo) → lo conectamos como único.
+    // Operarios
     if (
       Array.isArray((dto as any).operariosIds) &&
       (dto as any).operariosIds.length
     ) {
-      const operariosIds: number[] = (dto as any).operariosIds;
+      const operariosIds: Array<string | number> = (dto as any).operariosIds;
       (data as any).operarios = {
         connect: operariosIds.map((id) => ({ id: id.toString() })),
       };
-    } else if ((dto as any).responsableSugeridoId) {
-      const idNum: number = (dto as any).responsableSugeridoId;
+    } else if ((dto as any).responsableSugeridoId != null) {
       (data as any).operarios = {
-        connect: { id: idNum.toString() },
+        connect: { id: (dto as any).responsableSugeridoId.toString() },
       };
     }
 
     return this.prisma.definicionTareaPreventiva.create({ data });
   }
 
-  /** Listado con filtros (opcional) */
   async listar(payload: unknown) {
     const f = FiltroDefinicionPreventivaDTO.parse(payload);
     return this.prisma.definicionTareaPreventiva.findMany({
@@ -168,7 +188,6 @@ export class DefinicionTareaPreventivaService {
     });
   }
 
-  /** Listado simple por conjunto (para GET /conjuntos/:nit/preventivas) */
   async listarPorConjunto(conjuntoId: string) {
     return this.prisma.definicionTareaPreventiva.findMany({
       where: { conjuntoId },
@@ -192,6 +211,15 @@ export class DefinicionTareaPreventivaService {
     if (!def || def.conjuntoId !== conjuntoId) {
       throw new Error("Definición no encontrada para este conjunto.");
     }
+
+    const durMinFija =
+      (dto as any).duracionMinutosFija === undefined &&
+      (dto as any).duracionHorasFija === undefined
+        ? undefined
+        : (dto as any).duracionMinutosFija ??
+          ((dto as any).duracionHorasFija != null
+            ? Math.round(Number((dto as any).duracionHorasFija) * 60)
+            : null);
 
     const data: Prisma.DefinicionTareaPreventivaUpdateInput = {
       descripcion: dto.descripcion,
@@ -221,7 +249,10 @@ export class DefinicionTareaPreventivaService {
           : dto.rendimientoBase === null
           ? null
           : new Prisma.Decimal(dto.rendimientoBase),
-      duracionHorasFija: dto.duracionHorasFija ?? undefined,
+
+      diaSemanaProgramado: (dto as any).diaSemanaProgramado ?? undefined,
+      diaMesProgramado: (dto as any).diaMesProgramado ?? undefined,
+      duracionMinutosFija: durMinFija,
 
       insumoPrincipal:
         dto.insumoPrincipalId === undefined
@@ -258,7 +289,6 @@ export class DefinicionTareaPreventivaService {
           : { connect: { id: (dto as any).supervisorId.toString() } },
     };
 
-    // Actualización de operarios sugeridos
     if ((dto as any).operariosIds !== undefined) {
       const operariosIds: number[] = (dto as any).operariosIds ?? [];
       (data as any).operarios = {
@@ -287,15 +317,24 @@ export class DefinicionTareaPreventivaService {
 
   /* ============== GENERACIÓN DE CRONOGRAMA (BORRADOR) ============== */
 
-  /** Adaptador al nombre del DTO público */
   async generarCronograma(payload: unknown) {
     const dto = GenerarCronogramaDTO.parse(payload);
+
+    const tamanoBloqueMinutos =
+      dto.tamanoBloqueMinutos ??
+      (dto.tamanoBloqueHoras != null
+        ? Math.round(dto.tamanoBloqueHoras * 60)
+        : 60);
+
     const creadas = await this.generarBorradorMensual({
       conjuntoId: dto.conjuntoId,
       periodoAnio: dto.anio,
       periodoMes: dto.mes,
-      tamanoBloqueHoras: dto.tamanoBloqueHoras ?? 1,
+      tamanoBloqueMinutos,
+      paisFestivos: "CO",
+      incluirPublicadasEnAgenda: true,
     });
+
     return { creadas };
   }
 
@@ -305,7 +344,6 @@ export class DefinicionTareaPreventivaService {
     const { conjuntoId, tareaId, bloques } =
       DividirTareaBorradorDTO.parse(payload);
 
-    // 1) Buscar la tarea original
     const original = await this.prisma.tarea.findUnique({
       where: { id: tareaId },
       include: { operarios: true },
@@ -320,74 +358,43 @@ export class DefinicionTareaPreventivaService {
       throw new Error("Solo se pueden dividir tareas preventivas en borrador.");
     }
 
-    // 2) Validar que la suma de horas de los bloques = horas originales
-    const horasOriginal = original.duracionHoras ?? 0;
-    const horasBloques = bloques.reduce((acc, b) => {
-      const diffMs = +b.fechaFin - +b.fechaInicio;
-      const h = diffMs / 3_600_000; // ms → horas
-      return acc + h;
+    const originalMin = original.duracionMinutos ?? 0;
+
+    const minutosBloques = bloques.reduce((acc, b) => {
+      const diffMin = (+b.fechaFin - +b.fechaInicio) / 60000;
+      return acc + diffMin;
     }, 0);
 
-    const horasBloquesRedondeadas = Math.round(horasBloques);
-    if (horasBloquesRedondeadas !== horasOriginal) {
+    const minutosBloquesRed = Math.round(minutosBloques);
+    if (minutosBloquesRed !== originalMin) {
       throw new Error(
-        `La suma de horas de los bloques (${horasBloquesRedondeadas}h) ` +
-          `no coincide con la duración original (${horasOriginal}h).`
+        `La suma de minutos de los bloques (${minutosBloquesRed} min) no coincide con la duración original (${originalMin} min).`
       );
     }
 
-    // 3) Operarios asignados a la tarea original
-    const operariosIds = original.operarios.map((o) => o.id); // string[]
+    const operariosIds = original.operarios.map((o) => o.id);
 
-    // 4) Límite semanal (igual que en generarBorradorMensual)
-    let limiteHorasSemana = 42;
-    if (original.conjuntoId) {
-      const conjunto = await this.prisma.conjunto.findUnique({
-        where: { nit: original.conjuntoId },
-        select: { empresaId: true },
-      });
-      if (conjunto?.empresaId) {
-        const empresa = await this.prisma.empresa.findUnique({
-          where: { nit: conjunto.empresaId },
-          select: { limiteHorasSemana: true },
-        });
-        if (empresa?.limiteHorasSemana != null) {
-          limiteHorasSemana = empresa.limiteHorasSemana;
-        }
-      }
-    }
+    const limiteMinSemana = await getLimiteMinSemanaPorConjunto(
+      this.prisma,
+      conjuntoId
+    );
 
     await this.prisma.$transaction(async (tx) => {
-      // 5) Validar solapes y horas semanales por cada operario / bloque
       for (const opId of operariosIds) {
         for (const b of bloques) {
-          const inicioSemana = inicioSemanaFn(b.fechaInicio);
-          const finSemana = new Date(inicioSemana);
-          finSemana.setDate(inicioSemana.getDate() + 6);
-
-          const tareasSemana = await tx.tarea.findMany({
-            where: {
-              conjuntoId,
-              borrador: true,
-              tipo: TipoTarea.PREVENTIVA,
-              operarios: { some: { id: opId } },
-              fechaFin: { gte: inicioSemana },
-              fechaInicio: { lte: finSemana },
-              id: { not: tareaId }, // excluir la original
-            },
-            select: { fechaInicio: true, fechaFin: true, duracionHoras: true },
-          });
-
-          const horasSemana = tareasSemana.reduce(
-            (acc, t) => acc + (t.duracionHoras ?? 0),
-            0
+          const minSemana = await minutosAsignadosEnSemana(
+            tx as any,
+            conjuntoId,
+            opId,
+            b.fechaInicio,
+            false // en borrador, normalmente validas contra borradores; aquí estamos dentro de tx
           );
-          const duracionBloqueH =
-            (+b.fechaFin - +b.fechaInicio) / 3_600_000 || 0;
 
-          if (horasSemana + duracionBloqueH > limiteHorasSemana) {
+          const durBloqueMin = (+b.fechaFin - +b.fechaInicio) / 60000 || 0;
+
+          if (minSemana + durBloqueMin > limiteMinSemana) {
             throw new Error(
-              `El operario ${opId} superaría el límite semanal de horas con este bloque.`
+              `El operario ${opId} superaría el límite semanal (${limiteMinSemana} min) con este bloque.`
             );
           }
 
@@ -401,20 +408,20 @@ export class DefinicionTareaPreventivaService {
           });
 
           if (haySolape) {
+            const nombre = await getOperarioNombre(this.prisma, opId);
             throw new Error(
-              `Solape de agenda detectado para el operario ${opId} en uno de los bloques.`
+              `Solape de agenda detectado para el operario ${nombre} en uno de los bloques.`
             );
           }
         }
       }
 
-      // 6) Eliminar la tarea original y crear los nuevos bloques
       await tx.tarea.delete({ where: { id: tareaId } });
 
       for (const b of bloques) {
-        const duracionHoras = Math.max(
+        const duracionMinutos = Math.max(
           1,
-          Math.round((+b.fechaFin - +b.fechaInicio) / 3_600_000)
+          Math.round((+b.fechaFin - +b.fechaInicio) / 60000)
         );
 
         await tx.tarea.create({
@@ -422,7 +429,8 @@ export class DefinicionTareaPreventivaService {
             descripcion: original.descripcion,
             fechaInicio: b.fechaInicio,
             fechaFin: b.fechaFin,
-            duracionHoras,
+            duracionMinutos,
+            prioridad: (original as any).prioridad ?? 2,
             estado: original.estado,
             tipo: original.tipo,
             frecuencia: original.frecuencia,
@@ -435,7 +443,7 @@ export class DefinicionTareaPreventivaService {
             elementoId: original.elementoId,
             supervisorId: original.supervisorId,
 
-            tiempoEstimadoHoras: original.tiempoEstimadoHoras,
+            tiempoEstimadoMinutos: original.tiempoEstimadoMinutos,
             insumoPrincipalId: original.insumoPrincipalId,
             consumoPrincipalPorUnidad: original.consumoPrincipalPorUnidad,
             consumoTotalEstimado: original.consumoTotalEstimado,
@@ -448,6 +456,7 @@ export class DefinicionTareaPreventivaService {
               original.maquinariaPlanJson == null
                 ? undefined
                 : (original.maquinariaPlanJson as Prisma.InputJsonValue),
+
             grupoPlanId: null,
             bloqueIndex: null,
             bloquesTotales: null,
@@ -493,32 +502,21 @@ export class DefinicionTareaPreventivaService {
       throw new Error("No es un bloque borrador preventivo de este conjunto.");
     }
 
-    const operariosIds = original.operarios.map((o) => o.id); // string[]
+    const operariosIds = original.operarios.map((o) => o.id);
 
     const dur1 = Math.max(
       1,
-      Math.round((+dto.fechaFin1 - +dto.fechaInicio1) / 3600000)
+      Math.round((+dto.fechaFin1 - +dto.fechaInicio1) / 60000)
     );
     const dur2 = Math.max(
       1,
-      Math.round((+dto.fechaFin2 - +dto.fechaInicio2) / 3600000)
+      Math.round((+dto.fechaFin2 - +dto.fechaInicio2) / 60000)
     );
 
-    // Límite semanal por operario
-    let limiteHorasSemana = 42;
-    const conjunto = await this.prisma.conjunto.findUnique({
-      where: { nit: conjuntoId },
-      select: { empresaId: true },
-    });
-    if (conjunto?.empresaId) {
-      const empresa = await this.prisma.empresa.findUnique({
-        where: { nit: conjunto.empresaId },
-        select: { limiteHorasSemana: true },
-      });
-      if (empresa?.limiteHorasSemana != null) {
-        limiteHorasSemana = empresa.limiteHorasSemana;
-      }
-    }
+    const limiteMinSemana = await getLimiteMinSemanaPorConjunto(
+      this.prisma,
+      conjuntoId
+    );
 
     const semanaKey = (d: Date) => {
       const ini = inicioSemana(d);
@@ -530,36 +528,22 @@ export class DefinicionTareaPreventivaService {
 
     for (const opId of operariosIds) {
       const extraPorSemana: Record<string, number> = {};
-
       extraPorSemana[semana1] = (extraPorSemana[semana1] ?? 0) + dur1;
       extraPorSemana[semana2] = (extraPorSemana[semana2] ?? 0) + dur2;
 
       for (const [sem, extra] of Object.entries(extraPorSemana)) {
         const ini = inicioSemana(new Date(sem));
-        const fin = new Date(ini);
-        fin.setDate(ini.getDate() + 6);
-
-        const tareasSemana = await this.prisma.tarea.findMany({
-          where: {
-            id: { not: tareaId },
-            conjuntoId,
-            borrador: true,
-            tipo: TipoTarea.PREVENTIVA,
-            operarios: { some: { id: opId } },
-            fechaInicio: { lte: fin },
-            fechaFin: { gte: ini },
-          },
-          select: { duracionHoras: true },
-        });
-
-        const horasSemana = tareasSemana.reduce(
-          (acc, t) => acc + (t.duracionHoras ?? 0),
-          0
+        const minSemana = await minutosAsignadosEnSemana(
+          this.prisma,
+          conjuntoId,
+          opId,
+          ini,
+          false
         );
 
-        if (horasSemana + extra > limiteHorasSemana) {
+        if (minSemana + extra > limiteMinSemana) {
           throw new Error(
-            `Al dividir esta tarea, el operario ${opId} superaría el límite semanal de horas.`
+            `Al dividir esta tarea, el operario ${opId} superaría el límite semanal (${limiteMinSemana} min).`
           );
         }
       }
@@ -576,8 +560,9 @@ export class DefinicionTareaPreventivaService {
       });
 
       if (haySolape1) {
+        const nombre = await getOperarioNombre(this.prisma, opId);
         throw new Error(
-          `Solape de agenda con operario ${opId} al dividir la tarea (primer bloque).`
+          `Solape de agenda con operario ${nombre} al dividir la tarea (primer bloque).`
         );
       }
 
@@ -591,8 +576,9 @@ export class DefinicionTareaPreventivaService {
       });
 
       if (haySolape2) {
+        const nombre = await getOperarioNombre(this.prisma, opId);
         throw new Error(
-          `Solape de agenda con operario ${opId} al dividir la tarea (segundo bloque).`
+          `Solape de agenda con operario ${nombre} al dividir la tarea (segundo bloque).`
         );
       }
     }
@@ -608,19 +594,20 @@ export class DefinicionTareaPreventivaService {
       const periodoAnio2 = dto.fechaInicio2.getFullYear();
       const periodoMes2 = dto.fechaInicio2.getMonth() + 1;
 
-      const dataBase = {
+      const dataBase: any = {
         descripcion: original.descripcion,
         estado: EstadoTarea.ASIGNADA,
         tipo: TipoTarea.PREVENTIVA,
         frecuencia: original.frecuencia,
         borrador: true as const,
+        prioridad: (original as any).prioridad ?? 2,
 
         conjuntoId,
         ubicacionId: original.ubicacionId,
         elementoId: original.elementoId,
         supervisorId: original.supervisorId,
 
-        tiempoEstimadoHoras: original.tiempoEstimadoHoras,
+        tiempoEstimadoMinutos: original.tiempoEstimadoMinutos,
         insumoPrincipalId: original.insumoPrincipalId,
         consumoPrincipalPorUnidad: original.consumoPrincipalPorUnidad,
         consumoTotalEstimado: original.consumoTotalEstimado,
@@ -634,16 +621,14 @@ export class DefinicionTareaPreventivaService {
           ...dataBase,
           fechaInicio: dto.fechaInicio1,
           fechaFin: dto.fechaFin1,
-          duracionHoras: dur1,
+          duracionMinutos: dur1,
           periodoAnio: periodoAnio1,
           periodoMes: periodoMes1,
           grupoPlanId: null,
           bloqueIndex: null,
           bloquesTotales: null,
           operarios: operariosIds.length
-            ? {
-                connect: operariosIds.map((id) => ({ id })),
-              }
+            ? { connect: operariosIds.map((id) => ({ id })) }
             : undefined,
         },
       });
@@ -653,16 +638,14 @@ export class DefinicionTareaPreventivaService {
           ...dataBase,
           fechaInicio: dto.fechaInicio2,
           fechaFin: dto.fechaFin2,
-          duracionHoras: dur2,
+          duracionMinutos: dur2,
           periodoAnio: periodoAnio2,
           periodoMes: periodoMes2,
           grupoPlanId: null,
           bloqueIndex: null,
           bloquesTotales: null,
           operarios: operariosIds.length
-            ? {
-                connect: operariosIds.map((id) => ({ id })),
-              }
+            ? { connect: operariosIds.map((id) => ({ id })) }
             : undefined,
         },
       });
@@ -675,7 +658,7 @@ export class DefinicionTareaPreventivaService {
     conjuntoId: string;
     anio: number;
     mes: number;
-    consolidar?: boolean; // default=false
+    consolidar?: boolean;
   }) {
     const { conjuntoId, anio, mes, consolidar = false } = params;
 
@@ -703,7 +686,6 @@ export class DefinicionTareaPreventivaService {
       }
     }
 
-    // validar solapes en borrador por operario
     for (const opId of Object.keys(porOperario)) {
       const arr = porOperario[opId].sort((a, b) => +a.i - +b.i);
       for (let i = 1; i < arr.length; i++) {
@@ -711,8 +693,9 @@ export class DefinicionTareaPreventivaService {
         const cur = arr[i];
         const haySolape = prev.i < cur.f && cur.i < prev.f;
         if (haySolape) {
+          const nombre = await getOperarioNombre(this.prisma, opId);
           throw new Error(
-            `Solape detectado para operario ${opId} en el borrador del período.`
+            `Solape detectado para operario ${nombre} en el borrador del período.`
           );
         }
       }
@@ -747,7 +730,6 @@ export class DefinicionTareaPreventivaService {
     let publicadasSimples = 0;
 
     await this.prisma.$transaction(async (tx) => {
-      // Consolidar grupos
       for (const [, bloques] of grupos) {
         if (!bloques.length) continue;
 
@@ -757,7 +739,7 @@ export class DefinicionTareaPreventivaService {
         );
         const fechaFin = new Date(Math.max(...bloques.map((b) => +b.fechaFin)));
         const duracionTotal = bloques.reduce(
-          (acc, b) => acc + (b.duracionHoras ?? 0),
+          (acc, b) => acc + (b.duracionMinutos ?? 0),
           0
         );
 
@@ -770,7 +752,8 @@ export class DefinicionTareaPreventivaService {
             descripcion: base.descripcion,
             fechaInicio,
             fechaFin,
-            duracionHoras: duracionTotal,
+            duracionMinutos: duracionTotal,
+            prioridad: (base as any).prioridad ?? 2,
             estado: EstadoTarea.ASIGNADA,
             tipo: TipoTarea.PREVENTIVA,
             frecuencia: base.frecuencia,
@@ -781,7 +764,7 @@ export class DefinicionTareaPreventivaService {
             elementoId: base.elementoId,
             conjuntoId: base.conjuntoId!,
             supervisorId: base.supervisorId ?? null,
-            tiempoEstimadoHoras: base.tiempoEstimadoHoras ?? null,
+            tiempoEstimadoMinutos: base.tiempoEstimadoMinutos ?? null,
             insumoPrincipalId: base.insumoPrincipalId ?? null,
             consumoPrincipalPorUnidad: base.consumoPrincipalPorUnidad ?? null,
             consumoTotalEstimado: base.consumoTotalEstimado ?? null,
@@ -800,10 +783,10 @@ export class DefinicionTareaPreventivaService {
         gruposConsolidados++;
       }
 
-      // Publicar las tareas sin grupo directamente
       const idsSinGrupo = borradores
         .filter((t) => !t.grupoPlanId)
         .map((t) => t.id);
+
       if (idsSinGrupo.length) {
         const res = await tx.tarea.updateMany({
           where: { id: { in: idsSinGrupo } },
@@ -819,46 +802,81 @@ export class DefinicionTareaPreventivaService {
 
   /**
    * Genera tareas PREVENTIVAS en modo "borrador" para un conjunto y mes.
-   * - Respeta la frecuencia de cada definición activa.
-   * - Usa la jornada de ConjuntoHorario (por día de semana).
-   * - Controla horas semanales POR OPERARIO.
-   * - Evita solapes POR OPERARIO.
-   * - Usa TODOS los operarios asociados a la definición (si todos tienen cupo y sin solape).
+   * ✅ Respeta prioridad (1 primero)
+   * ✅ Respeta festivos (tabla Festivo)
+   * ✅ Evita solapes por operario (día)
+   * ✅ Respeta límite semanal (minutos), usando override del conjunto o límite empresa
    */
   async generarBorradorMensual(params: {
     conjuntoId: string;
     periodoAnio: number;
-    periodoMes: number; // 1..12
-    tamanoBloqueHoras?: number; // fallback si no hay estimación
+    periodoMes: number;
+    tamanoBloqueMinutos?: number;
+    paisFestivos?: string;
+    incluirPublicadasEnAgenda?: boolean;
   }): Promise<number> {
-    const { conjuntoId, periodoAnio, periodoMes } = params;
-    const tamanoBloqueHoras = params.tamanoBloqueHoras ?? 1;
+    const {
+      conjuntoId,
+      periodoAnio,
+      periodoMes,
+      tamanoBloqueMinutos = 60,
+      paisFestivos = "CO",
+      incluirPublicadasEnAgenda = true,
+    } = params;
 
-    // 1) Definiciones preventivas activas del conjunto
+    // 1) Definiciones activas, prioridad asc (1 primero)
     const defs = await this.prisma.definicionTareaPreventiva.findMany({
       where: { conjuntoId, activo: true },
-      include: {
-        operarios: true,
-        supervisor: true,
-        insumoPrincipal: true,
-      },
+      include: { operarios: true, supervisor: true, insumoPrincipal: true },
       orderBy: [{ prioridad: "asc" }, { id: "asc" }],
     });
     if (defs.length === 0) return 0;
 
-    // 2) Horarios del conjunto por día de semana
-    type HorarioDia = { start: number; end: number };
+    // 2) Horarios del conjunto (minutos)
+    type HorarioDia = {
+      startMin: number;
+      endMin: number;
+      descansoStartMin?: number;
+      descansoEndMin?: number;
+    };
     const horarios = await this.prisma.conjuntoHorario.findMany({
       where: { conjuntoId },
     });
+
     const horariosPorDia = new Map<DiaSemana, HorarioDia>();
+    const toMin = (hhmm: HHmm) => {
+      const [hh, mm] = hhmm.split(":").map(Number);
+      return hh * 60 + (mm || 0);
+    };
+
     for (const h of horarios) {
-      const [hA] = (h.horaApertura as HHmm).split(":").map(Number);
-      const [hC] = (h.horaCierre as HHmm).split(":").map(Number);
-      horariosPorDia.set(h.dia, { start: hA, end: hC });
+      horariosPorDia.set(h.dia, {
+        startMin: toMin(h.horaApertura as HHmm),
+        endMin: toMin(h.horaCierre as HHmm),
+        descansoStartMin: h.descansoInicio
+          ? toMin(h.descansoInicio as HHmm)
+          : undefined,
+        descansoEndMin: h.descansoFin
+          ? toMin(h.descansoFin as HHmm)
+          : undefined,
+      });
     }
 
-    // 3) Limpiar borradores previos del mismo periodo (solo borrador)
+    // 3) Rango mes
+    const month0 = periodoMes - 1;
+    const inicioMes = new Date(periodoAnio, month0, 1, 0, 0, 0, 0);
+    const finMes = new Date(periodoAnio, month0 + 1, 0, 23, 59, 59, 999);
+    const fechasDelMes = enumerateDays(inicioMes, finMes);
+
+    // 4) Festivos
+    const festivosSet = await getFestivosSet({
+      prisma: this.prisma,
+      pais: paisFestivos,
+      inicio: inicioMes,
+      fin: finMes,
+    });
+
+    // 5) Limpiar borradores del periodo
     await this.prisma.tarea.deleteMany({
       where: {
         conjuntoId,
@@ -869,22 +887,28 @@ export class DefinicionTareaPreventivaService {
       },
     });
 
-    // 4) Rango de fechas del mes (1..último día)
-    const month0 = periodoMes - 1;
-    const inicioMes = new Date(periodoAnio, month0, 1, 0, 0, 0, 0);
-    const finMes = new Date(periodoAnio, month0 + 1, 0, 23, 59, 59, 999);
-    const fechasDelMes = enumerateDays(inicioMes, finMes);
+    // 6) Límite semanal legal (minutos)
+    const limiteMinSemana = await getLimiteMinSemanaPorConjunto(
+      this.prisma,
+      conjuntoId
+    );
 
-    const ymd = (d: Date) => d.toISOString().slice(0, 10);
     let creadas = 0;
-    const siguienteHoraPorDiaYOperario: Record<
-      string,
-      Record<string, number>
-    > = {};
 
-    // 5) Recorrer cada definición preventiva
     for (const def of defs) {
-      // Tareas YA PUBLICADAS para esta definición en el mes (no tocar esos días)
+      const diasPlan = pickDaysByFrecuencia(fechasDelMes, def);
+      if (!diasPlan.length) continue;
+
+      // excluir festivos y días sin horario
+      const diasFiltrados = diasPlan.filter((d) => {
+        const key = ymdLocal(d);
+        if (festivosSet.has(key)) return false;
+        const ds = dateToDiaSemana(d);
+        return horariosPorDia.has(ds);
+      });
+      if (!diasFiltrados.length) continue;
+
+      // excluir días ya publicados (no duplicar)
       const publicadas = await this.prisma.tarea.findMany({
         where: {
           conjuntoId,
@@ -899,84 +923,124 @@ export class DefinicionTareaPreventivaService {
         select: { fechaInicio: true },
       });
 
-      const diasYaPublicados = new Set<string>(
-        publicadas.map((t) => ymd(t.fechaInicio))
+      const diasYaPublicados = new Set(
+        publicadas.map((t) => ymdLocal(t.fechaInicio))
       );
 
-      // Días planificados según frecuencia
-      const diasPlan = pickDaysByFrecuencia(fechasDelMes, def.frecuencia);
-      if (diasPlan.length === 0) continue;
-
-      // Días en los que SÍ vamos a generar (no duplicar publicados)
-      const diasParaGenerar = diasPlan.filter(
-        (d) => !diasYaPublicados.has(ymd(d))
+      const diasParaGenerar = diasFiltrados.filter(
+        (d) => !diasYaPublicados.has(ymdLocal(d))
       );
-      if (diasParaGenerar.length === 0) continue;
+      if (!diasParaGenerar.length) continue;
 
-      // Horas estimadas a partir de área/rendimiento o duración fija
-      const horasEstimadasFloat =
-        calcularHorasEstimadas({
-          areaNumerica: def.areaNumerica ? Number(def.areaNumerica) : undefined,
-          rendimientoBase: def.rendimientoBase
-            ? Number(def.rendimientoBase)
-            : undefined,
-          duracionHorasFija: def.duracionHorasFija ?? undefined,
+      // ===== DURACIÓN (minutos) =====
+      // duracionMinutosFija (int) tiene prioridad si existe
+      const duracionMinutosFija: number | null =
+        (def as any).duracionMinutosFija ?? null;
+
+      // rendimientoTiempoBase: 'POR_MINUTO' | 'MIN_POR_UNIDAD' | 'POR_HORA'
+      const rendimientoTiempoBase =
+        ((def as any).rendimientoTiempoBase as
+          | "POR_MINUTO"
+          | "POR_HORA"
+          | undefined) ?? "POR_HORA";
+
+      const cantidad =
+        def.areaNumerica != null ? Number(def.areaNumerica) : undefined;
+
+      const rendimiento =
+        def.rendimientoBase != null ? Number(def.rendimientoBase) : undefined;
+
+      const minutosEstimados =
+        calcularMinutosEstimados({
+          cantidad,
+          rendimiento,
+          duracionMinutosFija: duracionMinutosFija ?? undefined,
+          rendimientoTiempoBase,
         }) ?? 0;
 
-      const duracionBloque = Math.max(
+      const duracionMin = Math.max(
         1,
-        Math.round(
-          horasEstimadasFloat > 0 ? horasEstimadasFloat : tamanoBloqueHoras
-        )
+        minutosEstimados > 0 ? minutosEstimados : tamanoBloqueMinutos
       );
 
-      // TODOS los operarios definidos en la preventiva
-      const operariosIds = def.operarios.map((o) => o.id); // string[]
+      const operariosIds = def.operarios.map((o) => o.id);
 
-      // 6) Generar tareas por cada día aplicable
       for (const diaFecha of diasParaGenerar) {
         const diaSemana = dateToDiaSemana(diaFecha);
         const horario = horariosPorDia.get(diaSemana);
         if (!horario) continue;
 
-        const { start, end } = horario;
+        const { startMin, endMin } = horario;
 
-        // si la duración ni siquiera cabe en la jornada, saltamos
-        if (start + duracionBloque > end) continue;
+        // si no cabe en la jornada, no la programas (por ahora)
+        if (startMin + duracionMin > endMin) {
+          // tip: si luego quieres, aquí es donde se implementa "partir en bloques" automático
+          continue;
+        }
 
-        const diaKey = ymd(diaFecha);
-        const mapaOperarios = (siguienteHoraPorDiaYOperario[diaKey] ??=
-          {} as Record<string, number>);
-
-        // Si no hay operarios definidos en la preventiva,
-        // la dejamos a la hora de apertura.
-        let horaInicioReal = start;
+        // buscar hueco común en el día
+        let inicioMinReal: number | null = startMin;
 
         if (operariosIds.length) {
-          // Para los operarios de esta tarea, buscamos la hora
-          // más tarde a la que todos estén libres ese día.
-          const horasSiguientes = operariosIds.map(
-            (id) => mapaOperarios[id] ?? start
-          );
-          horaInicioReal = Math.max(...horasSiguientes);
+          const agenda = await buildAgendaPorOperarioDia({
+            prisma: this.prisma,
+            conjuntoId,
+            fechaDia: diaFecha,
+            operariosIds,
+            incluirBorrador: true,
+            bloqueosGlobales: buildBloqueosPorDescanso(horario),
+          });
 
-          // si ya no cabe en la jornada, saltamos este día
-          if (horaInicioReal + duracionBloque > end) continue;
+          inicioMinReal = buscarHuecoDia({
+            startMin,
+            endMin,
+            durMin: duracionMin,
+            operariosIds,
+            agendaPorOperario: agenda,
+          });
+
+          if (inicioMinReal == null) continue;
         }
 
         const fechaInicio = new Date(diaFecha);
-        fechaInicio.setHours(horaInicioReal, 0, 0, 0);
+        fechaInicio.setHours(
+          Math.floor(inicioMinReal / 60),
+          inicioMinReal % 60,
+          0,
+          0
+        );
 
         const fechaFin = new Date(fechaInicio);
-        fechaFin.setHours(fechaInicio.getHours() + duracionBloque);
+        fechaFin.setMinutes(fechaFin.getMinutes() + duracionMin);
 
-        // Creamos la tarea
+        // validar límite semanal (minutos) antes de crear
+        if (operariosIds.length) {
+          let okSemana = true;
+          for (const opId of operariosIds) {
+            const minSemana = await minutosAsignadosEnSemana(
+              this.prisma,
+              conjuntoId,
+              opId,
+              fechaInicio,
+              incluirPublicadasEnAgenda
+            );
+            if (minSemana + duracionMin > limiteMinSemana) {
+              okSemana = false;
+              break;
+            }
+          }
+          if (!okSemana) continue;
+        }
+
         await this.prisma.tarea.create({
           data: {
             descripcion: def.descripcion,
             fechaInicio,
             fechaFin,
-            duracionHoras: duracionBloque,
+            duracionMinutos: duracionMin,
+
+            prioridad: (def as any).prioridad ?? 2,
+
             estado: EstadoTarea.ASIGNADA,
             tipo: TipoTarea.PREVENTIVA,
             frecuencia: def.frecuencia,
@@ -988,41 +1052,31 @@ export class DefinicionTareaPreventivaService {
             bloqueIndex: null,
             bloquesTotales: null,
 
-            supervisorId: def.supervisorId ?? null,
+            supervisorId: (def as any).supervisorId ?? null,
             ubicacionId: def.ubicacionId,
             elementoId: def.elementoId,
             conjuntoId,
 
-            tiempoEstimadoHoras: new Prisma.Decimal(duracionBloque),
-            insumoPrincipalId: def.insumoPrincipalId ?? null,
+            tiempoEstimadoMinutos: duracionMin,
+            insumoPrincipalId: (def as any).insumoPrincipalId ?? null,
             consumoPrincipalPorUnidad:
-              def.consumoPrincipalPorUnidad != null
-                ? new Prisma.Decimal(def.consumoPrincipalPorUnidad)
+              (def as any).consumoPrincipalPorUnidad != null
+                ? new Prisma.Decimal((def as any).consumoPrincipalPorUnidad)
                 : null,
             consumoTotalEstimado: null,
 
-            insumosPlanJson: def.insumosPlanJson
-              ? (def.insumosPlanJson as Prisma.InputJsonValue)
+            insumosPlanJson: (def as any).insumosPlanJson
+              ? ((def as any).insumosPlanJson as Prisma.InputJsonValue)
               : undefined,
-            maquinariaPlanJson: def.maquinariaPlanJson
-              ? (def.maquinariaPlanJson as Prisma.InputJsonValue)
+            maquinariaPlanJson: (def as any).maquinariaPlanJson
+              ? ((def as any).maquinariaPlanJson as Prisma.InputJsonValue)
               : undefined,
 
             operarios: operariosIds.length
-              ? {
-                  connect: operariosIds.map((id) => ({ id })),
-                }
+              ? { connect: operariosIds.map((id) => ({ id })) }
               : undefined,
           },
         });
-
-        // Actualizamos la "siguiente hora libre" de cada operario
-        if (operariosIds.length) {
-          const nuevaHoraLibre = horaInicioReal + duracionBloque;
-          for (const opId of operariosIds) {
-            mapaOperarios[opId] = nuevaHoraLibre;
-          }
-        }
 
         creadas++;
       }
@@ -1052,7 +1106,7 @@ export class DefinicionTareaPreventivaService {
       data: {
         fechaInicio: dto.fechaInicio ?? undefined,
         fechaFin: dto.fechaFin ?? undefined,
-        duracionHoras: dto.duracionHoras ?? undefined,
+        duracionMinutos: dto.duracionMinutos ?? undefined,
         operarios:
           dto.operariosIds !== undefined
             ? {
@@ -1071,16 +1125,21 @@ export class DefinicionTareaPreventivaService {
 
     if (dto.operariosIds?.length) {
       for (const opId of dto.operariosIds) {
-        const haySolape = await existeSolapeParaOperario(this.prisma, {
-          conjuntoId,
-          operarioId: opId,
-          fechaInicio: dto.fechaInicio,
-          fechaFin: dto.fechaFin,
-          soloBorrador: true,
+        const choque = await this.prisma.tarea.findFirst({
+          where: {
+            conjuntoId,
+            borrador: true,
+            tipo: TipoTarea.PREVENTIVA,
+            fechaInicio: { lt: dto.fechaFin },
+            fechaFin: { gt: dto.fechaInicio },
+            operarios: { some: { id: opId.toString() } },
+          },
+          select: { id: true },
         });
 
-        if (haySolape) {
-          throw new Error(`Solape de agenda con operario ${opId}`);
+        if (choque) {
+          const nombre = await getOperarioNombre(this.prisma, opId);
+          throw new Error(`Solape de agenda con ${nombre}`);
         }
       }
     }
@@ -1093,9 +1152,9 @@ export class DefinicionTareaPreventivaService {
         descripcion: dto.descripcion,
         fechaInicio: dto.fechaInicio,
         fechaFin: dto.fechaFin,
-        duracionHoras: Math.max(
+        duracionMinutos: Math.max(
           1,
-          Math.round((+dto.fechaFin - +dto.fechaInicio) / 3600000)
+          Math.round((+dto.fechaFin - +dto.fechaInicio) / 60000)
         ),
         estado: EstadoTarea.ASIGNADA,
         tipo: TipoTarea.PREVENTIVA,
@@ -1111,9 +1170,10 @@ export class DefinicionTareaPreventivaService {
         supervisorId:
           dto.supervisorId == null ? null : dto.supervisorId.toString(),
 
-        tiempoEstimadoHoras: dto.tiempoEstimadoHoras
-          ? new Prisma.Decimal(dto.tiempoEstimadoHoras)
-          : null,
+        tiempoEstimadoMinutos:
+          dto.tiempoEstimadoMinutos === undefined
+            ? null
+            : Math.max(0, Math.round(dto.tiempoEstimadoMinutos)),
 
         operarios: dto.operariosIds?.length
           ? {
@@ -1171,7 +1231,8 @@ export class DefinicionTareaPreventivaService {
         });
 
         if (haySolape) {
-          throw new Error(`Solape de agenda con operario ${opId}`);
+          const nombre = await getOperarioNombre(this.prisma, opId);
+          throw new Error(`Solape de agenda con operario ${nombre}`);
         }
       }
     }
@@ -1182,10 +1243,10 @@ export class DefinicionTareaPreventivaService {
         descripcion: dto.descripcion ?? undefined,
         fechaInicio,
         fechaFin,
-        duracionHoras:
-          dto.duracionHoras ??
+        duracionMinutos:
+          dto.duracionMinutos ??
           (fechaInicio && fechaFin
-            ? Math.max(1, Math.round((+fechaFin - +fechaInicio) / 3600000))
+            ? Math.max(1, Math.round((+fechaFin - +fechaInicio) / 60000))
             : undefined),
         ubicacionId: dto.ubicacionId ?? undefined,
         elementoId: dto.elementoId ?? undefined,
@@ -1195,12 +1256,13 @@ export class DefinicionTareaPreventivaService {
             : dto.supervisorId === null
             ? null
             : dto.supervisorId.toString(),
-        tiempoEstimadoHoras:
-          dto.tiempoEstimadoHoras === undefined
+        tiempoEstimadoMinutos:
+          dto.tiempoEstimadoMinutos === undefined
             ? undefined
-            : dto.tiempoEstimadoHoras === null
+            : dto.tiempoEstimadoMinutos === null
             ? null
-            : new Prisma.Decimal(dto.tiempoEstimadoHoras),
+            : Math.max(0, Math.round(dto.tiempoEstimadoMinutos)),
+
         operarios:
           dto.operariosIds === undefined
             ? undefined
@@ -1254,7 +1316,8 @@ export class DefinicionTareaPreventivaService {
 
 /* ============== Helpers de tiempo/agenda ============== */
 
-// Genera array de fechas (00:00) entre dos fechas inclusivas
+type Intervalo = { i: number; f: number };
+
 function enumerateDays(start: Date, end: Date): Date[] {
   const out: Date[] = [];
   const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
@@ -1264,6 +1327,17 @@ function enumerateDays(start: Date, end: Date): Date[] {
     cur.setDate(cur.getDate() + 1);
   }
   return out;
+}
+
+export function buildBloqueosPorDescanso(horario: HorarioDia): Bloqueo[] {
+  const ds = horario.descansoStartMin;
+  const df = horario.descansoEndMin;
+
+  if (ds == null || df == null) return [];
+
+  if (!(horario.startMin < ds && ds < df && df < horario.endMin)) return [];
+
+  return [{ startMin: ds, endMin: df, motivo: "DESCANSO" }];
 }
 
 function dateToDiaSemana(d: Date): DiaSemana {
@@ -1287,20 +1361,29 @@ function dateToDiaSemana(d: Date): DiaSemana {
   }
 }
 
-async function horasAsignadasEnSemana(
-  prisma: PrismaClient,
+function inicioSemana(fecha: Date): Date {
+  const d = new Date(fecha);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // lunes
+  return new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
+}
+
+async function minutosAsignadosEnSemana(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  conjuntoId: string,
   operarioId: string,
   fecha: Date,
-  incluirPublicadas: boolean = false
+  incluirPublicadas: boolean
 ): Promise<number> {
-  const inicio = inicioSemana(fecha);
-  const fin = new Date(inicio);
-  fin.setDate(inicio.getDate() + 6);
+  const ini = inicioSemana(fecha);
+  const fin = new Date(ini);
+  fin.setDate(ini.getDate() + 6);
 
   const where: any = {
+    conjuntoId,
     operarios: { some: { id: operarioId.toString() } },
     fechaInicio: { lte: fin },
-    fechaFin: { gte: inicio },
+    fechaFin: { gte: ini },
   };
 
   if (!incluirPublicadas) {
@@ -1309,20 +1392,20 @@ async function horasAsignadasEnSemana(
 
   const tareas = await prisma.tarea.findMany({
     where,
-    select: { duracionHoras: true },
+    select: { duracionMinutos: true },
   });
 
-  return tareas.reduce((acc, t) => acc + (t.duracionHoras ?? 0), 0);
+  return tareas.reduce((acc, t) => acc + (t.duracionMinutos ?? 0), 0);
 }
 
 async function existeSolapeParaOperario(
-  prisma: PrismaClient,
+  prisma: PrismaClient | Prisma.TransactionClient,
   params: {
     conjuntoId: string;
     operarioId: string | number;
     fechaInicio: Date;
     fechaFin: Date;
-    soloBorrador?: boolean; // default: true
+    soloBorrador?: boolean;
     excluirTareaId?: number;
   }
 ): Promise<boolean> {
@@ -1339,7 +1422,6 @@ async function existeSolapeParaOperario(
     conjuntoId,
     tipo: TipoTarea.PREVENTIVA,
     operarios: { some: { id: operarioId.toString() } },
-    // solape clásico: (inicioA < finB) && (finA > inicioB)
     fechaInicio: { lt: fechaFin },
     fechaFin: { gt: fechaInicio },
   };
@@ -1360,55 +1442,104 @@ async function existeSolapeParaOperario(
   return Boolean(overlap);
 }
 
-function inicioSemana(fecha: Date): Date {
-  const d = new Date(fecha);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // lunes
-  return new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
+async function getOperarioNombre(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  operarioId: string | number
+): Promise<string> {
+  const idStr = operarioId.toString();
+
+  const op = await prisma.operario.findUnique({
+    where: { id: idStr },
+    include: { usuario: true },
+  });
+
+  return op?.usuario?.nombre ?? `Operario ${idStr}`;
 }
 
-function inicioSemanaFn(fecha: Date): Date {
-  const d = new Date(fecha);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
-}
-
-// Selecciona días del mes según frecuencia
-function pickDaysByFrecuencia(days: Date[], f: Frecuencia): Date[] {
-  switch (f) {
+function pickDaysByFrecuencia(days: Date[], def: any): Date[] {
+  switch (def.frecuencia) {
     case Frecuencia.DIARIA:
       return days;
-    case Frecuencia.SEMANAL:
-      // todos los lunes
-      return days.filter((d) => d.getDay() === 1);
-    case Frecuencia.QUINCENAL:
-      // típicamente 1 y 16
-      return days.filter((d) => {
-        const dd = d.getDate();
-        return dd === 1 || dd === 16;
-      });
-    case Frecuencia.MENSUAL:
-      return days.filter((d) => d.getDate() === 1);
-    case Frecuencia.BIMESTRAL:
-      // meses pares, día 1
-      return days.filter(
-        (d) => (d.getMonth() + 1) % 2 === 0 && d.getDate() === 1
-      );
-    case Frecuencia.TRIMESTRAL:
-      // ene-abr-jul-oct, día 1
-      return days.filter(
-        (d) => d.getDate() === 1 && [0, 3, 6, 9].includes(d.getMonth())
-      );
-    case Frecuencia.SEMESTRAL:
-      // enero y julio, día 1
-      return days.filter(
-        (d) => d.getDate() === 1 && [0, 6].includes(d.getMonth())
-      );
-    case Frecuencia.ANUAL:
-      // 1 de enero
-      return days.filter((d) => d.getDate() === 1 && d.getMonth() === 0);
+
+    case Frecuencia.SEMANAL: {
+      const dia = def.diaSemanaProgramado ?? DiaSemana.LUNES;
+      const target = diaSemanaToJsDay(dia);
+      return days.filter((d) => d.getDay() === target);
+    }
+
+    case Frecuencia.MENSUAL: {
+      const dd = def.diaMesProgramado ?? 1;
+      return days.filter((d) => d.getDate() === dd);
+    }
+
     default:
       return days;
   }
+}
+
+function diaSemanaToJsDay(d: DiaSemana): number {
+  switch (d) {
+    case DiaSemana.DOMINGO:
+      return 0;
+    case DiaSemana.LUNES:
+      return 1;
+    case DiaSemana.MARTES:
+      return 2;
+    case DiaSemana.MIERCOLES:
+      return 3;
+    case DiaSemana.JUEVES:
+      return 4;
+    case DiaSemana.VIERNES:
+      return 5;
+    case DiaSemana.SABADO:
+      return 6;
+  }
+}
+
+function solapa(a: Intervalo, b: Intervalo) {
+  return a.i < b.f && b.i < a.f;
+}
+
+function mergeIntervalos(xs: Intervalo[]): Intervalo[] {
+  if (!xs.length) return [];
+  const sorted = [...xs].sort((a, b) => a.i - b.i);
+
+  const out: Intervalo[] = [sorted[0]];
+  for (let k = 1; k < sorted.length; k++) {
+    const last = out[out.length - 1];
+    const cur = sorted[k];
+
+    if (cur.i <= last.f) {
+      // solapa o pega => unir
+      last.f = Math.max(last.f, cur.f);
+    } else {
+      out.push({ ...cur });
+    }
+  }
+  return out;
+}
+
+
+/**
+ * ✅ Límite semanal (minutos) por conjunto:
+ * - si Conjunto.limiteHorasSemanaOverride existe -> usa ese
+ * - si no, usa Empresa.limiteHorasSemana de la empresa del conjunto
+ * - fallback: 42h
+ */
+async function getLimiteMinSemanaPorConjunto(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  conjuntoId: string
+): Promise<number> {
+  const conjunto = await prisma.conjunto.findUnique({
+    where: { nit: conjuntoId },
+    select: {
+      limiteHorasSemanaOverride: true,
+      empresa: { select: { limiteHorasSemana: true } },
+    },
+  });
+
+  const override = conjunto?.limiteHorasSemanaOverride;
+  if (override != null) return override * 60;
+
+  return (conjunto?.empresa?.limiteHorasSemana ?? 42) * 60;
 }

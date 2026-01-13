@@ -8,6 +8,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum RendimientoBaseTiempo {
+  POR_HORA
+  POR_MINUTO
+  MIN_POR_UNIDAD
+}
+
 enum CategoriaInsumo {
   LIMPIEZA
   JARDINERIA
@@ -26,6 +32,7 @@ enum Frecuencia {
 }
 
 enum UnidadCalculo {
+  M
   UNIDAD
   M2
   M3
@@ -90,6 +97,7 @@ enum EstadoTarea {
   PENDIENTE_APROBACION
   RECHAZADA
   NO_COMPLETADA
+  PENDIENTE_REPROGRAMACION
 }
 
 enum FondoPension {
@@ -335,15 +343,18 @@ model DefinicionTareaPreventiva {
   elemento    Elemento  @relation(fields: [elementoId], references: [id])
   elementoId  Int
 
-  descripcion String
-  frecuencia  Frecuencia
-  prioridad   Int        @default(5)
+  descripcion         String
+  frecuencia          Frecuencia
+  prioridad           Int        @default(2)
+  diaSemanaProgramado DiaSemana?
+  diaMesProgramado    Int?
 
   // Duración planificada
-  unidadCalculo     UnidadCalculo?
-  areaNumerica      Decimal?       @db.Decimal(14, 4)
-  rendimientoBase   Decimal?       @db.Decimal(14, 4)
-  duracionHorasFija Int?
+  unidadCalculo         UnidadCalculo?
+  areaNumerica          Decimal?               @db.Decimal(14, 4)
+  rendimientoBase       Decimal?
+  rendimientoTiempoBase RendimientoBaseTiempo? @default(POR_HORA)
+  duracionMinutosFija   Int?
 
   // Recursos planeados
   insumoPrincipalId         Int?
@@ -381,7 +392,8 @@ model Tarea {
   fechaFin             DateTime
   fechaIniciarTarea    DateTime?
   fechaFinalizarTarea  DateTime?
-  duracionHoras        Int
+  duracionMinutos      Int
+  prioridad            Int         @default(2)
   estado               EstadoTarea @default(ASIGNADA)
   evidencias           String[]    @default([])
   insumosUsados        Json?
@@ -414,7 +426,7 @@ model Tarea {
   bloqueIndex    Int?
   bloquesTotales Int?
 
-  tiempoEstimadoHoras       Decimal?        @db.Decimal(14, 4)
+  tiempoEstimadoMinutos     Int?
   insumoPrincipalId         Int?
   insumoPrincipal           Insumo?         @relation(fields: [insumoPrincipalId], references: [id])
   consumoPrincipalPorUnidad Decimal?        @db.Decimal(14, 4)
@@ -467,6 +479,8 @@ model Conjunto {
 
   horarios                  ConjuntoHorario[]
   DefinicionTareaPreventiva DefinicionTareaPreventiva[]
+
+  limiteHorasSemanaOverride Int?
 }
 
 model ConjuntoHorario {
@@ -474,10 +488,13 @@ model ConjuntoHorario {
   conjunto     Conjunto  @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
   conjuntoId   String
   dia          DiaSemana
-  horaApertura String // "HH:mm" (24h)
-  horaCierre   String // "HH:mm" (24h)
+  horaApertura String
+  horaCierre   String
 
-  @@unique([conjuntoId, dia]) // un registro por día
+  descansoInicio String? // "HH:mm"
+  descansoFin    String? // "HH:mm"
+
+  @@unique([conjuntoId, dia])
 }
 
 model Ubicacion {
@@ -516,17 +533,17 @@ model Insumo {
   categoria  CategoriaInsumo
   umbralBajo Int?
 
-  inventarios         InventarioInsumo[]
-  consumos            ConsumoInsumo[]
-  consumosEmpresa     InsumoConsumoEmpresa[]
-  solicitudInsumoItem SolicitudInsumoItem[]
+  empresa   Empresa @relation(fields: [empresaId], references: [nit])
+  empresaId String
 
-  empresa   Empresa? @relation(fields: [empresaId], references: [nit])
-  empresaId String?
+  inventarios                InventarioInsumo[]
+  consumos                   ConsumoInsumo[]
+  consumosEmpresa            InsumoConsumoEmpresa[]
+  solicitudInsumoItem        SolicitudInsumoItem[]
+  definicionTareaPreventivas DefinicionTareaPreventiva[]
+  tareas                     Tarea[]
 
-  Tarea                     Tarea[]
-  DefinicionTareaPreventiva DefinicionTareaPreventiva[]
-
+  @@unique([empresaId, nombre, unidad])
   @@map("Insumo")
 }
 
@@ -549,7 +566,7 @@ model InventarioInsumo {
   insumo   Insumo @relation(fields: [insumoId], references: [id])
   insumoId Int
 
-  cantidad     Int
+  cantidad     Decimal
   umbralMinimo Int?
 
   @@unique([inventarioId, insumoId])
@@ -570,7 +587,7 @@ model ConsumoInsumo {
   tarea   Tarea? @relation(fields: [tareaId], references: [id])
   tareaId Int?
 
-  cantidad    Int
+  cantidad    Decimal
   fecha       DateTime
   observacion String?
 
@@ -763,6 +780,14 @@ model RendimientoAplicado {
 
   @@index([tareaId])
   @@index([rendimientoId])
+}
+
+model Festivo {
+  id       Int      @id @default(autoincrement())
+  fecha    DateTime @unique
+  nombre   String?
+  pais     String   @default("CO")
+  creadoEn DateTime @default(now())
 }
 
 generator erd {

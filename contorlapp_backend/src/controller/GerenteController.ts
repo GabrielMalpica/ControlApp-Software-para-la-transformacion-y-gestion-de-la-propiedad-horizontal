@@ -320,6 +320,36 @@ export class GerenteController {
     }
   };
 
+  asignarTareaConReemplazo: RequestHandler = async (req, res, next) => {
+    try {
+      const result = await this.service.asignarTareaConReemplazo(req.body);
+      res.status(200).json(result);
+      return;
+    } catch (err: any) {
+      const msg = err?.message ?? "ERROR_DESCONOCIDO";
+
+      if (
+        msg.includes("Solo aplica") ||
+        msg.includes("conjuntoId requerido") ||
+        msg.includes("no existen") ||
+        msg.includes("NO se permite reemplazar") ||
+        msg.includes("no se solapa")
+      ) {
+        res.status(400).json({ error: msg });
+        return;
+      }
+
+      if (msg.includes("SOLAPE") || msg.includes("HAY_SOLAPE")) {
+        res.status(409).json({ error: msg });
+        return;
+      }
+
+      console.error("asignarTareaConReemplazo error:", err);
+      res.status(500).json({ error: msg });
+      return;
+    }
+  };
+
   editarTarea: RequestHandler = async (req, res, next) => {
     try {
       const { tareaId } = TareaIdParam.parse(req.params);

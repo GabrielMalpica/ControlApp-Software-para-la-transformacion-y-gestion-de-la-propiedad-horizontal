@@ -49,3 +49,4 @@ export function toEmpresaPublica<
 >(row: T): EmpresaPublica {
   return row as unknown as EmpresaPublica;
 }
+

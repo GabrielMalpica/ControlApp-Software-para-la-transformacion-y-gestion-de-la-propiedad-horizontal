@@ -7,6 +7,9 @@ const controller = new EmpresaController();
 
 // Empresa
 router.post("/", controller.crearEmpresa);
+router.get("/:nit/limite-min-semana", controller.getLimiteMinSemanaPorConjunto);
+router.get("/festivos", controller.listarFestivos);
+router.put("/festivos/rango", controller.reemplazarFestivosEnRango);
 
 // Maquinaria
 router.post("/:nit/maquinaria", controller.agregarMaquinaria);

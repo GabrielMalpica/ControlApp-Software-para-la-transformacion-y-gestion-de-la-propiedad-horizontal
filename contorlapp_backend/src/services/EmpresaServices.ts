@@ -2,7 +2,6 @@
 import {
   PrismaClient,
   EstadoMaquinaria,
-  TipoMaquinaria,
   EstadoSolicitud,
 } from "../generated/prisma";
 import { z } from "zod";
@@ -42,8 +41,73 @@ const AgregarJefeOperacionesDTO = z.object({
 
 const IdNumericoDTO = z.object({ id: z.number().int().positive() });
 
+const RangoDTO = z.object({
+  pais: z.string().min(2).default("CO"),
+  desde: z.string().min(10),
+  hasta: z.string().min(10),
+});
+
+const FestivosRangoDTO = RangoDTO.extend({
+  fechas: z.array(
+    z.object({
+      fecha: z.string().min(10),
+      nombre: z.string().optional().nullable(),
+    })
+  ),
+});
+
 export class EmpresaService {
-  constructor(private prisma: PrismaClient, private empresaId: string) {} // empresaId = NIT
+  private empresaNit: string;
+
+  constructor(private prisma: PrismaClient, empresaNit: string) {
+    this.empresaNit = empresaNit; // empresaNit = NIT (clave)
+  }
+
+  /* ===================== HELPERS ===================== */
+
+  /** Devuelve el límite legal/operativo semanal en HORAS para esta empresa */
+  async getLimiteHorasSemana(): Promise<number> {
+    const empresa = await this.prisma.empresa.findUnique({
+      where: { nit: this.empresaNit },
+      select: { limiteHorasSemana: true },
+    });
+    if (!empresa) throw new Error("Empresa no encontrada.");
+    return empresa.limiteHorasSemana;
+  }
+
+  /** Setter del límite semanal (HORAS) para esta empresa */
+  async setLimiteHorasSemana(payload: unknown) {
+    const { limiteHorasSemana } = SetLimiteHorasDTO.parse(payload);
+    await this.prisma.empresa.update({
+      where: { nit: this.empresaNit },
+      data: { limiteHorasSemana },
+    });
+  }
+
+  /**
+   * ✅ Límite semanal en MINUTOS aplicable a un conjunto:
+   * 1) Si el conjunto tiene override -> usarlo
+   * 2) Si no -> usa el de la empresa operadora
+   */
+  async getLimiteMinSemanaPorConjunto(conjuntoId: string): Promise<number> {
+    const conjunto = await this.prisma.conjunto.findUnique({
+      where: { nit: conjuntoId },
+      select: { empresaId: true, limiteHorasSemanaOverride: true },
+    });
+
+    const override = conjunto?.limiteHorasSemanaOverride;
+    if (override != null) return override * 60;
+
+    // si el conjunto cuelga de otra empresa, respetamos esa
+    const empresaNit = conjunto?.empresaId ?? this.empresaNit;
+
+    const empresa = await this.prisma.empresa.findUnique({
+      where: { nit: empresaNit },
+      select: { limiteHorasSemana: true },
+    });
+
+    return (empresa?.limiteHorasSemana ?? 42) * 60;
+  }
 
   /* ===================== EMPRESA ===================== */
 
@@ -52,6 +116,7 @@ export class EmpresaService {
 
     const existe = await this.prisma.empresa.findUnique({
       where: { nit: dto.nit },
+      select: { nit: true },
     });
     if (existe) throw new Error("Ya existe una empresa con este NIT.");
 
@@ -59,13 +124,13 @@ export class EmpresaService {
       data: {
         nombre: dto.nombre,
         nit: dto.nit,
-        limiteHorasSemana: dto.limiteHorasSemana ?? undefined,
+        limiteHorasSemana: dto.limiteHorasSemana ?? undefined, // si no viene, Prisma aplica default
       },
       select: empresaPublicSelect,
     });
 
-    // Si creas y además quieres operar con esa empresa, actualiza el NIT interno
-    this.empresaId = creada.nit;
+    // Si quieres operar con la empresa recién creada, sincroniza el service
+    this.empresaNit = creada.nit;
 
     return toEmpresaPublica(creada);
   }
@@ -73,20 +138,18 @@ export class EmpresaService {
   async editarEmpresa(payload: unknown) {
     const dto = EditarEmpresaDTO.parse(payload);
 
-    // Actualización parcial por NIT (clave operativa del service)
     const actualizada = await this.prisma.empresa.update({
-      where: { nit: this.empresaId },
+      where: { nit: this.empresaNit },
       data: {
         nombre: dto.nombre ?? undefined,
-        nit: dto.nit ?? undefined,
+        nit: dto.nit ?? undefined, // si permites cambiarlo
         limiteHorasSemana: dto.limiteHorasSemana ?? undefined,
       },
       select: empresaPublicSelect,
     });
 
-    // Si cambiaste el NIT, mantén el service sincronizado
-    if (dto.nit && dto.nit !== this.empresaId) {
-      this.empresaId = dto.nit;
+    if (dto.nit && dto.nit !== this.empresaNit) {
+      this.empresaNit = dto.nit;
     }
 
     return toEmpresaPublica(actualizada);
@@ -94,28 +157,55 @@ export class EmpresaService {
 
   async getEmpresa() {
     const empresa = await this.prisma.empresa.findUnique({
-      where: { nit: this.empresaId },
+      where: { nit: this.empresaNit },
       select: empresaPublicSelect,
     });
     if (!empresa) throw new Error("Empresa no encontrada.");
     return toEmpresaPublica(empresa);
   }
 
-  async getLimiteHorasSemana(): Promise<number> {
-    const empresa = await this.prisma.empresa.findUnique({
-      where: { nit: this.empresaId },
-      select: { limiteHorasSemana: true },
-    });
-    if (!empresa) throw new Error("Empresa no encontrada.");
-    return empresa.limiteHorasSemana;
+  startOfDayLocal(dateStr: string) {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    return new Date(y, m - 1, d, 0, 0, 0, 0);
   }
 
-  async setLimiteHorasSemana(payload: unknown) {
-    const { limiteHorasSemana } = SetLimiteHorasDTO.parse(payload);
-    await this.prisma.empresa.update({
-      where: { nit: this.empresaId },
-      data: { limiteHorasSemana },
+  async listarFestivos(desde: string, hasta: string, pais = "CO") {
+    const d1 = this.startOfDayLocal(desde);
+    const d2 = this.startOfDayLocal(hasta);
+    // hasta inclusive -> sumas 1 día para usar lt
+    const d2Next = new Date(d2.getTime() + 24 * 60 * 60 * 1000);
+
+    return this.prisma.festivo.findMany({
+      where: { pais, fecha: { gte: d1, lt: d2Next } },
+      orderBy: { fecha: "asc" },
     });
+  }
+
+  async reemplazarFestivosEnRango(payload: unknown) {
+    const dto = FestivosRangoDTO.parse(payload);
+
+    const d1 = this.startOfDayLocal(dto.desde);
+    const d2 = this.startOfDayLocal(dto.hasta);
+    const d2Next = new Date(d2.getTime() + 24 * 60 * 60 * 1000);
+
+    // 1) borrar rango
+    await this.prisma.festivo.deleteMany({
+      where: { pais: dto.pais, fecha: { gte: d1, lt: d2Next } },
+    });
+
+    // 2) crear set nuevo (normalizado)
+    if (dto.fechas.length) {
+      await this.prisma.festivo.createMany({
+        data: dto.fechas.map((f) => ({
+          pais: dto.pais,
+          fecha: this.startOfDayLocal(f.fecha),
+          nombre: f.nombre ?? null,
+        })),
+        skipDuplicates: true, // por si acaso
+      });
+    }
+
+    return { ok: true, total: dto.fechas.length };
   }
 
   /* ===================== MAQUINARIA ===================== */
@@ -131,7 +221,7 @@ export class EmpresaService {
           tipo: base.tipo,
           estado: base.estado ?? EstadoMaquinaria.OPERATIVA,
           disponible: base.disponible ?? true,
-          empresaId: this.empresaId,
+          empresaId: this.empresaNit,
           conjuntoId: base.conjuntoId ?? null,
           operarioId:
             base.operarioId != null ? base.operarioId.toString() : null,
@@ -150,14 +240,12 @@ export class EmpresaService {
   async editarMaquinaria(id: number, payload: unknown) {
     const dto = EditarMaquinariaDTO.parse(payload);
 
-    // validar que pertenezca a esta empresa
     const existente = await this.prisma.maquinaria.findFirst({
-      where: { id, empresaId: this.empresaId },
+      where: { id, empresaId: this.empresaNit },
       select: { id: true },
     });
-    if (!existente) {
+    if (!existente)
       throw new Error("Maquinaria no encontrada para esta empresa.");
-    }
 
     const actualizada = await this.prisma.maquinaria.update({
       where: { id },
@@ -190,16 +278,13 @@ export class EmpresaService {
 
   async eliminarMaquinaria(id: number) {
     const existente = await this.prisma.maquinaria.findFirst({
-      where: { id, empresaId: this.empresaId },
+      where: { id, empresaId: this.empresaNit },
       select: { id: true },
     });
-    if (!existente) {
+    if (!existente)
       throw new Error("Maquinaria no encontrada para esta empresa.");
-    }
 
-    await this.prisma.maquinaria.delete({
-      where: { id },
-    });
+    await this.prisma.maquinaria.delete({ where: { id } });
   }
 
   async listarMaquinariaCatalogo(payloadFiltro?: unknown) {
@@ -209,7 +294,7 @@ export class EmpresaService {
 
     const items = await this.prisma.maquinaria.findMany({
       where: {
-        empresaId: filtro.empresaId ?? this.empresaId,
+        empresaId: filtro.empresaId ?? this.empresaNit,
         conjuntoId: filtro.conjuntoId ?? undefined,
         estado: filtro.estado ?? undefined,
         disponible: filtro.disponible ?? undefined,
@@ -227,21 +312,8 @@ export class EmpresaService {
         empresaId: true,
         fechaPrestamo: true,
         fechaDevolucionEstimada: true,
-
-        asignadaA: {
-          select: {
-            nombre: true,
-          },
-        },
-        responsable: {
-          select: {
-            usuario: {
-              select: {
-                nombre: true,
-              },
-            },
-          },
-        },
+        asignadaA: { select: { nombre: true } },
+        responsable: { select: { usuario: { select: { nombre: true } } } },
       },
       orderBy: { nombre: "asc" },
     });
@@ -258,8 +330,6 @@ export class EmpresaService {
       empresaId: m.empresaId,
       fechaPrestamo: m.fechaPrestamo,
       fechaDevolucionEstimada: m.fechaDevolucionEstimada,
-
-      // 👇 estos dos son nuevos, para el frontend
       conjuntoNombre: m.asignadaA?.nombre ?? null,
       operarioNombre: m.responsable?.usuario?.nombre ?? null,
     }));
@@ -267,10 +337,7 @@ export class EmpresaService {
 
   async listarMaquinariaDisponible() {
     const items = await this.prisma.maquinaria.findMany({
-      where: {
-        empresaId: this.empresaId,
-        disponible: true,
-      },
+      where: { empresaId: this.empresaNit, disponible: true },
       select: maquinariaPublicSelect,
       orderBy: { nombre: "asc" },
     });
@@ -281,14 +348,11 @@ export class EmpresaService {
   async obtenerMaquinariaPrestada() {
     const maquinaria = await this.prisma.maquinaria.findMany({
       where: {
-        empresaId: this.empresaId,
+        empresaId: this.empresaNit,
         disponible: false,
         conjuntoId: { not: null },
       },
-      include: {
-        asignadaA: true,
-        responsable: { include: { usuario: true } },
-      },
+      include: { asignadaA: true, responsable: { include: { usuario: true } } },
     });
 
     return maquinaria.map((m) => ({
@@ -313,14 +377,14 @@ export class EmpresaService {
     const { usuarioId } = AgregarJefeOperacionesDTO.parse(payload);
 
     const existente = await this.prisma.jefeOperaciones.findFirst({
-      where: { id: usuarioId.toString(), empresaId: this.empresaId },
+      where: { id: usuarioId.toString(), empresaId: this.empresaNit },
     });
     if (existente)
       throw new Error("Este jefe ya está registrado en la empresa.");
 
-    // Debe existir el registro JefeOperaciones por el id (relación 1:1 con Usuario)
     const jefe = await this.prisma.jefeOperaciones.findUnique({
       where: { id: usuarioId.toString() },
+      select: { id: true },
     });
     if (!jefe)
       throw new Error(
@@ -329,7 +393,7 @@ export class EmpresaService {
 
     return this.prisma.jefeOperaciones.update({
       where: { id: usuarioId.toString() },
-      data: { empresaId: this.empresaId },
+      data: { empresaId: this.empresaNit },
     });
   }
 
@@ -339,7 +403,7 @@ export class EmpresaService {
     const { id } = IdNumericoDTO.parse(payload);
     return this.prisma.solicitudTarea.update({
       where: { id },
-      data: { empresaId: this.empresaId },
+      data: { empresaId: this.empresaNit },
     });
   }
 
@@ -350,7 +414,7 @@ export class EmpresaService {
 
   async solicitudesTareaPendientes() {
     return this.prisma.solicitudTarea.findMany({
-      where: { empresaId: this.empresaId, estado: EstadoSolicitud.PENDIENTE },
+      where: { empresaId: this.empresaNit, estado: EstadoSolicitud.PENDIENTE },
       include: { conjunto: true, ubicacion: true, elemento: true },
     });
   }
@@ -360,22 +424,20 @@ export class EmpresaService {
   async agregarInsumoAlCatalogo(payload: unknown) {
     const dto = CrearInsumoDTO.parse(payload);
 
-    // 1. Verificar que la empresa exista
     const empresa = await this.prisma.empresa.findUnique({
-      where: { nit: this.empresaId },
+      where: { nit: this.empresaNit },
       select: { nit: true },
     });
 
     if (!empresa) {
       throw new Error(
-        `La empresa con NIT ${this.empresaId} no existe. Debes crearla antes de agregar insumos al catálogo.`
+        `La empresa con NIT ${this.empresaNit} no existe. Debes crearla antes de agregar insumos al catálogo.`
       );
     }
 
-    // 2. Validar duplicado
     const existe = await this.prisma.insumo.findFirst({
       where: {
-        empresaId: this.empresaId,
+        empresaId: this.empresaNit,
         nombre: dto.nombre,
         unidad: dto.unidad,
       },
@@ -387,14 +449,13 @@ export class EmpresaService {
       );
     }
 
-    // 3. Crear insumo ligado a la empresa
     const creado = await this.prisma.insumo.create({
       data: {
         nombre: dto.nombre,
         unidad: dto.unidad,
         categoria: dto.categoria,
         umbralBajo: dto.umbralBajo ?? null,
-        empresaId: this.empresaId,
+        empresaId: this.empresaNit,
       },
       select: insumoPublicSelect,
     });
@@ -407,7 +468,7 @@ export class EmpresaService {
 
     const insumos = await this.prisma.insumo.findMany({
       where: {
-        empresaId: filtro.empresaId ?? this.empresaId,
+        empresaId: filtro.empresaId ?? this.empresaNit,
         categoria: filtro.categoria ?? undefined,
         nombre: filtro.nombre
           ? { contains: filtro.nombre, mode: "insensitive" }
@@ -424,7 +485,7 @@ export class EmpresaService {
     const { id } = IdNumericoDTO.parse(payload);
 
     const insumo = await this.prisma.insumo.findFirst({
-      where: { id, empresaId: this.empresaId },
+      where: { id, empresaId: this.empresaNit },
       select: insumoPublicSelect,
     });
 
@@ -434,14 +495,11 @@ export class EmpresaService {
   async editarInsumoCatalogo(id: number, payload: unknown) {
     const dto = EditarInsumoDTO.parse(payload);
 
-    // validar que el insumo pertenezca a esta empresa
     const existente = await this.prisma.insumo.findFirst({
-      where: { id, empresaId: this.empresaId },
+      where: { id, empresaId: this.empresaNit },
       select: { id: true },
     });
-    if (!existente) {
-      throw new Error("Insumo no encontrado para esta empresa.");
-    }
+    if (!existente) throw new Error("Insumo no encontrado para esta empresa.");
 
     const actualizado = await this.prisma.insumo.update({
       where: { id },
@@ -450,7 +508,7 @@ export class EmpresaService {
         unidad: dto.unidad ?? undefined,
         categoria: dto.categoria ?? undefined,
         umbralBajo: dto.umbralBajo ?? undefined,
-        empresaId: dto.empresaId ?? undefined, // normalmente no lo cambiarás
+        empresaId: dto.empresaId ?? undefined,
       },
       select: insumoPublicSelect,
     });
@@ -460,15 +518,11 @@ export class EmpresaService {
 
   async eliminarInsumoCatalogo(id: number) {
     const existente = await this.prisma.insumo.findFirst({
-      where: { id, empresaId: this.empresaId },
+      where: { id, empresaId: this.empresaNit },
       select: { id: true },
     });
-    if (!existente) {
-      throw new Error("Insumo no encontrado para esta empresa.");
-    }
+    if (!existente) throw new Error("Insumo no encontrado para esta empresa.");
 
-    await this.prisma.insumo.delete({
-      where: { id },
-    });
+    await this.prisma.insumo.delete({ where: { id } });
   }
 }

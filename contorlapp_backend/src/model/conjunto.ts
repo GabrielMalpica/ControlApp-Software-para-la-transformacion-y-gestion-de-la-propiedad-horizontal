@@ -10,11 +10,57 @@ export const HorarioDTO = z
       .string()
       .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:mm"),
     horaCierre: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:mm"),
+
+    descansoInicio: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:mm")
+      .optional()
+      .nullable(),
+
+    descansoFin: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:mm")
+      .optional()
+      .nullable(),
   })
   .refine(({ horaApertura, horaCierre }) => horaApertura < horaCierre, {
     message: "horaApertura debe ser menor que horaCierre",
     path: ["horaCierre"],
-  });
+  })
+  .refine(
+    (d) => {
+      // si uno viene, el otro también
+      if (
+        (d.descansoInicio && !d.descansoFin) ||
+        (!d.descansoInicio && d.descansoFin)
+      ) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message:
+        "Si defines descanso, debes enviar descansoInicio y descansoFin.",
+      path: ["descansoInicio"],
+    }
+  )
+  .refine(
+    (d) => {
+      if (!d.descansoInicio || !d.descansoFin) return true;
+
+      // apertura < descansoInicio < descansoFin < cierre
+      return (
+        d.horaApertura < d.descansoInicio &&
+        d.descansoInicio < d.descansoFin &&
+        d.descansoFin < d.horaCierre
+      );
+    },
+    {
+      message:
+        "Descanso debe estar dentro de la jornada: apertura < descansoInicio < descansoFin < cierre.",
+      path: ["descansoInicio"],
+    }
+  );
 
 /** Dominio base alineado a Prisma */
 export interface ConjuntoDominio {
@@ -36,7 +82,13 @@ export interface ConjuntoDominio {
 
 /** Público: igual que dominio + (opcional) horarios */
 export type ConjuntoPublico = ConjuntoDominio & {
-  horarios?: { dia: DiaSemana; horaApertura: string; horaCierre: string }[];
+  horarios?: {
+    dia: DiaSemana;
+    horaApertura: string;
+    horaCierre: string;
+    descansoInicio?: string | null;
+    descansoFin?: string | null;
+  }[];
 };
 
 /* ===================== DTOs ===================== */
@@ -112,6 +164,16 @@ export const conjuntoPublicSelect = {
   valorMensual: true,
   consignasEspeciales: true,
   valorAgregado: true,
+
+  horarios: {
+    select: {
+      dia: true,
+      horaApertura: true,
+      horaCierre: true,
+      descansoInicio: true,
+      descansoFin: true,
+    },
+  },
 } as const;
 
 export function toConjuntoPublico<

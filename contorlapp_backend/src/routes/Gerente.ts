@@ -42,6 +42,7 @@ router.post("/maquinaria/entregar", ctrl.entregarMaquinariaAConjunto); // si pre
 
 /* Tareas */
 router.post("/tareas", ctrl.asignarTarea);
+router.post("/tareas/reemplazo", ctrl.asignarTareaConReemplazo);
 router.patch("/tareas/:tareaId", ctrl.editarTarea);
 router.get("/conjuntos/:conjuntoId/tareas", ctrl.listarTareasPorConjunto);
 

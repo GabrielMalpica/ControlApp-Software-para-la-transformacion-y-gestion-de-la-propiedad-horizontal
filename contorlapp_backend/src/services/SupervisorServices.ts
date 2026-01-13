@@ -77,7 +77,7 @@ export class SupervisorService {
         conjunto: { connect: { nit: tarea.ubicacion!.conjunto.nit } },
         ubicacion: { connect: { id: tarea.ubicacionId! } },
         elemento: { connect: { id: tarea.elementoId! } },
-        duracionHoras: tarea.duracionHoras,
+        duracionHoras: tarea.duracionMinutos,
         estado: "PENDIENTE",
       },
     });

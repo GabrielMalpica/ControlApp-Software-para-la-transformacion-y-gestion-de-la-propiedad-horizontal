@@ -41,6 +41,45 @@ export class EmpresaController {
     }
   };
 
+  getLimiteMinSemanaPorConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const empresaId = resolveEmpresaId(req);
+      const { nit } = req.params;
+
+      const service = new EmpresaService(this.prisma, empresaId);
+      const out = await service.getLimiteMinSemanaPorConjunto(nit);
+
+      res.status(200).json({ limiteMinSemana: out });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  listarFestivos: RequestHandler = async (req, res, next) => {
+    try {
+      const empresaId = resolveEmpresaId(req);
+      const service = new EmpresaService(this.prisma, empresaId);
+
+      const { desde, hasta, pais } = req.query as any;
+      const out = await service.listarFestivos(desde, hasta, pais ?? "CO");
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  reemplazarFestivosEnRango: RequestHandler = async (req, res, next) => {
+    try {
+      const empresaId = resolveEmpresaId(req);
+      const service = new EmpresaService(this.prisma, empresaId);
+
+      const out = await service.reemplazarFestivosEnRango(req.body);
+      res.status(200).json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   agregarMaquinaria: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);

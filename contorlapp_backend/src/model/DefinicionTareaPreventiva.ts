@@ -1,6 +1,6 @@
 // src/model/DefinicionTareaPreventiva.ts
 import { z } from "zod";
-import { Frecuencia, UnidadCalculo } from "../generated/prisma";
+import { DiaSemana, Frecuencia, UnidadCalculo } from "../generated/prisma";
 
 /** Dominio base 1:1 (aprox) con Prisma */
 export interface DefinicionTareaPreventivaDominio {
@@ -14,34 +14,30 @@ export interface DefinicionTareaPreventivaDominio {
   frecuencia: Frecuencia;
   prioridad: number;
 
-  // En Prisma son Decimal; aquí los exponemos como number
   unidadCalculo?: UnidadCalculo | null;
   areaNumerica?: number | null;
   rendimientoBase?: number | null;
 
-  duracionHorasFija?: number | null;
+  duracionMinutosFija?: number | null;
 
   insumoPrincipalId?: number | null;
   consumoPrincipalPorUnidad?: number | null;
 
-  // Json en Prisma; aquí definimos una forma simple y validable
   insumosPlanJson?:
     | {
         insumoId: number;
-        consumoPorUnidad: number; // por unidadCalculo (ej. litros por m2)
+        consumoPorUnidad: number;
       }[]
     | null;
 
   maquinariaPlanJson?:
     | {
-        maquinariaId?: number; // si apuntas a una máquina particular
-        tipo?: string; // o un tipo genérico si no hay id
-        cantidad?: number; // opcional (por bloque o por día)
+        maquinariaId?: number;
+        tipo?: string;
+        cantidad?: number;
       }[]
     | null;
 
-  // 🔹 OJO: este campo ya NO existe en Prisma,
-  // lo dejamos solo para compatibilidad lógica mientras migras a operarios[]
   responsableSugeridoId?: number | null;
 
   activo: boolean;
@@ -69,108 +65,105 @@ const MaquinariaPlanItemDTO = z.object({
 export const CrearDefinicionPreventivaDTO = z
   .object({
     conjuntoId: z.string().min(3),
-
     ubicacionId: z.number().int().positive(),
     elementoId: z.number().int().positive(),
 
     descripcion: z.string().min(3),
     frecuencia: z.nativeEnum(Frecuencia),
-    prioridad: z.number().int().min(1).max(9).default(5),
 
-    // A) cálculo por rendimiento/área (opcional)
+    prioridad: z.number().int().min(1).max(3).default(2),
+
+    // NUEVO: programación específica
+    diaSemanaProgramado: z.nativeEnum(DiaSemana).optional().nullable(),
+    diaMesProgramado: z.number().int().min(1).max(31).optional().nullable(),
+
+    // A) cálculo por rendimiento/área
     unidadCalculo: z.nativeEnum(UnidadCalculo).optional(),
     areaNumerica: z.coerce.number().min(0).optional(),
     rendimientoBase: z.coerce.number().min(0).optional(),
 
-    // B) duración fija (opcional)
-    duracionHorasFija: z.number().int().positive().optional(),
+    // B) duración fija en minutos (estándar)
+    duracionMinutosFija: z.number().int().min(1).optional(),
 
-    // Recursos planeados
+    // COMPAT (temporal): si aún mandan horas (decimal)
+    duracionHorasFija: z.coerce.number().positive().optional(),
+
     insumoPrincipalId: z.number().int().positive().optional(),
     consumoPrincipalPorUnidad: z.coerce.number().min(0).optional(),
 
     insumosPlanJson: z.array(InsumoPlanItemDTO).optional(),
     maquinariaPlanJson: z.array(MaquinariaPlanItemDTO).optional(),
 
-    // 🔹 Compatibilidad antigua: un solo responsable sugerido
     responsableSugeridoId: z.number().int().positive().optional(),
-
-    // 🔹 Nuevo: varios operarios sugeridos
     operariosIds: z.array(z.number().int().positive()).optional(),
 
-    // 🔹 Nuevo: supervisor de la definición
     supervisorId: z.number().int().positive().optional(),
 
     activo: z.boolean().default(true),
   })
   .refine(
     (d) => {
-      // Debe definirse o (área+rendimiento) o (duración fija)
       const tieneRendimiento =
         d.unidadCalculo &&
         d.areaNumerica !== undefined &&
         d.rendimientoBase !== undefined;
-      const tieneDuracionFija = d.duracionHorasFija !== undefined;
-      return tieneRendimiento || tieneDuracionFija;
+
+      const tieneDuracionMin = d.duracionMinutosFija !== undefined;
+      const tieneDuracionHoras = d.duracionHorasFija !== undefined;
+
+      return tieneRendimiento || tieneDuracionMin || tieneDuracionHoras;
     },
     {
       message:
-        "Debe indicar (unidadCalculo + areaNumerica + rendimientoBase) o duracionHorasFija.",
+        "Debe indicar (unidadCalculo + areaNumerica + rendimientoBase) o duracionMinutosFija (o duracionHorasFija compat).",
     }
+  )
+  .refine(
+    (d) => {
+      // Validación de coherencia por frecuencia:
+      if (d.frecuencia === Frecuencia.SEMANAL) {
+        // no obligo, pero recomendado
+        return true;
+      }
+      if (d.frecuencia === Frecuencia.MENSUAL) {
+        return true;
+      }
+      return true;
+    },
+    { message: "Frecuencia requiere campos de programación válidos." }
   );
 
 /** Editar definición preventiva (todo opcional) */
-export const EditarDefinicionPreventivaDTO = z
-  .object({
-    ubicacionId: z.number().int().positive().optional(),
-    elementoId: z.number().int().positive().optional(),
+export const EditarDefinicionPreventivaDTO = z.object({
+  ubicacionId: z.number().int().positive().optional(),
+  elementoId: z.number().int().positive().optional(),
 
-    descripcion: z.string().min(3).optional(),
-    frecuencia: z.nativeEnum(Frecuencia).optional(),
-    prioridad: z.number().int().min(1).max(9).optional(),
+  descripcion: z.string().min(3).optional(),
+  frecuencia: z.nativeEnum(Frecuencia).optional(),
+  prioridad: z.number().int().min(1).max(3).optional(),
 
-    unidadCalculo: z.nativeEnum(UnidadCalculo).optional().nullable(),
-    areaNumerica: z.coerce.number().min(0).optional().nullable(),
-    rendimientoBase: z.coerce.number().min(0).optional().nullable(),
+  diaSemanaProgramado: z.nativeEnum(DiaSemana).optional().nullable(),
+  diaMesProgramado: z.number().int().min(1).max(31).optional().nullable(),
 
-    duracionHorasFija: z.number().int().positive().optional().nullable(),
+  unidadCalculo: z.nativeEnum(UnidadCalculo).optional().nullable(),
+  areaNumerica: z.coerce.number().min(0).optional().nullable(),
+  rendimientoBase: z.coerce.number().min(0).optional().nullable(),
 
-    insumoPrincipalId: z.number().int().positive().optional().nullable(),
-    consumoPrincipalPorUnidad: z.coerce.number().min(0).optional().nullable(),
+  duracionMinutosFija: z.number().int().min(1).optional().nullable(),
+  duracionHorasFija: z.coerce.number().positive().optional().nullable(), // compat
 
-    insumosPlanJson: z.array(InsumoPlanItemDTO).optional().nullable(),
-    maquinariaPlanJson: z.array(MaquinariaPlanItemDTO).optional().nullable(),
+  insumoPrincipalId: z.number().int().positive().optional().nullable(),
+  consumoPrincipalPorUnidad: z.coerce.number().min(0).optional().nullable(),
 
-    // compat vieja
-    responsableSugeridoId: z.number().int().positive().optional().nullable(),
+  insumosPlanJson: z.array(InsumoPlanItemDTO).optional().nullable(),
+  maquinariaPlanJson: z.array(MaquinariaPlanItemDTO).optional().nullable(),
 
-    // nuevo
-    operariosIds: z.array(z.number().int().positive()).optional().nullable(),
+  responsableSugeridoId: z.number().int().positive().optional().nullable(),
+  operariosIds: z.array(z.number().int().positive()).optional().nullable(),
 
-    supervisorId: z.number().int().positive().optional().nullable(),
-
-    activo: z.boolean().optional(),
-  })
-  // Validación blanda: si setean uno de A, deben setear los otros (o limpiar todos y usar duración fija)
-  .refine(
-    (d) => {
-      const algunoA =
-        d.unidadCalculo !== undefined ||
-        d.areaNumerica !== undefined ||
-        d.rendimientoBase !== undefined;
-      if (!algunoA) return true;
-      // Si toca A, que vengan los tres (o null para limpiar)
-      const okA =
-        d.unidadCalculo !== undefined &&
-        d.areaNumerica !== undefined &&
-        d.rendimientoBase !== undefined;
-      return okA;
-    },
-    {
-      message:
-        "Si modifica cálculo por rendimiento, incluya unidadCalculo, areaNumerica y rendimientoBase.",
-    }
-  );
+  supervisorId: z.number().int().positive().optional().nullable(),
+  activo: z.boolean().optional(),
+});
 
 /** Filtro para listar/consultar definiciones */
 export const FiltroDefinicionPreventivaDTO = z.object({
@@ -185,8 +178,14 @@ export const FiltroDefinicionPreventivaDTO = z.object({
 export const GenerarCronogramaDTO = z.object({
   conjuntoId: z.string().min(3),
   anio: z.coerce.number().int().min(2000).max(2100),
-  mes: z.coerce.number().int().min(1).max(12), // 1..12
-  tamanoBloqueHoras: z.coerce.number().int().min(1).max(12).optional(), // default 1h
+  mes: z.coerce.number().int().min(1).max(12),
+  tamanoBloqueHoras: z.coerce.number().positive().max(12).optional(),
+  tamanoBloqueMinutos: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(12 * 60)
+    .optional(),
 });
 
 // Alias opcional por compatibilidad
@@ -237,15 +236,26 @@ export function toDefinicionTareaPreventivaPublica<
 /**
  * Calcula horas estimadas dado área y rendimiento.
  */
-export function calcularHorasEstimadas(params: {
-  areaNumerica?: number | null;
-  rendimientoBase?: number | null; // ej. 100 m2/h
-  duracionHorasFija?: number | null;
+export function calcularMinutosEstimados(params: {
+  cantidad?: number;                 // areaNumerica
+  rendimiento?: number;              // rendimientoBase
+  duracionMinutosFija?: number;
+  rendimientoTiempoBase?: "POR_MINUTO" | "POR_HORA";
 }): number | null {
-  if (params?.duracionHorasFija != null) return params.duracionHorasFija;
-  if (params?.areaNumerica != null && params?.rendimientoBase) {
-    if (params.rendimientoBase <= 0) return null;
-    return params.areaNumerica / params.rendimientoBase;
+  const { cantidad, rendimiento, duracionMinutosFija, rendimientoTiempoBase = "POR_HORA" } = params;
+
+  if (duracionMinutosFija != null) return Math.max(1, Math.round(duracionMinutosFija));
+
+  if (cantidad != null && rendimiento != null && rendimiento > 0) {
+    if (rendimientoTiempoBase === "POR_MINUTO") {
+      return Math.max(1, Math.round(cantidad / rendimiento));
+    }
+    // POR_HORA
+    const horas = cantidad / rendimiento;
+    return Math.max(1, Math.round(horas * 60));
   }
+
   return null;
 }
+
+

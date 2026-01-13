@@ -392,11 +392,11 @@ export class CronogramaService {
           fechaFin: { gte: lunes },
           fechaInicio: { lte: domingo },
         },
-        select: { fechaInicio: true, fechaFin: true, duracionHoras: true },
+        select: { fechaInicio: true, fechaFin: true, duracionMinutos: true },
       });
 
       const horas = tareasSemana.reduce(
-        (acc, t) => acc + (t.duracionHoras ?? 0),
+        (acc, t) => acc + (t.duracionMinutos ?? 0),
         0
       );
       const solapa = tareasSemana.some(
