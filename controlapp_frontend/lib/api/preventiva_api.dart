@@ -92,11 +92,17 @@ class DefinicionPreventivaApi {
     required int anio,
     required int mes,
     int? tamanoBloqueHoras,
+    int? tamanoBloqueMinutos,
   }) async {
     final body = <String, dynamic>{
+      'conjuntoId': nit,
       'anio': anio,
       'mes': mes,
       if (tamanoBloqueHoras != null) 'tamanoBloqueHoras': tamanoBloqueHoras,
+      if (tamanoBloqueMinutos != null)
+        'tamanoBloqueMinutos': tamanoBloqueMinutos,
+      if (tamanoBloqueMinutos == null && tamanoBloqueHoras != null)
+        'tamanoBloqueHoras': tamanoBloqueHoras,
     };
 
     final resp = await _client.post(

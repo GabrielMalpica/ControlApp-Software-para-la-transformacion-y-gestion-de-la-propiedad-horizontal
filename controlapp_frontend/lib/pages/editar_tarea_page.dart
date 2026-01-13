@@ -60,7 +60,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
   void _initFromTarea() {
     final t = widget.tarea;
     _descripcionCtrl.text = t.descripcion;
-    _duracionCtrl.text = t.duracionHoras.toString();
+    _duracionCtrl.text = t.duracionMinutos.toString();
     _observacionesCtrl.text = t.observaciones ?? '';
 
     fechaInicio = t.fechaInicio;
@@ -273,7 +273,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
         descripcion: _descripcionCtrl.text.trim(),
         fechaInicio: fechaInicio!,
         fechaFin: fechaFin!,
-        duracionHoras: duracion,
+        duracionMinutos: duracion,
         ubicacionId: _ubicacionSeleccionada!.id,
         elementoId: _elementoSeleccionado!.id,
         conjuntoId: conjunto.nit,
@@ -462,11 +462,16 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
                 controller: _duracionCtrl,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText: "Duración estimada (horas)",
+                  labelText: "Duración estimada (minutos)",
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Ingrese duración en horas' : null,
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty)
+                    return 'Ingrese duración en minutos';
+                  final m = int.tryParse(v.trim());
+                  if (m == null || m <= 0) return 'Minutos inválidos';
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
 

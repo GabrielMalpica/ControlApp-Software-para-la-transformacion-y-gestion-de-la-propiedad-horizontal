@@ -13,6 +13,15 @@ int? _toInt(dynamic v) {
   return int.tryParse(v.toString());
 }
 
+/// Convierte horas (double/int/string) a minutos (int)
+int? _horasToMin(dynamic v) {
+  if (v == null) return null;
+  final d = _toDouble(v);
+  if (d == null) return null;
+  final min = (d * 60).round();
+  return min > 0 ? min : null;
+}
+
 /* ===================== MODELOS ===================== */
 
 class InsumoPlanItem {
@@ -68,11 +77,15 @@ class DefinicionPreventiva {
   final String frecuencia;
   final int prioridad;
 
-  // Duración / cálculo
+  final String? diaSemanaProgramado;
+  final int? diaMesProgramado;
+
   final String? unidadCalculo;
   final double? areaNumerica;
   final double? rendimientoBase;
-  final int? duracionHorasFija;
+
+  final int? duracionMinutosFija;
+  final String? rendimientoTiempoBase;
 
   // Insumo principal
   final int? insumoPrincipalId;
@@ -100,10 +113,13 @@ class DefinicionPreventiva {
     required this.descripcion,
     required this.frecuencia,
     required this.prioridad,
+    this.diaSemanaProgramado,
+    this.diaMesProgramado,
     this.unidadCalculo,
     this.areaNumerica,
     this.rendimientoBase,
-    this.duracionHorasFija,
+    this.duracionMinutosFija,
+    this.rendimientoTiempoBase,
     this.insumoPrincipalId,
     this.consumoPrincipalPorUnidad,
     this.insumosPlan = const [],
@@ -118,7 +134,6 @@ class DefinicionPreventiva {
     final insumosJson = (json['insumosPlanJson'] as List?) ?? [];
     final maquinariaJson = (json['maquinariaPlanJson'] as List?) ?? [];
 
-    // 👇 soporta tanto "operariosIds" como "operarios"
     List<int> opIds = [];
     if (json['operariosIds'] != null) {
       opIds = (json['operariosIds'] as List)
@@ -132,6 +147,10 @@ class DefinicionPreventiva {
           .toList();
     }
 
+    final durMin =
+        _toInt(json['duracionMinutosFija']) ??
+        _horasToMin(json['duracionHorasFija']);
+
     return DefinicionPreventiva(
       id: _toInt(json['id']) ?? 0,
       conjuntoId: json['conjuntoId']?.toString() ?? '',
@@ -139,19 +158,27 @@ class DefinicionPreventiva {
       elementoId: _toInt(json['elementoId']) ?? 0,
       descripcion: json['descripcion']?.toString() ?? '',
       frecuencia: json['frecuencia']?.toString() ?? '',
-      prioridad: _toInt(json['prioridad']) ?? 5,
+      prioridad: _toInt(json['prioridad']) ?? 2,
+
+      // ✅ programación
+      diaSemanaProgramado: json['diaSemanaProgramado']?.toString(),
+      diaMesProgramado: _toInt(json['diaMesProgramado']),
+
       unidadCalculo: json['unidadCalculo']?.toString(),
       areaNumerica: _toDouble(json['areaNumerica']),
       rendimientoBase: _toDouble(json['rendimientoBase']),
-      duracionHorasFija: _toInt(json['duracionHorasFija']),
+      duracionMinutosFija: durMin,
+
       insumoPrincipalId: _toInt(json['insumoPrincipalId']),
       consumoPrincipalPorUnidad: _toDouble(json['consumoPrincipalPorUnidad']),
+
       insumosPlan: insumosJson
           .map((e) => InsumoPlanItem.fromJson(e as Map<String, dynamic>))
           .toList(),
       maquinariaPlan: maquinariaJson
           .map((e) => MaquinariaPlanItem.fromJson(e as Map<String, dynamic>))
           .toList(),
+
       operariosIds: opIds,
       responsableSugeridoId: _toInt(json['responsableSugeridoId']),
       supervisorId: _toInt(json['supervisorId']),
@@ -200,13 +227,24 @@ class DefinicionPreventivaRequest {
   final int ubicacionId;
   final int elementoId;
   final String descripcion;
+
   final String frecuencia;
   final int prioridad;
+
+  final String? diaSemanaProgramado;
+  final int? diaMesProgramado;
 
   final String? unidadCalculo;
   final double? areaNumerica;
   final double? rendimientoBase;
-  final int? duracionHorasFija;
+
+  /// ✅ NUEVO estándar backend: minutos
+  final int? duracionMinutosFija;
+  final String? rendimientoTiempoBase;
+
+  /// (Opcional) compat temporal: horas, por si algún endpoint viejo lo pide.
+  /// Ideal: NO usarlo.
+  final double? duracionHorasFijaCompat;
 
   final int? insumoPrincipalId;
   final double? consumoPrincipalPorUnidad;
@@ -216,7 +254,7 @@ class DefinicionPreventivaRequest {
   final int? responsableSugeridoId;
   final int? supervisorId;
 
-  /// 🔹 NUEVO: operarios asignados
+  /// 🔹 operarios asignados
   final List<int>? operariosIds;
 
   final bool? activo;
@@ -227,10 +265,14 @@ class DefinicionPreventivaRequest {
     required this.descripcion,
     required this.frecuencia,
     required this.prioridad,
+    this.diaSemanaProgramado,
+    this.diaMesProgramado,
     this.unidadCalculo,
     this.areaNumerica,
     this.rendimientoBase,
-    this.duracionHorasFija,
+    this.duracionMinutosFija,
+    this.rendimientoTiempoBase,
+    this.duracionHorasFijaCompat,
     this.insumoPrincipalId,
     this.consumoPrincipalPorUnidad,
     this.insumosPlan,
@@ -247,17 +289,34 @@ class DefinicionPreventivaRequest {
     'descripcion': descripcion,
     'frecuencia': frecuencia,
     'prioridad': prioridad,
+
+    // ✅ programación
+    if (diaSemanaProgramado != null) 'diaSemanaProgramado': diaSemanaProgramado,
+    if (diaMesProgramado != null) 'diaMesProgramado': diaMesProgramado,
+
+    // cálculo por rendimiento
     if (unidadCalculo != null) 'unidadCalculo': unidadCalculo,
     if (areaNumerica != null) 'areaNumerica': areaNumerica,
     if (rendimientoBase != null) 'rendimientoBase': rendimientoBase,
-    if (duracionHorasFija != null) 'duracionHorasFija': duracionHorasFija,
+
+    // ✅ estándar: minutos
+    if (duracionMinutosFija != null) 'duracionMinutosFija': duracionMinutosFija,
+    if (rendimientoTiempoBase != null) 'rendimientoTiempoBase': rendimientoTiempoBase,
+
+    // compat (solo si te toca)
+    if (duracionHorasFijaCompat != null)
+      'duracionHorasFija': duracionHorasFijaCompat,
+
     if (insumoPrincipalId != null) 'insumoPrincipalId': insumoPrincipalId,
     if (consumoPrincipalPorUnidad != null)
       'consumoPrincipalPorUnidad': consumoPrincipalPorUnidad,
+
     if (insumosPlan != null && insumosPlan!.isNotEmpty)
       'insumosPlanJson': insumosPlan!.map((e) => e.toJson()).toList(),
+
     if (maquinariaPlan != null && maquinariaPlan!.isNotEmpty)
       'maquinariaPlanJson': maquinariaPlan!.map((e) => e.toJson()).toList(),
+
     if (responsableSugeridoId != null)
       'responsableSugeridoId': responsableSugeridoId,
     if (supervisorId != null) 'supervisorId': supervisorId,

@@ -17,8 +17,12 @@ const _diasSemana = <String>[
 class _HorarioDia {
   TimeOfDay? apertura;
   TimeOfDay? cierre;
+  TimeOfDay? descansoInicio;
+  TimeOfDay? descansoFin;
 
   bool get completo => apertura != null && cierre != null;
+
+  bool get descansoCompleto => descansoInicio != null && descansoFin != null;
 }
 
 class CrearConjuntoPage extends StatefulWidget {
@@ -120,21 +124,32 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
   Future<void> _seleccionarHora({
     required String dia,
     required bool esApertura,
+    bool esDescansoInicio = false,
+    bool esDescansoFin = false,
   }) async {
     final horario = _horariosPorDia[dia]!;
-    final initial = esApertura
-        ? (horario.apertura ?? const TimeOfDay(hour: 8, minute: 0))
-        : (horario.cierre ?? const TimeOfDay(hour: 17, minute: 0));
 
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initial,
-      helpText: esApertura ? 'Hora de apertura' : 'Hora de cierre',
-    );
+    TimeOfDay initial;
+    if (esApertura) {
+      initial = horario.apertura ?? const TimeOfDay(hour: 8, minute: 0);
+    } else if (esDescansoInicio) {
+      initial = horario.descansoInicio ?? const TimeOfDay(hour: 12, minute: 0);
+    } else if (esDescansoFin) {
+      initial = horario.descansoFin ?? const TimeOfDay(hour: 13, minute: 0);
+    } else {
+      initial = horario.cierre ?? const TimeOfDay(hour: 17, minute: 0);
+    }
+
+    final picked = await showTimePicker(context: context, initialTime: initial);
+
     if (picked != null) {
       setState(() {
         if (esApertura) {
           horario.apertura = picked;
+        } else if (esDescansoInicio) {
+          horario.descansoInicio = picked;
+        } else if (esDescansoFin) {
+          horario.descansoFin = picked;
         } else {
           horario.cierre = picked;
         }
@@ -203,11 +218,18 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
           // validación simple: apertura < cierre
           return;
         }
-        horariosPayload.add({
+        final payload = {
           'dia': dia,
           'horaApertura': apertura,
           'horaCierre': cierre,
-        });
+        };
+
+        if (h.descansoCompleto) {
+          payload['descansoInicio'] = _formatTimeOfDay(h.descansoInicio!);
+          payload['descansoFin'] = _formatTimeOfDay(h.descansoFin!);
+        }
+
+        horariosPayload.add(payload);
       }
     });
 
@@ -535,7 +557,6 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
                                 Expanded(
                                   child: OutlinedButton(
                                     onPressed: () => _seleccionarHora(
@@ -549,7 +570,37 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () => _seleccionarHora(
+                                      esApertura: false,
+                                      dia: dia,
+                                      esDescansoInicio: true,
+                                    ),
+                                    child: Text(
+                                      h.descansoInicio == null
+                                          ? 'Desc. ini'
+                                          : _formatTimeOfDay(h.descansoInicio!),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () => _seleccionarHora(
+                                      dia: dia,
+                                      esDescansoFin: true,
+                                      esApertura: false,
+                                    ),
+                                    child: Text(
+                                      h.descansoFin == null
+                                          ? 'Desc. fin'
+                                          : _formatTimeOfDay(h.descansoFin!),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
                                 Expanded(
                                   child: OutlinedButton(
                                     onPressed: () => _seleccionarHora(
@@ -725,10 +776,7 @@ class _UbicacionWidget extends StatelessWidget {
   final _UbicacionForm ubicacion;
   final VoidCallback onEliminar;
 
-  const _UbicacionWidget({
-    required this.ubicacion,
-    required this.onEliminar,
-  });
+  const _UbicacionWidget({required this.ubicacion, required this.onEliminar});
 
   @override
   Widget build(BuildContext context) {

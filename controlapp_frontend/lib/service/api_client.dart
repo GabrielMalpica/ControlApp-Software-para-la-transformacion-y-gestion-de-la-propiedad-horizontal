@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:http/http.dart' as http;
 
 class ApiClient {
   final Map<String, String> defaultHeaders = {
     'Content-Type': 'application/json',
+    'x-empresa-id': AppConstants.empresaNit,
   };
 
   Future<http.Response> get(String url) async {

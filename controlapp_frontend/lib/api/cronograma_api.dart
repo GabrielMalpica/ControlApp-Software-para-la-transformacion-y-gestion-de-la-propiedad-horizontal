@@ -105,4 +105,25 @@ class CronogramaApi {
 
     return jsonDecode(resp.body) as Map<String, dynamic>;
   }
+
+  Future<int> getLimiteMinSemanaPorConjunto({required String nit}) async {
+    final uri = Uri.parse(
+      '${AppConstants.cronogramaBase}/conjuntos/$nit/limite-min-semana',
+    );
+
+    final resp = await _client.get(uri.toString());
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error al traer límite semanal: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+
+    final limite = data['limiteMinSemana'];
+    if (limite == null) throw Exception('Respuesta sin limiteMinSemana');
+
+    return int.parse(limite.toString());
+  }
 }

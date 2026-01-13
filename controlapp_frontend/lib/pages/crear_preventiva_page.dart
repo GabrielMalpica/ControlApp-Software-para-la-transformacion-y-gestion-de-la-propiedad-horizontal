@@ -13,8 +13,8 @@ import '../api/empresa_api.dart';
 import '../model/insumo_model.dart';
 
 class CrearEditarPreventivaPage extends StatefulWidget {
-  final String nit; // NIT del conjunto
-  final Conjunto conjunto; // ya viene con ubicaciones y operarios
+  final String nit;
+  final Conjunto conjunto;
   final DefinicionPreventiva? existente;
 
   const CrearEditarPreventivaPage({
@@ -34,51 +34,47 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   final _api = DefinicionPreventivaApi();
   final GerenteApi _gerenteApi = GerenteApi();
 
-  // Catálogo de insumos de la empresa
   final EmpresaApi _empresaApi = EmpresaApi();
   List<InsumoResponse> _catalogoInsumos = [];
-
-  // Catálogo de maquinaria de la empresa
   List<MaquinariaResponse> _catalogoMaquinaria = [];
-
-  // Supervisores
   List<Usuario> _supervisores = [];
 
   // Controllers básicos
   final _descripcionCtrl = TextEditingController();
-  final _prioridadCtrl = TextEditingController(text: '5');
+  final _prioridadCtrl = TextEditingController(text: '2');
 
   // Duración – rendimiento
   bool _usaRendimiento = true;
-  String? _unidadCalculo; // "M2", "HORA", "UNIDAD", ...
-  final _areaCtrl = TextEditingController();
-  final _rendimientoCtrl = TextEditingController(); // m2/hora, etc.
+  String? _unidadCalculo; // M2, M3, ML, UNIDAD...
+  final _cantidadCtrl = TextEditingController(); // antes _areaCtrl
+  final _rendimientoCtrl = TextEditingController(); // valor numérico
 
-  // Duración fija
-  final _duracionFijaCtrl = TextEditingController();
+  // ✅ NUEVO: cómo interpretar rendimiento
+  // POR_MINUTO: unidades/min
+  // MIN_POR_UNIDAD: min/unidad
+  // POR_HORA: unidades/h
+  String _rendimientoTiempoBase = 'POR_MINUTO';
+
+  // Duración fija (minutos)
+  final _duracionFijaMinCtrl = TextEditingController();
 
   // Insumo principal
   int? _insumoPrincipalId;
   final _consumoPorUnidadCtrl = TextEditingController();
 
-  // Insumos planificados adicionales
   final List<_InsumoPlanRow> _insumosPlanRows = [];
-
-  // Maquinaria planificada (sin horas / cantidad)
   final List<_MaquinariaPlanRow> _maquinariaPlanRows = [];
 
-  // Frecuencia
-  String? _frecuencia;
+  String? _frecuencia; // DIARIA | SEMANAL | MENSUAL
 
-  // Operarios responsables (uno o varios) -> guardamos cédulas como String
+  String? _diaSemanaProgramado;
+  int? _diaMesProgramado;
+
   final List<String> _operariosSeleccionadosCedulas = [];
-
-  // Supervisor responsable (obligatorio)
   Usuario? _supervisorResponsable;
 
   bool _activo = true;
 
-  // Ubicación / elemento
   UbicacionConElementos? _ubicacionSeleccionada;
   Elemento? _elementoSeleccionado;
 
@@ -108,9 +104,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     try {
       final lista = await _empresaApi.listarCatalogo();
       if (!mounted) return;
-      setState(() {
-        _catalogoInsumos = lista;
-      });
+      setState(() => _catalogoInsumos = lista);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -123,9 +117,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     try {
       final lista = await _empresaApi.listarMaquinaria();
       if (!mounted) return;
-      setState(() {
-        _catalogoMaquinaria = lista;
-      });
+      setState(() => _catalogoMaquinaria = lista);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -138,9 +130,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     try {
       final supervisores = await _gerenteApi.listarSupervisores();
       if (!mounted) return;
-      setState(() {
-        _supervisores = supervisores;
-      });
+      setState(() => _supervisores = supervisores);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -153,87 +143,71 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     final existente = widget.existente;
 
     if (existente != null) {
-      // 1. Datos básicos
       _descripcionCtrl.text = existente.descripcion;
-      _prioridadCtrl.text = existente.prioridad.toString();
+      _prioridadCtrl.text = (existente.prioridad.clamp(1, 3)).toString();
       _frecuencia = existente.frecuencia;
       _unidadCalculo = existente.unidadCalculo;
 
-      // 2. Duración / rendimiento
-      if (existente.duracionHorasFija != null) {
+      _diaSemanaProgramado = existente.diaSemanaProgramado;
+      _diaMesProgramado = existente.diaMesProgramado;
+
+      // Duración / rendimiento
+      if (existente.duracionMinutosFija != null) {
         _usaRendimiento = false;
-        _duracionFijaCtrl.text = existente.duracionHorasFija!.toString();
+        _duracionFijaMinCtrl.text = existente.duracionMinutosFija!.toString();
       } else {
         _usaRendimiento = true;
         if (existente.areaNumerica != null) {
-          _areaCtrl.text = existente.areaNumerica!.toString();
+          _cantidadCtrl.text = existente.areaNumerica!.toString();
         }
         if (existente.rendimientoBase != null) {
           _rendimientoCtrl.text = existente.rendimientoBase!.toString();
         }
       }
 
-      // 3. Insumo principal
+      // Si tu modelo DefinicionPreventiva ya trae rendimientoTiempoBase, úsalo:
+      final base = (existente as dynamic).rendimientoTiempoBase;
+      if (base is String && base.isNotEmpty) {
+        _rendimientoTiempoBase = base;
+      }
+
       _insumoPrincipalId = existente.insumoPrincipalId;
       if (existente.consumoPrincipalPorUnidad != null) {
         _consumoPorUnidadCtrl.text = existente.consumoPrincipalPorUnidad!
             .toString();
       }
 
-      // 4. Insumos planificados adicionales
       _insumosPlanRows.clear();
-      if (existente.insumosPlan.isNotEmpty) {
-        for (final i in existente.insumosPlan) {
-          _insumosPlanRows.add(
-            _InsumoPlanRow(
-              insumoId: i.insumoId,
-              consumoInicial: i.consumoPorUnidad,
-            ),
-          );
-        }
+      for (final i in existente.insumosPlan) {
+        _insumosPlanRows.add(
+          _InsumoPlanRow(
+            insumoId: i.insumoId,
+            consumoInicial: i.consumoPorUnidad,
+          ),
+        );
       }
 
-      // 4.1 Maquinaria planificada (sin cantidad)
       _maquinariaPlanRows.clear();
-      if (existente.maquinariaPlan.isNotEmpty) {
-        for (final m in existente.maquinariaPlan) {
-          _maquinariaPlanRows.add(
-            _MaquinariaPlanRow(
-              maquinariaId: m.maquinariaId,
-              tipoInicial: m.tipo,
-            ),
-          );
-        }
+      for (final m in existente.maquinariaPlan) {
+        _maquinariaPlanRows.add(
+          _MaquinariaPlanRow(maquinariaId: m.maquinariaId, tipoInicial: m.tipo),
+        );
       }
 
-      // 5. Activo
       _activo = existente.activo;
 
-      // 6. Operarios seleccionados (leemos la LISTA del backend)
       _operariosSeleccionadosCedulas.clear();
-
       if (existente.operariosIds.isNotEmpty) {
         for (final opId in existente.operariosIds) {
           final usuario = _operarios.firstWhere(
             (o) => int.tryParse(o.cedula) == opId,
             orElse: () => _dummyOperario(),
           );
-          if (usuario.cedula != '0') {
+          if (usuario.cedula != '0')
             _operariosSeleccionadosCedulas.add(usuario.cedula);
-          }
-        }
-      } else if (existente.responsableSugeridoId != null) {
-        // Fallback: al menos marcar el responsable principal
-        final usuario = _operarios.firstWhere(
-          (o) => int.tryParse(o.cedula) == existente.responsableSugeridoId,
-          orElse: () => _dummyOperario(),
-        );
-        if (usuario.cedula != '0') {
-          _operariosSeleccionadosCedulas.add(usuario.cedula);
         }
       }
 
-      // 7. Supervisor responsable
       if (existente.supervisorId != null) {
         final targetCedula = existente.supervisorId!.toString();
         _supervisorResponsable = _supervisores.firstWhere(
@@ -243,7 +217,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         );
       }
 
-      // 8. Ubicación y elemento
       _ubicacionSeleccionada = _ubicaciones.firstWhere(
         (u) => u.id == existente.ubicacionId,
         orElse: () =>
@@ -259,7 +232,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         );
       }
     } else {
-      // Nueva definición preventiva
       if (_ubicaciones.isNotEmpty) {
         _ubicacionSeleccionada = _ubicaciones.first;
         if (_ubicacionSeleccionada!.elementos.isNotEmpty) {
@@ -267,7 +239,22 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         }
       }
       _frecuencia = 'MENSUAL';
+      _diaMesProgramado = 1;
+      _diaSemanaProgramado = 'LUNES';
+      _prioridadCtrl.text = '2';
       _usaRendimiento = true;
+      _rendimientoTiempoBase = 'POR_MINUTO';
+    }
+
+    if (_frecuencia == 'SEMANAL') {
+      _diaSemanaProgramado ??= 'LUNES';
+      _diaMesProgramado = null;
+    } else if (_frecuencia == 'MENSUAL') {
+      _diaMesProgramado ??= 1;
+      _diaSemanaProgramado = null;
+    } else {
+      _diaSemanaProgramado = null;
+      _diaMesProgramado = null;
     }
   }
 
@@ -292,9 +279,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   void dispose() {
     _descripcionCtrl.dispose();
     _prioridadCtrl.dispose();
-    _areaCtrl.dispose();
+    _cantidadCtrl.dispose();
     _rendimientoCtrl.dispose();
-    _duracionFijaCtrl.dispose();
+    _duracionFijaMinCtrl.dispose();
     _consumoPorUnidadCtrl.dispose();
     for (final r in _insumosPlanRows) {
       r.consumoCtrl.dispose();
@@ -305,28 +292,79 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     super.dispose();
   }
 
-  double? _calcularConsumoPrincipalTotal() {
-    final consumoText = _consumoPorUnidadCtrl.text.trim();
-    if (consumoText.isEmpty) return null;
+  String _soloDigitos(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
 
-    final consumo = double.tryParse(consumoText);
-    if (consumo == null) return null;
+  int? _tryInt(String s) => int.tryParse(_soloDigitos(s));
 
-    if (_unidadCalculo == 'HORA') {
-      final horasText = _duracionFijaCtrl.text.trim();
-      final horas = int.tryParse(horasText);
-      if (horas != null && horas > 0) {
-        return consumo * horas;
-      }
+  double? _tryDouble(String s) =>
+      double.tryParse(s.trim().replaceAll(',', '.'));
+
+  String _unidadLabel() {
+    final u = _unidadCalculo ?? 'unidad';
+    return u.toLowerCase();
+  }
+
+  String _rendimientoHelper() {
+    final u = _unidadLabel();
+    switch (_rendimientoTiempoBase) {
+      case 'POR_MINUTO':
+        return 'Ej: 2 ($u/min) → haces 2 $u por minuto';
+      case 'POR_HORA':
+        return 'Ej: 120 ($u/h) → haces 120 $u por hora';
+      case 'MIN_POR_UNIDAD':
+        return 'Ej: 0.5 (min/$u) → tardas 0.5 min por cada $u';
+      default:
+        return '';
+    }
+  }
+
+  int? _previewMinutos() {
+    if (!_usaRendimiento) {
+      final m = _tryInt(_duracionFijaMinCtrl.text);
+      if (m == null || m <= 0) return null;
+      return m;
     }
 
-    final areaText = _areaCtrl.text.trim();
-    final area = double.tryParse(areaText);
-    if (area != null && area > 0) {
-      return consumo * area;
-    }
+    final cant = _tryDouble(_cantidadCtrl.text);
+    final rend = _tryDouble(_rendimientoCtrl.text);
+    if (cant == null || rend == null || rend <= 0) return null;
 
+    switch (_rendimientoTiempoBase) {
+      case 'POR_MINUTO': // unidades/min
+        return (cant / rend * 60)
+            .round(); // ← OJO: aquí NO, es *1 (min), no *60
+      case 'POR_HORA': // unidades/h
+        return (cant / rend * 60).round();
+      case 'MIN_POR_UNIDAD': // min/unidad
+        return (cant * rend).round();
+    }
     return null;
+  }
+
+  // ✅ IMPORTANTE:
+  // POR_MINUTO es unidades/min => minutos = cantidad / rendimiento
+  // (NO multiplicar por 60)
+  int? _previewMinutosBien() {
+    if (!_usaRendimiento) {
+      final m = _tryInt(_duracionFijaMinCtrl.text);
+      if (m == null || m <= 0) return null;
+      return m;
+    }
+
+    final cant = _tryDouble(_cantidadCtrl.text);
+    final rend = _tryDouble(_rendimientoCtrl.text);
+    if (cant == null || rend == null || rend <= 0) return null;
+
+    switch (_rendimientoTiempoBase) {
+      case 'POR_MINUTO': // unidades/min
+        return (cant / rend).round();
+      case 'POR_HORA': // unidades/h
+        return (cant / rend * 60).round();
+      case 'MIN_POR_UNIDAD': // min/unidad
+        return (cant * rend).round();
+      default:
+        return null;
+    }
   }
 
   Future<void> _mostrarSelectorOperarios() async {
@@ -378,7 +416,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                   onPressed: () => Navigator.of(dialogContext).pop(false),
                   child: const Text('Cancelar'),
                 ),
-                TextButton(
+                ElevatedButton(
                   onPressed: () => Navigator.of(dialogContext).pop(true),
                   child: const Text('Aceptar'),
                 ),
@@ -402,118 +440,97 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     if (!_formKey.currentState!.validate()) return;
 
     if (_ubicacionSeleccionada == null || _elementoSeleccionado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona ubicación y elemento')),
-      );
+      _snack('Selecciona ubicación y elemento');
       return;
     }
-
     if (_frecuencia == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Selecciona la frecuencia')));
+      _snack('Selecciona la frecuencia');
       return;
     }
 
-    // ========= OPERARIOS (uno o varios) =========
+    if (_frecuencia == 'SEMANAL' &&
+        (_diaSemanaProgramado == null || _diaSemanaProgramado!.isEmpty)) {
+      _snack('Selecciona el día de la semana');
+      return;
+    }
+
+    if (_frecuencia == 'MENSUAL' &&
+        (_diaMesProgramado == null ||
+            _diaMesProgramado! < 1 ||
+            _diaMesProgramado! > 31)) {
+      _snack('Selecciona el día del mes (1–31)');
+      return;
+    }
+
     if (_operariosSeleccionadosCedulas.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona al menos un operario')),
-      );
+      _snack('Selecciona al menos un operario');
       return;
     }
-
-    String _soloDigitos(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
 
     final operariosIdsInt = _operariosSeleccionadosCedulas
-        .map((ced) => _soloDigitos(ced))
-        .map((cedLimpia) => int.tryParse(cedLimpia))
+        .map((ced) => int.tryParse(_soloDigitos(ced)))
         .whereType<int>()
         .toList();
 
     if (operariosIdsInt.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudieron interpretar las cédulas de operarios'),
-        ),
-      );
+      _snack('No se pudieron interpretar las cédulas de operarios');
       return;
     }
 
-    // El responsable principal (para el campo existente) será el primero
     final responsableId = operariosIdsInt.first;
 
-    // ========= SUPERVISOR =========
     if (_supervisorResponsable == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona un supervisor responsable')),
-      );
+      _snack('Selecciona un supervisor responsable');
       return;
     }
 
-    final supervisorCedulaLimpia = _soloDigitos(_supervisorResponsable!.cedula);
-    final supervisorId = int.tryParse(supervisorCedulaLimpia);
-
+    final supervisorId = _tryInt(_supervisorResponsable!.cedula);
     if (supervisorId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Supervisor responsable inválido')),
-      );
+      _snack('Supervisor responsable inválido');
       return;
     }
 
     // ========= DURACIÓN =========
     String? unidadCalculo;
-    double? area;
+    double? cantidad;
     double? rendimiento;
-    int? duracionFija;
+    int? duracionMinFija;
 
     if (_usaRendimiento) {
       if (_unidadCalculo == null ||
-          _areaCtrl.text.trim().isEmpty ||
+          _cantidadCtrl.text.trim().isEmpty ||
           _rendimientoCtrl.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Completa unidad de cálculo, área y rendimiento o cambia a duración fija.',
-            ),
-          ),
-        );
+        _snack('Completa unidad, cantidad y rendimiento o usa duración fija.');
         return;
       }
       unidadCalculo = _unidadCalculo;
-      area = double.tryParse(_areaCtrl.text.trim());
-      rendimiento = double.tryParse(_rendimientoCtrl.text.trim());
-      if (area == null || rendimiento == null || rendimiento <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Área y rendimiento deben ser números válidos'),
-          ),
-        );
+      cantidad = _tryDouble(_cantidadCtrl.text);
+      rendimiento = _tryDouble(_rendimientoCtrl.text);
+      if (cantidad == null || rendimiento == null || rendimiento <= 0) {
+        _snack('Cantidad y rendimiento deben ser números válidos');
         return;
       }
     } else {
-      if (_duracionFijaCtrl.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Indica la duración fija en horas')),
-        );
+      if (_duracionFijaMinCtrl.text.trim().isEmpty) {
+        _snack('Indica la duración fija en minutos');
         return;
       }
-      duracionFija = int.tryParse(_duracionFijaCtrl.text.trim());
-      if (duracionFija == null || duracionFija <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Duración fija debe ser un entero > 0')),
-        );
+      duracionMinFija = _tryInt(_duracionFijaMinCtrl.text.trim());
+      if (duracionMinFija == null || duracionMinFija <= 0) {
+        _snack('Duración fija debe ser un entero > 0');
         return;
       }
     }
 
-    final prioridad = int.tryParse(_prioridadCtrl.text.trim()) ?? 5;
+    final prioridad = (int.tryParse(_prioridadCtrl.text.trim()) ?? 2).clamp(
+      1,
+      3,
+    );
 
     final consumoPrincipal = _consumoPorUnidadCtrl.text.trim().isNotEmpty
-        ? double.tryParse(_consumoPorUnidadCtrl.text.trim())
+        ? _tryDouble(_consumoPorUnidadCtrl.text)
         : null;
 
-    // ========= INSUMOS PLANIFICADOS =========
     final insumosPlanRequests = _insumosPlanRows
         .where(
           (r) => r.insumoId != null && r.consumoCtrl.text.trim().isNotEmpty,
@@ -521,12 +538,11 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         .map(
           (r) => InsumoPlanItemRequest(
             insumoId: r.insumoId!,
-            consumoPorUnidad: double.parse(r.consumoCtrl.text.trim()),
+            consumoPorUnidad: _tryDouble(r.consumoCtrl.text.trim()) ?? 0,
           ),
         )
         .toList();
 
-    // ========= MAQUINARIA PLANIFICADA =========
     final maquinariaPlanRequests = _maquinariaPlanRows
         .where((r) => r.maquinariaId != null)
         .map(
@@ -539,30 +555,41 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         )
         .toList();
 
-    // ========= ARMAR REQUEST =========
     final req = DefinicionPreventivaRequest(
       ubicacionId: _ubicacionSeleccionada!.id,
       elementoId: _elementoSeleccionado!.id,
       descripcion: _descripcionCtrl.text.trim(),
       frecuencia: _frecuencia!,
       prioridad: prioridad,
+
+      diaSemanaProgramado: _frecuencia == 'SEMANAL'
+          ? _diaSemanaProgramado
+          : null,
+      diaMesProgramado: _frecuencia == 'MENSUAL' ? _diaMesProgramado : null,
+
       unidadCalculo: unidadCalculo,
-      areaNumerica: area,
+      areaNumerica: cantidad,
       rendimientoBase: rendimiento,
-      duracionHorasFija: duracionFija,
+
+      // ✅ ahora sí: minutos fijos
+      duracionMinutosFija: duracionMinFija,
+
+      // ✅ NUEVO: esto es lo que el back necesita para interpretar el rendimiento
+      rendimientoTiempoBase: _usaRendimiento ? _rendimientoTiempoBase : null,
+
       insumoPrincipalId: _insumoPrincipalId,
       consumoPrincipalPorUnidad: consumoPrincipal,
       insumosPlan: insumosPlanRequests.isNotEmpty ? insumosPlanRequests : null,
       maquinariaPlan: maquinariaPlanRequests.isNotEmpty
           ? maquinariaPlanRequests
           : null,
-      operariosIds: operariosIdsInt, // lista completa
-      responsableSugeridoId: responsableId, // principal
+
+      operariosIds: operariosIdsInt,
+      responsableSugeridoId: responsableId,
       supervisorId: supervisorId,
       activo: _activo,
     );
 
-    // ========= GUARDAR =========
     setState(() => _guardando = true);
     try {
       if (widget.existente == null) {
@@ -574,19 +601,47 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al guardar preventiva: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _snack('Error al guardar preventiva: $e', error: true);
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
   }
 
+  void _snack(String msg, {bool error = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: error ? Colors.red : null),
+    );
+  }
+
+  Widget _sectionCard({required String title, required Widget child}) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final prioridadValue = (int.tryParse(_prioridadCtrl.text) ?? 2).clamp(1, 3);
+    final preview = _previewMinutosBien();
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
@@ -599,364 +654,494 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Form(
           key: _formKey,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. Dónde
-              const Text(
-                '1. Dónde se ejecuta',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<int>(
-                decoration: const InputDecoration(
-                  labelText: 'Ubicación',
-                  border: OutlineInputBorder(),
-                ),
-                value: _ubicacionSeleccionada?.id,
-                items: _ubicaciones
-                    .map(
-                      (u) =>
-                          DropdownMenuItem(value: u.id, child: Text(u.nombre)),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v == null) return;
-                  final u = _ubicaciones.firstWhere((x) => x.id == v);
-                  setState(() {
-                    _ubicacionSeleccionada = u;
-                    _elementoSeleccionado = u.elementos.isNotEmpty
-                        ? u.elementos.first
-                        : null;
-                  });
-                },
-                validator: (v) => v == null ? 'Selecciona una ubicación' : null,
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<int>(
-                decoration: const InputDecoration(
-                  labelText: 'Elemento',
-                  border: OutlineInputBorder(),
-                ),
-                value: _elementoSeleccionado?.id,
-                items: (_ubicacionSeleccionada?.elementos ?? [])
-                    .map(
-                      (e) =>
-                          DropdownMenuItem(value: e.id, child: Text(e.nombre)),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  if (v == null) return;
-                  final el = _ubicacionSeleccionada!.elementos.firstWhere(
-                    (x) => x.id == v,
-                  );
-                  setState(() => _elementoSeleccionado = el);
-                },
-                validator: (v) => v == null ? 'Selecciona un elemento' : null,
-              ),
-              const SizedBox(height: 24),
-
-              // 2. Qué
-              const Text(
-                '2. Qué se va a hacer',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _descripcionCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Descripción / actividad',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 2,
-                validator: (v) => v == null || v.trim().isEmpty
-                    ? 'Describe la actividad'
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  labelText: 'Frecuencia',
-                  border: OutlineInputBorder(),
-                ),
-                value: _frecuencia,
-                items:
-                    const [
-                      'DIARIA',
-                      'SEMANAL',
-                      'QUINCENAL',
-                      'MENSUAL',
-                      'BIMESTRAL',
-                      'TRIMESTRAL',
-                      'SEMESTRAL',
-                      'ANUAL',
-                    ].map((f) {
-                      return DropdownMenuItem(value: f, child: Text(f));
-                    }).toList(),
-                onChanged: (v) => setState(() => _frecuencia = v),
-                validator: (v) =>
-                    v == null ? 'Selecciona una frecuencia' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _prioridadCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Prioridad (1 alta – 9 baja)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // 3. Duración planificada
-              const Text(
-                '3. Duración planificada',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              SwitchListTile(
-                title: const Text('Calcular por rendimiento y área'),
-                subtitle: const Text(
-                  'Si lo desactivas, usas duración fija en horas',
-                ),
-                value: _usaRendimiento,
-                onChanged: (v) => setState(() => _usaRendimiento = v),
-              ),
-              if (_usaRendimiento) ...[
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(
-                    labelText: 'Unidad de cálculo',
-                    border: OutlineInputBorder(),
-                  ),
-                  value: _unidadCalculo,
-                  items:
-                      const [
-                        'M2',
-                        'M3',
-                        'ML',
-                        'UNIDAD',
-                        'HORA',
-                        'LITRO',
-                        'KILO',
-                      ].map((u) {
-                        return DropdownMenuItem(value: u, child: Text(u));
-                      }).toList(),
-                  onChanged: (v) => setState(() => _unidadCalculo = v),
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _areaCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Cantidad (área / unidades)',
-                    helperText: 'Ej: 200 si son 200 m² o 10 unidades',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _rendimientoCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Rendimiento base (ej. m² por hora)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ] else ...[
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: _duracionFijaCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Duración fija (horas)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 24),
-
-              // 4. Recursos planificados – Insumos
-              const Text(
-                '4. Recursos planificados – Insumos',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<int>(
-                decoration: const InputDecoration(
-                  labelText: 'Insumo principal (opcional)',
-                  border: OutlineInputBorder(),
-                ),
-                value: _insumoPrincipalId,
-                items: _catalogoInsumos
-                    .map(
-                      (i) => DropdownMenuItem(
-                        value: i.id,
-                        child: Text('${i.nombre} (${i.unidad})'),
+              _sectionCard(
+                title: '1) Dónde se ejecuta',
+                child: Column(
+                  children: [
+                    DropdownButtonFormField<int>(
+                      decoration: const InputDecoration(
+                        labelText: 'Ubicación',
+                        border: OutlineInputBorder(),
                       ),
-                    )
-                    .toList(),
-                onChanged: (v) => setState(() => _insumoPrincipalId = v),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _consumoPorUnidadCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: InputDecoration(
-                  labelText: 'Consumo por unidad',
-                  helperText: _unidadCalculo == null
-                      ? 'Ej: litros por m², litros por hora, unidades por unidad'
-                      : 'Cantidad de insumo por ${_unidadCalculo!.toLowerCase()}',
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Builder(
-                builder: (_) {
-                  final total = _calcularConsumoPrincipalTotal();
-                  if (total == null) return const SizedBox.shrink();
-                  return Text(
-                    'Consumo estimado total: ${total.toStringAsFixed(2)} (unidad del insumo)',
-                    style: const TextStyle(fontStyle: FontStyle.italic),
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-
-              const Text(
-                'Otros insumos planificados',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              Column(
-                children: [
-                  for (int i = 0; i < _insumosPlanRows.length; i++)
-                    _buildInsumoPlanRow(i),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () {
+                      value: _ubicacionSeleccionada?.id,
+                      items: _ubicaciones
+                          .map(
+                            (u) => DropdownMenuItem(
+                              value: u.id,
+                              child: Text(u.nombre),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v == null) return;
+                        final u = _ubicaciones.firstWhere((x) => x.id == v);
                         setState(() {
-                          _insumosPlanRows.add(_InsumoPlanRow());
+                          _ubicacionSeleccionada = u;
+                          _elementoSeleccionado = u.elementos.isNotEmpty
+                              ? u.elementos.first
+                              : null;
                         });
                       },
-                      icon: const Icon(Icons.add),
-                      label: const Text('Agregar insumo'),
+                      validator: (v) =>
+                          v == null ? 'Selecciona una ubicación' : null,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              const Text(
-                '4.1 Maquinaria planificada',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              Column(
-                children: [
-                  for (int i = 0; i < _maquinariaPlanRows.length; i++)
-                    _buildMaquinariaPlanRow(i),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _maquinariaPlanRows.add(_MaquinariaPlanRow());
-                        });
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      decoration: const InputDecoration(
+                        labelText: 'Elemento',
+                        border: OutlineInputBorder(),
+                      ),
+                      value: _elementoSeleccionado?.id,
+                      items: (_ubicacionSeleccionada?.elementos ?? [])
+                          .map(
+                            (e) => DropdownMenuItem(
+                              value: e.id,
+                              child: Text(e.nombre),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v == null) return;
+                        final el = _ubicacionSeleccionada!.elementos.firstWhere(
+                          (x) => x.id == v,
+                        );
+                        setState(() => _elementoSeleccionado = el);
                       },
-                      icon: const Icon(Icons.add),
-                      label: const Text('Agregar maquinaria'),
+                      validator: (v) =>
+                          v == null ? 'Selecciona un elemento' : null,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // 5. Operarios y supervisor
-              const Text(
-                '5. Operarios y supervisor',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-
-              InkWell(
-                onTap: _mostrarSelectorOperarios,
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: 'Operarios responsables',
-                    border: OutlineInputBorder(),
-                  ),
-                  child: Text(
-                    _operariosSeleccionadosCedulas.isEmpty
-                        ? 'Seleccionar operarios'
-                        : '${_operariosSeleccionadosCedulas.length} operario(s) seleccionado(s)',
-                  ),
+                  ],
                 ),
               ),
+
               const SizedBox(height: 12),
 
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  labelText: 'Supervisor responsable',
-                  border: OutlineInputBorder(),
-                ),
-                value: _supervisorResponsable?.cedula,
-                items: _supervisores
-                    .map(
-                      (s) => DropdownMenuItem(
-                        value: s.cedula,
-                        child: Text(s.nombre),
+              _sectionCard(
+                title: '2) Qué se va a hacer',
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _descripcionCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Descripción / actividad',
+                        border: OutlineInputBorder(),
                       ),
-                    )
-                    .toList(),
-                onChanged: (cedula) {
-                  if (cedula == null) return;
-                  final sup = _supervisores.firstWhere(
-                    (s) => s.cedula == cedula,
-                  );
-                  setState(() => _supervisorResponsable = sup);
-                },
-                validator: (v) => v == null ? 'Selecciona un supervisor' : null,
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile(
-                title: const Text('Definición activa'),
-                value: _activo,
-                onChanged: (v) => setState(() => _activo = v),
-              ),
-              const SizedBox(height: 24),
+                      maxLines: 2,
+                      validator: (v) => v == null || v.trim().isEmpty
+                          ? 'Describe la actividad'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
 
-              ElevatedButton.icon(
-                onPressed: _guardando ? null : _guardar,
-                icon: _guardando
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save),
-                label: Text(_guardando ? 'Guardando...' : 'Guardar definición'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Frecuencia',
+                        border: OutlineInputBorder(),
+                      ),
+                      value: _frecuencia,
+                      items: const ['DIARIA', 'SEMANAL', 'MENSUAL']
+                          .map(
+                            (f) => DropdownMenuItem(value: f, child: Text(f)),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        setState(() {
+                          _frecuencia = v;
+                          if (_frecuencia != 'SEMANAL')
+                            _diaSemanaProgramado = null;
+                          if (_frecuencia != 'MENSUAL')
+                            _diaMesProgramado = null;
+
+                          if (_frecuencia == 'SEMANAL' &&
+                              _diaSemanaProgramado == null) {
+                            _diaSemanaProgramado = 'LUNES';
+                          }
+                          if (_frecuencia == 'MENSUAL' &&
+                              _diaMesProgramado == null) {
+                            _diaMesProgramado = 1;
+                          }
+                        });
+                      },
+                      validator: (v) =>
+                          v == null ? 'Selecciona una frecuencia' : null,
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    if (_frecuencia == 'SEMANAL') ...[
+                      DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(
+                          labelText: 'Día de la semana',
+                          border: OutlineInputBorder(),
+                        ),
+                        value: _diaSemanaProgramado,
+                        items:
+                            const [
+                                  'LUNES',
+                                  'MARTES',
+                                  'MIERCOLES',
+                                  'JUEVES',
+                                  'VIERNES',
+                                  'SABADO',
+                                  'DOMINGO',
+                                ]
+                                .map(
+                                  (d) => DropdownMenuItem(
+                                    value: d,
+                                    child: Text(d),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged: (v) =>
+                            setState(() => _diaSemanaProgramado = v),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    if (_frecuencia == 'MENSUAL') ...[
+                      DropdownButtonFormField<int>(
+                        decoration: const InputDecoration(
+                          labelText: 'Día del mes',
+                          border: OutlineInputBorder(),
+                        ),
+                        value: _diaMesProgramado,
+                        items: List.generate(31, (i) => i + 1)
+                            .map(
+                              (d) =>
+                                  DropdownMenuItem(value: d, child: Text('$d')),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => _diaMesProgramado = v),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    DropdownButtonFormField<int>(
+                      decoration: const InputDecoration(
+                        labelText: 'Prioridad',
+                        border: OutlineInputBorder(),
+                      ),
+                      value: prioridadValue,
+                      items: const [
+                        DropdownMenuItem(value: 1, child: Text('1 - Alta')),
+                        DropdownMenuItem(value: 2, child: Text('2 - Media')),
+                        DropdownMenuItem(value: 3, child: Text('3 - Baja')),
+                      ],
+                      onChanged: (v) => setState(
+                        () => _prioridadCtrl.text = (v ?? 2).toString(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              _sectionCard(
+                title: '3) Duración planificada',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Calcular por rendimiento + cantidad'),
+                      subtitle: const Text(
+                        'Si lo desactivas, usas duración fija (minutos).',
+                      ),
+                      value: _usaRendimiento,
+                      onChanged: (v) => setState(() => _usaRendimiento = v),
+                    ),
+
+                    if (_usaRendimiento) ...[
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(
+                          labelText: 'Unidad de cálculo',
+                          border: OutlineInputBorder(),
+                        ),
+                        value: _unidadCalculo,
+                        items: const ['M', 'M2', 'M3', 'UNIDAD']
+                            .map(
+                              (u) => DropdownMenuItem(value: u, child: Text(u)),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => _unidadCalculo = v),
+                      ),
+                      const SizedBox(height: 10),
+
+                      DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(
+                          labelText: 'Base del rendimiento',
+                          border: OutlineInputBorder(),
+                        ),
+                        value: _rendimientoTiempoBase,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'POR_MINUTO',
+                            child: Text('Unidades por minuto'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'POR_HORA',
+                            child: Text('Unidades por hora'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'MIN_POR_UNIDAD',
+                            child: Text('Minutos por unidad'),
+                          ),
+                        ],
+                        onChanged: (v) => setState(
+                          () => _rendimientoTiempoBase = v ?? 'POR_MINUTO',
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      TextFormField(
+                        controller: _cantidadCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Cantidad total',
+                          helperText:
+                              'Ej: 200 (si son 200 m²) o 10 (si son 10 unidades)',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 10),
+
+                      TextFormField(
+                        controller: _rendimientoCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Rendimiento',
+                          helperText: _rendimientoHelper(),
+                          border: const OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+
+                      if (preview != null) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Text(
+                            '⏱️ Estimado: $preview min (~ ${(preview / 60).toStringAsFixed(2)} h)',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ] else ...[
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _duracionFijaMinCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Duración fija (minutos)',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              _sectionCard(
+                title: '4) Recursos planificados – Insumos',
+                child: Column(
+                  children: [
+                    DropdownButtonFormField<int>(
+                      decoration: const InputDecoration(
+                        labelText: 'Insumo principal (opcional)',
+                        border: OutlineInputBorder(),
+                      ),
+                      value: _insumoPrincipalId,
+                      items: _catalogoInsumos
+                          .map(
+                            (i) => DropdownMenuItem(
+                              value: i.id,
+                              child: Text('${i.nombre} (${i.unidad})'),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) => setState(() => _insumoPrincipalId = v),
+                    ),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _consumoPorUnidadCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Consumo por unidad (opcional)',
+                        helperText:
+                            'Ej: litros por m², litros por unidad, etc.',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Otros insumos',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Column(
+                      children: [
+                        for (int i = 0; i < _insumosPlanRows.length; i)
+                          _buildInsumoPlanRow(i),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: () => setState(
+                              () => _insumosPlanRows.add(_InsumoPlanRow()),
+                            ),
+                            icon: const Icon(Icons.add),
+                            label: const Text('Agregar insumo'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              _sectionCard(
+                title: '4.1) Maquinaria planificada',
+                child: Column(
+                  children: [
+                    for (int i = 0; i < _maquinariaPlanRows.length; i)
+                      _buildMaquinariaPlanRow(i),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () => setState(
+                          () => _maquinariaPlanRows.add(_MaquinariaPlanRow()),
+                        ),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Agregar maquinaria'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              _sectionCard(
+                title: '5) Equipo responsable',
+                child: Column(
+                  children: [
+                    InkWell(
+                      onTap: _mostrarSelectorOperarios,
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Operarios responsables',
+                          border: OutlineInputBorder(),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _operariosSeleccionadosCedulas.isEmpty
+                                    ? 'Seleccionar operarios'
+                                    : '${_operariosSeleccionadosCedulas.length} operario(s) seleccionado(s)',
+                              ),
+                            ),
+                            const Icon(Icons.people_alt_outlined),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Supervisor responsable',
+                        border: OutlineInputBorder(),
+                      ),
+                      value: _supervisorResponsable?.cedula,
+                      items: _supervisores
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s.cedula,
+                              child: Text(s.nombre),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (cedula) {
+                        if (cedula == null) return;
+                        final sup = _supervisores.firstWhere(
+                          (s) => s.cedula == cedula,
+                        );
+                        setState(() => _supervisorResponsable = sup);
+                      },
+                      validator: (v) =>
+                          v == null ? 'Selecciona un supervisor' : null,
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Definición activa'),
+                      value: _activo,
+                      onChanged: (v) => setState(() => _activo = v),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _guardando ? null : _guardar,
+                  icon: _guardando
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.save),
+                  label: Text(
+                    _guardando ? 'Guardando...' : 'Guardar definición',
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
+              const SizedBox(height: 18),
             ],
           ),
         ),

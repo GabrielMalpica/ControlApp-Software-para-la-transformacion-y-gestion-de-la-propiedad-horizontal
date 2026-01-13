@@ -250,7 +250,7 @@ class _TareasPageState extends State<TareasPage> {
                     Text(
                       "📅 ${_formatearFecha(tarea.fechaInicio)}"
                       " → ${_formatearFecha(tarea.fechaFin)}  "
-                      "• ⏱ ${tarea.duracionHoras} h",
+                      "• ⏱ ${tarea.duracionMinutos} h",
                     ),
                     const SizedBox(height: 4),
                     Text("👷 Operarios: ${_resumenOperarios(tarea)}"),

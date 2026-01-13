@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/pages/festivos_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_insumo_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_conjuntos_page.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_application_1/pages/gerente/lista_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/usuarios_conjunto_page.dart';
 import 'package:flutter_application_1/pages/preventivas_page.dart';
 import 'package:flutter_application_1/pages/tareas_page.dart';
+
 import '../../service/theme.dart';
 import '../maquinaria_page.dart';
 import '../inventario_page.dart';
@@ -22,6 +24,38 @@ import '../reportes_page.dart';
 import '../crear_cronograma_page.dart';
 import 'crear_conjunto_page.dart';
 import '../solicitud_maquinaria_page.dart';
+
+/// Acciones del menú superior (AppBar)
+enum _QuickAction {
+  // Usuarios
+  usuariosGestion,
+  usuarioCrear,
+
+  // Conjuntos
+  conjuntoCrear,
+  conjuntosGestion,
+
+  // Insumos
+  insumoCrear,
+  insumosCatalogo,
+
+  // Maquinaria
+  maquinariaCrear,
+  maquinariaCatalogo,
+
+  // Tareas
+  tareaCrear,
+
+  // Solicitudes
+  solicitudInsumo,
+  solicitudMaquinaria,
+
+  // Cronogramas
+  cronogramaCrear,
+
+  // Festivos
+  festivosCrear,
+}
 
 class GerenteDashboardPage extends StatefulWidget {
   const GerenteDashboardPage({super.key});
@@ -40,10 +74,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
   Conjunto? get _conjuntoSeleccionado {
     if (_conjuntoSeleccionadoNit == null) return null;
-    return _conjuntos.firstWhere(
-      (c) => c.nit == _conjuntoSeleccionadoNit,
-      orElse: () => _conjuntos.first,
-    );
+    // Si por alguna razón no encuentra el NIT seleccionado, vuelve al primero.
+    try {
+      return _conjuntos.firstWhere((c) => c.nit == _conjuntoSeleccionadoNit);
+    } catch (_) {
+      return _conjuntos.isNotEmpty ? _conjuntos.first : null;
+    }
   }
 
   @override
@@ -54,14 +90,15 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
   Future<void> _cargarConjuntos() async {
     try {
-      // Reutiliza el método que usas ya en ListaConjuntosPage
-      final lista = await _gerenteApi.listarConjuntos(); // <-- ya lo tienes
+      final lista = await _gerenteApi.listarConjuntos();
       setState(() {
         _conjuntos = lista;
         _cargandoConjuntos = false;
         _errorConjuntos = null;
         if (_conjuntos.isNotEmpty) {
           _conjuntoSeleccionadoNit = _conjuntos.first.nit;
+        } else {
+          _conjuntoSeleccionadoNit = null;
         }
       });
     } catch (e) {
@@ -72,7 +109,22 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
     }
   }
 
-  /// 🔹 NUEVO DISEÑO — Tarjetas compactas
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  bool get _hayConjunto => _conjuntoSeleccionado != null;
+
+  /// Para acciones que requieren NIT
+  bool _requiereConjuntoOrWarn() {
+    if (_hayConjunto) return true;
+    _snack(
+      "Primero crea un conjunto (arriba en Atajos) para usar esta opción.",
+    );
+    return false;
+  }
+
+  /// 🔹 Tarjetas compactas
   Widget _smallCard(
     String title,
     IconData icon,
@@ -115,208 +167,410 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
     );
   }
 
-  /// 🔹 Nuevo menú lateral derecho
-  Drawer _drawerAtajos(String nit) {
-    return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
+  /// Menú superior “más pro”: PopupMenuButton agrupado
+  List<PopupMenuEntry<_QuickAction>> _buildQuickMenuItems({
+    required bool enabledNit,
+  }) {
+    PopupMenuItem<_QuickAction> item(
+      _QuickAction v,
+      String text,
+      IconData icon, {
+      bool enabled = true,
+    }) {
+      return PopupMenuItem<_QuickAction>(
+        value: v,
+        enabled: enabled,
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: enabled ? null : Colors.grey),
+            const SizedBox(width: 10),
+            Expanded(child: Text(text)),
+          ],
+        ),
+      );
+    }
+
+    PopupMenuItem<_QuickAction> header(String text, IconData icon) {
+      return PopupMenuItem<_QuickAction>(
+        enabled: false,
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: Colors.black54),
+            const SizedBox(width: 10),
+            Text(
+              text,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.black54,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return [
+      header("Usuarios", Icons.people_alt_outlined),
+      item(
+        _QuickAction.usuariosGestion,
+        "Gestión de usuarios",
+        Icons.people,
+        enabled: enabledNit,
+      ),
+      item(
+        _QuickAction.usuarioCrear,
+        "Crear usuario",
+        Icons.person_add_alt_1,
+        enabled: enabledNit,
+      ),
+
+      const PopupMenuDivider(),
+
+      header("Conjuntos", Icons.apartment),
+      item(
+        _QuickAction.conjuntoCrear,
+        "Crear conjunto",
+        Icons.add_business,
+        enabled: true,
+      ),
+      item(
+        _QuickAction.conjuntosGestion,
+        "Gestión de conjuntos",
+        Icons.business,
+        enabled: true,
+      ),
+
+      const PopupMenuDivider(),
+
+      header("Insumos", Icons.inventory_2_outlined),
+      item(
+        _QuickAction.insumoCrear,
+        "Crear insumo",
+        Icons.inventory,
+        enabled: enabledNit,
+      ),
+      item(
+        _QuickAction.insumosCatalogo,
+        "Catálogo de insumos",
+        Icons.list_alt,
+        enabled: true,
+      ),
+
+      const PopupMenuDivider(),
+
+      header("Maquinaria", Icons.precision_manufacturing_outlined),
+      item(
+        _QuickAction.maquinariaCrear,
+        "Crear maquinaria",
+        Icons.build,
+        enabled: true,
+      ),
+      item(
+        _QuickAction.maquinariaCatalogo,
+        "Catálogo de maquinaria",
+        Icons.construction,
+        enabled: true,
+      ),
+
+      const PopupMenuDivider(),
+
+      header("Tareas", Icons.assignment),
+      item(
+        _QuickAction.tareaCrear,
+        "Crear tarea",
+        Icons.add_task,
+        enabled: enabledNit,
+      ),
+
+      const PopupMenuDivider(),
+
+      header("Solicitudes", Icons.shopping_cart_outlined),
+      item(
+        _QuickAction.solicitudInsumo,
+        "Solicitud de insumo",
+        Icons.inventory_2_outlined,
+        enabled: enabledNit,
+      ),
+      item(
+        _QuickAction.solicitudMaquinaria,
+        "Solicitud de maquinaria",
+        Icons.precision_manufacturing,
+        enabled: enabledNit,
+      ),
+
+      const PopupMenuDivider(),
+
+      header("Cronogramas", Icons.calendar_month),
+      item(
+        _QuickAction.cronogramaCrear,
+        "Crear cronograma",
+        Icons.calendar_today,
+        enabled: enabledNit,
+      ),
+
+      const PopupMenuDivider(),
+
+      header("Festivos", Icons.event_available),
+      item(
+        _QuickAction.festivosCrear,
+        "Crear días festivos",
+        Icons.event,
+        enabled: true,
+      ),
+    ];
+  }
+
+  void _handleQuickAction(_QuickAction action) {
+    final String? nit = _conjuntoSeleccionado?.nit;
+
+    // Helpers de navegación
+    void go(Widget page) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    }
+
+    switch (action) {
+      // Usuarios (requiere nit)
+      case _QuickAction.usuariosGestion:
+        if (!_requiereConjuntoOrWarn()) return;
+        go(ListaUsuariosPage(nit: nit!));
+        return;
+
+      case _QuickAction.usuarioCrear:
+        if (!_requiereConjuntoOrWarn()) return;
+        go(CrearUsuarioPage(nit: nit!));
+        return;
+
+      // Conjuntos (no requiere nit)
+      case _QuickAction.conjuntoCrear:
+        // Si tu CrearConjuntoPage realmente necesita nit, le mandamos '' para evitar null.
+        go(CrearConjuntoPage(nit: nit ?? ''));
+        return;
+
+      case _QuickAction.conjuntosGestion:
+        go(ListaConjuntosPage(nit: nit ?? ''));
+        return;
+
+      // Insumos
+      case _QuickAction.insumoCrear:
+        if (!_requiereConjuntoOrWarn()) return;
+        go(CrearInsumoPage(nit: nit!));
+        return;
+
+      case _QuickAction.insumosCatalogo:
+        go(const ListaInsumosPage());
+        return;
+
+      // Maquinaria
+      case _QuickAction.maquinariaCrear:
+        // En tu código original estaba hardcodeado. Lo dejo igual.
+        go(const CrearMaquinariaPage(nit: '901191875-4'));
+        return;
+
+      case _QuickAction.maquinariaCatalogo:
+        go(const ListaMaquinariaPage());
+        return;
+
+      // Tareas
+      case _QuickAction.tareaCrear:
+        if (!_requiereConjuntoOrWarn()) return;
+        go(CrearTareaPage(nit: nit!));
+        return;
+
+      // Solicitudes
+      case _QuickAction.solicitudInsumo:
+        if (!_requiereConjuntoOrWarn()) return;
+        go(SolicitudInsumoPage(nit: nit!));
+        return;
+
+      case _QuickAction.solicitudMaquinaria:
+        if (!_requiereConjuntoOrWarn()) return;
+        go(SolicitudMaquinariaPage(nit: nit!));
+        return;
+
+      // Cronogramas
+      case _QuickAction.cronogramaCrear:
+        if (!_requiereConjuntoOrWarn()) return;
+        go(CrearCronogramaPage(nit: nit!));
+        return;
+
+      // Festivos
+      case _QuickAction.festivosCrear:
+        go(FestivosPage());
+        return;
+    }
+  }
+
+  Widget _buildBody() {
+    if (_cargandoConjuntos) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorConjuntos != null) {
+      return Center(child: Text("Error cargando conjuntos: $_errorConjuntos"));
+    }
+
+    // No hay conjuntos: igual puedes abrir el menú superior y crear uno.
+    if (_conjuntoSeleccionado == null) {
+      return const Center(
+        child: Text(
+          "No hay conjuntos creados.\nUsa 'Atajos' arriba para crear el primero.",
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    final Conjunto conjunto = _conjuntoSeleccionado!;
+    final String nit = conjunto.nit;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DrawerHeader(
-            decoration: BoxDecoration(color: AppTheme.primary),
-            child: const Text(
-              "Atajos rápidos",
-              style: TextStyle(color: Colors.white, fontSize: 20),
+          Card(
+            elevation: 1,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(Icons.apartment, color: AppTheme.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Conjunto seleccionado",
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                        Text(
+                          conjunto.nombre,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        Text(
+                          "NIT: ${conjunto.nit}",
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  DropdownButton<String>(
+                    value: _conjuntoSeleccionadoNit,
+                    underline: const SizedBox.shrink(),
+                    items: _conjuntos
+                        .map(
+                          (c) => DropdownMenuItem<String>(
+                            value: c.nit,
+                            child: Text(
+                              c.nombre,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      setState(() {
+                        _conjuntoSeleccionadoNit = v;
+                      });
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
+          const SizedBox(height: 20),
+          const Text(
+            "Panel general",
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 12),
 
-          // ---------------------------
-          //        USUARIOS
-          // ---------------------------
-          ExpansionTile(
-            initiallyExpanded: true,
-            leading: const Icon(Icons.people_alt_outlined),
-            title: const Text("Usuarios"),
+          GridView.count(
+            shrinkWrap: true,
+            crossAxisCount: 4,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.2,
+            physics: const NeverScrollableScrollPhysics(),
             children: [
-              ListTile(
-                leading: const Icon(Icons.people),
-                title: const Text("Gestión de usuarios"),
+              _smallCard(
+                "Usuarios",
+                Icons.people_outline,
+                Colors.indigo,
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => ListaUsuariosPage(nit: nit),
+                    builder: (_) => UsuariosConjuntoPage(conjuntoNit: nit),
                   ),
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.person_add_alt_1),
-                title: const Text("Crear usuario"),
+              _smallCard(
+                "Tareas",
+                Icons.assignment,
+                AppTheme.green,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => CrearUsuarioPage(nit: nit)),
+                  MaterialPageRoute(builder: (_) => TareasPage(nit: nit)),
                 ),
               ),
-            ],
-          ),
-
-          // ---------------------------
-          //        CONJUNTOS
-          // ---------------------------
-          ExpansionTile(
-            leading: const Icon(Icons.apartment),
-            title: const Text("Conjuntos"),
-            children: [
-              ListTile(
-                leading: const Icon(Icons.add_business),
-                title: const Text("Crear conjunto"),
+              _smallCard(
+                "Solicitudes",
+                Icons.pending_actions,
+                AppTheme.primary,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => CrearConjuntoPage(nit: nit),
-                  ),
+                  MaterialPageRoute(builder: (_) => SolicitudesPage(nit: nit)),
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.business),
-                title: const Text("Gestión de conjuntos"),
+              _smallCard(
+                "Maquinaria",
+                Icons.precision_manufacturing,
+                AppTheme.red,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => ListaConjuntosPage(nit: nit),
-                  ),
+                  MaterialPageRoute(builder: (_) => MaquinariaPage(nit: nit)),
                 ),
               ),
-            ],
-          ),
-
-          // ---------------------------
-          //        INSUMOS
-          // ---------------------------
-          ExpansionTile(
-            leading: const Icon(Icons.inventory_2_outlined),
-            title: const Text("Insumos"),
-            children: [
-              ListTile(
-                leading: const Icon(Icons.inventory),
-                title: const Text("Crear insumos"),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CrearInsumoPage(nit: nit),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.inventory),
-                title: const Text("Catálogo de insumos"),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ListaInsumosPage()),
-                  );
-                },
-              ),
-            ],
-          ),
-
-          // ---------------------------
-          //        MAQUINARIA
-          // ---------------------------
-          ExpansionTile(
-            leading: const Icon(Icons.precision_manufacturing_outlined),
-            title: const Text("Maquinaria"),
-            children: [
-              ListTile(
-                leading: const Icon(Icons.build),
-                title: const Text("Crear maquinaria"),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const CrearMaquinariaPage(nit: '901191875-4'),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.build),
-                title: const Text("Catálogo de maquinaria"),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const ListaMaquinariaPage(),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-
-          // ---------------------------
-          //        TAREAS
-          // ---------------------------
-          ExpansionTile(
-            leading: const Icon(Icons.assignment),
-            title: const Text("Tareas"),
-            children: [
-              ListTile(
-                leading: const Icon(Icons.add_task),
-                title: const Text("Crear tarea"),
+              _smallCard(
+                "Inventario",
+                Icons.inventory_2_outlined,
+                AppTheme.yellow,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => CrearTareaPage(nit: nit,)),
+                  MaterialPageRoute(builder: (_) => InventarioPage(nit: nit)),
                 ),
               ),
-            ],
-          ),
-
-          // ---------------------------
-          //        SOLICITUDES
-          // ---------------------------
-          ExpansionTile(
-            leading: const Icon(Icons.shopping_cart),
-            title: const Text("Solicitudes"),
-            children: [
-              ListTile(
-                leading: const Icon(Icons.inventory_2_outlined),
-                title: const Text("Solicitud de insumo"),
+              _smallCard(
+                "Cronograma",
+                Icons.calendar_month,
+                Colors.purple,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => SolicitudInsumoPage(nit: nit),
-                  ),
+                  MaterialPageRoute(builder: (_) => CronogramaPage(nit: nit)),
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.precision_manufacturing),
-                title: const Text("Solicitud de maquinaria"),
+              _smallCard(
+                "Reportes",
+                Icons.bar_chart,
+                Colors.teal,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => SolicitudMaquinariaPage(nit: nit),
-                  ),
+                  MaterialPageRoute(builder: (_) => ReportesPage(nit: nit)),
                 ),
               ),
-            ],
-          ),
-
-          // ---------------------------
-          //        CRONOGRAMAS
-          // ---------------------------
-          ExpansionTile(
-            leading: const Icon(Icons.calendar_month),
-            title: const Text("Cronogramas"),
-            children: [
-              ListTile(
-                leading: const Icon(Icons.calendar_today),
-                title: const Text("Crear cronograma"),
+              _smallCard(
+                "Definir tarea preventiva",
+                Icons.build_circle_outlined,
+                Colors.deepOrange,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => CrearCronogramaPage(nit: nit),
-                  ),
+                  MaterialPageRoute(builder: (_) => PreventivasPage(nit: nit)),
                 ),
               ),
             ],
@@ -328,59 +582,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_cargandoConjuntos) {
-      return Scaffold(
-        backgroundColor: AppTheme.background,
-        appBar: AppBar(
-          backgroundColor: AppTheme.primary,
-          title: const Text(
-            "Panel del Gerente",
-            style: TextStyle(color: Colors.white),
-          ),
-        ),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_errorConjuntos != null) {
-      return Scaffold(
-        backgroundColor: AppTheme.background,
-        appBar: AppBar(
-          backgroundColor: AppTheme.primary,
-          title: const Text(
-            "Panel del Gerente",
-            style: TextStyle(color: Colors.white),
-          ),
-        ),
-        body: Center(child: Text("Error cargando conjuntos: $_errorConjuntos")),
-      );
-    }
-
-    if (_conjuntoSeleccionado == null) {
-      return Scaffold(
-        backgroundColor: AppTheme.background,
-        appBar: AppBar(
-          backgroundColor: AppTheme.primary,
-          title: const Text(
-            "Panel del Gerente",
-            style: TextStyle(color: Colors.white),
-          ),
-        ),
-        body: const Center(
-          child: Text(
-            "No hay conjuntos creados.\nCrea uno desde el menú de atajos.",
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-    }
-
-    final Conjunto conjunto = _conjuntoSeleccionado!;
-    final String nit = conjunto.nit;
+    final bool enabledNit = _hayConjunto; // habilita/deshabilita items del menú
 
     return Scaffold(
       backgroundColor: AppTheme.background,
-      endDrawer: _drawerAtajos(nit),
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
         title: const Text(
@@ -388,209 +593,21 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           style: TextStyle(color: Colors.white),
         ),
         actions: [
-          Builder(
-            builder: (context) {
-              return IconButton(
-                icon: const Icon(Icons.menu, color: Colors.white),
-                onPressed: () => Scaffold.of(context).openEndDrawer(),
-              );
-            },
+          IconButton(
+            tooltip: "Recargar conjuntos",
+            onPressed: _cargarConjuntos,
+            icon: const Icon(Icons.refresh, color: Colors.white),
           ),
+          PopupMenuButton<_QuickAction>(
+            tooltip: "Atajos",
+            icon: const Icon(Icons.apps_rounded, color: Colors.white),
+            onSelected: _handleQuickAction,
+            itemBuilder: (_) => _buildQuickMenuItems(enabledNit: enabledNit),
+          ),
+          const SizedBox(width: 6),
         ],
       ),
-
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 🔹 Cabecera Proyecto
-            // 🔹 Cabecera Conjunto
-            Card(
-              elevation: 1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.apartment, color: AppTheme.primary),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            "Conjunto seleccionado",
-                            style: TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
-                          Text(
-                            conjunto.nombre,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          Text(
-                            "NIT: ${conjunto.nit}",
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                    DropdownButton<String>(
-                      value: _conjuntoSeleccionadoNit,
-                      underline: const SizedBox.shrink(),
-                      items: _conjuntos
-                          .map(
-                            (c) => DropdownMenuItem<String>(
-                              value: c.nit,
-                              child: Text(
-                                c.nombre,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) {
-                        setState(() {
-                          _conjuntoSeleccionadoNit = v;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            const Text(
-              "Panel general",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 12),
-
-            /// 🔹 GRID compacta y bonita
-            GridView.count(
-              shrinkWrap: true,
-              crossAxisCount: 4,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.2,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                _smallCard(
-                  "Usuarios",
-                  Icons.people_outline,
-                  Colors.indigo,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => UsuariosConjuntoPage(conjuntoNit: nit),
-                      ),
-                    );
-                  },
-                ),
-                _smallCard(
-                  "Tareas",
-                  Icons.assignment,
-                  AppTheme.green,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => TareasPage(nit: nit)),
-                    );
-                  },
-                ),
-                _smallCard(
-                  "Solicitudes",
-                  Icons.pending_actions,
-                  AppTheme.primary,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SolicitudesPage(nit: nit),
-                      ),
-                    );
-                  },
-                ),
-                _smallCard(
-                  "Maquinaria",
-                  Icons.precision_manufacturing,
-                  AppTheme.red,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => MaquinariaPage(nit: nit),
-                      ),
-                    );
-                  },
-                ),
-                _smallCard(
-                  "Inventario",
-                  Icons.inventory_2_outlined,
-                  AppTheme.yellow,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => InventarioPage(nit: nit),
-                      ),
-                    );
-                  },
-                ),
-                _smallCard(
-                  "Cronograma",
-                  Icons.calendar_month,
-                  Colors.purple,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CronogramaPage(nit: nit,),
-                      ),
-                    );
-                  },
-                ),
-                _smallCard(
-                  "Reportes",
-                  Icons.bar_chart,
-                  Colors.teal,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => ReportesPage(nit: nit)),
-                    );
-                  },
-                ),
-                _smallCard(
-                  "Definir tarea preventiva",
-                  Icons.build_circle_outlined,
-                  Colors.deepOrange,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PreventivasPage(
-                          nit: nit,
-                        ), // o crea una DefinirTareaPreventivaPage(nit: nit)
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+      body: _buildBody(),
     );
   }
 }

@@ -124,8 +124,8 @@ class _PreventivasPageState extends State<PreventivasPage> {
   }
 
   String _textoDimensionDuracion(pm.DefinicionPreventiva def) {
-    if (def.duracionHorasFija != null) {
-      return '${def.duracionHorasFija} h (duración fija)';
+    if (def.duracionMinutosFija != null) {
+      return '${def.duracionMinutosFija} minutos (duración fija)';
     }
     if (def.areaNumerica != null && def.unidadCalculo != null) {
       return '${def.areaNumerica} ${def.unidadCalculo} (por rendimiento)';
@@ -201,7 +201,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
         nit: widget.nit,
         anio: anio,
         mes: mes,
-        tamanoBloqueHoras: 1,
+        tamanoBloqueMinutos: 60,
       );
 
       if (!mounted) return;

@@ -825,7 +825,20 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                       h.dia,
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
-                    Text("${h.horaApertura} - ${h.horaCierre}"),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text("${h.horaApertura} - ${h.horaCierre}"),
+                        if (h.descansoInicio != null && h.descansoFin != null)
+                          Text(
+                            "Descanso: ${h.descansoInicio} - ${h.descansoFin}",
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ),

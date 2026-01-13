@@ -4,11 +4,15 @@ class HorarioConjunto {
   final String dia;
   final String horaApertura;
   final String horaCierre;
+  final String? descansoInicio;
+  final String? descansoFin;
 
   HorarioConjunto({
     required this.dia,
     required this.horaApertura,
     required this.horaCierre,
+    this.descansoInicio,
+    this.descansoFin,
   });
 
   factory HorarioConjunto.fromJson(Map<String, dynamic> json) {
@@ -16,6 +20,8 @@ class HorarioConjunto {
       dia: json['dia'] as String,
       horaApertura: json['horaApertura'] as String,
       horaCierre: json['horaCierre'] as String,
+      descansoInicio: json['descansoInicio'] as String?,
+      descansoFin: json['descansoFin'] as String?,
     );
   }
 }
@@ -27,10 +33,7 @@ class Elemento {
   Elemento({required this.id, required this.nombre});
 
   factory Elemento.fromJson(Map<String, dynamic> json) {
-    return Elemento(
-      id: json['id'] as int,
-      nombre: json['nombre'] as String,
-    );
+    return Elemento(id: json['id'] as int, nombre: json['nombre'] as String);
   }
 }
 
@@ -142,8 +145,8 @@ class Conjunto {
       administradorNombre: adminNombre,
       operarios: operariosJson
           .map((o) {
-            final uJson = (o as Map<String, dynamic>)['usuario']
-                as Map<String, dynamic>?;
+            final uJson =
+                (o as Map<String, dynamic>)['usuario'] as Map<String, dynamic>?;
             return uJson != null ? Usuario.fromJson(uJson) : null;
           })
           .whereType<Usuario>()
@@ -152,8 +155,7 @@ class Conjunto {
           .map((h) => HorarioConjunto.fromJson(h as Map<String, dynamic>))
           .toList(),
       ubicaciones: ubicacionesJson
-          .map((u) =>
-              UbicacionConElementos.fromJson(u as Map<String, dynamic>))
+          .map((u) => UbicacionConElementos.fromJson(u as Map<String, dynamic>))
           .toList(),
     );
   }

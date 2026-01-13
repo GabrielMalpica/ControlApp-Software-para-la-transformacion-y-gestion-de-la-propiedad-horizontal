@@ -13,6 +13,17 @@ class EmpresaApi {
 
   String get _empresaNit => AppConstants.empresaNit;
 
+  Future<int> getLimiteMinSemanaPorConjunto() async {
+    final resp = await _client.get('/$_empresaNit/limite-min-semana');
+
+    if (resp.statusCode != 200) {
+      throw Exception('Error límite semanal: ${resp.statusCode} ${resp.body}');
+    }
+
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    return int.parse(data['limiteMinSemana'].toString());
+  }
+
   Future<InsumoResponse> crearInsumoCatalogo(InsumoRequest req) async {
     final resp = await _client.post(
       '${AppConstants.baseUrl}/empresa/$_empresaNit/catalogo/insumos',
