@@ -5,7 +5,12 @@ import { PrismaClient } from "../generated/prisma";
 import { MaquinariaService } from "../services/MaquinariaServices";
 
 // Params y body mínimos
-const MaquinariaIdParam = z.object({ maquinariaId: z.coerce.number().int().positive() });
+const MaquinariaIdParam = z.object({
+  maquinariaId: z.coerce.number().int().positive(),
+});
+export const ConjuntoIdParam = z.object({
+  conjuntoId: z.string().min(3),
+});
 const AsignarBody = z.object({
   conjuntoId: z.string().min(3),
   responsableId: z.number().int().positive().optional(),
@@ -26,17 +31,23 @@ export class MaquinariaController {
       const service = new MaquinariaService(this.prisma, maquinariaId);
       const updated = await service.asignarAConjunto(body);
       res.status(201).json(updated);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   // POST /maquinarias/:maquinariaId/devolver
   devolver: RequestHandler = async (req, res, next) => {
     try {
       const { maquinariaId } = MaquinariaIdParam.parse(req.params);
+      const { conjuntoId } = ConjuntoIdParam.parse(req.params); // crea este param
       const service = new MaquinariaService(this.prisma, maquinariaId);
-      const updated = await service.devolver();
+
+      const updated = await service.devolver(conjuntoId);
       res.status(200).json(updated);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   // GET /maquinarias/:maquinariaId/disponible
@@ -46,17 +57,25 @@ export class MaquinariaController {
       const service = new MaquinariaService(this.prisma, maquinariaId);
       const disponible = await service.estaDisponible();
       res.json({ disponible });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   // GET /maquinarias/:maquinariaId/responsable
   obtenerResponsable: RequestHandler = async (req, res, next) => {
     try {
       const { maquinariaId } = MaquinariaIdParam.parse(req.params);
+      const { conjuntoId } = ConjuntoIdParam.parse(req.params);
       const service = new MaquinariaService(this.prisma, maquinariaId);
-      const responsable = await service.obtenerResponsable();
+
+      const responsable = await service.obtenerResponsableEnConjunto(
+        conjuntoId
+      );
       res.json({ responsable });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   // GET /maquinarias/:maquinariaId/resumen
@@ -66,6 +85,8 @@ export class MaquinariaController {
       const service = new MaquinariaService(this.prisma, maquinariaId);
       const resumen = await service.resumenEstado();
       res.json({ resumen });
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 }

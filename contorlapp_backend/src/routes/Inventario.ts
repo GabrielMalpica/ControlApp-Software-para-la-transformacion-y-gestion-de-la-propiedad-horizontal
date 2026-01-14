@@ -1,18 +1,25 @@
+// ejemplo: src/routes/Inventario.ts
 import { Router } from "express";
 import { PrismaClient } from "../generated/prisma";
 import { InventarioController } from "../controller/InventarioController";
 
+const router = Router();
 const prisma = new PrismaClient();
-const controller = new InventarioController(prisma);
-export const inventarioRouter = Router();
+const c = new InventarioController(prisma);
 
-inventarioRouter.post("/inventarios/:inventarioId/insumos", controller.agregarInsumo);
-inventarioRouter.get("/inventarios/:inventarioId/insumos", controller.listarInsumos);
-inventarioRouter.get("/inventarios/:inventarioId/insumos-detalle", controller.listarInsumosDetallado);
-inventarioRouter.get("/inventarios/:inventarioId/insumos/:insumoId", controller.buscarInsumoPorId);
-inventarioRouter.delete("/inventarios/:inventarioId/insumos/:insumoId", controller.eliminarInsumo);
-inventarioRouter.post("/inventarios/:inventarioId/insumos/:insumoId/consumir", controller.consumirInsumoPorId);
-inventarioRouter.get("/inventarios/:inventarioId/insumos-bajos", controller.listarInsumosBajos);
-inventarioRouter.get("/inventarios/:inventarioId/insumos-bajos/detalle", controller.listarInsumosBajosDetallado);
+// ✅ por conjunto
+router.get("/conjunto/:nit/insumos", c.listarInsumosConjunto);
+router.get("/conjunto/:nit/insumos-bajos", c.listarInsumosBajosConjunto);
+router.post("/conjunto/:nit/agregar-stock", c.agregarStockConjunto);
+router.post("/conjunto/:nit/consumir-stock", c.consumirStockConjunto);
+router.get("/conjunto/:nit/insumos/:insumoId", c.buscarInsumoConjunto);
 
-export default inventarioRouter;
+// ✅ legacy por inventarioId (si aún los usas)
+router.post("/:inventarioId/insumos", c.agregarInsumo);
+router.get("/:inventarioId/insumos", c.listarInsumos);
+router.delete("/:inventarioId/insumos/:insumoId", c.eliminarInsumo);
+router.get("/:inventarioId/insumos/:insumoId", c.buscarInsumoPorId);
+router.post("/:inventarioId/insumos/:insumoId/consumir", c.consumirInsumoPorId);
+router.get("/:inventarioId/insumos-bajos", c.listarInsumosBajos);
+
+export default router;

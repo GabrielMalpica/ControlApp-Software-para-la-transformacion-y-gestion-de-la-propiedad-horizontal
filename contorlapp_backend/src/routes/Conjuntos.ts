@@ -14,6 +14,7 @@ conjuntoRouter.delete("/conjuntos/:nit/administrador", c.eliminarAdministrador);
 
 conjuntoRouter.post("/conjuntos/:nit/maquinaria", c.agregarMaquinaria);
 conjuntoRouter.post("/conjuntos/:nit/maquinaria/entregar", c.entregarMaquinaria);
+conjuntoRouter.get("/:nit/maquinaria", c.listarMaquinaria);
 
 conjuntoRouter.post("/conjuntos/:nit/ubicaciones", c.agregarUbicacion);
 conjuntoRouter.get("/conjuntos/:nit/ubicaciones/buscar", c.buscarUbicacion);

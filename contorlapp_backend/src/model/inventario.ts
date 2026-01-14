@@ -1,6 +1,7 @@
 // src/models/inventarioInsumo.ts
 import { z } from "zod";
 import { CategoriaInsumo } from "../generated/prisma";
+import { decToNumber } from "../utils/decimal";
 
 /** Dominio 1:1 con Prisma */
 export interface InventarioInsumoDominio {
@@ -25,10 +26,10 @@ export const AgregarStockDTO = z.object({
 
 /** Consumir stock (decrementa) */
 export const ConsumirStockDTO = z.object({
-  inventarioId: z.number().int().positive(),
   insumoId: z.number().int().positive(),
-  cantidad: z.number().int().positive(),
+  cantidad: z.coerce.number().positive(),
 });
+
 
 /** Fijar/actualizar umbral mínimo (por conjunto) */
 export const SetUmbralMinimoDTO = z.object({
@@ -61,8 +62,12 @@ export const inventarioInsumoPublicSelect = {
 } as const;
 
 /** Helper */
-export function toInventarioInsumoPublico<
-  T extends Record<keyof typeof inventarioInsumoPublicSelect, any>
->(row: T): InventarioInsumoPublico {
-  return row as unknown as InventarioInsumoPublico;
+export function toInventarioInsumoPublico(row: any): InventarioInsumoPublico {
+  return {
+    id: row.id,
+    inventarioId: row.inventarioId,
+    insumoId: row.insumoId,
+    cantidad: decToNumber(row.cantidad),
+    umbralMinimo: row.umbralMinimo != null ? decToNumber(row.umbralMinimo) : null,
+  };
 }

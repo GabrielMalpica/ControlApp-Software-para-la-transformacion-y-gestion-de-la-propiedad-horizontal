@@ -1,6 +1,7 @@
 // src/services/ReporteService.ts
 import { PrismaClient, EstadoTarea } from "../generated/prisma";
 import { z } from "zod";
+import { decToNumber } from "../utils/decimal";
 
 /** Rangos básicos */
 const RangoDTO = z
@@ -70,35 +71,35 @@ export class ReporteService {
 
     const inventario = await this.prisma.inventario.findUnique({
       where: { conjuntoId },
-      include: {
-        consumos: {
-          where: { fecha: { gte: desde, lte: hasta } },
-          include: { insumo: true },
-        },
-      },
+      select: { id: true },
     });
     if (!inventario) throw new Error("Inventario no encontrado");
 
-    const resumen = new Map<
-      number,
-      { insumoId: number; nombre: string; unidad: string; cantidad: number }
-    >();
+    const rows = await this.prisma.consumoInsumo.groupBy({
+      by: ["insumoId"],
+      where: {
+        inventarioId: inventario.id,
+        fecha: { gte: desde, lte: hasta },
+      },
+      _sum: { cantidad: true },
+    });
 
-    for (const c of inventario.consumos) {
-      const key = c.insumo.id;
-      const prev = resumen.get(key);
-      if (prev) {
-        prev.cantidad += c.cantidad;
-      } else {
-        resumen.set(key, {
-          insumoId: c.insumo.id,
-          nombre: c.insumo.nombre,
-          unidad: c.insumo.unidad,
-          cantidad: c.cantidad,
-        });
-      }
-    }
-    return Array.from(resumen.values());
+    const insumos = await this.prisma.insumo.findMany({
+      where: { id: { in: rows.map((r) => r.insumoId) } },
+      select: { id: true, nombre: true, unidad: true },
+    });
+
+    const mapInfo = new Map(insumos.map((i) => [i.id, i]));
+
+    return rows.map((r) => {
+      const info = mapInfo.get(r.insumoId)!;
+      return {
+        insumoId: r.insumoId,
+        nombre: info.nombre,
+        unidad: info.unidad,
+        cantidad: decToNumber(r._sum.cantidad),
+      };
+    });
   }
 
   async tareasPorEstado(payload: unknown) {

@@ -30,13 +30,6 @@ import {
   toConjuntoPublico,
 } from "../model/Conjunto";
 
-import {
-  CrearMaquinariaDTO,
-  EditarMaquinariaDTO,
-  maquinariaPublicSelect,
-  toMaquinariaPublica,
-} from "../model/Maquinaria";
-
 import { CrearTareaDTO, EditarTareaDTO } from "../model/Tarea";
 
 import { CrearInsumoDTO, insumoPublicSelect } from "../model/Insumo";
@@ -47,6 +40,7 @@ import {
   sugerirHuecoDia,
   toMinOfDay,
 } from "../utils/schedulerUtils";
+import { CrearMaquinariaCatalogoDTO, EditarMaquinariaCatalogoDTO } from "../model/Maquinaria";
 
 const AsignarAConjuntoDTO = z.object({
   operarioId: z.number().int().positive(),
@@ -537,7 +531,7 @@ export class GerenteService {
   }
 
   async eliminarConjunto(conjuntoId: string) {
-    const [tareasPendientes, maquinariaPrestada] = await Promise.all([
+    const [tareasPendientes, maquinariaActivaEnConjunto] = await Promise.all([
       this.prisma.tarea.findMany({
         where: {
           conjuntoId,
@@ -545,16 +539,21 @@ export class GerenteService {
         },
         select: { id: true },
       }),
-      this.prisma.maquinaria.findMany({
-        where: { conjuntoId, disponible: false },
+      this.prisma.maquinariaConjunto.findMany({
+        where: {
+          conjuntoId,
+          estado: "ACTIVA",
+        },
         select: { id: true },
       }),
     ]);
 
     if (tareasPendientes.length > 0)
       throw new Error("❌ El conjunto tiene tareas pendientes.");
-    if (maquinariaPrestada.length > 0)
-      throw new Error("❌ El conjunto tiene maquinaria prestada.");
+    if (maquinariaActivaEnConjunto.length > 0)
+      throw new Error(
+        "❌ El conjunto tiene maquinaria activa asignada (propia o prestada)."
+      );
 
     await this.prisma.conjunto.delete({ where: { nit: conjuntoId } });
   }
@@ -630,9 +629,8 @@ export class GerenteService {
   }
 
   /** Catálogo corporativo: empresaId = null (ajusta si usas catálogo por empresa) */
-  async agregarInsumoAlCatalogo(payload: unknown) {
+  async agregarInsumoAlCatalogo(payload: unknown, empresaId: string) {
     const dto = CrearInsumoDTO.parse(payload);
-    const empresaId: string | null = null;
 
     const existe = await this.prisma.insumo.findFirst({
       where: { empresaId, nombre: dto.nombre, unidad: dto.unidad },
@@ -647,7 +645,7 @@ export class GerenteService {
       data: {
         nombre: dto.nombre,
         unidad: dto.unidad,
-        empresaId,
+        empresaId, // ✅ ya no null
         categoria: dto.categoria,
         umbralBajo: dto.umbralBajo ?? null,
       },
@@ -655,8 +653,7 @@ export class GerenteService {
     });
   }
 
-  async listarCatalogo() {
-    const empresaId: string | null = null;
+  async listarCatalogo(empresaId: string) {
     return this.prisma.insumo.findMany({
       where: { empresaId },
       select: insumoPublicSelect,
@@ -675,90 +672,6 @@ export class GerenteService {
     return supervisores.map(toUsuarioPublico);
   }
 
-  /* ===================== MAQUINARIA ===================== */
-
-  async crearMaquinaria(payload: unknown) {
-    const dto = CrearMaquinariaDTO.parse(payload);
-    const creada = await this.prisma.maquinaria.create({
-      data: {
-        nombre: dto.nombre,
-        marca: dto.marca,
-        tipo: dto.tipo as TipoMaquinaria,
-        estado: dto.estado ?? EstadoMaquinaria.OPERATIVA,
-        disponible: dto.disponible ?? true,
-        conjuntoId: dto.conjuntoId ?? null,
-        operarioId: dto.operarioId!.toString() ?? null,
-        empresaId: dto.empresaId ?? null,
-        fechaPrestamo: dto.fechaPrestamo ?? null,
-        fechaDevolucionEstimada: dto.fechaDevolucionEstimada ?? null,
-      },
-      select: maquinariaPublicSelect,
-    });
-    return toMaquinariaPublica(creada);
-  }
-
-  async entregarMaquinariaAConjunto(payload: unknown) {
-    const dto = EntregarMaquinariaDTO.parse(payload);
-    return this.prisma.maquinaria.update({
-      where: { id: dto.maquinariaId },
-      data: {
-        disponible: false,
-        conjuntoId: dto.conjuntoId,
-        fechaPrestamo: new Date(),
-      },
-      select: maquinariaPublicSelect,
-    });
-  }
-
-  async editarMaquinaria(maquinariaId: number, payload: unknown) {
-    const dto = EditarMaquinariaDTO.parse(payload);
-
-    const data: Prisma.MaquinariaUpdateInput = {};
-
-    if (dto.nombre !== undefined) data.nombre = dto.nombre;
-    if (dto.marca !== undefined) data.marca = dto.marca;
-    if (dto.tipo !== undefined) data.tipo = dto.tipo; // enum TipoMaquinaria
-    if (dto.estado !== undefined) data.estado = dto.estado;
-    if (dto.disponible !== undefined) data.disponible = dto.disponible;
-
-    // relaciones
-    if (dto.conjuntoId !== undefined) {
-      data.asignadaA =
-        dto.conjuntoId === null
-          ? { disconnect: true }
-          : { connect: { nit: dto.conjuntoId } };
-    }
-
-    if (dto.operarioId !== undefined) {
-      data.responsable =
-        dto.operarioId === null
-          ? { disconnect: true }
-          : { connect: { id: dto.operarioId.toString() } };
-    }
-
-    if (dto.empresaId !== undefined) {
-      data.empresa =
-        dto.empresaId === null
-          ? { disconnect: true }
-          : { connect: { nit: dto.empresaId } };
-    }
-
-    if (dto.fechaPrestamo !== undefined) {
-      data.fechaPrestamo = dto.fechaPrestamo;
-    }
-
-    if (dto.fechaDevolucionEstimada !== undefined) {
-      data.fechaDevolucionEstimada = dto.fechaDevolucionEstimada;
-    }
-
-    const actualizado = await this.prisma.maquinaria.update({
-      where: { id: maquinariaId },
-      data,
-      select: maquinariaPublicSelect,
-    });
-
-    return toMaquinariaPublica(actualizado);
-  }
 
   /* ===================== TAREAS ===================== */
 

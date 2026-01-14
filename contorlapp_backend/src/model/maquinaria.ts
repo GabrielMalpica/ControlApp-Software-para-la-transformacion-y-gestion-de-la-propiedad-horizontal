@@ -3,85 +3,137 @@ import { z } from "zod";
 import {
   EstadoMaquinaria,
   TipoMaquinaria,
-} from "../generated/prisma"; // enums Prisma
+  PropietarioMaquinaria,
+  TipoTenenciaMaquinaria,
+  EstadoAsignacionMaquinaria,
+} from "../generated/prisma";
 
-/** Dominio base 1:1 con Prisma */
-export interface MaquinariaDominio {
+/* ===================== DOMINIO ===================== */
+
+// ✅ Catálogo/Activo (tabla Maquinaria)
+export interface MaquinariaCatalogo {
   id: number;
   nombre: string;
   marca: string;
   tipo: TipoMaquinaria;
   estado: EstadoMaquinaria;
-  disponible: boolean;
-  conjuntoId?: string | null;   // NIT del conjunto donde está asignada
-  operarioId?: number | null;   // responsable
-  empresaId?: string | null;    // empresa dueña
-  fechaPrestamo?: Date | null;
-  fechaDevolucionEstimada?: Date | null;
-  conjuntoNombre?: string | null;
-  operarioNombre?: string | null;
+
+  propietarioTipo: PropietarioMaquinaria; // REQUIRED
+  empresaId?: string | null;
+  conjuntoPropietarioId?: string | null;
+
+  operarioId?: string | null; // Operario.id es String en tu schema
 }
 
-/** Tipo público (idéntico por ahora) */
-export type MaquinariaPublica = MaquinariaDominio;
+// ✅ Inventario de maquinaria por conjunto (tabla MaquinariaConjunto)
+export interface MaquinariaInventarioConjunto {
+  id: number;
+  conjuntoId: string;
+  maquinariaId: number;
+  tipoTenencia: TipoTenenciaMaquinaria;
+  estado: EstadoAsignacionMaquinaria;
+
+  fechaInicio: Date;
+  fechaFin?: Date | null;
+  fechaDevolucionEstimada?: Date | null;
+
+  operarioId?: string | null; // responsable en esa asignación
+}
 
 /* ===================== DTOs ===================== */
 
-/** Crear maquinaria (parte del stock de empresa) */
+// Crear maquinaria del catálogo de empresa
+export const CrearMaquinariaCatalogoDTO = z.object({
+  nombre: z.string().min(2),
+  marca: z.string().min(2),
+  tipo: z.nativeEnum(TipoMaquinaria),
+  estado: z
+    .nativeEnum(EstadoMaquinaria)
+    .optional()
+    .default(EstadoMaquinaria.OPERATIVA),
+
+  // para catálogo empresa:
+  empresaId: z.string().min(3),
+
+  // opcional: responsable global (en Maquinaria)
+  operarioId: z.string().optional(),
+});
+
 export const CrearMaquinariaDTO = z.object({
   nombre: z.string().min(2),
   marca: z.string().min(2),
   tipo: z.nativeEnum(TipoMaquinaria),
-  estado: z.nativeEnum(EstadoMaquinaria).optional().default(EstadoMaquinaria.OPERATIVA),
-  disponible: z.boolean().optional().default(true),
-  conjuntoId: z.string().min(3).optional(),
-  operarioId: z.number().int().optional(),
-  empresaId: z.string().min(3).optional(),
-  fechaPrestamo: z.coerce.date().optional(),
-  fechaDevolucionEstimada: z.coerce.date().optional(),
+  estado: z
+    .nativeEnum(EstadoMaquinaria)
+    .optional()
+    .default(EstadoMaquinaria.OPERATIVA),
+
+  // ✅ NUEVO: dueño
+  propietarioTipo: z
+    .nativeEnum(PropietarioMaquinaria)
+    .default(PropietarioMaquinaria.EMPRESA),
+  conjuntoPropietarioId: z.string().min(3).optional().nullable(), // nit si dueño = CONJUNTO
 });
 
-/** Editar maquinaria */
-export const EditarMaquinariaDTO = z.object({
+// Editar maquinaria del catálogo
+export const EditarMaquinariaCatalogoDTO = z.object({
   nombre: z.string().min(2).optional(),
   marca: z.string().min(2).optional(),
   tipo: z.nativeEnum(TipoMaquinaria).optional(),
   estado: z.nativeEnum(EstadoMaquinaria).optional(),
-  disponible: z.boolean().optional(),
-  conjuntoId: z.string().min(3).optional().nullable(),
-  operarioId: z.number().int().optional().nullable(),
-  empresaId: z.string().min(3).optional().nullable(),
-  fechaPrestamo: z.coerce.date().optional().nullable(),
-  fechaDevolucionEstimada: z.coerce.date().optional().nullable(),
+  operarioId: z.string().optional().nullable(),
 });
 
-/** Filtro de búsqueda (para listados, reportes, etc.) */
+// Asignar (prestar) maquinaria al inventario de un conjunto
+export const PrestarMaquinariaAConjuntoDTO = z.object({
+  maquinariaId: z.number().int().positive(),
+  conjuntoId: z.string().min(3),
+  fechaDevolucionEstimada: z.coerce.date().optional(),
+  operarioId: z.string().optional(), // responsable de la asignación
+});
+
+// Devolver maquinaria del conjunto (cerrar asignación ACTIVA)
+export const DevolverMaquinariaDeConjuntoDTO = z.object({
+  maquinariaId: z.number().int().positive(),
+  conjuntoId: z.string().min(3),
+});
+
 export const FiltroMaquinariaDTO = z.object({
   empresaId: z.string().optional(),
-  conjuntoId: z.string().optional(),
+  conjuntoId: z.string().optional(), // filtra por "prestada a este conjunto" (asignación ACTIVA)
   estado: z.nativeEnum(EstadoMaquinaria).optional(),
-  disponible: z.boolean().optional(),
+  disponible: z.boolean().optional(), // derivado
   tipo: z.nativeEnum(TipoMaquinaria).optional(),
+
+  // ✅ NUEVO: filtrar por origen/dueño
+  propietarioTipo: z.nativeEnum(PropietarioMaquinaria).optional(), // EMPRESA | CONJUNTO
 });
 
-/* ===================== SELECT BASE PARA PRISMA ===================== */
-export const maquinariaPublicSelect = {
+/* ===================== SELECTS ===================== */
+
+export const maquinariaCatalogoSelect = {
   id: true,
   nombre: true,
   marca: true,
   tipo: true,
   estado: true,
-  disponible: true,
-  conjuntoId: true,
-  operarioId: true,
+  propietarioTipo: true,
   empresaId: true,
-  fechaPrestamo: true,
-  fechaDevolucionEstimada: true,
+  conjuntoPropietarioId: true,
+  operarioId: true,
 } as const;
 
-/** Helper para castear el resultado de Prisma al tipo público */
-export function toMaquinariaPublica<
-  T extends Record<keyof typeof maquinariaPublicSelect, any>
->(row: T): MaquinariaPublica {
-  return row;
-}
+export const maquinariaConjuntoSelect = {
+  id: true,
+  conjuntoId: true,
+  maquinariaId: true,
+  tipoTenencia: true,
+  estado: true,
+  fechaInicio: true,
+  fechaFin: true,
+  fechaDevolucionEstimada: true,
+  operarioId: true,
+  maquinaria: {
+    select: { id: true, nombre: true, marca: true, tipo: true, estado: true },
+  },
+} as const;

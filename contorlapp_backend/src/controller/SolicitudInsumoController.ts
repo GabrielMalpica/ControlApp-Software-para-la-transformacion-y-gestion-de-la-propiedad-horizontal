@@ -14,9 +14,16 @@ const FiltroQuery = z.object({
   fechaHasta: z.coerce.date().optional(),
 });
 
+// aprobar puede venir vacío
+const AprobarBody = z.object({
+  fechaAprobacion: z.coerce.date().optional(),
+  empresaId: z.string().min(3).optional(),
+});
+
 export class SolicitudInsumoController {
   private prisma: PrismaClient;
   private service: SolicitudInsumoService;
+
   constructor(prisma?: PrismaClient) {
     this.prisma = prisma ?? new PrismaClient();
     this.service = new SolicitudInsumoService(this.prisma);
@@ -26,15 +33,20 @@ export class SolicitudInsumoController {
     try {
       const out = await this.service.crear(req.body);
       res.status(201).json(out);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   aprobar: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParam.parse(req.params);
-      const out = await this.service.aprobar(id, req.body);
+      const body = AprobarBody.parse(req.body ?? {});
+      const out = await this.service.aprobar(id, body);
       res.json(out);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   listar: RequestHandler = async (req, res, next) => {
@@ -42,16 +54,23 @@ export class SolicitudInsumoController {
       const f = FiltroQuery.parse(req.query);
       const out = await this.service.listar(f);
       res.json(out);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   obtener: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParam.parse(req.params);
       const out = await this.service.obtener(id);
-      if (!out) { res.status(404).json({ message: "No encontrado" }); return; }
+      if (!out) {
+        res.status(404).json({ message: "No encontrado" });
+        return;
+      }
       res.json(out);
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 
   eliminar: RequestHandler = async (req, res, next) => {
@@ -59,6 +78,8 @@ export class SolicitudInsumoController {
       const { id } = IdParam.parse(req.params);
       await this.service.eliminar(id);
       res.status(204).send();
-    } catch (err) { next(err); }
+    } catch (err) {
+      next(err);
+    }
   };
 }

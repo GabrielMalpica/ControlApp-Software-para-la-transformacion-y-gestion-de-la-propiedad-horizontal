@@ -3,7 +3,7 @@ import { z } from "zod";
 
 const AsignarAConjuntoDTO = z.object({
   conjuntoId: z.string().min(3),
-  responsableId: z.number().int().positive().optional(),
+  responsableId: z.string().optional(), // ✅ Operario.id es String en tu schema
   diasPrestamo: z.number().int().positive().default(7),
 });
 
@@ -11,73 +11,127 @@ export class MaquinariaService {
   constructor(private prisma: PrismaClient, private maquinariaId: number) {}
 
   async asignarAConjunto(payload: unknown) {
-    const { conjuntoId, responsableId, diasPrestamo } = AsignarAConjuntoDTO.parse(payload);
+    const { conjuntoId, responsableId, diasPrestamo } =
+      AsignarAConjuntoDTO.parse(payload);
 
-    const fechaPrestamo = new Date();
+    const fechaInicio = new Date();
     const fechaDevolucionEstimada = new Date(
-      fechaPrestamo.getTime() + diasPrestamo * 24 * 60 * 60 * 1000
+      fechaInicio.getTime() + diasPrestamo * 24 * 60 * 60 * 1000
     );
 
-    // Validaciones mínimas
+    // 1) Validar existencia maquinaria y conjunto
     const [maq, conj] = await Promise.all([
-      this.prisma.maquinaria.findUnique({ where: { id: this.maquinariaId }, select: { id: true, disponible: true } }),
-      this.prisma.conjunto.findUnique({ where: { nit: conjuntoId }, select: { nit: true } }),
+      this.prisma.maquinaria.findUnique({
+        where: { id: this.maquinariaId },
+        select: { id: true },
+      }),
+      this.prisma.conjunto.findUnique({
+        where: { nit: conjuntoId },
+        select: { nit: true },
+      }),
     ]);
     if (!maq) throw new Error("Maquinaria no encontrada");
-    if (!maq.disponible) throw new Error("La maquinaria no está disponible.");
     if (!conj) throw new Error("Conjunto no encontrado");
 
-    return this.prisma.maquinaria.update({
-      where: { id: this.maquinariaId },
+    // 2) Validar que NO esté ACTIVA en otro conjunto
+    const activa = await this.prisma.maquinariaConjunto.findFirst({
+      where: { maquinariaId: this.maquinariaId, estado: "ACTIVA" },
+      select: { id: true, conjuntoId: true },
+    });
+    if (activa) {
+      throw new Error(
+        `La maquinaria ya está asignada (ACTIVA) al conjunto ${activa.conjuntoId}.`
+      );
+    }
+
+    // 3) Crear asignación (inventario del conjunto)
+    return this.prisma.maquinariaConjunto.create({
       data: {
-        asignadaA: { connect: { nit: conjuntoId } },
-        responsable: responsableId ? { connect: { id: responsableId.toString() } } : undefined,
-        fechaPrestamo,
+        conjunto: { connect: { nit: conjuntoId } },
+        maquinaria: { connect: { id: this.maquinariaId } },
+        tipoTenencia: "PRESTADA",
+        estado: "ACTIVA",
+        fechaInicio,
         fechaDevolucionEstimada,
-        disponible: false,
+        ...(responsableId
+          ? { responsable: { connect: { id: responsableId } } }
+          : {}),
+      },
+      include: {
+        conjunto: { select: { nit: true, nombre: true } },
+        maquinaria: {
+          select: { id: true, nombre: true, marca: true, estado: true },
+        },
+        responsable: { include: { usuario: { select: { nombre: true } } } },
       },
     });
   }
 
-  async devolver() {
-    // Opcional: validar que esté asignada
-    return this.prisma.maquinaria.update({
-      where: { id: this.maquinariaId },
+  async devolver(conjuntoId: string) {
+    // 1) Buscar asignación ACTIVA en ese conjunto
+    const activa = await this.prisma.maquinariaConjunto.findFirst({
+      where: {
+        maquinariaId: this.maquinariaId,
+        conjuntoId,
+        estado: "ACTIVA",
+      },
+      select: { id: true },
+    });
+
+    if (!activa) {
+      throw new Error(
+        "No existe una asignación ACTIVA de esta maquinaria en ese conjunto."
+      );
+    }
+
+    // 2) Cerrar asignación
+    return this.prisma.maquinariaConjunto.update({
+      where: { id: activa.id },
       data: {
-        asignadaA: { disconnect: true },
-        responsable: { disconnect: true },
-        fechaPrestamo: null,
-        fechaDevolucionEstimada: null,
-        disponible: true,
+        estado: "DEVUELTA",
+        fechaFin: new Date(),
       },
     });
   }
 
   async estaDisponible(): Promise<boolean> {
-    const maquinaria = await this.prisma.maquinaria.findUnique({
-      where: { id: this.maquinariaId },
-      select: { disponible: true },
+    // Disponible si NO tiene asignación ACTIVA
+    const activa = await this.prisma.maquinariaConjunto.findFirst({
+      where: { maquinariaId: this.maquinariaId, estado: "ACTIVA" },
+      select: { id: true },
     });
-    return maquinaria?.disponible ?? false;
+    return !activa;
   }
 
-  async obtenerResponsable(): Promise<string> {
-    const maquinaria = await this.prisma.maquinaria.findUnique({
-      where: { id: this.maquinariaId },
+  async obtenerResponsableEnConjunto(conjuntoId: string): Promise<string> {
+    const activa = await this.prisma.maquinariaConjunto.findFirst({
+      where: {
+        maquinariaId: this.maquinariaId,
+        conjuntoId,
+        estado: "ACTIVA",
+      },
       include: { responsable: { include: { usuario: true } } },
     });
-    return maquinaria?.responsable?.usuario?.nombre ?? "Sin asignar";
+
+    return activa?.responsable?.usuario?.nombre ?? "Sin asignar";
   }
 
   async resumenEstado(): Promise<string> {
     const maquinaria = await this.prisma.maquinaria.findUnique({
       where: { id: this.maquinariaId },
-      select: { nombre: true, marca: true, estado: true, disponible: true },
+      select: { nombre: true, marca: true, estado: true },
     });
     if (!maquinaria) throw new Error("🛠️ Maquinaria no encontrada");
 
-    return `🛠️ ${maquinaria.nombre} (${maquinaria.marca}) - ${maquinaria.estado} - ${
-      maquinaria.disponible ? "Disponible" : "Prestada"
-    }`;
-    }
+    const activa = await this.prisma.maquinariaConjunto.findFirst({
+      where: { maquinariaId: this.maquinariaId, estado: "ACTIVA" },
+      include: { conjunto: { select: { nombre: true } } },
+    });
+
+    const estadoAsignacion = activa
+      ? `Prestada a ${activa.conjunto?.nombre ?? activa.conjuntoId}`
+      : "Disponible";
+
+    return `🛠️ ${maquinaria.nombre} (${maquinaria.marca}) - ${maquinaria.estado} - ${estadoAsignacion}`;
+  }
 }

@@ -42,40 +42,89 @@ export class SolicitudInsumoService {
           })),
         },
       },
-      include: { insumosSolicitados: true },
+      include: {
+        insumosSolicitados: {
+          include: { insumo: { select: { nombre: true, unidad: true } } }, // ✅ aquí
+        },
+      },
     });
   }
 
   async aprobar(id: number, payload: unknown) {
     const dto = AprobarSolicitudInsumoDTO.parse(payload);
 
-    const sol = await this.prisma.solicitudInsumo.findUnique({
-      where: { id },
-      include: { insumosSolicitados: true },
-    });
-    if (!sol) throw new Error("Solicitud no encontrada");
-    if (sol.aprobado) return sol;
+    return this.prisma.$transaction(async (tx) => {
+      const sol = await this.prisma.solicitudInsumo.findUnique({
+        where: { id },
+        include: {
+          insumosSolicitados: {
+            include: { insumo: true },
+          },
+        },
+      });
 
-    // (opcional) al aprobar podrías provisionar inventario del conjunto:
-    // const inventario = await this.prisma.inventario.findUnique({ where: { conjuntoId: sol.conjuntoId }});
-    // if (inventario) {
-    //   for (const it of sol.insumosSolicitados) {
-    //     await this.prisma.inventarioInsumo.upsert({
-    //       where: { inventarioId_insumoId: { inventarioId: inventario.id, insumoId: it.insumoId } },
-    //       update: { cantidad: { increment: it.cantidad } },
-    //       create: { inventarioId: inventario.id, insumoId: it.insumoId, cantidad: it.cantidad },
-    //     });
-    //   }
-    // }
+      if (!sol) throw new Error("Solicitud no encontrada");
+      if (sol.aprobado) return sol;
 
-    return this.prisma.solicitudInsumo.update({
-      where: { id },
-      data: {
-        aprobado: true,
-        fechaAprobacion: dto.fechaAprobacion ?? new Date(),
-        empresaId: dto.empresaId ?? undefined,
-      },
-      include: { insumosSolicitados: true },
+      // inventario del conjunto
+      const inventario = await tx.inventario.upsert({
+        where: { conjuntoId: sol.conjuntoId },
+        update: {},
+        create: { conjuntoId: sol.conjuntoId },
+        select: { id: true },
+      });
+
+      // cargar stock
+      for (const it of sol.insumosSolicitados) {
+        // si tienes unique compuesto inventarioId+insumoId, usa upsert por esa llave.
+        // si no lo tienes, usa findFirst + update/create.
+        const existente = await tx.inventarioInsumo.findFirst({
+          where: { inventarioId: inventario.id, insumoId: it.insumoId },
+          select: { id: true },
+        });
+
+        if (existente) {
+          await tx.inventarioInsumo.update({
+            where: { id: existente.id },
+            data: { cantidad: { increment: it.cantidad as any } },
+          });
+        } else {
+          await tx.inventarioInsumo.create({
+            data: {
+              inventarioId: inventario.id,
+              insumoId: it.insumoId,
+              cantidad: it.cantidad as any,
+            },
+          });
+        }
+
+        // opcional: registrar movimiento ENTRADA
+        await tx.consumoInsumo.create({
+          data: {
+            inventarioId: inventario.id,
+            insumoId: it.insumoId,
+            cantidad: it.cantidad as any,
+            fecha: new Date(),
+            // tipo: "ENTRADA",
+            // observacion: `Ingreso por aprobación solicitud #${id}`
+          } as any,
+        });
+      }
+
+      // aprobar solicitud
+      return this.prisma.solicitudInsumo.update({
+        where: { id },
+        data: {
+          aprobado: true,
+          fechaAprobacion: dto.fechaAprobacion ?? new Date(),
+          empresaId: dto.empresaId ?? undefined,
+        },
+        include: {
+          insumosSolicitados: {
+            include: { insumo: { select: { nombre: true, unidad: true } } }, // ✅ aquí
+          },
+        },
+      });
     });
   }
 
@@ -94,7 +143,11 @@ export class SolicitudInsumoService {
         aprobado: f.aprobado ?? undefined,
         fechaSolicitud: Object.keys(rango).length ? rango : undefined,
       },
-      include: { insumosSolicitados: true },
+      include: {
+        insumosSolicitados: {
+          include: { insumo: { select: { nombre: true, unidad: true } } }, // ✅ aquí
+        },
+      },
       orderBy: { id: "desc" },
     });
   }
@@ -102,7 +155,11 @@ export class SolicitudInsumoService {
   async obtener(id: number) {
     return this.prisma.solicitudInsumo.findUnique({
       where: { id },
-      include: { insumosSolicitados: true },
+      include: {
+        insumosSolicitados: {
+          include: { insumo: { select: { nombre: true, unidad: true } } }, // ✅ aquí
+        },
+      },
     });
   }
 

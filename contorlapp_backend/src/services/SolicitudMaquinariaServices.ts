@@ -13,12 +13,21 @@ export class SolicitudMaquinariaService {
   async crear(payload: unknown) {
     const dto = CrearSolicitudMaquinariaDTO.parse(payload);
 
-    // Validaciones básicas
     const [conjunto, maquinaria, operario] = await Promise.all([
-      this.prisma.conjunto.findUnique({ where: { nit: dto.conjuntoId } }),
-      this.prisma.maquinaria.findUnique({ where: { id: dto.maquinariaId } }),
-      this.prisma.operario.findUnique({ where: { id: dto.operarioId.toString() } }),
+      this.prisma.conjunto.findUnique({
+        where: { nit: dto.conjuntoId },
+        select: { nit: true },
+      }),
+      this.prisma.maquinaria.findUnique({
+        where: { id: dto.maquinariaId },
+        select: { id: true },
+      }),
+      this.prisma.operario.findUnique({
+        where: { id: dto.operarioId },
+        select: { id: true },
+      }), // ✅ string
     ]);
+
     if (!conjunto) throw new Error("Conjunto no existe");
     if (!maquinaria) throw new Error("Maquinaria no existe");
     if (!operario) throw new Error("Operario no existe");
@@ -27,23 +36,22 @@ export class SolicitudMaquinariaService {
       data: {
         conjuntoId: dto.conjuntoId,
         maquinariaId: dto.maquinariaId,
-        operarioId: dto.operarioId.toString(),
+        operarioId: dto.operarioId, // ✅ string
         empresaId: dto.empresaId ?? null,
         fechaUso: dto.fechaUso,
         fechaDevolucionEstimada: dto.fechaDevolucionEstimada,
-        aprobado: false,
-        // fechaSolicitud la pone Prisma por default(now())
       },
     });
   }
 
   async editar(id: number, payload: unknown) {
     const dto = EditarSolicitudMaquinariaDTO.parse(payload);
+
     return this.prisma.solicitudMaquinaria.update({
       where: { id },
       data: {
         maquinariaId: dto.maquinariaId ?? undefined,
-        operarioId: dto.operarioId!.toString() ?? undefined,
+        operarioId: dto.operarioId ?? undefined, // ✅ string | undefined
         empresaId: dto.empresaId === undefined ? undefined : dto.empresaId,
         fechaUso: dto.fechaUso ?? undefined,
         fechaDevolucionEstimada: dto.fechaDevolucionEstimada ?? undefined,
@@ -57,45 +65,50 @@ export class SolicitudMaquinariaService {
     return this.prisma.$transaction(async (tx) => {
       const sol = await tx.solicitudMaquinaria.findUnique({ where: { id } });
       if (!sol) throw new Error("Solicitud no encontrada");
-      if (sol.aprobado) return sol;
+      if ((sol as any).estado === "APROBADA") return sol;
 
-      // Verificar disponibilidad real de la maquinaria antes de prestarla
-      const maq = await tx.maquinaria.findUnique({
-        where: { id: sol.maquinariaId },
-        select: { disponible: true, conjuntoId: true },
+      const activa = await tx.maquinariaConjunto.findFirst({
+        where: { maquinariaId: sol.maquinariaId, estado: "ACTIVA" },
+        select: { id: true },
       });
-      if (!maq) throw new Error("Maquinaria no existe");
-      if (!maq.disponible) {
+      if (activa)
         throw new Error("La maquinaria no está disponible para préstamo");
-      }
 
-      // Asignar maquinaria al conjunto/operario y bloquearla
-      await tx.maquinaria.update({
-        where: { id: sol.maquinariaId },
+      const asignacion = await tx.maquinariaConjunto.create({
         data: {
-          disponible: false,
-          conjuntoId: sol.conjuntoId,
-          operarioId: sol.operarioId,
-          fechaPrestamo: dto.fechaAprobacion ?? new Date(),
+          conjunto: { connect: { nit: sol.conjuntoId } },
+          maquinaria: { connect: { id: sol.maquinariaId } },
+
+          tipoTenencia: "PRESTADA",
+          estado: "ACTIVA",
+          fechaInicio: dto.fechaAprobacion ?? new Date(),
           fechaDevolucionEstimada: sol.fechaDevolucionEstimada,
+
+          // ✅ ahora sí puedes usar relación responsable
+          ...(sol.operarioId
+            ? { responsable: { connect: { id: sol.operarioId } } }
+            : {}),
+
+          // ✅ y también conectar la solicitud (si tu relación existe así)
+          solicitudMaquinaria: { connect: { id: sol.id } },
         },
       });
 
-      // Marcar solicitud como aprobada
-      return tx.solicitudMaquinaria.update({
+      const updated = await tx.solicitudMaquinaria.update({
         where: { id },
         data: {
-          aprobado: true,
+          estado: "APROBADA",
           fechaAprobacion: dto.fechaAprobacion ?? new Date(),
-        },
+        } as any,
       });
+
+      return { solicitud: updated, asignacion };
     });
   }
 
   async listar(payload: unknown) {
     const f = FiltroSolicitudMaquinariaDTO.parse(payload);
 
-    // Construir rango sobre fechaSolicitud (tu campo existente)
     const rango: { gte?: Date; lte?: Date } = {};
     if (f.fechaDesde) rango.gte = f.fechaDesde;
     if (f.fechaHasta) rango.lte = f.fechaHasta;
@@ -105,19 +118,16 @@ export class SolicitudMaquinariaService {
         conjuntoId: f.conjuntoId ?? undefined,
         empresaId: f.empresaId ?? undefined,
         maquinariaId: f.maquinariaId ?? undefined,
-        operarioId: f.operarioId!.toString() ?? undefined,
-        aprobado: f.aprobado ?? undefined,
-        fechaSolicitud:
-          Object.keys(rango).length > 0 ? rango : undefined, // sólo si viene gte/lte
-      },
+        operarioId: f.operarioId ?? undefined, // ✅ string
+        // aprobado: f.aprobado ?? undefined,   // ❌ solo si existe en schema
+        fechaSolicitud: Object.keys(rango).length > 0 ? rango : undefined,
+      } as any,
       orderBy: { id: "desc" },
     });
   }
 
   async obtener(id: number) {
-    return this.prisma.solicitudMaquinaria.findUnique({
-      where: { id },
-    });
+    return this.prisma.solicitudMaquinaria.findUnique({ where: { id } });
   }
 
   async eliminar(id: number) {

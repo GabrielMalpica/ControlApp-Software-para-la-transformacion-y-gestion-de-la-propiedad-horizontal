@@ -151,6 +151,17 @@ export class ConjuntoController {
     }
   };
 
+  listarMaquinaria: RequestHandler = async (req, res, next) => {
+    try {
+      const { nit } = req.params;
+      const service = new ConjuntoService(this.prisma, nit);
+      const data = await service.listarMaquinariaDelConjunto();
+      res.json(data);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   // POST /conjuntos/:nit/ubicaciones
   agregarUbicacion: RequestHandler = async (req, res, next) => {
     try {

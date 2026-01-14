@@ -81,25 +81,6 @@ export class GerenteController {
     }
   };
 
-  // ── Catálogo de insumos (empresa corporativa) ─────────────────────────────
-  agregarInsumoAlCatalogo: RequestHandler = async (req, res, next) => {
-    try {
-      const out = await this.service.agregarInsumoAlCatalogo(req.body);
-      res.status(201).json(out);
-    } catch (err) {
-      next(err);
-    }
-  };
-
-  listarCatalogoInsumos: RequestHandler = async (_req, res, next) => {
-    try {
-      const out = await this.service.listarCatalogo();
-      res.json(out);
-    } catch (err) {
-      next(err);
-    }
-  };
-
   // ── Usuarios ───────────────────────────────────────────────────────────────
   crearUsuario: RequestHandler = async (req, res, next) => {
     try {
@@ -275,35 +256,6 @@ export class GerenteController {
         insumoId: body.insumoId,
         cantidad: body.cantidad,
       });
-      res.status(201).json(out);
-    } catch (err) {
-      next(err);
-    }
-  };
-
-  // ── Maquinaria ────────────────────────────────────────────────────────────
-  crearMaquinaria: RequestHandler = async (req, res, next) => {
-    try {
-      const out = await this.service.crearMaquinaria(req.body);
-      res.status(201).json(out);
-    } catch (err) {
-      next(err);
-    }
-  };
-
-  editarMaquinaria: RequestHandler = async (req, res, next) => {
-    try {
-      const { maquinariaId } = MaquinariaIdParam.parse(req.params);
-      const out = await this.service.editarMaquinaria(maquinariaId, req.body);
-      res.json(out);
-    } catch (err) {
-      next(err);
-    }
-  };
-
-  entregarMaquinariaAConjunto: RequestHandler = async (req, res, next) => {
-    try {
-      const out = await this.service.entregarMaquinariaAConjunto(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);

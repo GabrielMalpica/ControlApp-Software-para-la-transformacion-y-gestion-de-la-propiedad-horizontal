@@ -9,10 +9,6 @@ const ctrl = new GerenteController();
 router.post("/empresa", ctrl.crearEmpresa);
 router.patch("/empresa/limite-horas", ctrl.actualizarLimiteHoras); // opcional
 
-/* Catálogo insumos (empresa) */
-router.post("/empresa/insumos", ctrl.agregarInsumoAlCatalogo);
-router.get("/empresa/insumos", ctrl.listarCatalogoInsumos);
-
 /* Usuarios */
 router.post("/usuarios", ctrl.crearUsuario);
 router.put("/usuarios/:id", ctrl.editarUsuario);
@@ -34,11 +30,6 @@ router.get("/conjuntos", ctrl.listarConjuntos);
 router.get("/conjuntos/:conjuntoId", ctrl.obtenerConjunto); 
 router.post("/conjuntos/:conjuntoId/operarios", ctrl.asignarOperarioAConjunto);
 router.post("/conjuntos/:conjuntoId/insumos", ctrl.agregarInsumoAConjunto);
-
-/* Maquinaria */
-router.post("/maquinaria", ctrl.crearMaquinaria);
-router.patch("/maquinaria/:maquinariaId", ctrl.editarMaquinaria);
-router.post("/maquinaria/entregar", ctrl.entregarMaquinariaAConjunto); // si prefieres por URL, cámbialo
 
 /* Tareas */
 router.post("/tareas", ctrl.asignarTarea);

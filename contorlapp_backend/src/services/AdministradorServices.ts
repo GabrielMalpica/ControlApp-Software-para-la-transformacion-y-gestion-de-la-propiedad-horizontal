@@ -1,14 +1,10 @@
 import { PrismaClient } from "../generated/prisma";
-import {
-  CrearSolicitudTareaDTO,
-} from "../model/SolicitudTarea";
+import { CrearSolicitudTareaDTO } from "../model/SolicitudTarea";
 import {
   CrearSolicitudInsumoDTO,
   SolicitudInsumoItemDTO,
 } from "../model/SolicitudInsumo";
-import {
-  CrearSolicitudMaquinariaDTO,
-} from "../model/SolicitudMaquinaria";
+import { CrearSolicitudMaquinariaDTO } from "../model/SolicitudMaquinaria";
 
 export class AdministradorService {
   constructor(private prisma: PrismaClient, private administradorId: number) {}
@@ -62,7 +58,9 @@ export class AdministradorService {
           conjunto: { connect: { nit: dto.conjuntoId } },
           ubicacion: { connect: { id: dto.ubicacionId } },
           elemento: { connect: { id: dto.elementoId } },
-          empresa: dto.empresaId ? { connect: { nit: dto.empresaId } } : undefined,
+          empresa: dto.empresaId
+            ? { connect: { nit: dto.empresaId } }
+            : undefined,
         },
       });
     } catch (error) {
@@ -100,7 +98,9 @@ export class AdministradorService {
       return await this.prisma.solicitudInsumo.create({
         data: {
           conjunto: { connect: { nit: dto.conjuntoId } },
-          empresa: dto.empresaId ? { connect: { nit: dto.empresaId } } : undefined,
+          empresa: dto.empresaId
+            ? { connect: { nit: dto.empresaId } }
+            : undefined,
           fechaSolicitud: new Date(),
           aprobado: false,
           insumosSolicitados: {
@@ -125,35 +125,49 @@ export class AdministradorService {
    * Valida con Zod y comprueba existencia de relaciones clave.
    */
   async solicitarMaquinaria(payload: unknown) {
-    try {
-      const dto = CrearSolicitudMaquinariaDTO.parse(payload);
+    const dto = CrearSolicitudMaquinariaDTO.parse(payload);
 
-      // Validar existencia de entidades
-      const [conjunto, maquinaria, operario] = await Promise.all([
-        this.prisma.conjunto.findUnique({ where: { nit: dto.conjuntoId }, select: { nit: true } }),
-        this.prisma.maquinaria.findUnique({ where: { id: dto.maquinariaId }, select: { id: true } }),
-        this.prisma.operario.findUnique({ where: { id: dto.operarioId.toString() }, select: { id: true } }),
-      ]);
+    const [conjunto, maquinaria, operario] = await Promise.all([
+      this.prisma.conjunto.findUnique({
+        where: { nit: dto.conjuntoId },
+        select: { nit: true },
+      }),
+      this.prisma.maquinaria.findUnique({
+        where: { id: dto.maquinariaId },
+        select: { id: true },
+      }),
+      this.prisma.operario.findUnique({
+        where: { id: dto.operarioId.toString() },
+        select: { id: true },
+      }),
+    ]);
 
-      if (!conjunto) throw new Error("Conjunto no encontrado.");
-      if (!maquinaria) throw new Error("Maquinaria no encontrada.");
-      if (!operario) throw new Error("Operario responsable no encontrado.");
+    if (!conjunto) throw new Error("Conjunto no encontrado.");
+    if (!maquinaria) throw new Error("Maquinaria no encontrada.");
+    if (!operario) throw new Error("Operario responsable no encontrado.");
 
-      return await this.prisma.solicitudMaquinaria.create({
-        data: {
-          conjunto: { connect: { nit: dto.conjuntoId } },
-          maquinaria: { connect: { id: dto.maquinariaId } },
-          responsable: { connect: { id: dto.operarioId.toString() } },
-          empresa: dto.empresaId ? { connect: { nit: dto.empresaId } } : undefined,
-          fechaUso: dto.fechaUso,
-          fechaDevolucionEstimada: dto.fechaDevolucionEstimada,
-          fechaSolicitud: new Date(),
-          aprobado: false,
-        },
-      });
-    } catch (error) {
-      console.error("Error al crear solicitud de maquinaria:", error);
-      throw new Error("No se pudo registrar la solicitud de maquinaria.");
-    }
+    // (opcional) evitar pedir una maquinaria ya ACTIVA en algún conjunto
+    const activa = await this.prisma.maquinariaConjunto.findFirst({
+      where: { maquinariaId: dto.maquinariaId, estado: "ACTIVA" },
+      select: { id: true },
+    });
+    if (activa)
+      throw new Error(
+        "❌ Esa maquinaria ya está asignada (ACTIVA) a un conjunto."
+      );
+
+    return this.prisma.solicitudMaquinaria.create({
+      data: {
+        conjunto: { connect: { nit: dto.conjuntoId } },
+        maquinaria: { connect: { id: dto.maquinariaId } },
+        responsable: { connect: { id: dto.operarioId.toString() } },
+        empresa: dto.empresaId
+          ? { connect: { nit: dto.empresaId } }
+          : undefined,
+        fechaUso: dto.fechaUso,
+        fechaDevolucionEstimada: dto.fechaDevolucionEstimada,
+        estado: "PENDIENTE",
+      },
+    });
   }
 }

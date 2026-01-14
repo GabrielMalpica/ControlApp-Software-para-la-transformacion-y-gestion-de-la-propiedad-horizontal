@@ -2,6 +2,7 @@
 import { PrismaClient } from "../generated/prisma";
 import { z } from "zod";
 import { CrearUbicacionDTO, FiltroUbicacionDTO } from "../model/Ubicacion";
+import { InventarioService } from "./InventarioServices";
 
 // DTOs locales
 const AsignarOperarioDTO = z.object({
@@ -38,6 +39,58 @@ export class ConjuntoService {
     private conjuntoId: string // nit
   ) {}
 
+  private async getOrCreateInventarioId(): Promise<number> {
+    const inv = await this.prisma.inventario.upsert({
+      where: { conjuntoId: this.conjuntoId },
+      update: {},
+      create: { conjuntoId: this.conjuntoId },
+      select: { id: true },
+    });
+    return inv.id;
+  }
+
+  async listarInventario(filtro?: { nombre?: string; categoria?: string }) {
+    const inventarioId = await this.getOrCreateInventarioId();
+    const invService = new InventarioService(this.prisma, inventarioId);
+    return invService.listarInsumosDetallado(filtro);
+  }
+
+  async listarInsumosBajos(filtro?: { umbral?: number; nombre?: string; categoria?: string }) {
+    const inventarioId = await this.getOrCreateInventarioId();
+    const invService = new InventarioService(this.prisma, inventarioId);
+    return invService.listarInsumosBajos(filtro);
+  }
+
+  async agregarStock(payload: unknown) {
+    const inventarioId = await this.getOrCreateInventarioId();
+    const invService = new InventarioService(this.prisma, inventarioId);
+    return invService.agregarStock(payload);
+  }
+
+  async consumirStock(payload: unknown) {
+    const inventarioId = await this.getOrCreateInventarioId();
+    const invService = new InventarioService(this.prisma, inventarioId);
+    return invService.consumirStock(payload);
+  }
+
+  async buscarInsumoPorId(payload: unknown) {
+    const inventarioId = await this.getOrCreateInventarioId();
+    const invService = new InventarioService(this.prisma, inventarioId);
+    return invService.buscarInsumoPorId(payload);
+  }
+
+  async setUmbralMinimo(payload: unknown) {
+    const inventarioId = await this.getOrCreateInventarioId();
+    const invService = new InventarioService(this.prisma, inventarioId);
+    return invService.setUmbralMinimo(payload);
+  }
+
+  async unsetUmbralMinimo(payload: unknown) {
+    const inventarioId = await this.getOrCreateInventarioId();
+    const invService = new InventarioService(this.prisma, inventarioId);
+    return invService.unsetUmbralMinimo(payload);
+  }
+
   /** Activa/Inactiva el conjunto y retorna el valor actualizado */
   async setActivo(activo: boolean): Promise<boolean> {
     const existe = await this.prisma.conjunto.findUnique({
@@ -52,6 +105,63 @@ export class ConjuntoService {
       select: { activo: true },
     });
     return updated.activo;
+  }
+
+  async listarMaquinariaDelConjunto() {
+    const [propia, prestada] = await Promise.all([
+      this.prisma.maquinaria.findMany({
+        where: {
+          propietarioTipo: "CONJUNTO",
+          conjuntoPropietarioId: this.conjuntoId,
+        },
+        select: {
+          id: true,
+          nombre: true,
+          marca: true,
+          tipo: true,
+          estado: true,
+          propietarioTipo: true,
+          conjuntoPropietarioId: true,
+        },
+      }),
+
+      // 2️⃣ Maquinaria prestada (asignación ACTIVA)
+      this.prisma.maquinariaConjunto.findMany({
+        where: {
+          conjuntoId: this.conjuntoId,
+          estado: "ACTIVA",
+        },
+        select: {
+          tipoTenencia: true,
+          fechaDevolucionEstimada: true,
+          maquinaria: {
+            select: {
+              id: true,
+              nombre: true,
+              marca: true,
+              tipo: true,
+              estado: true,
+              propietarioTipo: true,
+              empresaId: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    // 🔄 Normalizamos a un solo formato
+    return [
+      ...propia.map((m) => ({
+        ...m,
+        origen: "PROPIA",
+      })),
+      ...prestada.map((p) => ({
+        ...p.maquinaria,
+        origen: "PRESTADA",
+        tipoTenencia: p.tipoTenencia,
+        fechaDevolucionEstimada: p.fechaDevolucionEstimada,
+      })),
+    ];
   }
 
   async asignarOperario(payload: unknown) {
@@ -84,7 +194,9 @@ export class ConjuntoService {
 
       await this.prisma.conjunto.update({
         where: { nit: this.conjuntoId },
-        data: { administrador: { connect: { id: administradorId.toString() } } },
+        data: {
+          administrador: { connect: { id: administradorId.toString() } },
+        },
       });
     } catch (error) {
       console.error("Error al asignar administrador:", error);
@@ -106,23 +218,36 @@ export class ConjuntoService {
 
   async agregarMaquinaria(payload: unknown) {
     const { maquinariaId } = AgregarMaquinariaDTO.parse(payload);
+
     try {
+      // 1) validar que la maquinaria exista
       const maq = await this.prisma.maquinaria.findUnique({
         where: { id: maquinariaId },
-        select: { id: true, disponible: true, conjuntoId: true },
+        select: { id: true },
       });
       if (!maq) throw new Error("Maquinaria no encontrada.");
-      if (!maq.disponible) throw new Error("La maquinaria no está disponible.");
-      if (maq.conjuntoId && maq.conjuntoId !== this.conjuntoId) {
+
+      // 2) validar que no esté ACTIVA en otro conjunto
+      const asignacionActiva = await this.prisma.maquinariaConjunto.findFirst({
+        where: { maquinariaId, estado: "ACTIVA" },
+        select: { id: true, conjuntoId: true },
+      });
+
+      if (asignacionActiva) {
+        if (asignacionActiva.conjuntoId === this.conjuntoId) {
+          throw new Error("La maquinaria ya está asignada a este conjunto.");
+        }
         throw new Error("La maquinaria ya está asignada a otro conjunto.");
       }
 
-      await this.prisma.maquinaria.update({
-        where: { id: maquinariaId },
+      // 3) crear asignación (inventario de maquinaria del conjunto)
+      await this.prisma.maquinariaConjunto.create({
         data: {
-          conjuntoId: this.conjuntoId,
-          disponible: false,
-          fechaPrestamo: new Date(),
+          conjunto: { connect: { nit: this.conjuntoId } },
+          maquinaria: { connect: { id: maquinariaId } },
+          tipoTenencia: "PRESTADA",
+          estado: "ACTIVA",
+          fechaInicio: new Date(),
         },
       });
     } catch (error) {
@@ -133,14 +258,28 @@ export class ConjuntoService {
 
   async entregarMaquinaria(payload: unknown) {
     const { maquinariaId } = AgregarMaquinariaDTO.parse(payload);
+
     try {
-      await this.prisma.maquinaria.update({
-        where: { id: maquinariaId },
+      const asignacion = await this.prisma.maquinariaConjunto.findFirst({
+        where: {
+          maquinariaId,
+          conjuntoId: this.conjuntoId,
+          estado: "ACTIVA",
+        },
+        select: { id: true },
+      });
+
+      if (!asignacion) {
+        throw new Error(
+          "No hay una asignación ACTIVA de esa maquinaria en este conjunto."
+        );
+      }
+
+      await this.prisma.maquinariaConjunto.update({
+        where: { id: asignacion.id },
         data: {
-          conjuntoId: null,
-          disponible: true,
-          fechaDevolucionEstimada: null,
-          fechaPrestamo: null,
+          estado: "DEVUELTA",
+          fechaFin: new Date(),
         },
       });
     } catch (error) {
@@ -150,7 +289,10 @@ export class ConjuntoService {
   }
 
   async agregarUbicacion(payload: unknown) {
-    const dto = CrearUbicacionDTO.parse({ ...(payload as any), conjuntoId: this.conjuntoId });
+    const dto = CrearUbicacionDTO.parse({
+      ...(payload as any),
+      conjuntoId: this.conjuntoId,
+    });
     try {
       const yaExiste = await this.prisma.ubicacion.findFirst({
         where: { nombre: dto.nombre, conjuntoId: this.conjuntoId },
@@ -172,7 +314,10 @@ export class ConjuntoService {
   }
 
   async buscarUbicacion(payload: unknown) {
-    const dto = FiltroUbicacionDTO.parse({ ...(payload as any), conjuntoId: this.conjuntoId });
+    const dto = FiltroUbicacionDTO.parse({
+      ...(payload as any),
+      conjuntoId: this.conjuntoId,
+    });
     return this.prisma.ubicacion.findFirst({
       where: { conjuntoId: this.conjuntoId, nombre: dto.nombre },
       select: { id: true, nombre: true },
