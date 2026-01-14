@@ -47,19 +47,30 @@ extension TipoMaquinariaExt on TipoMaquinariaFlutter {
   String get backendValue => name; // Debe coincidir con el enum Prisma
 }
 
+enum PropietarioMaquinaria { EMPRESA, CONJUNTO }
+
+extension PropietarioMaquinariaExt on PropietarioMaquinaria {
+  String get backendValue => name;
+  String get label =>
+      this == PropietarioMaquinaria.EMPRESA ? "Empresa" : "Conjunto";
+}
+
 class MaquinariaRequest {
   final String nombre;
   final String marca;
   final TipoMaquinariaFlutter tipo;
   final EstadoMaquinaria? estado;
-  final bool? disponible;
+
+  final PropietarioMaquinaria propietarioTipo;
+  final String? conjuntoPropietarioId; // NIT
 
   MaquinariaRequest({
     required this.nombre,
     required this.marca,
     required this.tipo,
     this.estado,
-    this.disponible,
+    this.propietarioTipo = PropietarioMaquinaria.EMPRESA,
+    this.conjuntoPropietarioId,
   });
 
   Map<String, dynamic> toJson() {
@@ -68,7 +79,10 @@ class MaquinariaRequest {
       'marca': marca,
       'tipo': tipo.backendValue,
       if (estado != null) 'estado': estado!.name,
-      if (disponible != null) 'disponible': disponible,
+
+      'propietarioTipo': propietarioTipo.backendValue,
+      if (propietarioTipo == PropietarioMaquinaria.CONJUNTO)
+        'conjuntoPropietarioId': conjuntoPropietarioId,
     };
   }
 }
@@ -79,11 +93,13 @@ class MaquinariaResponse {
   final String marca;
   final TipoMaquinariaFlutter tipo;
   final EstadoMaquinaria estado;
-  final bool disponible;
-  final String? conjuntoId;
-  final String? empresaId;
-  final String? conjuntoNombre;   // 👈 nuevo
-  final String? operarioNombre; 
+
+  final bool? disponible; // si aún lo usas en catálogo
+  final String? conjuntoNombre; // “Prestada a …” (si backend lo envía)
+  final String? operarioNombre;
+
+  final PropietarioMaquinaria? propietarioTipo; // nuevo
+  final String? conjuntoPropietarioId; // nuevo
 
   MaquinariaResponse({
     required this.id,
@@ -91,11 +107,11 @@ class MaquinariaResponse {
     required this.marca,
     required this.tipo,
     required this.estado,
-    required this.disponible,
-    this.conjuntoId,
-    this.empresaId,
+    this.disponible,
     this.conjuntoNombre,
     this.operarioNombre,
+    this.propietarioTipo,
+    this.conjuntoPropietarioId,
   });
 
   factory MaquinariaResponse.fromJson(Map<String, dynamic> json) {
@@ -112,17 +128,26 @@ class MaquinariaResponse {
       orElse: () => EstadoMaquinaria.OPERATIVA,
     );
 
+    final propStr = json['propietarioTipo'] as String?;
+    PropietarioMaquinaria? prop;
+    if (propStr != null) {
+      prop = PropietarioMaquinaria.values.firstWhere(
+        (e) => e.name == propStr,
+        orElse: () => PropietarioMaquinaria.EMPRESA,
+      );
+    }
+
     return MaquinariaResponse(
       id: json['id'] as int,
       nombre: json['nombre'] as String,
       marca: json['marca'] as String,
       tipo: tipo,
       estado: estado,
-      disponible: json['disponible'] as bool,
-      conjuntoId: json['conjuntoId'] as String?,
-      empresaId: json['empresaId'] as String?,
+      disponible: json['disponible'] as bool?,
       conjuntoNombre: json['conjuntoNombre'] as String?,
       operarioNombre: json['operarioNombre'] as String?,
+      propietarioTipo: prop,
+      conjuntoPropietarioId: json['conjuntoPropietarioId'] as String?,
     );
   }
 }

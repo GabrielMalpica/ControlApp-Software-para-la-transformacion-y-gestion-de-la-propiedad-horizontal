@@ -9,7 +9,6 @@ import '../model/maquinaria_model.dart';
 class MaquinariaRepository {
   final ApiClient _apiClient = ApiClient();
 
-  /// 🏗️ Asignar maquinaria a conjunto (POST /maquinarias/:id/asignar)
   Future<MaquinariaResponse> asignarAConjunto({
     required int maquinariaId,
     required String conjuntoId,

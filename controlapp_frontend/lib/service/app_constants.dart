@@ -5,6 +5,9 @@ class AppConstants {
   static const String gerenteBase = "$baseUrl/gerente";
   static const empresaNit = '901191875-4';
 
+  static const String empresaBase = "$baseUrl/empresa";
+  static String maquinariaEmpresa(String nit) => "$empresaBase/$nit/maquinaria";
+
   // 🔹 Usuarios
   static const String usuarios = "$gerenteBase/usuarios";
 
@@ -19,7 +22,8 @@ class AppConstants {
 
   static const String conjuntosGerente = "$gerenteBase/conjuntos";
 
-  static const String definicionPreventivaBase = "$baseUrl/definicion-preventiva";
+  static const String definicionPreventivaBase =
+      "$baseUrl/definicion-preventiva";
 
   static const String cronogramaBase = "$baseUrl/cronograma";
 }

@@ -126,6 +126,42 @@ class EmpresaApi {
         .toList();
   }
 
+  Future<List<MaquinariaResponse>> listarMaquinariaFiltrada({
+    String? conjuntoNit,
+    EstadoMaquinaria? estado,
+    TipoMaquinariaFlutter? tipo,
+    PropietarioMaquinaria? propietario,
+    bool? disponible,
+  }) async {
+    final params = <String, String>{};
+
+    if (conjuntoNit != null && conjuntoNit.isNotEmpty) {
+      params['conjuntoId'] = conjuntoNit;
+    }
+    if (estado != null) params['estado'] = estado.name;
+    if (tipo != null) params['tipo'] = tipo.backendValue;
+    if (propietario != null)
+      params['propietarioTipo'] = propietario.backendValue;
+    if (disponible != null) params['disponible'] = disponible.toString();
+
+    final basePath = '/empresa/$_empresaNit/maquinaria';
+
+    final path = params.isEmpty
+        ? basePath
+        : '$basePath?${Uri(queryParameters: params).query}';
+
+    final resp = await _client.get(path);
+
+    if (resp.statusCode != 200) {
+      throw Exception('Error al listar maquinaria: ${resp.body}');
+    }
+
+    final List<dynamic> data = jsonDecode(resp.body) as List<dynamic>;
+    return data
+        .map((e) => MaquinariaResponse.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<MaquinariaResponse>> listarMaquinariaDisponible() async {
     final resp = await _client.get(
       '${AppConstants.baseUrl}/empresa/$_empresaNit/maquinaria/disponible',

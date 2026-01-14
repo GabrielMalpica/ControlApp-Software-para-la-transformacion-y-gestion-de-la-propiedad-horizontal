@@ -58,16 +58,16 @@ class _AdministradorPageState extends State<AdministradorPage> {
         children: [
           const Text("Atajos", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 12),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => SolicitudInsumoPage(nit: widget.nit)),
-              );
-            },
-            icon: const Icon(Icons.add_shopping_cart),
-            label: const Text("Solicitud Insumo"),
-          ),
+          // ElevatedButton.icon(
+          //   onPressed: () {
+          //     Navigator.push(
+          //       context,
+          //       MaterialPageRoute(builder: (_) => SolicitudInsumoPage(nit: widget.nit)),
+          //     );
+          //   },
+          //   icon: const Icon(Icons.add_shopping_cart),
+          //   label: const Text("Solicitud Insumo"),
+          // ),
         ],
       ),
     );

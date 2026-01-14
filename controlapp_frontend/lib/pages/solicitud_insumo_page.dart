@@ -1,215 +1,295 @@
 import 'package:flutter/material.dart';
 import '../service/theme.dart';
+import '../api/inventario_api.dart';
+import '../api/solicitud_insumo_api.dart';
+import '../model/inventario_item_model.dart';
+import '../model/insumo_model.dart';
 import '../model/solicitud_insumo_model.dart';
+import '../service/app_constants.dart';
 
 class SolicitudInsumoPage extends StatefulWidget {
-  final String nit;
-  const SolicitudInsumoPage({super.key, required this.nit});
+  final String conjuntoNit;
+  const SolicitudInsumoPage({super.key, required this.conjuntoNit});
 
   @override
   State<SolicitudInsumoPage> createState() => _SolicitudInsumoPageState();
 }
 
 class _SolicitudInsumoPageState extends State<SolicitudInsumoPage> {
-  final _formKey = GlobalKey<FormState>();
-  final _motivoCtrl = TextEditingController();
-  final _cantidadCtrl = TextEditingController();
+  final InventarioApi _api = InventarioApi();
 
-  int? insumoSeleccionado;
+  // ✅ Nuevo: API de solicitud (la que realmente hace POST /solicitud-insumo)
+  late final SolicitudInsumoApi _solApi;
 
-  final List<Map<String, dynamic>> insumosDisponibles = [
-    {"id": 1, "nombre": "Guantes de seguridad"},
-    {"id": 2, "nombre": "Cascos protectores"},
-    {"id": 3, "nombre": "Lámparas portátiles"},
-    {"id": 4, "nombre": "Extintores"},
-    {"id": 5, "nombre": "Chalecos reflectivos"},
-  ];
+  bool _cargando = false;
 
-  List<SolicitudInsumoItem> items = [];
+  List<InventarioItemResponse> _bajos = [];
+  List<InsumoResponse> _catalogo = [];
 
-  void _agregarItem() {
-    if (insumoSeleccionado == null ||
-        _cantidadCtrl.text.isEmpty ||
-        int.tryParse(_cantidadCtrl.text) == null) {
+  // carrito: insumoId -> cantidad
+  final Map<int, int> _carrito = {};
+
+  String _q = '';
+
+  @override
+  void initState() {
+    super.initState();
+
+    _solApi = SolicitudInsumoApi(
+      baseUrl: AppConstants.baseUrl,
+      // authToken: ... si lo manejas
+    );
+
+    _cargar();
+  }
+
+  Future<void> _cargar() async {
+    setState(() => _cargando = true);
+    try {
+      final bajos = await _api.listarInsumosBajos(widget.conjuntoNit);
+
+      // ✅ OJO: tu método está usando AppConstants.empresaNit, está bien
+      final cat = await _api.listarCatalogoInsumosEmpresa(
+        AppConstants.empresaNit,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _bajos = bajos;
+        _catalogo = cat;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error cargando solicitud: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+
+  void _sumar(int insumoId, {int delta = 1}) {
+    setState(() {
+      final actual = _carrito[insumoId] ?? 0;
+      final nuevo = actual + delta;
+      if (nuevo <= 0) {
+        _carrito.remove(insumoId);
+      } else {
+        _carrito[insumoId] = nuevo;
+      }
+    });
+  }
+
+  Future<void> _enviar() async {
+    if (_carrito.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("⚠️ Seleccione un insumo y cantidad válida."),
-          backgroundColor: Colors.orange,
+          content: Text('No has agregado insumos a la solicitud.'),
         ),
       );
       return;
     }
 
-    setState(() {
-      items.add(SolicitudInsumoItem(
-        insumoId: insumoSeleccionado!,
-        cantidad: int.parse(_cantidadCtrl.text),
-      ));
-      insumoSeleccionado = null;
-      _cantidadCtrl.clear();
-    });
-  }
+    setState(() => _cargando = true);
 
-  void _enviarSolicitud() {
-    if (_formKey.currentState!.validate() && items.isNotEmpty) {
-      final solicitud = SolicitudInsumoModel(
-        conjuntoId: widget.nit,
-        empresaId: "EMPRESA123",
-        items: items,
-        fechaCreacion: DateTime.now(),
+    try {
+      // ✅ Convertimos carrito a lista tipada (lo que pide el backend: items[])
+      final items = _carrito.entries
+          .map(
+            (e) =>
+                SolicitudInsumoItemRequest(insumoId: e.key, cantidad: e.value),
+          )
+          .toList();
+
+      final req = SolicitudInsumoRequest(
+        conjuntoId: widget.conjuntoNit,
+        empresaId: AppConstants
+            .empresaNit, // opcional, pero útil si tu backend lo guarda
+        items: items, // ✅ clave "items" garantizada
       );
 
+      await _solApi.crearSolicitud(req);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Solicitud enviada ✅')));
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("✅ Solicitud enviada (${solicitud.items.length} insumos)"),
-          backgroundColor: AppTheme.green,
+          content: Text('Error al enviar solicitud: $e'),
+          backgroundColor: Colors.red,
         ),
       );
-
-      setState(() {
-        items.clear();
-        insumoSeleccionado = null;
-        _cantidadCtrl.clear();
-        _motivoCtrl.clear();
-      });
-    } else if (items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("⚠️ Agregue al menos un insumo a la solicitud."),
-          backgroundColor: Colors.orange,
-        ),
-      );
+    } finally {
+      if (mounted) setState(() => _cargando = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final catalogoFiltrado = _catalogo.where((x) {
+      if (_q.trim().isEmpty) return true;
+      final t = _q.toLowerCase();
+      return x.nombre.toLowerCase().contains(t) ||
+          x.unidad.toLowerCase().contains(t);
+    }).toList();
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
-        title: Text(
-          "Solicitud de Insumos - ${widget.nit}",
-          style: const TextStyle(color: Colors.white),
+        title: const Text(
+          'Solicitud de insumos',
+          style: TextStyle(color: Colors.white),
         ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            onPressed: _cargar,
+            icon: const Icon(Icons.refresh, color: Colors.white),
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          color: Colors.white,
+          child: Row(
             children: [
-              const Text("🧾 Nueva Solicitud de Insumos",
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-              const SizedBox(height: 16),
-
-              DropdownButtonFormField<int>(
-                value: insumoSeleccionado,
-                items: insumosDisponibles
-                    .map(
-                      (i) => DropdownMenuItem<int>(
-                        value: i["id"],
-                        child: Text(i["nombre"]),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) => setState(() => insumoSeleccionado = v),
-                decoration: const InputDecoration(
-                  labelText: "Seleccione un insumo",
-                  border: OutlineInputBorder(),
+              Expanded(
+                child: Text(
+                  _carrito.isEmpty
+                      ? 'Carrito vacío'
+                      : 'Ítems: ${_carrito.length} · Total: ${_carrito.values.fold<int>(0, (a, b) => a + b)}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
-              const SizedBox(height: 12),
-
-              TextFormField(
-                controller: _cantidadCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: "Cantidad",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-
               ElevatedButton.icon(
-                onPressed: _agregarItem,
-                icon: const Icon(Icons.add),
-                label: const Text("Agregar insumo a la lista"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              if (items.isNotEmpty)
-                Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  elevation: 3,
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary.withOpacity(0.1),
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(10),
-                          ),
-                        ),
-                        child: const Text(
-                          "🧰 Insumos agregados",
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      ...items.map((item) {
-                        final insumo = insumosDisponibles
-                            .firstWhere((i) => i["id"] == item.insumoId);
-                        return ListTile(
-                          title: Text(insumo["nombre"]),
-                          subtitle: Text("Cantidad: ${item.cantidad}"),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () =>
-                                setState(() => items.remove(item)),
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-                ),
-              const SizedBox(height: 16),
-
-              TextFormField(
-                controller: _motivoCtrl,
-                decoration: const InputDecoration(
-                  labelText: "Motivo de la solicitud",
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Ingrese el motivo' : null,
-                maxLines: 2,
-              ),
-              const SizedBox(height: 24),
-
-              ElevatedButton.icon(
-                onPressed: _enviarSolicitud,
+                onPressed: _cargando ? null : _enviar,
                 icon: const Icon(Icons.send),
-                label: const Text("Enviar Solicitud"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.green,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  textStyle: const TextStyle(fontSize: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
+                label: const Text('Enviar'),
               ),
             ],
           ),
         ),
       ),
+      body: _cargando
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _sectionTitle('Recomendados (bajo stock / agotados)'),
+                const SizedBox(height: 8),
+                _bajos.isEmpty
+                    ? _hint(
+                        'No hay insumos bajos. Hoy el inventario está “en control” 😄',
+                      )
+                    : Column(
+                        children: _bajos.map((x) {
+                          final esAgotado = x.agotado;
+                          return Card(
+                            child: ListTile(
+                              leading: Icon(
+                                esAgotado
+                                    ? Icons.warning_amber_rounded
+                                    : Icons.report,
+                                color: esAgotado
+                                    ? Colors.black54
+                                    : AppTheme.red,
+                              ),
+                              title: Text(
+                                x.nombre,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                'Stock: ${x.cantidad} ${x.unidad}'
+                                '${x.umbralUsado != null ? " · Umbral ${x.umbralUsado}" : ""}',
+                              ),
+                              trailing: _qtyControls(x.insumoId),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+
+                const SizedBox(height: 14),
+                const Divider(),
+
+                _sectionTitle('Catálogo de la empresa'),
+                const SizedBox(height: 10),
+                TextField(
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search),
+                    hintText: 'Buscar en catálogo...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onChanged: (v) => setState(() => _q = v),
+                ),
+                const SizedBox(height: 10),
+
+                ...catalogoFiltrado.map((i) {
+                  return Card(
+                    child: ListTile(
+                      leading: Icon(Icons.inventory, color: AppTheme.primary),
+                      title: Text(
+                        i.nombre,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(
+                        'Unidad: ${i.unidad} · ${i.categoria.name}',
+                      ),
+                      trailing: _qtyControls(i.id),
+                    ),
+                  );
+                }),
+
+                const SizedBox(height: 80),
+              ],
+            ),
     );
   }
+
+  Widget _qtyControls(int insumoId) {
+    final qty = _carrito[insumoId] ?? 0;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Quitar',
+          onPressed: () => _sumar(insumoId, delta: -1),
+          icon: const Icon(Icons.remove_circle_outline),
+        ),
+        Text('$qty', style: const TextStyle(fontWeight: FontWeight.w700)),
+        IconButton(
+          tooltip: 'Agregar',
+          onPressed: () => _sumar(insumoId, delta: 1),
+          icon: const Icon(Icons.add_circle_outline),
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(String t) => Text(
+    t,
+    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+  );
+
+  Widget _hint(String t) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: Colors.black12),
+    ),
+    child: Text(t),
+  );
 }

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../api/empresa_api.dart';
+import '../../api/gerente_api.dart';
+import '../../model/conjunto_model.dart';
 import '../../model/maquinaria_model.dart';
 import '../../service/theme.dart';
 
 class CrearMaquinariaPage extends StatefulWidget {
-  final String nit; // por consistencia con otras páginas
+  final String nit; // nit empresa
   final MaquinariaResponse? maquinaria; // null = crear, no null = editar
 
   const CrearMaquinariaPage({super.key, required this.nit, this.maquinaria});
@@ -24,25 +26,37 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
 
   TipoMaquinariaFlutter _tipo = TipoMaquinariaFlutter.OTRO;
   EstadoMaquinaria _estado = EstadoMaquinaria.OPERATIVA;
-  bool _disponible = true;
+
+  PropietarioMaquinaria _prop = PropietarioMaquinaria.EMPRESA;
+  String? _conjuntoPropId;
+
+  List<Conjunto> _conjuntos = [];
+  bool _loadingConjuntos = false;
 
   bool _saving = false;
 
   late final EmpresaApi _empresaApi;
+  late final GerenteApi _gerenteApi;
 
   @override
   void initState() {
     super.initState();
     _empresaApi = EmpresaApi();
+    _gerenteApi = GerenteApi();
 
-    // Si viene maquinaria → estamos editando → rellenamos campos
     final m = widget.maquinaria;
     if (m != null) {
       _nombreCtrl.text = m.nombre;
       _marcaCtrl.text = m.marca;
       _tipo = m.tipo;
       _estado = m.estado;
-      _disponible = m.disponible;
+
+      _prop = m.propietarioTipo!;
+      _conjuntoPropId = m.conjuntoPropietarioId;
+
+      if (_prop == PropietarioMaquinaria.CONJUNTO) {
+        _cargarConjuntos(); // para que cargue el dropdown
+      }
     }
   }
 
@@ -53,8 +67,28 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
     super.dispose();
   }
 
+  Future<void> _cargarConjuntos() async {
+    setState(() => _loadingConjuntos = true);
+    try {
+      _conjuntos = await _gerenteApi.listarConjuntos();
+    } finally {
+      if (mounted) setState(() => _loadingConjuntos = false);
+    }
+  }
+
   Future<void> _guardar() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Validación extra: si es CONJUNTO debe haber NIT
+    if (_prop == PropietarioMaquinaria.CONJUNTO && _conjuntoPropId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona el conjunto propietario.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     setState(() => _saving = true);
 
@@ -64,14 +98,13 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
         marca: _marcaCtrl.text.trim(),
         tipo: _tipo,
         estado: _estado,
-        disponible: _disponible,
+        propietarioTipo: _prop,
+        conjuntoPropietarioId: _conjuntoPropId,
       );
 
       if (widget.modoEdicion && widget.maquinaria != null) {
-        // 🔧 Modo edición
         await _empresaApi.editarMaquinaria(widget.maquinaria!.id, req);
       } else {
-        // ➕ Modo creación
         await _empresaApi.crearMaquinaria(req);
       }
 
@@ -79,13 +112,11 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            widget.modoEdicion
-                ? 'Maquinaria actualizada'
-                : 'Maquinaria creada en el catálogo',
+            widget.modoEdicion ? 'Maquinaria actualizada' : 'Maquinaria creada',
           ),
         ),
       );
-      Navigator.of(context).pop(true); // <- esto hace que Lista recargue
+      Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -119,78 +150,112 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
           key: _formKey,
           child: Column(
             children: [
-              // Nombre
               TextFormField(
                 controller: _nombreCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Nombre de la máquina',
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) {
-                  if (v == null || v.trim().length < 2) {
-                    return 'Nombre muy corto';
-                  }
-                  return null;
-                },
+                validator: (v) => (v == null || v.trim().length < 2)
+                    ? 'Nombre muy corto'
+                    : null,
               ),
               const SizedBox(height: 12),
 
-              // Marca
               TextFormField(
                 controller: _marcaCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Marca',
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) {
-                  if (v == null || v.trim().length < 2) {
-                    return 'Marca muy corta';
-                  }
-                  return null;
-                },
+                validator: (v) => (v == null || v.trim().length < 2)
+                    ? 'Marca muy corta'
+                    : null,
               ),
               const SizedBox(height: 12),
 
-              // Tipo
               DropdownButtonFormField<TipoMaquinariaFlutter>(
                 value: _tipo,
                 decoration: const InputDecoration(
                   labelText: 'Tipo de maquinaria',
                   border: OutlineInputBorder(),
                 ),
-                items: TipoMaquinariaFlutter.values.map((t) {
-                  return DropdownMenuItem(value: t, child: Text(t.label));
-                }).toList(),
+                items: TipoMaquinariaFlutter.values
+                    .map(
+                      (t) => DropdownMenuItem(value: t, child: Text(t.label)),
+                    )
+                    .toList(),
                 onChanged: (val) {
                   if (val != null) setState(() => _tipo = val);
                 },
               ),
               const SizedBox(height: 12),
 
-              // Estado
               DropdownButtonFormField<EstadoMaquinaria>(
                 value: _estado,
                 decoration: const InputDecoration(
                   labelText: 'Estado',
                   border: OutlineInputBorder(),
                 ),
-                items: EstadoMaquinaria.values.map((e) {
-                  return DropdownMenuItem(value: e, child: Text(e.label));
-                }).toList(),
+                items: EstadoMaquinaria.values
+                    .map(
+                      (e) => DropdownMenuItem(value: e, child: Text(e.label)),
+                    )
+                    .toList(),
                 onChanged: (val) {
                   if (val != null) setState(() => _estado = val);
                 },
               ),
               const SizedBox(height: 12),
 
-              // Disponible
-              SwitchListTile(
-                title: const Text('Disponible'),
-                value: _disponible,
-                onChanged: (val) {
-                  setState(() => _disponible = val);
+              DropdownButtonFormField<PropietarioMaquinaria>(
+                value: _prop,
+                decoration: const InputDecoration(
+                  labelText: 'Propietario',
+                  border: OutlineInputBorder(),
+                ),
+                items: PropietarioMaquinaria.values
+                    .map(
+                      (p) => DropdownMenuItem(value: p, child: Text(p.label)),
+                    )
+                    .toList(),
+                onChanged: (val) async {
+                  if (val == null) return;
+                  setState(() {
+                    _prop = val;
+                    _conjuntoPropId = null;
+                  });
+
+                  if (val == PropietarioMaquinaria.CONJUNTO) {
+                    await _cargarConjuntos();
+                  }
                 },
               ),
+
+              if (_prop == PropietarioMaquinaria.CONJUNTO) ...[
+                const SizedBox(height: 12),
+                _loadingConjuntos
+                    ? const Center(child: CircularProgressIndicator())
+                    : DropdownButtonFormField<String>(
+                        value: _conjuntoPropId,
+                        decoration: const InputDecoration(
+                          labelText: 'Conjunto propietario',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: _conjuntos
+                            .map(
+                              (c) => DropdownMenuItem(
+                                value: c.nit,
+                                child: Text(c.nombre),
+                              ),
+                            )
+                            .toList(),
+                        validator: (v) =>
+                            v == null ? 'Selecciona un conjunto' : null,
+                        onChanged: (v) => setState(() => _conjuntoPropId = v),
+                      ),
+              ],
+
               const SizedBox(height: 20),
 
               SizedBox(

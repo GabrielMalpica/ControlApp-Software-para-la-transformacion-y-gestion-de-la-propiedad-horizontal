@@ -19,13 +19,11 @@ class InsumoApi {
     return {
       'Content-Type': 'application/json',
       if (authToken != null) 'Authorization': 'Bearer $authToken',
-      // Si quisieras también podrías enviar x-empresa-id,
-      // pero tu backend ya recibe el NIT en la ruta /:nit/...
     };
   }
 
   Future<InsumoResponse> crearInsumo(InsumoRequest request) async {
-    final uri = _buildUri('/empresas/$empresaNit/catalogo/insumos');
+    final uri = _buildUri('/empresa/$empresaNit/catalogo/insumos');
     final resp = await http.post(
       uri,
       headers: _headers(),

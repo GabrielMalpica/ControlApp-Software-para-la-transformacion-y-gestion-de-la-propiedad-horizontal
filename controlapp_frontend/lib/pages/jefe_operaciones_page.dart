@@ -84,13 +84,13 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
                 icon: const Icon(Icons.assignment_add),
                 label: const Text("Crear Tarea"),
               ),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => SolicitudInsumoPage(nit: nit)));
-                },
-                icon: const Icon(Icons.add_shopping_cart),
-                label: const Text("Solicitud Insumo"),
-              ),
+              // ElevatedButton.icon(
+              //   onPressed: () {
+              //     Navigator.push(context, MaterialPageRoute(builder: (_) => SolicitudInsumoPage(nit: nit)));
+              //   },
+              //   icon: const Icon(Icons.add_shopping_cart),
+              //   label: const Text("Solicitud Insumo"),
+              // ),
               ElevatedButton.icon(
                 onPressed: () {
                   Navigator.push(context, MaterialPageRoute(builder: (_) => CrearCronogramaPage(nit: nit)));

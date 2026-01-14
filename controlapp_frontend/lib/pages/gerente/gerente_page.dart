@@ -287,7 +287,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
       header("Solicitudes", Icons.shopping_cart_outlined),
       item(
         _QuickAction.solicitudInsumo,
-        "Solicitud de insumo",
+        "Solicitudes de insumos",
         Icons.inventory_2_outlined,
         enabled: enabledNit,
       ),
@@ -367,7 +367,9 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         return;
 
       case _QuickAction.maquinariaCatalogo:
-        go(const ListaMaquinariaPage());
+        go(
+          ListaMaquinariaGlobalPage(empresaNit: '901191875-4',),
+        );
         return;
 
       // Tareas
@@ -379,7 +381,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
       // Solicitudes
       case _QuickAction.solicitudInsumo:
         if (!_requiereConjuntoOrWarn()) return;
-        go(SolicitudInsumoPage(nit: nit!));
+        //go(SolicitudInsumoPage(nit: nit!));
         return;
 
       case _QuickAction.solicitudMaquinaria:
