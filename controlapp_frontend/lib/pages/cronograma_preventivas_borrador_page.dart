@@ -1,6 +1,7 @@
 // lib/pages/cronograma_preventivas_borrador_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:intl/intl.dart';
 
 import '../api/cronograma_api.dart';
@@ -29,10 +30,13 @@ class CronogramaPreventivasBorradorPage extends StatefulWidget {
 class _CronogramaPreventivasBorradorPageState
     extends State<CronogramaPreventivasBorradorPage> {
   final _cronogramaApi = CronogramaApi();
+  final _festivoApi = FestivoApi();
 
   bool _loading = true;
   bool _publicando = false;
   String? _error;
+  Set<String> _festivosYmd = {};
+  Map<String, String> _festivoNombrePorYmd = {};
 
   // ✅ ahora mes/año son mutables (para navegación)
   late int _anioActual;
@@ -49,7 +53,17 @@ class _CronogramaPreventivasBorradorPageState
 
   // Vista y semana seleccionada
   _VistaCronograma _vista = _VistaCronograma.mensual;
-  late DateTime _semanaBase; // fecha dentro de la semana seleccionada
+  late DateTime _semanaBase;
+
+  bool _mostrarFiltrosMensual = false;
+
+  String _filtroTipo = 'TODAS';
+  String _filtroEstado = 'TODOS';
+  String _filtroOperario = 'TODOS';
+  String _filtroUbicacion = 'TODAS';
+
+  List<String> _operariosDisponibles = [];
+  List<String> _ubicacionesDisponibles = [];
 
   @override
   void initState() {
@@ -65,6 +79,21 @@ class _CronogramaPreventivasBorradorPageState
   void _initMes() {
     _inicioMes = DateTime(_anioActual, _mesActual, 1);
     _daysInMonth = DateUtils.getDaysInMonth(_anioActual, _mesActual);
+  }
+
+  String _toYmd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  bool _esFestivo(DateTime d) {
+    final dl = d.toLocal();
+    final key = _toYmd(DateTime(dl.year, dl.month, dl.day));
+    return _festivosYmd.contains(key);
+  }
+
+  String? _nombreFestivo(DateTime d) {
+    final dl = d.toLocal();
+    final key = _toYmd(DateTime(dl.year, dl.month, dl.day));
+    return _festivoNombrePorYmd[key];
   }
 
   bool _isSameLocalDay(DateTime a, DateTime b) {
@@ -90,12 +119,82 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   List<TareaModel> _tareasSemana(DateTime semanaBase) {
-    final start = _startOfWeekMonday(semanaBase);
-    final end = start.add(const Duration(days: 7)); // exclusivo
-    return _tareasMes.where((t) {
+    return _tareasFiltradas.where((t) {
+      final start = _startOfWeekMonday(semanaBase);
+      final end = start.add(const Duration(days: 7));
       final dt = t.fechaInicio.toLocal();
       return !dt.isBefore(start) && dt.isBefore(end);
     }).toList();
+  }
+
+  List<TareaModel> get _tareasFiltradas =>
+      _tareasMes.where(_pasaFiltros).toList();
+
+  bool _pasaFiltros(TareaModel t) {
+    // Tipo
+    if (_filtroTipo != 'TODAS') {
+      final tipo = (t.tipo ?? '').toUpperCase();
+      if (tipo != _filtroTipo) return false;
+    }
+
+    // Estado
+    if (_filtroEstado != 'TODOS') {
+      if ((t.estado ?? '') != _filtroEstado) return false;
+    }
+
+    // Operario
+    if (_filtroOperario != 'TODOS') {
+      if (!_tareaTieneOperario(t, _filtroOperario)) return false;
+    }
+
+    // Ubicación
+    if (_filtroUbicacion != 'TODAS') {
+      final u = _nombreUbicacion(t) ?? '';
+      if (u != _filtroUbicacion) return false;
+    }
+
+    return true;
+  }
+
+  String? _nombreUbicacion(TareaModel t) => t.ubicacionNombre;
+
+  List<String> _nombresOperarios(TareaModel t) => t.operariosNombres;
+
+  bool _tareaTieneOperario(TareaModel t, String nombreOperario) {
+    return _nombresOperarios(t).contains(nombreOperario);
+  }
+
+  void _reconstruirFiltrosDisponibles() {
+    final ops = <String>{};
+    final ubis = <String>{};
+
+    for (final t in _tareasMes) {
+      final u = _nombreUbicacion(t);
+      if (u != null && u.trim().isNotEmpty) ubis.add(u.trim());
+
+      for (final op in _nombresOperarios(t)) {
+        final n = op.trim();
+        if (n.isNotEmpty) ops.add(n);
+      }
+    }
+
+    _operariosDisponibles = ops.toList()..sort();
+    _ubicacionesDisponibles = ubis.toList()..sort();
+  }
+
+  void _aplicarFiltrosYRefrescar() {
+    _recalcularResumenDias(); // si lo usas
+    setState(() {});
+  }
+
+  void _limpiarFiltros() {
+    setState(() {
+      _filtroTipo = 'TODAS';
+      _filtroEstado = 'TODOS';
+      _filtroOperario = 'TODOS';
+      _filtroUbicacion = 'TODAS';
+    });
+    _aplicarFiltrosYRefrescar();
   }
 
   Future<void> _cambiarMes(int delta) async {
@@ -127,20 +226,43 @@ class _CronogramaPreventivasBorradorPageState
     });
 
     try {
-      final lista = await _cronogramaApi.cronogramaMensual(
-        nit: widget.nit,
-        anio: _anioActual,
-        mes: _mesActual,
-        borrador: true,
-        tipo: 'PREVENTIVA',
-      );
+      final desde = DateTime(_anioActual, _mesActual, 1);
+      final hasta = DateTime(_anioActual, _mesActual, _daysInMonth);
+
+      final results = await Future.wait([
+        _cronogramaApi.cronogramaMensual(
+          nit: widget.nit,
+          anio: _anioActual,
+          mes: _mesActual,
+          borrador: true,
+          tipo: 'PREVENTIVA',
+        ),
+        _festivoApi.listarFestivosRango(desde: desde, hasta: hasta, pais: 'CO'),
+      ]);
+
+      final lista = results[0] as List<TareaModel>;
+      final festivos = results[1] as List<FestivoItem>;
 
       final filtradas = lista
           .where((t) => _isInThisMonth(t.fechaInicio))
           .toList();
 
+      final setYmd = <String>{};
+      final nombrePorYmd = <String, String>{};
+
+      for (final f in festivos) {
+        final key = _toYmd(f.fecha);
+        setYmd.add(key);
+        if (f.nombre != null && f.nombre!.trim().isNotEmpty) {
+          nombrePorYmd[key] = f.nombre!.trim();
+        }
+      }
+
       setState(() {
         _tareasMes = filtradas;
+        _reconstruirFiltrosDisponibles();
+        _festivosYmd = setYmd;
+        _festivoNombrePorYmd = nombrePorYmd;
         _recalcularResumenDias();
       });
     } catch (e) {
@@ -217,7 +339,7 @@ class _CronogramaPreventivasBorradorPageState
     for (int dia = 1; dia <= _daysInMonth; dia++) {
       final fechaDia = DateTime(_anioActual, _mesActual, dia);
 
-      final tareasDia = _tareasMes.where((t) {
+      final tareasDia = _tareasFiltradas.where((t) {
         return _isSameLocalDay(t.fechaInicio, fechaDia);
       }).toList();
 
@@ -231,10 +353,575 @@ class _CronogramaPreventivasBorradorPageState
     }
   }
 
+  bool _hayFiltrosActivos() {
+    return _filtroTipo != 'TODAS' ||
+        _filtroEstado != 'TODOS' ||
+        _filtroOperario != 'TODOS' ||
+        _filtroUbicacion != 'TODAS';
+  }
+
   _DiaResumen _getResumenDia(int dia) {
     return _diasResumen.firstWhere(
       (d) => d.dia == dia,
       orElse: () => _DiaResumen(dia: dia, total: 0, preventivas: 0),
+    );
+  }
+
+  // ========= NUEVO: Mensual tipo matriz (como la foto) =========
+
+  String _codigoEstado(String? estado) {
+    final e = (estado ?? '').trim().toUpperCase();
+    const map = <String, String>{
+      'ASIGNADA': 'AS',
+      'EN_PROCESO': 'EP',
+      'COMPLETADA': 'CO',
+      'APROBADA': 'AP',
+      'PENDIENTE_APROBACION': 'PA',
+      'RECHAZADA': 'RE',
+      'NO_COMPLETADA': 'NC',
+      'PENDIENTE_REPROGRAMACION': 'PR',
+    };
+
+    if (e.isEmpty) return '';
+    if (map.containsKey(e)) return map[e]!;
+
+    // fallback: 1-2 letras desde el texto
+    final parts = e
+        .split(RegExp(r'[_\s]+'))
+        .where((x) => x.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '';
+    if (parts.length == 1)
+      return parts.first.substring(0, parts.first.length >= 2 ? 2 : 1);
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  bool _esDomingo(DateTime d) => d.weekday == DateTime.sunday;
+
+  String _weekdayLetter(DateTime d) {
+    // L M M J V S D (lunes..domingo)
+    const letters = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+    return letters[d.weekday - 1];
+  }
+
+  Widget _ddTipo() {
+    return DropdownButtonFormField<String>(
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Tipo',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      value: _filtroTipo,
+      items: const [
+        DropdownMenuItem(value: 'TODAS', child: Text('Todas')),
+        DropdownMenuItem(value: 'PREVENTIVA', child: Text('Preventivas')),
+        DropdownMenuItem(value: 'CORRECTIVA', child: Text('Correctivas')),
+      ],
+      onChanged: (v) {
+        if (v == null) return;
+        setState(() => _filtroTipo = v);
+        _aplicarFiltrosYRefrescar();
+      },
+    );
+  }
+
+  Widget _ddEstado() {
+    return DropdownButtonFormField<String>(
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Estado',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      value: _filtroEstado,
+      items: const [
+        DropdownMenuItem(value: 'TODOS', child: Text('Todos')),
+        DropdownMenuItem(value: 'ASIGNADA', child: Text('Asignada')),
+        DropdownMenuItem(value: 'EN_PROCESO', child: Text('En proceso')),
+        DropdownMenuItem(value: 'COMPLETADA', child: Text('Completada')),
+        DropdownMenuItem(value: 'APROBADA', child: Text('Aprobada')),
+        DropdownMenuItem(
+          value: 'PENDIENTE_APROBACION',
+          child: Text('Pendiente aprobación'),
+        ),
+        DropdownMenuItem(value: 'RECHAZADA', child: Text('Rechazada')),
+        DropdownMenuItem(value: 'NO_COMPLETADA', child: Text('No completada')),
+        DropdownMenuItem(
+          value: 'PENDIENTE_REPROGRAMACION',
+          child: Text('Pendiente reprogramación'),
+        ),
+      ],
+      onChanged: (v) {
+        if (v == null) return;
+        setState(() => _filtroEstado = v);
+        _aplicarFiltrosYRefrescar();
+      },
+    );
+  }
+
+  Widget _ddOperario() {
+    return DropdownButtonFormField<String>(
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Operario',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      value: _filtroOperario,
+      items: [
+        const DropdownMenuItem(value: 'TODOS', child: Text('Todos')),
+        ..._operariosDisponibles.map(
+          (o) => DropdownMenuItem(value: o, child: Text(o)),
+        ),
+      ],
+      onChanged: (v) {
+        if (v == null) return;
+        setState(() => _filtroOperario = v);
+        _aplicarFiltrosYRefrescar();
+      },
+    );
+  }
+
+  Widget _ddUbicacion() {
+    return DropdownButtonFormField<String>(
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Ubicación',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      value: _filtroUbicacion,
+      items: [
+        const DropdownMenuItem(value: 'TODAS', child: Text('Todas')),
+        ..._ubicacionesDisponibles.map(
+          (u) => DropdownMenuItem(value: u, child: Text(u)),
+        ),
+      ],
+      onChanged: (v) {
+        if (v == null) return;
+        setState(() => _filtroUbicacion = v);
+        _aplicarFiltrosYRefrescar();
+      },
+    );
+  }
+
+  Widget _buildFiltrosMensualCompacto() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Filtros',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade900,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _limpiarFiltros,
+                  icon: const Icon(Icons.restart_alt, size: 18),
+                  label: const Text('Limpiar'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            // 2 columnas para que no quede “bloque ladrillo”
+            Row(
+              children: [
+                Expanded(child: _ddTipo()),
+                const SizedBox(width: 10),
+                Expanded(child: _ddEstado()),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(child: _ddOperario()),
+                const SizedBox(width: 10),
+                Expanded(child: _ddUbicacion()),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFiltrosComoColumna({bool mostrarTitulo = true}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (mostrarTitulo) ...[
+          const Text(
+            'Filtros',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          ),
+          const SizedBox(height: 10),
+        ],
+        _ddTipo(),
+        const SizedBox(height: 8),
+        _ddEstado(),
+        const SizedBox(height: 8),
+        _ddOperario(),
+        const SizedBox(height: 8),
+        _ddUbicacion(),
+      ],
+    );
+  }
+
+  List<_FilaCrono> _buildFilasCronoMensual() {
+    // Agrupa por: descripcion + frecuencia + ubicacion + responsable (ajustable)
+    final Map<String, _FilaCrono> rows = {};
+
+    for (final t in _tareasFiltradas) {
+      final ubic = (t.ubicacionNombre ?? 'ID ${t.ubicacionId}').trim();
+      final freq = (t.frecuencia ?? '—').trim();
+      final diag = (t.descripcion).trim();
+
+      // responsable: prioriza operarios, si no supervisor
+      final resp = t.operariosNombres.isNotEmpty
+          ? t.operariosNombres.join(', ')
+          : (t.supervisorNombre ??
+                (t.supervisorId != null
+                    ? 'ID ${t.supervisorId}'
+                    : 'Sin asignar'));
+
+      final key = '$freq||$diag||$ubic||$resp';
+
+      rows.putIfAbsent(
+        key,
+        () => _FilaCrono(
+          frecuencia: freq,
+          diagnostico: diag,
+          ubicacion: ubic,
+          responsable: resp,
+          porDia: {},
+        ),
+      );
+
+      final day = t.fechaInicio.toLocal().day;
+
+      // Si hay varias tareas el mismo día para esa fila, mostramos la “más crítica”
+      // Orden: X > R > O > vacío (ajusta si quieres)
+      final s = _codigoEstado(t.estado);
+      final actual = rows[key]!.porDia[day] ?? '';
+      rows[key]!.porDia[day] = _mergeSimbolos(actual, s);
+    }
+
+    final list = rows.values.toList();
+
+    // Ordena: frecuencia, diagnóstico, ubicación
+    list.sort((a, b) {
+      final c1 = a.frecuencia.compareTo(b.frecuencia);
+      if (c1 != 0) return c1;
+      final c2 = a.diagnostico.compareTo(b.diagnostico);
+      if (c2 != 0) return c2;
+      return a.ubicacion.compareTo(b.ubicacion);
+    });
+
+    return list;
+  }
+
+  String _mergeSimbolos(String a, String b) {
+    int rank(String s) {
+      switch (s) {
+        case 'NC':
+          return 90; // no completada
+        case 'RE':
+          return 80; // rechazada
+        case 'PR':
+          return 70; // pendiente reprogramación
+        case 'PA':
+          return 60; // pendiente aprobación
+        case 'EP':
+          return 50; // en proceso
+        case 'AS':
+          return 40; // asignada
+        case 'CO':
+          return 30; // completada
+        case 'AP':
+          return 20; // aprobada
+        default:
+          return s.isEmpty ? 0 : 10;
+      }
+    }
+
+    return rank(b) > rank(a) ? b : a;
+  }
+
+  Color _colorPorCodigo(String code) {
+    switch (code) {
+      case 'NC':
+        return Colors.red.shade700;
+      case 'RE':
+        return Colors.red.shade900;
+      case 'PR':
+        return Colors.deepOrange.shade800;
+      case 'PA':
+        return Colors.orange.shade800;
+      case 'EP':
+        return Colors.blue.shade800;
+      case 'AS':
+        return Colors.indigo.shade700;
+      case 'CO':
+        return Colors.green.shade800;
+      case 'AP':
+        return Colors.teal.shade800;
+      default:
+        return Colors.grey.shade900;
+    }
+  }
+
+  Widget _buildCronogramaMensualTipoFoto() {
+    final filas = _buildFilasCronoMensual();
+
+    // tamaños (ajusta si quieres)
+    const wFrecuencia = 120.0;
+    const wDiagnostico = 260.0;
+    const wUbicacion = 120.0;
+    const wResponsable = 140.0;
+    const wDia = 34.0;
+
+    final headerStyle = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      color: Colors.grey.shade900,
+    );
+
+    final border = BorderSide(color: Colors.grey.shade300);
+
+    Widget cellBox({
+      required double w,
+      required Widget child,
+      Color? color,
+      Alignment align = Alignment.center,
+    }) {
+      return Container(
+        width: w,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        alignment: align,
+        decoration: BoxDecoration(
+          color: color ?? Colors.white,
+          border: Border(right: border, bottom: border),
+        ),
+        child: child,
+      );
+    }
+
+    // encabezados días
+    final dias = List.generate(_daysInMonth, (i) => i + 1);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          color: Colors.white,
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ===== Header 1: títulos fijos + letras de semana =====
+              Row(
+                children: [
+                  cellBox(
+                    w: wFrecuencia,
+                    color: Colors.green.shade200,
+                    align: Alignment.center,
+                    child: Text('Frecuencia', style: headerStyle),
+                  ),
+                  cellBox(
+                    w: wDiagnostico,
+                    color: Colors.green.shade200,
+                    align: Alignment.center,
+                    child: Text('Tarea', style: headerStyle),
+                  ),
+                  cellBox(
+                    w: wUbicacion,
+                    color: Colors.green.shade200,
+                    align: Alignment.center,
+                    child: Text('Ubicación', style: headerStyle),
+                  ),
+                  cellBox(
+                    w: wResponsable,
+                    color: Colors.green.shade200,
+                    align: Alignment.center,
+                    child: Text('Responsable', style: headerStyle),
+                  ),
+                  ...dias.map((dia) {
+                    final fecha = DateTime(_anioActual, _mesActual, dia);
+                    final dom = _esDomingo(fecha);
+                    final fest = _esFestivo(fecha);
+
+                    Color headerColor;
+                    if (dom) {
+                      headerColor = Colors.yellow.shade300;
+                    } else if (fest) {
+                      headerColor = Colors.red.shade200;
+                    } else {
+                      headerColor = Colors.green.shade200;
+                    }
+
+                    return cellBox(
+                      w: wDia,
+                      color: headerColor,
+                      child: Tooltip(
+                        message: fest
+                            ? (_nombreFestivo(fecha) ?? 'Festivo')
+                            : '',
+                        child: Text(_weekdayLetter(fecha), style: headerStyle),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+              // ===== Header 2: números de día =====
+              Row(
+                children: [
+                  cellBox(
+                    w: wFrecuencia,
+                    color: Colors.white,
+                    child: const SizedBox.shrink(),
+                  ),
+                  cellBox(
+                    w: wDiagnostico,
+                    color: Colors.white,
+                    child: const SizedBox.shrink(),
+                  ),
+                  cellBox(
+                    w: wUbicacion,
+                    color: Colors.white,
+                    child: const SizedBox.shrink(),
+                  ),
+                  cellBox(
+                    w: wResponsable,
+                    color: Colors.white,
+                    child: const SizedBox.shrink(),
+                  ),
+                  ...dias.map((dia) {
+                    final fecha = DateTime(_anioActual, _mesActual, dia);
+                    final dom = _esDomingo(fecha);
+                    final fest = _esFestivo(fecha);
+
+                    Color header2Color;
+                    if (dom) {
+                      header2Color = Colors.yellow.shade300;
+                    } else if (fest) {
+                      header2Color = Colors.red.shade100; // 👈 festivo
+                    } else {
+                      header2Color = Colors.grey.shade100;
+                    }
+
+                    return cellBox(
+                      w: wDia,
+                      color: header2Color,
+                      child: Tooltip(
+                        message: fest
+                            ? (_nombreFestivo(fecha) ?? 'Festivo')
+                            : '',
+                        child: Text(
+                          '$dia',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey.shade900,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+
+              // ===== Body =====
+              ...filas.map((f) {
+                return Row(
+                  children: [
+                    cellBox(
+                      w: wFrecuencia,
+                      align: Alignment.centerLeft,
+                      child: Text(
+                        f.frecuencia,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    cellBox(
+                      w: wDiagnostico,
+                      align: Alignment.centerLeft,
+                      child: Text(
+                        f.diagnostico,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    cellBox(
+                      w: wUbicacion,
+                      align: Alignment.centerLeft,
+                      child: Text(
+                        f.ubicacion,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    cellBox(
+                      w: wResponsable,
+                      align: Alignment.centerLeft,
+                      child: Text(
+                        f.responsable,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    ...dias.map((dia) {
+                      final fecha = DateTime(_anioActual, _mesActual, dia);
+                      final dom = _esDomingo(fecha);
+                      final fest = _esFestivo(fecha);
+                      final val = f.porDia[dia] ?? '';
+
+                      Color cellColor;
+                      if (dom) {
+                        cellColor = Colors.yellow.shade200;
+                      } else if (fest) {
+                        cellColor = Colors.red.shade50;
+                      } else {
+                        cellColor = Colors.white;
+                      }
+
+                      return GestureDetector(
+                        onTap: () => _abrirDia(dia),
+                        child: cellBox(
+                          w: wDia,
+                          color: dom
+                              ? Colors.yellow.shade200
+                              : fest
+                              ? Colors.red.shade50
+                              : Colors.white,
+                          child: Text(
+                            val,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: _colorPorCodigo(val), // 👈 AQUÍ SE USA
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -263,9 +950,7 @@ class _CronogramaPreventivasBorradorPageState
       );
       final fin = inicio.add(const Duration(hours: 1));
 
-      final tareasDelDia = _tareasMes
-          .where((t) => _isSameLocalDay(t.fechaInicio, fechaLocal))
-          .toList();
+      final tareasDelDia = _tareasFiltradas;
 
       final tareasBloque = tareasDelDia.where((t) {
         final i = t.fechaInicio.toLocal();
@@ -451,7 +1136,6 @@ class _CronogramaPreventivasBorradorPageState
     final evidenciasTxt = (t.evidencias ?? []).isEmpty
         ? 'Sin evidencias'
         : t.evidencias!.join('\n');
-
     final insumosCount = (t.insumosUsados ?? []).length;
 
     final operarios = t.operariosNombres.isEmpty
@@ -599,7 +1283,62 @@ class _CronogramaPreventivasBorradorPageState
     );
   }
 
-  // ✅ mover tarea: trabaja en MINUTOS (no horas)
+  static const Map<String, String> _leyendaEstados = {
+    'AS': 'Asignada',
+    'EP': 'En proceso',
+    'CO': 'Completada',
+    'AP': 'Aprobada',
+    'PA': 'Pendiente aprobación',
+    'RE': 'Rechazada',
+    'NC': 'No completada',
+    'PR': 'Pendiente reprogramación',
+  };
+
+  Widget _buildLeyendaMensual() {
+    // mostrar solo lo que aparece en el mes
+    final usados = <String>{};
+    for (final f in _buildFilasCronoMensual()) {
+      usados.addAll(f.porDia.values.where((x) => x.trim().isNotEmpty));
+    }
+
+    final items = usados.toList()..sort();
+
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 8,
+        children: items.map((code) {
+          final label = _leyendaEstados[code] ?? 'Estado: $code';
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: AppTheme.primary.withOpacity(0.18)),
+            ),
+            child: Text(
+              '$code = $label',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade900,
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Future<void> _moverTareaADia(TareaModel t, int nuevoDia) async {
     final iniLocal = t.fechaInicio.toLocal();
     final finLocal = t.fechaFin.toLocal();
@@ -694,11 +1433,31 @@ class _CronogramaPreventivasBorradorPageState
       child: Column(
         children: [
           _buildTopBar(mesNombre),
+          if (_vista == _VistaCronograma.mensual)
+            AnimatedCrossFade(
+              duration: const Duration(milliseconds: 180),
+              crossFadeState: _mostrarFiltrosMensual
+                  ? CrossFadeState.showFirst
+                  : CrossFadeState.showSecond,
+              firstChild: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: _buildFiltrosMensualCompacto(),
+              ),
+              secondChild: const SizedBox.shrink(),
+            ),
+
           const SizedBox(height: 10),
           Expanded(
-            child: _vista == _VistaCronograma.mensual
-                ? _buildCalendarioMensualSemanas()
-                : _buildAgendaSemanal(),
+            child: Column(
+              children: [
+                Expanded(
+                  child: _vista == _VistaCronograma.mensual
+                      ? _buildCronogramaMensualTipoFoto()
+                      : _buildAgendaSemanal(),
+                ),
+                if (_vista == _VistaCronograma.mensual) _buildLeyendaMensual(),
+              ],
+            ),
           ),
         ],
       ),
@@ -730,8 +1489,6 @@ class _CronogramaPreventivasBorradorPageState
           onSelectionChanged: (s) => setState(() => _vista = s.first),
         ),
         const Spacer(),
-
-        // Navegación
         if (_vista == _VistaCronograma.mensual) ...[
           IconButton(
             tooltip: 'Mes anterior',
@@ -746,6 +1503,17 @@ class _CronogramaPreventivasBorradorPageState
             tooltip: 'Mes siguiente',
             onPressed: () => _cambiarMes(1),
             icon: const Icon(Icons.chevron_right),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.filter_alt_outlined, size: 18),
+            label: Text(
+              _hayFiltrosActivos() ? 'Filtros •' : 'Filtros',
+              style: const TextStyle(fontSize: 12),
+            ),
+            onPressed: () => setState(
+              () => _mostrarFiltrosMensual = !_mostrarFiltrosMensual,
+            ),
           ),
         ] else ...[
           IconButton(
@@ -771,186 +1539,6 @@ class _CronogramaPreventivasBorradorPageState
     );
   }
 
-  // ================== Vista mensual (7 columnas por semana) ==================
-  Widget _buildCalendarioMensualSemanas() {
-    final now = DateTime.now();
-    final esMismoMes = now.year == _anioActual && now.month == _mesActual;
-
-    // 0..6 (lunes..domingo)
-    int weekdayIndexMonday(DateTime d) => (d.weekday + 6) % 7;
-
-    final primerDiaMes = DateTime(_anioActual, _mesActual, 1);
-    final offset = weekdayIndexMonday(primerDiaMes); // espacios antes del 1
-
-    final totalCeldas = offset + _daysInMonth;
-    final totalFilas = (totalCeldas / 7).ceil();
-    final totalItems = totalFilas * 7;
-
-    return Column(
-      children: [
-        // Leyenda
-        Row(
-          children: [
-            _buildLegend(Colors.grey.shade200, 'Sin tareas'),
-            const SizedBox(width: 8),
-            _buildLegend(AppTheme.primary.withOpacity(0.2), 'Con preventivas'),
-            const SizedBox(width: 8),
-            _buildLegend(Colors.blue.shade100, 'Hoy'),
-          ],
-        ),
-        const SizedBox(height: 10),
-
-        // Encabezado días semana
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
-            children: const [
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Lun',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Mar',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Mié',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Jue',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Vie',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Sáb',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Dom',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        Expanded(
-          child: GridView.builder(
-            itemCount: totalItems,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              childAspectRatio: 1.25,
-              mainAxisExtent: 78,
-            ),
-            itemBuilder: (context, index) {
-              final dia = index - offset + 1;
-
-              // Celdas vacías (antes del 1 o después del último día)
-              if (dia < 1 || dia > _daysInMonth) {
-                return Container(
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
-                );
-              }
-
-              final resumen = _getResumenDia(dia);
-              final isToday = esMismoMes && now.day == dia;
-
-              return DragTarget<TareaModel>(
-                onWillAccept: (t) => t != null,
-                onAccept: (t) => _moverTareaADia(t, dia),
-                builder: (context, candidateData, rejectedData) {
-                  final hasCandidate = candidateData.isNotEmpty;
-
-                  Color baseColor = resumen.preventivas > 0
-                      ? AppTheme.primary.withOpacity(0.15)
-                      : Colors.grey.shade100;
-
-                  if (isToday) baseColor = Colors.blue.shade100;
-                  if (hasCandidate)
-                    baseColor = Colors.greenAccent.withOpacity(0.35);
-
-                  return GestureDetector(
-                    onTap: () => _abrirDia(dia),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: baseColor,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: resumen.preventivas > 0
-                              ? AppTheme.primary
-                              : Colors.grey.shade300,
-                          width: 1,
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            dia.toString(),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                          if (resumen.preventivas > 0)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: Text(
-                                '${resumen.preventivas} prev.',
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ================== Vista semanal ==================
   Widget _buildAgendaSemanal() {
     final weekStart = _startOfWeekMonday(_semanaBase);
     final tareas = _tareasSemana(_semanaBase);
@@ -974,9 +1562,13 @@ class _CronogramaPreventivasBorradorPageState
             title: 'Resumen',
             items: [
               'Tareas semana: ${tareas.length}',
-              'Tareas mes: ${_tareasMes.length}',
+              'Tareas mes: ${_tareasFiltradas.length}',
               'Horario: 08:00 - 16:00 (almuerzo 13-14)',
             ],
+            child: Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: _buildFiltrosComoColumna(mostrarTitulo: false),
+            ),
           ),
         ),
         const SizedBox(width: 10),
@@ -1033,29 +1625,11 @@ class _CronogramaPreventivasBorradorPageState
       ),
     );
   }
-
-  Widget _buildLegend(Color color, String label) {
-    return Row(
-      children: [
-        Container(
-          width: 14,
-          height: 14,
-          decoration: BoxDecoration(
-            color: color,
-            border: Border.all(color: Colors.grey.shade400),
-            borderRadius: BorderRadius.circular(4),
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(label, style: const TextStyle(fontSize: 11)),
-      ],
-    );
-  }
 }
 
 // ============================
 //   WIDGETS: Semana tipo agenda
-//   ✅ Header scrollea igual que body (Fix 2)
+//   ✅ FIX: Banda de almuerzo + pxPorMin + tema claro
 // ============================
 
 class _WeekScheduleView extends StatefulWidget {
@@ -1074,16 +1648,14 @@ class _WeekScheduleView extends StatefulWidget {
 }
 
 class _WeekScheduleViewState extends State<_WeekScheduleView> {
-  // Controladores para que header y body usen el MISMO scroll horizontal
   final ScrollController _hCtrl = ScrollController();
   final ScrollController _vCtrl = ScrollController();
 
-  // Horario fijo
   static const int horaInicio = 8;
   static const int horaFin = 16;
 
-  // Look & feel
-  static const double pxPorMin = 1.2;
+  // ✅ más “respirable”
+  static const double pxPorMin = 1.6; // estaba 1.2
   static const double anchoHora = 56;
   static const double altoHeader = 44;
 
@@ -1125,17 +1697,21 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
   @override
   Widget build(BuildContext context) {
-    final hours = horaFin - horaInicio;
+    final hours = horaFin - horaInicio; // 8 horas: 08..16
     final heightGrid = (hours * 60) * pxPorMin;
 
-    final bg = const Color(0xFF0F1115);
-    final line = Colors.white.withOpacity(0.08);
-    final text = Colors.white.withOpacity(0.85);
-    final subtext = Colors.white.withOpacity(0.60);
+    // ✅ tema claro
+    final bg = Colors.white;
+    final line = Colors.grey.shade300;
+    final text = Colors.grey.shade900;
+    final subtext = Colors.grey.shade700;
+
+    // ==== Banda de almuerzo 13:00 - 14:00 ====
+    final lunchStartMin = (13 - horaInicio) * 60; // 13:00
+    final lunchDurMin = 60;
 
     return LayoutBuilder(
       builder: (context, c) {
-        // si la pantalla es angosta, igual dejamos scroll horizontal
         const minDayCol = 120.0;
         final available = c.maxWidth - anchoHora;
         final colWidth = (available / 7).clamp(minDayCol, 9999.0);
@@ -1145,11 +1721,10 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white.withOpacity(0.08)),
+            border: Border.all(color: Colors.grey.shade300), // ✅
           ),
           child: Column(
             children: [
-              // ✅ HEADER (Fix 2): mismo ScrollController horizontal
               SizedBox(
                 height: altoHeader,
                 child: SingleChildScrollView(
@@ -1198,8 +1773,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                 ),
               ),
               Container(height: 1, color: line),
-
-              // BODY: scroll horizontal (mismo controller) + scroll vertical
               Expanded(
                 child: SingleChildScrollView(
                   controller: _hCtrl,
@@ -1212,7 +1785,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                         height: heightGrid,
                         child: Stack(
                           children: [
-                            // Columnas
                             Positioned.fill(
                               child: Row(
                                 children: [
@@ -1237,7 +1809,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                               ),
                             ),
 
-                            // Líneas por hora
+                            // líneas horizontales por hora
                             ...List.generate(hours + 1, (h) {
                               final top = (h * 60) * pxPorMin;
                               return Positioned(
@@ -1248,7 +1820,18 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                               );
                             }),
 
-                            // Bloques tareas
+                            // ✅ banda de almuerzo
+                            Positioned(
+                              left: anchoHora,
+                              right: 0,
+                              top: lunchStartMin * pxPorMin,
+                              height: lunchDurMin * pxPorMin,
+                              child: Container(
+                                color: Colors.orange.withOpacity(0.12),
+                              ),
+                            ),
+
+                            // tareas
                             ...widget.tareas
                                 .where(
                                   (t) => _isWithinWeek(t.fechaInicio.toLocal()),
@@ -1272,13 +1855,13 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   );
 
                                   final colorBase = AppTheme.primary;
-                                  final fill = colorBase.withOpacity(0.22);
-                                  final border = colorBase.withOpacity(0.70);
+                                  final fill = colorBase.withOpacity(0.12);
+                                  final border = colorBase.withOpacity(0.55);
 
                                   final horaIni = DateFormat(
                                     'HH:mm',
                                   ).format(ini);
-                                  final horaFin = DateFormat(
+                                  final horaFinStr = DateFormat(
                                     'HH:mm',
                                   ).format(fin);
 
@@ -1317,7 +1900,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                             ),
                                             const SizedBox(height: 6),
                                             Text(
-                                              '$horaIni - $horaFin',
+                                              '$horaIni - $horaFinStr',
                                               style: TextStyle(
                                                 color: subtext,
                                                 fontSize: 11,
@@ -1354,25 +1937,36 @@ class _HoursColumnDark extends StatelessWidget {
   Widget build(BuildContext context) {
     const int horaInicio = 8;
     const int horaFin = 16;
-    final hours = horaFin - horaInicio;
+    final hours = horaFin - horaInicio; // 8
 
-    return Column(
-      children: List.generate(hours, (i) {
-        final h = horaInicio + i;
-        return SizedBox(
-          height: 60 * pxPorMin,
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                "${h.toString().padLeft(2, '0')}:00",
-                style: TextStyle(fontSize: 11, color: textColor),
+    return LayoutBuilder(
+      builder: (context, c) {
+        final height = c.maxHeight;
+
+        return Stack(
+          children: List.generate(hours + 1, (i) {
+            final h = horaInicio + i;
+
+            double top = (i * 60) * pxPorMin;
+            top += 6;
+
+            const labelHeight = 16.0;
+            if (top > height - labelHeight) top = height - labelHeight;
+
+            return Positioned(
+              top: top,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Text(
+                  "${h.toString().padLeft(2, '0')}:00",
+                  style: TextStyle(fontSize: 11, color: textColor),
+                ),
               ),
-            ),
-          ),
+            );
+          }),
         );
-      }),
+      },
     );
   }
 }
@@ -1381,8 +1975,9 @@ class _HoursColumnDark extends StatelessWidget {
 class _SidebarSimple extends StatelessWidget {
   final String title;
   final List<String> items;
+  final Widget? child;
 
-  const _SidebarSimple({required this.title, required this.items});
+  const _SidebarSimple({required this.title, required this.items, this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -1406,6 +2001,7 @@ class _SidebarSimple extends StatelessWidget {
                 child: Text("• $s", style: const TextStyle(fontSize: 12)),
               ),
             ),
+            if (child != null) ...[const Divider(), child!],
             const Spacer(),
             Text(
               "Tip: aquí metes filtros (supervisor, operario, ubicación) sin tocar la agenda.",
@@ -1557,7 +2153,6 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
   }
 }
 
-
 class _DiaResumen {
   final int dia;
   final int total;
@@ -1576,4 +2171,21 @@ class _BloqueHora {
   final List<TareaModel> tareas;
 
   _BloqueHora({required this.inicio, required this.fin, required this.tareas});
+}
+
+// ✅ Modelo interno de fila (debe ser top-level en Dart)
+class _FilaCrono {
+  final String frecuencia;
+  final String diagnostico;
+  final String ubicacion;
+  final String responsable;
+  final Map<int, String> porDia;
+
+  _FilaCrono({
+    required this.frecuencia,
+    required this.diagnostico,
+    required this.ubicacion,
+    required this.responsable,
+    required this.porDia,
+  });
 }

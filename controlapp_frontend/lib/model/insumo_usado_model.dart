@@ -1,6 +1,6 @@
 class InsumoUsadoItem {
   final int insumoId;
-  final int cantidad;
+  final num cantidad;
 
   InsumoUsadoItem({
     required this.insumoId,
@@ -9,8 +9,8 @@ class InsumoUsadoItem {
 
   factory InsumoUsadoItem.fromJson(Map<String, dynamic> json) {
     return InsumoUsadoItem(
-      insumoId: json['insumoId'] as int,
-      cantidad: json['cantidad'] as int,
+      insumoId: int.parse(json['insumoId'].toString()),
+      cantidad: num.tryParse(json['cantidad'].toString()) ?? 0,
     );
   }
 

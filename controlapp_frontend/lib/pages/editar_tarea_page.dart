@@ -44,11 +44,11 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
 
   // Operarios del conjunto
   List<Usuario> _operarios = [];
-  final List<int> _operariosSeleccionadosIds = []; // 👈 IDs numéricos (cédula)
+  final List<String> _operariosSeleccionadosIds = [];
 
   // Supervisores
   List<Usuario> _supervisores = [];
-  int? _supervisorId; // 👈 también numérico
+  String? _supervisorId;
 
   @override
   void initState() {
@@ -59,6 +59,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
 
   void _initFromTarea() {
     final t = widget.tarea;
+
     _descripcionCtrl.text = t.descripcion;
     _duracionCtrl.text = t.duracionMinutos.toString();
     _observacionesCtrl.text = t.observaciones ?? '';
@@ -66,13 +67,14 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
     fechaInicio = t.fechaInicio;
     fechaFin = t.fechaFin;
 
-    // supervisorId viene como int? en TareaModel
-    _supervisorId = t.supervisorId;
+    // ✅ supervisorId como String? (si viene int, lo convertimos)
+    final sup = t.supervisorId;
+    _supervisorId = sup == null ? null : sup.toString();
 
-    // operariosIds viene como List<int> en TareaModel
+    // ✅ operariosIds como List<String> (si viene int, lo convertimos)
     _operariosSeleccionadosIds
       ..clear()
-      ..addAll(t.operariosIds);
+      ..addAll(t.operariosIds.map((x) => x.toString()));
   }
 
   Future<void> _cargarDatosIniciales() async {
@@ -163,7 +165,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
       return;
     }
 
-    final seleccionTemp = Set<int>.from(_operariosSeleccionadosIds);
+    final seleccionTemp = Set<String>.from(_operariosSeleccionadosIds);
 
     final ok = await showDialog<bool>(
       context: context,
@@ -181,8 +183,8 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
                     final op = _operarios[index];
 
                     // Usamos la cédula numérica como ID
-                    final opId = int.tryParse(op.cedula) ?? 0;
-                    if (opId == 0) return const SizedBox.shrink();
+                    final opId = op.cedula.trim();
+                    if (opId.isEmpty) return const SizedBox.shrink();
 
                     final checked = seleccionTemp.contains(opId);
                     return CheckboxListTile(
@@ -507,24 +509,23 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
               ),
               const SizedBox(height: 16),
 
-              DropdownButtonFormField<int>(
+              DropdownButtonFormField<String>(
                 value: _supervisorId,
                 decoration: const InputDecoration(
                   labelText: "Supervisor (opcional)",
                   border: OutlineInputBorder(),
                 ),
                 items: _supervisores
-                    .map(
-                      (s) => DropdownMenuItem(
-                        value: int.tryParse(s.cedula) ?? 0,
-                        child: Text(s.nombre),
-                      ),
-                    )
+                    .map((s) {
+                      final id = s.cedula.trim();
+                      if (id.isEmpty) return null;
+                      return DropdownMenuItem(value: id, child: Text(s.nombre));
+                    })
+                    .whereType<DropdownMenuItem<String>>()
                     .toList(),
-                onChanged: (value) {
-                  setState(() => _supervisorId = value);
-                },
+                onChanged: (value) => setState(() => _supervisorId = value),
               ),
+
               const SizedBox(height: 32),
 
               ElevatedButton.icon(

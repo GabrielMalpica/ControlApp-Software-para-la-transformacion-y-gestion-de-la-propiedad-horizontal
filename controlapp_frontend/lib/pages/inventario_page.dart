@@ -1,13 +1,21 @@
 import 'package:flutter/material.dart';
+
 import '../service/theme.dart';
 import '../api/inventario_api.dart';
 import '../model/inventario_item_model.dart';
 import 'solicitud_insumo_page.dart';
 
+// ✅ Imports herramientas
+import '../api/herramienta_api.dart';
+import '../model/herramienta_model.dart';
+
+enum TipoInventario { INSUMOS, HERRAMIENTAS }
+
 class InventarioPage extends StatefulWidget {
   final String nit; // NIT conjunto
+  final String empresaId; // ✅ NIT empresa (para catálogo)
 
-  const InventarioPage({super.key, required this.nit});
+  const InventarioPage({super.key, required this.nit, required this.empresaId});
 
   @override
   State<InventarioPage> createState() => _InventarioPageState();
@@ -16,18 +24,31 @@ class InventarioPage extends StatefulWidget {
 class _InventarioPageState extends State<InventarioPage> {
   final InventarioApi _api = InventarioApi();
 
+  // ✅ Tipo actual
+  TipoInventario _tipoInventario = TipoInventario.INSUMOS;
+
+  // =============================
+  // Herramientas
+  // =============================
+  final HerramientaApi _herrApi = HerramientaApi();
+  bool _cargandoHerr = false;
+  List<HerramientaStockResponse> _herrItems = [];
+  final Set<int> _selectedHerramientaIds = {};
+
+  // =============================
+  // Insumos
+  // =============================
   bool _cargando = false;
   List<InventarioItemResponse> _items = [];
+  final Set<int> _selectedInsumoIds = {};
+
+  // Search
   String _q = '';
 
   // Tabla
-  int _rowsPerPage =
-      8; // ✅ permitido porque lo incluimos en availableRowsPerPage
+  int _rowsPerPage = 8;
   int? _sortColumnIndex;
   bool _sortAscending = true;
-
-  // Selección (checkbox)
-  final Set<int> _selectedInsumoIds = {};
 
   @override
   void initState() {
@@ -35,33 +56,73 @@ class _InventarioPageState extends State<InventarioPage> {
     _cargar();
   }
 
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  // ✅ carga según tipo
   Future<void> _cargar() async {
-    setState(() => _cargando = true);
-    try {
-      final data = await _api.listarInventarioConjunto(widget.nit);
-      if (!mounted) return;
+    if (_tipoInventario == TipoInventario.INSUMOS) {
+      setState(() => _cargando = true);
+      try {
+        final data = await _api.listarInventarioConjunto(widget.nit);
+        if (!mounted) return;
 
-      setState(() {
-        _items = data;
-
-        // Limpia selección de ítems que ya no existen (por si refresca)
-        _selectedInsumoIds.removeWhere(
-          (id) => !_items.any((x) => x.insumoId == id),
+        setState(() {
+          _items = data;
+          _selectedInsumoIds.removeWhere(
+            (id) => !_items.any((x) => x.insumoId == id),
+          );
+        });
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error cargando inventario: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
-      });
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error cargando inventario: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _cargando = false);
+      } finally {
+        if (mounted) setState(() => _cargando = false);
+      }
+    } else {
+      setState(() => _cargandoHerr = true);
+      try {
+        final raw = await _herrApi.listarStockConjunto(nitConjunto: widget.nit);
+
+        final parsed = raw
+            .whereType<Map>()
+            .map(
+              (e) =>
+                  HerramientaStockResponse.fromJson(e.cast<String, dynamic>()),
+            )
+            .toList();
+
+        if (!mounted) return;
+        setState(() {
+          _herrItems = parsed;
+          _selectedHerramientaIds.removeWhere(
+            (id) => !_herrItems.any((x) => x.herramientaId == id),
+          );
+        });
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error cargando herramientas: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      } finally {
+        if (mounted) setState(() => _cargandoHerr = false);
+      }
     }
   }
 
+  // =============================
+  // Filtro insumos
+  // =============================
   List<InventarioItemResponse> get _filtrados {
     final t = _q.trim().toLowerCase();
     if (t.isEmpty) return List.of(_items);
@@ -73,6 +134,24 @@ class _InventarioPageState extends State<InventarioPage> {
     }).toList();
   }
 
+  // =============================
+  // Filtro herramientas
+  // =============================
+  List<HerramientaStockResponse> get _herrFiltrados {
+    final t = _q.trim().toLowerCase();
+    if (t.isEmpty) return List.of(_herrItems);
+
+    return _herrItems.where((x) {
+      return x.nombre.toLowerCase().contains(t) ||
+          x.unidad.toLowerCase().contains(t) ||
+          x.estado.name.toLowerCase().contains(t) ||
+          x.modoControl.name.toLowerCase().contains(t);
+    }).toList();
+  }
+
+  // =============================
+  // Sort insumos
+  // =============================
   void _sort<T extends Comparable<T>>(
     int columnIndex,
     bool ascending,
@@ -82,7 +161,6 @@ class _InventarioPageState extends State<InventarioPage> {
       _sortColumnIndex = columnIndex;
       _sortAscending = ascending;
 
-      // Ordenamos la lista base para que paginación sea coherente
       _items.sort((a, b) {
         final av = getField(a);
         final bv = getField(b);
@@ -91,192 +169,149 @@ class _InventarioPageState extends State<InventarioPage> {
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
+  // =============================
+  // Tabla insumos
+  // =============================
+  Widget _buildTablaInsumos() {
     final filtrados = _filtrados;
 
-    final bajos = _items.where((e) => e.estaBajo && !e.agotado).length;
-    final agotados = _items.where((e) => e.agotado).length;
+    if (_cargando) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.primary,
-        elevation: 0,
-        title: Text(
-          "Inventario · ${widget.nit}",
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            tooltip: "Refrescar",
-            onPressed: _cargar,
-            icon: const Icon(Icons.refresh, color: Colors.white),
-          ),
-        ],
+    if (filtrados.isEmpty) {
+      return const Center(
+        child: Text("Este conjunto no tiene insumos en inventario."),
+      );
+    }
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.grey.shade300),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // ===== Toolbar superior tipo dashboard =====
-            Row(
-              children: [
-                const Spacer(),
-
-                _ghostButton(
-                  icon: Icons.add_shopping_cart_outlined,
-                  label: "Solicitar insumos",
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            SolicitudInsumoPage(conjuntoNit: widget.nit),
-                      ),
-                    );
-                    _cargar();
-                  },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: SingleChildScrollView(
+          child: Theme(
+            data: Theme.of(
+              context,
+            ).copyWith(dividerColor: Colors.grey.shade200),
+            child: PaginatedDataTable(
+              header: const Text(
+                "Insumos",
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              availableRowsPerPage: const [8, 10, 20, 50],
+              rowsPerPage: _rowsPerPage,
+              onRowsPerPageChanged: (v) {
+                if (v == null) return;
+                setState(() => _rowsPerPage = v);
+              },
+              sortColumnIndex: _sortColumnIndex,
+              sortAscending: _sortAscending,
+              columns: [
+                DataColumn(
+                  label: const Text("NAME"),
+                  onSort: (i, asc) =>
+                      _sort<String>(i, asc, (d) => d.nombre.toLowerCase()),
                 ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // ===== Search + chips =====
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: TextField(
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(Icons.search),
-                        hintText: "Buscar (nombre, categoría, unidad)",
-                        filled: true,
-                        fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                      ),
-                      onChanged: (v) => setState(() => _q = v),
-                    ),
+                DataColumn(
+                  label: const Text("CATEGORY"),
+                  onSort: (i, asc) => _sort<String>(
+                    i,
+                    asc,
+                    (d) => (d.categoria ?? '').toLowerCase(),
                   ),
                 ),
-                const SizedBox(width: 12),
-                _chipCount("Bajos", bajos, AppTheme.red),
-                const SizedBox(width: 8),
-                _chipCount("Agotados", agotados, Colors.black54),
+                DataColumn(
+                  label: const Text("UNIT"),
+                  onSort: (i, asc) =>
+                      _sort<String>(i, asc, (d) => d.unidad.toLowerCase()),
+                ),
+                DataColumn(
+                  numeric: true,
+                  label: const Text("AVAILABLE"),
+                  onSort: (i, asc) => _sort<num>(i, asc, (d) => d.cantidad),
+                ),
+                const DataColumn(label: Text("THRESHOLD")),
+                const DataColumn(label: Text("STATUS")),
               ],
+              source: _InventarioDataSource(
+                data: filtrados,
+                selectedIds: _selectedInsumoIds,
+                onSelectionChanged: () => setState(() {}),
+              ),
             ),
-
-            const SizedBox(height: 12),
-
-            // ===== Tabla =====
-            Expanded(
-              child: _cargando
-                  ? const Center(child: CircularProgressIndicator())
-                  : filtrados.isEmpty
-                  ? const Center(
-                      child: Text(
-                        "Este conjunto no tiene insumos en inventario.",
-                      ),
-                    )
-                  : Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        side: BorderSide(color: Colors.grey.shade300),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: SingleChildScrollView(
-                          child: Theme(
-                            data: Theme.of(
-                              context,
-                            ).copyWith(dividerColor: Colors.grey.shade200),
-                            child: PaginatedDataTable(
-                              header: const Text(
-                                "Products",
-                                style: TextStyle(fontWeight: FontWeight.w800),
-                              ),
-
-                              // ✅ ESTO ES LO QUE ARREGLA TU ERROR
-                              availableRowsPerPage: const [8, 10, 20, 50],
-
-                              rowsPerPage: _rowsPerPage,
-                              onRowsPerPageChanged: (v) {
-                                if (v == null) return;
-                                setState(() => _rowsPerPage = v);
-                              },
-
-                              sortColumnIndex: _sortColumnIndex,
-                              sortAscending: _sortAscending,
-
-                              columns: [
-                                DataColumn(
-                                  label: const Text("NAME"),
-                                  onSort: (i, asc) => _sort<String>(
-                                    i,
-                                    asc,
-                                    (d) => d.nombre.toLowerCase(),
-                                  ),
-                                ),
-                                DataColumn(
-                                  label: const Text("CATEGORY"),
-                                  onSort: (i, asc) => _sort<String>(
-                                    i,
-                                    asc,
-                                    (d) => (d.categoria ?? '').toLowerCase(),
-                                  ),
-                                ),
-                                DataColumn(
-                                  label: const Text("UNIT"),
-                                  onSort: (i, asc) => _sort<String>(
-                                    i,
-                                    asc,
-                                    (d) => d.unidad.toLowerCase(),
-                                  ),
-                                ),
-                                DataColumn(
-                                  numeric: true,
-                                  label: const Text("AVAILABLE"),
-                                  onSort: (i, asc) =>
-                                      _sort<num>(i, asc, (d) => d.cantidad),
-                                ),
-                                const DataColumn(label: Text("THRESHOLD")),
-                                const DataColumn(label: Text("STATUS")),
-                              ],
-
-                              source: _InventarioDataSource(
-                                data: filtrados,
-                                selectedIds: _selectedInsumoIds,
-                                onSelectionChanged: () => setState(() {}),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
+  // =============================
+  // Tabla herramientas
+  // =============================
+  Widget _buildTablaHerramientas() {
+    final filtrados = _herrFiltrados;
+
+    if (_cargandoHerr) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (filtrados.isEmpty) {
+      return const Center(
+        child: Text("Este conjunto no tiene herramientas registradas."),
+      );
+    }
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.grey.shade300),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: SingleChildScrollView(
+          child: Theme(
+            data: Theme.of(
+              context,
+            ).copyWith(dividerColor: Colors.grey.shade200),
+            child: PaginatedDataTable(
+              header: const Text(
+                "Herramientas",
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              availableRowsPerPage: const [8, 10, 20, 50],
+              rowsPerPage: _rowsPerPage,
+              onRowsPerPageChanged: (v) {
+                if (v == null) return;
+                setState(() => _rowsPerPage = v);
+              },
+              columns: const [
+                DataColumn(label: Text("NAME")),
+                DataColumn(label: Text("UNIT")),
+                DataColumn(label: Text("CONTROL")),
+                DataColumn(numeric: true, label: Text("AVAILABLE")),
+                DataColumn(label: Text("STATE")),
+              ],
+              source: _HerramientaDataSource(
+                data: filtrados,
+                selectedIds: _selectedHerramientaIds,
+                onSelectionChanged: () => setState(() {}),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // =============================
+  // UI helpers
+  // =============================
   Widget _chipCount(String label, int n, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -328,9 +363,189 @@ class _InventarioPageState extends State<InventarioPage> {
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    // Conteos insumos
+    final bajos = _items.where((e) => e.estaBajo && !e.agotado).length;
+    final agotados = _items.where((e) => e.agotado).length;
+
+    // Conteos herramientas
+    final operativas = _herrItems
+        .where((e) => e.estado == EstadoHerramientaStock.OPERATIVA)
+        .length;
+    final danadas = _herrItems
+        .where((e) => e.estado == EstadoHerramientaStock.DANADA)
+        .length;
+    final perdidas = _herrItems
+        .where((e) => e.estado == EstadoHerramientaStock.PERDIDA)
+        .length;
+    final bajasHerr = _herrItems
+        .where((e) => e.estado == EstadoHerramientaStock.BAJA)
+        .length;
+
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      appBar: AppBar(
+        backgroundColor: AppTheme.primary,
+        elevation: 0,
+        title: Text(
+          "Inventario · ${widget.nit}",
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            tooltip: "Refrescar",
+            onPressed: _cargar,
+            icon: const Icon(Icons.refresh, color: Colors.white),
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            // ===== Toolbar superior =====
+            Row(
+              children: [
+                const Spacer(),
+                _ghostButton(
+                  icon: _tipoInventario == TipoInventario.INSUMOS
+                      ? Icons.add_shopping_cart_outlined
+                      : Icons.add,
+                  label: _tipoInventario == TipoInventario.INSUMOS
+                      ? "Solicitar insumos"
+                      : "Agregar herramienta",
+                  onTap: () async {
+                    if (_tipoInventario == TipoInventario.INSUMOS) {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              SolicitudInsumoPage(conjuntoNit: widget.nit),
+                        ),
+                      );
+                      _cargar();
+                    } else {
+                      final changed = await showDialog<bool>(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => _AgregarHerramientaDialog(
+                          nitConjunto: widget.nit,
+                          empresaId: widget.empresaId,
+                          api: _herrApi,
+                        ),
+                      );
+
+                      if (changed == true) {
+                        _cargar(); // recarga tabla herramientas
+                      }
+                    }
+                  },
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // ===== Selector =====
+            Row(
+              children: [
+                ChoiceChip(
+                  label: const Text("Insumos"),
+                  selected: _tipoInventario == TipoInventario.INSUMOS,
+                  onSelected: (_) {
+                    setState(() {
+                      _tipoInventario = TipoInventario.INSUMOS;
+                      _q = '';
+                    });
+                    _cargar();
+                  },
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text("Herramientas"),
+                  selected: _tipoInventario == TipoInventario.HERRAMIENTAS,
+                  onSelected: (_) {
+                    setState(() {
+                      _tipoInventario = TipoInventario.HERRAMIENTAS;
+                      _q = '';
+                    });
+                    _cargar();
+                  },
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // ===== Buscador + chips =====
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 44,
+                    child: TextField(
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.search),
+                        hintText: _tipoInventario == TipoInventario.INSUMOS
+                            ? "Buscar (nombre, categoría, unidad)"
+                            : "Buscar (nombre, unidad, estado, modo)",
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                      ),
+                      onChanged: (v) => setState(() => _q = v),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                if (_tipoInventario == TipoInventario.INSUMOS) ...[
+                  _chipCount("Bajos", bajos, AppTheme.red),
+                  const SizedBox(width: 8),
+                  _chipCount("Agotados", agotados, Colors.black54),
+                ] else ...[
+                  _chipCount("Operativas", operativas, AppTheme.green),
+                  const SizedBox(width: 8),
+                  _chipCount("Dañadas", danadas, AppTheme.red),
+                  const SizedBox(width: 8),
+                  _chipCount("Perdidas", perdidas, Colors.black54),
+                  const SizedBox(width: 8),
+                  _chipCount("Bajas", bajasHerr, Colors.black45),
+                ],
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // ===== Tabla =====
+            Expanded(
+              child: _tipoInventario == TipoInventario.INSUMOS
+                  ? _buildTablaInsumos()
+                  : _buildTablaHerramientas(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-// ================= DataSource =================
+// ================= DataSource INSUMOS =================
 
 class _InventarioDataSource extends DataTableSource {
   final List<InventarioItemResponse> data;
@@ -405,4 +620,324 @@ class _InventarioDataSource extends DataTableSource {
 
   @override
   int get selectedRowCount => selectedIds.length;
+}
+
+// ================= DataSource HERRAMIENTAS =================
+
+class _HerramientaDataSource extends DataTableSource {
+  final List<HerramientaStockResponse> data;
+  final Set<int> selectedIds; // herramientaId
+  final VoidCallback onSelectionChanged;
+
+  _HerramientaDataSource({
+    required this.data,
+    required this.selectedIds,
+    required this.onSelectionChanged,
+  });
+
+  @override
+  DataRow? getRow(int index) {
+    if (index >= data.length) return null;
+    final h = data[index];
+
+    final rowId = h.herramientaId;
+    final isSelected = selectedIds.contains(rowId);
+
+    final estadoTxt = h.estado.label;
+    final estadoColor = (h.estado == EstadoHerramientaStock.OPERATIVA)
+        ? AppTheme.green
+        : (h.estado == EstadoHerramientaStock.DANADA)
+        ? AppTheme.red
+        : Colors.black54;
+
+    return DataRow.byIndex(
+      index: index,
+      selected: isSelected,
+      onSelectChanged: (v) {
+        if (v == null) return;
+
+        if (v) {
+          selectedIds.add(rowId);
+        } else {
+          selectedIds.remove(rowId);
+        }
+
+        onSelectionChanged();
+        notifyListeners();
+      },
+      cells: [
+        DataCell(
+          Text(h.nombre, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ),
+        DataCell(Text(h.unidad.isEmpty ? "-" : h.unidad)),
+        DataCell(Text(h.modoControl.label)),
+        DataCell(Text(h.cantidad.toString())),
+        DataCell(
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: estadoColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: estadoColor.withOpacity(0.25)),
+            ),
+            child: Text(
+              estadoTxt,
+              style: TextStyle(color: estadoColor, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  bool get isRowCountApproximate => false;
+
+  @override
+  int get rowCount => data.length;
+
+  @override
+  int get selectedRowCount => selectedIds.length;
+}
+
+// ================= ✅ DIALOG AGREGAR HERRAMIENTA =================
+
+class _AgregarHerramientaDialog extends StatefulWidget {
+  final String nitConjunto;
+  final String empresaId;
+  final HerramientaApi api;
+
+  const _AgregarHerramientaDialog({
+    required this.nitConjunto,
+    required this.empresaId,
+    required this.api,
+  });
+
+  @override
+  State<_AgregarHerramientaDialog> createState() =>
+      _AgregarHerramientaDialogState();
+}
+
+class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
+  bool _loading = true;
+  String? _error;
+
+  List<HerramientaResponse> _catalogo = [];
+  HerramientaResponse? _selected;
+
+  final _cantidadCtrl = TextEditingController(text: "1");
+  EstadoHerramientaStock _estado = EstadoHerramientaStock.OPERATIVA;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCatalogo();
+  }
+
+  @override
+  void dispose() {
+    _cantidadCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCatalogo() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      const pageSize = 100;
+      const maxTotal = 300; // ajusta si quieres
+
+      final List<HerramientaResponse> all = [];
+      int skip = 0;
+
+      while (all.length < maxTotal) {
+        final out = await widget.api.listarHerramientas(
+          empresaId: widget.empresaId,
+          nombre: null,
+          take: pageSize,
+          skip: skip,
+        );
+
+        final data = (out["data"] as List?) ?? [];
+        final parsed = data
+            .whereType<Map>()
+            .map((e) => HerramientaResponse.fromJson(e.cast<String, dynamic>()))
+            .toList();
+
+        all.addAll(parsed);
+
+        // si ya no vienen más, paramos
+        if (parsed.length < pageSize) break;
+
+        skip += pageSize;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _catalogo = all;
+        _selected = all.isNotEmpty ? all.first : null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  num? _parseNumNullable(String v) {
+    final s = v.trim();
+    if (s.isEmpty) return null;
+    return num.tryParse(s);
+  }
+
+  Future<void> _guardar() async {
+    if (_selected == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Selecciona una herramienta")),
+      );
+      return;
+    }
+
+    final cant = _parseNumNullable(_cantidadCtrl.text);
+    if (cant == null || cant <= 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Cantidad inválida")));
+      return;
+    }
+
+    try {
+      await widget.api.upsertStockConjunto(
+        nitConjunto: widget.nitConjunto,
+        herramientaId: _selected!.id,
+        cantidad: cant,
+        estado: _estado.backendValue,
+      );
+
+      if (!mounted) return;
+
+      Navigator.pop(context, true);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("✅ Agregada: ${_selected!.nombre}")),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("❌ $e")));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text("Agregar herramienta al inventario"),
+      content: SizedBox(
+        width: 520,
+        child: _loading
+            ? const Padding(
+                padding: EdgeInsets.all(12),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : _error != null
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text("Error: $_error"),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _loadCatalogo,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text("Reintentar"),
+                  ),
+                ],
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<HerramientaResponse>(
+                    value: _selected,
+                    decoration: const InputDecoration(
+                      labelText: "Herramienta (catálogo)",
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _catalogo.map((h) {
+                      return DropdownMenuItem(
+                        value: h,
+                        child: Text("${h.nombre} · ${h.unidad}"),
+                      );
+                    }).toList(),
+                    onChanged: (v) => setState(() => _selected = v),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _cantidadCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: "Cantidad",
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButtonFormField<EstadoHerramientaStock>(
+                          value: _estado,
+                          decoration: const InputDecoration(
+                            labelText: "Estado",
+                            border: OutlineInputBorder(),
+                          ),
+                          items: EstadoHerramientaStock.values.map((e) {
+                            return DropdownMenuItem(
+                              value: e,
+                              child: Text(e.label),
+                            );
+                          }).toList(),
+                          onChanged: (v) => setState(
+                            () =>
+                                _estado = v ?? EstadoHerramientaStock.OPERATIVA,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (_selected != null)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.black12),
+                      ),
+                      child: Text(
+                        "Modo de control: ${_selected!.modoControl.label}",
+                      ),
+                    ),
+                ],
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text("Cancelar"),
+        ),
+        ElevatedButton.icon(
+          onPressed: _loading ? null : _guardar,
+          icon: const Icon(Icons.save),
+          label: const Text("Guardar"),
+        ),
+      ],
+    );
+  }
 }

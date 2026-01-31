@@ -2,6 +2,8 @@
 
 import 'dart:convert';
 
+import 'package:flutter_application_1/model/maquinaria_model.dart';
+
 import '../model/preventiva_model.dart';
 import '../service/api_client.dart';
 import '../service/app_constants.dart';
@@ -136,10 +138,103 @@ class DefinicionPreventivaApi {
 
     final resp = await _client.post(uri.toString());
 
-    if (resp.statusCode != 200 && resp.statusCode != 201) {
+    if (resp.statusCode == 200 || resp.statusCode == 201) return;
+
+    // Intentar parsear JSON
+    dynamic body;
+    try {
+      body = jsonDecode(resp.body);
+    } catch (_) {
+      body = null;
+    }
+
+    final friendly = _friendlyMessageFromBody(
+      body,
+      fallback:
+          'No se pudo publicar el cronograma. Intenta de nuevo o revisa la agenda.',
+    );
+
+    String? reason;
+    if (body is Map<String, dynamic>) {
+      reason = body['reason']?.toString();
+    }
+
+    throw ApiError(
+      statusCode: resp.statusCode,
+      message: friendly,
+      reason: reason,
+      details: body ?? resp.body,
+    );
+  }
+
+  Future<DisponibilidadMaquinariaResponse> maquinariaDisponible({
+    required String nit,
+    required DateTime fechaInicioUso,
+    required DateTime fechaFinUso,
+    int? excluirTareaId,
+  }) async {
+    final qp = <String, String>{
+      'fechaInicioUso': fechaInicioUso.toIso8601String(),
+      'fechaFinUso': fechaFinUso.toIso8601String(),
+      if (excluirTareaId != null) 'excluirTareaId': excluirTareaId.toString(),
+    };
+
+    final uri = Uri.parse(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/maquinaria-disponible',
+    ).replace(queryParameters: qp);
+
+    final resp = await _client.get(uri.toString());
+
+    if (resp.statusCode != 200) {
       throw Exception(
-        'Error al publicar cronograma: ${resp.statusCode} ${resp.body}',
+        'Error disponibilidad maquinaria: ${resp.statusCode} ${resp.body}',
       );
     }
+
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    return DisponibilidadMaquinariaResponse.fromJson(data);
   }
+}
+
+class ApiError implements Exception {
+  final int statusCode;
+  final String message; // mensaje amigable
+  final String? reason; // code: MAQUINARIA_NO_DISPONIBLE, etc
+  final dynamic details; // json completo (para admin/debug)
+
+  ApiError({
+    required this.statusCode,
+    required this.message,
+    this.reason,
+    this.details,
+  });
+
+  @override
+  String toString() => 'ApiError($statusCode): $message';
+}
+
+String _friendlyMessageFromBody(
+  dynamic body, {
+  String fallback = 'Ocurrió un error.',
+}) {
+  if (body is Map<String, dynamic>) {
+    final ok = body['ok'];
+    final reason = body['reason']?.toString();
+    final msg = body['message']?.toString();
+
+    // Si backend ya envía message amigable, úsalo.
+    if (msg != null && msg.trim().isNotEmpty) return msg.trim();
+
+    // Si no, mapea reason -> texto humano
+    switch (reason) {
+      case 'MAQUINARIA_NO_DISPONIBLE':
+        return 'La maquinaria seleccionada está ocupada en esas fechas. '
+            'Cambia la máquina o ajusta el cronograma.';
+      case 'SIN_HUECO_DIA':
+        return 'No hay espacio en la agenda para programar esa tarea en el día.';
+      default:
+        return fallback;
+    }
+  }
+  return fallback;
 }

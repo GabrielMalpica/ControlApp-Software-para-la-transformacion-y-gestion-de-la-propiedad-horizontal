@@ -1,6 +1,85 @@
 import 'package:flutter_application_1/model/insumo_usado_model.dart';
 import 'package:flutter_application_1/model/preventiva_model.dart';
 
+class InsumoProgramado {
+  final int insumoId;
+  final String nombre;
+  final String unidad;
+  final num cantidad;
+
+  InsumoProgramado({
+    required this.insumoId,
+    required this.nombre,
+    required this.unidad,
+    required this.cantidad,
+  });
+
+  factory InsumoProgramado.fromJson(Map<String, dynamic> json) {
+    return InsumoProgramado(
+      insumoId: int.tryParse(json['insumoId']?.toString() ?? '') ?? 0,
+      nombre: (json['nombre'] ?? '').toString(),
+      unidad: (json['unidad'] ?? '').toString(),
+      cantidad: num.tryParse(json['cantidad']?.toString() ?? '') ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'insumoId': insumoId,
+    'nombre': nombre,
+    'unidad': unidad,
+    'cantidad': cantidad,
+  };
+}
+
+class HerramientaAsignada {
+  final int herramientaId;
+  final String nombre;
+  final num cantidad;
+  final String? estado;
+
+  HerramientaAsignada({
+    required this.herramientaId,
+    required this.nombre,
+    required this.cantidad,
+    this.estado,
+  });
+
+  factory HerramientaAsignada.fromJson(Map<String, dynamic> json) {
+    return HerramientaAsignada(
+      herramientaId: int.tryParse(json['herramientaId']?.toString() ?? '') ?? 0,
+      nombre: (json['nombre'] ?? '').toString(),
+      cantidad: num.tryParse(json['cantidad']?.toString() ?? '') ?? 1,
+      estado: json['estado']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'herramientaId': herramientaId,
+    'nombre': nombre,
+    'cantidad': cantidad,
+    if (estado != null) 'estado': estado,
+  };
+}
+
+class MaquinariaAsignada {
+  final int maquinariaId;
+  final String nombre;
+
+  MaquinariaAsignada({required this.maquinariaId, required this.nombre});
+
+  factory MaquinariaAsignada.fromJson(Map<String, dynamic> json) {
+    return MaquinariaAsignada(
+      maquinariaId: int.tryParse(json['maquinariaId']?.toString() ?? '') ?? 0,
+      nombre: (json['nombre'] ?? '').toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'maquinariaId': maquinariaId,
+    'nombre': nombre,
+  };
+}
+
 class TareaModel {
   final int id;
   final String descripcion;
@@ -19,12 +98,15 @@ class TareaModel {
   final String? frecuencia;
   final String? conjuntoId;
   final String? conjuntoNombre;
-  final int? supervisorId;
+
+  // ✅ IDs como STRING (cédula)
+  final String? supervisorId;
+  final List<String> operariosIds;
+
   final int ubicacionId;
   final int elementoId;
   final int prioridad;
 
-  final List<int> operariosIds;
   final List<String> operariosNombres;
   final String? supervisorNombre;
   final String? ubicacionNombre;
@@ -38,6 +120,12 @@ class TareaModel {
   final String? insumoPrincipalNombre;
   final num? consumoPrincipalPorUnidad;
   final num? consumoTotalEstimado;
+  final List<HerramientaAsignada> herramientasAsignadas;
+  final List<MaquinariaAsignada> maquinariasAsignadas;
+
+  final List<InsumoProgramado> insumosProgramados;
+
+  final String? insumoPrincipalUnidad;
 
   TareaModel({
     required this.id,
@@ -69,6 +157,10 @@ class TareaModel {
     this.insumoPrincipalNombre,
     this.consumoPrincipalPorUnidad,
     this.consumoTotalEstimado,
+    this.herramientasAsignadas = const [],
+    this.maquinariasAsignadas = const [],
+    this.insumosProgramados = const [],
+    this.insumoPrincipalUnidad,
   });
 
   /// ✅ Helpers para UI (si quieres mostrar horas)
@@ -82,7 +174,6 @@ class TareaModel {
     if (h <= 0) return '$m min';
     if (m == 0) return '$h h';
     return '$h h $m min';
-    // (sí, esto es el “control de tiempos” en Controlito 😄)
   }
 
   factory TareaModel.fromJson(Map<String, dynamic> json) {
@@ -93,19 +184,20 @@ class TareaModel {
     final fechaFin = fechaFinRaw.toLocal();
 
     // --- Operarios: soportar formato plano y anidado ---
-    List<int> opIds = [];
+    List<String> opIds = [];
     List<String> opNombres = [];
 
     if (json['operariosIds'] != null) {
       opIds = (json['operariosIds'] as List? ?? [])
-          .map((e) => int.parse(e.toString()))
+          .map((e) => e.toString())
           .toList();
+
       opNombres = (json['operariosNombres'] as List? ?? [])
           .map((e) => e.toString())
           .toList();
     } else if (json['operarios'] != null) {
-      final ops = json['operarios'] as List;
-      opIds = ops.map((e) => int.parse(e['id'].toString())).toList();
+      final ops = (json['operarios'] as List? ?? []);
+      opIds = ops.map((e) => e['id'].toString()).toList();
       opNombres = ops
           .map((e) => (e['usuario']?['nombre'] ?? '').toString())
           .toList();
@@ -121,7 +213,8 @@ class TareaModel {
     }
 
     // --- Ubicación / elemento: nombre plano o anidado ---
-    final ubicacionId = json['ubicacionId'] ?? 0;
+    final ubicacionId =
+        int.tryParse(json['ubicacionId']?.toString() ?? '') ?? 0;
     String? ubicacionNombre;
     if (json['ubicacionNombre'] != null) {
       ubicacionNombre = json['ubicacionNombre'] as String?;
@@ -129,7 +222,7 @@ class TareaModel {
       ubicacionNombre = json['ubicacion']?['nombre']?.toString();
     }
 
-    final elementoId = json['elementoId'] ?? 0;
+    final elementoId = int.tryParse(json['elementoId']?.toString() ?? '') ?? 0;
     String? elementoNombre;
     if (json['elementoNombre'] != null) {
       elementoNombre = json['elementoNombre'] as String?;
@@ -137,11 +230,7 @@ class TareaModel {
       elementoNombre = json['elemento']?['nombre']?.toString();
     }
 
-    final prioridad = json['prioridad'] != null
-        ? int.tryParse(json['prioridad'].toString()) ?? 2
-        : 2;
-
-    final tipo = json['tipo']?.toString();
+    final prioridad = int.tryParse(json['prioridad']?.toString() ?? '') ?? 2;
 
     // --- Nuevos campos de planificación / insumo principal ---
     String? insumoPrincipalNombre;
@@ -151,26 +240,17 @@ class TareaModel {
       insumoPrincipalNombre = json['insumoPrincipal']?['nombre']?.toString();
     }
 
-    num? tiempoEstimadoHoras;
-    if (json['tiempoEstimadoHoras'] != null) {
-      tiempoEstimadoHoras = num.tryParse(
-        json['tiempoEstimadoHoras'].toString(),
-      );
-    }
+    final tiempoEstimadoHoras = json['tiempoEstimadoHoras'] != null
+        ? num.tryParse(json['tiempoEstimadoHoras'].toString())
+        : null;
 
-    num? consumoPrincipalPorUnidad;
-    if (json['consumoPrincipalPorUnidad'] != null) {
-      consumoPrincipalPorUnidad = num.tryParse(
-        json['consumoPrincipalPorUnidad'].toString(),
-      );
-    }
+    final consumoPrincipalPorUnidad = json['consumoPrincipalPorUnidad'] != null
+        ? num.tryParse(json['consumoPrincipalPorUnidad'].toString())
+        : null;
 
-    num? consumoTotalEstimado;
-    if (json['consumoTotalEstimado'] != null) {
-      consumoTotalEstimado = num.tryParse(
-        json['consumoTotalEstimado'].toString(),
-      );
-    }
+    final consumoTotalEstimado = json['consumoTotalEstimado'] != null
+        ? num.tryParse(json['consumoTotalEstimado'].toString())
+        : null;
 
     int durMin = 0;
     if (json['duracionMinutos'] != null) {
@@ -180,30 +260,51 @@ class TareaModel {
       durMin = h * 60;
     }
 
+    // ✅ supervisorId como STRING (cédula)
+    final supervisorId = json['supervisorId'] != null
+        ? json['supervisorId'].toString()
+        : null;
+
+    final herramientasAsignadas = (json['herramientasAsignadas'] as List? ?? [])
+        .map((e) => HerramientaAsignada.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    final maquinariasAsignadas = (json['maquinariasAsignadas'] as List? ?? [])
+        .map((e) => MaquinariaAsignada.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    final insumosProg = (json['insumosProgramados'] as List? ?? const [])
+        .map(
+          (e) => InsumoProgramado.fromJson((e as Map).cast<String, dynamic>()),
+        )
+        .toList();
+
+    final insumoPrincipalUnidad = json['insumoPrincipalUnidad']?.toString();
+
     return TareaModel(
-      id: json['id'] ?? 0,
-      descripcion: json['descripcion'] ?? '',
+      id: int.tryParse(json['id']?.toString() ?? '') ?? 0,
+      descripcion: (json['descripcion'] ?? '').toString(),
       fechaInicio: fechaInicio,
       fechaFin: fechaFin,
       duracionMinutos: durMin,
-      estado: json['estado'],
+      estado: json['estado']?.toString(),
       evidencias: json['evidencias'] != null
-          ? List<String>.from(json['evidencias'])
-          : [],
+          ? List<String>.from(
+              (json['evidencias'] as List).map((e) => e.toString()),
+            )
+          : const [],
       insumosUsados: json['insumosUsados'] != null
           ? (json['insumosUsados'] as List)
                 .map((i) => InsumoUsadoItem.fromJson(i))
                 .toList()
-          : [],
-      observaciones: json['observaciones'],
-      observacionesRechazo: json['observacionesRechazo'],
-      tipo: json['tipo'],
-      frecuencia: json['frecuencia'],
+          : const [],
+      observaciones: json['observaciones']?.toString(),
+      observacionesRechazo: json['observacionesRechazo']?.toString(),
+      tipo: json['tipo']?.toString(),
+      frecuencia: json['frecuencia']?.toString(),
       conjuntoId: json['conjuntoId']?.toString(),
       conjuntoNombre: json['conjuntoNombre']?.toString(),
-      supervisorId: json['supervisorId'] != null
-          ? int.tryParse(json['supervisorId'].toString())
-          : null,
+      supervisorId: supervisorId,
       ubicacionId: ubicacionId,
       elementoId: elementoId,
       operariosIds: opIds,
@@ -219,6 +320,10 @@ class TareaModel {
       consumoTotalEstimado: consumoTotalEstimado,
       borrador:
           (json['borrador'] as bool?) ?? (json['esBorrador'] as bool?) ?? false,
+      herramientasAsignadas: herramientasAsignadas,
+      maquinariasAsignadas: maquinariasAsignadas,
+      insumosProgramados: insumosProg,
+      insumoPrincipalUnidad: insumoPrincipalUnidad,
     );
   }
 
@@ -227,10 +332,7 @@ class TareaModel {
     'descripcion': descripcion,
     'fechaInicio': fechaInicio.toIso8601String(),
     'fechaFin': fechaFin.toIso8601String(),
-
-    /// ✅ NUEVO
     'duracionMinutos': duracionMinutos,
-
     'estado': estado,
     'evidencias': evidencias,
     'insumosUsados': (insumosUsados ?? []).map((e) => e.toJson()).toList(),
@@ -240,10 +342,10 @@ class TareaModel {
     'frecuencia': frecuencia,
     'conjuntoId': conjuntoId,
     'conjuntoNombre': conjuntoNombre,
-    'supervisorId': supervisorId,
+    'supervisorId': supervisorId, // ✅ string
     'ubicacionId': ubicacionId,
     'elementoId': elementoId,
-    'operariosIds': operariosIds,
+    'operariosIds': operariosIds, // ✅ List<String>
     'prioridad': prioridad,
     'operariosNombres': operariosNombres,
     'supervisorNombre': supervisorNombre,
@@ -253,6 +355,14 @@ class TareaModel {
     'insumoPrincipalNombre': insumoPrincipalNombre,
     'consumoPrincipalPorUnidad': consumoPrincipalPorUnidad,
     'consumoTotalEstimado': consumoTotalEstimado,
+    'herramientasAsignadas': herramientasAsignadas
+        .map((e) => e.toJson())
+        .toList(),
+    'maquinariasAsignadas': maquinariasAsignadas
+        .map((e) => e.toJson())
+        .toList(),
+    'insumosProgramados': insumosProgramados.map((e) => e.toJson()).toList(),
+    'insumoPrincipalUnidad': insumoPrincipalUnidad,
   };
 
   TareaModel copyWith({
@@ -268,10 +378,16 @@ class TareaModel {
     String? frecuencia,
     String? conjuntoId,
     String? conjuntoNombre,
-    int? supervisorId,
+
+    // ✅ supervisorId string
+    String? supervisorId,
+
     int? ubicacionId,
     int? elementoId,
-    List<int>? operariosIds,
+
+    // ✅ operariosIds strings
+    List<String>? operariosIds,
+
     List<String>? operariosNombres,
     String? supervisorNombre,
     String? ubicacionNombre,
@@ -285,6 +401,10 @@ class TareaModel {
     List<InsumoUsadoItem>? insumosUsados,
     String? observaciones,
     String? observacionesRechazo,
+    List<HerramientaAsignada>? herramientasAsignadas,
+    List<MaquinariaAsignada>? maquinariasAsignadas,
+    List<InsumoProgramado>? insumosProgramados,
+    String? insumoPrincipalUnidad,
   }) {
     return TareaModel(
       id: id ?? this.id,
@@ -318,8 +438,12 @@ class TareaModel {
       insumosUsados: insumosUsados ?? this.insumosUsados,
       observaciones: observaciones ?? this.observaciones,
       observacionesRechazo: observacionesRechazo ?? this.observacionesRechazo,
+      herramientasAsignadas:
+          herramientasAsignadas ?? this.herramientasAsignadas,
+      maquinariasAsignadas: maquinariasAsignadas ?? this.maquinariasAsignadas,
+      insumosProgramados: insumosProgramados ?? this.insumosProgramados,
+      insumoPrincipalUnidad:
+          insumoPrincipalUnidad ?? this.insumoPrincipalUnidad,
     );
   }
 }
-
-

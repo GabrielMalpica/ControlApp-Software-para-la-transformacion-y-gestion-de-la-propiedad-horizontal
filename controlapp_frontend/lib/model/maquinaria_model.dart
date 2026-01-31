@@ -151,3 +151,106 @@ class MaquinariaResponse {
     );
   }
 }
+
+class MaquinariaDisponibleItem {
+  final int id;
+  final String nombre;
+  final String tipo;
+  final String marca;
+  final String origen; // "CONJUNTO" | "EMPRESA"
+
+  MaquinariaDisponibleItem({
+    required this.id,
+    required this.nombre,
+    required this.tipo,
+    required this.marca,
+    required this.origen,
+  });
+
+  factory MaquinariaDisponibleItem.fromJson(Map<String, dynamic> json) {
+    final origenRaw = (json['origen'] ?? 'EMPRESA').toString();
+    final origen = origenRaw.trim().toUpperCase();
+
+    return MaquinariaDisponibleItem(
+      id: (json['id'] as num).toInt(),
+      nombre: (json['nombre'] ?? '').toString(),
+      tipo: (json['tipo'] ?? '').toString(),
+      marca: (json['marca'] ?? '').toString(),
+      origen: origen,
+    );
+  }
+}
+
+class MaquinariaOcupadaItem {
+  final int maquinariaId;
+  final DateTime ini;
+  final DateTime fin;
+  final int? tareaId;
+  final String? conjuntoId;
+  final String? descripcion;
+
+  MaquinariaOcupadaItem({
+    required this.maquinariaId,
+    required this.ini,
+    required this.fin,
+    this.tareaId,
+    this.conjuntoId,
+    this.descripcion,
+  });
+
+  factory MaquinariaOcupadaItem.fromJson(Map<String, dynamic> json) {
+    return MaquinariaOcupadaItem(
+      maquinariaId: (json['maquinariaId'] as num).toInt(),
+      ini: DateTime.parse(json['ini'].toString()),
+      fin: DateTime.parse(json['fin'].toString()),
+      tareaId: (json['tareaId'] as num?)?.toInt(),
+      conjuntoId: json['conjuntoId']?.toString(),
+      descripcion: json['descripcion']?.toString(),
+    );
+  }
+}
+
+class DisponibilidadMaquinariaResponse {
+  final bool ok;
+  final List<MaquinariaDisponibleItem> propiasDisponibles;
+  final List<MaquinariaDisponibleItem> empresaDisponibles;
+  final List<MaquinariaOcupadaItem> ocupadas;
+
+  DisponibilidadMaquinariaResponse({
+    required this.ok,
+    required this.propiasDisponibles,
+    required this.empresaDisponibles,
+    required this.ocupadas,
+  });
+
+  factory DisponibilidadMaquinariaResponse.fromJson(Map<String, dynamic> json) {
+    final propias = (json['propiasDisponibles'] as List?) ?? [];
+    final empresa = (json['empresaDisponibles'] as List?) ?? [];
+    final ocup = (json['ocupadas'] as List?) ?? [];
+
+    return DisponibilidadMaquinariaResponse(
+      ok: json['ok'] == true,
+      propiasDisponibles: propias
+          .map(
+            (e) => MaquinariaDisponibleItem.fromJson(
+              (e as Map).cast<String, dynamic>(),
+            ),
+          )
+          .toList(),
+      empresaDisponibles: empresa
+          .map(
+            (e) => MaquinariaDisponibleItem.fromJson(
+              (e as Map).cast<String, dynamic>(),
+            ),
+          )
+          .toList(),
+      ocupadas: ocup
+          .map(
+            (e) => MaquinariaOcupadaItem.fromJson(
+              (e as Map).cast<String, dynamic>(),
+            ),
+          )
+          .toList(),
+    );
+  }
+}

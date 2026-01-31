@@ -1,16 +1,24 @@
 // lib/pages/crear_preventiva_page.dart
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/api/gerente_api.dart';
-import 'package:flutter_application_1/model/maquinaria_model.dart';
+import 'package:flutter_application_1/service/app_constants.dart';
+
+import '../api/preventiva_api.dart';
+import '../api/empresa_api.dart';
+import '../api/herramienta_api.dart';
+import '../api/gerente_api.dart';
 
 import '../model/preventiva_model.dart';
 import '../model/conjunto_model.dart';
 import '../model/usuario_model.dart';
-import '../service/theme.dart';
-import '../api/preventiva_api.dart';
-import '../api/empresa_api.dart';
 import '../model/insumo_model.dart';
+import '../model/maquinaria_model.dart';
+import '../model/herramienta_model.dart';
+
+import '../service/theme.dart';
+
+enum SnackType { info, success, error }
 
 class CrearEditarPreventivaPage extends StatefulWidget {
   final String nit;
@@ -31,13 +39,21 @@ class CrearEditarPreventivaPage extends StatefulWidget {
 
 class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   final _formKey = GlobalKey<FormState>();
-  final _api = DefinicionPreventivaApi();
-  final GerenteApi _gerenteApi = GerenteApi();
 
-  final EmpresaApi _empresaApi = EmpresaApi();
+  final _api = DefinicionPreventivaApi();
+  final _gerenteApi = GerenteApi();
+  final _empresaApi = EmpresaApi();
+  final _herramientaApi = HerramientaApi();
+
   List<InsumoResponse> _catalogoInsumos = [];
   List<MaquinariaResponse> _catalogoMaquinaria = [];
+  List<HerramientaResponse> _catalogoHerramientas = [];
   List<Usuario> _supervisores = [];
+
+  // ✅ Cache de dropdown items (evita freeze fuerte)
+  List<DropdownMenuItem<int>> _insumoItems = [];
+  List<DropdownMenuItem<int>> _maquinariaItems = [];
+  List<DropdownMenuItem<int>> _herramientaItems = [];
 
   // Controllers básicos
   final _descripcionCtrl = TextEditingController();
@@ -45,18 +61,18 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   // Duración – rendimiento
   bool _usaRendimiento = true;
-  String? _unidadCalculo; // M2, M3, ML, UNIDAD...
-  final _cantidadCtrl = TextEditingController(); // antes _areaCtrl
-  final _rendimientoCtrl = TextEditingController(); // valor numérico
+  String? _unidadCalculo; // M2, M3, UNIDAD...
+  final _cantidadCtrl = TextEditingController();
+  final _rendimientoCtrl = TextEditingController();
 
-  // ✅ NUEVO: cómo interpretar rendimiento
-  // POR_MINUTO: unidades/min
-  // MIN_POR_UNIDAD: min/unidad
-  // POR_HORA: unidades/h
+  // POR_MINUTO: unidades/min | POR_HORA: unidades/h | MIN_POR_UNIDAD: min/unidad
   String _rendimientoTiempoBase = 'POR_MINUTO';
 
-  // Duración fija (minutos)
   final _duracionFijaMinCtrl = TextEditingController();
+
+  // ✅ dividir en N días (opcional)
+  bool _dividirEnDias = false;
+  final _diasParaCompletarCtrl = TextEditingController();
 
   // Insumo principal
   int? _insumoPrincipalId;
@@ -64,9 +80,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   final List<_InsumoPlanRow> _insumosPlanRows = [];
   final List<_MaquinariaPlanRow> _maquinariaPlanRows = [];
+  final List<_HerramientaPlanRow> _herramientasPlanRows = [];
 
   String? _frecuencia; // DIARIA | SEMANAL | MENSUAL
-
   String? _diaSemanaProgramado;
   int? _diaMesProgramado;
 
@@ -83,20 +99,176 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   List<UbicacionConElementos> get _ubicaciones => widget.conjunto.ubicaciones;
   List<Usuario> get _operarios => widget.conjunto.operarios;
 
+  // =========================================================
+  // ✅ NUEVO: Disponibilidad de maquinaria
+  // =========================================================
+  DisponibilidadMaquinariaResponse? _dispMaq;
+  bool _cargandoDispMaq = false;
+
+  // maps rápidos
+  final Map<int, MaquinariaOcupadaItem> _ocupadaPorId = {};
+
   @override
   void initState() {
     super.initState();
     _initData();
   }
 
+  // ===========================
+  // helpers fechas disponibilidad
+  // ===========================
+  DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  DateTime _proximaFechaProgramada() {
+    final now = DateTime.now();
+    final base = DateTime(now.year, now.month, now.day);
+
+    if (_frecuencia == 'SEMANAL' && _diaSemanaProgramado != null) {
+      const map = {
+        'LUNES': 1,
+        'MARTES': 2,
+        'MIERCOLES': 3,
+        'JUEVES': 4,
+        'VIERNES': 5,
+        'SABADO': 6,
+        'DOMINGO': 7,
+      };
+      final target = map[_diaSemanaProgramado!] ?? 1;
+      final today = base.weekday; // 1..7
+      var delta = target - today;
+      if (delta < 0) delta += 7;
+      if (delta == 0) delta = 7; // "próximo", no "hoy"
+      return base.add(Duration(days: delta));
+    }
+
+    if (_frecuencia == 'MENSUAL' && _diaMesProgramado != null) {
+      final y = base.year;
+      final m = base.month;
+      final day = _diaMesProgramado!.clamp(1, 28); // evita reventar por 31
+      var dt = DateTime(y, m, day);
+      if (!dt.isAfter(base)) dt = DateTime(y, m + 1, day);
+      return dt;
+    }
+
+    // DIARIA o fallback
+    return base.add(const Duration(days: 1));
+  }
+
+  Future<void> _consultarDisponibilidadMaquinaria() async {
+    final totalMin = _previewMinutosBien();
+    if (totalMin == null) {
+      _snack(
+        'Define la duración para consultar disponibilidad',
+        type: SnackType.info,
+      );
+      return;
+    }
+
+    final inicio = _dateOnly(_proximaFechaProgramada());
+    final dias = _dividirEnDias
+        ? (int.tryParse(_diasParaCompletarCtrl.text) ?? 1)
+        : 1;
+    final finUso = inicio.add(Duration(days: (dias <= 1 ? 0 : dias - 1)));
+
+    setState(() {
+      _cargandoDispMaq = true;
+      _dispMaq = null;
+      _ocupadaPorId.clear();
+    });
+
+    try {
+      final r = await _api.maquinariaDisponible(
+        nit: widget.nit,
+        fechaInicioUso: inicio,
+        fechaFinUso: finUso,
+        excluirTareaId: null,
+      );
+      print(r);
+
+      if (!mounted) return;
+
+      for (final o in r.ocupadas) {
+        _ocupadaPorId[o.maquinariaId] = o;
+      }
+
+      setState(() => _dispMaq = r);
+    } catch (e) {
+      if (!mounted) return;
+      _snack('Error consultando disponibilidad: $e', type: SnackType.error);
+    } finally {
+      if (!mounted) return;
+      setState(() => _cargandoDispMaq = false);
+    }
+  }
+
+  // ✅ Filtrado: si ya consultaste, muestra solo disponibles
+  List<_MaqOption> _maqOptionsDisponibles() {
+    if (_dispMaq == null) {
+      // fallback: si no consultaste, muestra catálogo general como "EMPRESA" por defecto
+      return _catalogoMaquinaria
+          .map(
+            (m) => _MaqOption(
+              id: m.id,
+              nombre: m.nombre,
+              origen: 'EMPRESA',
+              marca: m.marca,
+            ),
+          )
+          .toList();
+    }
+
+    final opts = <_MaqOption>[];
+
+    // disponibles del conjunto
+    for (final m in _dispMaq!.propiasDisponibles) {
+      opts.add(
+        _MaqOption(
+          id: m.id,
+          nombre: m.nombre,
+          origen: 'CONJUNTO',
+          marca: m.marca,
+        ),
+      );
+    }
+
+    // disponibles empresa
+    for (final m in _dispMaq!.empresaDisponibles) {
+      opts.add(
+        _MaqOption(
+          id: m.id,
+          nombre: m.nombre,
+          origen: 'EMPRESA',
+          marca: m.marca,
+        ),
+      );
+    }
+
+    // opcional: ordena alfabético, o primero conjunto y luego empresa
+    opts.sort((a, b) {
+      final o = a.origen.compareTo(b.origen);
+      if (o != 0) return o; // CONJUNTO primero si quieres, ajusta
+      return a.nombre.compareTo(b.nombre);
+    });
+
+    return opts;
+  }
+
+  // ===========================
+  // carga de datos
+  // ===========================
   Future<void> _initData() async {
     await Future.wait([
       _cargarCatalogoInsumos(),
       _cargarCatalogoMaquinaria(),
+      _cargarCatalogoHerramientas(),
       _cargarSupervisores(),
     ]);
+
     if (!mounted) return;
     _cargarDesdeExistenteOInit();
+    await _consultarDisponibilidadMaquinaria();
+
+    if (!mounted) return;
     setState(() {});
   }
 
@@ -104,12 +276,20 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     try {
       final lista = await _empresaApi.listarCatalogo();
       if (!mounted) return;
-      setState(() => _catalogoInsumos = lista);
+      setState(() {
+        _catalogoInsumos = lista;
+        _insumoItems = _catalogoInsumos
+            .map(
+              (i) => DropdownMenuItem(
+                value: i.id,
+                child: Text('${i.nombre} (${i.unidad})'),
+              ),
+            )
+            .toList(growable: false);
+      });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error cargando catálogo de insumos: $e')),
-      );
+      _snack('Error cargando catálogo de insumos: $e', type: SnackType.error);
     }
   }
 
@@ -117,11 +297,59 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     try {
       final lista = await _empresaApi.listarMaquinaria();
       if (!mounted) return;
-      setState(() => _catalogoMaquinaria = lista);
+      setState(() {
+        _catalogoMaquinaria = lista;
+        _maquinariaItems = _catalogoMaquinaria
+            .map((m) => DropdownMenuItem(value: m.id, child: Text(m.nombre)))
+            .toList(growable: false);
+      });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error cargando catálogo de maquinaria: $e')),
+      _snack(
+        'Error cargando catálogo de maquinaria: $e',
+        type: SnackType.error,
+      );
+    }
+  }
+
+  Future<void> _cargarCatalogoHerramientas() async {
+    try {
+      final empresaId = AppConstants.empresaNit;
+
+      final res = await _herramientaApi.listarHerramientas(
+        empresaId: empresaId,
+        take: 100,
+        skip: 0,
+      );
+
+      final raw = (res['data'] as List?) ?? [];
+
+      final lista = raw
+          .map(
+            (e) => HerramientaResponse.fromJson(
+              (e as Map).cast<String, dynamic>(),
+            ),
+          )
+          .toList();
+
+      if (!mounted) return;
+
+      setState(() {
+        _catalogoHerramientas = lista;
+        _herramientaItems = _catalogoHerramientas
+            .map(
+              (h) => DropdownMenuItem(
+                value: h.id,
+                child: Text('${h.nombre} (${h.unidad})'),
+              ),
+            )
+            .toList(growable: false);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      _snack(
+        'Error cargando catálogo de herramientas: $e',
+        type: SnackType.error,
       );
     }
   }
@@ -133,12 +361,13 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       setState(() => _supervisores = supervisores);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error cargando supervisores: $e')),
-      );
+      _snack('Error cargando supervisores: $e', type: SnackType.error);
     }
   }
 
+  // ===========================
+  // cargar existente / defaults
+  // ===========================
   void _cargarDesdeExistenteOInit() {
     final existente = widget.existente;
 
@@ -151,7 +380,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       _diaSemanaProgramado = existente.diaSemanaProgramado;
       _diaMesProgramado = existente.diaMesProgramado;
 
-      // Duración / rendimiento
       if (existente.duracionMinutosFija != null) {
         _usaRendimiento = false;
         _duracionFijaMinCtrl.text = existente.duracionMinutosFija!.toString();
@@ -165,10 +393,18 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         }
       }
 
-      // Si tu modelo DefinicionPreventiva ya trae rendimientoTiempoBase, úsalo:
       final base = (existente as dynamic).rendimientoTiempoBase;
       if (base is String && base.isNotEmpty) {
         _rendimientoTiempoBase = base;
+      }
+
+      final dias = existente.diasParaCompletar;
+      if (dias != null && dias > 1) {
+        _dividirEnDias = true;
+        _diasParaCompletarCtrl.text = dias.toString();
+      } else {
+        _dividirEnDias = false;
+        _diasParaCompletarCtrl.text = '';
       }
 
       _insumoPrincipalId = existente.insumoPrincipalId;
@@ -177,20 +413,36 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
             .toString();
       }
 
-      _insumosPlanRows.clear();
-      for (final i in existente.insumosPlan) {
-        _insumosPlanRows.add(
-          _InsumoPlanRow(
-            insumoId: i.insumoId,
-            consumoInicial: i.consumoPorUnidad,
+      _insumosPlanRows
+        ..clear()
+        ..addAll(
+          existente.insumosPlan.map(
+            (i) => _InsumoPlanRow(
+              insumoId: i.insumoId,
+              consumoInicial: i.consumoPorUnidad,
+            ),
           ),
         );
-      }
 
-      _maquinariaPlanRows.clear();
-      for (final m in existente.maquinariaPlan) {
-        _maquinariaPlanRows.add(
-          _MaquinariaPlanRow(maquinariaId: m.maquinariaId, tipoInicial: m.tipo),
+      _maquinariaPlanRows
+        ..clear()
+        ..addAll(
+          existente.maquinariaPlan.map(
+            (m) => _MaquinariaPlanRow(
+              maquinariaId: m.maquinariaId,
+              tipoInicial: m.tipo,
+            ),
+          ),
+        );
+
+      _herramientasPlanRows.clear();
+      for (final h in existente.herramientasPlan) {
+        _herramientasPlanRows.add(
+          _HerramientaPlanRow(
+            herramientaId: h.herramientaId,
+            cantidadInicial: h.cantidad,
+            estadoInicial: h.estado,
+          ),
         );
       }
 
@@ -203,8 +455,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
             (o) => int.tryParse(o.cedula) == opId,
             orElse: () => _dummyOperario(),
           );
-          if (usuario.cedula != '0')
+          if (usuario.cedula != '0') {
             _operariosSeleccionadosCedulas.add(usuario.cedula);
+          }
         }
       }
 
@@ -244,6 +497,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       _prioridadCtrl.text = '2';
       _usaRendimiento = true;
       _rendimientoTiempoBase = 'POR_MINUTO';
+
+      _dividirEnDias = false;
+      _diasParaCompletarCtrl.text = '';
     }
 
     if (_frecuencia == 'SEMANAL') {
@@ -283,26 +539,30 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     _rendimientoCtrl.dispose();
     _duracionFijaMinCtrl.dispose();
     _consumoPorUnidadCtrl.dispose();
+    _diasParaCompletarCtrl.dispose();
+
     for (final r in _insumosPlanRows) {
       r.consumoCtrl.dispose();
     }
     for (final m in _maquinariaPlanRows) {
       m.tipoCtrl.dispose();
     }
+    for (final h in _herramientasPlanRows) {
+      h.cantidadCtrl.dispose();
+    }
+
     super.dispose();
   }
 
+  // ===========================
+  // parsers
+  // ===========================
   String _soloDigitos(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
-
   int? _tryInt(String s) => int.tryParse(_soloDigitos(s));
-
   double? _tryDouble(String s) =>
       double.tryParse(s.trim().replaceAll(',', '.'));
 
-  String _unidadLabel() {
-    final u = _unidadCalculo ?? 'unidad';
-    return u.toLowerCase();
-  }
+  String _unidadLabel() => (_unidadCalculo ?? 'unidad').toLowerCase();
 
   String _rendimientoHelper() {
     final u = _unidadLabel();
@@ -318,32 +578,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     }
   }
 
-  int? _previewMinutos() {
-    if (!_usaRendimiento) {
-      final m = _tryInt(_duracionFijaMinCtrl.text);
-      if (m == null || m <= 0) return null;
-      return m;
-    }
-
-    final cant = _tryDouble(_cantidadCtrl.text);
-    final rend = _tryDouble(_rendimientoCtrl.text);
-    if (cant == null || rend == null || rend <= 0) return null;
-
-    switch (_rendimientoTiempoBase) {
-      case 'POR_MINUTO': // unidades/min
-        return (cant / rend * 60)
-            .round(); // ← OJO: aquí NO, es *1 (min), no *60
-      case 'POR_HORA': // unidades/h
-        return (cant / rend * 60).round();
-      case 'MIN_POR_UNIDAD': // min/unidad
-        return (cant * rend).round();
-    }
-    return null;
-  }
-
-  // ✅ IMPORTANTE:
-  // POR_MINUTO es unidades/min => minutos = cantidad / rendimiento
-  // (NO multiplicar por 60)
   int? _previewMinutosBien() {
     if (!_usaRendimiento) {
       final m = _tryInt(_duracionFijaMinCtrl.text);
@@ -356,22 +590,35 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     if (cant == null || rend == null || rend <= 0) return null;
 
     switch (_rendimientoTiempoBase) {
-      case 'POR_MINUTO': // unidades/min
+      case 'POR_MINUTO':
         return (cant / rend).round();
-      case 'POR_HORA': // unidades/h
+      case 'POR_HORA':
         return (cant / rend * 60).round();
-      case 'MIN_POR_UNIDAD': // min/unidad
+      case 'MIN_POR_UNIDAD':
         return (cant * rend).round();
       default:
         return null;
     }
   }
 
+  int? _previewMinutosPorDia() {
+    final total = _previewMinutosBien();
+    if (!_dividirEnDias) return null;
+    if (total == null || total <= 0) return null;
+
+    final dias = _tryInt(_diasParaCompletarCtrl.text.trim());
+    if (dias == null || dias <= 1) return null;
+
+    final porDia = (total / dias).ceil();
+    return porDia > 0 ? porDia : null;
+  }
+
+  // ===========================
+  // selector operarios
+  // ===========================
   Future<void> _mostrarSelectorOperarios() async {
     if (_operarios.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No hay operarios en este conjunto')),
-      );
+      _snack('No hay operarios en este conjunto');
       return;
     }
 
@@ -381,7 +628,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setStateDialog) {
+          builder: (_, setStateDialog) {
             return AlertDialog(
               title: const Text('Seleccionar operarios responsables'),
               content: SizedBox(
@@ -436,6 +683,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     }
   }
 
+  // ===========================
+  // guardar
+  // ===========================
   Future<void> _guardar() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -506,6 +756,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       unidadCalculo = _unidadCalculo;
       cantidad = _tryDouble(_cantidadCtrl.text);
       rendimiento = _tryDouble(_rendimientoCtrl.text);
+
       if (cantidad == null || rendimiento == null || rendimiento <= 0) {
         _snack('Cantidad y rendimiento deben ser números válidos');
         return;
@@ -551,9 +802,30 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
             tipo: r.tipoCtrl.text.trim().isNotEmpty
                 ? r.tipoCtrl.text.trim()
                 : null,
+            origen: r.origen, // ✅ viene automático del dropdown
           ),
         )
         .toList();
+
+    final herramientasPlanRequests = _herramientasPlanRows
+        .where(
+          (r) =>
+              r.herramientaId != null && r.cantidadCtrl.text.trim().isNotEmpty,
+        )
+        .map(
+          (r) => HerramientaPlanItemRequest(
+            herramientaId: r.herramientaId!,
+            cantidad: _tryDouble(r.cantidadCtrl.text.trim()) ?? 0,
+            estado: r.estado ?? 'OPERATIVA',
+          ),
+        )
+        .toList();
+
+    int? diasParaCompletar;
+    if (_dividirEnDias) {
+      final d = _tryInt(_diasParaCompletarCtrl.text.trim());
+      if (d != null && d > 1) diasParaCompletar = d;
+    }
 
     final req = DefinicionPreventivaRequest(
       ubicacionId: _ubicacionSeleccionada!.id,
@@ -561,21 +833,17 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       descripcion: _descripcionCtrl.text.trim(),
       frecuencia: _frecuencia!,
       prioridad: prioridad,
-
       diaSemanaProgramado: _frecuencia == 'SEMANAL'
           ? _diaSemanaProgramado
           : null,
       diaMesProgramado: _frecuencia == 'MENSUAL' ? _diaMesProgramado : null,
-
       unidadCalculo: unidadCalculo,
       areaNumerica: cantidad,
       rendimientoBase: rendimiento,
-
-      // ✅ ahora sí: minutos fijos
       duracionMinutosFija: duracionMinFija,
-
-      // ✅ NUEVO: esto es lo que el back necesita para interpretar el rendimiento
       rendimientoTiempoBase: _usaRendimiento ? _rendimientoTiempoBase : null,
+
+      diasParaCompletar: diasParaCompletar,
 
       insumoPrincipalId: _insumoPrincipalId,
       consumoPrincipalPorUnidad: consumoPrincipal,
@@ -583,7 +851,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       maquinariaPlan: maquinariaPlanRequests.isNotEmpty
           ? maquinariaPlanRequests
           : null,
-
+      herramientasPlan: herramientasPlanRequests.isNotEmpty
+          ? herramientasPlanRequests
+          : null,
       operariosIds: operariosIdsInt,
       responsableSugeridoId: responsableId,
       supervisorId: supervisorId,
@@ -601,15 +871,194 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      _snack('Error al guardar preventiva: $e', error: true);
+
+      // ✅ Si el backend ya manda {ok:false, reason, message, ...}
+      if (e is ApiError) {
+        // mensaje amigable
+        if (e.reason == 'MAQUINARIA_NO_DISPONIBLE') {
+          await _showMaquinariaNoDisponibleDialog(e);
+        } else {
+          await _showFriendlyErrorDialog(
+            title: 'No se pudo guardar',
+            message: e.message,
+            details: e.details,
+          );
+        }
+        return;
+      }
+
+      _snack('Error al guardar preventiva: $e', type: SnackType.error);
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
   }
 
-  void _snack(String msg, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: error ? Colors.red : null),
+  void _snack(String msg, {SnackType type = SnackType.info}) {
+    Color? bg;
+    switch (type) {
+      case SnackType.error:
+        bg = Colors.red;
+        break;
+      case SnackType.success:
+        bg = Colors.green;
+        break;
+      case SnackType.info:
+      default:
+        bg = Colors.blue; // o AppTheme.primary
+    }
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: bg));
+  }
+
+  Future<void> _showFriendlyErrorDialog({
+    required String title,
+    required String message,
+    dynamic details,
+  }) async {
+    final pretty = () {
+      try {
+        if (details == null) return null;
+        if (details is String) return details;
+        return const JsonEncoder.withIndent('  ').convert(details);
+      } catch (_) {
+        return details?.toString();
+      }
+    }();
+
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            if (pretty != null) ...[
+              const SizedBox(height: 12),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('Ver detalles'),
+                children: [
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Text(pretty, style: const TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showMaquinariaNoDisponibleDialog(ApiError e) async {
+    // e.details puede ser Map o String
+    Map<String, dynamic>? body;
+    try {
+      if (e.details is Map<String, dynamic>) {
+        body = e.details as Map<String, dynamic>;
+      } else if (e.details is String) {
+        body = jsonDecode(e.details as String) as Map<String, dynamic>;
+      }
+    } catch (_) {
+      body = null;
+    }
+
+    final conflictos = (body?['conflictos'] as List?) ?? const [];
+    // Muestra máximo 3 (para no saturar)
+    final top = conflictos.take(3).toList();
+    final extra = conflictos.length - top.length;
+
+    String fmtDate(dynamic s) {
+      if (s == null) return '';
+      try {
+        final dt = DateTime.parse(s.toString()).toLocal();
+        return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+      } catch (_) {
+        return s.toString();
+      }
+    }
+
+    Widget conflictoTile(Map<String, dynamic> c) {
+      final maquinariaId = c['maquinariaId'];
+      final ocupadoPor = (c['ocupadoPor'] as Map?)?.cast<String, dynamic>();
+      final desc = ocupadoPor?['descripcion']?.toString() ?? 'Tarea';
+      final conj = ocupadoPor?['conjuntoId']?.toString() ?? '—';
+      final ini = fmtDate(ocupadoPor?['ini']);
+      final fin = fmtDate(ocupadoPor?['fin']);
+
+      final entrega = fmtDate((c['rangoSolicitado'] as Map?)?['entrega']);
+      final recogida = fmtDate((c['rangoSolicitado'] as Map?)?['recogida']);
+
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.construction),
+        title: Text('Máquina #$maquinariaId • $desc'),
+        subtitle: Text(
+          'Conjunto: $conj\n'
+          'Ocupada: $ini → $fin\n'
+          'Reserva (entrega/recogida): $entrega → $recogida',
+        ),
+      );
+    }
+
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Maquinaria ocupada'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                e.message.isNotEmpty
+                    ? e.message
+                    : 'La maquinaria seleccionada está ocupada en esas fechas.',
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Conflictos detectados:',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 6),
+              ...top.map(
+                (x) => conflictoTile((x as Map).cast<String, dynamic>()),
+              ),
+              if (extra > 0) Text('… y $extra conflicto(s) más.'),
+              const SizedBox(height: 8),
+              const Text(
+                'Sugerencia: consulta disponibilidad y selecciona otra máquina u origen (Conjunto/Empresa).',
+                style: TextStyle(fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _consultarDisponibilidadMaquinaria();
+            },
+            icon: const Icon(Icons.search),
+            label: const Text('Consultar disponibilidad'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -625,9 +1074,18 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             child,
@@ -635,6 +1093,45 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         ),
       ),
     );
+  }
+
+  Widget _pillInfo({required IconData icon, required String text}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: AppTheme.primary),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<MaquinariaDisponibleItem> _opcionesMaquinariaDropdown() {
+    if (_dispMaq == null) return [];
+
+    return [..._dispMaq!.propiasDisponibles, ..._dispMaq!.empresaDisponibles];
+  }
+
+  String _labelMaq(MaquinariaDisponibleItem m) {
+    final o = m.origen.trim().toUpperCase();
+    final tag = (o == 'CONJUNTO') ? 'Conjunto' : 'Empresa';
+    final marca = m.marca.trim().isEmpty ? '' : ' • ${m.marca}';
+    return '[$tag] ${m.nombre}$marca';
   }
 
   @override
@@ -737,7 +1234,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           : null,
                     ),
                     const SizedBox(height: 12),
-
                     DropdownButtonFormField<String>(
                       decoration: const InputDecoration(
                         labelText: 'Frecuencia',
@@ -770,7 +1266,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       validator: (v) =>
                           v == null ? 'Selecciona una frecuencia' : null,
                     ),
-
                     const SizedBox(height: 12),
 
                     if (_frecuencia == 'SEMANAL') ...[
@@ -856,9 +1351,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       value: _usaRendimiento,
                       onChanged: (v) => setState(() => _usaRendimiento = v),
                     ),
-
                     if (_usaRendimiento) ...[
-                      const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
                         decoration: const InputDecoration(
                           labelText: 'Unidad de cálculo',
@@ -873,7 +1366,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         onChanged: (v) => setState(() => _unidadCalculo = v),
                       ),
                       const SizedBox(height: 10),
-
                       DropdownButtonFormField<String>(
                         decoration: const InputDecoration(
                           labelText: 'Base del rendimiento',
@@ -898,9 +1390,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           () => _rendimientoTiempoBase = v ?? 'POR_MINUTO',
                         ),
                       ),
-
                       const SizedBox(height: 10),
-
                       TextFormField(
                         controller: _cantidadCtrl,
                         keyboardType: const TextInputType.numberWithOptions(
@@ -908,14 +1398,11 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         ),
                         decoration: const InputDecoration(
                           labelText: 'Cantidad total',
-                          helperText:
-                              'Ej: 200 (si son 200 m²) o 10 (si son 10 unidades)',
                           border: OutlineInputBorder(),
                         ),
                         onChanged: (_) => setState(() {}),
                       ),
                       const SizedBox(height: 10),
-
                       TextFormField(
                         controller: _rendimientoCtrl,
                         keyboardType: const TextInputType.numberWithOptions(
@@ -928,24 +1415,21 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         ),
                         onChanged: (_) => setState(() {}),
                       ),
-
                       if (preview != null) ...[
                         const SizedBox(height: 10),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: Text(
-                            '⏱️ Estimado: $preview min (~ ${(preview / 60).toStringAsFixed(2)} h)',
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _pillInfo(
+                                icon: Icons.timer_outlined,
+                                text:
+                                    'Estimado: $preview min (~ ${(preview / 60).toStringAsFixed(2)} h)',
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ] else ...[
-                      const SizedBox(height: 8),
                       TextFormField(
                         controller: _duracionFijaMinCtrl,
                         keyboardType: TextInputType.number,
@@ -953,9 +1437,81 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           labelText: 'Duración fija (minutos)',
                           border: OutlineInputBorder(),
                         ),
-                        onChanged: (_) => setState(() {}),
                       ),
                     ],
+
+                    // ✅ Repartir en varios días
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Repartir en varios días'),
+                            subtitle: const Text(
+                              'Útil para actividades largas (ej: 10 horas en 5 días).',
+                            ),
+                            value: _dividirEnDias,
+                            onChanged: (v) => setState(() {
+                              _dividirEnDias = v;
+                              if (!v) _diasParaCompletarCtrl.text = '';
+                            }),
+                          ),
+                          if (_dividirEnDias) ...[
+                            const SizedBox(height: 10),
+                            TextFormField(
+                              controller: _diasParaCompletarCtrl,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: '¿En cuántos días completar?',
+                                hintText: 'Ej: 5',
+                                border: OutlineInputBorder(),
+                              ),
+                              validator: (v) {
+                                if (!_dividirEnDias) return null;
+                                final n = _tryInt(v?.trim() ?? '');
+                                if (n == null)
+                                  return 'Ingresa un número válido';
+                                if (n < 2) return 'Debe ser 2 o más';
+                                if (n > 31) return 'Máximo 31 días';
+                                return null;
+                              },
+                              onChanged: (_) => setState(() {}),
+                            ),
+                            const SizedBox(height: 10),
+                            Builder(
+                              builder: (_) {
+                                final total = _previewMinutosBien();
+                                final porDia = _previewMinutosPorDia();
+
+                                if (total == null) {
+                                  return const Text(
+                                    '💡 Define primero la duración (o el rendimiento) para calcular el reparto.',
+                                  );
+                                }
+                                if (porDia == null)
+                                  return const SizedBox.shrink();
+
+                                return Text(
+                                  '📌 Total: $total min (~ ${(total / 60).toStringAsFixed(2)} h)\n'
+                                  '📅 Reparto: ~$porDia min/día (~ ${(porDia / 60).toStringAsFixed(2)} h/día)',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -963,7 +1519,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
               const SizedBox(height: 12),
 
               _sectionCard(
-                title: '4) Recursos planificados – Insumos',
+                title: '4) Recursos – Insumos',
                 child: Column(
                   children: [
                     DropdownButtonFormField<int>(
@@ -972,14 +1528,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         border: OutlineInputBorder(),
                       ),
                       value: _insumoPrincipalId,
-                      items: _catalogoInsumos
-                          .map(
-                            (i) => DropdownMenuItem(
-                              value: i.id,
-                              child: Text('${i.nombre} (${i.unidad})'),
-                            ),
-                          )
-                          .toList(),
+                      items: _insumoItems,
                       onChanged: (v) => setState(() => _insumoPrincipalId = v),
                     ),
                     const SizedBox(height: 10),
@@ -990,8 +1539,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       ),
                       decoration: const InputDecoration(
                         labelText: 'Consumo por unidad (opcional)',
-                        helperText:
-                            'Ej: litros por m², litros por unidad, etc.',
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -1004,21 +1551,21 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Column(
-                      children: [
-                        for (int i = 0; i < _insumosPlanRows.length; i)
-                          _buildInsumoPlanRow(i),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
-                            onPressed: () => setState(
-                              () => _insumosPlanRows.add(_InsumoPlanRow()),
-                            ),
-                            icon: const Icon(Icons.add),
-                            label: const Text('Agregar insumo'),
-                          ),
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _insumosPlanRows.length,
+                      itemBuilder: (_, i) => _buildInsumoPlanRow(i),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () => setState(
+                          () => _insumosPlanRows.add(_InsumoPlanRow()),
                         ),
-                      ],
+                        icon: const Icon(Icons.add),
+                        label: const Text('Agregar insumo'),
+                      ),
                     ),
                   ],
                 ),
@@ -1026,12 +1573,52 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
               const SizedBox(height: 12),
 
+              // =========================================================
+              // ✅ 4.1 Maquinaria: botón consultar + resumen + filtrado
+              // =========================================================
               _sectionCard(
                 title: '4.1) Maquinaria planificada',
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (int i = 0; i < _maquinariaPlanRows.length; i)
-                      _buildMaquinariaPlanRow(i),
+                    OutlinedButton.icon(
+                      onPressed: _cargandoDispMaq
+                          ? null
+                          : _consultarDisponibilidadMaquinaria,
+                      icon: _cargandoDispMaq
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.search),
+                      label: const Text('Consultar disponibilidad'),
+                    ),
+                    const SizedBox(height: 10),
+                    if (_dispMaq != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Text(
+                          '✅ Empresa: ${_dispMaq!.empresaDisponibles.length} | '
+                          '✅ Conjunto: ${_dispMaq!.propiasDisponibles.length} | '
+                          '⛔ Ocupadas: ${_dispMaq!.ocupadas.length}',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _maquinariaPlanRows.length,
+                      itemBuilder: (_, i) => _buildMaquinariaPlanRow(i),
+                    ),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: TextButton.icon(
@@ -1040,6 +1627,33 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         ),
                         icon: const Icon(Icons.add),
                         label: const Text('Agregar maquinaria'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              _sectionCard(
+                title: '4.2) Herramientas planificadas',
+                child: Column(
+                  children: [
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _herramientasPlanRows.length,
+                      itemBuilder: (_, i) => _buildHerramientaPlanRow(i),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () => setState(
+                          () =>
+                              _herramientasPlanRows.add(_HerramientaPlanRow()),
+                        ),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Agregar herramienta'),
                       ),
                     ),
                   ],
@@ -1149,6 +1763,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     );
   }
 
+  // ===========================
+  // rows
+  // ===========================
   Widget _buildInsumoPlanRow(int index) {
     final row = _insumosPlanRows[index];
 
@@ -1157,18 +1774,14 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       child: Row(
         children: [
           Expanded(
-            flex: 2,
+            flex: 3,
             child: DropdownButtonFormField<int>(
               decoration: const InputDecoration(
                 labelText: 'Insumo',
                 border: OutlineInputBorder(),
               ),
               value: row.insumoId,
-              items: _catalogoInsumos
-                  .map(
-                    (i) => DropdownMenuItem(value: i.id, child: Text(i.nombre)),
-                  )
-                  .toList(),
+              items: _insumoItems,
               onChanged: (v) => setState(() => row.insumoId = v),
             ),
           ),
@@ -1203,43 +1816,155 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   Widget _buildMaquinariaPlanRow(int index) {
     final row = _maquinariaPlanRows[index];
 
+    final opciones = _opcionesMaquinariaDropdown();
+
+    if (_dispMaq == null) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: 8.0),
+        child: Text('Consulta disponibilidad para listar maquinaria.'),
+      );
+    }
+
+    // si la selección actual ya no está en opciones (por filtros), la dejamos como "no disponible"
+    final selectedExists = row.maquinariaId == null
+        ? true
+        : opciones.any((o) => o.id == row.maquinariaId);
+
+    final items = <DropdownMenuItem<int>>[
+      ...opciones.map(
+        (m) => DropdownMenuItem<int>(value: m.id, child: Text(_labelMaq(m))),
+      ),
+      if (!selectedExists && row.maquinariaId != null)
+        DropdownMenuItem<int>(
+          value: row.maquinariaId,
+          child: Text('[No disponible] #${row.maquinariaId}'),
+        ),
+    ];
+
+    // hint ocupada (si aplica)
+    final ocupada = row.maquinariaId != null
+        ? _ocupadaPorId[row.maquinariaId!]
+        : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  decoration: InputDecoration(
+                    labelText: 'Maquinaria',
+                    border: const OutlineInputBorder(),
+                    helperText: ocupada == null
+                        ? null
+                        : '⛔ Ocupada: ${ocupada.descripcion ?? ''}'.trim(),
+                  ),
+                  value: row.maquinariaId,
+                  items: items,
+                  onChanged: (id) {
+                    if (id == null) return;
+
+                    final sel = opciones.firstWhere(
+                      (x) => x.id == id,
+                      orElse: () => MaquinariaDisponibleItem(
+                        id: id,
+                        nombre: 'Maquinaria',
+                        tipo: '',
+                        marca: '',
+                        origen: 'EMPRESA',
+                      ),
+                    );
+
+                    setState(() {
+                      row.maquinariaId = id;
+                      row.origen = sel.origen; // ✅ automático
+                    });
+                  },
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () {
+                  setState(() {
+                    row.tipoCtrl.dispose();
+                    _maquinariaPlanRows.removeAt(index);
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: row.tipoCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Tipo / uso (opcional)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHerramientaPlanRow(int index) {
+    final row = _herramientasPlanRows[index];
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
       child: Row(
         children: [
           Expanded(
-            flex: 2,
+            flex: 3,
             child: DropdownButtonFormField<int>(
               decoration: const InputDecoration(
-                labelText: 'Maquinaria',
+                labelText: 'Herramienta',
                 border: OutlineInputBorder(),
               ),
-              value: row.maquinariaId,
-              items: _catalogoMaquinaria
-                  .map(
-                    (m) => DropdownMenuItem(value: m.id, child: Text(m.nombre)),
-                  )
-                  .toList(),
-              onChanged: (v) => setState(() => row.maquinariaId = v),
+              value: row.herramientaId,
+              items: _herramientaItems,
+              onChanged: (v) => setState(() => row.herramientaId = v),
             ),
           ),
           const SizedBox(width: 8),
           Expanded(
             flex: 2,
             child: TextFormField(
-              controller: row.tipoCtrl,
+              controller: row.cantidadCtrl,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(
-                labelText: 'Tipo / uso (opcional)',
+                labelText: 'Cantidad',
                 border: OutlineInputBorder(),
               ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: DropdownButtonFormField<String>(
+              decoration: const InputDecoration(
+                labelText: 'Estado',
+                border: OutlineInputBorder(),
+              ),
+              value: row.estado ?? 'OPERATIVA',
+              items: const [
+                DropdownMenuItem(value: 'OPERATIVA', child: Text('Operativa')),
+                DropdownMenuItem(value: 'DANADA', child: Text('Dañada')),
+                DropdownMenuItem(value: 'PERDIDA', child: Text('Perdida')),
+                DropdownMenuItem(value: 'BAJA', child: Text('Baja')),
+              ],
+              onChanged: (v) => setState(() => row.estado = v ?? 'OPERATIVA'),
             ),
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             onPressed: () {
               setState(() {
-                row.tipoCtrl.dispose();
-                _maquinariaPlanRows.removeAt(index);
+                row.cantidadCtrl.dispose();
+                _herramientasPlanRows.removeAt(index);
               });
             },
           ),
@@ -1261,8 +1986,38 @@ class _InsumoPlanRow {
 
 class _MaquinariaPlanRow {
   int? maquinariaId;
+  String? origen; // 'CONJUNTO' | 'EMPRESA'
   final TextEditingController tipoCtrl;
 
-  _MaquinariaPlanRow({this.maquinariaId, String? tipoInicial})
+  _MaquinariaPlanRow({this.maquinariaId, String? tipoInicial, this.origen})
     : tipoCtrl = TextEditingController(text: tipoInicial ?? '');
+}
+
+class _MaqOption {
+  final int id;
+  final String nombre;
+  final String origen; // 'EMPRESA' | 'CONJUNTO'
+  final String? marca;
+
+  _MaqOption({
+    required this.id,
+    required this.nombre,
+    required this.origen,
+    this.marca,
+  });
+}
+
+class _HerramientaPlanRow {
+  int? herramientaId;
+  final TextEditingController cantidadCtrl;
+  String? estado;
+
+  _HerramientaPlanRow({
+    this.herramientaId,
+    num? cantidadInicial,
+    String? estadoInicial,
+  }) : cantidadCtrl = TextEditingController(
+         text: cantidadInicial != null ? cantidadInicial.toString() : '',
+       ),
+       estado = estadoInicial ?? 'OPERATIVA';
 }

@@ -1,6 +1,7 @@
+// lib/pages/cronograma_definitivo_page.dart
+
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/api/gerente_api.dart';
-import 'package:flutter_application_1/pages/editar_tarea_page.dart';
+import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:intl/intl.dart';
 
 import '../api/cronograma_api.dart';
@@ -19,29 +20,38 @@ class CronogramaPage extends StatefulWidget {
 }
 
 class _CronogramaPageState extends State<CronogramaPage> {
-  final _api = CronogramaApi();
-  final _gerenteApi = GerenteApi();
+  final _cronogramaApi = CronogramaApi();
+  final _festivoApi = FestivoApi();
 
-  DateTime _mesActual = DateTime(DateTime.now().year, DateTime.now().month);
-  bool _cargando = false;
+  bool _loading = true;
   String? _error;
 
-  List<TareaModel> _tareas = [];
-  Map<int, String> _supervisorNombrePorId = {};
-  Map<int, List<TareaModel>> _tareasPorDia = {};
+  Set<String> _festivosYmd = {};
+  Map<String, String> _festivoNombrePorYmd = {};
 
-  // ✅ Vista + semana
+  // ✅ ahora mes/año son mutables (para navegación)
+  late int _anioActual;
+  late int _mesActual; // 1..12
+
+  late int _daysInMonth;
+  late DateTime _inicioMes;
+
+  /// Todas las tareas PUBLICADAS (preventivas + correctivas) del mes
+  List<TareaModel> _tareasMes = [];
+
+  /// Resumen por día (mensual)
+  List<_DiaResumen> _diasResumen = [];
+
+  // Vista y semana seleccionada
   _VistaCronograma _vista = _VistaCronograma.mensual;
   late DateTime _semanaBase;
 
-  // ✅ Día seleccionado (panel derecho)
-  DateTime? _diaSeleccionado;
+  bool _mostrarFiltrosMensual = false;
 
-  // Filtros
-  String _filtroTipo = 'TODAS'; // TODAS / PREVENTIVA / CORRECTIVA
-  String _filtroEstado = 'TODOS'; // TODOS o EstadoTarea.*
-  String _filtroOperario = 'TODOS'; // nombre del operario
-  String _filtroUbicacion = 'TODAS'; // nombre de la ubicación
+  String _filtroTipo = 'TODAS';
+  String _filtroEstado = 'TODOS';
+  String _filtroOperario = 'TODOS';
+  String _filtroUbicacion = 'TODAS';
 
   List<String> _operariosDisponibles = [];
   List<String> _ubicacionesDisponibles = [];
@@ -49,23 +59,34 @@ class _CronogramaPageState extends State<CronogramaPage> {
   @override
   void initState() {
     super.initState();
-    _semanaBase = DateTime(_mesActual.year, _mesActual.month, 1);
-    _diaSeleccionado = DateTime.now();
-    _cargar();
+
+    final now = DateTime.now();
+    _anioActual = now.year;
+    _mesActual = now.month;
+
+    _initMes();
+    _semanaBase = DateTime(_anioActual, _mesActual, 1);
+    _cargarDatos();
   }
 
-  // =========================
-  // Helpers fechas
-  // =========================
-  DateTime _startOfWeekMonday(DateTime d) {
-    final dd = DateTime(d.year, d.month, d.day);
-    final diff = dd.weekday - DateTime.monday;
-    return dd.subtract(Duration(days: diff));
+  void _initMes() {
+    _inicioMes = DateTime(_anioActual, _mesActual, 1);
+    _daysInMonth = DateUtils.getDaysInMonth(_anioActual, _mesActual);
   }
 
-  DateTime _endOfWeekSunday(DateTime d) {
-    final start = _startOfWeekMonday(d);
-    return start.add(const Duration(days: 6));
+  String _toYmd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  bool _esFestivo(DateTime d) {
+    final dl = d.toLocal();
+    final key = _toYmd(DateTime(dl.year, dl.month, dl.day));
+    return _festivosYmd.contains(key);
+  }
+
+  String? _nombreFestivo(DateTime d) {
+    final dl = d.toLocal();
+    final key = _toYmd(DateTime(dl.year, dl.month, dl.day));
+    return _festivoNombrePorYmd[key];
   }
 
   bool _isSameLocalDay(DateTime a, DateTime b) {
@@ -74,498 +95,60 @@ class _CronogramaPageState extends State<CronogramaPage> {
     return al.year == bl.year && al.month == bl.month && al.day == bl.day;
   }
 
-  // =========================
-  // Carga (✅ SOLO PUBLICADAS)
-  // =========================
-  Future<void> _cargar() async {
-    setState(() {
-      _cargando = true;
-      _error = null;
-    });
-
-    try {
-      final tareas = await _api.listarPorConjuntoYMes(
-        nit: widget.nit,
-        anio: _mesActual.year,
-        mes: _mesActual.month,
-      );
-
-      final supervisores = await _gerenteApi.listarSupervisores();
-      final mapaSup = <int, String>{};
-      for (final s in supervisores) {
-        final id = int.tryParse(s.cedula) ?? 0;
-        if (id > 0) {
-          mapaSup[id] = s.nombre;
-        }
-      }
-
-      // ✅ FILTRO: NO mostrar tareas no publicadas (borrador)
-      // Opción 1 (si tu TareaModel tiene bool borrador):
-      final soloPublicadas = tareas.where((t) => t.borrador == false).toList();
-
-      // ✅ Si NO tienes t.borrador, reemplaza el filtro anterior por algo así:
-      // final soloPublicadas = tareas.where((t) => (t.publicada ?? false) == true).toList();
-      // o:
-      // final soloPublicadas = tareas.where((t) => (t.estadoCronograma ?? '') == 'PUBLICADA').toList();
-
-      _tareas = soloPublicadas;
-      _supervisorNombrePorId = mapaSup;
-
-      _reconstruirFiltros();
-      _reconstruirMapa();
-
-      // ✅ Si el día seleccionado queda fuera del mes actual, lo reajustamos
-      final hoy = DateTime.now();
-      _diaSeleccionado ??= hoy;
-      if (_diaSeleccionado!.year != _mesActual.year ||
-          _diaSeleccionado!.month != _mesActual.month) {
-        _diaSeleccionado = DateTime(_mesActual.year, _mesActual.month, 1);
-      }
-    } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (!mounted) return;
-      setState(() => _cargando = false);
-    }
+  bool _isInThisMonth(DateTime d) {
+    final dl = d.toLocal();
+    return dl.year == _anioActual && dl.month == _mesActual;
   }
 
-  // =========================
-  // Filtros aplicados
-  // =========================
+  DateTime _startOfWeekMonday(DateTime d) {
+    final dd = DateTime(d.year, d.month, d.day);
+    final diff = dd.weekday - DateTime.monday; // monday=1
+    return dd.subtract(Duration(days: diff));
+  }
+
+  DateTime _endOfWeekSunday(DateTime d) {
+    final start = _startOfWeekMonday(d);
+    return start.add(const Duration(days: 6));
+  }
+
+  List<TareaModel> _tareasSemana(DateTime semanaBase) {
+    return _tareasFiltradas.where((t) {
+      final start = _startOfWeekMonday(semanaBase);
+      final end = start.add(const Duration(days: 7));
+      final dt = t.fechaInicio.toLocal();
+      return !dt.isBefore(start) && dt.isBefore(end);
+    }).toList();
+  }
+
+  List<TareaModel> get _tareasFiltradas =>
+      _tareasMes.where(_pasaFiltros).toList();
+
   bool _pasaFiltros(TareaModel t) {
-    // 🔹 Tipo
+    // Tipo
     if (_filtroTipo != 'TODAS') {
       final tipo = (t.tipo ?? '').toUpperCase();
       if (tipo != _filtroTipo) return false;
     }
 
-    // 🔹 Estado
+    // Estado
     if (_filtroEstado != 'TODOS') {
       if ((t.estado ?? '') != _filtroEstado) return false;
     }
 
-    // 🔹 Operario
+    // Operario
     if (_filtroOperario != 'TODOS') {
-      final tieneOperario = _tareaTieneOperario(t, _filtroOperario);
-      if (!tieneOperario) return false;
+      if (!_tareaTieneOperario(t, _filtroOperario)) return false;
     }
 
-    // 🔹 Ubicación
+    // Ubicación
     if (_filtroUbicacion != 'TODAS') {
-      final ubicacion = _nombreUbicacion(t);
-      if (ubicacion != _filtroUbicacion) return false;
+      final u = _nombreUbicacion(t) ?? '';
+      if (u != _filtroUbicacion) return false;
     }
 
     return true;
   }
 
-  void _reconstruirMapa() {
-    final mapa = <int, List<TareaModel>>{};
-
-    for (final t in _tareas) {
-      if (!_pasaFiltros(t)) continue;
-
-      final f = t.fechaInicio.toLocal();
-      if (f.year != _mesActual.year || f.month != _mesActual.month) continue;
-
-      final dia = f.day;
-      mapa.putIfAbsent(dia, () => []).add(t);
-    }
-
-    setState(() {
-      _tareasPorDia = mapa;
-    });
-  }
-
-  void _reconstruirFiltros() {
-    final ops = <String>{};
-    final ubis = <String>{};
-
-    for (final t in _tareas) {
-      final ubicacion = _nombreUbicacion(t);
-      if (ubicacion != null && ubicacion.isNotEmpty) {
-        ubis.add(ubicacion);
-      }
-
-      for (final opNombre in _nombresOperarios(t)) {
-        if (opNombre.isNotEmpty) ops.add(opNombre);
-      }
-    }
-
-    setState(() {
-      _operariosDisponibles = ops.toList()..sort();
-      _ubicacionesDisponibles = ubis.toList()..sort();
-    });
-  }
-
-  // =========================
-  // Navegación
-  // =========================
-  void _cambiarMes(int delta) {
-    setState(() {
-      _mesActual = DateTime(_mesActual.year, _mesActual.month + delta);
-      _semanaBase = DateTime(_mesActual.year, _mesActual.month, 1);
-      _diaSeleccionado = DateTime(_mesActual.year, _mesActual.month, 1);
-    });
-    _cargar();
-  }
-
-  void _cambiarSemana(int deltaWeeks) {
-    setState(() {
-      _semanaBase = _semanaBase.add(Duration(days: 7 * deltaWeeks));
-    });
-
-    // ✅ Si te sales del mes, actualiza el mes y recarga automático
-    final m = DateTime(_semanaBase.year, _semanaBase.month);
-    if (m.year != _mesActual.year || m.month != _mesActual.month) {
-      setState(() {
-        _mesActual = m;
-        _diaSeleccionado = DateTime(_mesActual.year, _mesActual.month, 1);
-      });
-      _cargar();
-    }
-  }
-
-  // =========================
-  // Colores
-  // =========================
-  Color _colorEstado(String? estado) {
-    switch (estado) {
-      case 'ASIGNADA':
-        return Colors.blueGrey;
-      case 'EN_PROCESO':
-        return Colors.blue;
-      case 'COMPLETADA':
-        return Colors.green;
-      case 'APROBADA':
-        return Colors.teal;
-      case 'PENDIENTE_APROBACION':
-        return Colors.orange;
-      case 'RECHAZADA':
-        return Colors.red;
-      case 'NO_COMPLETADA':
-        return Colors.deepOrange;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  Color _colorCuadrado(int dia) {
-    final hoy = DateTime.now();
-    final fechaDia = DateTime(_mesActual.year, _mesActual.month, dia);
-
-    final tareas = _tareasPorDia[dia] ?? [];
-    final hayTareas = tareas.isNotEmpty;
-    final hayPendientes = tareas.any(
-      (t) =>
-          t.estado == 'ASIGNADA' ||
-          t.estado == 'EN_PROCESO' ||
-          t.estado == 'PENDIENTE_APROBACION' ||
-          t.estado == 'NO_COMPLETADA' ||
-          t.estado == 'RECHAZADA',
-    );
-
-    final esHoy =
-        fechaDia.year == hoy.year &&
-        fechaDia.month == hoy.month &&
-        fechaDia.day == hoy.day;
-
-    if (esHoy) {
-      if (!hayTareas) return Colors.blue.withOpacity(0.25);
-      if (hayPendientes) return Colors.orange.shade300;
-      return Colors.green.shade400;
-    }
-
-    if (!hayTareas) return Colors.grey.shade200;
-
-    if (fechaDia.isBefore(DateTime(hoy.year, hoy.month, hoy.day))) {
-      if (hayPendientes) return Colors.orange.shade300;
-      return Colors.green.shade400;
-    }
-
-    return Colors.deepPurple.withOpacity(0.15);
-  }
-
-  Color _bordeCuadrado(int dia) {
-    final hoy = DateTime.now();
-    final fechaDia = DateTime(_mesActual.year, _mesActual.month, dia);
-
-    if (fechaDia.year == hoy.year &&
-        fechaDia.month == hoy.month &&
-        fechaDia.day == hoy.day) {
-      return Colors.blueAccent;
-    }
-
-    final tareas = _tareasPorDia[dia] ?? [];
-    if (tareas.isEmpty) return Colors.grey.shade300;
-    return Colors.deepPurple;
-  }
-
-  // =========================
-  // Abrir día (modal mensual)
-  // =========================
-  void _abrirDia(int dia) {
-    final tareas = _tareasPorDia[dia] ?? [];
-    if (tareas.isEmpty) return;
-
-    final tareasOrdenadas = [...tareas]
-      ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
-
-    final fecha = DateTime(_mesActual.year, _mesActual.month, dia);
-    final mesNombre = DateFormat.MMMM('es').format(fecha);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (ctx) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.6,
-          minChildSize: 0.4,
-          maxChildSize: 0.9,
-          builder: (_, controller) {
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Tareas del $dia de ${mesNombre.toUpperCase()}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Conjunto: ${widget.nit}',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  const Divider(height: 16),
-                  Expanded(
-                    child: ListView.builder(
-                      controller: controller,
-                      itemCount: tareasOrdenadas.length,
-                      itemBuilder: (_, index) {
-                        final t = tareasOrdenadas[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: ListTile(
-                            onTap: () {
-                              Navigator.of(ctx).pop();
-                              _mostrarResumenTarea(t);
-                            },
-                            leading: CircleAvatar(
-                              backgroundColor: _colorEstado(
-                                t.estado,
-                              ).withOpacity(0.2),
-                              child: Icon(
-                                Icons.assignment,
-                                color: _colorEstado(t.estado),
-                              ),
-                            ),
-                            title: Text(
-                              t.descripcion,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Estado: ${t.estado ?? 'SIN_ESTADO'}',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: _colorEstado(t.estado),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Tipo: ${t.tipo ?? 'SIN_TIPO'}',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Inicio: ${DateFormat('dd/MM/yyyy HH:mm').format(t.fechaInicio)}',
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  String _fmtDuracion(int min) {
-    final h = min ~/ 60;
-    final m = min % 60;
-    if (h <= 0) return '$m min';
-    if (m == 0) return '${h}h';
-    return '${h}h ${m}m';
-  }
-
-  void _mostrarResumenTarea(TareaModel t) {
-    final inicioStr = DateFormat('dd/MM/yyyy HH:mm').format(t.fechaInicio);
-    final finStr = DateFormat('dd/MM/yyyy HH:mm').format(t.fechaFin);
-
-    final ubicacion = t.ubicacionNombre ?? 'Sin ubicación';
-    final elemento = t.elementoNombre ?? 'Sin elemento';
-
-    String supervisorTexto;
-    final nombrePlano = (t.supervisorNombre ?? '').trim();
-    if (nombrePlano.isNotEmpty) {
-      supervisorTexto = nombrePlano;
-    } else if (t.supervisorId != null) {
-      supervisorTexto =
-          _supervisorNombrePorId[t.supervisorId!] ??
-          'Supervisor ID: ${t.supervisorId}';
-    } else {
-      supervisorTexto = 'Sin supervisor';
-    }
-
-    final operarios = t.operariosNombres;
-    final operariosTexto = operarios.isEmpty
-        ? 'Sin operarios'
-        : operarios.join(', ');
-
-    final tipo = t.tipo ?? 'SIN_TIPO';
-    final estado = t.estado ?? 'SIN_ESTADO';
-    final duracion = '${t.duracionMinutos}';
-    final frecuencia = t.frecuencia ?? '';
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (_) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.6,
-          maxChildSize: 0.9,
-          minChildSize: 0.4,
-          builder: (_, controller) {
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: ListView(
-                controller: controller,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          t.descripcion,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Chip(
-                        label: Text(
-                          estado,
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        backgroundColor: _colorEstado(estado),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      Chip(
-                        label: Text('Tipo: $tipo'),
-                        backgroundColor: Colors.grey.shade200,
-                      ),
-                      if (frecuencia.isNotEmpty)
-                        Chip(
-                          label: Text('Frecuencia: $frecuencia'),
-                          backgroundColor: Colors.grey.shade200,
-                        ),
-                      Chip(
-                        label: Text(
-                          'Duración: ${_fmtDuracion(t.duracionMinutos)}',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Detalles principales',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                  const SizedBox(height: 8),
-                  _detailRow('Inicio', inicioStr),
-                  _detailRow('Fin', finStr),
-                  _detailRow('Ubicación', ubicacion),
-                  _detailRow('Elemento', elemento),
-                  _detailRow('Supervisor', supervisorTexto),
-                  _detailRow('Operarios', operariosTexto),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: () => _irAEditarTarea(t),
-                        icon: const Icon(Icons.edit),
-                        label: const Text('Editar'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => _confirmarEliminarTarea(t),
-                        icon: const Icon(Icons.delete_outline),
-                        label: const Text('Eliminar'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          _mostrarDetalleTarea(t);
-                        },
-                        child: const Text('Ver más'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close),
-                      label: const Text('Cerrar'),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // ===== Helpers de lectura de modelo =====
   String? _nombreUbicacion(TareaModel t) => t.ubicacionNombre;
 
   List<String> _nombresOperarios(TareaModel t) => t.operariosNombres;
@@ -574,19 +157,1034 @@ class _CronogramaPageState extends State<CronogramaPage> {
     return _nombresOperarios(t).contains(nombreOperario);
   }
 
-  // =========================
-  // Detalle FULL (intacto)
-  // =========================
-  void _mostrarDetalleTarea(TareaModel t) {
-    // (tu método full se queda igual, no lo toco)
-    // ... (lo dejé igual que tu versión, para no alargar aquí)
-    // ✅ Para que compile: te dejo que lo uses tal cual lo pegaste arriba.
-    // (No lo recorto más porque tú ya lo tienes completo en tu archivo.)
+  void _reconstruirFiltrosDisponibles() {
+    final ops = <String>{};
+    final ubis = <String>{};
+
+    for (final t in _tareasMes) {
+      final u = _nombreUbicacion(t);
+      if (u != null && u.trim().isNotEmpty) ubis.add(u.trim());
+
+      for (final op in _nombresOperarios(t)) {
+        final n = op.trim();
+        if (n.isNotEmpty) ops.add(n);
+      }
+    }
+
+    _operariosDisponibles = ops.toList()..sort();
+    _ubicacionesDisponibles = ubis.toList()..sort();
   }
 
-  Widget _detailRow(String label, String value) {
+  void _aplicarFiltrosYRefrescar() {
+    _recalcularResumenDias();
+    setState(() {});
+  }
+
+  void _limpiarFiltros() {
+    setState(() {
+      _filtroTipo = 'TODAS';
+      _filtroEstado = 'TODOS';
+      _filtroOperario = 'TODOS';
+      _filtroUbicacion = 'TODAS';
+    });
+    _aplicarFiltrosYRefrescar();
+  }
+
+  Future<void> _cambiarMes(int delta) async {
+    int nuevoMes = _mesActual + delta;
+    int nuevoAnio = _anioActual;
+
+    if (nuevoMes == 13) {
+      nuevoMes = 1;
+      nuevoAnio++;
+    } else if (nuevoMes == 0) {
+      nuevoMes = 12;
+      nuevoAnio--;
+    }
+
+    setState(() {
+      _anioActual = nuevoAnio;
+      _mesActual = nuevoMes;
+      _initMes();
+      _semanaBase = DateTime(_anioActual, _mesActual, 1);
+    });
+
+    await _cargarDatos();
+  }
+
+  Future<void> _cargarDatos() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final desde = DateTime(_anioActual, _mesActual, 1);
+      final hasta = DateTime(_anioActual, _mesActual, _daysInMonth);
+
+      // ✅ DEFINITIVO: borrador false
+      // ✅ DEFINITIVO: traer PREVENTIVA + CORRECTIVA y unir (sin tocar backend)
+      final results = await Future.wait([
+        _cronogramaApi.cronogramaMensual(
+          nit: widget.nit,
+          anio: _anioActual,
+          mes: _mesActual,
+          borrador: false,
+          tipo: 'PREVENTIVA',
+        ),
+        _cronogramaApi.cronogramaMensual(
+          nit: widget.nit,
+          anio: _anioActual,
+          mes: _mesActual,
+          borrador: false,
+          tipo: 'CORRECTIVA',
+        ),
+        _festivoApi.listarFestivosRango(desde: desde, hasta: hasta, pais: 'CO'),
+      ]);
+
+      final prev = results[0] as List<TareaModel>;
+      final corr = results[1] as List<TareaModel>;
+      final festivos = results[2] as List<FestivoItem>;
+
+      // unir y quitar duplicados por id (por si backend repite algo)
+      final Map<int, TareaModel> porId = {};
+      for (final t in [...prev, ...corr]) {
+        porId[t.id] = t;
+      }
+
+      final listaUnida = porId.values.toList();
+
+      final filtradas = listaUnida
+          .where((t) => _isInThisMonth(t.fechaInicio))
+          .toList();
+
+      final setYmd = <String>{};
+      final nombrePorYmd = <String, String>{};
+
+      for (final f in festivos) {
+        final key = _toYmd(f.fecha);
+        setYmd.add(key);
+        if (f.nombre != null && f.nombre!.trim().isNotEmpty) {
+          nombrePorYmd[key] = f.nombre!.trim();
+        }
+      }
+
+      setState(() {
+        _tareasMes = filtradas;
+        _reconstruirFiltrosDisponibles();
+        _festivosYmd = setYmd;
+        _festivoNombrePorYmd = nombrePorYmd;
+        _recalcularResumenDias();
+      });
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _recalcularResumenDias() {
+    _diasResumen = [];
+    for (int dia = 1; dia <= _daysInMonth; dia++) {
+      final fechaDia = DateTime(_anioActual, _mesActual, dia);
+
+      final tareasDia = _tareasFiltradas.where((t) {
+        return _isSameLocalDay(t.fechaInicio, fechaDia);
+      }).toList();
+
+      _diasResumen.add(
+        _DiaResumen(
+          dia: dia,
+          total: tareasDia.length,
+          preventivas: tareasDia.length,
+        ),
+      );
+    }
+  }
+
+  bool _hayFiltrosActivos() {
+    return _filtroTipo != 'TODAS' ||
+        _filtroEstado != 'TODOS' ||
+        _filtroOperario != 'TODOS' ||
+        _filtroUbicacion != 'TODAS';
+  }
+
+  // ========= MATRIZ MENSUAL =========
+
+  String _codigoEstado(String? estado) {
+    final e = (estado ?? '').trim().toUpperCase();
+    const map = <String, String>{
+      'ASIGNADA': 'AS',
+      'EN_PROCESO': 'EP',
+      'COMPLETADA': 'CO',
+      'APROBADA': 'AP',
+      'PENDIENTE_APROBACION': 'PA',
+      'RECHAZADA': 'RE',
+      'NO_COMPLETADA': 'NC',
+      'PENDIENTE_REPROGRAMACION': 'PR',
+    };
+
+    if (e.isEmpty) return '';
+    if (map.containsKey(e)) return map[e]!;
+
+    final parts = e
+        .split(RegExp(r'[_\s]+'))
+        .where((x) => x.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '';
+    if (parts.length == 1) {
+      return parts.first.substring(0, parts.first.length >= 2 ? 2 : 1);
+    }
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  bool _esDomingo(DateTime d) => d.weekday == DateTime.sunday;
+
+  String _weekdayLetter(DateTime d) {
+    const letters = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+    return letters[d.weekday - 1];
+  }
+
+  Widget _ddTipo() {
+    return DropdownButtonFormField<String>(
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Tipo',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      value: _filtroTipo,
+      items: const [
+        DropdownMenuItem(value: 'TODAS', child: Text('Todas')),
+        DropdownMenuItem(value: 'PREVENTIVA', child: Text('Preventivas')),
+        DropdownMenuItem(value: 'CORRECTIVA', child: Text('Correctivas')),
+      ],
+      onChanged: (v) {
+        if (v == null) return;
+        setState(() => _filtroTipo = v);
+        _aplicarFiltrosYRefrescar();
+      },
+    );
+  }
+
+  Widget _ddEstado() {
+    return DropdownButtonFormField<String>(
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Estado',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      value: _filtroEstado,
+      items: const [
+        DropdownMenuItem(value: 'TODOS', child: Text('Todos')),
+        DropdownMenuItem(value: 'ASIGNADA', child: Text('Asignada')),
+        DropdownMenuItem(value: 'EN_PROCESO', child: Text('En proceso')),
+        DropdownMenuItem(value: 'COMPLETADA', child: Text('Completada')),
+        DropdownMenuItem(value: 'APROBADA', child: Text('Aprobada')),
+        DropdownMenuItem(
+          value: 'PENDIENTE_APROBACION',
+          child: Text('Pendiente aprobación'),
+        ),
+        DropdownMenuItem(value: 'RECHAZADA', child: Text('Rechazada')),
+        DropdownMenuItem(value: 'NO_COMPLETADA', child: Text('No completada')),
+        DropdownMenuItem(
+          value: 'PENDIENTE_REPROGRAMACION',
+          child: Text('Pendiente reprogramación'),
+        ),
+      ],
+      onChanged: (v) {
+        if (v == null) return;
+        setState(() => _filtroEstado = v);
+        _aplicarFiltrosYRefrescar();
+      },
+    );
+  }
+
+  Widget _ddOperario() {
+    return DropdownButtonFormField<String>(
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Operario',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      value: _filtroOperario,
+      items: [
+        const DropdownMenuItem(value: 'TODOS', child: Text('Todos')),
+        ..._operariosDisponibles.map(
+          (o) => DropdownMenuItem(value: o, child: Text(o)),
+        ),
+      ],
+      onChanged: (v) {
+        if (v == null) return;
+        setState(() => _filtroOperario = v);
+        _aplicarFiltrosYRefrescar();
+      },
+    );
+  }
+
+  Widget _ddUbicacion() {
+    return DropdownButtonFormField<String>(
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Ubicación',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      value: _filtroUbicacion,
+      items: [
+        const DropdownMenuItem(value: 'TODAS', child: Text('Todas')),
+        ..._ubicacionesDisponibles.map(
+          (u) => DropdownMenuItem(value: u, child: Text(u)),
+        ),
+      ],
+      onChanged: (v) {
+        if (v == null) return;
+        setState(() => _filtroUbicacion = v);
+        _aplicarFiltrosYRefrescar();
+      },
+    );
+  }
+
+  Widget _buildFiltrosMensualCompacto() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Filtros',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade900,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _limpiarFiltros,
+                  icon: const Icon(Icons.restart_alt, size: 18),
+                  label: const Text('Limpiar'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(child: _ddTipo()),
+                const SizedBox(width: 10),
+                Expanded(child: _ddEstado()),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(child: _ddOperario()),
+                const SizedBox(width: 10),
+                Expanded(child: _ddUbicacion()),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFiltrosComoColumna({bool mostrarTitulo = true}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (mostrarTitulo) ...[
+          const Text(
+            'Filtros',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          ),
+          const SizedBox(height: 10),
+        ],
+        _ddTipo(),
+        const SizedBox(height: 8),
+        _ddEstado(),
+        const SizedBox(height: 8),
+        _ddOperario(),
+        const SizedBox(height: 8),
+        _ddUbicacion(),
+      ],
+    );
+  }
+
+  List<_FilaCrono> _buildFilasCronoMensual() {
+    final Map<String, _FilaCrono> rows = {};
+
+    for (final t in _tareasFiltradas) {
+      final ubic = (t.ubicacionNombre ?? 'ID ${t.ubicacionId}').trim();
+      final freq = (t.frecuencia ?? '—').trim();
+      final diag = (t.descripcion).trim();
+
+      final resp = t.operariosNombres.isNotEmpty
+          ? t.operariosNombres.join(', ')
+          : (t.supervisorNombre ??
+                (t.supervisorId != null
+                    ? 'ID ${t.supervisorId}'
+                    : 'Sin asignar'));
+
+      final key = '$freq||$diag||$ubic||$resp';
+
+      rows.putIfAbsent(
+        key,
+        () => _FilaCrono(
+          frecuencia: freq,
+          diagnostico: diag,
+          ubicacion: ubic,
+          responsable: resp,
+          porDia: {},
+        ),
+      );
+
+      final day = t.fechaInicio.toLocal().day;
+      final s = _codigoEstado(t.estado);
+      final actual = rows[key]!.porDia[day] ?? '';
+      rows[key]!.porDia[day] = _mergeSimbolos(actual, s);
+    }
+
+    final list = rows.values.toList();
+    list.sort((a, b) {
+      final c1 = a.frecuencia.compareTo(b.frecuencia);
+      if (c1 != 0) return c1;
+      final c2 = a.diagnostico.compareTo(b.diagnostico);
+      if (c2 != 0) return c2;
+      return a.ubicacion.compareTo(b.ubicacion);
+    });
+
+    return list;
+  }
+
+  String _mergeSimbolos(String a, String b) {
+    int rank(String s) {
+      switch (s) {
+        case 'NC':
+          return 90;
+        case 'RE':
+          return 80;
+        case 'PR':
+          return 70;
+        case 'PA':
+          return 60;
+        case 'EP':
+          return 50;
+        case 'AS':
+          return 40;
+        case 'CO':
+          return 30;
+        case 'AP':
+          return 20;
+        default:
+          return s.isEmpty ? 0 : 10;
+      }
+    }
+
+    return rank(b) > rank(a) ? b : a;
+  }
+
+  Color _colorPorCodigo(String code) {
+    switch (code) {
+      case 'NC':
+        return Colors.red.shade700;
+      case 'RE':
+        return Colors.red.shade900;
+      case 'PR':
+        return Colors.deepOrange.shade800;
+      case 'PA':
+        return Colors.orange.shade800;
+      case 'EP':
+        return Colors.blue.shade800;
+      case 'AS':
+        return Colors.indigo.shade700;
+      case 'CO':
+        return Colors.green.shade800;
+      case 'AP':
+        return Colors.teal.shade800;
+      default:
+        return Colors.grey.shade900;
+    }
+  }
+
+  Widget _buildCronogramaMensualTipoFoto() {
+    final filas = _buildFilasCronoMensual();
+
+    const wFrecuencia = 120.0;
+    const wDiagnostico = 260.0;
+    const wUbicacion = 120.0;
+    const wResponsable = 140.0;
+    const wDia = 34.0;
+
+    final headerStyle = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      color: Colors.grey.shade900,
+    );
+
+    final border = BorderSide(color: Colors.grey.shade300);
+
+    Widget cellBox({
+      required double w,
+      required Widget child,
+      Color? color,
+      Alignment align = Alignment.center,
+    }) {
+      return Container(
+        width: w,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        alignment: align,
+        decoration: BoxDecoration(
+          color: color ?? Colors.white,
+          border: Border(right: border, bottom: border),
+        ),
+        child: child,
+      );
+    }
+
+    final dias = List.generate(_daysInMonth, (i) => i + 1);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          color: Colors.white,
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header 1
+              Row(
+                children: [
+                  cellBox(
+                    w: wFrecuencia,
+                    color: Colors.green.shade200,
+                    child: Text('Frecuencia', style: headerStyle),
+                  ),
+                  cellBox(
+                    w: wDiagnostico,
+                    color: Colors.green.shade200,
+                    child: Text('Tarea', style: headerStyle),
+                  ),
+                  cellBox(
+                    w: wUbicacion,
+                    color: Colors.green.shade200,
+                    child: Text('Ubicación', style: headerStyle),
+                  ),
+                  cellBox(
+                    w: wResponsable,
+                    color: Colors.green.shade200,
+                    child: Text('Responsable', style: headerStyle),
+                  ),
+                  ...dias.map((dia) {
+                    final fecha = DateTime(_anioActual, _mesActual, dia);
+                    final dom = _esDomingo(fecha);
+                    final fest = _esFestivo(fecha);
+
+                    Color headerColor;
+                    if (dom) {
+                      headerColor = Colors.yellow.shade300;
+                    } else if (fest) {
+                      headerColor = Colors.red.shade200;
+                    } else {
+                      headerColor = Colors.green.shade200;
+                    }
+
+                    return cellBox(
+                      w: wDia,
+                      color: headerColor,
+                      child: Tooltip(
+                        message: fest
+                            ? (_nombreFestivo(fecha) ?? 'Festivo')
+                            : '',
+                        child: Text(_weekdayLetter(fecha), style: headerStyle),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+              // Header 2
+              Row(
+                children: [
+                  cellBox(
+                    w: wFrecuencia,
+                    color: Colors.white,
+                    child: const SizedBox.shrink(),
+                  ),
+                  cellBox(
+                    w: wDiagnostico,
+                    color: Colors.white,
+                    child: const SizedBox.shrink(),
+                  ),
+                  cellBox(
+                    w: wUbicacion,
+                    color: Colors.white,
+                    child: const SizedBox.shrink(),
+                  ),
+                  cellBox(
+                    w: wResponsable,
+                    color: Colors.white,
+                    child: const SizedBox.shrink(),
+                  ),
+                  ...dias.map((dia) {
+                    final fecha = DateTime(_anioActual, _mesActual, dia);
+                    final dom = _esDomingo(fecha);
+                    final fest = _esFestivo(fecha);
+
+                    Color header2Color;
+                    if (dom) {
+                      header2Color = Colors.yellow.shade300;
+                    } else if (fest) {
+                      header2Color = Colors.red.shade100;
+                    } else {
+                      header2Color = Colors.grey.shade100;
+                    }
+
+                    return cellBox(
+                      w: wDia,
+                      color: header2Color,
+                      child: Tooltip(
+                        message: fest
+                            ? (_nombreFestivo(fecha) ?? 'Festivo')
+                            : '',
+                        child: Text(
+                          '$dia',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey.shade900,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+
+              // Body
+              ...filas.map((f) {
+                return Row(
+                  children: [
+                    cellBox(
+                      w: wFrecuencia,
+                      align: Alignment.centerLeft,
+                      child: Text(
+                        f.frecuencia,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    cellBox(
+                      w: wDiagnostico,
+                      align: Alignment.centerLeft,
+                      child: Text(
+                        f.diagnostico,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    cellBox(
+                      w: wUbicacion,
+                      align: Alignment.centerLeft,
+                      child: Text(
+                        f.ubicacion,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    cellBox(
+                      w: wResponsable,
+                      align: Alignment.centerLeft,
+                      child: Text(
+                        f.responsable,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    ...dias.map((dia) {
+                      final fecha = DateTime(_anioActual, _mesActual, dia);
+                      final dom = _esDomingo(fecha);
+                      final fest = _esFestivo(fecha);
+                      final val = f.porDia[dia] ?? '';
+
+                      return GestureDetector(
+                        onTap: () => _abrirDia(dia),
+                        child: cellBox(
+                          w: wDia,
+                          color: dom
+                              ? Colors.yellow.shade200
+                              : fest
+                              ? Colors.red.shade50
+                              : Colors.white,
+                          child: Text(
+                            val,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: _colorPorCodigo(val),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ===== bloques por hora (modal diario) =====
+  List<_BloqueHora> _generarBloquesDia(DateTime fecha) {
+    const int horaInicioJornada = 8;
+    const int horaFinJornada = 16;
+    const bool excluirAlmuerzo = true;
+    const int horaAlmuerzoInicio = 13;
+    const int horaAlmuerzoFin = 14;
+
+    final fechaLocal = fecha.toLocal();
+    final List<_BloqueHora> bloques = [];
+
+    for (int h = horaInicioJornada; h < horaFinJornada; h++) {
+      if (excluirAlmuerzo && h >= horaAlmuerzoInicio && h < horaAlmuerzoFin) {
+        continue;
+      }
+
+      final inicio = DateTime(
+        fechaLocal.year,
+        fechaLocal.month,
+        fechaLocal.day,
+        h,
+        0,
+      );
+      final fin = inicio.add(const Duration(hours: 1));
+
+      final tareasDelDia = _tareasFiltradas;
+
+      final tareasBloque = tareasDelDia.where((t) {
+        final i = t.fechaInicio.toLocal();
+        final f = t.fechaFin.toLocal();
+        return i.isBefore(fin) && f.isAfter(inicio);
+      }).toList();
+
+      bloques.add(_BloqueHora(inicio: inicio, fin: fin, tareas: tareasBloque));
+    }
+
+    return bloques;
+  }
+
+  Future<void> _abrirDia(int dia) async {
+    final fechaBase = DateTime(_anioActual, _mesActual, dia);
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final alto = MediaQuery.of(ctx).size.height * 0.8;
+        final bloques = _generarBloquesDia(fechaBase);
+
+        _BloqueHora? bloqueSeleccionado;
+
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            void seleccionarBloque(_BloqueHora b) {
+              setModalState(() => bloqueSeleccionado = b);
+            }
+
+            return SizedBox(
+              height: alto,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          // ✅ definitivo: ya no dice borrador
+                          'Tareas del día - $dia ${DateFormat.MMMM('es').format(fechaBase)}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: ListView.separated(
+                            padding: const EdgeInsets.all(8),
+                            itemCount: bloques.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 4),
+                            itemBuilder: (context, index) {
+                              final b = bloques[index];
+                              final horaIni = TimeOfDay.fromDateTime(
+                                b.inicio,
+                              ).format(ctx);
+                              final horaFin = TimeOfDay.fromDateTime(
+                                b.fin,
+                              ).format(ctx);
+                              final count = b.tareas.length;
+                              final seleccionado = bloqueSeleccionado == b;
+
+                              return Card(
+                                color: seleccionado
+                                    ? AppTheme.primary.withOpacity(0.1)
+                                    : Colors.white,
+                                child: ListTile(
+                                  title: Text('$horaIni - $horaFin'),
+                                  subtitle: Text(
+                                    '$count ${count == 1 ? 'tarea' : 'tareas'}',
+                                  ),
+                                  onTap: () => seleccionarBloque(b),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        Expanded(
+                          flex: 3,
+                          child: bloqueSeleccionado == null
+                              ? const Center(
+                                  child: Text(
+                                    'Selecciona un bloque para ver las tareas.',
+                                  ),
+                                )
+                              : ListView.separated(
+                                  padding: const EdgeInsets.all(8),
+                                  itemCount: bloqueSeleccionado!.tareas.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 8),
+                                  itemBuilder: (context, index) {
+                                    final t = bloqueSeleccionado!.tareas[index];
+                                    return _buildTareaTile(t, ctx);
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    setState(() => _recalcularResumenDias());
+  }
+
+  Widget _buildTareaTile(TareaModel t, BuildContext ctx) {
+    final iniLocal = t.fechaInicio.toLocal();
+    final finLocal = t.fechaFin.toLocal();
+
+    final horaIni = TimeOfDay.fromDateTime(iniLocal).format(ctx);
+    final horaFin = TimeOfDay.fromDateTime(finLocal).format(ctx);
+
+    final durMin = t.duracionMinutos;
+    final durH = durMin / 60.0;
+
+    final operarios = t.operariosNombres.isEmpty
+        ? 'Sin asignar'
+        : t.operariosNombres.join(', ');
+    final supervisor =
+        t.supervisorNombre ??
+        (t.supervisorId != null ? 'ID ${t.supervisorId}' : 'Sin supervisor');
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      elevation: 2,
+      child: ListTile(
+        title: Text(
+          t.descripcion,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              '⏱ $durMin min (${durH.toStringAsFixed(1)} h)  •  $horaIni - $horaFin',
+              style: const TextStyle(fontSize: 12),
+            ),
+            Text(
+              '🧑‍💼 Supervisor: $supervisor',
+              style: const TextStyle(fontSize: 12),
+            ),
+            Text(
+              '👷 Operarios: $operarios',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
+        onTap: () => _mostrarDetalleTarea(t, ctx),
+      ),
+    );
+  }
+
+  void _mostrarDetalleTarea(TareaModel t, BuildContext ctx) {
+    final iniLocal = t.fechaInicio.toLocal();
+    final finLocal = t.fechaFin.toLocal();
+
+    final fechaIniStr = DateFormat('dd/MM/yyyy HH:mm', 'es').format(iniLocal);
+    final fechaFinStr = DateFormat('dd/MM/yyyy HH:mm', 'es').format(finLocal);
+
+    final evidenciasTxt = (t.evidencias ?? []).isEmpty
+        ? 'Sin evidencias'
+        : t.evidencias!.join('\n');
+    final insumosCount = (t.insumosUsados ?? []).length;
+
+    final operarios = t.operariosNombres.isEmpty
+        ? 'Sin asignar'
+        : t.operariosNombres.join(', ');
+
+    final conjuntoLabel = t.conjuntoNombre ?? t.conjuntoId ?? '—';
+    final ubicacionLabel =
+        t.ubicacionNombre ?? 'ID ${t.ubicacionId.toString()}';
+    final elementoLabel = t.elementoNombre ?? 'ID ${t.elementoId.toString()}';
+
+    final supervisorLabel =
+        t.supervisorNombre ??
+        (t.supervisorId != null ? 'ID ${t.supervisorId}' : '—');
+
+    final durMin = t.duracionMinutos;
+    final durH = durMin / 60.0;
+
+    final maquinariaLista = t.maquinariaPlan ?? const [];
+    final maquinariaTxt = maquinariaLista.isEmpty
+        ? 'Sin maquinaria planificada'
+        : maquinariaLista
+              .map((m) {
+                String base = 'ID ${m.maquinariaId ?? '-'}';
+                if (m.tipo != null && m.tipo!.trim().isNotEmpty) {
+                  base += ' – ${m.tipo}';
+                }
+                if (m.cantidad != null) base += ' (${m.cantidad} h / unidades)';
+                return base;
+              })
+              .join('\n');
+
+    showModalBottomSheet(
+      context: ctx,
+      isScrollControlled: true,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.75,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) {
+            return Material(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Detalle de la tarea',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _infoRow('ID', t.id.toString()),
+                          _infoRow('Descripción', t.descripcion),
+                          _infoRow('Estado', t.estado ?? '—'),
+                          _infoRow('Tipo', t.tipo ?? '—'),
+                          _infoRow('Frecuencia', t.frecuencia ?? '—'),
+                          const SizedBox(height: 8),
+                          _infoRow('Fecha inicio', fechaIniStr),
+                          _infoRow('Fecha fin', fechaFinStr),
+                          _infoRow(
+                            'Duración',
+                            '$durMin min (${durH.toStringAsFixed(1)} h)',
+                          ),
+                          const SizedBox(height: 8),
+                          _infoRow('Conjunto', conjuntoLabel),
+                          _infoRow('Ubicación', ubicacionLabel),
+                          _infoRow('Elemento', elementoLabel),
+                          _infoRow('Supervisor', supervisorLabel),
+                          const SizedBox(height: 8),
+                          _infoRow('Operarios', operarios),
+                          const SizedBox(height: 8),
+                          _infoRow('Maquinaria planificada', maquinariaTxt),
+                          const SizedBox(height: 8),
+                          _infoRow('Observaciones', t.observaciones ?? '—'),
+                          _infoRow(
+                            'Obs. rechazo',
+                            t.observacionesRechazo ?? '—',
+                          ),
+                          const SizedBox(height: 8),
+                          _infoRow('Evidencias', evidenciasTxt),
+                          _infoRow(
+                            'Insumos usados',
+                            insumosCount == 0
+                                ? 'Sin insumos registrados'
+                                : '$insumosCount ítem(s)',
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _infoRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -603,652 +1201,294 @@ class _CronogramaPageState extends State<CronogramaPage> {
     );
   }
 
-  // =========================
-  // Acciones
-  // =========================
-  void _irAEditarTarea(TareaModel t) async {
-    final resultado = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => EditarTareaPage(tarea: t, nit: widget.nit),
+  static const Map<String, String> _leyendaEstados = {
+    'AS': 'Asignada',
+    'EP': 'En proceso',
+    'CO': 'Completada',
+    'AP': 'Aprobada',
+    'PA': 'Pendiente aprobación',
+    'RE': 'Rechazada',
+    'NC': 'No completada',
+    'PR': 'Pendiente reprogramación',
+  };
+
+  Widget _buildLeyendaMensual() {
+    final usados = <String>{};
+    for (final f in _buildFilasCronoMensual()) {
+      usados.addAll(f.porDia.values.where((x) => x.trim().isNotEmpty));
+    }
+
+    final items = usados.toList()..sort();
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
       ),
-    );
-    if (resultado == true) _cargar();
-  }
-
-  void _confirmarEliminarTarea(TareaModel t) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Eliminar tarea'),
-          content: Text(
-            '¿Seguro que deseas eliminar la tarea:\n\n"${t.descripcion}"?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancelar'),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 8,
+        children: items.map((code) {
+          final label = _leyendaEstados[code] ?? 'Estado: $code';
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: AppTheme.primary.withOpacity(0.18)),
             ),
-            TextButton(
-              onPressed: () async {
-                Navigator.of(dialogContext).pop();
-                Navigator.of(context).pop();
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Tarea ${t.id} eliminada (simulado, falta conectar API)',
-                    ),
-                  ),
-                );
-              },
-              child: const Text(
-                'Eliminar',
-                style: TextStyle(color: Colors.red),
+            child: Text(
+              '$code = $label',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade900,
               ),
             ),
-          ],
-        );
-      },
+          );
+        }).toList(),
+      ),
     );
   }
 
-  void _irADetalleCompleto(TareaModel t) {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => TareaDetallePage(tarea: t)));
-  }
+  // ================= UI =================
 
-  // =========================
-  // UI
-  // =========================
   @override
   Widget build(BuildContext context) {
-    final mesNombre = DateFormat.MMMM('es').format(_mesActual).toUpperCase();
-    final year = _mesActual.year;
-
-    final weekStart = _startOfWeekMonday(_semanaBase);
-    final weekEnd = _endOfWeekSunday(_semanaBase);
-    final rangoSemana =
-        "${DateFormat('dd MMM', 'es').format(weekStart)} - ${DateFormat('dd MMM', 'es').format(weekEnd)}";
+    final primary = AppTheme.primary;
+    final mesNombre = DateFormat.MMMM('es').format(_inicioMes).toUpperCase();
 
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        backgroundColor: AppTheme.primary,
-        title: const Text('Cronograma', style: TextStyle(color: Colors.white)),
+        backgroundColor: primary,
+        title: const Text(
+          'Cronograma mensual',
+          style: TextStyle(color: Colors.white),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(onPressed: _cargarDatos, icon: const Icon(Icons.refresh)),
+        ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? _buildError()
+          : _buildContenido(mesNombre),
+      // ✅ definitivo: NO bottomNavigationBar
+    );
+  }
+
+  Widget _buildError() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // ✅ TOP BAR: toggle + navegación
-            Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                child: Row(
-                  children: [
-                    SegmentedButton<_VistaCronograma>(
-                      segments: const [
-                        ButtonSegment(
-                          value: _VistaCronograma.mensual,
-                          label: Text('Mensual'),
-                          icon: Icon(Icons.calendar_month),
-                        ),
-                        ButtonSegment(
-                          value: _VistaCronograma.semanal,
-                          label: Text('Semanal'),
-                          icon: Icon(Icons.view_week),
-                        ),
-                      ],
-                      selected: {_vista},
-                      onSelectionChanged: (s) {
-                        setState(() {
-                          _vista = s.first;
-                          if (_vista == _VistaCronograma.semanal) {
-                            _diaSeleccionado ??= DateTime(
-                              _mesActual.year,
-                              _mesActual.month,
-                              1,
-                            );
-                          }
-                        });
-                      },
-                    ),
-                    const SizedBox(width: 10),
-
-                    if (_vista == _VistaCronograma.mensual) ...[
-                      IconButton(
-                        icon: const Icon(Icons.chevron_left),
-                        onPressed: () => _cambiarMes(-1),
-                      ),
-                      Text(
-                        '$mesNombre $year',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.chevron_right),
-                        onPressed: () => _cambiarMes(1),
-                      ),
-                    ] else ...[
-                      IconButton(
-                        icon: const Icon(Icons.chevron_left),
-                        onPressed: () => _cambiarSemana(-1),
-                      ),
-                      Text(
-                        rangoSemana,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.chevron_right),
-                        onPressed: () => _cambiarSemana(1),
-                      ),
-                    ],
-
-                    const Spacer(),
-                    Text(
-                      'Tareas: ${_tareas.length} | Días con tareas: ${_t_tareasPorDiaCount()}',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
+            const Icon(Icons.error_outline, color: Colors.red, size: 40),
+            const SizedBox(height: 12),
+            Text(
+              'Error cargando cronograma:\n$_error',
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 8),
-
-            if (_cargando)
-              const Expanded(child: Center(child: CircularProgressIndicator()))
-            else if (_error != null)
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Error: $_error',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                ),
-              )
-            else
-              Expanded(
-                child: _vista == _VistaCronograma.mensual
-                    ? _buildMensualCompacto()
-                    : _buildSemanalConPaneles(weekStart),
-              ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _cargarDatos,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+            ),
           ],
         ),
       ),
     );
   }
 
-  int _t_tareasPorDiaCount() => _tareasPorDia.keys.length;
-
-  // =========================
-  // MENSUAL (✅ compacto + 7 columnas)
-  // =========================
-  Widget _buildMensualCompacto() {
-    return Column(
-      children: [
-        // Encabezado días semana
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
-            children: const [
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Lun',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
+  Widget _buildContenido(String mesNombre) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          _buildTopBar(mesNombre),
+          if (_vista == _VistaCronograma.mensual)
+            AnimatedCrossFade(
+              duration: const Duration(milliseconds: 180),
+              crossFadeState: _mostrarFiltrosMensual
+                  ? CrossFadeState.showFirst
+                  : CrossFadeState.showSecond,
+              firstChild: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: _buildFiltrosMensualCompacto(),
               ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Mar',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
+              secondChild: const SizedBox.shrink(),
+            ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: Column(
+              children: [
+                Expanded(
+                  child: _vista == _VistaCronograma.mensual
+                      ? _buildCronogramaMensualTipoFoto()
+                      : _buildAgendaSemanal(),
                 ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Mié',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Jue',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Vie',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Sáb',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Dom',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            ],
+                if (_vista == _VistaCronograma.mensual) _buildLeyendaMensual(),
+              ],
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopBar(String mesNombre) {
+    final start = _startOfWeekMonday(_semanaBase);
+    final end = _endOfWeekSunday(_semanaBase);
+    final rangoSemana =
+        "${DateFormat('dd MMM', 'es').format(start)} - ${DateFormat('dd MMM', 'es').format(end)}";
+
+    return Row(
+      children: [
+        SegmentedButton<_VistaCronograma>(
+          segments: const [
+            ButtonSegment(
+              value: _VistaCronograma.mensual,
+              label: Text('Mensual'),
+              icon: Icon(Icons.calendar_month),
+            ),
+            ButtonSegment(
+              value: _VistaCronograma.semanal,
+              label: Text('Semanal'),
+              icon: Icon(Icons.view_week),
+            ),
+          ],
+          selected: {_vista},
+          onSelectionChanged: (s) => setState(() => _vista = s.first),
         ),
-        Expanded(child: _buildCalendarioMensualSemanasCompacto()),
+        const Spacer(),
+        if (_vista == _VistaCronograma.mensual) ...[
+          IconButton(
+            tooltip: 'Mes anterior',
+            onPressed: () => _cambiarMes(-1),
+            icon: const Icon(Icons.chevron_left),
+          ),
+          Text(
+            '$mesNombre $_anioActual',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          IconButton(
+            tooltip: 'Mes siguiente',
+            onPressed: () => _cambiarMes(1),
+            icon: const Icon(Icons.chevron_right),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.filter_alt_outlined, size: 18),
+            label: Text(
+              _hayFiltrosActivos() ? 'Filtros •' : 'Filtros',
+              style: const TextStyle(fontSize: 12),
+            ),
+            onPressed: () => setState(
+              () => _mostrarFiltrosMensual = !_mostrarFiltrosMensual,
+            ),
+          ),
+        ] else ...[
+          IconButton(
+            tooltip: 'Semana anterior',
+            onPressed: () => setState(
+              () => _semanaBase = _semanaBase.subtract(const Duration(days: 7)),
+            ),
+            icon: const Icon(Icons.chevron_left),
+          ),
+          Text(
+            rangoSemana,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          IconButton(
+            tooltip: 'Semana siguiente',
+            onPressed: () => setState(
+              () => _semanaBase = _semanaBase.add(const Duration(days: 7)),
+            ),
+            icon: const Icon(Icons.chevron_right),
+          ),
+        ],
       ],
     );
   }
 
-  Widget _buildCalendarioMensualSemanasCompacto() {
-    final totalDias = DateUtils.getDaysInMonth(
-      _mesActual.year,
-      _mesActual.month,
-    );
+  Widget _buildAgendaSemanal() {
+    final weekStart = _startOfWeekMonday(_semanaBase);
+    final tareas = _tareasSemana(_semanaBase);
 
-    int weekdayIndexMonday(DateTime d) => (d.weekday + 6) % 7;
+    final w = MediaQuery.of(context).size.width;
+    final showSidebar = w >= 1100;
 
-    final primerDiaMes = DateTime(_mesActual.year, _mesActual.month, 1);
-    final offset = weekdayIndexMonday(primerDiaMes);
-
-    final totalCeldas = offset + totalDias;
-    final totalFilas = (totalCeldas / 7).ceil();
-    final totalItems = totalFilas * 7;
-
-    return GridView.builder(
-      itemCount: totalItems,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 7,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-        mainAxisExtent:
-            78, // ✅ tamaño del cuadro (bájalo a 64 si lo quieres más pequeño)
-      ),
-      itemBuilder: (_, index) {
-        final dia = index - offset + 1;
-
-        if (dia < 1 || dia > totalDias) {
-          return Container(
-            decoration: BoxDecoration(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-          );
-        }
-
-        final tareasDia = _tareasPorDia[dia];
-        return GestureDetector(
-          onTap: () => _abrirDia(dia),
-          child: Container(
-            decoration: BoxDecoration(
-              color: _colorCuadrado(dia),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _bordeCuadrado(dia), width: 1),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  dia.toString(),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                if (tareasDia != null && tareasDia.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      '${tareasDia.length} tareas',
-                      style: const TextStyle(fontSize: 10),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // =========================
-  // SEMANAL (✅ panel izquierdo + agenda + panel derecho)
-  // =========================
-  Widget _buildSemanalConPaneles(DateTime weekStart) {
-    // Ajusta día seleccionado al rango de la semana si hace falta
-    _diaSeleccionado ??= weekStart;
-    if (_diaSeleccionado!.isBefore(weekStart) ||
-        _diaSeleccionado!.isAfter(weekStart.add(const Duration(days: 6)))) {
-      _diaSeleccionado = weekStart;
+    if (!showSidebar) {
+      return _WeekScheduleView(
+        weekStart: weekStart,
+        tareas: tareas,
+        onTapTarea: (t) => _mostrarDetalleTarea(t, context),
+      );
     }
 
     return Row(
       children: [
-        SizedBox(width: 340, child: _buildPanelIzquierdoSemanal(weekStart)),
-        const SizedBox(width: 12),
-        Expanded(child: _buildAgendaSemanal(weekStart)),
-        const SizedBox(width: 12),
-        SizedBox(width: 340, child: _buildPanelDerechoAgendaDia(weekStart)),
-      ],
-    );
-  }
-
-  Widget _buildPanelIzquierdoSemanal(DateTime weekStart) {
-    final start = DateTime(weekStart.year, weekStart.month, weekStart.day);
-    final end = start.add(const Duration(days: 7));
-
-    final tareasSemana = _tareas.where((t) {
-      if (!_pasaFiltros(t)) return false;
-      final dt = t.fechaInicio.toLocal();
-      return !dt.isBefore(start) && dt.isBefore(end);
-    }).length;
-
-    final horarioTxt = '08:00 - 16:00 (almuerzo 13-14)';
-
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: ListView(
-          children: [
-            const Text(
-              'Resumen',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        Expanded(
+          flex: 3,
+          child: _SidebarSimple(
+            title: 'Resumen',
+            items: [
+              'Tareas semana: ${tareas.length}',
+              'Tareas mes: ${_tareasFiltradas.length}',
+              'Horario: 08:00 - 16:00 (almuerzo 13-14)',
+            ],
+            child: Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: _buildFiltrosComoColumna(mostrarTitulo: false),
             ),
-            const SizedBox(height: 12),
-            Text('• Tareas semana: $tareasSemana'),
-            Text('• Tareas mes: ${_tareas.length}'),
-            const SizedBox(height: 6),
-            Text('• Horario: $horarioTxt'),
-            const SizedBox(height: 14),
-            const Divider(),
-            const SizedBox(height: 10),
-
-            const Text(
-              'Filtros',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-            const SizedBox(height: 10),
-
-            _buildFiltrosComoColumna(),
-
-            const SizedBox(height: 14),
-            Text(
-              'Tip: aquí metes filtros (supervisor, operario, ubicación) sin tocar la agenda.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFiltrosComoColumna() {
-    return Column(
-      children: [
-        DropdownButtonFormField<String>(
-          isExpanded: true,
-          decoration: const InputDecoration(
-            labelText: 'Tipo de tarea',
-            border: OutlineInputBorder(),
           ),
-          value: _filtroTipo,
-          items: const [
-            DropdownMenuItem(value: 'TODAS', child: Text('Todas')),
-            DropdownMenuItem(value: 'PREVENTIVA', child: Text('Preventivas')),
-            DropdownMenuItem(value: 'CORRECTIVA', child: Text('Correctivas')),
-          ],
-          onChanged: (v) {
-            if (v == null) return;
-            setState(() => _filtroTipo = v);
-            _reconstruirMapa();
-          },
         ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          isExpanded: true,
-          decoration: const InputDecoration(
-            labelText: 'Estado',
-            border: OutlineInputBorder(),
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 8,
+          child: _WeekScheduleView(
+            weekStart: weekStart,
+            tareas: tareas,
+            onTapTarea: (t) => _mostrarDetalleTarea(t, context),
           ),
-          value: _filtroEstado,
-          items: const [
-            DropdownMenuItem(value: 'TODOS', child: Text('Todos')),
-            DropdownMenuItem(value: 'ASIGNADA', child: Text('Asignada')),
-            DropdownMenuItem(value: 'EN_PROCESO', child: Text('En proceso')),
-            DropdownMenuItem(value: 'COMPLETADA', child: Text('Completada')),
-            DropdownMenuItem(value: 'APROBADA', child: Text('Aprobada')),
-            DropdownMenuItem(
-              value: 'PENDIENTE_APROBACION',
-              child: Text('Pendiente aprobación'),
-            ),
-            DropdownMenuItem(value: 'RECHAZADA', child: Text('Rechazada')),
-            DropdownMenuItem(value: 'PENDIENTE_REPROGRAMACION', child: Text('Pendiente reprogramación')),
-            DropdownMenuItem(
-              value: 'NO_COMPLETADA',
-              child: Text('No completada'),
-            ),
-          ],
-          onChanged: (v) {
-            if (v == null) return;
-            setState(() => _filtroEstado = v);
-            _reconstruirMapa();
-          },
         ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          isExpanded: true,
-          decoration: const InputDecoration(
-            labelText: 'Operario',
-            border: OutlineInputBorder(),
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 4,
+          child: _SidebarAgendaDia(
+            weekStart: weekStart,
+            tareasSemana: tareas,
+            onTapTarea: (t) => _mostrarDetalleTarea(t, context),
           ),
-          value: _filtroOperario,
-          items: [
-            const DropdownMenuItem(value: 'TODOS', child: Text('Todos')),
-            ..._operariosDisponibles.map(
-              (o) => DropdownMenuItem(value: o, child: Text(o)),
-            ),
-          ],
-          onChanged: (v) {
-            if (v == null) return;
-            setState(() => _filtroOperario = v);
-            _reconstruirMapa();
-          },
-        ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          isExpanded: true,
-          decoration: const InputDecoration(
-            labelText: 'Ubicación',
-            border: OutlineInputBorder(),
-          ),
-          value: _filtroUbicacion,
-          items: [
-            const DropdownMenuItem(value: 'TODAS', child: Text('Todas')),
-            ..._ubicacionesDisponibles.map(
-              (u) => DropdownMenuItem(value: u, child: Text(u)),
-            ),
-          ],
-          onChanged: (v) {
-            if (v == null) return;
-            setState(() => _filtroUbicacion = v);
-            _reconstruirMapa();
-          },
         ),
       ],
-    );
-  }
-
-  Widget _buildPanelDerechoAgendaDia(DateTime weekStart) {
-    final dia = _diaSeleccionado ?? weekStart;
-    final diaLabel = DateFormat('EEE dd', 'es').format(dia).toUpperCase();
-
-    final tareasDia = _tareas.where((t) {
-      if (!_pasaFiltros(t)) return false;
-      return _isSameLocalDay(t.fechaInicio, dia);
-    }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
-
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                const Text(
-                  'Agenda',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const Spacer(),
-                DropdownButton<DateTime>(
-                  value: dia,
-                  underline: const SizedBox.shrink(),
-                  items: List.generate(7, (i) {
-                    final d = weekStart.add(Duration(days: i));
-                    final label = DateFormat('EEE dd', 'es').format(d);
-                    return DropdownMenuItem(value: d, child: Text(label));
-                  }),
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() => _diaSeleccionado = v);
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                DateFormat("EEEE dd 'de' MMMM", 'es').format(dia),
-                style: const TextStyle(color: Colors.grey),
-              ),
-            ),
-            const Divider(height: 18),
-
-            Expanded(
-              child: tareasDia.isEmpty
-                  ? const Center(child: Text('Sin tareas este día'))
-                  : ListView.separated(
-                      itemCount: tareasDia.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (_, i) {
-                        final t = tareasDia[i];
-                        final ini = DateFormat('HH:mm').format(t.fechaInicio);
-                        final fin = DateFormat('HH:mm').format(t.fechaFin);
-                        return ListTile(
-                          dense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          title: Text(
-                            t.descripcion,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            '$ini - $fin • ${t.tipo ?? ''} • ${t.estado ?? ''}',
-                          ),
-                          leading: Container(
-                            width: 10,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: _colorEstado(t.estado).withOpacity(0.25),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: _colorEstado(t.estado).withOpacity(0.7),
-                              ),
-                            ),
-                          ),
-                          onTap: () => _mostrarDetalleTarea(t),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // =========================
-  // Semanal: agenda por horas
-  // =========================
-  Widget _buildAgendaSemanal(DateTime weekStart) {
-    final start = DateTime(weekStart.year, weekStart.month, weekStart.day);
-    final end = start.add(const Duration(days: 7));
-
-    final tareasSemana = _tareas.where((t) {
-      if (!_pasaFiltros(t)) return false;
-      final dt = t.fechaInicio.toLocal();
-      return !dt.isBefore(start) && dt.isBefore(end);
-    }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
-
-    return _WeekScheduleView(
-      weekStart: weekStart,
-      tareas: tareasSemana,
-      onTapTarea: (t) {
-        setState(
-          () => _diaSeleccionado = DateTime(
-            t.fechaInicio.year,
-            t.fechaInicio.month,
-            t.fechaInicio.day,
-          ),
-        );
-        _mostrarDetalleTarea(t);
-      },
-      onSelectDay: (d) => setState(() => _diaSeleccionado = d),
     );
   }
 }
 
-// =====================================================
-//  Vista semanal tipo agenda (✅ header scrollea con body)
-// =====================================================
+// ============================
+//   WIDGETS: Semana tipo agenda
+//   Banda de almuerzo + pxPorMin + tema claro
+// ============================
 
 class _WeekScheduleView extends StatefulWidget {
-  final DateTime weekStart; // lunes
+  final DateTime weekStart; // lunes 00:00
   final List<TareaModel> tareas;
   final void Function(TareaModel t) onTapTarea;
-  final void Function(DateTime day) onSelectDay;
 
   const _WeekScheduleView({
     required this.weekStart,
     required this.tareas,
     required this.onTapTarea,
-    required this.onSelectDay,
   });
 
   @override
@@ -1261,10 +1501,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
   static const int horaInicio = 8;
   static const int horaFin = 16;
-  static const int almuerzoIni = 13;
-  static const int almuerzoFin = 14;
 
-  static const double pxPorMin = 1.2;
+  static const double pxPorMin = 1.6;
   static const double anchoHora = 56;
   static const double altoHeader = 44;
 
@@ -1304,21 +1542,18 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     super.dispose();
   }
 
-  bool _cruzaAlmuerzo(DateTime ini, DateTime fin) {
-    final aIni = DateTime(ini.year, ini.month, ini.day, almuerzoIni);
-    final aFin = DateTime(ini.year, ini.month, ini.day, almuerzoFin);
-    return ini.isBefore(aFin) && fin.isAfter(aIni);
-  }
-
   @override
   Widget build(BuildContext context) {
     final hours = horaFin - horaInicio;
     final heightGrid = (hours * 60) * pxPorMin;
 
-    final bg = const Color(0xFF0F1115);
-    final line = Colors.white.withOpacity(0.08);
-    final text = Colors.white.withOpacity(0.85);
-    final subtext = Colors.white.withOpacity(0.60);
+    final bg = Colors.white;
+    final line = Colors.grey.shade300;
+    final text = Colors.grey.shade900;
+    final subtext = Colors.grey.shade700;
+
+    final lunchStartMin = (13 - horaInicio) * 60;
+    final lunchDurMin = 60;
 
     return LayoutBuilder(
       builder: (context, c) {
@@ -1331,11 +1566,10 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white.withOpacity(0.08)),
+            border: Border.all(color: Colors.grey.shade300),
           ),
           child: Column(
             children: [
-              // ✅ HEADER scrolleable (Fix 2)
               SizedBox(
                 height: altoHeader,
                 child: SingleChildScrollView(
@@ -1356,7 +1590,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                         ),
                         ...List.generate(7, (i) {
                           final d = widget.weekStart.add(Duration(days: i));
-                          final label = const [
+                          final label = [
                             "Lun",
                             "Mar",
                             "Mié",
@@ -1367,15 +1601,12 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                           ][i];
                           return SizedBox(
                             width: colWidth,
-                            child: InkWell(
-                              onTap: () => widget.onSelectDay(d),
-                              child: Center(
-                                child: Text(
-                                  "$label ${d.day}",
-                                  style: TextStyle(
-                                    color: text,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                            child: Center(
+                              child: Text(
+                                "$label ${d.day}",
+                                style: TextStyle(
+                                  color: text,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
@@ -1387,7 +1618,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                 ),
               ),
               Container(height: 1, color: line),
-
               Expanded(
                 child: SingleChildScrollView(
                   controller: _hCtrl,
@@ -1400,7 +1630,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                         height: heightGrid,
                         child: Stack(
                           children: [
-                            // Columnas + horas
                             Positioned.fill(
                               child: Row(
                                 children: [
@@ -1424,8 +1653,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 ],
                               ),
                             ),
-
-                            // Líneas por hora
                             ...List.generate(hours + 1, (h) {
                               final top = (h * 60) * pxPorMin;
                               return Positioned(
@@ -1435,20 +1662,15 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 child: Container(height: 1, color: line),
                               );
                             }),
-
-                            // Franja almuerzo
                             Positioned(
-                              left: 0,
+                              left: anchoHora,
                               right: 0,
-                              top: ((almuerzoIni - horaInicio) * 60) * pxPorMin,
-                              height:
-                                  ((almuerzoFin - almuerzoIni) * 60) * pxPorMin,
+                              top: lunchStartMin * pxPorMin,
+                              height: lunchDurMin * pxPorMin,
                               child: Container(
-                                color: Colors.white.withOpacity(0.03),
+                                color: Colors.orange.withOpacity(0.12),
                               ),
                             ),
-
-                            // Tareas
                             ...widget.tareas
                                 .where(
                                   (t) => _isWithinWeek(t.fechaInicio.toLocal()),
@@ -1471,18 +1693,16 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                     9999.0,
                                   );
 
-                                  final baseColor = _colorPorTipo(t);
-                                  final fill = baseColor.withOpacity(0.22);
-                                  final border = baseColor.withOpacity(0.70);
+                                  final colorBase = AppTheme.primary;
+                                  final fill = colorBase.withOpacity(0.12);
+                                  final border = colorBase.withOpacity(0.55);
 
                                   final horaIni = DateFormat(
                                     'HH:mm',
                                   ).format(ini);
-                                  final horaFin = DateFormat(
+                                  final horaFinStr = DateFormat(
                                     'HH:mm',
                                   ).format(fin);
-
-                                  final cruzaAlm = _cruzaAlmuerzo(ini, fin);
 
                                   return Positioned(
                                     left: left,
@@ -1519,26 +1739,12 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                             ),
                                             const SizedBox(height: 6),
                                             Text(
-                                              '$horaIni - $horaFin',
+                                              '$horaIni - $horaFinStr',
                                               style: TextStyle(
                                                 color: subtext,
                                                 fontSize: 11,
                                               ),
                                             ),
-                                            if (cruzaAlm)
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                  top: 4,
-                                                ),
-                                                child: Text(
-                                                  '⚠ Cruza almuerzo',
-                                                  style: TextStyle(
-                                                    color:
-                                                        Colors.orange.shade200,
-                                                    fontSize: 10,
-                                                  ),
-                                                ),
-                                              ),
                                           ],
                                         ),
                                       ),
@@ -1558,13 +1764,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       },
     );
   }
-
-  Color _colorPorTipo(TareaModel t) {
-    final tipo = (t.tipo ?? '').toUpperCase();
-    if (tipo == 'CORRECTIVA') return Colors.orange;
-    if (tipo == 'PREVENTIVA') return AppTheme.primary;
-    return Colors.blueGrey;
-  }
 }
 
 class _HoursColumnDark extends StatelessWidget {
@@ -1579,166 +1778,250 @@ class _HoursColumnDark extends StatelessWidget {
     const int horaFin = 16;
     final hours = horaFin - horaInicio;
 
-    return Column(
-      children: List.generate(hours, (i) {
-        final h = horaInicio + i;
-        return SizedBox(
-          height: 60 * pxPorMin,
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                "${h.toString().padLeft(2, '0')}:00",
-                style: TextStyle(fontSize: 11, color: textColor),
+    return LayoutBuilder(
+      builder: (context, c) {
+        final height = c.maxHeight;
+
+        return Stack(
+          children: List.generate(hours + 1, (i) {
+            final h = horaInicio + i;
+
+            double top = (i * 60) * pxPorMin;
+            top += 6;
+
+            const labelHeight = 16.0;
+            if (top > height - labelHeight) top = height - labelHeight;
+
+            return Positioned(
+              top: top,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Text(
+                  "${h.toString().padLeft(2, '0')}:00",
+                  style: TextStyle(fontSize: 11, color: textColor),
+                ),
               ),
-            ),
-          ),
+            );
+          }),
         );
-      }),
+      },
     );
   }
 }
 
-// =====================================================
-// Página detalle completa (la tuya)
-// =====================================================
+class _SidebarSimple extends StatelessWidget {
+  final String title;
+  final List<String> items;
+  final Widget? child;
 
-class TareaDetallePage extends StatelessWidget {
-  final TareaModel tarea;
-
-  const TareaDetallePage({super.key, required this.tarea});
+  const _SidebarSimple({required this.title, required this.items, this.child});
 
   @override
   Widget build(BuildContext context) {
-    final inicioStr = DateFormat('dd/MM/yyyy HH:mm').format(tarea.fechaInicio);
-    final finStr = DateFormat('dd/MM/yyyy HH:mm').format(tarea.fechaFin);
-
-    final operarios = tarea.operariosNombres.join(', ');
-    final supervisorNombreLimpio = (tarea.supervisorNombre ?? '').trim().isEmpty
-        ? null
-        : tarea.supervisorNombre;
-
-    final supervisor =
-        supervisorNombreLimpio ??
-        (tarea.supervisorId != null
-            ? 'Supervisor ID: ${tarea.supervisorId}'
-            : 'Sin supervisor');
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Detalle de tarea'),
-        backgroundColor: AppTheme.primary,
-      ),
-      backgroundColor: AppTheme.background,
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: ListView(
+    return Card(
+      color: Colors.white,
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              tarea.descripcion,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              title,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                Chip(
-                  label: Text(tarea.estado ?? 'SIN_ESTADO'),
-                  backgroundColor: Colors.grey.shade200,
-                ),
-                Chip(
-                  label: Text('Tipo: ${tarea.tipo ?? 'SIN_TIPO'}'),
-                  backgroundColor: Colors.grey.shade200,
-                ),
-                Chip(
-                  label: Text('Duración: ${tarea.duracionMinutos} h'),
-                  backgroundColor: Colors.grey.shade200,
-                ),
-              ],
+            const SizedBox(height: 10),
+            ...items.map(
+              (s) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text("• $s", style: const TextStyle(fontSize: 12)),
+              ),
             ),
-            const SizedBox(height: 16),
-            const Text(
-              'Programación',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-            const SizedBox(height: 8),
-            _fila('Inicio', inicioStr),
-            _fila('Fin', finStr),
-            _fila('Conjunto', tarea.conjuntoNombre ?? tarea.conjuntoId ?? '-'),
-            _fila('Ubicación', tarea.ubicacionNombre ?? '-'),
-            _fila('Elemento', tarea.elementoNombre ?? '-'),
-            _fila('Supervisor', supervisor),
-            _fila('Operarios', operarios.isEmpty ? 'Sin operarios' : operarios),
-            const SizedBox(height: 16),
-            const Text(
-              'Observaciones',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-            const SizedBox(height: 8),
+            if (child != null) ...[const Divider(), child!],
+            const Spacer(),
             Text(
-              tarea.observaciones?.isNotEmpty == true
-                  ? tarea.observaciones!
-                  : 'Sin observaciones',
+              "Tip: aquí metes filtros (supervisor, operario, ubicación) sin tocar la agenda.",
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
             ),
-            if (tarea.observacionesRechazo?.isNotEmpty == true) ...[
-              const SizedBox(height: 16),
-              const Text(
-                'Observaciones de rechazo',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              const SizedBox(height: 8),
-              Text(tarea.observacionesRechazo!),
-            ],
-            const SizedBox(height: 16),
-            if (tarea.evidencias != null && tarea.evidencias!.isNotEmpty) ...[
-              const Text(
-                'Evidencias',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              const SizedBox(height: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: tarea.evidencias!
-                    .map(
-                      (url) => Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          url,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.blue,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _fila(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              '$label:',
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+class _SidebarAgendaDia extends StatefulWidget {
+  final DateTime weekStart;
+  final List<TareaModel> tareasSemana;
+  final void Function(TareaModel t) onTapTarea;
+
+  const _SidebarAgendaDia({
+    required this.weekStart,
+    required this.tareasSemana,
+    required this.onTapTarea,
+  });
+
+  @override
+  State<_SidebarAgendaDia> createState() => _SidebarAgendaDiaState();
+}
+
+class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
+  int _diaIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final fecha = widget.weekStart.add(Duration(days: _diaIndex));
+    final tareasDia = widget.tareasSemana.where((t) {
+      final d = t.fechaInicio.toLocal();
+      return d.year == fecha.year &&
+          d.month == fecha.month &&
+          d.day == fecha.day;
+    }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+
+    return Card(
+      color: Colors.white,
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Agenda',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                const Spacer(),
+                DropdownButton<int>(
+                  value: _diaIndex,
+                  items: List.generate(7, (i) {
+                    final d = widget.weekStart.add(Duration(days: i));
+                    final label = [
+                      "Lun",
+                      "Mar",
+                      "Mié",
+                      "Jue",
+                      "Vie",
+                      "Sáb",
+                      "Dom",
+                    ][i];
+                    return DropdownMenuItem(
+                      value: i,
+                      child: Text("$label ${d.day}"),
+                    );
+                  }),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => _diaIndex = v);
+                  },
+                ),
+              ],
             ),
-          ),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
-        ],
+            const SizedBox(height: 6),
+            Text(
+              DateFormat("EEEE dd MMMM", "es").format(fecha),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+            const Divider(height: 18),
+            if (tareasDia.isEmpty)
+              const Expanded(
+                child: Center(
+                  child: Text(
+                    'Sin tareas este día',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.separated(
+                  itemCount: tareasDia.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (context, i) {
+                    final t = tareasDia[i];
+                    final ini = t.fechaInicio.toLocal();
+                    final fin = t.fechaFin.toLocal();
+                    return InkWell(
+                      onTap: () => widget.onTapTarea(t),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppTheme.primary.withOpacity(0.25),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              t.descripcion,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              "${DateFormat('HH:mm').format(ini)} - ${DateFormat('HH:mm').format(fin)}",
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
+}
+
+class _DiaResumen {
+  final int dia;
+  final int total;
+  final int preventivas;
+
+  _DiaResumen({
+    required this.dia,
+    required this.total,
+    required this.preventivas,
+  });
+}
+
+class _BloqueHora {
+  final DateTime inicio;
+  final DateTime fin;
+  final List<TareaModel> tareas;
+
+  _BloqueHora({required this.inicio, required this.fin, required this.tareas});
+}
+
+class _FilaCrono {
+  final String frecuencia;
+  final String diagnostico;
+  final String ubicacion;
+  final String responsable;
+  final Map<int, String> porDia;
+
+  _FilaCrono({
+    required this.frecuencia,
+    required this.diagnostico,
+    required this.ubicacion,
+    required this.responsable,
+    required this.porDia,
+  });
 }

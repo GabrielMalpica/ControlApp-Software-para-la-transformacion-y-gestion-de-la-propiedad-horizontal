@@ -8,12 +8,14 @@ class AppConstants {
   static const String empresaBase = "$baseUrl/empresa";
   static String maquinariaEmpresa(String nit) => "$empresaBase/$nit/maquinaria";
 
+
   // 🔹 Usuarios
   static const String usuarios = "$gerenteBase/usuarios";
 
   // 🔹 Asignación de roles
   static const String operarios = "$gerenteBase/operarios";
   static const String supervisores = "$gerenteBase/supervisores";
+  static const String supervisorBase = "$baseUrl/supervisor";
   static const String administradores = "$gerenteBase/administradores";
   static const String jefesOperaciones = "$gerenteBase/jefes-operaciones";
 

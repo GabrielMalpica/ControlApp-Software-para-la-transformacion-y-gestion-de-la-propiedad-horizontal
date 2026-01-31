@@ -3,6 +3,7 @@ import '../service/theme.dart';
 import 'tareas_page.dart';
 import 'solicitudes_page.dart';
 import 'solicitud_insumo_page.dart';
+import 'package:flutter_application_1/service/logout.dart';
 
 class OperarioDashboardPage extends StatefulWidget {
   final String nit;
@@ -14,7 +15,12 @@ class OperarioDashboardPage extends StatefulWidget {
 
 class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
   /// 🔹 Tarjeta simple
-  Widget _simpleCard(String title, Color color, IconData icon, {VoidCallback? onTap}) {
+  Widget _simpleCard(
+    String title,
+    Color color,
+    IconData icon, {
+    VoidCallback? onTap,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -57,7 +63,10 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Atajos", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const Text(
+            "Atajos",
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
           const SizedBox(height: 12),
           // ElevatedButton.icon(
           //   onPressed: () {
@@ -79,8 +88,37 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
-        title: Text("Panel Operario - Proyecto ${widget.nit}",
-            style: const TextStyle(color: Colors.white)),
+        title: Text(
+          "Panel Operario - Proyecto ${widget.nit}",
+          style: const TextStyle(color: Colors.white),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Cerrar sesión',
+            icon: const Icon(Icons.logout, color: Colors.white),
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('Cerrar sesión'),
+                  content: const Text('¿Seguro que quieres salir?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Salir'),
+                    ),
+                  ],
+                ),
+              );
+
+              if (ok == true) logout(context);
+            },
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -96,14 +134,32 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
               mainAxisSpacing: 12,
               childAspectRatio: 1.1,
               children: [
-                _simpleCard("Tareas", AppTheme.green, Icons.assignment, onTap: () {
-                  Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => TareasPage(nit: widget.nit)));
-                }),
-                _simpleCard("Solicitudes", AppTheme.primary, Icons.pending_actions, onTap: () {
-                  Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => SolicitudesPage(nit: widget.nit)));
-                }),
+                _simpleCard(
+                  "Tareas",
+                  AppTheme.green,
+                  Icons.assignment,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TareasPage(nit: widget.nit),
+                      ),
+                    );
+                  },
+                ),
+                _simpleCard(
+                  "Solicitudes",
+                  AppTheme.primary,
+                  Icons.pending_actions,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SolicitudesPage(nit: widget.nit),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
 

@@ -21,9 +21,10 @@ class TareaRequest {
   final int elementoId;
   final String conjuntoId;
 
-  final int? supervisorId;
-  final List<int> operariosIds;
+  final String? supervisorId;
+  final List<String> operariosIds;
   final String? observaciones;
+  final List<int> maquinariaIds;
 
   TareaRequest({
     required this.descripcion,
@@ -38,6 +39,7 @@ class TareaRequest {
     this.supervisorId,
     this.operariosIds = const [],
     this.observaciones,
+    this.maquinariaIds = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -57,6 +59,7 @@ class TareaRequest {
     if (operariosIds.isNotEmpty) 'operariosIds': operariosIds,
     if (observaciones != null && observaciones!.trim().isNotEmpty)
       'observaciones': observaciones,
+    'maquinariaIds': maquinariaIds,
   };
 }
 
@@ -75,18 +78,17 @@ class TareaApi {
       if (decoded is Map<String, dynamic>) data = decoded;
     }
 
-    // ✅ Caso éxito "normal": tu backend probablemente devuelve 201 con la tarea
-    if (resp.statusCode == 201) {
-      return data; // puede traer la tarea creada
-    }
+    // ✅ Si el backend manda needsReplacement, lo devolvemos tal cual
+    if (data['needsReplacement'] == true) return data;
 
-    // ✅ Caso especial: solape + correctiva P1 => backend debería devolver 200 con needsReplacement
-    if (resp.statusCode == 200 && data['needsReplacement'] == true) {
-      return data;
-    }
+    // ✅ Si el backend manda ok:true/false, lo devolvemos tal cual (sin lanzar exception)
+    if (data.containsKey('ok')) return data;
 
-    // ❌ Otros casos: error real
-    throw Exception('Error al crear tarea: ${resp.statusCode} - ${resp.body}');
+    // ✅ Si el backend devuelve la tarea creada directa (sin ok), también sirve
+    if (resp.statusCode == 201) return data;
+
+    // ❌ Solo aquí es error “duro” (500, no JSON, etc.)
+    throw Exception('Error HTTP ${resp.statusCode}: ${resp.body}');
   }
 
   Future<void> editarTarea(int id, TareaRequest req) async {
@@ -126,10 +128,15 @@ class TareaApi {
   Future<Map<String, dynamic>> crearTareaConReemplazo({
     required TareaRequest tarea,
     required List<int> reemplazarIds,
+    String? motivo,
   }) async {
     final resp = await _client.post(
       '${AppConstants.gerenteBase}/tareas/reemplazo',
-      body: {'tarea': tarea.toJson(), 'reemplazarIds': reemplazarIds},
+      body: {
+        'tarea': tarea.toJson(),
+        'reemplazarIds': reemplazarIds,
+        if (motivo != null && motivo.trim().isNotEmpty) 'motivo': motivo.trim(),
+      },
     );
 
     Map<String, dynamic> data = {};

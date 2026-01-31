@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/gerente_api.dart';
+import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/pages/supervisor/supervisor_tareas_page.dart';
+import 'package:flutter_application_1/service/logout.dart';
+
 import '../service/theme.dart';
-import 'crear_tarea_page.dart';
-import 'solicitud_insumo_page.dart';
-import 'tareas_page.dart';
+
 import 'solicitudes_page.dart';
+import 'maquinaria_page.dart';
+import 'inventario_page.dart';
 import 'cronograma_page.dart';
-import 'crear_cronograma_page.dart';
+import 'reportes_page.dart';
+import 'preventivas_page.dart';
+import '../service/app_constants.dart';
 
 class SupervisorPage extends StatefulWidget {
   const SupervisorPage({super.key});
@@ -15,38 +22,105 @@ class SupervisorPage extends StatefulWidget {
 }
 
 class _SupervisorPageState extends State<SupervisorPage> {
-  final List<String> proyectos = ['Proyecto 1', 'Proyecto 2', 'Proyecto 3'];
-  String proyectoSeleccionado = 'Proyecto 1';
+  final GerenteApi _api = GerenteApi();
 
-  final Map<String, dynamic> dataPorProyecto = {
-    'Proyecto 1': {'nit': '1111'},
-    'Proyecto 2': {'nit': '2222'},
-    'Proyecto 3': {'nit': '3333'},
-  };
+  List<Conjunto> _conjuntos = [];
+  String? _conjuntoSeleccionadoNit;
 
-  /// 🔹 Tarjeta simple
-  Widget _simpleCard(String title, Color color, IconData icon, {VoidCallback? onTap}) {
+  bool _cargandoConjuntos = true;
+  String? _errorConjuntos;
+
+  Conjunto? get _conjuntoSeleccionado {
+    final nit = _conjuntoSeleccionadoNit;
+    if (nit == null) return null;
+
+    try {
+      return _conjuntos.firstWhere((c) => c.nit == nit);
+    } catch (_) {
+      return _conjuntos.isNotEmpty ? _conjuntos.first : null;
+    }
+  }
+
+  bool get _hayConjunto => _conjuntoSeleccionado != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarConjuntos();
+  }
+
+  Future<void> _cargarConjuntos() async {
+    setState(() {
+      _cargandoConjuntos = true;
+      _errorConjuntos = null;
+    });
+
+    try {
+      final lista = await _api.listarConjuntos();
+      setState(() {
+        _conjuntos = lista;
+        _conjuntoSeleccionadoNit = lista.isNotEmpty ? lista.first.nit : null;
+        _cargandoConjuntos = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorConjuntos = e.toString();
+        _cargandoConjuntos = false;
+      });
+    }
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  void _go(Widget page) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  }
+
+  bool _requiereConjuntoOrWarn() {
+    if (_hayConjunto) return true;
+    _snack("Primero selecciona un conjunto para continuar.");
+    return false;
+  }
+
+  /// Tarjeta pequeña tipo gerente
+  Widget _smallCard(
+    String title,
+    IconData icon,
+    Color color, {
+    VoidCallback? onTap,
+  }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           boxShadow: [
-            BoxShadow(color: Colors.black12.withOpacity(0.05), blurRadius: 5),
+            BoxShadow(
+              color: Colors.black12.withOpacity(0.05),
+              blurRadius: 5,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
+        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: color, size: 36),
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: color.withOpacity(0.15),
+              child: Icon(icon, color: color, size: 22),
+            ),
             const SizedBox(height: 10),
             Text(
               title,
-              style: const TextStyle(fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
             ),
           ],
         ),
@@ -54,47 +128,182 @@ class _SupervisorPageState extends State<SupervisorPage> {
     );
   }
 
-  /// 🔹 Sección de atajos (crear tarea, solicitud y cronograma)
-  Widget _atajos() {
-    final nit = dataPorProyecto[proyectoSeleccionado]['nit'];
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(color: Colors.black12.withOpacity(0.05), blurRadius: 5),
-        ],
+  Widget _buildSelectorConjuntoCard(Conjunto conjunto) {
+    final nit = conjunto.nit;
+
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(Icons.apartment, color: AppTheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Conjunto seleccionado",
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  Text(
+                    conjunto.nombre,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  Text("NIT: $nit", style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+            DropdownButton<String>(
+              value: _conjuntoSeleccionadoNit,
+              underline: const SizedBox.shrink(),
+              items: _conjuntos
+                  .map(
+                    (c) => DropdownMenuItem<String>(
+                      value: c.nit,
+                      child: Text(c.nombre, overflow: TextOverflow.ellipsis),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) async {
+                if (v == null) return;
+                setState(() => _conjuntoSeleccionadoNit = v);
+
+                // 🔹 Hook para cargas futuras por conjunto (si las agregas)
+                // await _cargarResumenSupervisor(v);
+              },
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_cargandoConjuntos) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorConjuntos != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text("Error cargando conjuntos: $_errorConjuntos"),
+        ),
+      );
+    }
+
+    final conjunto = _conjuntoSeleccionado;
+    if (conjunto == null) {
+      return const Center(
+        child: Text(
+          "No hay conjuntos disponibles.\nPide al gerente que registre/asigne conjuntos.",
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    final nit = conjunto.nit;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Atajos", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          _buildSelectorConjuntoCard(conjunto),
+          const SizedBox(height: 20),
+          const Text(
+            "Panel del Supervisor",
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
+
+          GridView.count(
+            shrinkWrap: true,
+            crossAxisCount: 4, // ✅ cuadritos pequeños como gerente
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.2,
+            physics: const NeverScrollableScrollPhysics(),
             children: [
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => CrearTareaPage(nit: nit)));
+              _smallCard(
+                "Tareas",
+                Icons.assignment,
+                AppTheme.green,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(SupervisorTareasPage(nit: nit));
                 },
-                icon: const Icon(Icons.assignment_add),
-                label: const Text("Crear Tarea"),
               ),
-              // ElevatedButton.icon(
-              //   onPressed: () {
-              //     Navigator.push(context, MaterialPageRoute(builder: (_) => SolicitudInsumoPage(nit: nit)));
-              //   },
-              //   icon: const Icon(Icons.add_shopping_cart),
-              //   label: const Text("Solicitud Insumo"),
-              // ),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => CrearCronogramaPage(nit: nit)));
+              _smallCard(
+                "Solicitudes",
+                Icons.pending_actions,
+                AppTheme.primary,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(SolicitudesPage(nit: nit));
                 },
-                icon: const Icon(Icons.calendar_today),
-                label: const Text("Crear Cronograma"),
+              ),
+              _smallCard(
+                "Cronograma",
+                Icons.calendar_month,
+                Colors.purple,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(CronogramaPage(nit: nit));
+                },
+              ),
+              _smallCard(
+                "Inventario",
+                Icons.inventory_2_outlined,
+                AppTheme.yellow,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(
+                    InventarioPage(
+                      nit: nit,
+                      empresaId: AppConstants.empresaNit,
+                    ),
+                  );
+                },
+              ),
+              _smallCard(
+                "Maquinaria",
+                Icons.precision_manufacturing,
+                AppTheme.red,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(MaquinariaPage(nit: nit));
+                },
+              ),
+              _smallCard(
+                "Reportes",
+                Icons.bar_chart,
+                Colors.teal,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(ReportesPage(nit: nit));
+                },
+              ),
+              _smallCard(
+                "Preventivas",
+                Icons.build_circle_outlined,
+                Colors.deepOrange,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(PreventivasPage(nit: nit));
+                },
+              ),
+              _smallCard(
+                "Recargar",
+                Icons.refresh,
+                Colors.blueGrey,
+                onTap: _cargarConjuntos,
               ),
             ],
           ),
@@ -105,59 +314,49 @@ class _SupervisorPageState extends State<SupervisorPage> {
 
   @override
   Widget build(BuildContext context) {
-    final nit = dataPorProyecto[proyectoSeleccionado]['nit'];
-
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
-        title: const Text("Panel Supervisor", style: TextStyle(color: Colors.white)),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 🔹 Selector de proyecto
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("Seleccionar proyecto:", style: TextStyle(fontWeight: FontWeight.bold)),
-                DropdownButton<String>(
-                  value: proyectoSeleccionado,
-                  items: proyectos.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
-                  onChanged: (v) => setState(() => proyectoSeleccionado = v!),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // 🔹 Paneles principales (sin maquinaria ni inventario)
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.1,
-              children: [
-                _simpleCard("Tareas", AppTheme.green, Icons.assignment, onTap: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => TareasPage(nit: nit)));
-                }),
-                _simpleCard("Solicitudes", AppTheme.primary, Icons.pending_actions, onTap: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => SolicitudesPage(nit: nit)));
-                }),
-                _simpleCard("Cronograma", Colors.purple, Icons.calendar_month, onTap: () {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => CronogramaPage(nit: nit)));
-                }),
-              ],
-            ),
-
-            const SizedBox(height: 20),
-            _atajos(),
-          ],
+        title: const Text(
+          "Panel del Supervisor",
+          style: TextStyle(color: Colors.white),
         ),
+        actions: [
+          IconButton(
+            tooltip: "Recargar conjuntos",
+            onPressed: _cargarConjuntos,
+            icon: const Icon(Icons.refresh, color: Colors.white),
+          ),
+          const SizedBox(width: 6),
+          IconButton(
+            tooltip: 'Cerrar sesión',
+            icon: const Icon(Icons.logout, color: Colors.white),
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('Cerrar sesión'),
+                  content: const Text('¿Seguro que quieres salir?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Salir'),
+                    ),
+                  ],
+                ),
+              );
+
+              if (ok == true) logout(context);
+            },
+          ),
+        ],
       ),
+      body: _buildBody(),
     );
   }
 }

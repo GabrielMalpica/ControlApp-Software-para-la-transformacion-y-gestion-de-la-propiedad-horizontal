@@ -45,17 +45,29 @@ class InsumoPlanItem {
 
 /// 🔹 Plan de maquinaria asociada a la definición / tarea
 class MaquinariaPlanItem {
-  final int? maquinariaId; // id en el catálogo de la empresa
-  final String? tipo; // ej: "guadaña", "hidrolavadora"
-  final double? cantidad; // ej: horas de uso, unidades, etc.
+  final int? maquinariaId;
+  final String? tipo;
+  final double? cantidad;
 
-  MaquinariaPlanItem({this.maquinariaId, this.tipo, this.cantidad});
+  final String? origen; // 'CONJUNTO' | 'EMPRESA'
+  final bool?
+  preferirConjunto; // si true: intenta conjunto, si no hay -> empresa
+
+  MaquinariaPlanItem({
+    this.maquinariaId,
+    this.tipo,
+    this.cantidad,
+    this.origen,
+    this.preferirConjunto,
+  });
 
   factory MaquinariaPlanItem.fromJson(Map<String, dynamic> json) {
     return MaquinariaPlanItem(
       maquinariaId: _toInt(json['maquinariaId']),
       tipo: json['tipo'] as String?,
       cantidad: _toDouble(json['cantidad']),
+      origen: json['origen']?.toString(),
+      preferirConjunto: json['preferirConjunto'] as bool?,
     );
   }
 
@@ -63,6 +75,37 @@ class MaquinariaPlanItem {
     if (maquinariaId != null) 'maquinariaId': maquinariaId,
     if (tipo != null) 'tipo': tipo,
     if (cantidad != null) 'cantidad': cantidad,
+    if (origen != null) 'origen': origen,
+    if (preferirConjunto != null) 'preferirConjunto': preferirConjunto,
+  };
+}
+
+/// ✅ Plan de herramientas asociadas a la definición / tarea
+class HerramientaPlanItem {
+  final int herramientaId;
+  final double cantidad;
+  final String estado; // OPERATIVA | DANADA | PERDIDA | BAJA
+
+  HerramientaPlanItem({
+    required this.herramientaId,
+    required this.cantidad,
+    required this.estado,
+  });
+
+  factory HerramientaPlanItem.fromJson(Map<String, dynamic> json) {
+    return HerramientaPlanItem(
+      herramientaId: _toInt(json['herramientaId']) ?? 0,
+      cantidad: _toDouble(json['cantidad']) ?? 0,
+      estado: (json['estado']?.toString().trim().isNotEmpty ?? false)
+          ? json['estado'].toString()
+          : 'OPERATIVA',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'herramientaId': herramientaId,
+    'cantidad': cantidad,
+    'estado': estado,
   };
 }
 
@@ -87,6 +130,10 @@ class DefinicionPreventiva {
   final int? duracionMinutosFija;
   final String? rendimientoTiempoBase;
 
+  /// ✅ NUEVO: cuántos días para completar la preventiva (si es larga)
+  /// Ej: 10 horas = 600 min y diasParaCompletar=5 => 120 min/día
+  final int? diasParaCompletar;
+
   // Insumo principal
   final int? insumoPrincipalId;
   final double? consumoPrincipalPorUnidad;
@@ -94,7 +141,9 @@ class DefinicionPreventiva {
   final List<InsumoPlanItem> insumosPlan;
   final List<MaquinariaPlanItem> maquinariaPlan;
 
-  /// 🔹 Operarios asignados a la definición (IDs de la tabla Operario)
+  final List<HerramientaPlanItem> herramientasPlan;
+
+  /// Operarios asignados
   final List<int> operariosIds;
 
   // Responsable sugerido (principal)
@@ -120,10 +169,15 @@ class DefinicionPreventiva {
     this.rendimientoBase,
     this.duracionMinutosFija,
     this.rendimientoTiempoBase,
+
+    /// ✅ NUEVO
+    this.diasParaCompletar,
+
     this.insumoPrincipalId,
     this.consumoPrincipalPorUnidad,
     this.insumosPlan = const [],
     this.maquinariaPlan = const [],
+    this.herramientasPlan = const [],
     this.operariosIds = const [],
     this.responsableSugeridoId,
     this.supervisorId,
@@ -133,6 +187,7 @@ class DefinicionPreventiva {
   factory DefinicionPreventiva.fromJson(Map<String, dynamic> json) {
     final insumosJson = (json['insumosPlanJson'] as List?) ?? [];
     final maquinariaJson = (json['maquinariaPlanJson'] as List?) ?? [];
+    final herramientasJson = (json['herramientasPlanJson'] as List?) ?? [];
 
     List<int> opIds = [];
     if (json['operariosIds'] != null) {
@@ -160,7 +215,7 @@ class DefinicionPreventiva {
       frecuencia: json['frecuencia']?.toString() ?? '',
       prioridad: _toInt(json['prioridad']) ?? 2,
 
-      // ✅ programación
+      // programación
       diaSemanaProgramado: json['diaSemanaProgramado']?.toString(),
       diaMesProgramado: _toInt(json['diaMesProgramado']),
 
@@ -168,6 +223,10 @@ class DefinicionPreventiva {
       areaNumerica: _toDouble(json['areaNumerica']),
       rendimientoBase: _toDouble(json['rendimientoBase']),
       duracionMinutosFija: durMin,
+      rendimientoTiempoBase: json['rendimientoTiempoBase']?.toString(),
+
+      /// ✅ NUEVO
+      diasParaCompletar: _toInt(json['diasParaCompletar']),
 
       insumoPrincipalId: _toInt(json['insumoPrincipalId']),
       consumoPrincipalPorUnidad: _toDouble(json['consumoPrincipalPorUnidad']),
@@ -175,8 +234,13 @@ class DefinicionPreventiva {
       insumosPlan: insumosJson
           .map((e) => InsumoPlanItem.fromJson(e as Map<String, dynamic>))
           .toList(),
+
       maquinariaPlan: maquinariaJson
           .map((e) => MaquinariaPlanItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+
+      herramientasPlan: herramientasJson
+          .map((e) => HerramientaPlanItem.fromJson(e as Map<String, dynamic>))
           .toList(),
 
       operariosIds: opIds,
@@ -204,22 +268,47 @@ class InsumoPlanItemRequest {
   };
 }
 
-/// 🔹 Request para maquinaria planificada
 class MaquinariaPlanItemRequest {
   final int maquinariaId;
   final String? tipo;
   final double? cantidad;
 
+  // ✅ NUEVO
+  final String? origen; // 'CONJUNTO' | 'EMPRESA'
+  final bool? preferirConjunto;
+
   MaquinariaPlanItemRequest({
     required this.maquinariaId,
     this.tipo,
     this.cantidad,
+    this.origen,
+    this.preferirConjunto,
   });
 
   Map<String, dynamic> toJson() => {
     'maquinariaId': maquinariaId,
     if (tipo != null) 'tipo': tipo,
     if (cantidad != null) 'cantidad': cantidad,
+    if (origen != null) 'origen': origen,
+    if (preferirConjunto != null) 'preferirConjunto': preferirConjunto,
+  };
+}
+
+class HerramientaPlanItemRequest {
+  final int herramientaId;
+  final double cantidad;
+  final String estado;
+
+  HerramientaPlanItemRequest({
+    required this.herramientaId,
+    required this.cantidad,
+    required this.estado,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'herramientaId': herramientaId,
+    'cantidad': cantidad,
+    'estado': estado,
   };
 }
 
@@ -238,23 +327,26 @@ class DefinicionPreventivaRequest {
   final double? areaNumerica;
   final double? rendimientoBase;
 
-  /// ✅ NUEVO estándar backend: minutos
+  /// estándar backend: minutos
   final int? duracionMinutosFija;
   final String? rendimientoTiempoBase;
 
-  /// (Opcional) compat temporal: horas, por si algún endpoint viejo lo pide.
-  /// Ideal: NO usarlo.
+  /// ✅ NUEVO: días para completar
+  final int? diasParaCompletar;
+
+  /// compat temporal: horas
   final double? duracionHorasFijaCompat;
 
   final int? insumoPrincipalId;
   final double? consumoPrincipalPorUnidad;
+
   final List<InsumoPlanItemRequest>? insumosPlan;
   final List<MaquinariaPlanItemRequest>? maquinariaPlan;
+  final List<HerramientaPlanItemRequest>? herramientasPlan;
 
   final int? responsableSugeridoId;
   final int? supervisorId;
 
-  /// 🔹 operarios asignados
   final List<int>? operariosIds;
 
   final bool? activo;
@@ -272,11 +364,16 @@ class DefinicionPreventivaRequest {
     this.rendimientoBase,
     this.duracionMinutosFija,
     this.rendimientoTiempoBase,
+
+    /// ✅ NUEVO
+    this.diasParaCompletar,
+
     this.duracionHorasFijaCompat,
     this.insumoPrincipalId,
     this.consumoPrincipalPorUnidad,
     this.insumosPlan,
     this.maquinariaPlan,
+    this.herramientasPlan,
     this.responsableSugeridoId,
     this.supervisorId,
     this.operariosIds,
@@ -290,7 +387,7 @@ class DefinicionPreventivaRequest {
     'frecuencia': frecuencia,
     'prioridad': prioridad,
 
-    // ✅ programación
+    // programación
     if (diaSemanaProgramado != null) 'diaSemanaProgramado': diaSemanaProgramado,
     if (diaMesProgramado != null) 'diaMesProgramado': diaMesProgramado,
 
@@ -299,11 +396,15 @@ class DefinicionPreventivaRequest {
     if (areaNumerica != null) 'areaNumerica': areaNumerica,
     if (rendimientoBase != null) 'rendimientoBase': rendimientoBase,
 
-    // ✅ estándar: minutos
+    // estándar: minutos
     if (duracionMinutosFija != null) 'duracionMinutosFija': duracionMinutosFija,
-    if (rendimientoTiempoBase != null) 'rendimientoTiempoBase': rendimientoTiempoBase,
+    if (rendimientoTiempoBase != null)
+      'rendimientoTiempoBase': rendimientoTiempoBase,
 
-    // compat (solo si te toca)
+    /// ✅ NUEVO
+    if (diasParaCompletar != null) 'diasParaCompletar': diasParaCompletar,
+
+    // compat (solo si toca)
     if (duracionHorasFijaCompat != null)
       'duracionHorasFija': duracionHorasFijaCompat,
 
@@ -316,6 +417,9 @@ class DefinicionPreventivaRequest {
 
     if (maquinariaPlan != null && maquinariaPlan!.isNotEmpty)
       'maquinariaPlanJson': maquinariaPlan!.map((e) => e.toJson()).toList(),
+
+    if (herramientasPlan != null && herramientasPlan!.isNotEmpty)
+      'herramientasPlanJson': herramientasPlan!.map((e) => e.toJson()).toList(),
 
     if (responsableSugeridoId != null)
       'responsableSugeridoId': responsableSugeridoId,

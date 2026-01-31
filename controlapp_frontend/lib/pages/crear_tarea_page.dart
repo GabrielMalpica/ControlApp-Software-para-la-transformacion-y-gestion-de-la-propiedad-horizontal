@@ -5,7 +5,6 @@ import '../api/tarea_api.dart';
 import '../api/gerente_api.dart';
 import '../api/empresa_api.dart';
 import '../api/cronograma_api.dart';
-import '../repositories/maquinaria_repository.dart';
 
 import '../model/conjunto_model.dart';
 import '../model/maquinaria_model.dart';
@@ -27,20 +26,18 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
   final TareaApi _tareaApi = TareaApi();
   final GerenteApi _gerenteApi = GerenteApi();
   final EmpresaApi _empresaApi = EmpresaApi();
-  final MaquinariaRepository _maquinariaRepo = MaquinariaRepository();
   final CronogramaApi _cronogramaApi = CronogramaApi();
 
   // Controllers
   final _descripcionCtrl = TextEditingController();
-  final _duracionCtrl = TextEditingController(); // ahora en MINUTOS
+  final _duracionCtrl = TextEditingController(); // minutos
   final _observacionesCtrl = TextEditingController();
 
   // Fechas y horas
-  DateTime? fechaInicio; // solo fecha
-  DateTime? fechaFin; // solo fecha (mismo día por ahora)
+  DateTime? fechaInicio; // fecha
+  DateTime? fechaFin; // fecha
   TimeOfDay? _horaInicio;
 
-  // Estado de carga / guardado
   bool _cargandoInicial = true;
   bool _guardando = false;
 
@@ -55,24 +52,21 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
   List<Elemento> _elementos = [];
   Elemento? _elementoSeleccionado;
 
-  // Operarios del conjunto
+  // Operarios
   List<Usuario> _operarios = [];
-  final List<int> _operariosSeleccionadosIds = []; // usamos cédula como int
+  final List<String> _operariosSeleccionadosIds = [];
 
   // Supervisores
   List<Usuario> _supervisores = [];
-  int? _supervisorId; // cédula como int
+  String? _supervisorId;
 
-  // Maquinaria disponible y seleccionada
+  // Maquinaria
   List<MaquinariaResponse> _maquinariaDisponible = [];
   final List<int> _maquinariaSeleccionadaIds = [];
 
   int? _limiteMinSemana;
 
   int _prioridad = 2;
-  List<Map<String, dynamic>> _insumosDisponibles = [];
-  final List<Map<String, dynamic>> _insumosSeleccionados = [];
-  bool _cargandoInsumos = false;
 
   @override
   void initState() {
@@ -99,7 +93,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     }
   }
 
-  /// Carga conjuntos, supervisores y maquinaria disponible
   Future<void> _cargarInicial() async {
     try {
       final conjuntos = await _gerenteApi.listarConjuntos();
@@ -122,9 +115,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         _cargandoInicial = false;
       });
 
-      if (seleccionado != null) {
-        _refrescarDatosConjunto(seleccionado);
-      }
+      if (seleccionado != null) _refrescarDatosConjunto(seleccionado);
     } catch (e) {
       if (!mounted) return;
       setState(() => _cargandoInicial = false);
@@ -137,7 +128,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     }
   }
 
-  /// Cuando cambia el conjunto, refrescamos ubicaciones, elementos y operarios
   void _refrescarDatosConjunto(Conjunto conjunto) {
     setState(() {
       _conjuntoSeleccionado = conjunto;
@@ -154,8 +144,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       _maquinariaSeleccionadaIds.clear();
       _supervisorId = null;
       _cargarLimiteSemana(conjunto.nit);
-      _insumosSeleccionados.clear();
-      //TODO: _cargarInsumosConjunto(conjunto.nit);
     });
   }
 
@@ -166,9 +154,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2035),
     );
-    if (picked != null) {
-      setState(() => fechaInicio = picked);
-    }
+    if (picked != null) setState(() => fechaInicio = picked);
   }
 
   Future<void> _seleccionarFechaFin() async {
@@ -178,9 +164,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       firstDate: fechaInicio ?? DateTime(2020),
       lastDate: DateTime(2035),
     );
-    if (picked != null) {
-      setState(() => fechaFin = picked);
-    }
+    if (picked != null) setState(() => fechaFin = picked);
   }
 
   Future<void> _seleccionarHoraInicio() async {
@@ -188,12 +172,9 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       context: context,
       initialTime: _horaInicio ?? const TimeOfDay(hour: 8, minute: 0),
     );
-    if (picked != null) {
-      setState(() => _horaInicio = picked);
-    }
+    if (picked != null) setState(() => _horaInicio = picked);
   }
 
-  /// Selección múltiple de operarios
   Future<void> _mostrarSelectorOperarios() async {
     if (_operarios.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -202,7 +183,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       return;
     }
 
-    final seleccionTemp = Set<int>.from(_operariosSeleccionadosIds);
+    final seleccionTemp = Set<String>.from(_operariosSeleccionadosIds);
 
     final ok = await showDialog<bool>(
       context: context,
@@ -218,10 +199,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                   itemCount: _operarios.length,
                   itemBuilder: (_, index) {
                     final op = _operarios[index];
-
-                    final opId = int.tryParse(op.cedula) ?? 0;
-                    if (opId == 0) return const SizedBox.shrink();
-
+                    final opId = op.cedula.trim();
+                    if (opId.isEmpty) return const SizedBox.shrink();
                     final checked = seleccionTemp.contains(opId);
                     return CheckboxListTile(
                       value: checked,
@@ -264,7 +243,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     }
   }
 
-  /// Selección múltiple de maquinaria
   Future<void> _mostrarSelectorMaquinaria() async {
     if (_maquinariaDisponible.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -335,31 +313,18 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     return DateTime(fecha.year, fecha.month, fecha.day, hora.hour, hora.minute);
   }
 
-  bool _intervalosSeSolapan(
-    DateTime aInicio,
-    DateTime aFin,
-    DateTime bInicio,
-    DateTime bFin,
-  ) {
-    return aInicio.isBefore(bFin) && bInicio.isBefore(aFin);
-  }
-
   DateTime _inicioSemana(DateTime d) {
-    // lunes = 1, domingo = 7
-    final diff = d.weekday - DateTime.monday; // 0 para lunes
+    final diff = d.weekday - DateTime.monday;
     return DateTime(d.year, d.month, d.day).subtract(Duration(days: diff));
   }
 
-  /// Valida solapes y minutos semanales con las tareas ya existentes
-  Future<bool> _validarDisponibilidad(
+  // ✅ SOLO valida límite semanal. NO valida solapes (eso lo hace backend).
+  Future<bool> _validarLimiteSemanal(
     DateTime inicio,
-    DateTime fin,
     int duracionMinutos,
   ) async {
     final conjunto = _conjuntoSeleccionado;
-    if (conjunto == null || _operariosSeleccionadosIds.isEmpty) {
-      return true;
-    }
+    if (conjunto == null || _operariosSeleccionadosIds.isEmpty) return true;
 
     try {
       final tareasMes = await _cronogramaApi.listarPorConjuntoYMes(
@@ -368,58 +333,18 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         mes: inicio.month,
       );
 
-      // 1) Validar solapes por operario
-      for (final t in tareasMes) {
-        final coincideOperario = t.operariosIds.any(
-          (idOp) => _operariosSeleccionadosIds.contains(idOp),
-        );
-        if (!coincideOperario) continue;
-
-        if (_intervalosSeSolapan(inicio, fin, t.fechaInicio, t.fechaFin)) {
-          final opIdsSeleccionadosSet = _operariosSeleccionadosIds.toSet();
-          final opNombresChoque = <String>[];
-
-          for (int i = 0; i < t.operariosIds.length; i++) {
-            final idOp = t.operariosIds[i];
-            if (opIdsSeleccionadosSet.contains(idOp)) {
-              if (i < t.operariosNombres.length &&
-                  t.operariosNombres[i].isNotEmpty) {
-                opNombresChoque.add(t.operariosNombres[i]);
-              } else {
-                opNombresChoque.add('Operario $idOp');
-              }
-            }
-          }
-
-          final textoOperarios = opNombresChoque.isEmpty
-              ? 'operario(s) seleccionado(s)'
-              : opNombresChoque.join(', ');
-
-          await showDialog(
-            context: context,
-            builder: (_) => AlertDialog(
-              title: const Text('Solape de agenda'),
-              content: Text(
-                'La tarea se solapa con otra tarea existente para $textoOperarios.\n\n'
-                'Tarea existente: "${t.descripcion}"\n'
-                'Horario: ${t.fechaInicio} - ${t.fechaFin}',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Aceptar'),
-                ),
-              ],
-            ),
-          );
-          return false;
-        }
-      }
-
-      // 2) Validar minutos semanales por operario
       final inicioSemana = _inicioSemana(inicio);
       final finSemana = inicioSemana.add(const Duration(days: 6));
       final limiteMinutosSemana = _limiteMinSemana ?? (42 * 60);
+
+      bool solapaSemana(
+        DateTime aIni,
+        DateTime aFin,
+        DateTime bIni,
+        DateTime bFin,
+      ) {
+        return aIni.isBefore(bFin) && bIni.isBefore(aFin);
+      }
 
       for (final opId in _operariosSeleccionadosIds) {
         int minutosSemana = 0;
@@ -427,7 +352,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         for (final t in tareasMes) {
           if (!t.operariosIds.contains(opId)) continue;
 
-          final dentroSemana = _intervalosSeSolapan(
+          final dentroSemana = solapaSemana(
             inicioSemana,
             finSemana,
             t.fechaInicio,
@@ -440,28 +365,16 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
         final minutosConNueva = minutosSemana + duracionMinutos;
 
-        // Nombre operario
-        String opNombre;
-        final idx = _operarios.indexWhere(
-          (u) => int.tryParse(u.cedula) == opId,
-        );
-        if (idx != -1) {
-          opNombre = _operarios[idx].nombre;
-        } else {
-          opNombre = 'Operario $opId';
-        }
-
         if (minutosConNueva > limiteMinutosSemana) {
-          final hSemana = (minutosSemana / 60).toStringAsFixed(1);
-          final hConNueva = (minutosConNueva / 60).toStringAsFixed(1);
-
           await showDialog(
             context: context,
             builder: (_) => AlertDialog(
               title: const Text('Límite semanal superado'),
               content: Text(
-                '$opNombre ya tiene asignadas $hSemana h en esta semana.\n\n'
-                'Con esta tarea sumaría $hConNueva h, superando el límite de $_limiteMinSemana h.',
+                'El operario $opId supera el límite semanal.\n\n'
+                'Actual: ${(minutosSemana / 60).toStringAsFixed(1)} h\n'
+                'Con nueva: ${(minutosConNueva / 60).toStringAsFixed(1)} h\n'
+                'Límite: ${(limiteMinutosSemana / 60).toStringAsFixed(1)} h',
               ),
               actions: [
                 TextButton(
@@ -472,19 +385,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             ),
           );
           return false;
-        } else {
-          final disponiblesMin = limiteMinutosSemana - minutosSemana;
-          final disponiblesH = (disponiblesMin / 60).toStringAsFixed(1);
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '$opNombre tiene ${(minutosSemana / 60).toStringAsFixed(1)} h asignadas esta semana. '
-                'Le quedan $disponiblesH h disponibles.',
-              ),
-              duration: const Duration(seconds: 3),
-            ),
-          );
         }
       }
 
@@ -492,7 +392,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No se pudo validar la disponibilidad: $e'),
+          content: Text('No se pudo validar límite semanal: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -515,6 +415,115 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     final hh = d.hour.toString().padLeft(2, '0');
     final mm = d.minute.toString().padLeft(2, '0');
     return '${d.day}/${d.month}/${d.year} $hh:$mm';
+  }
+
+  bool _backendOk(dynamic resp) {
+    if (resp is Map) {
+      // tu backend a veces responde {ok:true,...} y a veces devuelve la tarea creada (con id)
+      if (resp['ok'] == true) return true;
+      if (resp['id'] != null) return true;
+      if (resp['createdIds'] != null) return true;
+    }
+    return false;
+  }
+
+  Future<void> _mostrarErrorBackend(dynamic resp) async {
+    String msg = 'No se pudo crear la tarea.';
+    String? reason;
+
+    DateTime? sugIni;
+    DateTime? sugFin;
+
+    if (resp is Map) {
+      msg = (resp['message'] ?? resp['error'] ?? msg).toString();
+      reason = resp['reason']?.toString();
+
+      if (resp['suggestedInicio'] != null && resp['suggestedFin'] != null) {
+        sugIni = DateTime.parse(resp['suggestedInicio'].toString()).toLocal();
+        sugFin = DateTime.parse(resp['suggestedFin'].toString()).toLocal();
+      }
+    } else {
+      msg = resp.toString();
+    }
+
+    // Texto extra bonito según reason
+    String extra = '';
+    switch ((reason ?? '').toUpperCase()) {
+      case 'INICIO_ANTES_APERTURA':
+        extra = 'La hora seleccionada está antes de la apertura del conjunto.';
+        break;
+      case 'INICIO_EN_DESCANSO':
+        extra = 'La hora seleccionada cae dentro del descanso del conjunto.';
+        break;
+      case 'FUERA_DE_JORNADA':
+        extra = 'La tarea se sale del horario de operación del conjunto.';
+        break;
+      case 'SIN_HORARIO_DIA':
+        extra = 'Ese día no tiene horario configurado para el conjunto.';
+        break;
+      case 'HAY_SOLAPE_CON_TAREAS_EXISTENTES':
+        extra = 'Se cruza con otras tareas ya programadas.';
+        break;
+    }
+
+    // Si hay sugerencia, ofrecer usarla
+    if (sugIni != null && sugFin != null) {
+      final usar = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('No se puede crear en ese horario'),
+          content: Text(
+            '${extra.isEmpty ? '' : '$extra\n\n'}'
+            '$msg\n\n'
+            'Sugerencia: ${_fmtDateTime(sugIni!)} → ${_fmtDateTime(sugFin!)}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cerrar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Usar sugerencia'),
+            ),
+          ],
+        ),
+      );
+
+      if (usar == true) {
+        // ✅ aplica sugerencia en el form para que el usuario la vea
+        setState(() {
+          fechaInicio = DateTime(sugIni!.year, sugIni.month, sugIni.day);
+          fechaFin = DateTime(sugFin!.year, sugFin.month, sugFin.day);
+          _horaInicio = TimeOfDay(hour: sugIni.hour, minute: sugIni.minute);
+        });
+
+        // opcional: ajustar duración si sugFin cambió
+        final nuevaDur = sugFin.difference(sugIni).inMinutes;
+        if (nuevaDur > 0) _duracionCtrl.text = nuevaDur.toString();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ Sugerencia aplicada al formulario.')),
+        );
+      }
+
+      return;
+    }
+
+    // Sin sugerencia: solo alert
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('No se pudo crear la tarea'),
+        content: Text('${extra.isEmpty ? '' : '$extra\n\n'}$msg'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<bool?> _dialogSugerenciaHorario(DateTime ini, DateTime fin) {
@@ -549,11 +558,11 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         return StatefulBuilder(
           builder: (ctx, setStateDialog) {
             return AlertDialog(
-              title: const Text("Reemplazar preventivas"),
+              title: const Text("Reemplazar tareas (P2/P3)"),
               content: SizedBox(
                 width: double.maxFinite,
                 child: reemplazables.isEmpty
-                    ? const Text("No hay preventivas reemplazables (P2 o P3).")
+                    ? const Text("No hay tareas reemplazables (P2 o P3).")
                     : ListView.builder(
                         shrinkWrap: true,
                         itemCount: reemplazables.length,
@@ -561,6 +570,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                           final t = reemplazables[i] as Map<String, dynamic>;
                           final id = int.parse(t['id'].toString());
                           final desc = (t['descripcion'] ?? '').toString();
+                          final tipo = (t['tipo'] ?? '').toString();
                           final ini = DateTime.parse(
                             t['fechaInicio'].toString(),
                           ).toLocal();
@@ -577,7 +587,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                             value: checked,
                             title: Text(desc.isEmpty ? 'Tarea $id' : desc),
                             subtitle: Text(
-                              'ID: $id | ${_fmtDateTime(ini)} - ${_fmtDateTime(fin)}'
+                              'ID: $id | $tipo | ${_fmtDateTime(ini)} - ${_fmtDateTime(fin)}'
                               '${p != null ? " | P$p" : ""}',
                             ),
                             onChanged: (v) {
@@ -601,7 +611,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                   onPressed: selected.isEmpty
                       ? null
                       : () => Navigator.pop(ctx, selected.toList()),
-                  child: const Text("Reemplazar y crear correctiva"),
+                  child: const Text("Reemplazar y crear correctiva P1"),
                 ),
               ],
             );
@@ -636,7 +646,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       return;
     }
 
-    // Por ahora correctiva de un día
     final mismoDia =
         fechaInicio!.year == fechaFin!.year &&
         fechaInicio!.month == fechaFin!.month &&
@@ -675,10 +684,9 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     final inicio = _combinarFechaYHora(fechaInicio!, _horaInicio!);
     final fin = inicio.add(Duration(minutes: duracionMin));
 
-    if (_prioridad != 1) {
-      final disponible = await _validarDisponibilidad(inicio, fin, duracionMin);
-      if (!disponible) return;
-    }
+    // ✅ Solo límite semanal (no solapes)
+    final okSemana = await _validarLimiteSemanal(inicio, duracionMin);
+    if (!okSemana) return;
 
     setState(() => _guardando = true);
 
@@ -698,13 +706,14 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         observaciones: _observacionesCtrl.text.trim().isEmpty
             ? null
             : _observacionesCtrl.text.trim(),
+        maquinariaIds: _maquinariaSeleccionadaIds,
       );
 
       final resp = await _tareaApi.crearTarea(req);
 
-      // ✅ Caso “needsReplacement”
-      if (resp['needsReplacement'] == true) {
-        // 1) sugerencia de horario si viene
+      // ✅ 1) Caso reemplazo (correctiva P1)
+      if (resp is Map && resp['needsReplacement'] == true) {
+        // 1) sugerencia de horario (si la hay)
         if (resp['suggestedInicio'] != null && resp['suggestedFin'] != null) {
           final sugIni = DateTime.parse(
             resp['suggestedInicio'].toString(),
@@ -731,35 +740,58 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             );
 
             final resp2 = await _tareaApi.crearTarea(req2);
-            if (resp2['needsReplacement'] != true) {
+
+            // ✅ si ahora sí fue OK, salimos
+            if (_backendOk(resp2)) {
               _onSuccess();
               return;
             }
+
+            // si sigue pidiendo reemplazo o trae error, seguimos al flujo normal
+            // (no hacemos return aquí)
           }
         }
 
-        // 2) reemplazo: mostrar reemplazables
+        // 2) reemplazo manual
         final reemplazables = (resp['reemplazables'] as List?) ?? [];
         final ids = await _dialogReemplazo(reemplazables);
 
         if (ids != null && ids.isNotEmpty) {
-          await _tareaApi.crearTareaConReemplazo(
+          final resp3 = await _tareaApi.crearTareaConReemplazo(
             tarea: req,
             reemplazarIds: ids,
           );
-          _onSuccess();
+
+          if (_backendOk(resp3)) {
+            _onSuccess();
+            return;
+          }
+
+          await _mostrarErrorBackend(resp3);
           return;
         }
 
-        // Canceló
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Operación cancelada.')));
         return;
       }
 
-      // ✅ Caso normal: creada
-      _onSuccess();
+      // ✅ 2) Caso backend devuelve ok:false (como INICIO_ANTES_APERTURA)
+      if (resp is Map && resp['ok'] == false) {
+        await _mostrarErrorBackend(resp);
+        return;
+      }
+
+      // ✅ 3) Caso normal: si es OK de verdad
+      if (_backendOk(resp)) {
+        _onSuccess();
+        return;
+      }
+
+      // ✅ 4) Fallback: respuesta rara -> mostrar
+      await _mostrarErrorBackend(resp);
+      return;
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -805,7 +837,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 1. DÓNDE
               const Text(
                 "1. Dónde se realizará",
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -879,7 +910,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               ),
               const SizedBox(height: 24),
 
-              // 2. QUÉ
               const Text(
                 "2. Qué se va a hacer",
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -977,9 +1007,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                   border: OutlineInputBorder(),
                 ),
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
+                  if (v == null || v.trim().isEmpty)
                     return 'Ingrese duración en minutos';
-                  }
                   final m = int.tryParse(v.trim());
                   if (m == null || m <= 0) return 'Minutos inválidos';
                   return null;
@@ -997,7 +1026,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               ),
               const SizedBox(height: 24),
 
-              // 3. QUIÉNES
               const Text(
                 "3. Quiénes la ejecutan",
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -1020,25 +1048,25 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               ),
               const SizedBox(height: 16),
 
-              DropdownButtonFormField<int>(
+              DropdownButtonFormField<String>(
                 initialValue: _supervisorId,
                 decoration: const InputDecoration(
                   labelText: "Supervisor (opcional)",
                   border: OutlineInputBorder(),
                 ),
                 items: _supervisores
-                    .map(
-                      (s) => DropdownMenuItem(
-                        value: int.tryParse(s.cedula) ?? 0,
-                        child: Text(s.nombre),
-                      ),
-                    )
+                    .map((s) {
+                      final id = s.cedula.trim();
+                      if (id.isEmpty) return null;
+                      return DropdownMenuItem(value: id, child: Text(s.nombre));
+                    })
+                    .whereType<DropdownMenuItem<String>>()
                     .toList(),
                 onChanged: (value) => setState(() => _supervisorId = value),
               ),
+
               const SizedBox(height: 24),
 
-              // 4. MAQUINARIA
               const Text(
                 "4. Con qué maquinaria",
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
