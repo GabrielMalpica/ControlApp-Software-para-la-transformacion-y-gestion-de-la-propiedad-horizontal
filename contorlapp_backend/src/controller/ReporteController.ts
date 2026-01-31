@@ -1,8 +1,9 @@
 // src/controllers/ReporteController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
-import { PrismaClient, EstadoTarea } from "../generated/prisma";
+import { prisma } from "../db/prisma";
 import { ReporteService } from "../services/ReporteService";
+import { EstadoTarea } from "../generated/prisma";
 
 const RangoQuery = z.object({
   desde: z.coerce.date(),
@@ -22,19 +23,15 @@ const EstadoQuery = z.object({
   hasta: z.coerce.date(),
 }).refine(d => d.hasta >= d.desde, { path: ["hasta"], message: "hasta debe ser >= desde" });
 
+const service = new ReporteService(prisma);
+
 export class ReporteController {
-  private prisma: PrismaClient;
-  private service: ReporteService;
-  constructor(prisma?: PrismaClient) {
-    this.prisma = prisma ?? new PrismaClient();
-    this.service = new ReporteService(this.prisma);
-  }
 
   // GET /reportes/tareas/aprobadas?desde=&hasta=
   tareasAprobadasPorFecha: RequestHandler = async (req, res, next) => {
     try {
       const { desde, hasta } = RangoQuery.parse(req.query);
-      const out = await this.service.tareasAprobadasPorFecha({ desde, hasta });
+      const out = await service.tareasAprobadasPorFecha({ desde, hasta });
       res.json(out);
     } catch (err) { next(err); }
   };
@@ -43,7 +40,7 @@ export class ReporteController {
   tareasRechazadasPorFecha: RequestHandler = async (req, res, next) => {
     try {
       const { desde, hasta } = RangoQuery.parse(req.query);
-      const out = await this.service.tareasRechazadasPorFecha({ desde, hasta });
+      const out = await service.tareasRechazadasPorFecha({ desde, hasta });
       res.json(out);
     } catch (err) { next(err); }
   };
@@ -52,7 +49,7 @@ export class ReporteController {
   usoDeInsumosPorFecha: RequestHandler = async (req, res, next) => {
     try {
       const { conjuntoId, desde, hasta } = UsoInsumosQuery.parse(req.query);
-      const out = await this.service.usoDeInsumosPorFecha({ conjuntoId, desde, hasta });
+      const out = await service.usoDeInsumosPorFecha({ conjuntoId, desde, hasta });
       res.json(out);
     } catch (err) { next(err); }
   };
@@ -61,7 +58,7 @@ export class ReporteController {
   tareasPorEstado: RequestHandler = async (req, res, next) => {
     try {
       const { conjuntoId, estado, desde, hasta } = EstadoQuery.parse(req.query);
-      const out = await this.service.tareasPorEstado({ conjuntoId, estado, desde, hasta });
+      const out = await service.tareasPorEstado({ conjuntoId, estado, desde, hasta });
       res.json(out);
     } catch (err) { next(err); }
   };
@@ -70,7 +67,7 @@ export class ReporteController {
   tareasConDetalle: RequestHandler = async (req, res, next) => {
     try {
       const { conjuntoId, estado, desde, hasta } = EstadoQuery.parse(req.query);
-      const out = await this.service.tareasConDetalle({ conjuntoId, estado, desde, hasta });
+      const out = await service.tareasConDetalle({ conjuntoId, estado, desde, hasta });
       res.json(out);
     } catch (err) { next(err); }
   };

@@ -1,7 +1,7 @@
 // src/controllers/CronogramaController.ts
 import { RequestHandler, Request } from "express";
 import { z } from "zod";
-import { PrismaClient } from "../generated/prisma";
+import { prisma } from "../db/prisma";
 import { CronogramaService } from "../services/CronogramaServices"; // <- singular
 
 // Schemas para params/query
@@ -59,10 +59,6 @@ function resolveConjuntoId(req: Request): string {
 }
 
 export class CronogramaController {
-  private prisma: PrismaClient;
-  constructor(prisma?: PrismaClient) {
-    this.prisma = prisma ?? new PrismaClient();
-  }
 
   // GET /conjuntos/:nit/operarios/sugerir?inicio=...&fin=...&max=5&requiereFuncion=...
   sugerirOperarios: RequestHandler = async (req, res, next) => {
@@ -73,7 +69,7 @@ export class CronogramaController {
       const max = req.query.max ? Number(req.query.max) : undefined;
       const requiereFuncion = req.query.requiereFuncion as string | undefined;
 
-      const service = new CronogramaService(this.prisma, conjuntoId);
+      const service = new CronogramaService(prisma, conjuntoId);
       const out = await service.sugerirOperarios({
         fechaInicio: inicio,
         fechaFin: fin,
@@ -96,7 +92,7 @@ export class CronogramaController {
         req.query.borrador === undefined
           ? undefined
           : String(req.query.borrador) === "true";
-      const service = new CronogramaService(this.prisma, conjuntoId);
+      const service = new CronogramaService(prisma, conjuntoId);
       const list = await service.cronogramaMensual({ anio, mes, borrador });
       res.json(list);
     } catch (err) {
@@ -133,7 +129,7 @@ export class CronogramaController {
         return; // <- clave: no retornes el Response
       }
 
-      const service = new CronogramaService(this.prisma, conjuntoId);
+      const service = new CronogramaService(prisma, conjuntoId);
       const out = await service.calendarioMensual({
         anio,
         mes,
@@ -152,7 +148,7 @@ export class CronogramaController {
     try {
       const conjuntoId = resolveConjuntoId(req);
       const { operarioId } = OperarioIdSchema.parse(req.params);
-      const service = new CronogramaService(this.prisma, conjuntoId);
+      const service = new CronogramaService(prisma, conjuntoId);
       const tareas = await service.tareasPorOperario({ operarioId });
       res.json(tareas);
     } catch (err) {
@@ -165,7 +161,7 @@ export class CronogramaController {
     try {
       const conjuntoId = resolveConjuntoId(req);
       const { fecha } = FechaSchema.parse({ fecha: req.query.fecha ?? "" });
-      const service = new CronogramaService(this.prisma, conjuntoId);
+      const service = new CronogramaService(prisma, conjuntoId);
       const tareas = await service.tareasPorFecha({ fecha });
       res.json(tareas);
     } catch (err) {
@@ -181,7 +177,7 @@ export class CronogramaController {
         inicio: req.query.inicio ?? "",
         fin: req.query.fin ?? "",
       });
-      const service = new CronogramaService(this.prisma, conjuntoId);
+      const service = new CronogramaService(prisma, conjuntoId);
       const tareas = await service.tareasEnRango({
         fechaInicio: inicio,
         fechaFin: fin,
@@ -199,7 +195,7 @@ export class CronogramaController {
       const { ubicacion } = UbicacionSchema.parse({
         ubicacion: req.query.ubicacion,
       });
-      const service = new CronogramaService(this.prisma, conjuntoId);
+      const service = new CronogramaService(prisma, conjuntoId);
       const tareas = await service.tareasPorUbicacion({ ubicacion });
       res.json(tareas);
     } catch (err) {
@@ -212,7 +208,7 @@ export class CronogramaController {
     try {
       const conjuntoId = resolveConjuntoId(req);
       const filtro = FiltroBodySchema.parse(req.body);
-      const service = new CronogramaService(this.prisma, conjuntoId);
+      const service = new CronogramaService(prisma, conjuntoId);
       const tareas = await service.tareasPorFiltro(filtro);
       res.json(tareas);
     } catch (err) {
@@ -224,7 +220,7 @@ export class CronogramaController {
   exportarComoEventosCalendario: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new CronogramaService(this.prisma, conjuntoId);
+      const service = new CronogramaService(prisma, conjuntoId);
       const eventos = await service.exportarComoEventosCalendario();
       res.json(eventos);
     } catch (err) {

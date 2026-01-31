@@ -1,11 +1,9 @@
 // src/services/EmpresaService.ts
 import {
-  PrismaClient,
-  EstadoMaquinaria,
   EstadoSolicitud,
 } from "../generated/prisma";
 import { z } from "zod";
-
+import { prisma } from "../db/prisma";
 import {
   CrearInsumoDTO,
   EditarInsumoDTO,
@@ -22,7 +20,6 @@ import {
   toEmpresaPublica,
 } from "../model/Empresa";
 import {
-  CrearMaquinariaCatalogoDTO,
   CrearMaquinariaDTO,
   DevolverMaquinariaDeConjuntoDTO,
   EditarMaquinariaCatalogoDTO,
@@ -31,7 +28,6 @@ import {
   maquinariaConjuntoSelect,
   PrestarMaquinariaAConjuntoDTO,
 } from "../model/Maquinaria";
-import { FiltroSolicitudMaquinariaDTO } from "../model/SolicitudMaquinaria";
 
 /** Zod local para setear el límite semanal directamente */
 const SetLimiteHorasDTO = z.object({
@@ -62,7 +58,7 @@ const FestivosRangoDTO = RangoDTO.extend({
 export class EmpresaService {
   private empresaNit: string;
 
-  constructor(private prisma: PrismaClient, empresaNit: string) {
+  constructor(empresaNit: string) {
     this.empresaNit = empresaNit; // empresaNit = NIT (clave)
   }
 
@@ -70,7 +66,7 @@ export class EmpresaService {
 
   /** Devuelve el límite legal/operativo semanal en HORAS para esta empresa */
   async getLimiteHorasSemana(): Promise<number> {
-    const empresa = await this.prisma.empresa.findUnique({
+    const empresa = await prisma.empresa.findUnique({
       where: { nit: this.empresaNit },
       select: { limiteHorasSemana: true },
     });
@@ -81,7 +77,7 @@ export class EmpresaService {
   /** Setter del límite semanal (HORAS) para esta empresa */
   async setLimiteHorasSemana(payload: unknown) {
     const { limiteHorasSemana } = SetLimiteHorasDTO.parse(payload);
-    await this.prisma.empresa.update({
+    await prisma.empresa.update({
       where: { nit: this.empresaNit },
       data: { limiteHorasSemana },
     });
@@ -93,7 +89,7 @@ export class EmpresaService {
    * 2) Si no -> usa el de la empresa operadora
    */
   async getLimiteMinSemanaPorConjunto(conjuntoId: string): Promise<number> {
-    const conjunto = await this.prisma.conjunto.findUnique({
+    const conjunto = await prisma.conjunto.findUnique({
       where: { nit: conjuntoId },
       select: { empresaId: true, limiteHorasSemanaOverride: true },
     });
@@ -104,7 +100,7 @@ export class EmpresaService {
     // si el conjunto cuelga de otra empresa, respetamos esa
     const empresaNit = conjunto?.empresaId ?? this.empresaNit;
 
-    const empresa = await this.prisma.empresa.findUnique({
+    const empresa = await prisma.empresa.findUnique({
       where: { nit: empresaNit },
       select: { limiteHorasSemana: true },
     });
@@ -117,13 +113,13 @@ export class EmpresaService {
   async crearEmpresa(payload: unknown) {
     const dto = CrearEmpresaDTO.parse(payload);
 
-    const existe = await this.prisma.empresa.findUnique({
+    const existe = await prisma.empresa.findUnique({
       where: { nit: dto.nit },
       select: { nit: true },
     });
     if (existe) throw new Error("Ya existe una empresa con este NIT.");
 
-    const creada = await this.prisma.empresa.create({
+    const creada = await prisma.empresa.create({
       data: {
         nombre: dto.nombre,
         nit: dto.nit,
@@ -141,7 +137,7 @@ export class EmpresaService {
   async editarEmpresa(payload: unknown) {
     const dto = EditarEmpresaDTO.parse(payload);
 
-    const actualizada = await this.prisma.empresa.update({
+    const actualizada = await prisma.empresa.update({
       where: { nit: this.empresaNit },
       data: {
         nombre: dto.nombre ?? undefined,
@@ -159,7 +155,7 @@ export class EmpresaService {
   }
 
   async getEmpresa() {
-    const empresa = await this.prisma.empresa.findUnique({
+    const empresa = await prisma.empresa.findUnique({
       where: { nit: this.empresaNit },
       select: empresaPublicSelect,
     });
@@ -178,7 +174,7 @@ export class EmpresaService {
     // hasta inclusive -> sumas 1 día para usar lt
     const d2Next = new Date(d2.getTime() + 24 * 60 * 60 * 1000);
 
-    return this.prisma.festivo.findMany({
+    return prisma.festivo.findMany({
       where: { pais, fecha: { gte: d1, lt: d2Next } },
       orderBy: { fecha: "asc" },
     });
@@ -192,13 +188,13 @@ export class EmpresaService {
     const d2Next = new Date(d2.getTime() + 24 * 60 * 60 * 1000);
 
     // 1) borrar rango
-    await this.prisma.festivo.deleteMany({
+    await prisma.festivo.deleteMany({
       where: { pais: dto.pais, fecha: { gte: d1, lt: d2Next } },
     });
 
     // 2) crear set nuevo (normalizado)
     if (dto.fechas.length) {
-      await this.prisma.festivo.createMany({
+      await prisma.festivo.createMany({
         data: dto.fechas.map((f) => ({
           pais: dto.pais,
           fecha: this.startOfDayLocal(f.fecha),
@@ -218,7 +214,7 @@ export class EmpresaService {
 
     // Si es de conjunto, valida que ese conjunto exista y sea de esta empresa (si aplica)
     if (dto.propietarioTipo === "CONJUNTO") {
-      const conj = await this.prisma.conjunto.findUnique({
+      const conj = await prisma.conjunto.findUnique({
         where: { nit: dto.conjuntoPropietarioId! },
         select: { nit: true, empresaId: true },
       });
@@ -229,7 +225,7 @@ export class EmpresaService {
       }
     }
 
-    const creada = await this.prisma.maquinaria.create({
+    const creada = await prisma.maquinaria.create({
       data: {
         nombre: dto.nombre,
         marca: dto.marca,
@@ -273,7 +269,7 @@ export class EmpresaService {
           : { connect: { id: dto.operarioId } };
     }
 
-    return this.prisma.maquinaria.update({
+    return prisma.maquinaria.update({
       where: { id },
       data,
       select: maquinariaCatalogoSelect,
@@ -281,28 +277,28 @@ export class EmpresaService {
   }
 
   async eliminarMaquinaria(id: number) {
-    const existente = await this.prisma.maquinaria.findFirst({
+    const existente = await prisma.maquinaria.findFirst({
       where: { id, empresaId: this.empresaNit },
       select: { id: true },
     });
     if (!existente)
       throw new Error("Maquinaria no encontrada para esta empresa.");
 
-    await this.prisma.maquinaria.delete({ where: { id } });
+    await prisma.maquinaria.delete({ where: { id } });
   }
 
   async prestarMaquinariaAConjunto(payload: unknown) {
     const dto = PrestarMaquinariaAConjuntoDTO.parse(payload);
 
     // 1) validar que exista maquinaria
-    const maq = await this.prisma.maquinaria.findUnique({
+    const maq = await prisma.maquinaria.findUnique({
       where: { id: dto.maquinariaId },
       select: { id: true },
     });
     if (!maq) throw new Error("Maquinaria no encontrada.");
 
     // 2) validar que no esté ACTIVA en ningún conjunto
-    const activa = await this.prisma.maquinariaConjunto.findFirst({
+    const activa = await prisma.maquinariaConjunto.findFirst({
       where: { maquinariaId: dto.maquinariaId, estado: "ACTIVA" },
       select: { id: true, conjuntoId: true },
     });
@@ -310,7 +306,7 @@ export class EmpresaService {
       throw new Error(`❌ Ya está ACTIVA en el conjunto ${activa.conjuntoId}.`);
 
     // 3) crear asignación inventario
-    return this.prisma.maquinariaConjunto.create({
+    return prisma.maquinariaConjunto.create({
       data: {
         conjunto: { connect: { nit: dto.conjuntoId } },
         maquinaria: { connect: { id: dto.maquinariaId } },
@@ -332,7 +328,7 @@ export class EmpresaService {
   async devolverMaquinariaDeConjunto(payload: unknown) {
     const dto = DevolverMaquinariaDeConjuntoDTO.parse(payload);
 
-    const asignacion = await this.prisma.maquinariaConjunto.findFirst({
+    const asignacion = await prisma.maquinariaConjunto.findFirst({
       where: {
         maquinariaId: dto.maquinariaId,
         conjuntoId: dto.conjuntoId,
@@ -347,7 +343,7 @@ export class EmpresaService {
       );
     }
 
-    return this.prisma.maquinariaConjunto.update({
+    return prisma.maquinariaConjunto.update({
       where: { id: asignacion.id },
       data: {
         estado: "DEVUELTA",
@@ -386,7 +382,7 @@ export class EmpresaService {
       };
     }
 
-    const items = await this.prisma.maquinaria.findMany({
+    const items = await prisma.maquinaria.findMany({
       where,
       select: {
         id: true,
@@ -483,7 +479,7 @@ export class EmpresaService {
   }
 
   async listarMaquinariaDisponible() {
-    return this.prisma.maquinaria.findMany({
+    return prisma.maquinaria.findMany({
       where: {
         propietarioTipo: "EMPRESA",
         empresaId: this.empresaNit,
@@ -495,7 +491,7 @@ export class EmpresaService {
   }
 
   async obtenerMaquinariaPrestada() {
-    return this.prisma.maquinariaConjunto.findMany({
+    return prisma.maquinariaConjunto.findMany({
       where: {
         estado: "ACTIVA",
         tipoTenencia: "PRESTADA",
@@ -522,13 +518,13 @@ export class EmpresaService {
   async agregarJefeOperaciones(payload: unknown) {
     const { usuarioId } = AgregarJefeOperacionesDTO.parse(payload);
 
-    const existente = await this.prisma.jefeOperaciones.findFirst({
+    const existente = await prisma.jefeOperaciones.findFirst({
       where: { id: usuarioId.toString(), empresaId: this.empresaNit },
     });
     if (existente)
       throw new Error("Este jefe ya está registrado en la empresa.");
 
-    const jefe = await this.prisma.jefeOperaciones.findUnique({
+    const jefe = await prisma.jefeOperaciones.findUnique({
       where: { id: usuarioId.toString() },
       select: { id: true },
     });
@@ -537,7 +533,7 @@ export class EmpresaService {
         "El usuario no es Jefe de Operaciones (no existe el rol)."
       );
 
-    return this.prisma.jefeOperaciones.update({
+    return prisma.jefeOperaciones.update({
       where: { id: usuarioId.toString() },
       data: { empresaId: this.empresaNit },
     });
@@ -547,7 +543,7 @@ export class EmpresaService {
 
   async recibirSolicitudTarea(payload: unknown) {
     const { id } = IdNumericoDTO.parse(payload);
-    return this.prisma.solicitudTarea.update({
+    return prisma.solicitudTarea.update({
       where: { id },
       data: { empresaId: this.empresaNit },
     });
@@ -555,11 +551,11 @@ export class EmpresaService {
 
   async eliminarSolicitudTarea(payload: unknown) {
     const { id } = IdNumericoDTO.parse(payload);
-    return this.prisma.solicitudTarea.delete({ where: { id } });
+    return prisma.solicitudTarea.delete({ where: { id } });
   }
 
   async solicitudesTareaPendientes() {
-    return this.prisma.solicitudTarea.findMany({
+    return prisma.solicitudTarea.findMany({
       where: { empresaId: this.empresaNit, estado: EstadoSolicitud.PENDIENTE },
       include: { conjunto: true, ubicacion: true, elemento: true },
     });
@@ -570,7 +566,7 @@ export class EmpresaService {
   async agregarInsumoAlCatalogo(payload: unknown) {
     const dto = CrearInsumoDTO.parse(payload);
 
-    const empresa = await this.prisma.empresa.findUnique({
+    const empresa = await prisma.empresa.findUnique({
       where: { nit: this.empresaNit },
       select: { nit: true },
     });
@@ -581,7 +577,7 @@ export class EmpresaService {
       );
     }
 
-    const existe = await this.prisma.insumo.findFirst({
+    const existe = await prisma.insumo.findFirst({
       where: {
         empresaId: this.empresaNit,
         nombre: dto.nombre,
@@ -595,7 +591,7 @@ export class EmpresaService {
       );
     }
 
-    const creado = await this.prisma.insumo.create({
+    const creado = await prisma.insumo.create({
       data: {
         nombre: dto.nombre,
         unidad: dto.unidad,
@@ -612,7 +608,7 @@ export class EmpresaService {
   async listarCatalogo(filtroRaw?: unknown): Promise<InsumoPublico[]> {
     const filtro = filtroRaw ? FiltroInsumoDTO.parse(filtroRaw) : {};
 
-    const insumos = await this.prisma.insumo.findMany({
+    const insumos = await prisma.insumo.findMany({
       where: {
         empresaId: filtro.empresaId ?? this.empresaNit,
         categoria: filtro.categoria ?? undefined,
@@ -630,7 +626,7 @@ export class EmpresaService {
   async buscarInsumoPorId(payload: unknown): Promise<InsumoPublico | null> {
     const { id } = IdNumericoDTO.parse(payload);
 
-    const insumo = await this.prisma.insumo.findFirst({
+    const insumo = await prisma.insumo.findFirst({
       where: { id, empresaId: this.empresaNit },
       select: insumoPublicSelect,
     });
@@ -641,13 +637,13 @@ export class EmpresaService {
   async editarInsumoCatalogo(id: number, payload: unknown) {
     const dto = EditarInsumoDTO.parse(payload);
 
-    const existente = await this.prisma.insumo.findFirst({
+    const existente = await prisma.insumo.findFirst({
       where: { id, empresaId: this.empresaNit },
       select: { id: true },
     });
     if (!existente) throw new Error("Insumo no encontrado para esta empresa.");
 
-    const actualizado = await this.prisma.insumo.update({
+    const actualizado = await prisma.insumo.update({
       where: { id },
       data: {
         nombre: dto.nombre ?? undefined,
@@ -663,12 +659,12 @@ export class EmpresaService {
   }
 
   async eliminarInsumoCatalogo(id: number) {
-    const existente = await this.prisma.insumo.findFirst({
+    const existente = await prisma.insumo.findFirst({
       where: { id, empresaId: this.empresaNit },
       select: { id: true },
     });
     if (!existente) throw new Error("Insumo no encontrado para esta empresa.");
 
-    await this.prisma.insumo.delete({ where: { id } });
+    await prisma.insumo.delete({ where: { id } });
   }
 }

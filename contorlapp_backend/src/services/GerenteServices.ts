@@ -1,11 +1,5 @@
-import {
-  PrismaClient,
-  Rol,
-  TipoFuncion,
-  TipoMaquinaria,
-  EstadoMaquinaria,
-  EstadoTarea,
-} from "../generated/prisma";
+import type { PrismaClient } from "../generated/prisma";
+import { Rol, TipoFuncion, EstadoTarea } from "../generated/prisma";
 import bcrypt from "bcrypt";
 import { Prisma } from "../generated/prisma";
 
@@ -36,11 +30,22 @@ import { CrearInsumoDTO, insumoPublicSelect } from "../model/Insumo";
 
 import { z } from "zod";
 import {
+  buscarHuecoDiaConSplitEarliest,
   buscarSolapesEnConjunto,
-  sugerirHuecoDia,
+  dateToDiaSemana,
+  mergeIntervalos,
+  solapa,
+  toDateAtMin,
+  toMin,
   toMinOfDay,
+  ymdLocal,
 } from "../utils/schedulerUtils";
-import { CrearMaquinariaCatalogoDTO, EditarMaquinariaCatalogoDTO } from "../model/Maquinaria";
+import {
+  CrearMaquinariaCatalogoDTO,
+  EditarMaquinariaCatalogoDTO,
+} from "../model/Maquinaria";
+import { buildBloqueosPorDescanso } from "./DefinicionTareaPreventivaService";
+import { Intervalo } from "../utils/agenda";
 
 const AsignarAConjuntoDTO = z.object({
   operarioId: z.number().int().positive(),
@@ -552,7 +557,7 @@ export class GerenteService {
       throw new Error("❌ El conjunto tiene tareas pendientes.");
     if (maquinariaActivaEnConjunto.length > 0)
       throw new Error(
-        "❌ El conjunto tiene maquinaria activa asignada (propia o prestada)."
+        "❌ El conjunto tiene maquinaria activa asignada (propia o prestada).",
       );
 
     await this.prisma.conjunto.delete({ where: { nit: conjuntoId } });
@@ -600,7 +605,7 @@ export class GerenteService {
     });
     if (!inventario)
       throw new Error(
-        `❌ No se encontró inventario para el conjunto ${dto.conjuntoId}`
+        `❌ No se encontró inventario para el conjunto ${dto.conjuntoId}`,
       );
 
     const existente = await this.prisma.inventarioInsumo.findUnique({
@@ -638,7 +643,7 @@ export class GerenteService {
     });
     if (existe)
       throw new Error(
-        "🚫 Ya existe un insumo con ese nombre y unidad en el catálogo."
+        "🚫 Ya existe un insumo con ese nombre y unidad en el catálogo.",
       );
 
     return this.prisma.insumo.create({
@@ -672,248 +677,456 @@ export class GerenteService {
     return supervisores.map(toUsuarioPublico);
   }
 
-
   /* ===================== TAREAS ===================== */
 
   async asignarTarea(payload: unknown) {
     const dto = CrearTareaDTO.parse(payload);
 
-    const periodoAnio = dto.fechaInicio.getFullYear();
-    const periodoMes = dto.fechaInicio.getMonth() + 1;
-
     const inicio = dto.fechaInicio;
+    const periodoAnio = inicio.getFullYear();
+    const periodoMes = inicio.getMonth() + 1;
 
     const durMin =
       dto.duracionMinutos ??
-      Math.max(
-        1,
-        Math.round((dto.fechaFin.getTime() - dto.fechaInicio.getTime()) / 60000)
-      );
+      (dto.duracionHoras
+        ? Math.max(1, Math.round(dto.duracionHoras * 60))
+        : undefined) ??
+      (dto.fechaFin
+        ? Math.max(
+            1,
+            Math.round((dto.fechaFin.getTime() - inicio.getTime()) / 60000),
+          )
+        : undefined);
+
+    if (!durMin) {
+      return {
+        ok: false,
+        reason: "FALTA_DURACION",
+        message: "Debe indicar duración.",
+      };
+    }
 
     const fin = dto.fechaFin ?? new Date(inicio.getTime() + durMin * 60000);
 
-    // Operarios
     const operariosIds =
       dto.operariosIds?.map(String) ??
       (dto.operarioId ? [String(dto.operarioId)] : []);
 
-    // ✅ 1) sugerencia de hueco (si hay conjunto)
-    let sugerencia: null | {
-      startMin: number;
-      endMin: number;
-      suggestedInicio: Date;
-      suggestedFin: Date;
-      startHHmm: string;
-    } = null;
+    const tipo = (dto.tipo ?? "CORRECTIVA") as any;
+    const prioridad = dto.prioridad ?? 2;
 
-    if (dto.conjuntoId && operariosIds.length) {
-      const desiredStartMin = toMinOfDay(inicio);
-
-      const sug = await sugerirHuecoDia({
-        prisma: this.prisma,
-        conjuntoId: dto.conjuntoId,
-        fechaDia: inicio,
-        desiredStartMin,
-        durMin,
-        operariosIds,
-        incluirBorradorAgenda: true,
-        excluirEstadosAgenda: ["PENDIENTE_REPROGRAMACION"],
-      });
-
-      if (sug.ok) {
-        const sugIni = new Date(
-          inicio.getFullYear(),
-          inicio.getMonth(),
-          inicio.getDate(),
-          Math.floor(sug.startMin / 60),
-          sug.startMin % 60,
-          0,
-          0
-        );
-        const sugFin = new Date(sugIni.getTime() + durMin * 60000);
-
-        sugerencia = {
-          startMin: sug.startMin,
-          endMin: sug.endMin,
-          suggestedInicio: sugIni,
-          suggestedFin: sugFin,
-          startHHmm: `${String(Math.floor(sug.startMin / 60)).padStart(
-            2,
-            "0"
-          )}:${String(sug.startMin % 60).padStart(2, "0")}`,
-        };
-      }
-    }
-
-    // ✅ 2) solapes reales
-    const solapes = dto.conjuntoId
-      ? await buscarSolapesEnConjunto(this.prisma, {
-          conjuntoId: dto.conjuntoId,
-          fechaInicio: inicio,
-          fechaFin: fin,
-          incluirBorrador: true,
-          excluirEstados: ["PENDIENTE_REPROGRAMACION"],
-        })
+    const maquinariaIds: number[] = Array.isArray((dto as any).maquinariaIds)
+      ? (dto as any).maquinariaIds
+          .map((x: any) => Number(x))
+          .filter((n: number) => Number.isFinite(n) && n > 0)
       : [];
 
-    if (solapes.length) {
-      const esCorrectivaP1 =
-        dto.tipo === "CORRECTIVA" && (dto.prioridad ?? 2) === 1;
+    // =========================
+    // Helpers de logística
+    // =========================
+    const LOGISTICA_DOW = new Set([1, 3, 6]); // lun, mié, sáb
 
-      if (!esCorrectivaP1) {
-        throw new Error("HAY_SOLAPE_CON_TAREAS_EXISTENTES");
+    const startDay = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+    const endDay = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+
+    const isLogistica = (d: Date) => LOGISTICA_DOW.has(d.getDay());
+
+    const entregaLogistica = (uso: Date) => {
+      const base = startDay(uso);
+      if (isLogistica(base)) return base;
+      for (let i = 1; i <= 7; i++) {
+        const d = new Date(base);
+        d.setDate(d.getDate() - i);
+        if (isLogistica(d)) return startDay(d);
       }
+      return base;
+    };
 
-      const reemplazables = solapes.filter(
-        (t) => t.tipo === "PREVENTIVA" && (t.prioridad ?? 2) > 1
-      );
+    const recogidaLogistica = (uso: Date) => {
+      const base = startDay(uso);
+      for (let i = 1; i <= 14; i++) {
+        const d = new Date(base);
+        d.setDate(d.getDate() + i);
+        if (isLogistica(d)) return startDay(d);
+      }
+      return base;
+    };
 
-      return {
-        needsReplacement: true,
-        message:
-          "La correctiva prioridad 1 se solapa. Puedes reemplazar una preventiva (prioridad 2 o 3) o usar el horario sugerido.",
-        solapes,
-        reemplazables,
-        suggestedInicio: sugerencia?.suggestedInicio ?? null,
-        suggestedFin: sugerencia?.suggestedFin ?? null,
-        startHHmm: sugerencia?.startHHmm ?? null,
-      };
-    }
+    const esPropia = (tipoTenencia: any) => {
+      const v = String(tipoTenencia ?? "").toUpperCase();
+      return v.includes("PROPIA") || v.includes("CONJUNTO");
+    };
 
-    // ✅ 3) crear si no hay solape
-    return this.prisma.tarea.create({
-      data: {
-        descripcion: dto.descripcion,
-        fechaInicio: inicio,
-        fechaFin: fin,
-        duracionMinutos: durMin,
-        estado: EstadoTarea.ASIGNADA,
-        tipo: (dto.tipo ?? "CORRECTIVA") as any,
-        prioridad: dto.prioridad ?? 2,
-        borrador: false,
-
-        evidencias: dto.evidencias ?? [],
-        insumosUsados: dto.insumosUsados ?? [],
-        ubicacionId: dto.ubicacionId,
-        elementoId: dto.elementoId,
-        conjuntoId: dto.conjuntoId ?? null,
-        supervisorId:
-          dto.supervisorId != null ? String(dto.supervisorId) : null,
-
-        periodoAnio,
-        periodoMes,
-
-        ...(dto.operariosIds?.length
-          ? {
-              operarios: {
-                connect: dto.operariosIds.map((id) => ({ id: String(id) })),
-              },
-            }
-          : dto.operarioId
-          ? { operarios: { connect: { id: String(dto.operarioId) } } }
-          : {}),
-      },
-    });
-  }
-
-  async asignarTareaConReemplazo(payload: unknown) {
-    const { tarea, reemplazarIds } = AsignarConReemplazoDTO.parse(payload);
-    const dto = CrearTareaDTO.parse(tarea);
-
-    if (dto.tipo !== "CORRECTIVA" || (dto.prioridad ?? 2) !== 1) {
-      throw new Error("Solo aplica para CORRECTIVA prioridad 1.");
-    }
-    if (!dto.conjuntoId) throw new Error("conjuntoId requerido.");
-
+    // =========================
+    // TRANSACCIÓN
+    // =========================
     return this.prisma.$transaction(async (tx) => {
-      const targets = await tx.tarea.findMany({
-        where: {
-          id: { in: reemplazarIds },
-          conjuntoId: dto.conjuntoId!,
-          tipo: "PREVENTIVA" as any,
-          borrador: false,
-        },
-        select: {
-          id: true,
-          fechaInicio: true,
-          fechaFin: true,
-          prioridad: true,
-          tipo: true,
-          descripcion: true,
-        },
-      });
-
-      if (targets.length !== reemplazarIds.length) {
-        throw new Error(
-          "Algunas tareas a reemplazar no existen o no son preventivas publicadas."
-        );
-      }
-
-      // Exigir que sean prioridad 2 o 3 y que choquen
-      for (const t of targets) {
-        if ((t.prioridad ?? 2) <= 1) {
-          throw new Error(
-            `La tarea ${t.id} es prioridad 1; NO se permite reemplazar.`
-          );
-        }
-        const choca =
-          t.fechaInicio < dto.fechaFin && t.fechaFin > dto.fechaInicio;
-        if (!choca) {
-          throw new Error(
-            `La tarea ${t.id} no se solapa; no se puede reemplazar.`
-          );
-        }
-      }
-
-      await tx.tarea.updateMany({
-        where: { id: { in: reemplazarIds } },
-        data: {
-          estado: EstadoTarea.PENDIENTE_REPROGRAMACION,
-          observaciones: "Reemplazada por correctiva prioridad 1",
-        },
-      });
-
-      // Crear correctiva
-      const periodoAnio = dto.fechaInicio.getFullYear();
-      const periodoMes = dto.fechaInicio.getMonth() + 1;
-
-      const creada = await tx.tarea.create({
+      // 1️⃣ Crear la tarea
+      const tarea = await tx.tarea.create({
         data: {
           descripcion: dto.descripcion,
-          fechaInicio: dto.fechaInicio,
-          fechaFin: dto.fechaFin,
-          duracionMinutos: dto.duracionMinutos,
+          fechaInicio: inicio,
+          fechaFin: fin,
+          duracionMinutos: durMin,
+          tipo,
+          prioridad,
           estado: EstadoTarea.ASIGNADA,
-          tipo: "CORRECTIVA" as any,
-          prioridad: 1,
           borrador: false,
-
-          evidencias: dto.evidencias ?? [],
-          insumosUsados: dto.insumosUsados ?? [],
+          periodoAnio,
+          periodoMes,
           ubicacionId: dto.ubicacionId,
           elementoId: dto.elementoId,
           conjuntoId: dto.conjuntoId ?? null,
           supervisorId:
             dto.supervisorId != null ? String(dto.supervisorId) : null,
-          periodoAnio,
-          periodoMes,
-
-          ...(dto.operariosIds?.length
-            ? {
-                operarios: {
-                  connect: dto.operariosIds.map((id) => ({ id: String(id) })),
-                },
-              }
-            : dto.operarioId
-            ? { operarios: { connect: { id: String(dto.operarioId) } } }
+          ...(operariosIds.length
+            ? { operarios: { connect: operariosIds.map((id) => ({ id })) } }
             : {}),
         },
+        select: { id: true },
       });
+
+      // 2️⃣ Resolver maquinaria por conjunto
+      if (dto.conjuntoId && maquinariaIds.length) {
+        const registros = await tx.maquinariaConjunto.findMany({
+          where: {
+            conjuntoId: dto.conjuntoId,
+            maquinariaId: { in: maquinariaIds },
+            estado: "ACTIVA",
+          },
+          select: {
+            maquinariaId: true,
+            tipoTenencia: true,
+          },
+        });
+
+        const tenenciaMap = new Map<number, any>();
+        for (const r of registros) {
+          tenenciaMap.set(r.maquinariaId, r.tipoTenencia);
+        }
+
+        for (const maqId of maquinariaIds) {
+          const propia = esPropia(tenenciaMap.get(maqId));
+
+          let reservaInicio: Date;
+          let reservaFin: Date;
+          let obs: string;
+
+          if (propia) {
+            reservaInicio = inicio;
+            reservaFin = fin;
+            obs = "Reserva maquinaria propia (uso real)";
+          } else {
+            const entrega = entregaLogistica(inicio);
+            const recogida = recogidaLogistica(fin);
+            reservaInicio = startDay(entrega);
+            reservaFin = endDay(recogida);
+            obs = `Reserva logística (${entrega.toDateString()} → ${recogida.toDateString()})`;
+          }
+
+          // Validar solape REAL
+          const choque = await tx.usoMaquinaria.findFirst({
+            where: {
+              maquinariaId: maqId,
+              fechaInicio: { lt: reservaFin },
+              fechaFin: { gt: reservaInicio },
+            },
+          });
+
+          if (choque) {
+            throw new Error(
+              `MAQUINARIA_OCUPADA: maquinaria ${maqId} ya está reservada`,
+            );
+          }
+
+          // Crear uso
+          await tx.usoMaquinaria.create({
+            data: {
+              tarea: { connect: { id: tarea.id } },
+              maquinaria: { connect: { id: maqId } },
+              fechaInicio: reservaInicio,
+              fechaFin: reservaFin,
+              observacion: obs,
+            },
+          });
+
+          // Amarrar si existe registro en MaquinariaConjunto
+          await tx.maquinariaConjunto.updateMany({
+            where: {
+              conjuntoId: dto.conjuntoId,
+              maquinariaId: maqId,
+              estado: "ACTIVA",
+            },
+            data: { tareaId: tarea.id },
+          });
+        }
+      }
 
       return {
         ok: true,
-        creada,
-        reemplazadas: targets,
+        message: "Tarea creada correctamente",
+        tareaId: tarea.id,
+      };
+    });
+  }
+
+  async asignarTareaConReemplazo(payload: unknown) {
+    const body = payload as any;
+
+    const dto = CrearTareaDTO.parse(body.tarea);
+
+    const reemplazarIds: number[] = Array.isArray(body.reemplazarIds)
+      ? body.reemplazarIds
+          .map((x: any) => Number(x))
+          .filter((n: number) => Number.isFinite(n) && n > 0)
+      : [];
+
+    if (!reemplazarIds.length) {
+      return {
+        ok: false,
+        reason: "SIN_REEMPLAZOS",
+        message: "Debe indicar las tareas a reemplazar.",
+      };
+    }
+
+    const tipo = (dto.tipo ?? "CORRECTIVA") as any;
+    const prioridad = dto.prioridad ?? 2;
+
+    if (tipo !== "CORRECTIVA" || prioridad !== 1) {
+      return {
+        ok: false,
+        reason: "NO_ES_P1",
+        message: "Solo se permite reemplazo para correctivas prioridad 1.",
+      };
+    }
+
+    if (!dto.conjuntoId) {
+      return {
+        ok: false,
+        reason: "SIN_CONJUNTO",
+        message: "conjuntoId es obligatorio para reemplazo.",
+      };
+    }
+
+    const inicio = dto.fechaInicio;
+    const periodoAnio = inicio.getFullYear();
+    const periodoMes = inicio.getMonth() + 1;
+
+    const durMin =
+      dto.duracionMinutos ??
+      (dto.duracionHoras
+        ? Math.max(1, Math.round(dto.duracionHoras * 60))
+        : undefined) ??
+      (dto.fechaFin
+        ? Math.max(
+            1,
+            Math.round((dto.fechaFin.getTime() - inicio.getTime()) / 60000),
+          )
+        : undefined);
+
+    if (!durMin) {
+      return {
+        ok: false,
+        reason: "FALTA_DURACION",
+        message: "Debe indicar duración.",
+      };
+    }
+
+    const fin = dto.fechaFin ?? new Date(inicio.getTime() + durMin * 60000);
+
+    const operariosIds =
+      dto.operariosIds?.map(String) ??
+      (dto.operarioId ? [String(dto.operarioId)] : []);
+
+    const maquinariaIds: number[] = Array.isArray((dto as any).maquinariaIds)
+      ? (dto as any).maquinariaIds
+          .map((x: any) => Number(x))
+          .filter((n: number) => Number.isFinite(n) && n > 0)
+      : [];
+
+    // =========================
+    // Helpers logística (MISMA lógica que asignarTarea)
+    // =========================
+    const LOGISTICA_DOW = new Set([1, 3, 6]); // lun, mié, sáb
+
+    const startDay = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+    const endDay = (d: Date) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+
+    const isLogistica = (d: Date) => LOGISTICA_DOW.has(d.getDay());
+
+    const entregaLogistica = (uso: Date) => {
+      const base = startDay(uso);
+      if (isLogistica(base)) return base;
+      for (let i = 1; i <= 7; i++) {
+        const d = new Date(base);
+        d.setDate(d.getDate() - i);
+        if (isLogistica(d)) return startDay(d);
+      }
+      return base;
+    };
+
+    const recogidaLogistica = (uso: Date) => {
+      const base = startDay(uso);
+      for (let i = 1; i <= 14; i++) {
+        const d = new Date(base);
+        d.setDate(d.getDate() + i);
+        if (isLogistica(d)) return startDay(d);
+      }
+      return base;
+    };
+
+    const esPropia = (tipoTenencia: any) => {
+      const v = String(tipoTenencia ?? "").toUpperCase();
+      return v.includes("PROPIA") || v.includes("CONJUNTO");
+    };
+
+    // =========================
+    // TRANSACCIÓN
+    // =========================
+    return this.prisma.$transaction(async (tx) => {
+      // 1️⃣ Validar tareas a reemplazar
+      const tareasReemplazar = await tx.tarea.findMany({
+        where: {
+          id: { in: reemplazarIds },
+          conjuntoId: dto.conjuntoId,
+        },
+        select: {
+          id: true,
+          prioridad: true,
+          estado: true,
+          fechaInicio: true,
+          fechaFin: true,
+        },
+      });
+
+      for (const t of tareasReemplazar) {
+        if ((t.prioridad ?? 2) <= 1) {
+          throw new Error("NO_REEMPLAZAR_P1");
+        }
+        if (t.estado === "COMPLETADA" || t.estado === "APROBADA") {
+          throw new Error("NO_REEMPLAZAR_CERRADA");
+        }
+      }
+
+      // 2️⃣ Crear la correctiva P1
+      const p1 = await tx.tarea.create({
+        data: {
+          descripcion: dto.descripcion,
+          fechaInicio: inicio,
+          fechaFin: fin,
+          duracionMinutos: durMin,
+          tipo: "CORRECTIVA",
+          prioridad: 1,
+          estado: EstadoTarea.ASIGNADA,
+          borrador: false,
+          periodoAnio,
+          periodoMes,
+          ubicacionId: dto.ubicacionId,
+          elementoId: dto.elementoId,
+          conjuntoId: dto.conjuntoId,
+          supervisorId:
+            dto.supervisorId != null ? String(dto.supervisorId) : null,
+          ...(operariosIds.length
+            ? { operarios: { connect: operariosIds.map((id) => ({ id })) } }
+            : {}),
+        },
+        select: { id: true },
+      });
+
+      // 3️⃣ Marcar reemplazadas
+      const now = new Date();
+
+      await tx.tarea.updateMany({
+        where: { id: { in: reemplazarIds } },
+        data: {
+          estado: EstadoTarea.PENDIENTE_REPROGRAMACION,
+          reprogramada: true,
+          reprogramadaEn: now,
+          reprogramadaMotivo: "Reemplazada por correctiva P1",
+          reprogramadaPorTareaId: p1.id,
+        } as any,
+      });
+
+      // 4️⃣ Reservar maquinaria (misma lógica que asignarTarea)
+      if (maquinariaIds.length) {
+        const registros = await tx.maquinariaConjunto.findMany({
+          where: {
+            conjuntoId: dto.conjuntoId!,
+            maquinariaId: { in: maquinariaIds },
+            estado: "ACTIVA",
+          },
+          select: {
+            maquinariaId: true,
+            tipoTenencia: true,
+          },
+        });
+
+        const tenenciaMap = new Map<number, any>();
+        for (const r of registros) {
+          tenenciaMap.set(r.maquinariaId, r.tipoTenencia);
+        }
+
+        for (const maqId of maquinariaIds) {
+          const propia = esPropia(tenenciaMap.get(maqId));
+
+          let reservaInicio: Date;
+          let reservaFin: Date;
+          let obs: string;
+
+          if (propia) {
+            reservaInicio = inicio;
+            reservaFin = fin;
+            obs = "Reserva maquinaria propia (correctiva P1)";
+          } else {
+            const entrega = entregaLogistica(inicio);
+            const recogida = recogidaLogistica(fin);
+            reservaInicio = startDay(entrega);
+            reservaFin = endDay(recogida);
+            obs = `Reserva logística P1 (${entrega.toDateString()} → ${recogida.toDateString()})`;
+          }
+
+          const choque = await tx.usoMaquinaria.findFirst({
+            where: {
+              maquinariaId: maqId,
+              fechaInicio: { lt: reservaFin },
+              fechaFin: { gt: reservaInicio },
+            },
+          });
+
+          if (choque) {
+            throw new Error(`MAQUINARIA_OCUPADA_${maqId}`);
+          }
+
+          await tx.usoMaquinaria.create({
+            data: {
+              tarea: { connect: { id: p1.id } },
+              maquinaria: { connect: { id: maqId } },
+              fechaInicio: reservaInicio,
+              fechaFin: reservaFin,
+              observacion: obs,
+            },
+          });
+
+          await tx.maquinariaConjunto.updateMany({
+            where: {
+              conjuntoId: dto.conjuntoId!,
+              maquinariaId: maqId,
+              estado: "ACTIVA",
+            },
+            data: { tareaId: p1.id },
+          });
+        }
+      }
+
+      return {
+        ok: true,
+        message: "Correctiva P1 creada y tareas reemplazadas.",
+        createdP1Id: p1.id,
+        reemplazadasIds: reemplazarIds,
       };
     });
   }
@@ -972,16 +1185,20 @@ export class GerenteService {
     const tareas = await this.prisma.tarea.findMany({
       where: { conjuntoId, borrador: false },
       include: {
-        supervisor: {
-          include: {
-            usuario: true,
-          },
+        supervisor: { include: { usuario: true } },
+        operarios: { include: { usuario: true } },
+
+        ubicacion: true,
+        elemento: true,
+
+        usoHerramientas: {
+          include: { herramienta: { select: { id: true, nombre: true } } },
         },
-        operarios: {
-          include: {
-            usuario: true,
-          },
+        usoMaquinarias: {
+          include: { maquinaria: { select: { id: true, nombre: true } } },
         },
+
+        insumoPrincipal: true,
       },
       orderBy: { fechaInicio: "desc" },
     });
@@ -992,9 +1209,23 @@ export class GerenteService {
           ?.map((o) => o.usuario?.nombre)
           .filter((n): n is string => !!n) ?? [];
 
-      const operariosIds = t.operarios?.map((o) => Number(o.id)) ?? [];
-
+      // NO convertir a Number (cédulas)
+      const operariosIds = t.operarios?.map((o) => o.id) ?? [];
       const supervisorNombre = t.supervisor?.usuario?.nombre ?? null;
+
+      const herramientasAsignadas =
+        t.usoHerramientas?.map((u) => ({
+          herramientaId: u.herramientaId,
+          nombre: u.herramienta?.nombre ?? "",
+          cantidad: Number(u.cantidad ?? 1),
+          estado: u.estado ?? null,
+        })) ?? [];
+
+      const maquinariasAsignadas =
+        t.usoMaquinarias?.map((u) => ({
+          maquinariaId: u.maquinariaId,
+          nombre: u.maquinaria?.nombre ?? "",
+        })) ?? [];
 
       return {
         id: t.id,
@@ -1002,21 +1233,45 @@ export class GerenteService {
         fechaInicio: t.fechaInicio,
         fechaFin: t.fechaFin,
         duracionMinutos: t.duracionMinutos,
+        prioridad: t.prioridad,
         estado: t.estado,
-        evidencias: t.evidencias,
-        insumosUsados: t.insumosUsados,
+
+        evidencias: t.evidencias ?? [],
+        insumosUsados: t.insumosUsados ?? null,
+
         observaciones: t.observaciones,
         observacionesRechazo: t.observacionesRechazo,
         tipo: t.tipo,
         frecuencia: t.frecuencia,
+
         conjuntoId: t.conjuntoId,
-        supervisorId: t.supervisorId ? Number(t.supervisorId) : null,
+
+        supervisorId: t.supervisorId ?? null,
+        supervisorNombre,
+
         ubicacionId: t.ubicacionId,
+        ubicacionNombre: t.ubicacion?.nombre ?? null,
+
         elementoId: t.elementoId,
+        elementoNombre: t.elemento?.nombre ?? null,
 
         operariosIds,
         operariosNombres,
-        supervisorNombre,
+
+        // USO/ASIGNACIÓN
+        herramientasAsignadas,
+        maquinariasAsignadas,
+
+        // PLANIFICACIÓN (JSON)
+        herramientasPlanJson: t.herramientasPlanJson ?? null,
+        maquinariaPlanJson: t.maquinariaPlanJson ?? null,
+        insumosPlanJson: t.insumosPlanJson ?? null,
+
+        // Opcional
+        insumoPrincipalId: t.insumoPrincipalId ?? null,
+        insumoPrincipalNombre: t.insumoPrincipal?.nombre ?? null,
+        consumoPrincipalPorUnidad: t.consumoPrincipalPorUnidad ?? null,
+        consumoTotalEstimado: t.consumoTotalEstimado ?? null,
       };
     });
   }
@@ -1034,7 +1289,7 @@ export class GerenteService {
   }
 
   async reemplazarAdminEnVariosConjuntos(
-    reemplazos: { conjuntoId: string; nuevoAdminId: number }[]
+    reemplazos: { conjuntoId: string; nuevoAdminId: number }[],
   ) {
     if (reemplazos.length === 0) return;
     for (const { conjuntoId, nuevoAdminId } of reemplazos) {
@@ -1130,8 +1385,63 @@ export class GerenteService {
     await this.prisma.maquinaria.delete({ where: { id: maquinariaId } });
   }
 
-  async eliminarTarea(tareaId: number) {
-    await this.prisma.tarea.delete({ where: { id: tareaId } });
+  async eliminarTarea(prisma: PrismaClient, id: number) {
+    const tarea = await prisma.tarea.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        estado: true,
+        borrador: true,
+      },
+    });
+
+    if (!tarea) throw new Error("Tarea no encontrada.");
+
+    // 🔒 Reglas de negocio (ajústalas a tu gusto)
+    if (
+      tarea.estado === EstadoTarea.COMPLETADA ||
+      tarea.estado === EstadoTarea.APROBADA ||
+      tarea.estado === EstadoTarea.PENDIENTE_APROBACION
+    ) {
+      throw new Error(
+        "No se puede eliminar una tarea que ya fue ejecutada o está en aprobación.",
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1) Liberar maquinaria asignada al conjunto por esta tarea (si existiera)
+      // (tu relación tiene onDelete: SetNull, pero igual lo hacemos explícito)
+      await tx.maquinariaConjunto.updateMany({
+        where: { tareaId: id },
+        data: { tareaId: null },
+      });
+
+      // 2) Borrar usos de maquinaria/herramienta ligados a la tarea (FK dura)
+      await tx.usoMaquinaria.deleteMany({
+        where: { tareaId: id },
+      });
+
+      await tx.usoHerramienta.deleteMany({
+        where: { tareaId: id },
+      });
+
+      // 3) Borrar consumos ligados a la tarea (si aplica en tu schema real)
+      await tx.consumoInsumo.deleteMany({
+        where: { tareaId: id },
+      });
+
+      // 4) (Opcional) Desconectar relación M:N de operarios (normalmente Prisma lo limpia,
+      // pero lo dejo por si tu DB tiene restricciones raras)
+      await tx.tarea.update({
+        where: { id },
+        data: { operarios: { set: [] } },
+      });
+
+      // 5) Ahora sí, borrar la tarea
+      await tx.tarea.delete({ where: { id } });
+    });
+
+    return { ok: true, message: "Tarea eliminada correctamente." };
   }
 
   /* ===================== EDICIONES RÁPIDAS (compat) ===================== */

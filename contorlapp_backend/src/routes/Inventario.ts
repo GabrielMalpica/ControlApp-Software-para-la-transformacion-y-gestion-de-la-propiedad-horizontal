@@ -1,11 +1,9 @@
 // ejemplo: src/routes/Inventario.ts
 import { Router } from "express";
-import { PrismaClient } from "../generated/prisma";
 import { InventarioController } from "../controller/InventarioController";
 
 const router = Router();
-const prisma = new PrismaClient();
-const c = new InventarioController(prisma);
+const c = new InventarioController();
 
 // ✅ por conjunto
 router.get("/conjunto/:nit/insumos", c.listarInsumosConjunto);

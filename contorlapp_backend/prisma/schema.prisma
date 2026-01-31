@@ -1,10 +1,11 @@
-/* =========================================
-   GENERATORS & DATASOURCE
-========================================= */
+/**
+ * =========================================
+ * GENERATORS & DATASOURCE
+ * =========================================
+ */
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
 }
 
 generator erd {
@@ -19,9 +20,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/* =========================================
-   ENUMS - IDENTIDAD / RRHH
-========================================= */
+/**
+ * =========================================
+ * ENUMS - IDENTIDAD / RRHH
+ * =========================================
+ */
 
 enum Rol {
   gerente
@@ -140,9 +143,11 @@ enum TipoFuncion {
   ASEO
 }
 
-/* =========================================
-   ENUMS - OPERACIÓN / SERVICIOS / AGENDA
-========================================= */
+/**
+ * =========================================
+ * ENUMS - OPERACIÓN / SERVICIOS / AGENDA
+ * =========================================
+ */
 
 enum TipoServicio {
   JARDINERIA
@@ -195,9 +200,11 @@ enum EstadoSolicitud {
   RECHAZADA
 }
 
-/* =========================================
-   ENUMS - INSUMOS / INVENTARIO
-========================================= */
+/**
+ * =========================================
+ * ENUMS - INSUMOS / INVENTARIO
+ * =========================================
+ */
 
 enum CategoriaInsumo {
   LIMPIEZA
@@ -222,9 +229,19 @@ enum TipoMovimientoInsumo {
   AJUSTE
 }
 
-/* =========================================
-   ENUMS - MAQUINARIA
-========================================= */
+enum EstadoUsoHerramienta {
+  RESERVADA
+  EN_USO
+  DEVUELTA
+  CONSUMIDA
+  CANCELADA
+}
+
+/**
+ * =========================================
+ * ENUMS - MAQUINARIA
+ * =========================================
+ */
 
 enum TipoMaquinaria {
   CORTASETOS_MANO
@@ -268,6 +285,7 @@ enum TipoTenenciaMaquinaria {
 }
 
 enum EstadoAsignacionMaquinaria {
+  RESERVADA
   ACTIVA
   DEVUELTA
   INACTIVA
@@ -281,9 +299,24 @@ enum EstadoSolicitudMaquinaria {
   DEVUELTA
 }
 
-/* =========================================
-   ENUMS - RENDIMIENTOS
-========================================= */
+enum ModoControlHerramienta {
+  PRESTAMO
+  CONSUMO
+  VIDA_CORTA
+}
+
+enum EstadoHerramienta {
+  OPERATIVA
+  DANADA
+  PERDIDA
+  BAJA
+}
+
+/**
+ * =========================================
+ * ENUMS - RENDIMIENTOS
+ * =========================================
+ */
 
 enum RendimientoBaseTiempo {
   POR_HORA
@@ -291,9 +324,11 @@ enum RendimientoBaseTiempo {
   MIN_POR_UNIDAD
 }
 
-/* =========================================
-   MODELOS - CONFIG / MAESTROS
-========================================= */
+/**
+ * =========================================
+ * MODELOS - CONFIG / MAESTROS
+ * =========================================
+ */
 
 model ConfiguracionSistema {
   id    Int    @id @default(autoincrement())
@@ -301,14 +336,16 @@ model ConfiguracionSistema {
   valor String
 }
 
-/* =========================================
-   MODELOS - NÚCLEO EMPRESA / USUARIOS / ROLES
-========================================= */
+/**
+ * =========================================
+ * MODELOS - NÚCLEO EMPRESA / USUARIOS / ROLES
+ * =========================================
+ */
 
 model Usuario {
-  id              String     @id
+  id              String          @id
   nombre          String
-  correo          String     @unique
+  correo          String          @unique
   contrasena      String
   rol             String
   telefono        BigInt
@@ -350,7 +387,7 @@ model Empresa {
 
   // Catálogos/Stock
   stockMaquinaria Maquinaria[]
-  catalogoInsumos  Insumo[]
+  catalogoInsumos Insumo[]
 
   // Solicitudes
   solicitudesTareas     SolicitudTarea[]
@@ -362,8 +399,10 @@ model Empresa {
   tareasRechazadas Tarea[] @relation("EmpresaTareasRechazadas")
 
   // Analítica/consumos
-  insumosConsumidos InsumoConsumoEmpresa[]
-  Rendimiento       Rendimiento[]
+  insumosConsumidos       InsumoConsumoEmpresa[]
+  Rendimiento             Rendimiento[]
+  catalogoHerramientas    Herramienta[]
+  solicitudesHerramientas SolicitudHerramienta[]
 
   @@map("Empresa")
 }
@@ -409,11 +448,11 @@ model Supervisor {
 }
 
 model Operario {
-  id                        String      @id
-  usuario                   Usuario     @relation(fields: [id], references: [id], onDelete: Cascade)
-  funciones                 TipoFuncion[]
-  tareas                    Tarea[]     @relation("TareaOperarios")
-  conjuntos                 Conjunto[]  @relation("OperarioConjuntos")
+  id        String        @id
+  usuario   Usuario       @relation(fields: [id], references: [id], onDelete: Cascade)
+  funciones TipoFuncion[]
+  tareas    Tarea[]       @relation("TareaOperarios")
+  conjuntos Conjunto[]    @relation("OperarioConjuntos")
 
   cursoSalvamentoAcuatico   Boolean
   urlEvidenciaSalvamento    String?
@@ -437,13 +476,16 @@ model Operario {
   definicionesPreventivas DefinicionTareaPreventiva[] @relation("DefinicionOperarios")
   maquinariaConjuntos     MaquinariaConjunto[]
   usoMaquinarias          UsoMaquinaria[]
+  usoHerramientas         UsoHerramienta[]
 
   @@map("Operario")
 }
 
-/* =========================================
-   MODELOS - CLIENTE / SITIO (CONJUNTO) / HORARIOS
-========================================= */
+/**
+ * =========================================
+ * MODELOS - CLIENTE / SITIO (CONJUNTO) / HORARIOS
+ * =========================================
+ */
 
 model Conjunto {
   nit       String @id
@@ -466,7 +508,7 @@ model Conjunto {
   valorAgregado       String[]       @default([])
 
   // Operación
-  operarios   Operario[] @relation("OperarioConjuntos")
+  operarios   Operario[]  @relation("OperarioConjuntos")
   inventario  Inventario?
   ubicaciones Ubicacion[]
   cronograma  Tarea[]
@@ -484,6 +526,8 @@ model Conjunto {
   limiteHorasSemanaOverride Int?
   maquinariaConjuntos       MaquinariaConjunto[]
   maquinarias               Maquinaria[]
+  herramientasStock         ConjuntoHerramientaStock[]
+  solicitudHerramientas     SolicitudHerramienta[]
 }
 
 model ConjuntoHorario {
@@ -501,9 +545,11 @@ model ConjuntoHorario {
   @@unique([conjuntoId, dia])
 }
 
-/* =========================================
-   MODELOS - UBICACIÓN / ELEMENTOS
-========================================= */
+/**
+ * =========================================
+ * MODELOS - UBICACIÓN / ELEMENTOS
+ * =========================================
+ */
 
 model Ubicacion {
   id     Int    @id @default(autoincrement())
@@ -534,15 +580,17 @@ model Elemento {
   @@map("Elemento")
 }
 
-/* =========================================
-   MODELOS - INSUMOS / INVENTARIO / CONSUMOS
-========================================= */
+/**
+ * =========================================
+ * MODELOS - INSUMOS / INVENTARIO / CONSUMOS
+ * =========================================
+ */
 
 model Insumo {
-  id        Int            @id @default(autoincrement())
-  nombre    String
-  unidad    String
-  categoria CategoriaInsumo
+  id         Int             @id @default(autoincrement())
+  nombre     String
+  unidad     String
+  categoria  CategoriaInsumo
   umbralBajo Int?
 
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
@@ -557,6 +605,105 @@ model Insumo {
 
   @@unique([empresaId, nombre, unidad])
   @@map("Insumo")
+}
+
+model Herramienta {
+  id     Int    @id @default(autoincrement())
+  nombre String
+  unidad String @default("UNIDAD")
+
+  modoControl  ModoControlHerramienta @default(PRESTAMO)
+  vidaUtilDias Int?
+  umbralBajo   Int?
+
+  empresa   Empresa @relation(fields: [empresaId], references: [nit])
+  empresaId String
+
+  stocksConjunto ConjuntoHerramientaStock[]
+  usosTarea      UsoHerramienta[]
+  solicitudItems SolicitudHerramientaItem[]
+
+  @@unique([empresaId, nombre, unidad])
+  @@map("Herramienta")
+}
+
+model ConjuntoHerramientaStock {
+  id Int @id @default(autoincrement())
+
+  conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
+  conjuntoId String
+
+  herramienta   Herramienta @relation(fields: [herramientaId], references: [id])
+  herramientaId Int
+
+  cantidad Decimal           @db.Decimal(14, 4)
+  estado   EstadoHerramienta @default(OPERATIVA)
+
+  actualizadoEn DateTime @updatedAt
+
+  @@unique([conjuntoId, herramientaId, estado])
+  @@index([conjuntoId, estado])
+  @@map("ConjuntoHerramientaStock")
+}
+
+model UsoHerramienta {
+  id Int @id @default(autoincrement())
+
+  tarea   Tarea @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+  tareaId Int
+
+  herramienta   Herramienta @relation(fields: [herramientaId], references: [id])
+  herramientaId Int
+
+  cantidad Decimal @default(1) @db.Decimal(14, 4)
+
+  estado EstadoUsoHerramienta @default(RESERVADA)
+
+  operario   Operario? @relation(fields: [operarioId], references: [id])
+  operarioId String?
+
+  fechaInicio DateTime  @default(now())
+  fechaFin    DateTime?
+  observacion String?
+
+  @@index([tareaId])
+  @@index([herramientaId])
+  @@map("UsoHerramienta")
+}
+
+model SolicitudHerramienta {
+  id              Int       @id @default(autoincrement())
+  fechaSolicitud  DateTime  @default(now())
+  fechaAprobacion DateTime?
+
+  estado               EstadoSolicitud @default(PENDIENTE)
+  observacionRespuesta String?
+
+  conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit])
+  conjuntoId String
+
+  empresa   Empresa? @relation(fields: [empresaId], references: [nit])
+  empresaId String?
+
+  items SolicitudHerramientaItem[]
+
+  @@index([conjuntoId, estado])
+  @@map("SolicitudHerramienta")
+}
+
+model SolicitudHerramientaItem {
+  id Int @id @default(autoincrement())
+
+  solicitud   SolicitudHerramienta @relation(fields: [solicitudId], references: [id], onDelete: Cascade)
+  solicitudId Int
+
+  herramienta   Herramienta @relation(fields: [herramientaId], references: [id])
+  herramientaId Int
+
+  cantidad Decimal @db.Decimal(14, 4)
+
+  @@unique([solicitudId, herramientaId])
+  @@map("SolicitudHerramientaItem")
 }
 
 model Inventario {
@@ -608,8 +755,8 @@ model ConsumoInsumo {
 }
 
 model InsumoConsumoEmpresa {
-  id     Int    @id @default(autoincrement())
-  insumo Insumo @relation(fields: [insumoId], references: [id])
+  id       Int    @id @default(autoincrement())
+  insumo   Insumo @relation(fields: [insumoId], references: [id])
   insumoId Int
 
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
@@ -619,25 +766,27 @@ model InsumoConsumoEmpresa {
   fecha    DateTime
 }
 
-/* =========================================
-   MODELOS - MAQUINARIA / ASIGNACIONES / USO
-========================================= */
+/**
+ * =========================================
+ * MODELOS - MAQUINARIA / ASIGNACIONES / USO
+ * =========================================
+ */
 
 model Maquinaria {
-  id     Int    @id @default(autoincrement())
+  id     Int              @id @default(autoincrement())
   nombre String
   marca  String
   tipo   TipoMaquinaria
   estado EstadoMaquinaria @default(OPERATIVA)
 
   propietarioTipo       PropietarioMaquinaria
-  empresa               Empresa?  @relation(fields: [empresaId], references: [nit])
+  empresa               Empresa?              @relation(fields: [empresaId], references: [nit])
   empresaId             String?
-  conjuntoPropietario   Conjunto? @relation(fields: [conjuntoPropietarioId], references: [nit])
+  conjuntoPropietario   Conjunto?             @relation(fields: [conjuntoPropietarioId], references: [nit])
   conjuntoPropietarioId String?
 
   asignaciones         MaquinariaConjunto[]
-  operario             Operario? @relation(fields: [operarioId], references: [id])
+  operario             Operario?             @relation(fields: [operarioId], references: [id])
   operarioId           String?
   solicitudMaquinarias SolicitudMaquinaria[]
   usoMaquinarias       UsoMaquinaria[]
@@ -665,9 +814,13 @@ model MaquinariaConjunto {
 
   solicitudMaquinaria SolicitudMaquinaria?
 
+  tareaId Int?
+  tarea   Tarea? @relation(fields: [tareaId], references: [id], onDelete: SetNull)
+
   @@unique([conjuntoId, maquinariaId, estado])
   @@index([conjuntoId, estado])
   @@index([maquinariaId, estado])
+  @@index([tareaId])
 }
 
 model UsoMaquinaria {
@@ -690,9 +843,11 @@ model UsoMaquinaria {
   @@index([maquinariaId])
 }
 
-/* =========================================
-   MODELOS - TAREAS / DEFINICIONES PREVENTIVAS
-========================================= */
+/**
+ * =========================================
+ * MODELOS - TAREAS / DEFINICIONES PREVENTIVAS
+ * =========================================
+ */
 
 model DefinicionTareaPreventiva {
   id Int @id @default(autoincrement())
@@ -717,6 +872,7 @@ model DefinicionTareaPreventiva {
   rendimientoBase       Decimal?
   rendimientoTiempoBase RendimientoBaseTiempo? @default(POR_HORA)
   duracionMinutosFija   Int?
+  diasParaCompletar     Int?
 
   // Recursos planeados
   insumoPrincipalId         Int?
@@ -724,6 +880,7 @@ model DefinicionTareaPreventiva {
   consumoPrincipalPorUnidad Decimal? @db.Decimal(14, 4)
   insumosPlanJson           Json?
   maquinariaPlanJson        Json?
+  herramientasPlanJson      Json?
 
   // Operarios sugeridos (M:N)
   operarios Operario[] @relation("DefinicionOperarios")
@@ -758,11 +915,13 @@ model Tarea {
   prioridad           Int         @default(2)
   estado              EstadoTarea @default(ASIGNADA)
 
-  evidencias           String[] @default([])
+  evidencias           String[]  @default([])
   insumosUsados        Json?
   observaciones        String?
   observacionesRechazo String?
   fechaVerificacion    DateTime?
+  finalizadaPorId      String?
+  finalizadaPorRol String?
 
   operarios    Operario[]  @relation("TareaOperarios")
   supervisor   Supervisor? @relation(fields: [supervisorId], references: [id])
@@ -807,6 +966,16 @@ model Tarea {
   rendimientoVersion   Int?
   rendimientoAplicado  RendimientoAplicado?
   usoMaquinarias       UsoMaquinaria[]
+  usoHerramientas      UsoHerramienta[]
+  herramientasPlanJson Json?
+  maquinariaConjuntos  MaquinariaConjunto[]
+
+  reprogramada           Boolean   @default(false)
+  reprogramadaEn         DateTime?
+  reprogramadaMotivo     String?
+  reprogramadaPorTareaId Int?
+  fechaInicioOriginal    DateTime?
+  fechaFinOriginal       DateTime?
 
   @@index([conjuntoId, fechaInicio])
   @@index([conjuntoId, fechaFin])
@@ -816,9 +985,11 @@ model Tarea {
   @@map("Tarea")
 }
 
-/* =========================================
-   MODELOS - SOLICITUDES
-========================================= */
+/**
+ * =========================================
+ * MODELOS - SOLICITUDES
+ * =========================================
+ */
 
 model SolicitudTarea {
   id            Int             @id @default(autoincrement())
@@ -840,10 +1011,10 @@ model SolicitudTarea {
 }
 
 model SolicitudInsumo {
-  id              Int      @id @default(autoincrement())
-  fechaSolicitud  DateTime @default(now())
+  id              Int       @id @default(autoincrement())
+  fechaSolicitud  DateTime  @default(now())
   fechaAprobacion DateTime?
-  aprobado        Boolean  @default(false)
+  aprobado        Boolean   @default(false)
 
   conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit])
   conjuntoId String
@@ -869,8 +1040,8 @@ model SolicitudInsumoItem {
 }
 
 model SolicitudMaquinaria {
-  id                      Int      @id @default(autoincrement())
-  fechaSolicitud          DateTime @default(now())
+  id                      Int       @id @default(autoincrement())
+  fechaSolicitud          DateTime  @default(now())
   fechaUso                DateTime
   fechaDevolucionEstimada DateTime
   fechaAprobacion         DateTime?
@@ -897,26 +1068,28 @@ model SolicitudMaquinaria {
   @@index([maquinariaId, estado])
 }
 
-/* =========================================
-   MODELOS - RENDIMIENTO
-========================================= */
+/**
+ * =========================================
+ * MODELOS - RENDIMIENTO
+ * =========================================
+ */
 
 model Rendimiento {
-  id                         Int     @id @default(autoincrement())
+  id                         Int           @id @default(autoincrement())
   actividad                  String
   tipoServicio               TipoServicio
   unidadCalculo              UnidadCalculo
-  rendimientoBasePorOperario Decimal @db.Decimal(14, 4)
+  rendimientoBasePorOperario Decimal       @db.Decimal(14, 4)
 
   curvaCuadrillaJson        Json?
   factoresJson              Json?
   insumosBaseJson           Json?
   herramientasSugeridasJson Json?
 
-  mermaPorcentaje    Decimal?  @db.Decimal(5, 2)
+  mermaPorcentaje    Decimal?    @db.Decimal(5, 2)
   frecuenciaSugerida Frecuencia?
-  version            Int       @default(1)
-  vigenteDesde       DateTime? @default(now())
+  version            Int         @default(1)
+  vigenteDesde       DateTime?   @default(now())
   vigenteHasta       DateTime?
 
   empresa   Empresa? @relation(fields: [empresaId], references: [nit])
@@ -942,9 +1115,9 @@ model RendimientoAplicado {
   cuadrillaPersonas  Int
   factoresUsadosJson Json?
 
-  areaNumerica    Decimal? @db.Decimal(14, 4)
-  unidadCalculo   UnidadCalculo?
-  consumoBaseJson Json?
+  areaNumerica     Decimal?       @db.Decimal(14, 4)
+  unidadCalculo    UnidadCalculo?
+  consumoBaseJson  Json?
   herramientasJson Json?
 
   rendimientoCalculadoPorPersona Decimal? @db.Decimal(14, 4)
@@ -958,9 +1131,11 @@ model RendimientoAplicado {
   @@index([rendimientoId])
 }
 
-/* =========================================
-   MODELOS - CALENDARIO (FESTIVOS)
-========================================= */
+/**
+ * =========================================
+ * MODELOS - CALENDARIO (FESTIVOS)
+ * =========================================
+ */
 
 model Festivo {
   id       Int      @id @default(autoincrement())

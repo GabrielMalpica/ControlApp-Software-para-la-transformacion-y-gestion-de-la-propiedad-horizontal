@@ -1,9 +1,8 @@
 import { Router } from "express";
-import { PrismaClient } from "../generated/prisma";
 import { ConjuntoController } from "../controller/ConjuntoController";
 
-const prisma = new PrismaClient();
-const c = new ConjuntoController(prisma);
+
+const c = new ConjuntoController();
 export const conjuntoRouter = Router();
 
 conjuntoRouter.put("/conjuntos/:nit/activo", c.setActivo);

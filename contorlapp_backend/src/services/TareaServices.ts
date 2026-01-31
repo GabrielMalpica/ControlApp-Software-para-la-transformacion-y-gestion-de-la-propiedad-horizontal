@@ -28,7 +28,10 @@ const RechazarDTO = z.object({
 });
 
 export class TareaService {
-  constructor(private prisma: PrismaClient, private tareaId: number) {}
+  constructor(
+    private prisma: PrismaClient,
+    private tareaId: number,
+  ) {}
 
   /* =====================================================
    *       CRUD GENERAL (CORRECTIVAS POR DEFECTO)
@@ -60,7 +63,7 @@ export class TareaService {
     payload: unknown,
     inventarioService: {
       consumirInsumoPorId: (payload: unknown) => Promise<void>;
-    }
+    },
   ): Promise<void> {
     const { insumosUsados } = CompletarConInsumosDTO.parse(payload);
 
@@ -95,19 +98,19 @@ export class TareaService {
     // Operarios (M:N)
     const operariosConnect =
       dto.operariosIds && dto.operariosIds.length
-        ? dto.operariosIds.map((id) => ({ id: id.toString() }))
+        ? dto.operariosIds.map((id) => ({ id: id }))
         : dto.operarioId
-        ? [{ id: dto.operarioId.toString() }]
-        : [];
+          ? [{ id: dto.operarioId }]
+          : [];
 
     const data: any = {
       descripcion: dto.descripcion,
       fechaInicio: dto.fechaInicio,
       fechaFin: dto.fechaFin,
-      duracionHoras: dto.duracionHoras,
+      duracionMinutos: dto.duracionMinutos,
 
-      tipo: dto.tipo ?? TipoTarea.CORRECTIVA, // 👈 default correctiva
-      estado: dto.estado ?? EstadoTarea.ASIGNADA, // 👈 default ASIGNADA
+      tipo: dto.tipo ?? TipoTarea.CORRECTIVA,
+      estado: dto.estado ?? EstadoTarea.ASIGNADA,
       frecuencia: dto.frecuencia ?? null,
 
       evidencias: dto.evidencias ?? [],
@@ -126,7 +129,7 @@ export class TareaService {
 
     // Supervisor (id numérico → string)
     if (dto.supervisorId != null) {
-      data.supervisor = { connect: { id: dto.supervisorId.toString() } };
+      data.supervisor = { connect: { id: dto.supervisorId } };
     }
 
     // Operarios
@@ -182,14 +185,14 @@ export class TareaService {
     if (dto.supervisorId !== undefined) {
       data.supervisor =
         dto.supervisorId != null
-          ? { connect: { id: dto.supervisorId.toString() } }
+          ? { connect: { id: dto.supervisorId } }
           : { disconnect: true };
     }
 
     // Reemplazar operarios si viene el array
     if (dto.operariosIds) {
       data.operarios = {
-        set: dto.operariosIds.map((id) => ({ id: id.toString() })),
+        set: dto.operariosIds.map((id) => ({ id: id })),
       };
     }
 
@@ -224,12 +227,12 @@ export class TareaService {
 
     if (filtro.operarioId) {
       where.operarios = {
-        some: { id: filtro.operarioId.toString() },
+        some: { id: filtro.operarioId },
       };
     }
 
     if (filtro.supervisorId) {
-      where.supervisorId = filtro.supervisorId.toString();
+      where.supervisorId = filtro.supervisorId;
     }
 
     if (filtro.tipo) where.tipo = filtro.tipo;
@@ -260,22 +263,77 @@ export class TareaService {
   static async eliminarTarea(prisma: PrismaClient, id: number) {
     const tarea = await prisma.tarea.findUnique({
       where: { id },
-      select: { estado: true },
+      select: {
+        id: true,
+        estado: true,
+        borrador: true,
+      },
     });
 
     if (!tarea) throw new Error("Tarea no encontrada.");
 
+    // 🔒 Reglas de negocio (ajústalas a tu gusto)
     if (
       tarea.estado === EstadoTarea.COMPLETADA ||
       tarea.estado === EstadoTarea.APROBADA ||
       tarea.estado === EstadoTarea.PENDIENTE_APROBACION
     ) {
       throw new Error(
-        "No se puede eliminar una tarea que ya fue ejecutada o está en aprobación."
+        "No se puede eliminar una tarea que ya fue ejecutada o está en aprobación.",
       );
     }
 
-    await prisma.tarea.delete({ where: { id } });
+    // ✅ Recomendación: si NO es borrador, mejor CANCELAR en vez de borrar
+    // (si quieres permitir borrado igual, comenta este bloque)
+    if (!tarea.borrador) {
+      throw new Error(
+        "No se permite eliminar tareas publicadas. Cáncelala (estado CANCELADA) o elimine solo borradores.",
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1) Liberar maquinaria asignada al conjunto por esta tarea (si existiera)
+      // (tu relación tiene onDelete: SetNull, pero igual lo hacemos explícito)
+      await tx.maquinariaConjunto.updateMany({
+        where: { tareaId: id },
+        data: { tareaId: null },
+      });
+
+      const [um, uh, ci, mc] = await Promise.all([
+        prisma.usoMaquinaria.count({ where: { tarea } }),
+        prisma.usoHerramienta.count({ where: { tarea } }),
+        prisma.consumoInsumo.count({ where: { tarea } }),
+        prisma.maquinariaConjunto.count({ where: { tarea } }),
+      ]);
+
+      console.log("refs tarea", { um, uh, ci, mc });
+
+      // 2) Borrar usos de maquinaria/herramienta ligados a la tarea (FK dura)
+      await tx.usoMaquinaria.deleteMany({
+        where: { tareaId: id },
+      });
+
+      await tx.usoHerramienta.deleteMany({
+        where: { tareaId: id },
+      });
+
+      // 3) Borrar consumos ligados a la tarea (si aplica en tu schema real)
+      await tx.consumoInsumo.deleteMany({
+        where: { tareaId: id },
+      });
+
+      // 4) (Opcional) Desconectar relación M:N de operarios (normalmente Prisma lo limpia,
+      // pero lo dejo por si tu DB tiene restricciones raras)
+      await tx.tarea.update({
+        where: { id },
+        data: { operarios: { set: [] } },
+      });
+
+      // 5) Ahora sí, borrar la tarea
+      await tx.tarea.delete({ where: { id } });
+    });
+
+    return { ok: true, message: "Tarea eliminada correctamente." };
   }
 
   /* =====================================================

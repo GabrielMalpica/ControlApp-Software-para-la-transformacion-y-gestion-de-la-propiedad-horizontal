@@ -1,5 +1,5 @@
 // src/services/ConjuntoService.ts
-import { PrismaClient } from "../generated/prisma";
+import type { PrismaClient } from "../generated/prisma";
 import { z } from "zod";
 import { CrearUbicacionDTO, FiltroUbicacionDTO } from "../model/Ubicacion";
 import { InventarioService } from "./InventarioServices";

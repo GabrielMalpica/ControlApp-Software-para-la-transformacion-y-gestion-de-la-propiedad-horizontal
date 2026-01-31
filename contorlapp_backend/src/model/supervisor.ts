@@ -3,7 +3,7 @@ import { z } from "zod";
 
 /** Dominio base según Prisma */
 export interface SupervisorDominio {
-  id: number;          // mismo ID que Usuario.id
+  id: string; // mismo ID que Usuario.id
 }
 
 /** Tipo público (igual por ahora) */
@@ -21,6 +21,12 @@ export const EditarSupervisorDTO = z.object({
   empresaId: z.string().min(3).optional(),
 });
 
+export const VeredictoSupervisorDTO = z.object({
+  estado: z.enum(["APROBADA", "RECHAZADA", "NO_COMPLETADA"]),
+  observacionesRechazo: z.string().min(3).max(500).optional(),
+  evidencias: z.array(z.string()).default([]), // si el supervisor sube fotos al aprobar/rechazar
+});
+
 /* ===================== SELECT BASE ===================== */
 export const supervisorPublicSelect = {
   id: true,
@@ -29,7 +35,7 @@ export const supervisorPublicSelect = {
 
 /** Helper para castear select de Prisma */
 export function toSupervisorPublico<
-  T extends Record<keyof typeof supervisorPublicSelect, any>
+  T extends Record<keyof typeof supervisorPublicSelect, any>,
 >(row: T): SupervisorPublico {
   return row;
 }

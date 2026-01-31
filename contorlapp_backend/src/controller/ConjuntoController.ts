@@ -1,7 +1,7 @@
 // src/controllers/ConjuntoController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
-import { PrismaClient } from "../generated/prisma";
+import { prisma } from "../db/prisma";
 import { ConjuntoService } from "../services/ConjuntoServices";
 import { CronogramaService } from "../services/CronogramaServices";
 
@@ -72,14 +72,13 @@ function resolveConjuntoId(req: any): string {
 
 /* ===================== Controller ===================== */
 export class ConjuntoController {
-  constructor(private prisma: PrismaClient) {}
 
   // PUT /conjuntos/:nit/activo
   setActivo: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
       const { activo } = SetActivoBody.parse(req.body);
-      const service = new ConjuntoService(this.prisma, conjuntoId);
+      const service = new ConjuntoService(prisma, conjuntoId);
       await service.setActivo(activo);
       res.status(204).send();
     } catch (err) {
@@ -91,7 +90,7 @@ export class ConjuntoController {
   asignarOperario: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(this.prisma, conjuntoId);
+      const service = new ConjuntoService(prisma, conjuntoId);
       const body = OperarioIdSchema.parse(req.body);
       await service.asignarOperario(body);
       res.status(204).send();
@@ -104,7 +103,7 @@ export class ConjuntoController {
   asignarAdministrador: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(this.prisma, conjuntoId);
+      const service = new ConjuntoService(prisma, conjuntoId);
       const body = AdminIdSchema.parse(req.body);
       await service.asignarAdministrador(body);
       res.status(204).send();
@@ -117,7 +116,7 @@ export class ConjuntoController {
   eliminarAdministrador: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(this.prisma, conjuntoId);
+      const service = new ConjuntoService(prisma, conjuntoId);
       await service.eliminarAdministrador();
       res.status(204).send();
     } catch (err) {
@@ -129,7 +128,7 @@ export class ConjuntoController {
   agregarMaquinaria: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(this.prisma, conjuntoId);
+      const service = new ConjuntoService(prisma, conjuntoId);
       const body = MaquinariaIdSchema.parse(req.body);
       await service.agregarMaquinaria(body);
       res.status(204).send();
@@ -142,7 +141,7 @@ export class ConjuntoController {
   entregarMaquinaria: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(this.prisma, conjuntoId);
+      const service = new ConjuntoService(prisma, conjuntoId);
       const body = MaquinariaIdSchema.parse(req.body);
       await service.entregarMaquinaria(body);
       res.status(204).send();
@@ -154,7 +153,7 @@ export class ConjuntoController {
   listarMaquinaria: RequestHandler = async (req, res, next) => {
     try {
       const { nit } = req.params;
-      const service = new ConjuntoService(this.prisma, nit);
+      const service = new ConjuntoService(prisma, nit);
       const data = await service.listarMaquinariaDelConjunto();
       res.json(data);
     } catch (err) {
@@ -166,7 +165,7 @@ export class ConjuntoController {
   agregarUbicacion: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(this.prisma, conjuntoId);
+      const service = new ConjuntoService(prisma, conjuntoId);
       await service.agregarUbicacion(req.body); // valida internamente con CrearUbicacionDTO
       res.status(201).json({ message: "Ubicación registrada (o ya existía)." });
     } catch (err) {
@@ -178,7 +177,7 @@ export class ConjuntoController {
   buscarUbicacion: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(this.prisma, conjuntoId);
+      const service = new ConjuntoService(prisma, conjuntoId);
       const nombre = (req.query.nombre ?? req.query.nombreUbicacion) as
         | string
         | undefined;
@@ -200,7 +199,7 @@ export class ConjuntoController {
   agregarTareaACronograma: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(this.prisma, conjuntoId);
+      const service = new ConjuntoService(prisma, conjuntoId);
       const body = TareaIdSchema.parse(req.body);
       await service.agregarTareaACronograma(body);
       res.status(204).send();
@@ -213,7 +212,7 @@ export class ConjuntoController {
   tareasPorFecha: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(this.prisma, conjuntoId);
+      const service = new ConjuntoService(prisma, conjuntoId);
       const { fecha } = FechaSchema.parse({
         fecha: req.query.fecha as string | undefined,
       });
@@ -228,7 +227,7 @@ export class ConjuntoController {
   tareasPorOperario: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(this.prisma, conjuntoId);
+      const service = new ConjuntoService(prisma, conjuntoId);
       const { operarioId } = OperarioIdSchema.parse(req.params);
       const tareas = await service.tareasPorOperario({ operarioId });
       res.json(tareas);
@@ -241,7 +240,7 @@ export class ConjuntoController {
   tareasPorUbicacion: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(this.prisma, conjuntoId);
+      const service = new ConjuntoService(prisma, conjuntoId);
       const payload = UbicacionNombreSchema.parse({
         nombreUbicacion: req.query.nombreUbicacion,
       });
@@ -258,7 +257,7 @@ export class ConjuntoController {
   tareasEnRango: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const cronograma = new CronogramaService(this.prisma, conjuntoId); // ⬅️ usar CronogramaService
+      const cronograma = new CronogramaService(prisma, conjuntoId); // ⬅️ usar CronogramaService
       const { fechaInicio, fechaFin } = RangoQuery.parse({
         fechaInicio: req.query.fechaInicio,
         fechaFin: req.query.fechaFin,
@@ -274,7 +273,7 @@ export class ConjuntoController {
   tareasPorFiltro: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const cronograma = new CronogramaService(this.prisma, conjuntoId); // ⬅️ usar CronogramaService
+      const cronograma = new CronogramaService(prisma, conjuntoId); // ⬅️ usar CronogramaService
       const filtro = TareasPorFiltroQuery.parse(req.query);
       const out = await cronograma.tareasPorFiltro(filtro);
       res.json(out);
@@ -287,7 +286,7 @@ export class ConjuntoController {
   exportarEventosCalendario: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const cronograma = new CronogramaService(this.prisma, conjuntoId); // ⬅️ usar CronogramaService
+      const cronograma = new CronogramaService(prisma, conjuntoId); // ⬅️ usar CronogramaService
       const eventos = await cronograma.exportarComoEventosCalendario();
       res.json(eventos);
     } catch (err) {

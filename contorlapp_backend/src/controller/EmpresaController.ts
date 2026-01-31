@@ -1,7 +1,7 @@
 // src/controllers/EmpresaController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
-import { PrismaClient } from "../generated/prisma";
+import { prisma } from "../db/prisma";
 import { EmpresaService } from "../services/EmpresaServices";
 
 const IdParamSchema = z.object({ id: z.coerce.number().int().positive() });
@@ -26,14 +26,9 @@ function resolveEmpresaId(req: any): string {
 }
 
 export class EmpresaController {
-  private prisma: PrismaClient;
-  constructor(prisma?: PrismaClient) {
-    this.prisma = prisma ?? new PrismaClient();
-  }
-
   crearEmpresa: RequestHandler = async (req, res, next) => {
     try {
-      const service = new EmpresaService(this.prisma, "901191875-4");
+      const service = new EmpresaService("901191875-4");
       const creada = await service.crearEmpresa(req.body);
       res.status(201).json(creada);
     } catch (err) {
@@ -46,7 +41,7 @@ export class EmpresaController {
       const empresaId = resolveEmpresaId(req);
       const { nit } = req.params;
 
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const out = await service.getLimiteMinSemanaPorConjunto(nit);
 
       res.status(200).json({ limiteMinSemana: out });
@@ -58,7 +53,7 @@ export class EmpresaController {
   listarFestivos: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
 
       const { desde, hasta, pais } = req.query as any;
       const out = await service.listarFestivos(desde, hasta, pais ?? "CO");
@@ -71,7 +66,7 @@ export class EmpresaController {
   reemplazarFestivosEnRango: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
 
       const out = await service.reemplazarFestivosEnRango(req.body);
       res.status(200).json(out);
@@ -83,7 +78,7 @@ export class EmpresaController {
   agregarMaquinaria: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const creada = await service.agregarMaquinaria(req.body);
       res.status(201).json(creada);
     } catch (err) {
@@ -94,7 +89,7 @@ export class EmpresaController {
   listarMaquinariaCatalogo: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const items = await service.listarMaquinariaCatalogo(req.query);
       res.json(items);
     } catch (err) {
@@ -106,7 +101,7 @@ export class EmpresaController {
     try {
       const empresaId = resolveEmpresaId(req);
       const { id } = IdParamSchema.parse(req.params);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const upd = await service.editarMaquinaria(id, req.body);
       res.json(upd);
     } catch (err) {
@@ -118,7 +113,7 @@ export class EmpresaController {
     try {
       const empresaId = resolveEmpresaId(req);
       const { id } = IdParamSchema.parse(req.params);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       await service.eliminarMaquinaria(id);
       res.status(204).send();
     } catch (err) {
@@ -129,7 +124,7 @@ export class EmpresaController {
   listarMaquinariaDisponible: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const items = await service.listarMaquinariaDisponible();
       res.json(items);
     } catch (err) {
@@ -140,7 +135,7 @@ export class EmpresaController {
   obtenerMaquinariaPrestada: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const items = await service.obtenerMaquinariaPrestada();
       res.json(items);
     } catch (err) {
@@ -151,7 +146,7 @@ export class EmpresaController {
   agregarJefeOperaciones: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const jefe = await service.agregarJefeOperaciones(req.body);
       res.status(201).json(jefe);
     } catch (err) {
@@ -163,7 +158,7 @@ export class EmpresaController {
     try {
       const empresaId = resolveEmpresaId(req);
       const { id } = IdParamSchema.parse(req.params);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const upd = await service.recibirSolicitudTarea({ id });
       res.json(upd);
     } catch (err) {
@@ -175,7 +170,7 @@ export class EmpresaController {
     try {
       const empresaId = resolveEmpresaId(req);
       const { id } = IdParamSchema.parse(req.params);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       await service.eliminarSolicitudTarea({ id });
       res.status(204).send();
     } catch (err) {
@@ -186,7 +181,7 @@ export class EmpresaController {
   solicitudesTareaPendientes: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const list = await service.solicitudesTareaPendientes();
       res.json(list);
     } catch (err) {
@@ -197,7 +192,7 @@ export class EmpresaController {
   agregarInsumoAlCatalogo: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const insumo = await service.agregarInsumoAlCatalogo(req.body);
       res.status(201).json(insumo);
     } catch (err) {
@@ -208,7 +203,7 @@ export class EmpresaController {
   listarCatalogo: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const items = await service.listarCatalogo(req.query); // opcional
       res.json(items);
     } catch (err) {
@@ -220,7 +215,7 @@ export class EmpresaController {
     try {
       const empresaId = resolveEmpresaId(req);
       const { id } = IdParamSchema.parse(req.params);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const item = await service.buscarInsumoPorId({ id });
       if (!item) {
         res.status(404).json({ message: "Insumo no encontrado" });
@@ -236,7 +231,7 @@ export class EmpresaController {
     try {
       const empresaId = resolveEmpresaId(req);
       const { id } = IdParamSchema.parse(req.params);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       const upd = await service.editarInsumoCatalogo(id, req.body);
       res.json(upd);
     } catch (err) {
@@ -248,7 +243,7 @@ export class EmpresaController {
     try {
       const empresaId = resolveEmpresaId(req);
       const { id } = IdParamSchema.parse(req.params);
-      const service = new EmpresaService(this.prisma, empresaId);
+      const service = new EmpresaService(empresaId);
       await service.eliminarInsumoCatalogo(id);
       res.status(204).send();
     } catch (err) {

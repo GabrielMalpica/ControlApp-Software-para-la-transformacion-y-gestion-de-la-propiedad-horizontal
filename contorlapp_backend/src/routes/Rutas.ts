@@ -17,6 +17,11 @@ import SupervisorRoutes from "./Supervisores"
 import TareaRoutes from "./Tarea"
 import TareaCorrectivaRoutes from "./TareasCorrectivas"
 import UbicacionesRoutes from "./Ubicaciones"
+import HerramientasRoutes from "./Herramienta"
+import SolicitudHerramientasRoutes from "./SolicitudHerramienta"
+import HerramientasStockRoutes from "./HerramientaStock"
+import AuthRoutes from "./auth"
+import AgendaRoutes from './Agenda';
 
 const rutas = Router();
 
@@ -38,5 +43,10 @@ rutas.use('/supervisor', SupervisorRoutes);
 rutas.use('/tarea', TareaRoutes);
 rutas.use('/tarea-correctiva', TareaCorrectivaRoutes);
 rutas.use('/ubicacion', UbicacionesRoutes);
+rutas.use('/herramientas', HerramientasRoutes);
+rutas.use('/solicitud-herramientas', SolicitudHerramientasRoutes);
+rutas.use('/herramientas', HerramientasStockRoutes);
+rutas.use('/auth', AuthRoutes);
+rutas.use('/agenda', AgendaRoutes);
 
 export default rutas;

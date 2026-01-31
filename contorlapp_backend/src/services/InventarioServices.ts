@@ -1,5 +1,6 @@
 // src/services/InventarioService.ts
-import { PrismaClient, TipoMovimientoInsumo } from "../generated/prisma";
+import { TipoMovimientoInsumo } from "../generated/prisma";
+import { Prisma, PrismaClient } from "../generated/prisma";
 import { z } from "zod";
 import { decToNumber, toDec } from "../utils/decimal";
 
@@ -37,13 +38,13 @@ const AgregarStockDTO = z.object({
   observacion: z.string().optional(),
 });
 
-const ConsumirStockDTO = z.object({
+const ConsumirDTO = z.object({
+  conjuntoId: z.string().min(1),
   insumoId: z.number().int().positive(),
-  cantidad: z.coerce.number().positive(),
-  // opcional: para trazabilidad
+  cantidad: z.coerce.number().positive(), // 👈 decimal ok
+  operarioId: z.string().min(1).optional(),
   tareaId: z.number().int().positive().optional(),
-  operarioId: z.string().optional(),
-  observacion: z.string().optional(),
+  observacion: z.string().max(500).optional(),
 });
 
 export const SetUmbralDTO = z.object({
@@ -52,7 +53,10 @@ export const SetUmbralDTO = z.object({
 });
 
 export class InventarioService {
-  constructor(private prisma: PrismaClient, private inventarioId: number) {}
+  constructor(
+    private prisma: PrismaClient,
+    private inventarioId: number,
+  ) {}
 
   /* ========= Stock básico ========= */
 
@@ -184,49 +188,82 @@ export class InventarioService {
   }
 
   async consumirInsumoPorId(payload: unknown) {
-    const { insumoId, cantidad, tareaId, operarioId, observacion } =
-      ConsumirStockDTO.parse(payload);
+    const dto = ConsumirDTO.parse(payload);
 
-    const existente = await this.prisma.inventarioInsumo.findFirst({
-      where: { inventarioId: this.inventarioId, insumoId },
-      include: { insumo: true },
-    });
+    const cant = new Prisma.Decimal(dto.cantidad);
 
-    if (!existente) {
-      throw new Error(
-        `El insumo con ID "${insumoId}" no existe en el inventario.`
-      );
-    }
+    return this.prisma.$transaction(async (tx) => {
+      // 1) Buscar inventario del conjunto
+      // Ajusta esto si tu Inventario se encuentra diferente
+      const inventario = await tx.inventario.findFirst({
+        where: { conjuntoId: dto.conjuntoId },
+        select: { id: true },
+      });
 
-    const disponibleNum = decToNumber(existente.cantidad);
-    if (disponibleNum < cantidad) {
-      throw new Error(
-        `Cantidad insuficiente de "${existente.insumo.nombre}". Disponible: ${disponibleNum}`
-      );
-    }
+      if (!inventario) {
+        throw new Error("No existe inventario para este conjunto.");
+      }
 
-    await this.prisma.inventarioInsumo.update({
-      where: { id: existente.id },
-      data: { cantidad: { decrement: toDec(cantidad) } },
-    });
+      // 2) Buscar el registro del insumo en el inventario
+      const invItem = await tx.inventarioInsumo.findFirst({
+        where: {
+          inventarioId: inventario.id,
+          insumoId: dto.insumoId,
+        },
+        select: {
+          id: true,
+          // 👇 AJUSTA este nombre si no es `cantidad`
+          cantidad: true,
+        },
+      });
 
-    await this.prisma.consumoInsumo.create({
-      data: {
-        inventarioId: this.inventarioId,
-        insumoId,
-        cantidad: toDec(cantidad),
-        fecha: new Date(),
-        // si existe en tu schema:
-        // tipo: "SALIDA",
-        // tareaId: tareaId ?? null,
-        // operarioId: operarioId ?? null,
-        // observacion: observacion ?? null,
-      } as any,
+      if (!invItem) {
+        throw new Error(
+          "Este insumo no está registrado en el inventario del conjunto.",
+        );
+      }
+
+      // 3) Validar stock suficiente
+      const disponible = new Prisma.Decimal(invItem.cantidad as any);
+      if (disponible.lt(cant)) {
+        throw new Error(
+          `Stock insuficiente. Disponible: ${disponible.toString()} - Requerido: ${cant.toString()}`,
+        );
+      }
+
+      // 4) Descontar stock
+      await tx.inventarioInsumo.update({
+        where: { id: invItem.id },
+        data: {
+          // 👇 AJUSTA si tu campo no se llama `cantidad`
+          cantidad: { decrement: cant },
+        },
+      });
+
+      // 5) Registrar movimiento (ConsumoInsumo = SALIDA)
+      await tx.consumoInsumo.create({
+        data: {
+          inventario: { connect: { id: inventario.id } },
+          insumo: { connect: { id: dto.insumoId } },
+          tipo: TipoMovimientoInsumo.SALIDA,
+          cantidad: cant,
+          fecha: new Date(),
+          observacion: dto.observacion ?? null,
+
+          // relaciones opcionales
+          ...(dto.operarioId
+            ? { operario: { connect: { id: dto.operarioId } } }
+            : {}),
+          ...(dto.tareaId ? { tarea: { connect: { id: dto.tareaId } } } : {}),
+        },
+      });
+
+      return { ok: true };
     });
   }
 
   async consumirStock(payload: unknown) {
-    const dto = ConsumirStockDTO.parse(payload);
+    const dto = ConsumirDTO.parse(payload);
 
     // transacción para consistencia
     return this.prisma.$transaction(async (tx) => {
@@ -242,14 +279,14 @@ export class InventarioService {
 
       if (!existente) {
         throw new Error(
-          `El insumo con ID "${dto.insumoId}" no existe en el inventario.`
+          `El insumo con ID "${dto.insumoId}" no existe en el inventario.`,
         );
       }
 
       const disponible = decToNumber(existente.cantidad);
       if (disponible < dto.cantidad) {
         throw new Error(
-          `Cantidad insuficiente de "${existente.insumo.nombre}". Disponible: ${disponible}`
+          `Cantidad insuficiente de "${existente.insumo.nombre}". Disponible: ${disponible}`,
         );
       }
 
@@ -285,7 +322,7 @@ export class InventarioService {
       include: { insumo: true },
     });
     return insumos.map(
-      (i) => `${i.insumo.nombre}: ${i.cantidad} ${i.insumo.unidad}`
+      (i) => `${i.insumo.nombre}: ${i.cantidad} ${i.insumo.unidad}`,
     );
   }
 

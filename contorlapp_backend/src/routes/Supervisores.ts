@@ -1,13 +1,20 @@
-// src/routes/supervisores.ts
 import { Router } from "express";
 import { SupervisorController } from "../controller/SupervisorController";
+import { requireRoles } from "../middlewares/role.middleware";
+import { authRequired } from "../middlewares/auth.middleware";
+import { uploadEvidencias } from "../middlewares/upload_evidencias";
 
 const router = Router();
-const controller = new SupervisorController();
+const ctrl = new SupervisorController();
 
-router.post("/supervisores/:supervisorId/tareas/:tareaId/recibir", controller.recibirTareaFinalizada);
-router.post("/supervisores/:supervisorId/tareas/:tareaId/aprobar", controller.aprobarTarea);
-router.post("/supervisores/:supervisorId/tareas/:tareaId/rechazar", controller.rechazarTarea);
-router.get("/supervisores/:supervisorId/tareas/pendientes", controller.listarTareasPendientes);
+router.use(authRequired, requireRoles("supervisor"));
+router.get("/tareas", ctrl.listarTareas);
+router.post(
+  "/tareas/:id/cerrar",
+  uploadEvidencias.array("files", 10),
+  ctrl.cerrarTarea
+);
+router.post("/tareas/:id/veredicto", ctrl.veredicto);
+router.get("/cronograma-imprimible", ctrl.cronogramaImprimible);
 
 export default router;

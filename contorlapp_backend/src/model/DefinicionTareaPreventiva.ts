@@ -14,11 +14,18 @@ export interface DefinicionTareaPreventivaDominio {
   frecuencia: Frecuencia;
   prioridad: number;
 
+  diaSemanaProgramado?: DiaSemana | null;
+  diaMesProgramado?: number | null;
+
   unidadCalculo?: UnidadCalculo | null;
   areaNumerica?: number | null;
   rendimientoBase?: number | null;
 
+  /** "POR_MINUTO" o "POR_HORA" (según tu BD) */
+  rendimientoTiempoBase?: "POR_MINUTO" | "POR_HORA" | null;
+
   duracionMinutosFija?: number | null;
+  diasParaCompletar?: number | null;
 
   insumoPrincipalId?: number | null;
   consumoPrincipalPorUnidad?: number | null;
@@ -38,7 +45,12 @@ export interface DefinicionTareaPreventivaDominio {
       }[]
     | null;
 
-  responsableSugeridoId?: number | null;
+  herramientasPlanJson?:
+    | {
+        herramientaId: number;
+        cantidad?: number;
+      }[]
+    | null;
 
   activo: boolean;
   creadoEn: Date;
@@ -61,6 +73,11 @@ const MaquinariaPlanItemDTO = z.object({
   cantidad: z.coerce.number().min(0).optional(),
 });
 
+const HerramientaPlanItemDTO = z.object({
+  herramientaId: z.number().int().positive(),
+  cantidad: z.coerce.number().min(0).optional(),
+});
+
 /** Crear definición (molde) de tarea preventiva */
 export const CrearDefinicionPreventivaDTO = z
   .object({
@@ -73,19 +90,23 @@ export const CrearDefinicionPreventivaDTO = z
 
     prioridad: z.number().int().min(1).max(3).default(2),
 
-    // NUEVO: programación específica
+    // programación específica
     diaSemanaProgramado: z.nativeEnum(DiaSemana).optional().nullable(),
     diaMesProgramado: z.number().int().min(1).max(31).optional().nullable(),
 
-    // A) cálculo por rendimiento/área
-    unidadCalculo: z.nativeEnum(UnidadCalculo).optional(),
+    // A) rendimiento/área
+    unidadCalculo: z.nativeEnum(UnidadCalculo).optional().nullable(),
     areaNumerica: z.coerce.number().min(0).optional(),
     rendimientoBase: z.coerce.number().min(0).optional(),
 
-    // B) duración fija en minutos (estándar)
-    duracionMinutosFija: z.number().int().min(1).optional(),
+    // 👇 sin enums nuevos: literal union
+    rendimientoTiempoBase: z.enum(["POR_MINUTO", "POR_HORA"]).optional(),
 
-    // COMPAT (temporal): si aún mandan horas (decimal)
+    // B) duración fija
+    duracionMinutosFija: z.number().int().min(1).optional(),
+    diasParaCompletar: z.number().int().min(1).max(31).optional().nullable(),
+
+    // compat temporal
     duracionHorasFija: z.coerce.number().positive().optional(),
 
     insumoPrincipalId: z.number().int().positive().optional(),
@@ -93,6 +114,7 @@ export const CrearDefinicionPreventivaDTO = z
 
     insumosPlanJson: z.array(InsumoPlanItemDTO).optional(),
     maquinariaPlanJson: z.array(MaquinariaPlanItemDTO).optional(),
+    herramientasPlanJson: z.array(HerramientaPlanItemDTO).optional(),
 
     responsableSugeridoId: z.number().int().positive().optional(),
     operariosIds: z.array(z.number().int().positive()).optional(),
@@ -104,7 +126,7 @@ export const CrearDefinicionPreventivaDTO = z
   .refine(
     (d) => {
       const tieneRendimiento =
-        d.unidadCalculo &&
+        !!d.unidadCalculo &&
         d.areaNumerica !== undefined &&
         d.rendimientoBase !== undefined;
 
@@ -116,21 +138,7 @@ export const CrearDefinicionPreventivaDTO = z
     {
       message:
         "Debe indicar (unidadCalculo + areaNumerica + rendimientoBase) o duracionMinutosFija (o duracionHorasFija compat).",
-    }
-  )
-  .refine(
-    (d) => {
-      // Validación de coherencia por frecuencia:
-      if (d.frecuencia === Frecuencia.SEMANAL) {
-        // no obligo, pero recomendado
-        return true;
-      }
-      if (d.frecuencia === Frecuencia.MENSUAL) {
-        return true;
-      }
-      return true;
     },
-    { message: "Frecuencia requiere campos de programación válidos." }
   );
 
 /** Editar definición preventiva (todo opcional) */
@@ -149,14 +157,21 @@ export const EditarDefinicionPreventivaDTO = z.object({
   areaNumerica: z.coerce.number().min(0).optional().nullable(),
   rendimientoBase: z.coerce.number().min(0).optional().nullable(),
 
+  rendimientoTiempoBase: z
+    .enum(["POR_MINUTO", "POR_HORA"])
+    .optional()
+    .nullable(),
+
   duracionMinutosFija: z.number().int().min(1).optional().nullable(),
-  duracionHorasFija: z.coerce.number().positive().optional().nullable(), // compat
+  diasParaCompletar: z.number().int().min(1).max(31).optional().nullable(),
+  duracionHorasFija: z.coerce.number().positive().optional().nullable(),
 
   insumoPrincipalId: z.number().int().positive().optional().nullable(),
   consumoPrincipalPorUnidad: z.coerce.number().min(0).optional().nullable(),
 
   insumosPlanJson: z.array(InsumoPlanItemDTO).optional().nullable(),
   maquinariaPlanJson: z.array(MaquinariaPlanItemDTO).optional().nullable(),
+  herramientasPlanJson: z.array(HerramientaPlanItemDTO).optional().nullable(),
 
   responsableSugeridoId: z.number().int().positive().optional().nullable(),
   operariosIds: z.array(z.number().int().positive()).optional().nullable(),
@@ -204,21 +219,23 @@ export const definicionPreventivaPublicSelect = {
   frecuencia: true,
   prioridad: true,
 
+  diaSemanaProgramado: true,
+  diaMesProgramado: true,
+
   unidadCalculo: true,
   areaNumerica: true,
   rendimientoBase: true,
+  rendimientoTiempoBase: true,
 
-  duracionHorasFija: true,
+  duracionMinutosFija: true,
+  diasParaCompletar: true,
 
   insumoPrincipalId: true,
   consumoPrincipalPorUnidad: true,
 
   insumosPlanJson: true,
   maquinariaPlanJson: true,
-
-  // 👀 OJO: ya no seleccionamos responsableSugeridoId porque NO existe en Prisma.
-  // Si quieres incluir supervisorId, podrías agregarlo aquí:
-  // supervisorId: true,
+  herramientasPlanJson: true,
 
   activo: true,
   creadoEn: true,
@@ -227,24 +244,30 @@ export const definicionPreventivaPublicSelect = {
 
 /** Helper para castear el resultado Prisma al tipo público */
 export function toDefinicionTareaPreventivaPublica<
-  T extends Record<keyof typeof definicionPreventivaPublicSelect, any>
+  T extends Record<keyof typeof definicionPreventivaPublicSelect, any>,
 >(row: T): DefinicionTareaPreventivaPublica {
   return row as unknown as DefinicionTareaPreventivaPublica;
 }
 
 /* ===================== Utilidad ===================== */
 /**
- * Calcula horas estimadas dado área y rendimiento.
+ * Calcula minutos estimados dado área y rendimiento.
  */
 export function calcularMinutosEstimados(params: {
-  cantidad?: number;                 // areaNumerica
-  rendimiento?: number;              // rendimientoBase
+  cantidad?: number; // areaNumerica
+  rendimiento?: number; // rendimientoBase
   duracionMinutosFija?: number;
   rendimientoTiempoBase?: "POR_MINUTO" | "POR_HORA";
 }): number | null {
-  const { cantidad, rendimiento, duracionMinutosFija, rendimientoTiempoBase = "POR_HORA" } = params;
+  const {
+    cantidad,
+    rendimiento,
+    duracionMinutosFija,
+    rendimientoTiempoBase = "POR_HORA",
+  } = params;
 
-  if (duracionMinutosFija != null) return Math.max(1, Math.round(duracionMinutosFija));
+  if (duracionMinutosFija != null)
+    return Math.max(1, Math.round(duracionMinutosFija));
 
   if (cantidad != null && rendimiento != null && rendimiento > 0) {
     if (rendimientoTiempoBase === "POR_MINUTO") {
@@ -257,5 +280,3 @@ export function calcularMinutosEstimados(params: {
 
   return null;
 }
-
-

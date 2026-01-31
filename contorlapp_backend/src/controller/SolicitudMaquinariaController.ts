@@ -1,7 +1,7 @@
 // src/controllers/SolicitudMaquinariaController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
-import { PrismaClient } from "../generated/prisma";
+import { prisma } from "../db/prisma";
 import { SolicitudMaquinariaService } from "../services/SolicitudMaquinariaServices";
 
 const IdParam = z.object({ id: z.coerce.number().int().positive() });
@@ -16,17 +16,13 @@ const FiltroQuery = z.object({
   fechaHasta: z.coerce.date().optional(),
 });
 
+const service = new SolicitudMaquinariaService(prisma);
+
 export class SolicitudMaquinariaController {
-  private prisma: PrismaClient;
-  private service: SolicitudMaquinariaService;
-  constructor(prisma?: PrismaClient) {
-    this.prisma = prisma ?? new PrismaClient();
-    this.service = new SolicitudMaquinariaService(this.prisma);
-  }
 
   crear: RequestHandler = async (req, res, next) => {
     try {
-      const out = await this.service.crear(req.body);
+      const out = await service.crear(req.body);
       res.status(201).json(out);
     } catch (err) { next(err); }
   };
@@ -34,7 +30,7 @@ export class SolicitudMaquinariaController {
   editar: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParam.parse(req.params);
-      const out = await this.service.editar(id, req.body);
+      const out = await service.editar(id, req.body);
       res.json(out);
     } catch (err) { next(err); }
   };
@@ -42,7 +38,7 @@ export class SolicitudMaquinariaController {
   aprobar: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParam.parse(req.params);
-      const out = await this.service.aprobar(id, req.body);
+      const out = await service.aprobar(id, req.body);
       res.json(out);
     } catch (err) { next(err); }
   };
@@ -50,7 +46,7 @@ export class SolicitudMaquinariaController {
   listar: RequestHandler = async (req, res, next) => {
     try {
       const f = FiltroQuery.parse(req.query);
-      const out = await this.service.listar(f);
+      const out = await service.listar(f);
       res.json(out);
     } catch (err) { next(err); }
   };
@@ -58,7 +54,7 @@ export class SolicitudMaquinariaController {
   obtener: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParam.parse(req.params);
-      const out = await this.service.obtener(id);
+      const out = await service.obtener(id);
       if (!out) { res.status(404).json({ message: "No encontrado" }); return; }
       res.json(out);
     } catch (err) { next(err); }
@@ -67,7 +63,7 @@ export class SolicitudMaquinariaController {
   eliminar: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParam.parse(req.params);
-      await this.service.eliminar(id);
+      await service.eliminar(id);
       res.status(204).send();
     } catch (err) { next(err); }
   };

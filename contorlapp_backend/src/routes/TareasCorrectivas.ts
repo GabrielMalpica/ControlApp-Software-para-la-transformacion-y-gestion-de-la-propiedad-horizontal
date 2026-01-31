@@ -1,8 +1,7 @@
 import { Router } from "express";
 import { GerenteService } from "../services/GerenteServices";
-import { PrismaClient } from "../generated/prisma";
+import { prisma } from "../db/prisma";
 
-const prisma = new PrismaClient();
 const svc = new GerenteService(prisma);
 const router = Router();
 
@@ -24,14 +23,6 @@ router.patch("/tareas/:id", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// Eliminar correctiva
-router.delete("/tareas/:id", async (req, res, next) => {
-  try {
-    const id = Number(req.params.id);
-    await svc.eliminarTarea(id);
-    res.status(204).send();
-  } catch (e) { next(e); }
-});
 
 // Listar por rango (mixto o filtra tipo)
 router.get("/conjuntos/:nit/tareas", async (req, res, next) => {

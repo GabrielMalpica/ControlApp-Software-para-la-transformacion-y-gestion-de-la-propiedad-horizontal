@@ -17,6 +17,11 @@ const AsignarBody = z.object({
   diasPrestamo: z.number().int().positive().optional(),
 });
 
+const AgendaMaquinariaQuery = z.object({
+  desde: z.coerce.date(),
+  hasta: z.coerce.date(),
+});
+
 export class MaquinariaController {
   private prisma: PrismaClient;
   constructor(prisma?: PrismaClient) {
@@ -31,6 +36,39 @@ export class MaquinariaController {
       const service = new MaquinariaService(this.prisma, maquinariaId);
       const updated = await service.asignarAConjunto(body);
       res.status(201).json(updated);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  agendaMaquinaria: RequestHandler = async (req, res, next) => {
+    try {
+      const { maquinariaId } = MaquinariaIdParam.parse(req.params);
+      const { conjuntoId } = ConjuntoIdParam.parse(req.params);
+      const { desde, hasta } = AgendaMaquinariaQuery.parse(req.query);
+
+      if (desde >= hasta) {
+        res.status(400).json({
+          ok: false,
+          reason: "RANGO_INVALIDO",
+          message: "El parámetro 'desde' debe ser menor que 'hasta'.",
+        });
+        return;
+      }
+
+      const service = new MaquinariaService(this.prisma, maquinariaId);
+
+      const agenda = await service.agendaMaquinariaPorMaquina({
+        maquinariaId,
+        conjuntoId,
+        desde,
+        hasta,
+      });
+
+      res.status(200).json({
+        ok: true,
+        data: agenda,
+      });
     } catch (err) {
       next(err);
     }
@@ -69,9 +107,8 @@ export class MaquinariaController {
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);
       const service = new MaquinariaService(this.prisma, maquinariaId);
 
-      const responsable = await service.obtenerResponsableEnConjunto(
-        conjuntoId
-      );
+      const responsable =
+        await service.obtenerResponsableEnConjunto(conjuntoId);
       res.json({ responsable });
     } catch (err) {
       next(err);

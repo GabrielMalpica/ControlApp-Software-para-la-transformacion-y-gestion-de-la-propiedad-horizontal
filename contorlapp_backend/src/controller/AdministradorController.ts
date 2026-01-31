@@ -1,7 +1,7 @@
 // src/controllers/AdministradorController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
-import { PrismaClient } from "../generated/prisma";
+import { prisma } from "../db/prisma";
 import { AdministradorService } from "../services/AdministradorServices";
 
 // Validaciones mínimas para params / headers / query
@@ -23,17 +23,12 @@ function resolveAdminId(req: any): number {
 }
 
 export class AdministradorController {
-  private prisma: PrismaClient;
-
-  constructor(prisma?: PrismaClient) {
-    this.prisma = prisma ?? new PrismaClient();
-  }
 
   // GET /administradores/:adminId/conjuntos
   verConjuntos: RequestHandler = async (req, res, next) => {
     try {
       const administradorId = resolveAdminId(req);
-      const service = new AdministradorService(this.prisma, administradorId);
+      const service = new AdministradorService(prisma, administradorId);
       const conjuntos = await service.verConjuntos();
       res.json(conjuntos);
     } catch (err) { next(err); }
@@ -43,7 +38,7 @@ export class AdministradorController {
   solicitarTarea: RequestHandler = async (req, res, next) => {
     try {
       const administradorId = resolveAdminId(req);
-      const service = new AdministradorService(this.prisma, administradorId);
+      const service = new AdministradorService(prisma, administradorId);
       const creada = await service.solicitarTarea(req.body);
       res.status(201).json(creada);
     } catch (err) { next(err); }
@@ -53,7 +48,7 @@ export class AdministradorController {
   solicitarInsumos: RequestHandler = async (req, res, next) => {
     try {
       const administradorId = resolveAdminId(req);
-      const service = new AdministradorService(this.prisma, administradorId);
+      const service = new AdministradorService(prisma, administradorId);
       const creada = await service.solicitarInsumos(req.body);
       res.status(201).json(creada);
     } catch (err) { next(err); }
@@ -63,7 +58,7 @@ export class AdministradorController {
   solicitarMaquinaria: RequestHandler = async (req, res, next) => {
     try {
       const administradorId = resolveAdminId(req);
-      const service = new AdministradorService(this.prisma, administradorId);
+      const service = new AdministradorService(prisma, administradorId);
       const creada = await service.solicitarMaquinaria(req.body);
       res.status(201).json(creada);
     } catch (err) { next(err); }

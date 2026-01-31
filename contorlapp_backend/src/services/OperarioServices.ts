@@ -13,7 +13,7 @@ const MarcarCompletadaDTO = z.object({
     .array(
       z.object({
         insumoId: z.number().int().positive(),
-        cantidad: z.number().int().positive(),
+        cantidad: z.coerce.number().positive(),
       })
     )
     .default([]),

@@ -4,7 +4,7 @@ import { EstadoTarea, TipoTarea, Frecuencia } from "../generated/prisma";
 
 export const InsumoUsadoItemDTO = z.object({
   insumoId: z.number().int().positive(),
-  cantidad: z.number().int().positive(),
+  cantidad: z.coerce.number().positive(),
 });
 
 /** Planificación (JSON) */
@@ -24,13 +24,14 @@ export const CrearTareaDTO = z
     descripcion: z.string().min(3),
 
     fechaInicio: z.coerce.date(),
-    fechaFin: z.coerce.date(),
+    // ✅ opcional (puede venir o no)
+    fechaFin: z.coerce.date().optional(),
 
-    duracionMinutos: z.number().int().min(1),
-
+    // ✅ opcional (puede venir o no)
+    duracionMinutos: z.coerce.number().int().min(1).optional(),
     duracionHoras: z.coerce.number().positive().optional(),
 
-    prioridad: z.number().int().min(1).max(3).optional(),
+    prioridad: z.coerce.number().int().min(1).max(3).optional(),
 
     tipo: z.nativeEnum(TipoTarea).optional(),
     estado: z.nativeEnum(EstadoTarea).optional(),
@@ -42,26 +43,75 @@ export const CrearTareaDTO = z
     observaciones: z.string().optional(),
     observacionesRechazo: z.string().optional(),
 
-    ubicacionId: z.number().int().positive(),
-    elementoId: z.number().int().positive(),
+    ubicacionId: z.coerce.number().int().positive(),
+    elementoId: z.coerce.number().int().positive(),
 
     conjuntoId: z.string().min(1).nullable().optional(),
-    supervisorId: z.number().int().positive().nullable().optional(),
+    supervisorId: z.string().min(1).nullable().optional(),
 
-    operariosIds: z.array(z.number().int().positive()).optional(),
-    operarioId: z.number().int().positive().optional(),
+    operariosIds: z.array(z.string().min(1)).optional(),
+    operarioId: z.string().min(1).optional(),
+
+    // ✅ NUEVO: asignación de maquinaria/herramientas en creación
+    maquinariaIds: z
+      .array(z.coerce.number().int().positive())
+      .optional()
+      .default([]),
+
+    herramientas: z
+      .array(
+        z.object({
+          herramientaId: z.coerce.number().int().positive(),
+          cantidad: z.coerce.number().positive().default(1),
+        }),
+      )
+      .optional()
+      .default([]),
   })
-  .refine(
-    (d) => {
-      const okDur = d.duracionMinutos != null || d.duracionHoras != null;
-      if (!okDur) return false;
+  .superRefine((d, ctx) => {
+    // ✅ debe existir al menos uno: fechaFin o duración
+    const hasDur =
+      (d.duracionMinutos != null && d.duracionMinutos >= 1) ||
+      (d.duracionHoras != null && d.duracionHoras > 0);
 
-      if (d.duracionMinutos != null) return d.duracionMinutos >= 1;
+    if (!d.fechaFin && !hasDur) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Debes enviar fechaFin o duracionMinutos o duracionHoras.",
+        path: ["fechaFin"],
+      });
+      return;
+    }
 
-      return (d.duracionHoras ?? 0) > 0;
-    },
-    { message: "Debe indicar duracionMinutos o duracionHoras (>0)." }
-  );
+    // ✅ si vienen ambos (fechaFin y duración), validamos coherencia mínima
+    if (d.fechaFin && hasDur) {
+      const durMin =
+        d.duracionMinutos ?? Math.round((d.duracionHoras ?? 0) * 60);
+
+      const diffMin = Math.round(
+        (d.fechaFin.getTime() - d.fechaInicio.getTime()) / 60000,
+      );
+
+      // tolerancia 1 min
+      if (Math.abs(diffMin - durMin) > 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "fechaFin no coincide con la duración enviada (duracionMinutos/duracionHoras).",
+          path: ["fechaFin"],
+        });
+      }
+    }
+
+    // ✅ fechaFin no puede ser antes de inicio
+    if (d.fechaFin && d.fechaFin.getTime() <= d.fechaInicio.getTime()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "fechaFin debe ser posterior a fechaInicio.",
+        path: ["fechaFin"],
+      });
+    }
+  });
 
 /** Editar tarea (parcial) */
 export const EditarTareaDTO = z.object({
@@ -89,17 +139,17 @@ export const EditarTareaDTO = z.object({
   elementoId: z.number().int().positive().optional(),
 
   conjuntoId: z.string().min(1).nullable().optional(),
-  supervisorId: z.number().int().positive().nullable().optional(),
+  supervisorId: z.string().min(1).nullable().optional(),
 
-  operariosIds: z.array(z.number().int().positive()).optional(),
-  operarioId: z.number().int().positive().optional(),
+  operariosIds: z.array(z.string().min(1)).optional(),
+  operarioId: z.string().min(1).optional(),
 });
 
 /** Filtros para listar/consultar tareas */
 export const FiltroTareaDTO = z.object({
   conjuntoId: z.string().optional(),
-  operarioId: z.number().int().optional(),
-  supervisorId: z.number().int().optional(),
+  supervisorId: z.string().optional(),
+  operarioId: z.string().optional(),
   ubicacionId: z.number().int().optional(),
   elementoId: z.number().int().optional(),
 
@@ -182,7 +232,7 @@ export type TareaPublica = {
   [K in keyof typeof tareaPublicSelect]: any;
 };
 export function toTareaPublica<
-  T extends Record<keyof typeof tareaPublicSelect, any>
+  T extends Record<keyof typeof tareaPublicSelect, any>,
 >(row: T): TareaPublica {
   return row as unknown as TareaPublica;
 }

@@ -1,7 +1,7 @@
 // src/controllers/OperarioController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
-import { PrismaClient } from "../generated/prisma";
+import { prisma } from "../db/prisma";
 import { OperarioService } from "../services/OperarioServices";
 import { InventarioService } from "../services/InventarioServices";
 
@@ -31,11 +31,6 @@ const CompletarBody = z.object({
 });
 
 export class OperarioController {
-  private prisma: PrismaClient;
-
-  constructor(prisma?: PrismaClient) {
-    this.prisma = prisma ?? new PrismaClient();
-  }
 
   // POST /operarios/:operarioId/tareas/asignar
   asignarTarea: RequestHandler = async (req, res, next) => {
@@ -43,7 +38,7 @@ export class OperarioController {
       const { operarioId } = OperarioIdParam.parse(req.params);
       const { tareaId }   = AsignarBody.parse(req.body);
 
-      const service = new OperarioService(this.prisma, operarioId);
+      const service = new OperarioService(prisma, operarioId);
       await service.asignarTarea({ tareaId });
       res.status(204).send();
     } catch (err) { next(err); }
@@ -55,7 +50,7 @@ export class OperarioController {
       const { operarioId } = OperarioIdParam.parse(req.params);
       const { tareaId }    = TareaIdParam.parse(req.params);
 
-      const service = new OperarioService(this.prisma, operarioId);
+      const service = new OperarioService(prisma, operarioId);
       await service.iniciarTarea({ tareaId });
       res.status(204).send();
     } catch (err) { next(err); }
@@ -68,7 +63,7 @@ export class OperarioController {
       const body = CompletarBody.parse(req.body);
 
       // 1) Resolver inventario del conjunto de la tarea
-      const tarea = await this.prisma.tarea.findUnique({
+      const tarea = await prisma.tarea.findUnique({
         where: { id: body.tareaId },
         select: { conjuntoId: true },
       });
@@ -76,7 +71,7 @@ export class OperarioController {
         const e: any = new Error("La tarea no existe o no tiene conjunto asignado.");
         e.status = 400; throw e;
       }
-      const inventario = await this.prisma.inventario.findUnique({
+      const inventario = await prisma.inventario.findUnique({
         where: { conjuntoId: tarea.conjuntoId },
         select: { id: true },
       });
@@ -86,8 +81,8 @@ export class OperarioController {
       }
 
       // 2) Ejecutar flujo de cierre con consumo de insumos
-      const service = new OperarioService(this.prisma, operarioId);
-      const inventarioService = new InventarioService(this.prisma, inventario.id);
+      const service = new OperarioService(prisma, operarioId);
+      const inventarioService = new InventarioService(prisma, inventario.id);
       await service.marcarComoCompletada(body, inventarioService);
 
       res.status(204).send();
@@ -100,7 +95,7 @@ export class OperarioController {
       const { operarioId } = OperarioIdParam.parse(req.params);
       const { tareaId }    = TareaIdParam.parse(req.params);
 
-      const service = new OperarioService(this.prisma, operarioId);
+      const service = new OperarioService(prisma, operarioId);
       await service.marcarComoNoCompletada({ tareaId });
       res.status(204).send();
     } catch (err) { next(err); }
@@ -112,7 +107,7 @@ export class OperarioController {
       const { operarioId } = OperarioIdParam.parse(req.params);
       const { fecha }      = FechaQuery.parse(req.query);
 
-      const service = new OperarioService(this.prisma, operarioId);
+      const service = new OperarioService(prisma, operarioId);
       const tareas = await service.tareasDelDia({ fecha });
       res.json(tareas);
     } catch (err) { next(err); }
@@ -122,7 +117,7 @@ export class OperarioController {
   listarTareas: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
-      const service = new OperarioService(this.prisma, operarioId);
+      const service = new OperarioService(prisma, operarioId);
       const list = await service.listarTareas();
       res.json(list);
     } catch (err) { next(err); }
@@ -134,7 +129,7 @@ export class OperarioController {
       const { operarioId } = OperarioIdParam.parse(req.params);
       const { fecha }      = FechaQuery.parse(req.query);
 
-      const service = new OperarioService(this.prisma, operarioId);
+      const service = new OperarioService(prisma, operarioId);
       const horas = await service.horasRestantesEnSemana({ fecha });
       res.json({ horasRestantes: horas });
     } catch (err) { next(err); }
@@ -146,7 +141,7 @@ export class OperarioController {
       const { operarioId } = OperarioIdParam.parse(req.params);
       const { fecha }      = FechaQuery.parse(req.query);
 
-      const service = new OperarioService(this.prisma, operarioId);
+      const service = new OperarioService(prisma, operarioId);
       const resumen = await service.resumenDeHoras({ fecha });
       res.json({ resumen });
     } catch (err) { next(err); }

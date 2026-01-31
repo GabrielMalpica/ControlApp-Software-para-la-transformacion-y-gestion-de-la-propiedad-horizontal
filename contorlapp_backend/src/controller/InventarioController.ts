@@ -1,7 +1,7 @@
 // src/controllers/InventarioController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
-import { PrismaClient } from "../generated/prisma";
+import { prisma } from "../db/prisma";
 import { InventarioService } from "../services/InventarioServices";
 import { ConjuntoService } from "../services/ConjuntoServices";
 import { decToNumber } from "../utils/decimal";
@@ -59,7 +59,6 @@ function resolveInventarioId(req: any): number {
 }
 
 export class InventarioController {
-  constructor(private prisma: PrismaClient) {}
 
   // ==========================================================
   // ✅ NUEVO: ENDPOINTS POR CONJUNTO (para tu front dinámico)
@@ -71,7 +70,7 @@ export class InventarioController {
       const { nit } = ConjuntoNitParam.parse(req.params);
       const q = UmbralQuery.parse(req.query);
 
-      const service = new ConjuntoService(this.prisma, nit);
+      const service = new ConjuntoService(prisma, nit);
       const out = await service.listarInventario({
         nombre: q.nombre,
         categoria: q.categoria,
@@ -89,7 +88,7 @@ export class InventarioController {
       const { nit } = ConjuntoNitParam.parse(req.params);
       const q = UmbralQuery.parse(req.query);
 
-      const service = new ConjuntoService(this.prisma, nit);
+      const service = new ConjuntoService(prisma, nit);
       const out = await service.listarInsumosBajos({
         umbral: q.umbral ?? 5,
         nombre: q.nombre,
@@ -108,7 +107,7 @@ export class InventarioController {
       const { nit } = ConjuntoNitParam.parse(req.params);
       const body = AgregarInsumoBody.parse(req.body);
 
-      const service = new ConjuntoService(this.prisma, nit);
+      const service = new ConjuntoService(prisma, nit);
       const out = await service.agregarStock(body);
 
       res.status(201).json(out ?? { ok: true });
@@ -123,7 +122,7 @@ export class InventarioController {
       const { nit } = ConjuntoNitParam.parse(req.params);
       const body = ConsumirBody.extend({ insumoId: z.number().int().positive() }).parse(req.body);
 
-      const service = new ConjuntoService(this.prisma, nit);
+      const service = new ConjuntoService(prisma, nit);
       await service.consumirStock(body);
 
       res.status(204).send();
@@ -138,7 +137,7 @@ export class InventarioController {
       const { nit } = ConjuntoNitParam.parse(req.params);
       const { insumoId } = InsumoIdParam.parse(req.params);
 
-      const service = new ConjuntoService(this.prisma, nit);
+      const service = new ConjuntoService(prisma, nit);
       const item = await service.buscarInsumoPorId({ insumoId });
 
       if (!item) {
@@ -159,7 +158,7 @@ export class InventarioController {
   agregarInsumo: RequestHandler = async (req, res, next) => {
     try {
       const inventarioId = resolveInventarioId(req);
-      const service = new InventarioService(this.prisma, inventarioId);
+      const service = new InventarioService(prisma, inventarioId);
       const body = AgregarInsumoBody.parse(req.body);
       const out = await service.agregarInsumo(body);
       res.status(201).json(out);
@@ -172,7 +171,7 @@ export class InventarioController {
   listarInsumos: RequestHandler = async (req, res, next) => {
     try {
       const inventarioId = resolveInventarioId(req);
-      const service = new InventarioService(this.prisma, inventarioId);
+      const service = new InventarioService(prisma, inventarioId);
       const q = UmbralQuery.parse(req.query);
       const items = await service.listarInsumosDetallado({
         nombre: q.nombre,
@@ -189,7 +188,7 @@ export class InventarioController {
     try {
       const inventarioId = resolveInventarioId(req);
       const { insumoId } = InsumoIdParam.parse(req.params);
-      const service = new InventarioService(this.prisma, inventarioId);
+      const service = new InventarioService(prisma, inventarioId);
       await service.eliminarInsumo({ insumoId });
       res.status(204).send();
     } catch (err) {
@@ -202,7 +201,7 @@ export class InventarioController {
     try {
       const inventarioId = resolveInventarioId(req);
       const { insumoId } = InsumoIdParam.parse(req.params);
-      const service = new InventarioService(this.prisma, inventarioId);
+      const service = new InventarioService(prisma, inventarioId);
       const item = await service.buscarInsumoPorId({ insumoId });
       if (!item) {
         res.status(404).json({ message: "Insumo no encontrado en el inventario" });
@@ -221,7 +220,7 @@ export class InventarioController {
       const { insumoId } = InsumoIdParam.parse(req.params);
       const body = ConsumirBody.parse(req.body);
 
-      const service = new InventarioService(this.prisma, inventarioId);
+      const service = new InventarioService(prisma, inventarioId);
       await service.consumirInsumoPorId({
         insumoId,
         cantidad: body.cantidad,
@@ -242,7 +241,7 @@ export class InventarioController {
       const inventarioId = resolveInventarioId(req);
       const q = UmbralQuery.parse(req.query);
 
-      const service = new InventarioService(this.prisma, inventarioId);
+      const service = new InventarioService(prisma, inventarioId);
       const list = await service.listarInsumosBajos({
         umbral: q.umbral ?? 5,
         nombre: q.nombre,
@@ -261,7 +260,7 @@ export class InventarioController {
       const inventarioId = resolveInventarioId(req);
       const q = UmbralQuery.parse(req.query);
 
-      const rows = await this.prisma.inventarioInsumo.findMany({
+      const rows = await prisma.inventarioInsumo.findMany({
         where: { inventarioId },
         include: { insumo: true },
       });

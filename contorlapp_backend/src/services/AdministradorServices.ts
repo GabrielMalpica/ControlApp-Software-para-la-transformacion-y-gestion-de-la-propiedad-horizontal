@@ -15,7 +15,7 @@ export class AdministradorService {
         where: { administradorId: this.administradorId.toString() },
         select: { nombre: true, nit: true },
       });
-      return conjuntos.map((c) => `${c.nombre} ${c.nit}`);
+      return conjuntos;
     } catch (error) {
       console.error("Error al obtener conjuntos:", error);
       throw new Error("No se pudieron obtener los conjuntos.");

@@ -1,7 +1,7 @@
 // src/controllers/SolicitudInsumoController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
-import { PrismaClient } from "../generated/prisma";
+import { prisma } from "../db/prisma";
 import { SolicitudInsumoService } from "../services/SolicitudInsumoServices";
 
 const IdParam = z.object({ id: z.coerce.number().int().positive() });
@@ -20,18 +20,13 @@ const AprobarBody = z.object({
   empresaId: z.string().min(3).optional(),
 });
 
-export class SolicitudInsumoController {
-  private prisma: PrismaClient;
-  private service: SolicitudInsumoService;
+const service = new SolicitudInsumoService(prisma);
 
-  constructor(prisma?: PrismaClient) {
-    this.prisma = prisma ?? new PrismaClient();
-    this.service = new SolicitudInsumoService(this.prisma);
-  }
+export class SolicitudInsumoController {
 
   crear: RequestHandler = async (req, res, next) => {
     try {
-      const out = await this.service.crear(req.body);
+      const out = await service.crear(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -42,7 +37,7 @@ export class SolicitudInsumoController {
     try {
       const { id } = IdParam.parse(req.params);
       const body = AprobarBody.parse(req.body ?? {});
-      const out = await this.service.aprobar(id, body);
+      const out = await service.aprobar(id, body);
       res.json(out);
     } catch (err) {
       next(err);
@@ -52,7 +47,7 @@ export class SolicitudInsumoController {
   listar: RequestHandler = async (req, res, next) => {
     try {
       const f = FiltroQuery.parse(req.query);
-      const out = await this.service.listar(f);
+      const out = await service.listar(f);
       res.json(out);
     } catch (err) {
       next(err);
@@ -62,7 +57,7 @@ export class SolicitudInsumoController {
   obtener: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParam.parse(req.params);
-      const out = await this.service.obtener(id);
+      const out = await service.obtener(id);
       if (!out) {
         res.status(404).json({ message: "No encontrado" });
         return;
@@ -76,7 +71,7 @@ export class SolicitudInsumoController {
   eliminar: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParam.parse(req.params);
-      await this.service.eliminar(id);
+      await service.eliminar(id);
       res.status(204).send();
     } catch (err) {
       next(err);

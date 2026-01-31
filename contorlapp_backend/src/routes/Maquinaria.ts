@@ -13,5 +13,6 @@ router.post("/:maquinariaId/devolver", controller.devolver);
 router.get("/:maquinariaId/disponible", controller.estaDisponible);
 router.get("/:maquinariaId/responsable", controller.obtenerResponsable);
 router.get("/:maquinariaId/resumen", controller.resumenEstado);
+router.get("/:maquinariaId/agenda/:conjuntoId", controller.agendaMaquinaria);
 
 export default router;
