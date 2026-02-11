@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/pages/jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 
 import '../service/theme.dart';
 import 'maquinaria_page.dart';
 import 'inventario_page.dart';
 import 'crear_tarea_page.dart';
-import 'tareas_page.dart';
 import 'solicitudes_page.dart';
 import 'cronograma_page.dart';
 import 'crear_cronograma_page.dart';
@@ -245,7 +245,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => TareasPage(nit: nit)),
+                    MaterialPageRoute(builder: (_) => JefeOperacionesPendientesPage(conjuntoId: nit)),
                   );
                 },
               ),

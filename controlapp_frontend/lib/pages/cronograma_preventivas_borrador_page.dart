@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/festivo_api.dart';
+import 'package:flutter_application_1/api/preventiva_api.dart';
+import 'package:flutter_application_1/model/novedad_cronograma_model.dart';
 import 'package:intl/intl.dart';
 
 import '../api/cronograma_api.dart';
@@ -31,6 +33,7 @@ class _CronogramaPreventivasBorradorPageState
     extends State<CronogramaPreventivasBorradorPage> {
   final _cronogramaApi = CronogramaApi();
   final _festivoApi = FestivoApi();
+  final _preventivaApi = DefinicionPreventivaApi();
 
   bool _loading = true;
   bool _publicando = false;
@@ -65,6 +68,9 @@ class _CronogramaPreventivasBorradorPageState
   List<String> _operariosDisponibles = [];
   List<String> _ubicacionesDisponibles = [];
 
+  // ✅ Para no mostrar el cuadro de novedades repetido en el mismo periodo
+  final Set<String> _novedadesMostradasPorPeriodo = {};
+
   @override
   void initState() {
     super.initState();
@@ -73,7 +79,9 @@ class _CronogramaPreventivasBorradorPageState
 
     _initMes();
     _semanaBase = DateTime(_anioActual, _mesActual, 1);
-    _cargarDatos();
+
+    // ✅ Al entrar: generar borrador -> mostrar novedades -> cargar cronograma
+    _generarYcargarAlEntrar();
   }
 
   void _initMes() {
@@ -216,7 +224,298 @@ class _CronogramaPreventivasBorradorPageState
       _semanaBase = DateTime(_anioActual, _mesActual, 1);
     });
 
-    await _cargarDatos();
+    // ✅ al cambiar mes: generar + novedades + cargar
+    await _generarYcargarAlEntrar();
+  }
+
+  /// ==============================
+  /// ✅ NUEVO: Generar borrador y mostrar “novedades”
+  /// (para que el cliente no quede a ciegas)
+  /// ==============================
+  Future<void> _generarYcargarAlEntrar() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final periodoKey =
+          '${_anioActual.toString().padLeft(4, '0')}-${_mesActual.toString().padLeft(2, '0')}';
+
+      // 1) Generar borrador (backend debería devolver {creadas, novedades})
+      //    OJO: este método debe existir en tu CronogramaApi
+      //    Si ya tienes otro nombre, cámbialo aquí.
+      final gen = await _preventivaApi.generarCronogramaMensual(
+        nit: widget.nit,
+        anio: _anioActual,
+        mes: _mesActual,
+        // tamanoBloqueMinutos: 60,
+      );
+
+      final creadas = int.tryParse('${(gen is Map) ? gen['creadas'] : 0}') ?? 0;
+
+      final rawNovedades = (gen is Map) ? gen['novedades'] : null;
+      final novedades = (rawNovedades is List)
+          ? rawNovedades
+                .map(
+                  (e) => NovedadCronogramaModel.fromJson(
+                    Map<String, dynamic>.from(e),
+                  ),
+                )
+                .toList()
+          : <NovedadCronogramaModel>[];
+
+      // 2) Cargar cronograma (como antes)
+      await _cargarDatos(); // deja _loading en false al final
+
+      // 3) Mostrar cuadro grande solo 1 vez por periodo
+      if (mounted && !_novedadesMostradasPorPeriodo.contains(periodoKey)) {
+        _novedadesMostradasPorPeriodo.add(periodoKey);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _mostrarModalNovedades(creadas: creadas, novedades: novedades);
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _mostrarModalNovedades({
+    required int creadas,
+    required List<NovedadCronogramaModel> novedades,
+  }) async {
+    final mesNombre = DateFormat.MMMM(
+      'es',
+    ).format(DateTime(_anioActual, _mesActual, 1));
+    final titulo = 'Novedades del borrador ($mesNombre $_anioActual)';
+    final subtitulo = 'Tareas creadas: $creadas';
+
+    IconData _icon(String tipo) {
+      switch (tipo) {
+        case 'FESTIVO_MOVIDO':
+          return Icons.event_busy;
+        case 'REEMPLAZO_PRIORIDAD':
+          return Icons.swap_horiz;
+        case 'SIN_CANDIDATAS':
+          return Icons.warning_amber_rounded;
+        case 'SIN_HUECO':
+          return Icons.schedule;
+        default:
+          return Icons.info_outline;
+      }
+    }
+
+    Color _color(String tipo) {
+      switch (tipo) {
+        case 'FESTIVO_MOVIDO':
+          return Colors.red.shade700;
+        case 'REEMPLAZO_PRIORIDAD':
+          return Colors.indigo.shade700;
+        case 'SIN_CANDIDATAS':
+          return Colors.orange.shade800;
+        case 'SIN_HUECO':
+          return Colors.deepOrange.shade800;
+        default:
+          return Colors.grey.shade800;
+      }
+    }
+
+    String _title(NovedadCronogramaModel n) {
+      switch (n.tipo) {
+        case 'FESTIVO_MOVIDO':
+          return 'Festivo: tarea movida';
+        case 'REEMPLAZO_PRIORIDAD':
+          return 'Reemplazo por prioridad';
+        case 'SIN_CANDIDATAS':
+          return 'No hay candidatas para reemplazo';
+        case 'SIN_HUECO':
+          return 'Sin hueco en agenda';
+        default:
+          return 'Novedad';
+      }
+    }
+
+    String _body(NovedadCronogramaModel n) {
+      final desc = (n.descripcion ?? '—').trim();
+      final pr = n.prioridad != null ? 'Prioridad: ${n.prioridad}' : '';
+
+      if (n.tipo == 'FESTIVO_MOVIDO') {
+        return '$desc\n$pr\n${n.fechaOriginal ?? '—'} → ${n.fechaNueva ?? '—'}';
+      }
+
+      if (n.tipo == 'REEMPLAZO_PRIORIDAD') {
+        final nuevas = n.nuevaTareaIds.isEmpty
+            ? '—'
+            : n.nuevaTareaIds.join(', ');
+        final reprog = n.reprogramadasIds.isEmpty
+            ? '—'
+            : n.reprogramadasIds.join(', ');
+        return '$desc\n$pr\nFecha: ${n.fecha ?? '—'}\nNuevas: $nuevas\nReprogramadas: $reprog';
+      }
+
+      if (n.tipo == 'SIN_CANDIDATAS' || n.tipo == 'SIN_HUECO') {
+        return '$desc\n$pr\nFecha: ${n.fecha ?? '—'}';
+      }
+
+      return '$desc\n$pr';
+    }
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false, // ✅ solo cierra con Aceptar
+      builder: (ctx) {
+        final w = MediaQuery.of(ctx).size.width;
+        final h = MediaQuery.of(ctx).size.height;
+        final dialogW = (w * 0.92).clamp(320.0, 900.0);
+        final dialogH = (h * 0.76).clamp(360.0, 820.0);
+
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 18,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: SizedBox(
+            width: dialogW,
+            height: dialogH,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    titulo,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitulo,
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppTheme.primary.withOpacity(0.18),
+                      ),
+                    ),
+                    child: Text(
+                      novedades.isEmpty
+                          ? 'No hubo novedades. El borrador se generó sin mover tareas por festivos y sin reemplazos por prioridad.'
+                          : 'Estas son las novedades detectadas al generar el borrador (movimientos por festivos, reemplazos por prioridad y/o casos sin hueco).',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: novedades.isEmpty
+                        ? Center(
+                            child: Text(
+                              '✅ Sin novedades',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: novedades.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 10),
+                            itemBuilder: (context, i) {
+                              final n = novedades[i];
+                              final c = _color(n.tipo);
+                              return Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.03),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: 38,
+                                      height: 38,
+                                      decoration: BoxDecoration(
+                                        color: c.withOpacity(0.10),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Icon(_icon(n.tipo), color: c),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _title(n),
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            _body(n),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              height: 1.25,
+                                              color: Colors.grey.shade800,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.check),
+                      label: const Text('Aceptar'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _cargarDatos() async {
@@ -391,8 +690,9 @@ class _CronogramaPreventivasBorradorPageState
         .where((x) => x.isNotEmpty)
         .toList();
     if (parts.isEmpty) return '';
-    if (parts.length == 1)
+    if (parts.length == 1) {
       return parts.first.substring(0, parts.first.length >= 2 ? 2 : 1);
+    }
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
 
@@ -884,15 +1184,6 @@ class _CronogramaPreventivasBorradorPageState
                       final dom = _esDomingo(fecha);
                       final fest = _esFestivo(fecha);
                       final val = f.porDia[dia] ?? '';
-
-                      Color cellColor;
-                      if (dom) {
-                        cellColor = Colors.yellow.shade200;
-                      } else if (fest) {
-                        cellColor = Colors.red.shade50;
-                      } else {
-                        cellColor = Colors.white;
-                      }
 
                       return GestureDetector(
                         onTap: () => _abrirDia(dia),
@@ -1390,7 +1681,11 @@ class _CronogramaPreventivasBorradorPageState
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(onPressed: _cargarDatos, icon: const Icon(Icons.refresh)),
+          // ✅ refresca generando de nuevo y mostrando novedades
+          IconButton(
+            onPressed: _generarYcargarAlEntrar,
+            icon: const Icon(Icons.refresh),
+          ),
         ],
       ),
       body: _loading
@@ -1417,7 +1712,7 @@ class _CronogramaPreventivasBorradorPageState
             ),
             const SizedBox(height: 12),
             ElevatedButton.icon(
-              onPressed: _cargarDatos,
+              onPressed: _generarYcargarAlEntrar,
               icon: const Icon(Icons.refresh),
               label: const Text('Reintentar'),
             ),
@@ -1445,7 +1740,6 @@ class _CronogramaPreventivasBorradorPageState
               ),
               secondChild: const SizedBox.shrink(),
             ),
-
           const SizedBox(height: 10),
           Expanded(
             child: Column(
@@ -1841,8 +2135,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   final fin = t.fechaFin.toLocal();
 
                                   final day = _dayIndex(ini);
-                                  if (day < 0 || day > 6)
+                                  if (day < 0 || day > 6) {
                                     return const SizedBox.shrink();
+                                  }
 
                                   final startMin = _minutesFromStart(ini);
                                   final durMin = fin.difference(ini).inMinutes;

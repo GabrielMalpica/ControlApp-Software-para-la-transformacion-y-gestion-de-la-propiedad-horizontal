@@ -93,6 +93,23 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     }
   }
 
+  void _informarAutoReemplazos(List<dynamic> autoReplaced) {
+    if (!mounted) return;
+    if (autoReplaced.isEmpty) return;
+
+    final ids = autoReplaced
+        .map((e) => (e is Map ? e['id'] : null)?.toString())
+        .whereType<String>()
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    final texto = ids.isEmpty
+        ? 'Se reemplazó automáticamente una tarea de prioridad 3.'
+        : 'Se reemplazó automáticamente la(s) tarea(s) P3: ${ids.join(", ")}.';
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texto)));
+  }
+
   Future<void> _cargarInicial() async {
     try {
       final conjuntos = await _gerenteApi.listarConjuntos();
@@ -417,9 +434,65 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     return '${d.day}/${d.month}/${d.year} $hh:$mm';
   }
 
+  // ✅ NUEVO: helpers de fechas para el diálogo de ajuste
+  DateTime? _parseDt(dynamic v) {
+    if (v == null) return null;
+    try {
+      return DateTime.parse(v.toString()).toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _fmtHora(DateTime d) {
+    final hh = d.hour.toString().padLeft(2, '0');
+    final mm = d.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  String _fmtFecha(DateTime d) => '${d.day}/${d.month}/${d.year}';
+
+  // ✅ NUEVO: diálogo para avisar ajuste automático
+  Future<void> _mostrarAjusteHorarioDialog({
+    required DateTime? solicitadaIni,
+    required DateTime? solicitadaFin,
+    required DateTime? asignadaIni,
+    required DateTime? asignadaFin,
+    String? motivo,
+  }) async {
+    if (!mounted) return;
+
+    String linea(String titulo, DateTime? a, DateTime? b) {
+      if (a == null || b == null) return '$titulo: (no disponible)';
+      final fecha = _fmtFecha(a);
+      final rango = '${_fmtHora(a)} → ${_fmtHora(b)}';
+      return '$titulo: $fecha  $rango';
+    }
+
+    final texto = [
+      '⚠️ No había disponibilidad en el horario que seleccionaste.',
+      if ((motivo ?? '').trim().isNotEmpty) '\n$motivo',
+      '\n${linea("Solicitado", solicitadaIni, solicitadaFin)}',
+      '${linea("Programado", asignadaIni, asignadaFin)}',
+    ].join('\n');
+
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Horario ajustado automáticamente'),
+        content: Text(texto),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
   bool _backendOk(dynamic resp) {
     if (resp is Map) {
-      // tu backend a veces responde {ok:true,...} y a veces devuelve la tarea creada (con id)
       if (resp['ok'] == true) return true;
       if (resp['id'] != null) return true;
       if (resp['createdIds'] != null) return true;
@@ -446,7 +519,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       msg = resp.toString();
     }
 
-    // Texto extra bonito según reason
     String extra = '';
     switch ((reason ?? '').toUpperCase()) {
       case 'INICIO_ANTES_APERTURA':
@@ -466,7 +538,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         break;
     }
 
-    // Si hay sugerencia, ofrecer usarla
     if (sugIni != null && sugFin != null) {
       final usar = await showDialog<bool>(
         context: context,
@@ -491,14 +562,12 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       );
 
       if (usar == true) {
-        // ✅ aplica sugerencia en el form para que el usuario la vea
         setState(() {
           fechaInicio = DateTime(sugIni!.year, sugIni.month, sugIni.day);
           fechaFin = DateTime(sugFin!.year, sugFin.month, sugFin.day);
           _horaInicio = TimeOfDay(hour: sugIni.hour, minute: sugIni.minute);
         });
 
-        // opcional: ajustar duración si sugFin cambió
         final nuevaDur = sugFin.difference(sugIni).inMinutes;
         if (nuevaDur > 0) _duracionCtrl.text = nuevaDur.toString();
 
@@ -510,7 +579,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       return;
     }
 
-    // Sin sugerencia: solo alert
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -684,7 +752,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     final inicio = _combinarFechaYHora(fechaInicio!, _horaInicio!);
     final fin = inicio.add(Duration(minutes: duracionMin));
 
-    // ✅ Solo límite semanal (no solapes)
     final okSemana = await _validarLimiteSemanal(inicio, duracionMin);
     if (!okSemana) return;
 
@@ -711,9 +778,48 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
       final resp = await _tareaApi.crearTarea(req);
 
-      // ✅ 1) Caso reemplazo (correctiva P1)
+      // ✅ CAMBIO: si fue OK, mostrar AlertDialog si el backend ajustó horario
+      if (_backendOk(resp)) {
+        if (resp is Map) {
+          final solIni = _parseDt(resp['solicitadaInicio']);
+          final solFin = _parseDt(resp['solicitadaFin']);
+          final asgIni = _parseDt(resp['asignadaInicio']);
+          final asgFin = _parseDt(resp['asignadaFin']);
+
+          final motivo = (resp['motivoAjuste'] ?? '').toString();
+
+          final flag = resp['ajustadaAutomaticamente'] == true;
+
+          final cambio =
+              (solIni != null &&
+                  asgIni != null &&
+                  solFin != null &&
+                  asgFin != null)
+              ? (solIni != asgIni || solFin != asgFin)
+              : false;
+
+          final tieneMotivo = motivo.trim().isNotEmpty;
+
+          if (flag || cambio || tieneMotivo) {
+            await _mostrarAjusteHorarioDialog(
+              solicitadaIni: solIni,
+              solicitadaFin: solFin,
+              asignadaIni: asgIni,
+              asignadaFin: asgFin,
+              motivo: motivo,
+            );
+          }
+        }
+
+        _onSuccess();
+        return;
+      }
+
+      // ✅ Caso reemplazo (correctiva P1)
       if (resp is Map && resp['needsReplacement'] == true) {
-        // 1) sugerencia de horario (si la hay)
+        final autoReplaced = (resp['autoReplaced'] as List?) ?? [];
+        _informarAutoReemplazos(autoReplaced);
+
         if (resp['suggestedInicio'] != null && resp['suggestedFin'] != null) {
           final sugIni = DateTime.parse(
             resp['suggestedInicio'].toString(),
@@ -737,25 +843,82 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               prioridad: req.prioridad,
               tipo: req.tipo,
               observaciones: req.observaciones,
+              maquinariaIds: req.maquinariaIds,
             );
 
             final resp2 = await _tareaApi.crearTarea(req2);
 
-            // ✅ si ahora sí fue OK, salimos
             if (_backendOk(resp2)) {
+              final auto2 =
+                  (resp2 is Map ? (resp2['autoReplaced'] as List?) : null) ??
+                  [];
+              _informarAutoReemplazos(auto2);
               _onSuccess();
               return;
             }
-
-            // si sigue pidiendo reemplazo o trae error, seguimos al flujo normal
-            // (no hacemos return aquí)
           }
         }
 
-        // 2) reemplazo manual
-        final reemplazables = (resp['reemplazables'] as List?) ?? [];
-        final ids = await _dialogReemplazo(reemplazables);
+        final reemplazablesP2 =
+            (resp['reemplazablesP2'] as List?) ??
+            (resp['reemplazables'] as List?) ??
+            [];
 
+        if (reemplazablesP2.isEmpty) {
+          await _mostrarErrorBackend(resp);
+          return;
+        }
+
+        if (reemplazablesP2.length == 1) {
+          final t = reemplazablesP2.first as Map<String, dynamic>;
+          final id = int.parse(t['id'].toString());
+          final desc = (t['descripcion'] ?? '').toString();
+
+          final ok = await showDialog<bool>(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text("Confirmar reemplazo"),
+              content: Text(
+                "¿Deseas reemplazar esta tarea P2?\n\nID: $id\n$desc",
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text("No"),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text("Sí, reemplazar"),
+                ),
+              ],
+            ),
+          );
+
+          if (ok != true) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Operación cancelada.')),
+            );
+            return;
+          }
+
+          final resp3 = await _tareaApi.crearTareaConReemplazo(
+            tarea: req,
+            reemplazarIds: [id],
+          );
+
+          if (_backendOk(resp3)) {
+            final auto3 =
+                (resp3 is Map ? (resp3['autoReplaced'] as List?) : null) ?? [];
+            _informarAutoReemplazos(auto3);
+            _onSuccess();
+            return;
+          }
+
+          await _mostrarErrorBackend(resp3);
+          return;
+        }
+
+        final ids = await _dialogReemplazo(reemplazablesP2);
         if (ids != null && ids.isNotEmpty) {
           final resp3 = await _tareaApi.crearTareaConReemplazo(
             tarea: req,
@@ -763,6 +926,9 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           );
 
           if (_backendOk(resp3)) {
+            final auto3 =
+                (resp3 is Map ? (resp3['autoReplaced'] as List?) : null) ?? [];
+            _informarAutoReemplazos(auto3);
             _onSuccess();
             return;
           }
@@ -777,19 +943,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         return;
       }
 
-      // ✅ 2) Caso backend devuelve ok:false (como INICIO_ANTES_APERTURA)
-      if (resp is Map && resp['ok'] == false) {
-        await _mostrarErrorBackend(resp);
-        return;
-      }
-
-      // ✅ 3) Caso normal: si es OK de verdad
-      if (_backendOk(resp)) {
-        _onSuccess();
-        return;
-      }
-
-      // ✅ 4) Fallback: respuesta rara -> mostrar
       await _mostrarErrorBackend(resp);
       return;
     } catch (e) {
@@ -842,7 +995,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 8),
-
               DropdownButtonFormField<String>(
                 initialValue: _conjuntoSeleccionado?.nit,
                 decoration: const InputDecoration(
@@ -863,7 +1015,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                 validator: (v) => v == null ? 'Seleccione un conjunto' : null,
               ),
               const SizedBox(height: 16),
-
               DropdownButtonFormField<int>(
                 initialValue: _ubicacionSeleccionada?.id,
                 decoration: const InputDecoration(
@@ -888,7 +1039,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                 validator: (v) => v == null ? 'Seleccione una ubicación' : null,
               ),
               const SizedBox(height: 16),
-
               DropdownButtonFormField<int>(
                 initialValue: _elementoSeleccionado?.id,
                 decoration: const InputDecoration(
@@ -909,13 +1059,11 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                 validator: (v) => v == null ? 'Seleccione un elemento' : null,
               ),
               const SizedBox(height: 24),
-
               const Text(
                 "2. Qué se va a hacer",
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 8),
-
               TextFormField(
                 controller: _descripcionCtrl,
                 decoration: const InputDecoration(
@@ -928,7 +1076,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                     : null,
               ),
               const SizedBox(height: 16),
-
               DropdownButtonFormField<int>(
                 value: _prioridad,
                 decoration: const InputDecoration(
@@ -943,7 +1090,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                 onChanged: (v) => setState(() => _prioridad = v ?? 2),
               ),
               const SizedBox(height: 16),
-
               Row(
                 children: [
                   Expanded(
@@ -982,7 +1128,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                 ],
               ),
               const SizedBox(height: 16),
-
               InkWell(
                 onTap: _seleccionarHoraInicio,
                 child: InputDecorator(
@@ -998,7 +1143,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                 ),
               ),
               const SizedBox(height: 16),
-
               TextFormField(
                 controller: _duracionCtrl,
                 keyboardType: TextInputType.number,
@@ -1007,15 +1151,15 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                   border: OutlineInputBorder(),
                 ),
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty)
+                  if (v == null || v.trim().isEmpty) {
                     return 'Ingrese duración en minutos';
+                  }
                   final m = int.tryParse(v.trim());
                   if (m == null || m <= 0) return 'Minutos inválidos';
                   return null;
                 },
               ),
               const SizedBox(height: 16),
-
               TextFormField(
                 controller: _observacionesCtrl,
                 decoration: const InputDecoration(
@@ -1025,13 +1169,11 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                 maxLines: 3,
               ),
               const SizedBox(height: 24),
-
               const Text(
                 "3. Quiénes la ejecutan",
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 8),
-
               InkWell(
                 onTap: _mostrarSelectorOperarios,
                 child: InputDecorator(
@@ -1047,7 +1189,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                 ),
               ),
               const SizedBox(height: 16),
-
               DropdownButtonFormField<String>(
                 initialValue: _supervisorId,
                 decoration: const InputDecoration(
@@ -1064,15 +1205,12 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                     .toList(),
                 onChanged: (value) => setState(() => _supervisorId = value),
               ),
-
               const SizedBox(height: 24),
-
               const Text(
                 "4. Con qué maquinaria",
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 8),
-
               InkWell(
                 onTap: _mostrarSelectorMaquinaria,
                 child: InputDecorator(
@@ -1088,7 +1226,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                 ),
               ),
               const SizedBox(height: 32),
-
               ElevatedButton.icon(
                 onPressed: _guardando ? null : _guardarTarea,
                 icon: _guardando

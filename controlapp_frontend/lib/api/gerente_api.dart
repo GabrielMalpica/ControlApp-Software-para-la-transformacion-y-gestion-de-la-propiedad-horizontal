@@ -93,7 +93,7 @@ class GerenteApi {
 
   Future<void> asignarJefeOperaciones({required String usuarioId}) async {
     final res = await _apiClient.post(
-      AppConstants.jefesOperaciones,
+      AppConstants.jefeOperacionesBase,
       body: {'Id': usuarioId},
     );
     if (res.statusCode != 201 && res.statusCode != 200) {

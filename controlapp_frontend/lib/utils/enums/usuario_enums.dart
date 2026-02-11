@@ -10,6 +10,7 @@ class UsuarioEnums {
   final List<String> tallasCalzado;
   final List<String> tiposContrato;
   final List<String> tiposFuncion;
+  final List<String> patronesJornada;
 
   UsuarioEnums({
     required this.roles,
@@ -23,24 +24,29 @@ class UsuarioEnums {
     required this.tallasCalzado,
     required this.tiposContrato,
     required this.tiposFuncion,
+    required this.patronesJornada,
   });
 
   factory UsuarioEnums.fromJson(Map<String, dynamic> json) {
-    List<String> list(dynamic v) =>
-        (v as List<dynamic>).map((e) => e.toString()).toList();
+    List<String> listOfStrings(dynamic v) {
+      if (v == null) return [];
+      if (v is List) return v.map((e) => e.toString()).toList();
+      return [];
+    }
 
     return UsuarioEnums(
-      roles: list(json['rol']),
-      estadosCiviles: list(json['estadoCivil']),
-      eps: list(json['eps']),
-      fondosPensiones: list(json['fondoPensiones']),
-      jornadasLaborales: list(json['jornadaLaboral']),
-      tiposSangre: list(json['tipoSangre']),
-      tallasCamisa: list(json['tallaCamisa']),
-      tallasPantalon: list(json['tallaPantalon']),
-      tallasCalzado: list(json['tallaCalzado']),
-      tiposContrato: list(json['tipoContrato']),
-      tiposFuncion: list(json['tipoFuncion']),
+      roles: listOfStrings(json['rol']),
+      estadosCiviles: listOfStrings(json['estadoCivil']),
+      eps: listOfStrings(json['eps']),
+      fondosPensiones: listOfStrings(json['fondoPensiones']),
+      jornadasLaborales: listOfStrings(json['jornadaLaboral']),
+      tiposSangre: listOfStrings(json['tipoSangre']),
+      tallasCamisa: listOfStrings(json['tallaCamisa']),
+      tallasPantalon: listOfStrings(json['tallaPantalon']),
+      tallasCalzado: listOfStrings(json['tallaCalzado']),
+      tiposContrato: listOfStrings(json['tipoContrato']),
+      tiposFuncion: listOfStrings(json['tipoFuncion']),
+      patronesJornada: listOfStrings(json['patronesJornada']),
     );
   }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../model/usuario_model.dart';
-import '../../service/theme.dart';
+import 'package:flutter_application_1/model/usuario_model.dart';
+import 'package:flutter_application_1/service/theme.dart';
 
 class DetalleUsuarioPage extends StatelessWidget {
   final Usuario usuario;
@@ -8,9 +8,61 @@ class DetalleUsuarioPage extends StatelessWidget {
   const DetalleUsuarioPage({super.key, required this.usuario});
 
   String _prettyEnum(String? raw) {
-    if (raw == null || raw.isEmpty) return '-';
+    if (raw == null || raw.isEmpty) return "-";
     final withSpaces = raw.toLowerCase().replaceAll('_', ' ');
     return withSpaces[0].toUpperCase() + withSpaces.substring(1);
+  }
+
+  Widget _rowDato(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value.isEmpty ? "-" : value,
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cardSeccion({
+    required String titulo,
+    required List<Widget> children,
+  }) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              titulo,
+              style: TextStyle(
+                color: AppTheme.primary,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...children,
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -19,40 +71,32 @@ class DetalleUsuarioPage extends StatelessWidget {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
-        title: Text(
-          'Detalle usuario - ${usuario.nombre}',
-          style: const TextStyle(color: Colors.white),
+        title: const Text(
+          "Detalle usuario",
+          style: TextStyle(color: Colors.white),
         ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // ───────────── RESUMEN PRINCIPAL ─────────────
+            // ───────── RESUMEN PRINCIPAL ─────────
             Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
               elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     CircleAvatar(
-                      radius: 30,
+                      radius: 28,
                       backgroundColor: AppTheme.primary.withOpacity(0.1),
-                      child: Text(
-                        usuario.nombre.isNotEmpty
-                            ? usuario.nombre[0].toUpperCase()
-                            : '?',
-                        style: TextStyle(
-                          fontSize: 24,
-                          color: AppTheme.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      child: Icon(Icons.person, color: AppTheme.primary),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -64,17 +108,25 @@ class DetalleUsuarioPage extends StatelessWidget {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 6),
                           Text(
-                            'Rol: ${_prettyEnum(usuario.rol)}',
-                            style: const TextStyle(fontSize: 14),
+                            "Rol: ${_prettyEnum(usuario.rol)}",
+                            style: const TextStyle(fontSize: 13),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Cédula: ${usuario.cedula}',
-                            style: const TextStyle(
+                            "Cédula: ${usuario.cedula}",
+                            style: const TextStyle(fontSize: 13),
+                          ),
+
+                          // ✅ NUEVO: Estado activo/inactivo (resumen)
+                          const SizedBox(height: 4),
+                          Text(
+                            'Estado: ${usuario.activo ? "Activo" : "Inactivo"}',
+                            style: TextStyle(
                               fontSize: 13,
-                              color: Colors.grey,
+                              color: usuario.activo ? Colors.green : Colors.red,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
@@ -85,133 +137,83 @@ class DetalleUsuarioPage extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            // ───────────── DATOS DE CONTACTO ─────────────
+            // ───────── CUENTA (OPCIONAL PERO RECOMENDADO) ─────────
             _cardSeccion(
-              titulo: "Datos de contacto",
+              titulo: "Cuenta",
               children: [
+                _rowDato("Rol", _prettyEnum(usuario.rol)),
+                _rowDato("Estado", usuario.activo ? "Activo" : "Inactivo"),
+                _rowDato("Cédula", usuario.cedula),
                 _rowDato("Correo", usuario.correo),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // ───────── INFORMACIÓN PERSONAL ─────────
+            _cardSeccion(
+              titulo: "Información personal",
+              children: [
                 _rowDato("Teléfono", usuario.telefono.toString()),
+                _rowDato("Dirección", usuario.direccion ?? "-"),
                 _rowDato(
-                  "Dirección",
-                  (usuario.direccion == null || usuario.direccion!.isEmpty)
+                  "Fecha nacimiento",
+                  usuario.fechaNacimiento == null
                       ? "-"
-                      : usuario.direccion!,
+                      : "${usuario.fechaNacimiento!.day}/${usuario.fechaNacimiento!.month}/${usuario.fechaNacimiento!.year}",
                 ),
               ],
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            // ───────────── DATOS PERSONALES ─────────────
+            // ───────── INFORMACIÓN FAMILIAR Y SALUD ─────────
             _cardSeccion(
-              titulo: "Datos personales",
+              titulo: "Información familiar y salud",
               children: [
+                _rowDato("Estado civil", _prettyEnum(usuario.estadoCivil)),
                 _rowDato(
-                  "Fecha nacimiento",
-                  usuario.fechaNacimiento != null
-                      ? "${usuario.fechaNacimiento.day}/${usuario.fechaNacimiento.month}/${usuario.fechaNacimiento.year}"
-                      : "-",
+                  "Número de hijos",
+                  usuario.numeroHijos == null ? "-" : "${usuario.numeroHijos}",
                 ),
-                _rowDato(
-                  "Estado civil",
-                  _prettyEnum(usuario.estadoCivil ?? ''),
-                ),
-                _rowDato("Número de hijos", "${usuario.numeroHijos}"),
                 _rowDato(
                   "Padres vivos",
-                  usuario.padresVivos == null
+                  (usuario.padresVivos == null)
                       ? "-"
                       : (usuario.padresVivos! ? "Sí" : "No"),
                 ),
-
-                _rowDato("Tipo de sangre", usuario.tipoSangre ?? "-"),
+                _rowDato("Tipo de sangre", _prettyEnum(usuario.tipoSangre)),
+                _rowDato("EPS", _prettyEnum(usuario.eps)),
+                _rowDato(
+                  "Fondo pensiones",
+                  _prettyEnum(usuario.fondoPensiones),
+                ),
               ],
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            // ───────────── SALUD Y SEGURIDAD SOCIAL ─────────────
-            _cardSeccion(
-              titulo: "Salud y seguridad social",
-              children: [
-                _rowDato("EPS", usuario.eps ?? "-"),
-                _rowDato("Fondo pensiones", usuario.fondoPensiones ?? "-"),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            // ───────────── DOTACIÓN ─────────────
-            _cardSeccion(
-              titulo: "Dotación",
-              children: [
-                _rowDato("Talla camisa", usuario.tallaCamisa ?? "-"),
-                _rowDato("Talla pantalón", usuario.tallaPantalon ?? "-"),
-                _rowDato("Talla calzado", usuario.tallaCalzado ?? "-"),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            // ───────────── INFORMACIÓN LABORAL ─────────────
+            // ───────── INFORMACIÓN LABORAL ─────────
             _cardSeccion(
               titulo: "Información laboral",
               children: [
+                // (Opcional) también mostrar activo aquí
+                _rowDato("Usuario activo", usuario.activo ? "Sí" : "No"),
+
                 _rowDato("Tipo contrato", _prettyEnum(usuario.tipoContrato)),
                 _rowDato(
                   "Jornada laboral",
                   _prettyEnum(usuario.jornadaLaboral),
                 ),
+
+                // ✅ NUEVO: patrón jornada
+                _rowDato("Patrón jornada", _prettyEnum(usuario.patronJornada)),
               ],
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _cardSeccion({
-    required String titulo,
-    required List<Widget> children,
-  }) {
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              titulo,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 12),
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _rowDato(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 130,
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(value)),
-        ],
       ),
     );
   }

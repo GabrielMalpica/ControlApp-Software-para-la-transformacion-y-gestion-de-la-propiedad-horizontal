@@ -80,7 +80,6 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
       MaterialPageRoute(builder: (_) => CrearUsuarioPage(nit: widget.nit)),
     );
 
-    // Si en la página de creación devolvemos true al guardar, recargamos lista
     if (resultado == true) {
       _cargarUsuarios();
     }
@@ -250,49 +249,92 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
       separatorBuilder: (_, __) => const SizedBox(height: 4),
       itemBuilder: (context, index) {
         final u = _usuariosFiltrados[index];
-        return GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => DetalleUsuarioPage(usuario: u),
-              ),
-            );
-          },
-          child: Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: AppTheme.primary.withOpacity(0.1),
-                child: Text(
-                  u.nombre.isNotEmpty ? u.nombre[0].toUpperCase() : '?',
-                  style: TextStyle(color: AppTheme.primary),
+
+        // ✅ si el backend no manda activo (por compatibilidad), lo consideramos true
+        final bool isActivo = (u.activo);
+
+        final Color avatarBg = isActivo
+            ? AppTheme.primary.withOpacity(0.1)
+            : Colors.grey.withOpacity(0.2);
+
+        final Color avatarTextColor = isActivo ? AppTheme.primary : Colors.grey;
+
+        final Color titleColor = isActivo ? Colors.black87 : Colors.grey;
+        final Color subtitleColor = isActivo ? Colors.black54 : Colors.grey;
+
+        return Opacity(
+          opacity: isActivo ? 1.0 : 0.55, // ✅ efecto apagado
+          child: GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => DetalleUsuarioPage(usuario: u),
                 ),
+              );
+            },
+            child: Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
               ),
-              title: Text(
-                u.nombre,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text(
-                "Cédula: ${u.cedula} · Rol: ${_prettyRol(u.rol)}\nCorreo: ${u.correo}",
-              ),
-              isThreeLine: true,
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: "Editar",
-                    icon: const Icon(Icons.edit, color: Colors.blueGrey),
-                    onPressed: () => _irAEditarUsuario(u),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: avatarBg,
+                  child: Text(
+                    u.nombre.isNotEmpty ? u.nombre[0].toUpperCase() : '?',
+                    style: TextStyle(color: avatarTextColor),
                   ),
-                  IconButton(
-                    tooltip: "Eliminar",
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    onPressed: () => _confirmarEliminarUsuario(u),
-                  ),
-                ],
+                ),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        u.nombre,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: titleColor,
+                        ),
+                      ),
+                    ),
+                    if (!isActivo)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: Chip(
+                          label: Text(
+                            "Inactivo",
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                  ],
+                ),
+                subtitle: Text(
+                  "Cédula: ${u.cedula} · Rol: ${_prettyRol(u.rol)}\nCorreo: ${u.correo}",
+                  style: TextStyle(color: subtitleColor),
+                ),
+                isThreeLine: true,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: "Editar",
+                      icon: Icon(
+                        Icons.edit,
+                        color: isActivo ? Colors.blueGrey : Colors.grey,
+                      ),
+                      onPressed: () => _irAEditarUsuario(u),
+                    ),
+                    IconButton(
+                      tooltip: "Eliminar",
+                      icon: Icon(
+                        Icons.delete_outline,
+                        color: isActivo ? Colors.red : Colors.grey,
+                      ),
+                      onPressed: () => _confirmarEliminarUsuario(u),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

@@ -89,7 +89,7 @@ class DefinicionPreventivaApi {
 
   /// Generar cronograma mensual desde las definiciones
   /// POST /definicion-preventiva/conjuntos/:nit/preventivas/generar-cronograma
-  Future<void> generarCronogramaMensual({
+  Future<Map<String, dynamic>> generarCronogramaMensual({
     required String nit,
     required int anio,
     required int mes,
@@ -117,6 +117,13 @@ class DefinicionPreventivaApi {
         'Error al generar cronograma: ${resp.statusCode} ${resp.body}',
       );
     }
+
+    // ✅ AHORA DEVUELVE JSON: {creadas, novedades}
+    final decoded = jsonDecode(resp.body);
+    if (decoded is Map<String, dynamic>) return decoded;
+
+    // fallback por si backend responde otra cosa
+    return {'creadas': 0, 'novedades': []};
   }
 
   Future<void> publicarCronogramaMensual({
@@ -218,7 +225,6 @@ String _friendlyMessageFromBody(
   String fallback = 'Ocurrió un error.',
 }) {
   if (body is Map<String, dynamic>) {
-    final ok = body['ok'];
     final reason = body['reason']?.toString();
     final msg = body['message']?.toString();
 

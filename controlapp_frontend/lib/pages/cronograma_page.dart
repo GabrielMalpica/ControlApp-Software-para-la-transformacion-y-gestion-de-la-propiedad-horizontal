@@ -4,6 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:intl/intl.dart';
 
+import 'package:flutter_application_1/api/supervisor_api.dart';
+import 'package:flutter_application_1/api/inventario_api.dart';
+import 'package:flutter_application_1/model/inventario_item_model.dart';
+import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
+
 import '../api/cronograma_api.dart';
 import '../model/tarea_model.dart';
 import '../service/theme.dart';
@@ -22,6 +27,10 @@ class CronogramaPage extends StatefulWidget {
 class _CronogramaPageState extends State<CronogramaPage> {
   final _cronogramaApi = CronogramaApi();
   final _festivoApi = FestivoApi();
+
+  // ✅ para cerrar desde cronograma
+  final _supervisorApi = SupervisorApi();
+  final _inventarioApi = InventarioApi();
 
   bool _loading = true;
   String? _error;
@@ -222,8 +231,6 @@ class _CronogramaPageState extends State<CronogramaPage> {
       final desde = DateTime(_anioActual, _mesActual, 1);
       final hasta = DateTime(_anioActual, _mesActual, _daysInMonth);
 
-      // ✅ DEFINITIVO: borrador false
-      // ✅ DEFINITIVO: traer PREVENTIVA + CORRECTIVA y unir (sin tocar backend)
       final results = await Future.wait([
         _cronogramaApi.cronogramaMensual(
           nit: widget.nit,
@@ -307,6 +314,60 @@ class _CronogramaPageState extends State<CronogramaPage> {
         _filtroEstado != 'TODOS' ||
         _filtroOperario != 'TODOS' ||
         _filtroUbicacion != 'TODAS';
+  }
+
+  // =======================
+  // ✅ CERRAR DESDE CRONOGRAMA
+  // =======================
+
+  bool _puedeCerrar(TareaModel t) {
+    final e = (t.estado ?? '').toUpperCase();
+    return e == 'ASIGNADA' || e == 'EN_PROCESO' || e == 'COMPLETADA';
+  }
+
+  Future<void> _accionCerrarDesdeCronograma(TareaModel t) async {
+    List<InventarioItemResponse> inventario;
+
+    try {
+      inventario = await _inventarioApi.listarInventarioConjunto(widget.nit);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('⚠️ No pude cargar inventario: $e')),
+      );
+      inventario = [];
+    }
+
+    final res = await showModalBottomSheet<CerrarTareaResult>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => CerrarTareaSheet(tarea: t, inventario: inventario),
+    );
+
+    if (res == null) return;
+
+    try {
+      await _supervisorApi.cerrarTareaConEvidencias(
+        tareaId: t.id,
+        observaciones: res.observaciones,
+        insumosUsados: res.insumosUsados,
+        evidenciaPaths: const [],
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Tarea cerrada. Quedó PENDIENTE_APROBACION.'),
+        ),
+      );
+
+      await _cargarDatos();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('❌ Error cerrando: $e')));
+    }
   }
 
   // ========= MATRIZ MENSUAL =========
@@ -911,7 +972,6 @@ class _CronogramaPageState extends State<CronogramaPage> {
                     child: Row(
                       children: [
                         Text(
-                          // ✅ definitivo: ya no dice borrador
                           'Tareas del día - $dia ${DateFormat.MMMM('es').format(fechaBase)}',
                           style: const TextStyle(
                             fontSize: 16,
@@ -1168,6 +1228,32 @@ class _CronogramaPageState extends State<CronogramaPage> {
                                 ? 'Sin insumos registrados'
                                 : '$insumosCount ítem(s)',
                           ),
+
+                          const SizedBox(height: 14),
+
+                          // ✅ Cerrar desde aquí
+                          if (_puedeCerrar(t)) ...[
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () async {
+                                  Navigator.pop(context); // cerrar detalle
+                                  await _accionCerrarDesdeCronograma(t);
+                                },
+                                icon: const Icon(Icons.task_alt),
+                                label: const Text('Cerrar tarea'),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Nota: El veredicto (aprobar/rechazar) lo hace el Jefe de Operaciones.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+
                           const SizedBox(height: 16),
                         ],
                       ),
@@ -1280,7 +1366,6 @@ class _CronogramaPageState extends State<CronogramaPage> {
           : _error != null
           ? _buildError()
           : _buildContenido(mesNombre),
-      // ✅ definitivo: NO bottomNavigationBar
     );
   }
 

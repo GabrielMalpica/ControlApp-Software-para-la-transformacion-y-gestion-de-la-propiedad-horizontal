@@ -18,6 +18,8 @@ class Usuario {
   final String? tipoContrato;
   final String? jornadaLaboral;
   final List<String>? tipoFunciones;
+  final bool activo;
+  final String? patronJornada;
 
   Usuario({
     required this.cedula,
@@ -39,6 +41,8 @@ class Usuario {
     this.tipoContrato,
     this.jornadaLaboral,
     this.tipoFunciones,
+    this.activo = true,
+    this.patronJornada,
   });
 
   factory Usuario.fromJson(Map<String, dynamic> json) {
@@ -65,6 +69,8 @@ class Usuario {
       tipoFunciones: (json['tipoFunciones'] as List<dynamic>?)
           ?.map((e) => e.toString())
           .toList(),
+      activo: json['activo'] ?? true,
+      patronJornada: json['patronJornada'],
     );
   }
 
@@ -88,6 +94,8 @@ class Usuario {
       'tallaCalzado': tallaCalzado,
       'tipoContrato': tipoContrato,
       'jornadaLaboral': jornadaLaboral,
+      'activo': activo,
+      'patronJornada': patronJornada,
       if (tipoFunciones != null && tipoFunciones!.isNotEmpty)
         'tipoFunciones': tipoFunciones,
     };

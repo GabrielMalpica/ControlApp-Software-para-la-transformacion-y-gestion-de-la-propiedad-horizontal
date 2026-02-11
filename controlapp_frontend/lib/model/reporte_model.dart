@@ -1,0 +1,517 @@
+// lib/model/reporte_models.dart
+import 'dart:convert';
+
+DateTime _dt(dynamic v) {
+  if (v == null) return DateTime.fromMillisecondsSinceEpoch(0);
+  if (v is DateTime) return v;
+  return DateTime.tryParse(v.toString()) ??
+      DateTime.fromMillisecondsSinceEpoch(0);
+}
+
+class ReporteKpis {
+  final bool ok;
+  final int total;
+  final Map<String, int> byEstado;
+  final ReporteKpiDetalle kpi;
+
+  ReporteKpis({
+    required this.ok,
+    required this.total,
+    required this.byEstado,
+    required this.kpi,
+  });
+
+  factory ReporteKpis.fromJson(Map<String, dynamic> json) {
+    final by = <String, int>{};
+    final rawBy = json['byEstado'];
+    if (rawBy is Map) {
+      rawBy.forEach(
+        (k, v) =>
+            by[k.toString()] = (v is num) ? v.toInt() : int.tryParse('$v') ?? 0,
+      );
+    }
+
+    return ReporteKpis(
+      ok: json['ok'] == true,
+      total: (json['total'] is num)
+          ? (json['total'] as num).toInt()
+          : int.tryParse('${json['total']}') ?? 0,
+      byEstado: by,
+      kpi: ReporteKpiDetalle.fromJson(
+        (json['kpi'] as Map?)?.cast<String, dynamic>() ?? {},
+      ),
+    );
+  }
+}
+
+class ReporteKpiDetalle {
+  final int asignadas;
+  final int enProceso;
+  final int completadas;
+  final int aprobadas;
+  final int pendientesAprobacion;
+  final int rechazadas;
+  final int noCompletadas;
+  final int cerradasOperativas;
+  final int tasaCierrePct;
+
+  ReporteKpiDetalle({
+    required this.asignadas,
+    required this.enProceso,
+    required this.completadas,
+    required this.aprobadas,
+    required this.pendientesAprobacion,
+    required this.rechazadas,
+    required this.noCompletadas,
+    required this.cerradasOperativas,
+    required this.tasaCierrePct,
+  });
+
+  factory ReporteKpiDetalle.fromJson(Map<String, dynamic> json) =>
+      ReporteKpiDetalle(
+        asignadas: _toInt(json['asignadas']),
+        enProceso: _toInt(json['enProceso']),
+        completadas: _toInt(json['completadas']),
+        aprobadas: _toInt(json['aprobadas']),
+        pendientesAprobacion: _toInt(json['pendientesAprobacion']),
+        rechazadas: _toInt(json['rechazadas']),
+        noCompletadas: _toInt(json['noCompletadas']),
+        cerradasOperativas: _toInt(json['cerradasOperativas']),
+        tasaCierrePct: _toInt(json['tasaCierrePct']),
+      );
+
+  static int _toInt(dynamic v) =>
+      (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
+}
+
+class SerieDiariaPorEstado {
+  final bool ok;
+  final List<String> days; // yyyy-mm-dd
+  final Map<String, Map<String, int>> series; // day -> estado -> count
+
+  SerieDiariaPorEstado({
+    required this.ok,
+    required this.days,
+    required this.series,
+  });
+
+  factory SerieDiariaPorEstado.fromJson(Map<String, dynamic> json) {
+    final days = (json['days'] is List)
+        ? (json['days'] as List).map((e) => e.toString()).toList()
+        : <String>[];
+
+    final out = <String, Map<String, int>>{};
+    final raw = json['series'];
+    if (raw is Map) {
+      raw.forEach((day, m) {
+        final mm = <String, int>{};
+        if (m is Map) {
+          m.forEach((estado, count) {
+            mm[estado.toString()] = (count is num)
+                ? count.toInt()
+                : int.tryParse('$count') ?? 0;
+          });
+        }
+        out[day.toString()] = mm;
+      });
+    }
+
+    return SerieDiariaPorEstado(
+      ok: json['ok'] == true,
+      days: days,
+      series: out,
+    );
+  }
+}
+
+class ResumenConjuntoRow {
+  final String conjuntoId;
+  final String conjuntoNombre;
+  final String nit;
+  final int total;
+  final int aprobadas;
+  final int rechazadas;
+  final int noCompletadas;
+  final int pendientesAprobacion;
+
+  ResumenConjuntoRow({
+    required this.conjuntoId,
+    required this.conjuntoNombre,
+    required this.nit,
+    required this.total,
+    required this.aprobadas,
+    required this.rechazadas,
+    required this.noCompletadas,
+    required this.pendientesAprobacion,
+  });
+
+  factory ResumenConjuntoRow.fromJson(Map<String, dynamic> json) =>
+      ResumenConjuntoRow(
+        conjuntoId: (json['conjuntoId'] ?? '').toString(),
+        conjuntoNombre: (json['conjuntoNombre'] ?? '').toString(),
+        nit: (json['nit'] ?? '').toString(),
+        total: _toInt(json['total']),
+        aprobadas: _toInt(json['aprobadas']),
+        rechazadas: _toInt(json['rechazadas']),
+        noCompletadas: _toInt(json['noCompletadas']),
+        pendientesAprobacion: _toInt(json['pendientesAprobacion']),
+      );
+
+  static int _toInt(dynamic v) =>
+      (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
+}
+
+class ResumenOperarioRow {
+  final String operarioId;
+  final String nombre;
+  final int total;
+  final int aprobadas;
+  final int rechazadas;
+  final int noCompletadas;
+  final int pendientesAprobacion;
+  final int minutosPromedio;
+
+  ResumenOperarioRow({
+    required this.operarioId,
+    required this.nombre,
+    required this.total,
+    required this.aprobadas,
+    required this.rechazadas,
+    required this.noCompletadas,
+    required this.pendientesAprobacion,
+    required this.minutosPromedio,
+  });
+
+  factory ResumenOperarioRow.fromJson(Map<String, dynamic> json) =>
+      ResumenOperarioRow(
+        operarioId: (json['operarioId'] ?? '').toString(),
+        nombre: (json['nombre'] ?? '').toString(),
+        total: _toInt(json['total']),
+        aprobadas: _toInt(json['aprobadas']),
+        rechazadas: _toInt(json['rechazadas']),
+        noCompletadas: _toInt(json['noCompletadas']),
+        pendientesAprobacion: _toInt(json['pendientesAprobacion']),
+        minutosPromedio: _toInt(json['minutosPromedio']),
+      );
+
+  static int _toInt(dynamic v) =>
+      (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
+}
+
+class InsumoUsoRow {
+  final int insumoId;
+  final String nombre;
+  final String unidad;
+  final double cantidad;
+  final int usos;
+
+  InsumoUsoRow({
+    required this.insumoId,
+    required this.nombre,
+    required this.unidad,
+    required this.cantidad,
+    required this.usos,
+  });
+
+  factory InsumoUsoRow.fromJson(Map<String, dynamic> json) => InsumoUsoRow(
+    insumoId: (json['insumoId'] is num)
+        ? (json['insumoId'] as num).toInt()
+        : int.tryParse('${json['insumoId']}') ?? 0,
+    nombre: (json['nombre'] ?? '').toString(),
+    unidad: (json['unidad'] ?? '').toString(),
+    cantidad: (json['cantidad'] is num)
+        ? (json['cantidad'] as num).toDouble()
+        : double.tryParse('${json['cantidad']}') ?? 0.0,
+    usos: (json['usos'] is num)
+        ? (json['usos'] as num).toInt()
+        : int.tryParse('${json['usos']}') ?? 0,
+  );
+}
+
+class UsoEquipoRow {
+  final int id;
+  final String nombre;
+  final int usos;
+  final double cantidad;
+
+  UsoEquipoRow({
+    required this.id,
+    required this.nombre,
+    required this.usos,
+    required this.cantidad,
+  });
+
+  factory UsoEquipoRow.fromJson(
+    Map<String, dynamic> json, {
+    required String idKey,
+  }) => UsoEquipoRow(
+    id: (json[idKey] is num)
+        ? (json[idKey] as num).toInt()
+        : int.tryParse('${json[idKey]}') ?? 0,
+    nombre: (json['nombre'] ?? '').toString(),
+    usos: (json['usos'] is num)
+        ? (json['usos'] as num).toInt()
+        : int.tryParse('${json['usos']}') ?? 0,
+    cantidad: (json['cantidad'] is num)
+        ? (json['cantidad'] as num).toDouble()
+        : double.tryParse('${json['cantidad']}') ?? 0.0,
+  );
+}
+
+class RecursoUsoRow {
+  final int? recursoId; // insumoId / maquinariaId / herramientaId (según lista)
+  final String? nombre;
+  final String? unidad; // aplica para insumos/herramienta
+  final double cantidad;
+  final String? operario;
+  final String? observacion;
+  final DateTime? fecha;
+
+  RecursoUsoRow({
+    this.recursoId,
+    this.nombre,
+    this.unidad,
+    required this.cantidad,
+    this.operario,
+    this.observacion,
+    this.fecha,
+  });
+
+  factory RecursoUsoRow.fromJson(
+    Map<String, dynamic> json, {
+    required String idKey,
+  }) {
+    double toDouble(dynamic v) {
+      if (v == null) return 0.0;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString()) ?? 0.0;
+    }
+
+    return RecursoUsoRow(
+      recursoId: (json[idKey] is num)
+          ? (json[idKey] as num).toInt()
+          : int.tryParse('${json[idKey]}'),
+      nombre: json['nombre']?.toString(),
+      unidad: json['unidad']?.toString(),
+      cantidad: toDouble(json['cantidad']),
+      operario: json['operario']?.toString(),
+      observacion: json['observacion']?.toString(),
+      fecha: json['fecha'] == null ? null : _dt(json['fecha']),
+    );
+  }
+}
+
+class PdfDatasetRow {
+  final int id;
+  final String descripcion;
+  final String estado;
+  final String tipo; // ✅ PREVENTIVA / CORRECTIVA
+
+  final DateTime fechaInicio;
+  final DateTime fechaFin;
+  final int? duracionMinutos;
+
+  final String? ubicacionNombre;
+  final String? elementoNombre;
+
+  final String? supervisor;
+  final List<String> operarios;
+
+  final String? conjuntoId;
+  final String? conjuntoNombre;
+  final String? conjuntoNit;
+
+  final String? observaciones;
+  final String? observacionesRechazo;
+
+  final List<String> evidencias;
+
+  // ✅ detalle real
+  final List<RecursoUsoRow> insumos;
+  final List<RecursoUsoRow> maquinaria;
+  final List<RecursoUsoRow> herramientas;
+
+  PdfDatasetRow({
+    required this.id,
+    required this.descripcion,
+    required this.estado,
+    required this.tipo,
+    required this.fechaInicio,
+    required this.fechaFin,
+    required this.duracionMinutos,
+    required this.ubicacionNombre,
+    required this.elementoNombre,
+    required this.supervisor,
+    required this.operarios,
+    required this.conjuntoId,
+    required this.conjuntoNombre,
+    required this.conjuntoNit,
+    required this.observaciones,
+    required this.observacionesRechazo,
+    required this.evidencias,
+    required this.insumos,
+    required this.maquinaria,
+    required this.herramientas,
+  });
+
+  factory PdfDatasetRow.fromJson(Map<String, dynamic> json) {
+    List<String> toStrList(dynamic v) {
+      if (v is List) return v.map((e) => e.toString()).toList();
+      return <String>[];
+    }
+
+    List<RecursoUsoRow> mapRecursos(dynamic v, {required String idKey}) {
+      if (v is! List) return <RecursoUsoRow>[];
+      return v
+          .whereType<Map>()
+          .map(
+            (m) =>
+                RecursoUsoRow.fromJson(m.cast<String, dynamic>(), idKey: idKey),
+          )
+          .toList();
+    }
+
+    final conjunto = (json['conjunto'] is Map)
+        ? (json['conjunto'] as Map)
+        : null;
+    final ubic = (json['ubicacion'] is Map) ? (json['ubicacion'] as Map) : null;
+    final elem = (json['elemento'] is Map) ? (json['elemento'] as Map) : null;
+
+    return PdfDatasetRow(
+      id: (json['id'] is num)
+          ? (json['id'] as num).toInt()
+          : int.tryParse('${json['id']}') ?? 0,
+      descripcion: (json['descripcion'] ?? '').toString(),
+      estado: (json['estado'] ?? '').toString(),
+      tipo: (json['tipo'] ?? 'CORRECTIVA').toString(), // ✅ default
+
+      fechaInicio: _dt(json['fechaInicio']),
+      fechaFin: _dt(json['fechaFin']),
+      duracionMinutos: (json['duracionMinutos'] is num)
+          ? (json['duracionMinutos'] as num).toInt()
+          : int.tryParse('${json['duracionMinutos']}'),
+
+      ubicacionNombre:
+          json['ubicacionNombre']?.toString() ?? ubic?['nombre']?.toString(),
+      elementoNombre:
+          json['elementoNombre']?.toString() ?? elem?['nombre']?.toString(),
+
+      supervisor: json['supervisor']?.toString(),
+      operarios: toStrList(json['operarios']),
+
+      conjuntoId: json['conjuntoId']?.toString() ?? conjunto?['id']?.toString(),
+      conjuntoNombre: conjunto?['nombre']?.toString(),
+      conjuntoNit: conjunto?['nit']?.toString(),
+
+      observaciones: json['observaciones']?.toString(),
+      observacionesRechazo: json['observacionesRechazo']?.toString(),
+
+      evidencias: toStrList(json['evidencias']),
+
+      insumos: mapRecursos(json['insumos'], idKey: 'insumoId'),
+      maquinaria: mapRecursos(json['maquinaria'], idKey: 'maquinariaId'),
+      herramientas: mapRecursos(json['herramientas'], idKey: 'herramientaId'),
+    );
+  }
+
+  static List<PdfDatasetRow> parseFromAny(dynamic payload) {
+    if (payload is Map && payload['data'] is List) {
+      return (payload['data'] as List)
+          .map(
+            (e) => PdfDatasetRow.fromJson((e as Map).cast<String, dynamic>()),
+          )
+          .toList();
+    }
+    if (payload is String) {
+      final d = jsonDecode(payload);
+      return parseFromAny(d);
+    }
+    return [];
+  }
+}
+
+class TareaDetalleRow {
+  final int id;
+  final String tipo;
+  final String estado;
+  final String descripcion;
+  final DateTime fechaInicio;
+  final DateTime fechaFin;
+  final int duracionMinutos;
+
+  final String? ubicacion;
+  final String? elemento;
+  final String? supervisor;
+  final List<String> operarios;
+
+  final List<Map<String, dynamic>> insumos;
+  final List<Map<String, dynamic>> maquinaria;
+  final List<Map<String, dynamic>> herramientas;
+
+  final List<String> evidencias;
+
+  TareaDetalleRow({
+    required this.id,
+    required this.tipo,
+    required this.estado,
+    required this.descripcion,
+    required this.fechaInicio,
+    required this.fechaFin,
+    required this.duracionMinutos,
+    required this.ubicacion,
+    required this.elemento,
+    required this.supervisor,
+    required this.operarios,
+    required this.insumos,
+    required this.maquinaria,
+    required this.herramientas,
+    required this.evidencias,
+  });
+
+  static DateTime _dt(dynamic v) =>
+      DateTime.tryParse('$v')?.toLocal() ??
+      DateTime.fromMillisecondsSinceEpoch(0);
+
+  factory TareaDetalleRow.fromJson(Map<String, dynamic> json) =>
+      TareaDetalleRow(
+        id: (json['id'] as num).toInt(),
+        tipo: (json['tipo'] ?? '').toString(),
+        estado: (json['estado'] ?? '').toString(),
+        descripcion: (json['descripcion'] ?? '').toString(),
+        fechaInicio: _dt(json['fechaInicio']),
+        fechaFin: _dt(json['fechaFin']),
+        duracionMinutos: (json['duracionMinutos'] is num)
+            ? (json['duracionMinutos'] as num).toInt()
+            : int.tryParse('${json['duracionMinutos']}') ?? 0,
+        ubicacion: (json['ubicacion'] is Map)
+            ? ((json['ubicacion'] as Map)['nombre']?.toString())
+            : json['ubicacionNombre']?.toString(),
+        elemento: (json['elemento'] is Map)
+            ? ((json['elemento'] as Map)['nombre']?.toString())
+            : json['elementoNombre']?.toString(),
+        supervisor: (json['supervisor'] ?? '').toString().isEmpty
+            ? null
+            : (json['supervisor']).toString(),
+        operarios: (json['operarios'] is List)
+            ? (json['operarios'] as List).map((e) => e.toString()).toList()
+            : <String>[],
+        insumos: (json['insumos'] is List)
+            ? (json['insumos'] as List)
+                  .map((e) => (e as Map).cast<String, dynamic>())
+                  .toList()
+            : <Map<String, dynamic>>[],
+        maquinaria: (json['maquinaria'] is List)
+            ? (json['maquinaria'] as List)
+                  .map((e) => (e as Map).cast<String, dynamic>())
+                  .toList()
+            : <Map<String, dynamic>>[],
+        herramientas: (json['herramientas'] is List)
+            ? (json['herramientas'] as List)
+                  .map((e) => (e as Map).cast<String, dynamic>())
+                  .toList()
+            : <Map<String, dynamic>>[],
+        evidencias: (json['evidencias'] is List)
+            ? (json['evidencias'] as List).map((e) => e.toString()).toList()
+            : <String>[],
+      );
+}

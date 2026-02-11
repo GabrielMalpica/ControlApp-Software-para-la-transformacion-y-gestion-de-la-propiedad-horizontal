@@ -45,6 +45,12 @@ class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
 
           final conjunto = snapshot.data!;
 
+          // ✅ FILTRAR: SOLO OPERARIOS ACTIVOS
+          // (Tu Operario dentro de Conjunto debe traer "activo")
+          final operariosActivos = conjunto.operarios
+              .where((o) => o.activo == true)
+              .toList();
+
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -67,7 +73,8 @@ class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
                 // ───────── ADMINISTRADOR ─────────
                 Card(
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                   elevation: 2,
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -92,9 +99,7 @@ class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
                             leading: const Icon(Icons.admin_panel_settings),
                             title: Text(conjunto.administradorNombre!),
                             subtitle: conjunto.administradorId != null
-                                ? Text(
-                                    'CC: ${conjunto.administradorId!}',
-                                  )
+                                ? Text('CC: ${conjunto.administradorId!}')
                                 : null,
                           ),
                       ],
@@ -104,10 +109,11 @@ class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
 
                 const SizedBox(height: 16),
 
-                // ───────── OPERARIOS ─────────
+                // ───────── OPERARIOS (SOLO ACTIVOS) ─────────
                 Card(
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                   elevation: 2,
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -115,20 +121,21 @@ class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          "Operarios vinculados",
+                          "Operarios vinculados (activos)",
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                           ),
                         ),
                         const SizedBox(height: 8),
-                        if (conjunto.operarios.isEmpty)
+
+                        if (operariosActivos.isEmpty)
                           const Text(
-                            "No hay operarios asignados a este conjunto.",
+                            "No hay operarios activos asignados a este conjunto.",
                             style: TextStyle(color: Colors.grey),
                           )
                         else
-                          ...conjunto.operarios.map(
+                          ...operariosActivos.map(
                             (o) => ListTile(
                               leading: const Icon(Icons.person),
                               title: Text(o.nombre),

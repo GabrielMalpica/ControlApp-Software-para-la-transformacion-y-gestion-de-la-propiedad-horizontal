@@ -45,7 +45,11 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
   int numeroHijos = 0;
 
   String? tipoSangre, eps, fondo, tipoContrato, jornada;
-  String? tallaCamisa, tallaPantalon, tallaCalzado; // por si luego los usas
+  String? tallaCamisa, tallaPantalon, tallaCalzado;
+
+  // ✅ NUEVO
+  bool activo = true;
+  String? patronJornada; // enum backend
 
   // 🔹 Para operario
   final Set<String> funcionesSeleccionadas = {}; // TipoFuncion[]
@@ -70,11 +74,9 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
 
   Future<void> _cargarConjuntos() async {
     try {
-      final lista = await _gerenteApi
-          .listarConjuntos(); // ya lo tienes en la API
+      final lista = await _gerenteApi.listarConjuntos();
       setState(() {
         _conjuntos = lista;
-        // Por defecto, usamos el NIT que viene del dashboard si existe en la lista
         final fromDashboardNit = widget.nit;
         final existe = lista.any((c) => c.nit == fromDashboardNit);
         _conjuntoSeleccionadoNit = existe
@@ -120,9 +122,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
       lastDate: DateTime.now().add(const Duration(days: 365)),
       helpText: helpText,
     );
-    if (picked != null) {
-      onSelected(picked);
-    }
+    if (picked != null) onSelected(picked);
   }
 
   // 🔹 Helper para mostrar enums bonitos
@@ -153,6 +153,10 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
       tallaCalzado: tallaCalzado,
       tipoContrato: tipoContrato,
       jornadaLaboral: jornada,
+
+      // ✅ NUEVO
+      activo: activo,
+      patronJornada: patronJornada,
     );
   }
 
@@ -168,6 +172,19 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
         ),
       );
       return;
+    }
+
+    // ✅ Validación patrón de medio tiempo
+    if (rolSeleccionado == 'operario' && jornada == 'MEDIO_TIEMPO') {
+      if (patronJornada == null || patronJornada!.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Seleccione el patrón de medio tiempo"),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
     }
 
     // Validaciones extra para operario
@@ -200,10 +217,9 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
       // 1️⃣ Crear el usuario base
       final usuarioCreado = await _usuarioRepository.crearUsuario(usuario);
 
-      // 2️⃣ Asignar el rol correspondiente usando los endpoints del gerente
+      // 2️⃣ Asignar el rol correspondiente usando endpoints del gerente
       switch (rolSeleccionado) {
         case 'operario':
-          // 1️⃣ Crear el perfil de operario
           await _gerenteApi.asignarOperario(
             usuarioId: usuarioCreado.cedula,
             funciones: funcionesSeleccionadas.toList(),
@@ -214,7 +230,6 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
             observaciones: _observacionesOperarioCtrl.text,
           );
 
-          // 2️⃣ Si el gerente eligió un conjunto, lo asignamos de una vez
           if (_conjuntoSeleccionadoNit != null &&
               _conjuntoSeleccionadoNit!.trim().isNotEmpty) {
             await _gerenteApi.asignarOperarioAConjunto(
@@ -223,15 +238,18 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
             );
           }
           break;
+
         case 'supervisor':
           await _gerenteApi.asignarSupervisor(usuarioId: usuarioCreado.cedula);
           break;
+
         case 'administrador':
           await _gerenteApi.asignarAdministrador(
             usuarioId: usuarioCreado.cedula,
             conjuntoId: widget.nit,
           );
           break;
+
         case 'jefe_operaciones':
           await _gerenteApi.asignarJefeOperaciones(
             usuarioId: usuarioCreado.cedula,
@@ -271,6 +289,11 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
         tallaCalzado = null;
         padresVivos = true;
         numeroHijos = 0;
+
+        // ✅ NUEVO
+        activo = true;
+        patronJornada = null;
+
         funcionesSeleccionadas.clear();
         cursoSalvamentoAcuatico = false;
         cursoAlturas = false;
@@ -286,9 +309,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
         ),
       );
     } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -339,7 +360,6 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
           key: _formKey,
           child: Column(
             children: [
-              // ───────── CABECERA ─────────
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
@@ -377,6 +397,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                         ],
                       ),
                       const SizedBox(height: 12),
+
                       LayoutBuilder(
                         builder: (context, constraints) {
                           final isWide = constraints.maxWidth > 600;
@@ -547,18 +568,14 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                           const Text("Número de hijos: "),
                           const SizedBox(width: 8),
                           IconButton(
-                            onPressed: () {
-                              setState(() {
-                                if (numeroHijos > 0) numeroHijos--;
-                              });
-                            },
+                            onPressed: () => setState(() {
+                              if (numeroHijos > 0) numeroHijos--;
+                            }),
                             icon: const Icon(Icons.remove_circle_outline),
                           ),
                           Text("$numeroHijos"),
                           IconButton(
-                            onPressed: () {
-                              setState(() => numeroHijos++);
-                            },
+                            onPressed: () => setState(() => numeroHijos++),
                             icon: const Icon(Icons.add_circle_outline),
                           ),
                         ],
@@ -669,6 +686,14 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                       ),
                       const SizedBox(height: 12),
 
+                      // ✅ Switch Activo
+                      SwitchListTile(
+                        title: const Text("Usuario activo"),
+                        value: activo,
+                        onChanged: (v) => setState(() => activo = v),
+                      ),
+                      const SizedBox(height: 8),
+
                       DropdownButtonFormField<String>(
                         value: rolSeleccionado,
                         items: enums.roles
@@ -679,7 +704,22 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                               ),
                             )
                             .toList(),
-                        onChanged: (v) => setState(() => rolSeleccionado = v),
+                        onChanged: (v) {
+                          setState(() {
+                            rolSeleccionado = v;
+
+                            // si deja de ser operario, no aplica patrón
+                            if (rolSeleccionado != 'operario') {
+                              patronJornada = null;
+                            }
+
+                            // si es operario y jornada completa -> patrón completa
+                            if (rolSeleccionado == 'operario' &&
+                                jornada == 'COMPLETA') {
+                              patronJornada = 'COMPLETA';
+                            }
+                          });
+                        },
                         decoration: const InputDecoration(
                           labelText: "Rol",
                           border: OutlineInputBorder(),
@@ -706,6 +746,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                         ),
                       ),
                       const SizedBox(height: 8),
+
                       DropdownButtonFormField<String>(
                         value: jornada,
                         items: enums.jornadasLaborales
@@ -716,12 +757,67 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                               ),
                             )
                             .toList(),
-                        onChanged: (v) => setState(() => jornada = v),
+                        onChanged: (v) {
+                          setState(() {
+                            jornada = v;
+
+                            // ✅ auto-ajuste de patrón
+                            if (rolSeleccionado == 'operario') {
+                              if (jornada == 'COMPLETA') {
+                                patronJornada = 'COMPLETA';
+                              } else if (jornada != 'MEDIO_TIEMPO') {
+                                // otros tipos futuros
+                                if (patronJornada != 'COMPLETA') {
+                                  patronJornada = null;
+                                }
+                              } else {
+                                // MEDIO_TIEMPO: si venía en COMPLETA, limpiamos para obligar selección
+                                if (patronJornada == 'COMPLETA') {
+                                  patronJornada = null;
+                                }
+                              }
+                            } else {
+                              patronJornada = null;
+                            }
+                          });
+                        },
                         decoration: const InputDecoration(
                           labelText: "Jornada laboral (opcional)",
                           border: OutlineInputBorder(),
                         ),
                       ),
+
+                      // ✅ Dropdown patrón (solo operario + medio tiempo)
+                      if (rolSeleccionado == 'operario' &&
+                          jornada == 'MEDIO_TIEMPO') ...[
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          value: patronJornada,
+                          items: enums.patronesJornada
+                              .where((p) => p.startsWith('MEDIO_'))
+                              .map(
+                                (p) => DropdownMenuItem(
+                                  value: p,
+                                  child: Text(prettyEnum(p)),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) => setState(() => patronJornada = v),
+                          decoration: const InputDecoration(
+                            labelText: "Patrón de medio tiempo (obligatorio)",
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (v) {
+                            if (rolSeleccionado == 'operario' &&
+                                jornada == 'MEDIO_TIEMPO') {
+                              if (v == null || v.isEmpty) {
+                                return "Seleccione el patrón de medio tiempo";
+                              }
+                            }
+                            return null;
+                          },
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -876,18 +972,14 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                           ),
                         )
                         .toList(),
-                    onChanged: (v) {
-                      setState(() {
-                        _conjuntoSeleccionadoNit = v;
-                      });
-                    },
+                    onChanged: (v) =>
+                        setState(() => _conjuntoSeleccionadoNit = v),
                   )
                 else
                   const Text(
                     "No hay conjuntos creados para asignar.",
                     style: TextStyle(color: Colors.grey),
                   ),
-
                 const SizedBox(height: 16),
               ],
 

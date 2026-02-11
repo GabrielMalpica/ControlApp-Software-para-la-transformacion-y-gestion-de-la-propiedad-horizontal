@@ -8,10 +8,7 @@ import 'package:flutter_application_1/utils/enums/usuario_enums_service.dart';
 class EditarUsuarioPage extends StatefulWidget {
   final Usuario usuario;
 
-  const EditarUsuarioPage({
-    super.key,
-    required this.usuario,
-  });
+  const EditarUsuarioPage({super.key, required this.usuario});
 
   @override
   State<EditarUsuarioPage> createState() => _EditarUsuarioPageState();
@@ -41,6 +38,10 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
   bool padresVivos = true;
   String? tipoSangre, eps, fondo, tipoContrato, jornada;
 
+  // ✅ NUEVOS
+  bool activo = true;
+  String? patronJornada;
+
   bool _guardando = false;
 
   @override
@@ -65,7 +66,27 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     tipoContrato = u.tipoContrato;
     jornada = u.jornadaLaboral;
 
+    // ✅ Inicializar nuevos campos (asegúrate que existan en tu Usuario model)
+    activo = u.activo;
+    patronJornada = u.patronJornada;
+
     _cargarEnums();
+  }
+
+  String prettyPatronJornada(String? raw) {
+    if (raw == null || raw.isEmpty) return "-";
+
+    switch (raw) {
+      case 'COMPLETA':
+        return 'Completa (normal)';
+      case 'MEDIO_LV4_S2':
+        return 'Medio tiempo: L–V 4h + S 2h';
+      case 'MEDIO_LX8_V6':
+        return 'Medio tiempo: L 8h + X 8h + V 6h';
+      default:
+        // fallback por si mañana agregas más
+        return prettyEnum(raw);
+    }
   }
 
   Future<void> _cargarEnums() async {
@@ -113,8 +134,30 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     }
   }
 
+  bool get _debeMostrarPatron {
+    // ✅ Si jornada es MEDIO_TIEMPO, mostrar
+    if (jornada == 'MEDIO_TIEMPO') return true;
+
+    // ✅ Si ya viene guardado un patrón medio tiempo, también mostrarlo
+    if ((patronJornada ?? '').startsWith('MEDIO_')) return true;
+
+    return false;
+  }
+
   Future<void> _guardarCambios() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // ✅ Validación extra recomendada
+    if (_debeMostrarPatron &&
+        (patronJornada == null || patronJornada!.isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Seleccione el patrón de medio tiempo"),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
     setState(() => _guardando = true);
 
@@ -123,8 +166,9 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
         'nombre': _nombreCtrl.text,
         'correo': _correoCtrl.text,
         'telefono': _telefonoCtrl.text,
-        'direccion':
-            _direccionCtrl.text.isEmpty ? null : _direccionCtrl.text.trim(),
+        'direccion': _direccionCtrl.text.isEmpty
+            ? null
+            : _direccionCtrl.text.trim(),
         'fechaNacimiento': fechaNacimiento?.toIso8601String(),
         'estadoCivil': estadoCivilSeleccionado,
         'numeroHijos': numeroHijos,
@@ -134,6 +178,11 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
         'fondoPensiones': fondo,
         'tipoContrato': tipoContrato,
         'jornadaLaboral': jornada,
+
+        // ✅ NUEVOS
+        'activo': activo,
+        if (jornada == 'MEDIO_TIEMPO') 'patronJornada': patronJornada,
+        if (jornada != 'MEDIO_TIEMPO') 'patronJornada': null,
       };
 
       await _usuarioRepository.editarUsuario(widget.usuario.cedula, cambios);
@@ -145,7 +194,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
           backgroundColor: Colors.green,
         ),
       );
-      Navigator.of(context).pop(true); // devolvemos true para refrescar lista
+      Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -162,9 +211,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
   @override
   Widget build(BuildContext context) {
     if (_cargandoEnums) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_errorEnums != null || _enums == null) {
@@ -176,9 +223,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
             style: TextStyle(color: Colors.white),
           ),
         ),
-        body: Center(
-          child: Text("Error cargando catálogos: $_errorEnums"),
-        ),
+        body: Center(child: Text("Error cargando catálogos: $_errorEnums")),
       );
     }
 
@@ -236,7 +281,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _cedulaCtrl,
-                        enabled: false, // no queremos cambiar cédula
+                        enabled: false,
                         decoration: const InputDecoration(
                           labelText: "Cédula",
                           border: OutlineInputBorder(),
@@ -333,9 +378,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                           ),
                           Text("$numeroHijos"),
                           IconButton(
-                            onPressed: () {
-                              setState(() => numeroHijos++);
-                            },
+                            onPressed: () => setState(() => numeroHijos++),
                             icon: const Icon(Icons.add_circle_outline),
                           ),
                         ],
@@ -445,6 +488,15 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                         ],
                       ),
                       const SizedBox(height: 12),
+
+                      // ✅ Switch Activo
+                      SwitchListTile(
+                        title: const Text("Usuario activo"),
+                        value: activo,
+                        onChanged: (v) => setState(() => activo = v),
+                      ),
+                      const SizedBox(height: 8),
+
                       DropdownButtonFormField<String>(
                         value: tipoContrato,
                         items: enums.tiposContrato
@@ -462,6 +514,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                         ),
                       ),
                       const SizedBox(height: 8),
+
                       DropdownButtonFormField<String>(
                         value: jornada,
                         items: enums.jornadasLaborales
@@ -472,12 +525,55 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                               ),
                             )
                             .toList(),
-                        onChanged: (v) => setState(() => jornada = v),
+                        onChanged: (v) {
+                          setState(() {
+                            jornada = v;
+
+                            if (jornada != 'MEDIO_TIEMPO') {
+                              patronJornada = null;
+                            } else {
+                              // MEDIO_TIEMPO: si venía COMPLETA, limpiar para obligar selección
+                              if (patronJornada == 'COMPLETA') {
+                                patronJornada = null;
+                              }
+                            }
+                          });
+                        },
                         decoration: const InputDecoration(
                           labelText: "Jornada laboral (opcional)",
                           border: OutlineInputBorder(),
                         ),
                       ),
+
+                      const SizedBox(height: 8),
+
+                      // ✅ Dropdown patrón (si aplica)
+                      if (_debeMostrarPatron)
+                        DropdownButtonFormField<String>(
+                          value: patronJornada,
+                          items: enums.patronesJornada
+                              .where((p) => p.startsWith('MEDIO_'))
+                              .map(
+                                (p) => DropdownMenuItem(
+                                  value: p,
+                                  child: Text(prettyPatronJornada(p)),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) => setState(() => patronJornada = v),
+                          decoration: const InputDecoration(
+                            labelText: "Patrón de medio tiempo (obligatorio)",
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (v) {
+                            if (_debeMostrarPatron) {
+                              if (v == null || v.isEmpty) {
+                                return "Seleccione el patrón de medio tiempo";
+                              }
+                            }
+                            return null;
+                          },
+                        ),
                     ],
                   ),
                 ),

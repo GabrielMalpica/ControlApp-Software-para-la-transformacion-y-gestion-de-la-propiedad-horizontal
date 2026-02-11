@@ -14,10 +14,11 @@ class AppConstants {
 
   // 🔹 Asignación de roles
   static const String operarios = "$gerenteBase/operarios";
-  static const String supervisores = "$gerenteBase/supervisores";
+  static const String supervisores = "$baseUrl/supervisores";
   static const String supervisorBase = "$baseUrl/supervisor";
   static const String administradores = "$gerenteBase/administradores";
-  static const String jefesOperaciones = "$gerenteBase/jefes-operaciones";
+  static const String jefeOperacionesBase = "$baseUrl/jefe-operaciones";
+  static const String reportesBase = "$baseUrl/reporte";
 
   // 🔹 Catálogo de enums para usuario
   static const String usuarioEnums = "$gerenteBase/enums-usuario";

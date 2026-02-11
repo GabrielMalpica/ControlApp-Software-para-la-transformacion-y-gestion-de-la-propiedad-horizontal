@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/agenda_maquinaria_page.dart';
+import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.dart';
 import 'package:flutter_application_1/pages/crear_herramienta_page.dart';
 import 'package:flutter_application_1/pages/festivos_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
@@ -25,7 +26,6 @@ import 'lista_usuarios_page.dart';
 import '../crear_tarea_page.dart';
 import '../solicitudes_page.dart';
 import '../cronograma_page.dart';
-import '../reportes_page.dart';
 import '../crear_cronograma_page.dart';
 import 'crear_conjunto_page.dart';
 
@@ -626,7 +626,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
       _Tile("Reportes", Icons.bar_chart, AppTheme.green, () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => ReportesPage(nit: nit)),
+          MaterialPageRoute(builder: (_) => ReportesDashboardPage(conjuntoIdInicial: nit)),
         );
       }),
       _Tile(
