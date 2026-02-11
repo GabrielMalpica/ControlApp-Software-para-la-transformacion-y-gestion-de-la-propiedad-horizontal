@@ -8,6 +8,7 @@ import {
   EstadoCivil,
   FondoPension,
   JornadaLaboral,
+  PatronJornada,
   TallaCalzado,
   TallaCamisa,
   TallaPantalon,
@@ -16,7 +17,7 @@ import {
   Rol, // aunque en el modelo 'rol' es String, usamos este enum para validar
 } from "../generated/prisma";
 
-/** 
+/**
  * Nota: En tu Prisma, Usuario.id es Int @id (SIN autoincrement).
  * Por tanto, para crear un usuario debes proveer el id manualmente.
  */
@@ -27,9 +28,12 @@ export interface UsuarioDominio {
   id: UsuarioId;
   nombre: string;
   correo: string;
-  contrasena: string; // ¡No exponer hacia fuera!
+  contrasena: string;
   rol: `${Rol}` | string;
-  telefono: bigint; // Prisma BigInt -> JS bigint
+
+  activo: boolean; // ✅ NUEVO
+
+  telefono: bigint;
   fechaNacimiento: Date;
   direccion?: string | null;
   estadoCivil?: EstadoCivil | null;
@@ -42,7 +46,9 @@ export interface UsuarioDominio {
   tallaPantalon?: TallaPantalon | null;
   tallaCalzado?: TallaCalzado | null;
   tipoContrato?: TipoContrato | null;
+
   jornadaLaboral?: JornadaLaboral | null;
+  patronJornada?: PatronJornada | null;
 }
 
 /** Lo que devolvemos públicamente (sin contraseña) */
@@ -63,6 +69,8 @@ export const CrearUsuarioDTO = z.object({
   rol: z.nativeEnum(Rol),
   telefono: z.coerce.bigint(),
   fechaNacimiento: z.coerce.date(),
+  activo: z.boolean().optional(),
+  patronJornada: z.nativeEnum(PatronJornada).optional().nullable(),
 
   direccion: z.string().optional().nullable(),
   estadoCivil: z.nativeEnum(EstadoCivil).optional().nullable(),
@@ -89,7 +97,11 @@ export const CrearUsuarioDTO = z.object({
 export const EditarUsuarioDTO = z.object({
   // id: z.number().int().positive().optional(), // normalmente NO se edita
   nombre: z.string().min(2).optional(),
-  correo: z.string().email().transform((v) => v.toLowerCase().trim()).optional(),
+  correo: z
+    .string()
+    .email()
+    .transform((v) => v.toLowerCase().trim())
+    .optional(),
   contrasena: z.string().min(8).optional(),
   rol: z.nativeEnum(Rol).optional(),
   telefono: z.coerce.bigint().optional(),
@@ -106,6 +118,8 @@ export const EditarUsuarioDTO = z.object({
   tallaCalzado: z.nativeEnum(TallaCalzado).optional(),
   tipoContrato: z.nativeEnum(TipoContrato).optional(),
   jornadaLaboral: z.nativeEnum(JornadaLaboral).optional(),
+  activo: z.boolean().optional(),
+  patronJornada: z.nativeEnum(PatronJornada).optional().nullable(),
 });
 
 /** ---------- SELECT reutilizable para Prisma (oculta contrasena) ---------- */
@@ -114,6 +128,7 @@ export const usuarioPublicSelect = {
   nombre: true,
   correo: true,
   rol: true,
+  activo: true,
   telefono: true,
   fechaNacimiento: true,
   direccion: true,
@@ -128,12 +143,13 @@ export const usuarioPublicSelect = {
   tallaCalzado: true,
   tipoContrato: true,
   jornadaLaboral: true,
+  patronJornada: true,
 } as const;
 
 /** Helper para castear el result de Prisma con ese select a UsuarioPublico */
-export function toUsuarioPublico<T extends Record<keyof typeof usuarioPublicSelect, any>>(
-  row: T
-): UsuarioPublico {
+export function toUsuarioPublico<
+  T extends Record<keyof typeof usuarioPublicSelect, any>,
+>(row: T): UsuarioPublico {
   return row;
 }
 

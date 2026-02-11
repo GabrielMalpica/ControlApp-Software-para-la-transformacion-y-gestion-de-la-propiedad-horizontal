@@ -11,7 +11,7 @@ import {
   UsuarioPublico,
 } from "../model/Usuario";
 
-import { CrearGerenteDTO, ListarUsuariosInput } from "../model/Gerente";
+import { CrearGerenteDTO } from "../model/Gerente";
 import { CrearAdministradorDTO } from "../model/Administrador";
 import { CrearJefeOperacionesDTO } from "../model/JefeOperaciones";
 import { CrearSupervisorDTO } from "../model/Supervisor";
@@ -30,27 +30,19 @@ import { CrearInsumoDTO, insumoPublicSelect } from "../model/Insumo";
 
 import { z } from "zod";
 import {
+  Bloqueo,
+  buildAgendaPorOperarioDia,
   buscarHuecoDiaConSplitEarliest,
-  buscarSolapesEnConjunto,
   dateToDiaSemana,
+  Intervalo,
   mergeIntervalos,
-  solapa,
-  toDateAtMin,
   toMin,
-  toMinOfDay,
-  ymdLocal,
+  toMinOfDaySafe,
 } from "../utils/schedulerUtils";
 import {
-  CrearMaquinariaCatalogoDTO,
-  EditarMaquinariaCatalogoDTO,
-} from "../model/Maquinaria";
-import { buildBloqueosPorDescanso } from "./DefinicionTareaPreventivaService";
-import { Intervalo } from "../utils/agenda";
-
-const AsignarAConjuntoDTO = z.object({
-  operarioId: z.number().int().positive(),
-  conjuntoId: z.string().min(3),
-});
+  buildBloqueosPorDescanso,
+  buildBloqueosPorPatronJornada,
+} from "./DefinicionTareaPreventivaService";
 
 export const AsignarConReemplazoDTO = z.object({
   tarea: CrearTareaDTO,
@@ -63,10 +55,61 @@ const AgregarInsumoAConjuntoDTO = z.object({
   cantidad: z.number().int().positive(),
 });
 
-const EntregarMaquinariaDTO = z.object({
-  maquinariaId: z.number().int().positive(),
-  conjuntoId: z.string().min(3),
-});
+type ReemplazoPropuesta =
+  | {
+      ok: true;
+      mode: "CREADA_SIN_REEMPLAZO";
+      createdP1Id: number;
+      message: string;
+
+      // ✅ NUEVO: info UX (solo si se movió)
+      ajustadaAutomaticamente?: boolean;
+      motivoAjuste?: string;
+
+      // ✅ NUEVO: solicitado vs asignado
+      solicitadaInicio?: Date;
+      solicitadaFin?: Date;
+      asignadaInicio?: Date;
+      asignadaFin?: Date;
+    }
+  | {
+      ok: true;
+      mode: "AUTO_REEMPLAZO_P3";
+      createdP1Id: number;
+      reemplazadasIds: number[];
+      info: {
+        motivo: string;
+        reemplazadas: Array<{
+          id: number;
+          prioridad: number;
+          descripcion: string;
+          fechaInicio: Date;
+          fechaFin: Date;
+        }>;
+      };
+    }
+  | {
+      ok: true;
+      mode: "REQUIERE_CONFIRMACION_P2";
+      message: string;
+      opciones: Array<{
+        reemplazarIds: number[];
+        resumen: string;
+        tareas: Array<{
+          id: number;
+          prioridad: number; // 2
+          descripcion: string;
+          fechaInicio: Date;
+          fechaFin: Date;
+        }>;
+      }>;
+      slotSugerido?: { fechaInicio: Date; fechaFin: Date };
+    }
+  | {
+      ok: false;
+      reason: "NO_ES_P1" | "SIN_CONJUNTO" | "SIN_HUECO";
+      message: string;
+    };
 
 const EMPRESA_ID_FIJA = "901191875-4";
 
@@ -136,6 +179,8 @@ export class GerenteService {
         tallaCalzado: dto.tallaCalzado,
         tipoContrato: dto.tipoContrato,
         jornadaLaboral: dto.jornadaLaboral,
+        activo: dto.activo ?? true,
+        patronJornada: dto.patronJornada ?? null,
       },
       select: usuarioPublicSelect,
     });
@@ -722,7 +767,7 @@ export class GerenteService {
       : [];
 
     // =========================
-    // Helpers de logística
+    // Helpers de logística (maquinaria)
     // =========================
     const LOGISTICA_DOW = new Set([1, 3, 6]); // lun, mié, sáb
 
@@ -763,6 +808,116 @@ export class GerenteService {
     // TRANSACCIÓN
     // =========================
     return this.prisma.$transaction(async (tx) => {
+      // ✅ 0) Validar solape de operarios (bloque duro)
+      if (dto.conjuntoId && operariosIds.length) {
+        const choqueOperario = await tx.tarea.findFirst({
+          where: {
+            conjuntoId: dto.conjuntoId,
+            borrador: false,
+            estado: {
+              notIn: [
+                EstadoTarea.PENDIENTE_REPROGRAMACION,
+                EstadoTarea.COMPLETADA,
+                EstadoTarea.APROBADA,
+              ] as any,
+            },
+            // solape
+            fechaInicio: { lt: fin },
+            fechaFin: { gt: inicio },
+            operarios: { some: { id: { in: operariosIds } } },
+          },
+          select: { id: true, fechaInicio: true, fechaFin: true },
+        });
+
+        if (choqueOperario) {
+          // ✅ 0.1) Intentar sugerir hueco en el día (si hay conjunto y horario)
+          const ds = dateToDiaSemana(inicio);
+          const horario = await tx.conjuntoHorario.findFirst({
+            where: { conjuntoId: dto.conjuntoId, dia: ds as any },
+          });
+
+          if (horario) {
+            const startMin = toMin(horario.horaApertura);
+            const endMin = toMin(horario.horaCierre);
+
+            const bloqueosDescanso = buildBloqueosPorDescanso({
+              startMin,
+              endMin,
+              descansoStartMin: horario.descansoInicio
+                ? toMin(horario.descansoInicio)
+                : undefined,
+              descansoEndMin: horario.descansoFin
+                ? toMin(horario.descansoFin)
+                : undefined,
+            } as any);
+
+            const bloqueosPatron = await buildBloqueosPorPatronJornada({
+              prisma: tx as any,
+              fechaDia: inicio,
+              horarioDia: { startMin, endMin } as any,
+              operariosIds,
+            });
+
+            const bloqueos = [...bloqueosDescanso, ...bloqueosPatron];
+
+            const agenda = await buildAgendaPorOperarioDia({
+              prisma: tx as any,
+              conjuntoId: dto.conjuntoId,
+              fechaDia: inicio,
+              operariosIds,
+              incluirBorrador: false,
+              bloqueosGlobales: bloqueos,
+              excluirEstados: ["PENDIENTE_REPROGRAMACION"],
+            });
+
+            const all: Intervalo[] = [];
+            for (const opId of Object.keys(agenda)) all.push(...agenda[opId]);
+            const ocupadosGlobal = mergeIntervalos(all);
+
+            const desiredStartMin = toMinOfDaySafe(inicio);
+
+            const bloques = buscarHuecoDiaConSplitEarliest({
+              startMin,
+              endMin,
+              durMin,
+              ocupados: ocupadosGlobal,
+              bloqueos,
+              desiredStartMin,
+              maxBloques: 2,
+            });
+
+            if (bloques) {
+              const sugStart = bloques[0].i;
+              const sugEnd = bloques[bloques.length - 1].f;
+
+              const sugIni = new Date(inicio);
+              sugIni.setHours(0, 0, 0, 0);
+              sugIni.setMinutes(sugStart);
+
+              const sugFin = new Date(inicio);
+              sugFin.setHours(0, 0, 0, 0);
+              sugFin.setMinutes(sugEnd);
+
+              return {
+                ok: false,
+                reason: "HAY_SOLAPE_CON_TAREAS_EXISTENTES",
+                message: "Ese horario ya está ocupado por otra tarea.",
+                suggestedInicio: sugIni,
+                suggestedFin: sugFin,
+              };
+            }
+          }
+
+          // sin hueco sugerible
+          return {
+            ok: false,
+            reason: "HAY_SOLAPE_CON_TAREAS_EXISTENTES",
+            message:
+              "Ese horario ya está ocupado y no se encontró hueco en el día.",
+          };
+        }
+      }
+
       // 1️⃣ Crear la tarea
       const tarea = await tx.tarea.create({
         data: {
@@ -796,16 +951,12 @@ export class GerenteService {
             maquinariaId: { in: maquinariaIds },
             estado: "ACTIVA",
           },
-          select: {
-            maquinariaId: true,
-            tipoTenencia: true,
-          },
+          select: { maquinariaId: true, tipoTenencia: true },
         });
 
         const tenenciaMap = new Map<number, any>();
-        for (const r of registros) {
+        for (const r of registros)
           tenenciaMap.set(r.maquinariaId, r.tipoTenencia);
-        }
 
         for (const maqId of maquinariaIds) {
           const propia = esPropia(tenenciaMap.get(maqId));
@@ -826,7 +977,7 @@ export class GerenteService {
             obs = `Reserva logística (${entrega.toDateString()} → ${recogida.toDateString()})`;
           }
 
-          // Validar solape REAL
+          // Validar solape REAL maquinaria
           const choque = await tx.usoMaquinaria.findFirst({
             where: {
               maquinariaId: maqId,
@@ -852,7 +1003,6 @@ export class GerenteService {
             },
           });
 
-          // Amarrar si existe registro en MaquinariaConjunto
           await tx.maquinariaConjunto.updateMany({
             where: {
               conjuntoId: dto.conjuntoId,
@@ -1129,6 +1279,454 @@ export class GerenteService {
         reemplazadasIds: reemplazarIds,
       };
     });
+  }
+
+  async sugerirReemplazoParaCorrectivaP1(params: {
+    prisma: PrismaClient;
+    conjuntoId: string;
+    fechaDia: Date;
+
+    // intervalos jornada
+    startMin: number;
+    endMin: number;
+
+    // bloqueos (descanso, patrón, etc)
+    bloqueos: Bloqueo[];
+
+    // nueva tarea P1
+    durMin: number;
+    operariosIds: string[];
+  }): Promise<{
+    huecoNormal?: Intervalo[];
+    autoP3?: { reemplazarIds: number[]; bloques: Intervalo[]; tareas: any[] };
+    opcionesP2?: Array<{
+      reemplazarIds: number[];
+      bloques: Intervalo[];
+      tareas: any[];
+    }>;
+  }> {
+    const {
+      prisma,
+      conjuntoId,
+      fechaDia,
+      startMin,
+      endMin,
+      bloqueos,
+      durMin,
+      operariosIds,
+    } = params;
+
+    const ini = new Date(
+      fechaDia.getFullYear(),
+      fechaDia.getMonth(),
+      fechaDia.getDate(),
+      0,
+      0,
+      0,
+      0,
+    );
+    const fin = new Date(
+      fechaDia.getFullYear(),
+      fechaDia.getMonth(),
+      fechaDia.getDate(),
+      23,
+      59,
+      59,
+      999,
+    );
+
+    // 1) Agenda actual (incluye bloqueos)
+    const agenda = operariosIds.length
+      ? await buildAgendaPorOperarioDia({
+          prisma,
+          conjuntoId,
+          fechaDia,
+          operariosIds,
+          incluirBorrador: false,
+          bloqueosGlobales: bloqueos,
+          excluirEstados: ["PENDIENTE_REPROGRAMACION"],
+        })
+      : null;
+
+    let ocupadosGlobal: Intervalo[] = [];
+    if (agenda) {
+      const all: Intervalo[] = [];
+      for (const opId of Object.keys(agenda)) all.push(...agenda[opId]);
+      ocupadosGlobal = mergeIntervalos(all);
+    } else {
+      ocupadosGlobal = mergeIntervalos(
+        bloqueos.map((b) => ({ i: b.startMin, f: b.endMin })),
+      );
+    }
+
+    // 2) Intento normal
+    const normal = buscarHuecoDiaConSplitEarliest({
+      startMin,
+      endMin,
+      durMin,
+      ocupados: ocupadosGlobal,
+      bloqueos,
+      desiredStartMin: startMin,
+      maxBloques: 2,
+    });
+    if (normal) return { huecoNormal: normal };
+
+    // 3) Candidatas del día P2/P3 (NO cerradas, NO ya reprogramadas)
+    const candidatas = await prisma.tarea.findMany({
+      where: {
+        conjuntoId,
+        fechaInicio: { lte: fin },
+        fechaFin: { gte: ini },
+        estado: {
+          notIn: ["PENDIENTE_REPROGRAMACION", "COMPLETADA", "APROBADA"] as any,
+        },
+        prioridad: { in: [2, 3] },
+        // MUY IMPORTANTE: que afecten a los operarios de la P1 (si tu reemplazo es por agenda/operario)
+        ...(operariosIds.length
+          ? { operarios: { some: { id: { in: operariosIds } } } }
+          : {}),
+      },
+      select: {
+        id: true,
+        prioridad: true,
+        descripcion: true,
+        fechaInicio: true,
+        fechaFin: true,
+        grupoPlanId: true,
+      },
+      orderBy: [{ prioridad: "desc" }, { fechaInicio: "asc" }], // primero P3
+    });
+
+    if (!candidatas.length) return {};
+
+    const excluyeIds = async (t: (typeof candidatas)[number]) => {
+      if (!t.grupoPlanId) return new Set([t.id]);
+      const grupo = await prisma.tarea.findMany({
+        where: { grupoPlanId: t.grupoPlanId },
+        select: {
+          id: true,
+          prioridad: true,
+          descripcion: true,
+          fechaInicio: true,
+          fechaFin: true,
+        },
+      });
+      return new Set(grupo.map((x) => x.id));
+    };
+
+    // helper: recalcular ocupados SIN ciertas ids
+    const buildOcupadosSin = async (idsAExcluir: Set<number>) => {
+      const tareasDia = await prisma.tarea.findMany({
+        where: {
+          conjuntoId,
+          fechaInicio: { lte: fin },
+          fechaFin: { gte: ini },
+          id: { notIn: Array.from(idsAExcluir) },
+          estado: {
+            notIn: [
+              "PENDIENTE_REPROGRAMACION",
+              "COMPLETADA",
+              "APROBADA",
+            ] as any,
+          },
+          ...(operariosIds.length
+            ? { operarios: { some: { id: { in: operariosIds } } } }
+            : {}),
+        },
+        select: { fechaInicio: true, fechaFin: true },
+      });
+
+      const all: Intervalo[] = tareasDia.map((t) => ({
+        i: toMinOfDaySafe(t.fechaInicio),
+        f: toMinOfDaySafe(t.fechaFin),
+      }));
+      for (const b of bloqueos) all.push({ i: b.startMin, f: b.endMin });
+      return mergeIntervalos(all);
+    };
+
+    // 4) Primero probar P3 (auto)
+    for (const cand of candidatas.filter((x) => x.prioridad === 3)) {
+      const idsAExcluir = await excluyeIds(cand);
+      const ocup = await buildOcupadosSin(idsAExcluir);
+
+      const bloques = buscarHuecoDiaConSplitEarliest({
+        startMin,
+        endMin,
+        durMin,
+        ocupados: ocup,
+        bloqueos,
+        desiredStartMin: startMin,
+        maxBloques: 2,
+      });
+
+      if (bloques) {
+        // capturamos info de tareas que se reemplazarían (para informar)
+        const tareas = await prisma.tarea.findMany({
+          where: { id: { in: Array.from(idsAExcluir) } },
+          select: {
+            id: true,
+            prioridad: true,
+            descripcion: true,
+            fechaInicio: true,
+            fechaFin: true,
+          },
+        });
+
+        return {
+          autoP3: { reemplazarIds: Array.from(idsAExcluir), bloques, tareas },
+        };
+      }
+    }
+
+    // 5) Si no hubo P3, armar opciones P2 (para que el usuario escoja)
+    const opcionesP2: Array<{
+      reemplazarIds: number[];
+      bloques: Intervalo[];
+      tareas: any[];
+    }> = [];
+
+    for (const cand of candidatas.filter((x) => x.prioridad === 2)) {
+      const idsAExcluir = await excluyeIds(cand);
+      const ocup = await buildOcupadosSin(idsAExcluir);
+
+      const bloques = buscarHuecoDiaConSplitEarliest({
+        startMin,
+        endMin,
+        durMin,
+        ocupados: ocup,
+        bloqueos,
+        desiredStartMin: startMin,
+        maxBloques: 2,
+      });
+
+      if (!bloques) continue;
+
+      const tareas = await prisma.tarea.findMany({
+        where: { id: { in: Array.from(idsAExcluir) } },
+        select: {
+          id: true,
+          prioridad: true,
+          descripcion: true,
+          fechaInicio: true,
+          fechaFin: true,
+        },
+      });
+
+      opcionesP2.push({
+        reemplazarIds: Array.from(idsAExcluir),
+        bloques,
+        tareas,
+      });
+
+      // Si te preocupa rendimiento, puedes cortar a 10 opciones
+      if (opcionesP2.length >= 10) break;
+    }
+
+    return { opcionesP2: opcionesP2.length ? opcionesP2 : undefined };
+  }
+
+  async crearCorrectivaP1ConReglas(
+    payload: unknown,
+  ): Promise<ReemplazoPropuesta> {
+    const dto = CrearTareaDTO.parse(payload);
+
+    const tipo = (dto.tipo ?? "CORRECTIVA") as any;
+    const prioridad = dto.prioridad ?? 2;
+
+    if (tipo !== "CORRECTIVA" || prioridad !== 1) {
+      return {
+        ok: false,
+        reason: "NO_ES_P1",
+        message: "Solo aplica para correctiva prioridad 1.",
+      };
+    }
+    if (!dto.conjuntoId) {
+      return {
+        ok: false,
+        reason: "SIN_CONJUNTO",
+        message: "conjuntoId es obligatorio.",
+      };
+    }
+
+    const inicio = dto.fechaInicio;
+
+    const durMin =
+      dto.duracionMinutos ??
+      (dto.duracionHoras
+        ? Math.max(1, Math.round(dto.duracionHoras * 60))
+        : undefined) ??
+      (dto.fechaFin
+        ? Math.max(
+            1,
+            Math.round((dto.fechaFin.getTime() - inicio.getTime()) / 60000),
+          )
+        : undefined);
+
+    if (!durMin) {
+      return {
+        ok: false,
+        reason: "SIN_HUECO",
+        message: "Debe indicar duración.",
+      };
+    }
+
+    const operariosIds =
+      dto.operariosIds?.map(String) ??
+      (dto.operarioId ? [String(dto.operarioId)] : []);
+
+    const ds = dateToDiaSemana(inicio);
+    const horario = await this.prisma.conjuntoHorario.findFirst({
+      where: { conjuntoId: dto.conjuntoId, dia: ds as any },
+    });
+    if (!horario) {
+      return {
+        ok: false,
+        reason: "SIN_HUECO",
+        message: "No hay horario configurado para ese día.",
+      };
+    }
+
+    const startMin = toMin(horario.horaApertura);
+    const endMin = toMin(horario.horaCierre);
+
+    const bloqueosDescanso = buildBloqueosPorDescanso({
+      startMin,
+      endMin,
+      descansoStartMin: horario.descansoInicio
+        ? toMin(horario.descansoInicio)
+        : undefined,
+      descansoEndMin: horario.descansoFin
+        ? toMin(horario.descansoFin)
+        : undefined,
+    } as any);
+
+    const bloqueosPatron = await buildBloqueosPorPatronJornada({
+      prisma: this.prisma,
+      fechaDia: inicio,
+      horarioDia: { startMin, endMin } as any,
+      operariosIds,
+    });
+
+    const bloqueos = [...bloqueosDescanso, ...bloqueosPatron];
+
+    const sug = await this.sugerirReemplazoParaCorrectivaP1({
+      prisma: this.prisma,
+      conjuntoId: dto.conjuntoId,
+      fechaDia: inicio,
+      startMin,
+      endMin,
+      bloqueos,
+      durMin,
+      operariosIds,
+    });
+
+    // A) Si cabe normal: crear sin reemplazo EN EL HUECO (no en la hora original)
+    // A) Si cabe normal: crear sin reemplazo EN EL HUECO (no en la hora original)
+    if (sug.huecoNormal) {
+      // lo que pidió el usuario
+      const solicitadaInicio = dto.fechaInicio;
+      const solicitadaFin =
+        dto.fechaFin ?? new Date(solicitadaInicio.getTime() + durMin * 60000);
+
+      // hueco sugerido por el scheduler (minutos del día)
+      const sugStartMin = sug.huecoNormal[0].i;
+      const sugEndMin = sug.huecoNormal[sug.huecoNormal.length - 1].f;
+
+      // convertir minutos del día a Date real
+      const asignadaInicio = new Date(inicio);
+      asignadaInicio.setHours(0, 0, 0, 0);
+      asignadaInicio.setMinutes(sugStartMin);
+
+      const asignadaFin = new Date(inicio);
+      asignadaFin.setHours(0, 0, 0, 0);
+      asignadaFin.setMinutes(sugEndMin);
+
+      // dto2 con horario ajustado
+      const dto2: any = {
+        ...dto,
+        fechaInicio: asignadaInicio,
+        fechaFin: asignadaFin,
+        duracionMinutos: durMin,
+      };
+
+      const res = await this.asignarTarea(dto2);
+
+      const ajustada =
+        solicitadaInicio.getTime() !== asignadaInicio.getTime() ||
+        solicitadaFin.getTime() !== asignadaFin.getTime();
+
+      return {
+        ok: true,
+        mode: "CREADA_SIN_REEMPLAZO",
+        createdP1Id: (res as any).tareaId,
+        message: ajustada
+          ? "La correctiva se programó en el siguiente espacio disponible."
+          : "Correctiva P1 creada sin reemplazar tareas.",
+
+        // ✅ NUEVO
+        ajustadaAutomaticamente: ajustada,
+        motivoAjuste: ajustada
+          ? "El horario solicitado estaba ocupado. La correctiva se reprogramó automáticamente al siguiente espacio disponible del día."
+          : undefined,
+
+        // ✅ NUEVO: para mostrar en UI
+        solicitadaInicio,
+        solicitadaFin,
+        asignadaInicio,
+        asignadaFin,
+      };
+    }
+
+    // B) Si hay P3 viable: reemplazar sin preguntar
+    if (sug.autoP3) {
+      const res = await this.asignarTareaConReemplazo({
+        tarea: dto,
+        reemplazarIds: sug.autoP3.reemplazarIds,
+      });
+
+      return {
+        ok: true,
+        mode: "AUTO_REEMPLAZO_P3",
+        createdP1Id: (res as any).createdP1Id,
+        reemplazadasIds: sug.autoP3.reemplazarIds,
+        info: {
+          motivo:
+            "Se reemplazó automáticamente prioridad 3 para abrir espacio.",
+          reemplazadas: sug.autoP3.tareas,
+        },
+      };
+    }
+
+    // C) Si hay opciones P2: devolver lista para confirmación
+    if (sug.opcionesP2?.length) {
+      const opciones = sug.opcionesP2.map((o) => {
+        const tareas = o.tareas;
+        const first = tareas[0];
+        const resumen =
+          tareas.length === 1
+            ? `Reemplazar: [P2] ${first.descripcion} (${first.fechaInicio.toISOString()} - ${first.fechaFin.toISOString()})`
+            : `Reemplazar grupo (${tareas.length} tareas) - Ej: ${first.descripcion}`;
+
+        return { reemplazarIds: o.reemplazarIds, resumen, tareas };
+      });
+
+      return {
+        ok: true,
+        mode: "REQUIERE_CONFIRMACION_P2",
+        message:
+          opciones.length === 1
+            ? "No hay hueco. Se encontró 1 tarea P2 candidata. ¿Deseas reemplazarla?"
+            : `No hay hueco. Se encontraron ${opciones.length} opciones P2. Elige cuál reemplazar.`,
+        opciones,
+        slotSugerido: undefined,
+      };
+    }
+
+    return {
+      ok: false,
+      reason: "SIN_HUECO",
+      message: "No hay hueco y no hay reemplazos viables.",
+    };
   }
 
   async editarTarea(tareaId: number, payload: unknown) {

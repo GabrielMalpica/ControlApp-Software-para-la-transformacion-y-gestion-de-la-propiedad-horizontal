@@ -11,6 +11,7 @@ import {
   TallaCalzado,
   TipoContrato,
   TipoFuncion,
+  PatronJornada,
 } from "../generated/prisma";
 
 const router = Router();
@@ -28,6 +29,7 @@ router.get("/enums/usuario", (_req, res) => {
     tallaCalzado: Object.values(TallaCalzado),
     tipoContrato: Object.values(TipoContrato),
     tipoFuncion: Object.values(TipoFuncion),
+    patronesJornada: Object.values(PatronJornada)
   });
 });
 

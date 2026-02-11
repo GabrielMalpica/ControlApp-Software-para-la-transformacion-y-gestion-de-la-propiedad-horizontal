@@ -22,6 +22,7 @@ import SolicitudHerramientasRoutes from "./SolicitudHerramienta"
 import HerramientasStockRoutes from "./HerramientaStock"
 import AuthRoutes from "./auth"
 import AgendaRoutes from './Agenda';
+import JefeOperacionesRoutes from './JefeOperaciones'
 
 const rutas = Router();
 
@@ -48,5 +49,6 @@ rutas.use('/solicitud-herramientas', SolicitudHerramientasRoutes);
 rutas.use('/herramientas', HerramientasStockRoutes);
 rutas.use('/auth', AuthRoutes);
 rutas.use('/agenda', AgendaRoutes);
+rutas.use('/jefe-operaciones', JefeOperacionesRoutes);
 
 export default rutas;

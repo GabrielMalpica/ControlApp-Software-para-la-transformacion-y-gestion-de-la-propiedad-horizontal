@@ -6,6 +6,7 @@
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 generator erd {
@@ -94,6 +95,12 @@ enum JornadaLaboral {
   COMPLETA
   MEDIO_TIEMPO
   FINES_DE_SEMANA
+}
+
+enum PatronJornada {
+  MEDIO_SEMANA_SABADO
+  MEDIO_SEMANA_SABADO_TARDE
+  MEDIO_DIAS_INTERCALADOS
 }
 
 enum TallaCamisa {
@@ -336,6 +343,14 @@ model ConfiguracionSistema {
   valor String
 }
 
+model ConfiguracionLaboral {
+  id                    Int      @id @default(1)
+  horasSemanalesLegales Int // 44 hoy, 42 mañana
+  updatedAt             DateTime @updatedAt
+
+  @@map("ConfiguracionLaboral")
+}
+
 /**
  * =========================================
  * MODELOS - NÚCLEO EMPRESA / USUARIOS / ROLES
@@ -343,11 +358,13 @@ model ConfiguracionSistema {
  */
 
 model Usuario {
-  id              String          @id
+  id              String   @id
   nombre          String
-  correo          String          @unique
+  correo          String   @unique
   contrasena      String
   rol             String
+  activo          Boolean  @default(true)
+
   telefono        BigInt
   fechaNacimiento DateTime
   direccion       String?
@@ -361,7 +378,9 @@ model Usuario {
   tallaPantalon   TallaPantalon?
   tallaCalzado    TallaCalzado?
   tipoContrato    TipoContrato?
+
   jornadaLaboral  JornadaLaboral?
+  patronJornada   PatronJornada?
 
   gerente         Gerente?
   jefeOperaciones JefeOperaciones?
@@ -921,7 +940,7 @@ model Tarea {
   observacionesRechazo String?
   fechaVerificacion    DateTime?
   finalizadaPorId      String?
-  finalizadaPorRol String?
+  finalizadaPorRol     String?
 
   operarios    Operario[]  @relation("TareaOperarios")
   supervisor   Supervisor? @relation(fields: [supervisorId], references: [id])

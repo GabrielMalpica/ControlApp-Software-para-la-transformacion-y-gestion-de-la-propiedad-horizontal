@@ -37,7 +37,7 @@ const ReemplazosBody = z.object({
     z.object({
       conjuntoId: z.string().min(3),
       nuevoAdminId: z.number().int().positive(),
-    })
+    }),
   ),
 });
 
@@ -53,7 +53,6 @@ const QuitarOperarioBody = z.object({
 const service = new GerenteService(prisma);
 
 export class GerenteController {
-
   // ── Empresa ────────────────────────────────────────────────────────────────
   crearEmpresa: RequestHandler = async (req, res, next) => {
     try {
@@ -67,9 +66,7 @@ export class GerenteController {
   actualizarLimiteHoras: RequestHandler = async (req, res, next) => {
     try {
       const { limiteHorasSemana } = LimiteHorasBody.parse(req.body);
-      const out = await service.actualizarLimiteHorasEmpresa(
-        limiteHorasSemana
-      );
+      const out = await service.actualizarLimiteHorasEmpresa(limiteHorasSemana);
       res.json(out);
     } catch (err) {
       next(err);
@@ -260,8 +257,83 @@ export class GerenteController {
   // ── Tareas ────────────────────────────────────────────────────────────────
   asignarTarea: RequestHandler = async (req, res, next) => {
     try {
-      const out = await service.asignarTarea(req.body);
-      res.status(201).json(out);
+      const body: any = req.body ?? {};
+
+      const tipo = String(body?.tipo ?? "CORRECTIVA").toUpperCase();
+      const prioridad = Number(body?.prioridad ?? 2);
+
+      // ✅ 1) Correctiva P1: entra por reglas (buscar hueco / reemplazos P3/P2)
+      if (tipo === "CORRECTIVA" && prioridad === 1) {
+        const r = await service.crearCorrectivaP1ConReglas(body);
+
+        // A) Creada sin reemplazo (en hueco) → 201
+        if (r.ok && r.mode === "CREADA_SIN_REEMPLAZO") {
+          res.status(201).json({
+            ok: true,
+            tareaId: r.createdP1Id,
+            createdP1Id: r.createdP1Id,
+            message: r.message,
+            ajustadaAutomaticamente: r.ajustadaAutomaticamente ?? false,
+            motivoAjuste: r.motivoAjuste ?? null,
+            solicitadaInicio: r.solicitadaInicio ?? null,
+            solicitadaFin: r.solicitadaFin ?? null,
+            asignadaInicio: r.asignadaInicio ?? null,
+            asignadaFin: r.asignadaFin ?? null,
+          });
+          return;
+        }
+
+        // B) Auto reemplazo P3 → 200 (para UI info)
+        if (r.ok && r.mode === "AUTO_REEMPLAZO_P3") {
+          res.status(200).json({
+            ok: true,
+            tareaId: r.createdP1Id,
+            createdP1Id: r.createdP1Id,
+            autoReplaced: r.info?.reemplazadas ?? [],
+            reemplazadasIds: r.reemplazadasIds ?? [],
+          });
+          return;
+        }
+
+        // C) Requiere confirmación P2 → 200 con flag para UI
+        if (r.ok && r.mode === "REQUIERE_CONFIRMACION_P2") {
+          const reemplazablesP2 = (r.opciones ?? []).flatMap((op: any) => {
+            return (op.tareas ?? []).map((t: any) => ({
+              id: t.id,
+              prioridad: t.prioridad,
+              descripcion: t.descripcion,
+              tipo: t.tipo ?? "PREVENTIVA",
+              fechaInicio: t.fechaInicio,
+              fechaFin: t.fechaFin,
+            }));
+          });
+
+          res.status(200).json({
+            needsReplacement: true,
+            ok: false,
+            message: r.message,
+            reemplazablesP2,
+            suggestedInicio: r.slotSugerido?.fechaInicio ?? null,
+            suggestedFin: r.slotSugerido?.fechaFin ?? null,
+          });
+          return;
+        }
+
+        // D) No se pudo
+        res.status(200).json({
+          ok: false,
+          reason: r.reason,
+          message: r.message,
+        });
+        return;
+      }
+
+      // ✅ 2) No es P1: asignación normal (incluye validación solapes/sugerencias)
+      const out: any = await service.asignarTarea(body);
+
+      const status = out?.ok === true ? 201 : 200;
+      res.status(status).json(out);
+      return;
     } catch (err) {
       next(err);
     }

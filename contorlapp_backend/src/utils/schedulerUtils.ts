@@ -6,6 +6,7 @@ import {
   Frecuencia,
   EstadoTarea,
 } from "../generated/prisma";
+import { HorarioDia } from "./agenda";
 
 export type Intervalo = { i: number; f: number }; // minutos dentro del día [0..1440]
 export type Bloqueo = { startMin: number; endMin: number; reason?: string };
@@ -609,7 +610,19 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
 
   // agenda
   incluirBorradorEnAgenda: boolean;
-  incluirPublicadasEnAgenda: boolean; // si quieres, úsalo para calcular agenda también
+  incluirPublicadasEnAgenda: boolean;
+
+  // ✅ NUEVO: para reportar al UI / log
+  onEvent?: (
+    ev:
+      | {
+          tipo: "REEMPLAZO";
+          nuevaTareaIds: number[];
+          reprogramadasIds: number[];
+        }
+      | { tipo: "SIN_CANDIDATAS" }
+      | { tipo: "SIN_HUECO" },
+  ) => void;
 }): Promise<
   | {
       ok: true;
@@ -629,6 +642,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     durMin,
     payload,
     incluirBorradorEnAgenda,
+    onEvent,
   } = params;
 
   const operariosIds = payload.operariosIds ?? [];
@@ -642,7 +656,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
         operariosIds,
         incluirBorrador: incluirBorradorEnAgenda,
         bloqueosGlobales: bloqueos,
-        excluirEstados: ["PENDIENTE_REPROGRAMACION"], // no bloquea
+        excluirEstados: ["PENDIENTE_REPROGRAMACION"],
       })
     : null;
 
@@ -669,7 +683,6 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
   });
 
   if (normal) {
-    // crear sin reprogramar nada
     const ids = await crearTareaConBloques(
       prisma,
       fechaDia,
@@ -677,6 +690,10 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       durMin,
       payload,
     );
+
+    // ✅ evento: no hubo reemplazo (reprogramadas vacío)
+    onEvent?.({ tipo: "REEMPLAZO", nuevaTareaIds: ids, reprogramadasIds: [] });
+
     return {
       ok: true,
       nuevaTareaIds: ids,
@@ -710,12 +727,8 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       conjuntoId,
       fechaInicio: { lte: fin },
       fechaFin: { gte: ini },
-      // NO reemplazar ya reprogramadas
       estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
-      // solo prioridades bajas
       prioridad: { in: [2, 3] },
-      // puedes limitar a ASIGNADA si quieres:
-      // estado: EstadoTarea.ASIGNADA,
     },
     select: {
       id: true,
@@ -729,13 +742,15 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     orderBy: [{ prioridad: "desc" }, { fechaInicio: "asc" }], // primero 3, luego 2
   });
 
-  if (!candidatas.length) return { ok: false, reason: "SIN_CANDIDATAS" };
+  if (!candidatas.length) {
+    onEvent?.({ tipo: "SIN_CANDIDATAS" });
+    return { ok: false, reason: "SIN_CANDIDATAS" };
+  }
 
-  // helper: construir “ocupados” excluyendo candidata(s)
+  // helper: ids a excluir (si está en grupo -> todo el grupo)
   const excluyeIds = async (t: (typeof candidatas)[number]) => {
     if (!t.grupoPlanId) return new Set([t.id]);
 
-    // si está en grupo, reprograma todo el grupo (consistente)
     const grupo = await prisma.tarea.findMany({
       where: { grupoPlanId: t.grupoPlanId },
       select: { id: true },
@@ -751,9 +766,6 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     let ocupSinCand: Intervalo[] = [];
 
     if (operariosIds.length) {
-      // agenda actual por operario está basada en tareas, no sabemos cuál intervalo es de cuál tarea aquí.
-      // Entonces, hacemos un approach seguro: recalcular agenda excluyendo por IDs.
-      // (solo en este intento; si te preocupa rendimiento, lo optimizamos luego).
       const tareasDia = await prisma.tarea.findMany({
         where: {
           conjuntoId,
@@ -773,11 +785,10 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
           f: toMinOfDaySafe(t.fechaFin),
         });
       }
-      // + descanso
       for (const b of bloqueos) all.push({ i: b.startMin, f: b.endMin });
+
       ocupSinCand = mergeIntervalos(all);
     } else {
-      // sin operarios: solo descanso + tareas del día (sin cand)
       const tareasDia = await prisma.tarea.findMany({
         where: {
           conjuntoId,
@@ -794,6 +805,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
         f: toMinOfDaySafe(t.fechaFin),
       }));
       for (const b of bloqueos) all.push({ i: b.startMin, f: b.endMin });
+
       ocupSinCand = mergeIntervalos(all);
     }
 
@@ -816,7 +828,6 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       "Reprogramada por reemplazo de prioridad alta";
 
     const result = await prisma.$transaction(async (tx) => {
-      // marcar candidata(s) como pendientes
       const reprogramadas = Array.from(idsAExcluir);
 
       for (const id of reprogramadas) {
@@ -839,15 +850,12 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
             reprogramada: true,
             reprogramadaEn: now,
             reprogramadaMotivo: motivo,
-            // lo llenamos después de crear la nueva (por ahora null)
-            // reprogramadaPorTareaId: ???,
             fechaInicioOriginal: t.fechaInicioOriginal ?? t.fechaInicio,
             fechaFinOriginal: t.fechaFinOriginal ?? t.fechaFin,
           },
         });
       }
 
-      // crear nueva(s) tarea(s)
       const nuevaIds = await crearTareaConBloques(
         tx as any,
         fechaDia,
@@ -856,7 +864,6 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
         payload,
       );
 
-      // set reprogramadaPorTareaId apuntando a la primera tarea creada (si son 2 bloques igual queda trazable)
       const nuevaRefId = nuevaIds[0] ?? null;
       if (nuevaRefId) {
         await tx.tarea.updateMany({
@@ -868,6 +875,12 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       return { nuevaIds, reprogramadas };
     });
 
+    onEvent?.({
+      tipo: "REEMPLAZO",
+      nuevaTareaIds: result.nuevaIds,
+      reprogramadasIds: result.reprogramadas,
+    });
+
     return {
       ok: true,
       nuevaTareaIds: result.nuevaIds,
@@ -876,17 +889,20 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     };
   }
 
+  onEvent?.({ tipo: "SIN_HUECO" });
   return { ok: false, reason: "SIN_HUECO" };
 }
 
 // ---- helpers ----
 
-function toMinOfDaySafe(d: Date): number {
-  // clamp sencillo
-  const v = d.getHours() * 60 + d.getMinutes();
-  if (v < 0) return 0;
-  if (v > 1440) return 1440;
-  return v;
+export function toMinOfDaySafe(d: Date): number {
+  const dd = new Date(d);
+  const h = dd.getHours();
+  const m = dd.getMinutes();
+  const min = h * 60 + m;
+
+  if (!Number.isFinite(min)) return 0;
+  return Math.max(0, Math.min(24 * 60, min));
 }
 
 async function crearTareaConBloques(
@@ -1044,4 +1060,171 @@ export function findNextValidDay(params: {
   }
 
   return null;
+}
+
+async function buildBloqueosPorPatronJornada(params: {
+  prisma: PrismaClient;
+  fechaDia: Date;
+  horarioDia: HorarioDia;
+  operariosIds: string[];
+}): Promise<Bloqueo[]> {
+  const { prisma, fechaDia, horarioDia, operariosIds } = params;
+  if (!operariosIds.length) return [];
+
+  const dia = dateToDiaSemana(fechaDia);
+
+  // Traer jornada y patrón desde Usuario
+  const ops = await prisma.operario.findMany({
+    where: { id: { in: operariosIds.map(String) } },
+    select: {
+      id: true,
+      usuario: {
+        select: {
+          jornadaLaboral: true,
+          patronJornada: true,
+        },
+      },
+    },
+  });
+
+  const bloqueos: Bloqueo[] = [];
+
+  for (const op of ops) {
+    const jornada = (op.usuario?.jornadaLaboral ?? null) as string | null;
+    const patron = (op.usuario?.patronJornada ?? null) as string | null;
+
+    // COMPLETA => no bloquea nada
+    if (jornada === "COMPLETA") continue;
+
+    // Si no tiene jornada, por seguridad no limitamos (o si prefieres, bloquea todo)
+    if (!jornada) continue;
+
+    // MEDIO_TIEMPO sin patrón => no debería poder trabajar (bloquea todo el horario)
+    const allowed = allowedIntervalsForUser({
+      dia,
+      horario: horarioDia,
+      jornadaLaboral: jornada,
+      patronJornada: patron,
+    });
+
+    const b = bloqueosFromAllowed({
+      horario: horarioDia,
+      allowed,
+      reason: `PATRON_${op.id}`,
+    });
+
+    bloqueos.push(...b);
+  }
+
+  return bloqueos;
+}
+
+function allowedIntervalsForUser(params: {
+  dia: DiaSemana;
+  horario: HorarioDia;
+  jornadaLaboral: string | null;
+  patronJornada: string | null;
+}): Array<{ i: number; f: number }> {
+  const { dia, horario, jornadaLaboral, patronJornada } = params;
+
+  if (!jornadaLaboral) return [{ i: horario.startMin, f: horario.endMin }];
+
+  if (jornadaLaboral === "COMPLETA") {
+    return [{ i: horario.startMin, f: horario.endMin }];
+  }
+
+  if (jornadaLaboral !== "MEDIO_TIEMPO") {
+    return [{ i: horario.startMin, f: horario.endMin }];
+  }
+
+  if (!patronJornada) return [];
+
+  const apertura = horario.startMin;
+  const cierre = horario.endMin;
+
+  const clamp = (i: number, f: number) => {
+    const ii = Math.max(i, apertura);
+    const ff = Math.min(f, cierre);
+    return ff > ii ? { i: ii, f: ff } : null;
+  };
+
+  // 13:00 - 16:00
+  const m13 = 13 * 60;
+  const m16 = 16 * 60;
+
+  switch (patronJornada) {
+    case "MEDIO_DIAS_INTERCALADOS": {
+      if (dia === DiaSemana.LUNES || dia === DiaSemana.MIERCOLES) {
+        return [{ i: apertura, f: cierre }];
+      }
+      if (dia === DiaSemana.VIERNES) {
+        const x = clamp(apertura, apertura + 6 * 60);
+        return x ? [x] : [];
+      }
+      return [];
+    }
+
+    case "MEDIO_SEMANA_SABADO": {
+      if (
+        dia === DiaSemana.LUNES ||
+        dia === DiaSemana.MARTES ||
+        dia === DiaSemana.MIERCOLES ||
+        dia === DiaSemana.JUEVES ||
+        dia === DiaSemana.VIERNES
+      ) {
+        const x = clamp(apertura, apertura + 4 * 60);
+        return x ? [x] : [];
+      }
+      if (dia === DiaSemana.SABADO) {
+        const x = clamp(apertura, apertura + 2 * 60); // 8am-10am (según tu corrección)
+        return x ? [x] : [];
+      }
+      return [];
+    }
+
+    case "MEDIO_SEMANA_SABADO_TARDE": {
+      if (
+        dia === DiaSemana.LUNES ||
+        dia === DiaSemana.MARTES ||
+        dia === DiaSemana.MIERCOLES ||
+        dia === DiaSemana.JUEVES ||
+        dia === DiaSemana.VIERNES
+      ) {
+        const x = clamp(m13, m16);
+        return x ? [x] : [];
+      }
+      if (dia === DiaSemana.SABADO) {
+        const x = clamp(apertura, apertura + 2 * 60);
+        return x ? [x] : [];
+      }
+      return [];
+    }
+
+    default:
+      return [];
+  }
+}
+
+function bloqueosFromAllowed(params: {
+  horario: HorarioDia;
+  allowed: Array<{ i: number; f: number }>;
+  reason: string;
+}): Bloqueo[] {
+  const { horario, allowed, reason } = params;
+
+  if (!allowed.length) {
+    return [{ startMin: horario.startMin, endMin: horario.endMin, reason }];
+  }
+
+  // En tus patrones siempre queda un único intervalo permitido por día
+  const a = allowed[0];
+
+  const out: Bloqueo[] = [];
+  if (horario.startMin < a.i) {
+    out.push({ startMin: horario.startMin, endMin: a.i, reason });
+  }
+  if (a.f < horario.endMin) {
+    out.push({ startMin: a.f, endMin: horario.endMin, reason });
+  }
+  return out;
 }
