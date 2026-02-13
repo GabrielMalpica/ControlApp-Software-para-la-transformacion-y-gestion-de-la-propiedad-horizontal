@@ -37,3 +37,4 @@ flutter:
     - assets/logo.png
     - assets/fonts/Roboto-Regular.ttf
     - assets/fonts/Roboto-Bold.ttf 
+    - assets/templates/Informe_de_Gestion_plantilla.pdf

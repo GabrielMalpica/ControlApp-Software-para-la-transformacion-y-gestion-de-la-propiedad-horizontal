@@ -13,6 +13,7 @@ import 'package:flutter_application_1/pages/gerente/crear_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_conjuntos_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_insumos_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_maquinaria_page.dart';
+import 'package:flutter_application_1/pages/gerente/reportes_general_dashboard_page.dart';
 import 'package:flutter_application_1/pages/gerente/usuarios_conjunto_page.dart';
 import 'package:flutter_application_1/pages/lista_herramientas_page.dart';
 import 'package:flutter_application_1/pages/preventivas_page.dart';
@@ -626,9 +627,24 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
       _Tile("Reportes", Icons.bar_chart, AppTheme.green, () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => ReportesDashboardPage(conjuntoIdInicial: nit)),
+          MaterialPageRoute(
+            builder: (_) => ReportesDashboardPage(conjuntoIdInicial: nit),
+          ),
         );
       }),
+      _Tile(
+        "Reportes generales",
+        Icons.analytics_outlined,
+        AppTheme.yellow,
+        () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const ReportesGeneralDashboardPage(),
+            ),
+          );
+        },
+      ),
       _Tile(
         "Definir tarea preventiva",
         Icons.build_circle_outlined,

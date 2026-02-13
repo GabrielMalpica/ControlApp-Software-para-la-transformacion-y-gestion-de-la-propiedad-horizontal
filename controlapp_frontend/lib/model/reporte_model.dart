@@ -8,6 +8,98 @@ DateTime _dt(dynamic v) {
       DateTime.fromMillisecondsSinceEpoch(0);
 }
 
+final RegExp _httpUrlRx = RegExp(r'https?:\/\/[^\s<>"\]\[)]+');
+
+String _cleanEvidence(String s) {
+  var x = s.trim();
+  if ((x.startsWith('"') && x.endsWith('"')) ||
+      (x.startsWith("'") && x.endsWith("'"))) {
+    x = x.substring(1, x.length - 1).trim();
+  }
+  return x
+      .replaceAll(r'\u003d', '=')
+      .replaceAll(r'\u0026', '&')
+      .replaceAll('&amp;', '&')
+      .replaceAll('\\/', '/')
+      .replaceAll(RegExp(r'[,.;]+$'), '');
+}
+
+String? _urlFromEvidenceMap(Map<dynamic, dynamic> m) {
+  const keys = [
+    'url',
+    'downloadUrl',
+    'secureUrl',
+    'fileUrl',
+    'evidenciaUrl',
+    'archivoUrl',
+    'src',
+    'href',
+    'path',
+  ];
+  for (final k in keys) {
+    final v = m[k];
+    if (v == null) continue;
+    final s = _cleanEvidence(v.toString());
+    if (s.isNotEmpty) return s;
+  }
+  return null;
+}
+
+void _collectEvidence(dynamic value, Set<String> out) {
+  if (value == null) return;
+
+  if (value is List) {
+    for (final item in value) {
+      _collectEvidence(item, out);
+    }
+    return;
+  }
+
+  if (value is Map) {
+    final direct = _urlFromEvidenceMap(value);
+    if (direct != null) {
+      _collectEvidence(direct, out);
+    }
+    if (value['urls'] is List) _collectEvidence(value['urls'], out);
+    if (value['evidencias'] is List) _collectEvidence(value['evidencias'], out);
+    return;
+  }
+
+  final s = _cleanEvidence(value.toString());
+  if (s.isEmpty) return;
+
+  if ((s.startsWith('{') && s.endsWith('}')) ||
+      (s.startsWith('[') && s.endsWith(']'))) {
+    try {
+      final decoded = jsonDecode(s);
+      _collectEvidence(decoded, out);
+      return;
+    } catch (_) {
+      // si no es JSON valido, seguimos con parseo de string plano
+    }
+  }
+
+  final hits = _httpUrlRx.allMatches(s).map((m) => s.substring(m.start, m.end));
+  if (hits.isNotEmpty) {
+    for (final h in hits) {
+      final u = _cleanEvidence(h);
+      if (u.isNotEmpty) out.add(u);
+    }
+    return;
+  }
+
+  // algunos backends devuelven solo el ID de Drive.
+  if (RegExp(r'^[a-zA-Z0-9_-]{20,}$').hasMatch(s)) {
+    out.add(s);
+  }
+}
+
+List<String> _toEvidenceUrls(dynamic raw) {
+  final out = <String>{};
+  _collectEvidence(raw, out);
+  return out.toList();
+}
+
 class ReporteKpis {
   final bool ok;
   final int total;
@@ -355,11 +447,6 @@ class PdfDatasetRow {
   });
 
   factory PdfDatasetRow.fromJson(Map<String, dynamic> json) {
-    List<String> toStrList(dynamic v) {
-      if (v is List) return v.map((e) => e.toString()).toList();
-      return <String>[];
-    }
-
     List<RecursoUsoRow> mapRecursos(dynamic v, {required String idKey}) {
       if (v is! List) return <RecursoUsoRow>[];
       return v
@@ -397,7 +484,9 @@ class PdfDatasetRow {
           json['elementoNombre']?.toString() ?? elem?['nombre']?.toString(),
 
       supervisor: json['supervisor']?.toString(),
-      operarios: toStrList(json['operarios']),
+      operarios: (json['operarios'] is List)
+          ? (json['operarios'] as List).map((e) => e.toString()).toList()
+          : <String>[],
 
       conjuntoId: json['conjuntoId']?.toString() ?? conjunto?['id']?.toString(),
       conjuntoNombre: conjunto?['nombre']?.toString(),
@@ -406,7 +495,7 @@ class PdfDatasetRow {
       observaciones: json['observaciones']?.toString(),
       observacionesRechazo: json['observacionesRechazo']?.toString(),
 
-      evidencias: toStrList(json['evidencias']),
+      evidencias: _toEvidenceUrls(json['evidencias']),
 
       insumos: mapRecursos(json['insumos'], idKey: 'insumoId'),
       maquinaria: mapRecursos(json['maquinaria'], idKey: 'maquinariaId'),
@@ -510,8 +599,6 @@ class TareaDetalleRow {
                   .map((e) => (e as Map).cast<String, dynamic>())
                   .toList()
             : <Map<String, dynamic>>[],
-        evidencias: (json['evidencias'] is List)
-            ? (json['evidencias'] as List).map((e) => e.toString()).toList()
-            : <String>[],
+        evidencias: _toEvidenceUrls(json['evidencias']),
       );
 }
