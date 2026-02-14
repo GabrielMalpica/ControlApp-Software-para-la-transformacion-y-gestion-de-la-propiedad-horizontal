@@ -51,6 +51,16 @@ const RangoConOperarioOpcionalDTO = RangoBaseDTO.merge(
   message: "hasta debe ser >= desde",
 });
 
+const ZonificacionPreventivasDTO = RangoBaseDTO.merge(
+  z.object({
+    conjuntoId: z.string().min(1).optional(),
+    soloActivas: z.boolean().optional(),
+  }),
+).refine((d) => d.hasta >= d.desde, {
+  path: ["hasta"],
+  message: "hasta debe ser >= desde",
+});
+
 /** ======================
  * Tipos de salida
  * ====================== */
@@ -86,6 +96,172 @@ function buildDayRange(desde: Date, hasta: Date) {
     cur = addDays(cur, 1);
   }
   return out;
+}
+
+type PlanInsumoItem = {
+  insumoId: number;
+  consumoPorUnidad: number;
+};
+
+type InsumoAgg = {
+  insumoId: number;
+  nombre: string;
+  unidad: string;
+  consumoEstimado: number;
+  usos: number;
+  consumoPorUnidadAcumulado: number;
+  consumoPorUnidadMuestras: number;
+  rendimientoAcumulado: number;
+  rendimientoMuestras: number;
+};
+
+type UbicacionAgg = {
+  ubicacionId: number;
+  ubicacionNombre: string;
+  unidadCalculo: string | null;
+  preventivas: number;
+  areaTotal: number;
+  insumos: Map<string, InsumoAgg>;
+};
+
+type ConjuntoAgg = {
+  conjuntoId: string;
+  conjuntoNombre: string;
+  preventivas: number;
+  areaTotal: number;
+  ubicaciones: Map<number, UbicacionAgg>;
+  insumos: Map<string, InsumoAgg>;
+};
+
+function toNumberSafe(v: unknown): number {
+  if (v == null) return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  const parsed = Number(String(v).replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toStringSafe(v: unknown, fallback = ""): string {
+  const s = String(v ?? "").trim();
+  return s.length > 0 ? s : fallback;
+}
+
+function parsePlanInsumos(raw: unknown): PlanInsumoItem[] {
+  let source: unknown = raw;
+  if (typeof source === "string") {
+    try {
+      source = JSON.parse(source);
+    } catch {
+      source = [];
+    }
+  }
+  if (!Array.isArray(source)) return [];
+
+  const out: PlanInsumoItem[] = [];
+  for (const item of source) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    const insumoId = Math.trunc(
+      toNumberSafe(obj.insumoId ?? obj.id ?? obj.insumo_id),
+    );
+    const consumoPorUnidad = toNumberSafe(
+      obj.consumoPorUnidad ??
+        obj.consumo ??
+        obj.cantidadPorUnidad ??
+        obj.cantidad,
+    );
+    if (insumoId > 0 && consumoPorUnidad > 0) {
+      out.push({ insumoId, consumoPorUnidad });
+    }
+  }
+  return out;
+}
+
+function calcConsumoEstimado(
+  areaNumerica: number,
+  consumoPorUnidad: number,
+): number {
+  if (consumoPorUnidad <= 0) return 0;
+  if (areaNumerica > 0) return areaNumerica * consumoPorUnidad;
+  return consumoPorUnidad;
+}
+
+function calcRendimientoInsumo(
+  areaNumerica: number,
+  consumoEstimado: number,
+): number | null {
+  if (areaNumerica <= 0 || consumoEstimado <= 0) return null;
+  return areaNumerica / consumoEstimado;
+}
+
+function makeInsumoKey(insumoId: number, nombre: string, unidad: string): string {
+  return insumoId > 0
+    ? `id:${insumoId}`
+    : `${nombre.toUpperCase()}|${unidad.toUpperCase()}`;
+}
+
+function pushInsumoAgg(
+  bucket: Map<string, InsumoAgg>,
+  params: {
+    key: string;
+    insumoId: number;
+    nombre: string;
+    unidad: string;
+    consumoEstimado: number;
+    consumoPorUnidad: number;
+    rendimiento: number | null;
+  },
+) {
+  const current = bucket.get(params.key) ?? {
+    insumoId: params.insumoId,
+    nombre: params.nombre,
+    unidad: params.unidad,
+    consumoEstimado: 0,
+    usos: 0,
+    consumoPorUnidadAcumulado: 0,
+    consumoPorUnidadMuestras: 0,
+    rendimientoAcumulado: 0,
+    rendimientoMuestras: 0,
+  };
+
+  current.consumoEstimado += params.consumoEstimado;
+  current.usos += 1;
+
+  if (params.consumoPorUnidad > 0) {
+    current.consumoPorUnidadAcumulado += params.consumoPorUnidad;
+    current.consumoPorUnidadMuestras += 1;
+  }
+  if (params.rendimiento != null && params.rendimiento > 0) {
+    current.rendimientoAcumulado += params.rendimiento;
+    current.rendimientoMuestras += 1;
+  }
+
+  bucket.set(params.key, current);
+}
+
+function toOutInsumoRow(i: InsumoAgg) {
+  const consumoPorUnidadPromedio =
+    i.consumoPorUnidadMuestras > 0
+      ? i.consumoPorUnidadAcumulado / i.consumoPorUnidadMuestras
+      : 0;
+  const rendimientoPromedio =
+    i.rendimientoMuestras > 0
+      ? i.rendimientoAcumulado / i.rendimientoMuestras
+      : null;
+
+  return {
+    insumoId: i.insumoId,
+    nombre: i.nombre,
+    unidad: i.unidad,
+    consumoEstimado: Number(i.consumoEstimado.toFixed(4)),
+    usos: i.usos,
+    consumoPorUnidadPromedio: Number(consumoPorUnidadPromedio.toFixed(6)),
+    rendimientoPromedio:
+      rendimientoPromedio == null
+        ? null
+        : Number(rendimientoPromedio.toFixed(6)),
+    formulaConsumoEstimado: "areaNumerica * consumoPorUnidad",
+    formulaRendimiento: "areaNumerica / consumoEstimado",
+  };
 }
 
 export class ReporteService {
@@ -743,6 +919,218 @@ export class ReporteService {
           .filter(([k]) => k !== "PREVENTIVA" && k !== "CORRECTIVA")
           .reduce((a, [, v]) => a + v, 0),
       },
+    };
+  }
+
+  // 11) ZonificaciÃ³n de preventivas por conjunto/ubicaciÃ³n (Ã¡rea + rendimiento estimado)
+  async zonificacionPreventivas(payload: unknown) {
+    const {
+      desde,
+      hasta,
+      conjuntoId,
+      soloActivas: soloActivasRaw,
+    } = ZonificacionPreventivasDTO.parse(payload);
+    const soloActivas = soloActivasRaw ?? true;
+
+    const defs = await this.prisma.definicionTareaPreventiva.findMany({
+      where: {
+        ...(conjuntoId ? { conjuntoId } : {}),
+        ...(soloActivas ? { activo: true } : {}),
+        creadoEn: { gte: desde, lte: hasta },
+      },
+      select: {
+        id: true,
+        conjuntoId: true,
+        areaNumerica: true,
+        unidadCalculo: true,
+        ubicacionId: true,
+        insumoPrincipalId: true,
+        consumoPrincipalPorUnidad: true,
+        insumosPlanJson: true,
+        conjunto: { select: { nit: true, nombre: true } },
+        ubicacion: { select: { id: true, nombre: true } },
+      },
+      orderBy: [{ conjuntoId: "asc" }, { ubicacionId: "asc" }, { id: "asc" }],
+    });
+
+    const insumoIds = new Set<number>();
+    for (const d of defs) {
+      if (d.insumoPrincipalId != null && d.insumoPrincipalId > 0) {
+        insumoIds.add(d.insumoPrincipalId);
+      }
+      for (const p of parsePlanInsumos(d.insumosPlanJson)) {
+        if (p.insumoId > 0) insumoIds.add(p.insumoId);
+      }
+    }
+
+    const insumoRows =
+      insumoIds.size > 0
+        ? await this.prisma.insumo.findMany({
+            where: { id: { in: Array.from(insumoIds) } },
+            select: { id: true, nombre: true, unidad: true },
+          })
+        : [];
+    const insumoInfo = new Map(
+      insumoRows.map((i) => [i.id, { nombre: i.nombre, unidad: i.unidad }]),
+    );
+
+    const conjuntos = new Map<string, ConjuntoAgg>();
+    const topGlobal = new Map<string, InsumoAgg>();
+
+    let totalPreventivas = 0;
+    let totalArea = 0;
+
+    for (const d of defs) {
+      const cId = d.conjuntoId;
+      const cNombre = d.conjunto?.nombre?.trim() || cId;
+      const uId = d.ubicacionId;
+      const uNombre = d.ubicacion?.nombre?.trim() || `Ubicacion ${uId}`;
+      const unidadCalculo = d.unidadCalculo?.toString() ?? null;
+      const area = Math.max(0, toNumberSafe(d.areaNumerica));
+
+      const conjAgg = conjuntos.get(cId) ?? {
+        conjuntoId: cId,
+        conjuntoNombre: cNombre,
+        preventivas: 0,
+        areaTotal: 0,
+        ubicaciones: new Map<number, UbicacionAgg>(),
+        insumos: new Map<string, InsumoAgg>(),
+      };
+      conjAgg.preventivas += 1;
+      conjAgg.areaTotal += area;
+
+      const ubicAgg = conjAgg.ubicaciones.get(uId) ?? {
+        ubicacionId: uId,
+        ubicacionNombre: uNombre,
+        unidadCalculo,
+        preventivas: 0,
+        areaTotal: 0,
+        insumos: new Map<string, InsumoAgg>(),
+      };
+
+      if (unidadCalculo && !ubicAgg.unidadCalculo) {
+        ubicAgg.unidadCalculo = unidadCalculo;
+      } else if (
+        unidadCalculo &&
+        ubicAgg.unidadCalculo &&
+        ubicAgg.unidadCalculo !== unidadCalculo
+      ) {
+        ubicAgg.unidadCalculo = "MIXTA";
+      }
+
+      ubicAgg.preventivas += 1;
+      ubicAgg.areaTotal += area;
+      conjAgg.ubicaciones.set(uId, ubicAgg);
+      conjuntos.set(cId, conjAgg);
+
+      totalPreventivas += 1;
+      totalArea += area;
+
+      const planInsumos = parsePlanInsumos(d.insumosPlanJson);
+      const insumosDef: PlanInsumoItem[] = [...planInsumos];
+
+      const consumoPrincipalPorUnidad = toNumberSafe(d.consumoPrincipalPorUnidad);
+      if (d.insumoPrincipalId != null && d.insumoPrincipalId > 0) {
+        if (consumoPrincipalPorUnidad > 0) {
+          insumosDef.push({
+            insumoId: d.insumoPrincipalId,
+            consumoPorUnidad: consumoPrincipalPorUnidad,
+          });
+        }
+      }
+
+      for (const it of insumosDef) {
+        const info = insumoInfo.get(it.insumoId);
+        const nombre = toStringSafe(info?.nombre, `Insumo ${it.insumoId}`);
+        const unidad = toStringSafe(info?.unidad, "UND");
+        const consumoEstimado = calcConsumoEstimado(area, it.consumoPorUnidad);
+        const rendimiento = calcRendimientoInsumo(area, consumoEstimado);
+        const key = makeInsumoKey(it.insumoId, nombre, unidad);
+
+        pushInsumoAgg(ubicAgg.insumos, {
+          key,
+          insumoId: it.insumoId,
+          nombre,
+          unidad,
+          consumoEstimado,
+          consumoPorUnidad: it.consumoPorUnidad,
+          rendimiento,
+        });
+        pushInsumoAgg(conjAgg.insumos, {
+          key,
+          insumoId: it.insumoId,
+          nombre,
+          unidad,
+          consumoEstimado,
+          consumoPorUnidad: it.consumoPorUnidad,
+          rendimiento,
+        });
+        pushInsumoAgg(topGlobal, {
+          key,
+          insumoId: it.insumoId,
+          nombre,
+          unidad,
+          consumoEstimado,
+          consumoPorUnidad: it.consumoPorUnidad,
+          rendimiento,
+        });
+      }
+    }
+
+    const data = Array.from(conjuntos.values())
+      .map((c) => {
+        const ubicaciones = Array.from(c.ubicaciones.values())
+          .map((u) => {
+            const topInsumos = Array.from(u.insumos.values())
+              .sort((a, b) => b.consumoEstimado - a.consumoEstimado)
+              .map(toOutInsumoRow);
+
+            return {
+              ubicacionId: u.ubicacionId,
+              ubicacionNombre: u.ubicacionNombre,
+              unidadCalculo: u.unidadCalculo,
+              preventivas: u.preventivas,
+              areaTotal: Number(u.areaTotal.toFixed(4)),
+              topInsumos: topInsumos.slice(0, 5),
+            };
+          })
+          .sort((a, b) => b.areaTotal - a.areaTotal);
+
+        const topInsumosConjunto = Array.from(c.insumos.values())
+          .sort((a, b) => b.consumoEstimado - a.consumoEstimado)
+          .map(toOutInsumoRow)
+          .slice(0, 10);
+
+        return {
+          conjuntoId: c.conjuntoId,
+          conjuntoNombre: c.conjuntoNombre,
+          preventivas: c.preventivas,
+          ubicaciones: ubicaciones.length,
+          areaTotal: Number(c.areaTotal.toFixed(4)),
+          ubicacionesDetalle: ubicaciones,
+          topInsumos: topInsumosConjunto,
+        };
+      })
+      .sort((a, b) => b.areaTotal - a.areaTotal);
+
+    const topInsumosGlobal = Array.from(topGlobal.values())
+      .sort((a, b) => b.consumoEstimado - a.consumoEstimado)
+      .map(toOutInsumoRow)
+      .slice(0, 15);
+
+    const totalUbicaciones = data.reduce((acc, c) => acc + c.ubicaciones, 0);
+
+    return {
+      ok: true,
+      resumen: {
+        conjuntos: data.length,
+        ubicaciones: totalUbicaciones,
+        preventivas: totalPreventivas,
+        areaTotal: Number(totalArea.toFixed(4)),
+        soloActivas,
+      },
+      topInsumosGlobal,
+      data,
     };
   }
 }
