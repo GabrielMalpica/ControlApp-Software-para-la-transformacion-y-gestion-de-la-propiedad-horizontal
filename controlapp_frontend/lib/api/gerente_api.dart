@@ -231,6 +231,7 @@ class GerenteApi {
     String? administradorId,
     List<String>? operariosIds,
     List<Map<String, dynamic>>? ubicaciones,
+    List<Map<String, String>>? horarios,
   }) async {
     final Map<String, dynamic> body = {};
     if (nombre != null) body['nombre'] = nombre;
@@ -247,6 +248,7 @@ class GerenteApi {
     if (administradorId != null) body['administradorId'] = administradorId;
     if (operariosIds != null) body['operariosIds'] = operariosIds;
     if (ubicaciones != null) body['ubicaciones'] = ubicaciones;
+    if (horarios != null) body['horarios'] = horarios;
 
     final resp = await _apiClient.patch(
       '${AppConstants.conjuntosGerente}/$conjuntoNit',
