@@ -6,8 +6,6 @@ import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:http/http.dart' as http;
 
-import 'package:flutter_application_1/model/tarea_model.dart';
-
 class OperarioApi {
   final SessionService _session = SessionService();
 
@@ -21,27 +19,6 @@ class OperarioApi {
       'x-empresa-id': AppConstants.empresaNit,
       'Accept': 'application/json',
     };
-  }
-
-  Future<List<TareaModel>> listarTareasOperario({required int operarioId}) async {
-    final uri = Uri.parse(
-      '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas',
-    );
-
-    final resp = await http.get(uri, headers: await _authHeaders());
-
-    if (resp.statusCode != 200) {
-      throw Exception(
-        'Error al listar tareas del operario: ${resp.statusCode} - ${resp.body}',
-      );
-    }
-
-    final decoded = jsonDecode(resp.body);
-    if (decoded is! List) return [];
-
-    return decoded
-        .map((e) => TareaModel.fromJson((e as Map).cast<String, dynamic>()))
-        .toList();
   }
 
   Future<void> cerrarTareaConEvidencias({

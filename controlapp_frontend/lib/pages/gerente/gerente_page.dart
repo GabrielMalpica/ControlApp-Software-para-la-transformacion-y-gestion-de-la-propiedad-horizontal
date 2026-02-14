@@ -15,6 +15,7 @@ import 'package:flutter_application_1/pages/gerente/lista_insumos_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/reportes_general_dashboard_page.dart';
 import 'package:flutter_application_1/pages/gerente/usuarios_conjunto_page.dart';
+import 'package:flutter_application_1/pages/gerente/zonificacion_page.dart';
 import 'package:flutter_application_1/pages/lista_herramientas_page.dart';
 import 'package:flutter_application_1/pages/preventivas_page.dart';
 import 'package:flutter_application_1/pages/tareas_page.dart';
@@ -656,6 +657,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           );
         },
       ),
+      _Tile("Zonificacion", Icons.map_outlined, Colors.teal, () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ZonificacionPage()),
+        );
+      }),
       _Tile(
         "Definir tarea preventiva",
         Icons.build_circle_outlined,

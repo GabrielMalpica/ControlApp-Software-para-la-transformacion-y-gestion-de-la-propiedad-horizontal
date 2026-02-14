@@ -1,9 +1,11 @@
 // agenda_maquinaria_page.dart (SIN GRUPOS + más linda)
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/agenda_api.dart';
-import 'package:flutter_application_1/api/empresa_api.dart';
+import 'package:flutter_application_1/api/conjunto_api.dart';
+import 'package:flutter_application_1/model/agenda_model.dart';
 import 'package:flutter_application_1/model/agenda_maquinaria_model.dart';
 import 'package:flutter_application_1/model/maquinaria_model.dart';
+import 'package:flutter_application_1/service/app_constants.dart';
 
 class AgendaMaquinariaPage extends StatefulWidget {
   final String conjuntoId; // NIT del conjunto
@@ -14,7 +16,7 @@ class AgendaMaquinariaPage extends StatefulWidget {
 }
 
 class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
-  final _empresaApi = EmpresaApi();
+  final _conjuntoApi = ConjuntoApi();
   final _agendaApi = AgendaApi();
 
   late Future<List<MaquinariaResponse>> _fMaquinas;
@@ -32,7 +34,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
   @override
   void initState() {
     super.initState();
-    _fMaquinas = _empresaApi.listarMaquinaria();
+    _fMaquinas = _cargarCatalogoAgendaConjunto();
   }
 
   DateTime get _desdeMes => DateTime(_month.year, _month.month, 1);
@@ -41,11 +43,72 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
   Future<void> _changeMonth(int delta) async {
     setState(() {
       _month = DateTime(_month.year, _month.month + delta, 1);
+      _fMaquinas = _cargarCatalogoAgendaConjunto();
     });
 
     if (_seleccionada != null) {
       await _cargarAgendaMaquinaSeleccionada();
     }
+  }
+
+  bool _esPropiaDelConjunto(MaquinariaResponse m) {
+    return m.propietarioTipo == PropietarioMaquinaria.CONJUNTO &&
+        (m.conjuntoPropietarioId?.trim() ?? '') == widget.conjuntoId.trim();
+  }
+
+  bool _bloqueTieneAgendaDelConjunto(AgendaMaquinaBlock block) {
+    for (final grupos in block.semanas.values) {
+      for (final items in grupos.values) {
+        for (final item in items) {
+          if ((item.conjuntoId?.trim() ?? '') == widget.conjuntoId.trim()) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  Future<List<MaquinariaResponse>> _cargarCatalogoAgendaConjunto() async {
+    final results = await Future.wait([
+      _conjuntoApi.listarMaquinariaConjunto(widget.conjuntoId),
+      _agendaApi.agendaGlobalMaquinaria(
+        empresaNit: AppConstants.empresaNit,
+        anio: _month.year,
+        mes: _month.month,
+      ),
+    ]);
+
+    final maquinariaConjunto = results[0] as List<MaquinariaResponse>;
+    final agendaGlobal = results[1] as AgendaGlobalResponse;
+
+    final idsConAgenda = agendaGlobal.data
+        .where(_bloqueTieneAgendaDelConjunto)
+        .map((b) => b.maquinaria.id)
+        .toSet();
+
+    final byId = <int, MaquinariaResponse>{};
+
+    for (final m in maquinariaConjunto) {
+      if (_esPropiaDelConjunto(m)) {
+        byId[m.id] = m;
+      }
+    }
+
+    for (final b in agendaGlobal.data) {
+      if (!idsConAgenda.contains(b.maquinaria.id)) continue;
+      byId.putIfAbsent(b.maquinaria.id, () => b.maquinaria);
+    }
+
+    final salida = byId.values.toList()
+      ..sort((a, b) {
+        final rankA = _esPropiaDelConjunto(a) ? 0 : 1;
+        final rankB = _esPropiaDelConjunto(b) ? 0 : 1;
+        if (rankA != rankB) return rankA.compareTo(rankB);
+        return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+      });
+
+    return salida;
   }
 
   Future<void> _cargarAgendaMaquinaSeleccionada() async {
@@ -103,33 +166,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
     return list;
   }
 
-  // Días logísticos: Lunes, Miércoles, Sábado
-  bool _isDiaLogistico(DateTime d) {
-    final wd = d.weekday; // 1=Lun ... 7=Dom
-    return wd == DateTime.monday ||
-        wd == DateTime.wednesday ||
-        wd == DateTime.saturday;
-  }
-
   DateTime _dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
-
-  DateTime _prevDiaLogistico(DateTime base) {
-    // último día logístico ANTES de base
-    var d = _dayOnly(base).subtract(const Duration(days: 1));
-    while (!_isDiaLogistico(d)) {
-      d = d.subtract(const Duration(days: 1));
-    }
-    return d;
-  }
-
-  DateTime _nextDiaLogistico(DateTime base) {
-    // primer día logístico DESPUÉS de base
-    var d = _dayOnly(base).add(const Duration(days: 1));
-    while (!_isDiaLogistico(d)) {
-      d = d.add(const Duration(days: 1));
-    }
-    return d;
-  }
 
   // ✅ lógica E/P/R basada en la fecha real de la TAREA
   String _codeForDate(DateTime date, ReservaMaquinaria r) {
@@ -197,6 +234,9 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
             tooltip: 'Recargar',
             icon: const Icon(Icons.refresh),
             onPressed: () async {
+              setState(() {
+                _fMaquinas = _cargarCatalogoAgendaConjunto();
+              });
               if (_seleccionada != null) {
                 await _cargarAgendaMaquinaSeleccionada();
               }
@@ -216,6 +256,20 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
           }
 
           final maquinas = snap.data ?? const <MaquinariaResponse>[];
+          final selectedVisible = _seleccionada == null
+              ? true
+              : maquinas.any((m) => m.id == _seleccionada!.id);
+
+          if (!selectedVisible) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              setState(() {
+                _seleccionada = null;
+                _agendaSeleccionada = null;
+                _errorAgenda = null;
+              });
+            });
+          }
 
           return Row(
             children: [
@@ -242,7 +296,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Empresa + Conjuntos',
+                          'Propias del conjunto + con agenda del conjunto',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.black54,
@@ -267,11 +321,13 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                           itemBuilder: (context, i) {
                             final m = maquinas[i];
                             final selected = _seleccionada?.id == m.id;
+                            final esPropia = _esPropiaDelConjunto(m);
 
                             final subtitle =
                                 [
                                       m.marca,
                                       m.tipo.label,
+                                      esPropia ? 'Propia' : 'Con agenda',
                                       if (m.propietarioTipo != null)
                                         m.propietarioTipo!.label,
                                       if (m.conjuntoPropietarioId != null)
@@ -669,7 +725,6 @@ class _PlanillaProgramacion extends StatelessWidget {
       // Prioridad: E > P > R
       var hasA = false;
       var hasP = false;
-      var hasR = false;
 
       for (final r in matches) {
         final code = codeForDate(date, r);
@@ -681,7 +736,6 @@ class _PlanillaProgramacion extends StatelessWidget {
 
       if (hasA) return 'A';
       if (hasP) return 'P';
-      if (hasR) return 'R';
       return '';
     }
 

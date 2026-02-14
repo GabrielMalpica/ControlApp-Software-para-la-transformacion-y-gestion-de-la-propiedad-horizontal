@@ -28,6 +28,8 @@ class _TareasPageState extends State<TareasPage> {
   bool _cargando = true;
   String? _error;
   List<TareaModel> _tareas = [];
+  String? _rol;
+  int? _operarioId;
 
   String? _rol;
   int? _operarioId;
@@ -38,26 +40,19 @@ class _TareasPageState extends State<TareasPage> {
   @override
   void initState() {
     super.initState();
-    _init();
-  }
-
-  Future<void> _init() async {
-    await _cargarSesion();
-    await _cargarTareas();
+    _cargarSesion();
+    _cargarTareas();
   }
 
   Future<void> _cargarSesion() async {
     final rol = await _session.getRol();
     final userId = await _session.getUserId();
-
     if (!mounted) return;
     setState(() {
       _rol = rol;
       _operarioId = int.tryParse(userId ?? '');
     });
   }
-
-  bool _esOperario() => (_rol ?? '').toLowerCase() == 'operario';
 
   Future<void> _cargarTareas() async {
     setState(() {
@@ -226,10 +221,64 @@ class _TareasPageState extends State<TareasPage> {
     return {for (final e in sorted) e.key: e.value};
   }
 
+  bool _esOperario() => (_rol ?? '').toLowerCase() == 'operario';
+
   bool _puedeCerrar(TareaModel t) {
     final e = (t.estado ?? '').toUpperCase();
     return e == 'ASIGNADA' || e == 'EN_PROCESO' || e == 'COMPLETADA';
   }
+
+  Future<void> _cerrarComoOperario(TareaModel t) async {
+    if (_operarioId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo resolver el operario de sesión.')),
+      );
+      return;
+    }
+
+    List<InventarioItemResponse> inventarioRaw = [];
+    try {
+      inventarioRaw = await _inventarioApi.listarInventarioConjunto(widget.nit);
+    } catch (_) {}
+
+    final result = await showModalBottomSheet<CerrarTareaResult>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => CerrarTareaSheet(
+        tarea: t,
+        inventario: inventarioRaw,
+      ),
+    );
+
+    if (result == null) return;
+
+    try {
+      await _operarioApi.cerrarTareaConEvidencias(
+        operarioId: _operarioId!,
+        tareaId: t.id,
+        observaciones: result.observaciones,
+        insumosUsados: result.insumosUsados,
+        evidenciaPaths: const [],
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Tarea cerrada por operario. Quedó PENDIENTE_APROBACION.'),
+        ),
+      );
+      await _cargarTareas();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Error cerrando tarea: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = AppTheme.primary;
 
   Future<void> _cerrarComoOperario(TareaModel t) async {
     if (_operarioId == null) {
@@ -478,9 +527,105 @@ class _TareasPageState extends State<TareasPage> {
 
     return RefreshIndicator(
       onRefresh: _cargarTareas,
-      child: _esOperario() ? _listaOperario() : _listaGeneral(),
-    );
-  }
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: _tareas.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (context, index) {
+          final tarea = _tareas[index];
+          final colorEstado = _colorPorEstado(tarea.estado);
+          final labelEstado = _labelEstado(tarea.estado);
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 4),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: 3,
+            child: ListTile(
+              contentPadding: const EdgeInsets.all(16),
+              leading: CircleAvatar(
+                radius: 22,
+                backgroundColor: colorEstado.withOpacity(0.15),
+                child: Icon(Icons.assignment, color: colorEstado, size: 24),
+              ),
+              title: Text(
+                tarea.descripcion,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "📅 ${_formatearFecha(tarea.fechaInicio)}"
+                      " → ${_formatearFecha(tarea.fechaFin)}  "
+                      "• ⏱ ${tarea.duracionMinutos} h",
+                    ),
+                    const SizedBox(height: 4),
+                    Text("👷 Operarios: ${_resumenOperarios(tarea)}"),
+                    if (tarea.supervisorNombre != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          "🧑‍💼 Supervisor: ${tarea.supervisorNombre}",
+                        ),
+                      ),
+                    if (tarea.observaciones != null &&
+                        tarea.observaciones!.trim().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          "📝 ${tarea.observaciones}",
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(Icons.circle, size: 10, color: colorEstado),
+                        const SizedBox(width: 6),
+                        Text(
+                          labelEstado,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: colorEstado,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              trailing: _esOperario()
+                  ? (_puedeCerrar(tarea)
+                        ? IconButton(
+                            icon: const Icon(Icons.task_alt, color: Colors.green),
+                            tooltip: 'Cerrar tarea',
+                            onPressed: () => _cerrarComoOperario(tarea),
+                          )
+                        : null)
+                  : IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      tooltip: 'Eliminar tarea',
+                      onPressed: () => _eliminarTarea(tarea),
+                    ),
+              // Tap para editar
+              onTap: () async {
+                final actualizado = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        EditarTareaPage(nit: widget.nit, tarea: tarea),
+                  ),
+                );
 
   @override
   Widget build(BuildContext context) {
