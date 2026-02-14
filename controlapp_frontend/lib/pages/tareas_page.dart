@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/inventario_api.dart';
+import 'package:flutter_application_1/api/operario_api.dart';
 
 import '../api/tarea_api.dart';
+import '../model/inventario_item_model.dart';
 import '../model/tarea_model.dart';
+import '../service/session_service.dart';
 import '../service/theme.dart';
+import '../widgets/cerrar_tarea_sheet.dart';
 import 'editar_tarea_page.dart';
 
 class TareasPage extends StatefulWidget {
@@ -16,15 +21,31 @@ class TareasPage extends StatefulWidget {
 
 class _TareasPageState extends State<TareasPage> {
   final TareaApi _tareaApi = TareaApi();
+  final OperarioApi _operarioApi = OperarioApi();
+  final InventarioApi _inventarioApi = InventarioApi();
+  final SessionService _session = SessionService();
 
   bool _cargando = true;
   String? _error;
   List<TareaModel> _tareas = [];
+  String? _rol;
+  int? _operarioId;
 
   @override
   void initState() {
     super.initState();
+    _cargarSesion();
     _cargarTareas();
+  }
+
+  Future<void> _cargarSesion() async {
+    final rol = await _session.getRol();
+    final userId = await _session.getUserId();
+    if (!mounted) return;
+    setState(() {
+      _rol = rol;
+      _operarioId = int.tryParse(userId ?? '');
+    });
   }
 
   Future<void> _cargarTareas() async {
@@ -148,6 +169,61 @@ class _TareasPageState extends State<TareasPage> {
       return '${t.operariosIds!.length} operarios';
     }
     return 'Sin operarios asignados';
+  }
+
+  bool _esOperario() => (_rol ?? '').toLowerCase() == 'operario';
+
+  bool _puedeCerrar(TareaModel t) {
+    final e = (t.estado ?? '').toUpperCase();
+    return e == 'ASIGNADA' || e == 'EN_PROCESO' || e == 'COMPLETADA';
+  }
+
+  Future<void> _cerrarComoOperario(TareaModel t) async {
+    if (_operarioId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo resolver el operario de sesión.')),
+      );
+      return;
+    }
+
+    List<InventarioItemResponse> inventarioRaw = [];
+    try {
+      inventarioRaw = await _inventarioApi.listarInventarioConjunto(widget.nit);
+    } catch (_) {}
+
+    final result = await showModalBottomSheet<CerrarTareaResult>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => CerrarTareaSheet(
+        tarea: t,
+        inventario: inventarioRaw,
+      ),
+    );
+
+    if (result == null) return;
+
+    try {
+      await _operarioApi.cerrarTareaConEvidencias(
+        operarioId: _operarioId!,
+        tareaId: t.id,
+        observaciones: result.observaciones,
+        insumosUsados: result.insumosUsados,
+        evidenciaPaths: const [],
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Tarea cerrada por operario. Quedó PENDIENTE_APROBACION.'),
+        ),
+      );
+      await _cargarTareas();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Error cerrando tarea: $e')),
+      );
+    }
   }
 
   @override
@@ -289,12 +365,19 @@ class _TareasPageState extends State<TareasPage> {
                   ],
                 ),
               ),
-              // 👉 Botón de borrar a la derecha
-              trailing: IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red),
-                tooltip: 'Eliminar tarea',
-                onPressed: () => _eliminarTarea(tarea),
-              ),
+              trailing: _esOperario()
+                  ? (_puedeCerrar(tarea)
+                        ? IconButton(
+                            icon: const Icon(Icons.task_alt, color: Colors.green),
+                            tooltip: 'Cerrar tarea',
+                            onPressed: () => _cerrarComoOperario(tarea),
+                          )
+                        : null)
+                  : IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      tooltip: 'Eliminar tarea',
+                      onPressed: () => _eliminarTarea(tarea),
+                    ),
               // Tap para editar
               onTap: () async {
                 final actualizado = await Navigator.push<bool>(
