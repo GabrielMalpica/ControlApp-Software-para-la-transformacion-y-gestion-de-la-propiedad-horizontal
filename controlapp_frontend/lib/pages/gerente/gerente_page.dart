@@ -597,6 +597,17 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           MaterialPageRoute(builder: (_) => TareasPage(nit: nit)),
         );
       }),
+      _Tile(
+        "Crear tarea correctiva",
+        Icons.add_task,
+        Colors.teal,
+        () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => CrearTareaPage(nit: nit)),
+          );
+        },
+      ),
       _Tile("Solicitudes", Icons.pending_actions, AppTheme.green, () {
         Navigator.push(
           context,
