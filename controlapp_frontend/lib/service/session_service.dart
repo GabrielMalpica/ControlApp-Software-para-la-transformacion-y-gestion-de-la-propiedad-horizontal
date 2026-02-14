@@ -76,6 +76,19 @@ class SessionService {
     return _memUserId;
   }
 
+  Future<String?> getRol() async {
+    if (_memRol != null && _memRol!.isNotEmpty) return _memRol;
+
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      _memRol = prefs.getString(_kRol);
+      return _memRol;
+    }
+
+    _memRol = await _secure.read(key: _kRol);
+    return _memRol;
+  }
+
   Future<void> clear() async {
     _memToken = null;
     _memRol = null;
