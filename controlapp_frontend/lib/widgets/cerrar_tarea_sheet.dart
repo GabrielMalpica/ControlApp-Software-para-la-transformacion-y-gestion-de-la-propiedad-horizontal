@@ -22,6 +22,7 @@ class CerrarTareaResult {
   });
 }
 
+
 class CerrarTareaSheet extends StatefulWidget {
   final TareaModel tarea;
 
@@ -43,6 +44,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
 
   /// filas para consumo
   final List<_ConsumoRow> _rows = [];
+  final List<EvidenciaAdjunto> _evidencias = [];
 
   /// ✅ evidencias unificadas (path o bytes)
   final List<EvidenciaAdjunto> _evidencias = [];

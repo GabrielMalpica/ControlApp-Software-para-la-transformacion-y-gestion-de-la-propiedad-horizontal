@@ -85,6 +85,13 @@ class _SupervisorPageState extends State<SupervisorPage> {
     return false;
   }
 
+  int _gridCountForWidth(double w) {
+    if (w >= 1100) return 4;
+    if (w >= 800) return 4;
+    if (w >= 520) return 3;
+    return 2;
+  }
+
   /// Tarjeta pequeña tipo gerente
   Widget _smallCard(
     String title,
@@ -239,8 +246,8 @@ class _SupervisorPageState extends State<SupervisorPage> {
           _buildSelectorConjuntoCard(conjunto),
           const SizedBox(height: 20),
           const Text(
-            "Panel del Supervisor",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            "Panel general",
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
           ),
           const SizedBox(height: 12),
 
@@ -380,4 +387,31 @@ class _SupervisorPageState extends State<SupervisorPage> {
       body: _buildBody(),
     );
   }
+}
+
+
+class _BubblePatternPainter extends CustomPainter {
+  final Color color;
+  _BubblePatternPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withOpacity(0.18)
+      ..style = PaintingStyle.fill;
+
+    const xs = [0.04, 0.10, 0.22, 0.34, 0.48, 0.62, 0.74, 0.86, 0.92];
+    const ys = [0.64, 0.32, 0.78, 0.40, 0.70, 0.36, 0.78, 0.52, 0.30];
+    const rs = [3.5, 4.6, 2.8, 5.0, 3.8, 4.2, 3.0, 4.8, 3.2];
+
+    for (var i = 0; i < xs.length; i++) {
+      final c = Offset(size.width * xs[i], size.height * ys[i]);
+      canvas.drawCircle(c, rs[i], paint);
+      canvas.drawCircle(c.translate(18, -4), rs[i] * 0.55, paint);
+      canvas.drawCircle(c.translate(-14, 6), rs[i] * 0.45, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

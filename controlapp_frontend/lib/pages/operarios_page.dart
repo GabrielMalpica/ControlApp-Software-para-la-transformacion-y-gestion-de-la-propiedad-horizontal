@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../service/theme.dart';
 import 'tareas_page.dart';
 import 'solicitudes_page.dart';
-import 'solicitud_insumo_page.dart';
 import 'package:flutter_application_1/service/logout.dart';
 
 class OperarioDashboardPage extends StatefulWidget {
@@ -14,6 +13,13 @@ class OperarioDashboardPage extends StatefulWidget {
 }
 
 class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
+  int _gridCountForWidth(double w) {
+    if (w >= 1100) return 4;
+    if (w >= 800) return 4;
+    if (w >= 520) return 3;
+    return 2;
+  }
+
   /// 🔹 Tarjeta simple
   Widget _simpleCard(
     String title,
@@ -96,17 +102,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
             "Atajos",
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
-          const SizedBox(height: 12),
-          // ElevatedButton.icon(
-          //   onPressed: () {
-          //     Navigator.push(context, MaterialPageRoute(
-          //       builder: (_) => SolicitudInsumoPage(nit: widget.nit),
-          //     ));
-          //   },
-          //   icon: const Icon(Icons.add_shopping_cart),
-          //   label: const Text("Solicitud Insumo"),
-          // ),
-        ],
+        ),
       ),
     );
   }
@@ -118,7 +114,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
         title: Text(
-          "Panel Operario - Proyecto ${widget.nit}",
+          "Panel del Operario",
           style: const TextStyle(color: Colors.white),
         ),
         actions: [
@@ -191,12 +187,36 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                 ),
               ],
             ),
-
-            const SizedBox(height: 20),
-            _atajos(),
           ],
         ),
       ),
     );
   }
+}
+
+
+class _BubblePatternPainter extends CustomPainter {
+  final Color color;
+  _BubblePatternPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withOpacity(0.18)
+      ..style = PaintingStyle.fill;
+
+    const xs = [0.04, 0.10, 0.22, 0.34, 0.48, 0.62, 0.74, 0.86, 0.92];
+    const ys = [0.64, 0.32, 0.78, 0.40, 0.70, 0.36, 0.78, 0.52, 0.30];
+    const rs = [3.5, 4.6, 2.8, 5.0, 3.8, 4.2, 3.0, 4.8, 3.2];
+
+    for (var i = 0; i < xs.length; i++) {
+      final c = Offset(size.width * xs[i], size.height * ys[i]);
+      canvas.drawCircle(c, rs[i], paint);
+      canvas.drawCircle(c.translate(18, -4), rs[i] * 0.55, paint);
+      canvas.drawCircle(c.translate(-14, 6), rs[i] * 0.45, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

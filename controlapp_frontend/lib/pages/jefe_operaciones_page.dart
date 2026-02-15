@@ -7,10 +7,8 @@ import 'package:flutter_application_1/service/app_constants.dart';
 import '../service/theme.dart';
 import 'maquinaria_page.dart';
 import 'inventario_page.dart';
-import 'crear_tarea_page.dart';
 import 'solicitudes_page.dart';
 import 'cronograma_page.dart';
-import 'crear_cronograma_page.dart';
 
 class JefeOperacionesPage extends StatefulWidget {
   const JefeOperacionesPage({super.key});
@@ -65,6 +63,13 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
   }
 
   /// 🔹 Tarjeta simple
+  int _gridCountForWidth(double w) {
+    if (w >= 1100) return 4;
+    if (w >= 800) return 4;
+    if (w >= 520) return 3;
+    return 2;
+  }
+
   Widget _simpleCard(
     String title,
     Color color,
@@ -151,35 +156,54 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
             spacing: 10,
             runSpacing: 10,
             children: [
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => CrearTareaPage(nit: nit)),
-                  );
-                },
-                icon: const Icon(Icons.assignment_add),
-                label: const Text("Crear Tarea"),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 78,
+                        height: 78,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: color.withOpacity(0.12),
+                        ),
+                        child: Icon(icon, size: 44, color: color),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CrearCronogramaPage(nit: nit),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.calendar_today),
-                label: const Text("Crear Cronograma"),
+              SizedBox(
+                height: 46,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Container(color: color.withOpacity(0.10)),
+                    CustomPaint(painter: _BubblePatternPainter(color)),
+                  ],
+                ),
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
 
+  /// 🔹 Atajos (usa el NIT seleccionado)
   Widget _buildBody() {
     if (_loading) return const Center(child: CircularProgressIndicator());
 
@@ -330,11 +354,10 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
                   );
                 },
               ),
-            ],
+                ],
+              );
+            },
           ),
-
-          const SizedBox(height: 20),
-          _atajos(nit),
         ],
       ),
     );
@@ -361,4 +384,31 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
       body: _buildBody(),
     );
   }
+}
+
+
+class _BubblePatternPainter extends CustomPainter {
+  final Color color;
+  _BubblePatternPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withOpacity(0.18)
+      ..style = PaintingStyle.fill;
+
+    const xs = [0.04, 0.10, 0.22, 0.34, 0.48, 0.62, 0.74, 0.86, 0.92];
+    const ys = [0.64, 0.32, 0.78, 0.40, 0.70, 0.36, 0.78, 0.52, 0.30];
+    const rs = [3.5, 4.6, 2.8, 5.0, 3.8, 4.2, 3.0, 4.8, 3.2];
+
+    for (var i = 0; i < xs.length; i++) {
+      final c = Offset(size.width * xs[i], size.height * ys[i]);
+      canvas.drawCircle(c, rs[i], paint);
+      canvas.drawCircle(c.translate(18, -4), rs[i] * 0.55, paint);
+      canvas.drawCircle(c.translate(-14, 6), rs[i] * 0.45, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
