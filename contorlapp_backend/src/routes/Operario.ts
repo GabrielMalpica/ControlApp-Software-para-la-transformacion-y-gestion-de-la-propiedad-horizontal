@@ -1,6 +1,7 @@
 // src/routes/operarios.ts
 import { Router } from "express";
 import { OperarioController } from "../controller/OperarioController";
+import { uploadEvidencias } from "../middlewares/upload_evidencias";
 
 const router = Router();
 const controller = new OperarioController();
@@ -9,6 +10,11 @@ const controller = new OperarioController();
 router.post("/operarios/:operarioId/tareas/asignar", controller.asignarTarea);
 router.post("/operarios/:operarioId/tareas/:tareaId/iniciar", controller.iniciarTarea);
 router.post("/operarios/:operarioId/tareas/completar", controller.marcarComoCompletada);
+router.post(
+  "/operarios/:operarioId/tareas/:tareaId/cerrar",
+  uploadEvidencias.array("files", 10),
+  controller.cerrarTareaConEvidencias,
+);
 router.post("/operarios/:operarioId/tareas/:tareaId/no-completada", controller.marcarComoNoCompletada);
 
 router.get("/operarios/:operarioId/tareas/dia", controller.tareasDelDia);
