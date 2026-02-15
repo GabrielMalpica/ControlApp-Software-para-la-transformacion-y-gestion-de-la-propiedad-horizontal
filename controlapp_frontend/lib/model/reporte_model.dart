@@ -602,3 +602,218 @@ class TareaDetalleRow {
         evidencias: _toEvidenceUrls(json['evidencias']),
       );
 }
+
+class ZonificacionInsumoRow {
+  final int insumoId;
+  final String nombre;
+  final String unidad;
+  final double consumoEstimado;
+  final int usos;
+  final double consumoPorUnidadPromedio;
+  final double? rendimientoPromedio;
+  final String? formulaRendimiento;
+
+  const ZonificacionInsumoRow({
+    required this.insumoId,
+    required this.nombre,
+    required this.unidad,
+    required this.consumoEstimado,
+    required this.usos,
+    required this.consumoPorUnidadPromedio,
+    required this.rendimientoPromedio,
+    required this.formulaRendimiento,
+  });
+
+  factory ZonificacionInsumoRow.fromJson(Map<String, dynamic> json) {
+    double d(dynamic v) {
+      if (v == null) return 0;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString().replaceAll(',', '.')) ?? 0;
+    }
+
+    int i(dynamic v) => (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
+
+    final rendRaw = json['rendimientoPromedio'];
+    final rendimiento = rendRaw == null ? null : d(rendRaw);
+
+    return ZonificacionInsumoRow(
+      insumoId: i(json['insumoId']),
+      nombre: (json['nombre'] ?? '').toString(),
+      unidad: (json['unidad'] ?? '').toString(),
+      consumoEstimado: d(json['consumoEstimado']),
+      usos: i(json['usos']),
+      consumoPorUnidadPromedio: d(json['consumoPorUnidadPromedio']),
+      rendimientoPromedio: rendimiento,
+      formulaRendimiento: json['formulaRendimiento']?.toString(),
+    );
+  }
+}
+
+class ZonificacionUbicacionRow {
+  final int ubicacionId;
+  final String ubicacionNombre;
+  final String? unidadCalculo;
+  final int preventivas;
+  final double areaTotal;
+  final List<ZonificacionInsumoRow> topInsumos;
+
+  const ZonificacionUbicacionRow({
+    required this.ubicacionId,
+    required this.ubicacionNombre,
+    required this.unidadCalculo,
+    required this.preventivas,
+    required this.areaTotal,
+    required this.topInsumos,
+  });
+
+  factory ZonificacionUbicacionRow.fromJson(Map<String, dynamic> json) {
+    int i(dynamic v) => (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
+    double d(dynamic v) {
+      if (v is num) return v.toDouble();
+      return double.tryParse('${v ?? 0}'.replaceAll(',', '.')) ?? 0;
+    }
+
+    final topRaw = (json['topInsumos'] is List)
+        ? (json['topInsumos'] as List)
+        : const <dynamic>[];
+
+    return ZonificacionUbicacionRow(
+      ubicacionId: i(json['ubicacionId']),
+      ubicacionNombre: (json['ubicacionNombre'] ?? '').toString(),
+      unidadCalculo: json['unidadCalculo']?.toString(),
+      preventivas: i(json['preventivas']),
+      areaTotal: d(json['areaTotal']),
+      topInsumos: topRaw
+          .whereType<Map>()
+          .map((e) => ZonificacionInsumoRow.fromJson(e.cast<String, dynamic>()))
+          .toList(),
+    );
+  }
+}
+
+class ZonificacionConjuntoRow {
+  final String conjuntoId;
+  final String conjuntoNombre;
+  final int preventivas;
+  final int ubicaciones;
+  final double areaTotal;
+  final List<ZonificacionUbicacionRow> ubicacionesDetalle;
+  final List<ZonificacionInsumoRow> topInsumos;
+
+  const ZonificacionConjuntoRow({
+    required this.conjuntoId,
+    required this.conjuntoNombre,
+    required this.preventivas,
+    required this.ubicaciones,
+    required this.areaTotal,
+    required this.ubicacionesDetalle,
+    required this.topInsumos,
+  });
+
+  factory ZonificacionConjuntoRow.fromJson(Map<String, dynamic> json) {
+    int i(dynamic v) => (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
+    double d(dynamic v) {
+      if (v is num) return v.toDouble();
+      return double.tryParse('${v ?? 0}'.replaceAll(',', '.')) ?? 0;
+    }
+
+    final ubRaw = (json['ubicacionesDetalle'] is List)
+        ? (json['ubicacionesDetalle'] as List)
+        : const <dynamic>[];
+    final topRaw = (json['topInsumos'] is List)
+        ? (json['topInsumos'] as List)
+        : const <dynamic>[];
+
+    return ZonificacionConjuntoRow(
+      conjuntoId: (json['conjuntoId'] ?? '').toString(),
+      conjuntoNombre: (json['conjuntoNombre'] ?? '').toString(),
+      preventivas: i(json['preventivas']),
+      ubicaciones: i(json['ubicaciones']),
+      areaTotal: d(json['areaTotal']),
+      ubicacionesDetalle: ubRaw
+          .whereType<Map>()
+          .map(
+            (e) => ZonificacionUbicacionRow.fromJson(e.cast<String, dynamic>()),
+          )
+          .toList(),
+      topInsumos: topRaw
+          .whereType<Map>()
+          .map((e) => ZonificacionInsumoRow.fromJson(e.cast<String, dynamic>()))
+          .toList(),
+    );
+  }
+}
+
+class ZonificacionResumen {
+  final int conjuntos;
+  final int ubicaciones;
+  final int preventivas;
+  final double areaTotal;
+  final bool soloActivas;
+
+  const ZonificacionResumen({
+    required this.conjuntos,
+    required this.ubicaciones,
+    required this.preventivas,
+    required this.areaTotal,
+    required this.soloActivas,
+  });
+
+  factory ZonificacionResumen.fromJson(Map<String, dynamic> json) {
+    int i(dynamic v) => (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
+    double d(dynamic v) {
+      if (v is num) return v.toDouble();
+      return double.tryParse('${v ?? 0}'.replaceAll(',', '.')) ?? 0;
+    }
+
+    return ZonificacionResumen(
+      conjuntos: i(json['conjuntos']),
+      ubicaciones: i(json['ubicaciones']),
+      preventivas: i(json['preventivas']),
+      areaTotal: d(json['areaTotal']),
+      soloActivas: json['soloActivas'] == true,
+    );
+  }
+}
+
+class ZonificacionPreventivasResponse {
+  final bool ok;
+  final ZonificacionResumen resumen;
+  final List<ZonificacionInsumoRow> topInsumosGlobal;
+  final List<ZonificacionConjuntoRow> data;
+
+  const ZonificacionPreventivasResponse({
+    required this.ok,
+    required this.resumen,
+    required this.topInsumosGlobal,
+    required this.data,
+  });
+
+  factory ZonificacionPreventivasResponse.fromJson(Map<String, dynamic> json) {
+    final resumenMap = (json['resumen'] is Map)
+        ? (json['resumen'] as Map).cast<String, dynamic>()
+        : <String, dynamic>{};
+
+    final topRaw = (json['topInsumosGlobal'] is List)
+        ? (json['topInsumosGlobal'] as List)
+        : const <dynamic>[];
+    final dataRaw = (json['data'] is List)
+        ? (json['data'] as List)
+        : const <dynamic>[];
+
+    return ZonificacionPreventivasResponse(
+      ok: json['ok'] == true,
+      resumen: ZonificacionResumen.fromJson(resumenMap),
+      topInsumosGlobal: topRaw
+          .whereType<Map>()
+          .map((e) => ZonificacionInsumoRow.fromJson(e.cast<String, dynamic>()))
+          .toList(),
+      data: dataRaw
+          .whereType<Map>()
+          .map(
+            (e) => ZonificacionConjuntoRow.fromJson(e.cast<String, dynamic>()),
+          )
+          .toList(),
+    );
+  }
+}
