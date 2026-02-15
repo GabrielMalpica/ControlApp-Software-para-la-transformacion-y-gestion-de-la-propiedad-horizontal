@@ -1,18 +1,14 @@
-// lib/api/supervisor_api.dart
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
-import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:http/http.dart' as http;
 
-import '../service/api_client.dart';
-
-class SupervisorApi {
-  final ApiClient _client = ApiClient();
+class OperarioApi {
   final SessionService _session = SessionService();
 
   Future<Map<String, String>> _authHeaders() async {
@@ -24,52 +20,32 @@ class SupervisorApi {
       'Authorization': 'Bearer $token',
       'x-empresa-id': AppConstants.empresaNit,
       'Accept': 'application/json',
-      // OJO: no Content-Type aquí; multipart lo define solo
     };
   }
 
-  /// GET /supervisor/tareas?...
-  Future<List<TareaModel>> listarTareas({
-    required String conjuntoId,
-    String? operarioId,
-    String? estado,
-    DateTime? desde,
-    DateTime? hasta,
-    bool? borrador,
-  }) async {
-    final qp = <String, String>{
-      'conjuntoId': conjuntoId,
-      if (operarioId != null && operarioId.trim().isNotEmpty)
-        'operarioId': operarioId.trim(),
-      if (estado != null && estado.trim().isNotEmpty) 'estado': estado.trim(),
-      if (desde != null) 'desde': desde.toIso8601String(),
-      if (hasta != null) 'hasta': hasta.toIso8601String(),
-      if (borrador != null) 'borrador': borrador.toString(),
-    };
-
+  Future<List<TareaModel>> listarTareasOperario({required int operarioId}) async {
     final uri = Uri.parse(
-      '${AppConstants.supervisorBase}/tareas',
-    ).replace(queryParameters: qp);
+      '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas',
+    );
 
-
-    final resp = await _client.get(uri.toString());
+    final resp = await http.get(uri, headers: await _authHeaders());
 
     if (resp.statusCode != 200) {
       throw Exception(
-        'Error listando tareas: ${resp.statusCode} - ${resp.body}',
+        'Error al listar tareas del operario: ${resp.statusCode} - ${resp.body}',
       );
     }
 
-    final data = jsonDecode(resp.body);
-    if (data is! List) return [];
+    final decoded = jsonDecode(resp.body);
+    if (decoded is! List) return [];
 
-    return data
-        .map((e) => TareaModel.fromJson(e as Map<String, dynamic>))
+    return decoded
+        .map((e) => TareaModel.fromJson((e as Map).cast<String, dynamic>()))
         .toList();
   }
 
-  /// POST /supervisor/tareas/:id/cerrar (multipart con fotos + insumos)
   Future<void> cerrarTareaConEvidencias({
+    required int operarioId,
     required int tareaId,
     String? observaciones,
     DateTime? fechaFinalizarTarea,
@@ -78,7 +54,7 @@ class SupervisorApi {
     @Deprecated('Usa evidencias') List<String> evidenciaPaths = const [],
   }) async {
     final uri = Uri.parse(
-      '${AppConstants.supervisorBase}/tareas/$tareaId/cerrar',
+      '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas/$tareaId/cerrar',
     );
 
     final req = http.MultipartRequest('POST', uri);
@@ -130,42 +106,5 @@ class SupervisorApi {
     if (streamed.statusCode != 200) {
       throw Exception('Error cerrando tarea: ${streamed.statusCode} - $body');
     }
-  }
-
-  /// POST /supervisor/tareas/:id/veredicto (json normal)
-  Future<void> veredicto(int tareaId, Map<String, dynamic> body) async {
-    final resp = await _client.post(
-      '${AppConstants.supervisorBase}/tareas/$tareaId/veredicto',
-      body: body,
-    );
-
-    if (resp.statusCode != 200) {
-      throw Exception('Error veredicto: ${resp.statusCode} - ${resp.body}');
-    }
-  }
-
-  Future<Map<String, dynamic>> cronogramaImprimible({
-    required String conjuntoId,
-    required String operarioId,
-    required DateTime desde,
-    required DateTime hasta,
-  }) async {
-    final uri =
-        Uri.parse(
-          '${AppConstants.baseUrl}/supervisor/cronograma-imprimible',
-        ).replace(
-          queryParameters: {
-            'conjuntoId': conjuntoId,
-            'operarioId': operarioId,
-            'desde': desde.toIso8601String(),
-            'hasta': hasta.toIso8601String(),
-          },
-        );
-
-    final resp = await _client.get(uri.toString());
-    if (resp.statusCode != 200) {
-      throw Exception('Error cronograma: ${resp.statusCode} ${resp.body}');
-    }
-    return jsonDecode(resp.body) as Map<String, dynamic>;
   }
 }

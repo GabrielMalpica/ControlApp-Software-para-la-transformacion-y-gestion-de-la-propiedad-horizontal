@@ -1,6 +1,8 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../model/tarea_model.dart';
 import '../model/inventario_item_model.dart';
+import '../model/evidencia_adjunto_model.dart';
 
 class CerrarTareaResult {
   final String? observaciones;
@@ -8,8 +10,15 @@ class CerrarTareaResult {
   /// [{insumoId: 1, cantidad: 0.3}, ...]
   final List<Map<String, num>> insumosUsados;
 
-  CerrarTareaResult({required this.insumosUsados, this.observaciones});
+  final List<EvidenciaAdjunto> evidencias;
+
+  CerrarTareaResult({
+    required this.insumosUsados,
+    this.observaciones,
+    this.evidencias = const [],
+  });
 }
+
 
 class CerrarTareaSheet extends StatefulWidget {
   final TareaModel tarea;
@@ -28,6 +37,7 @@ class CerrarTareaSheet extends StatefulWidget {
 class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
   final _obsCtrl = TextEditingController();
   final List<_ConsumoRow> _rows = [];
+  final List<EvidenciaAdjunto> _evidencias = [];
 
   @override
   void initState() {
@@ -42,6 +52,52 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
       r.qtyCtrl.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _pickEvidencias() async {
+    final picked = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      withData: true,
+      type: FileType.custom,
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
+    );
+
+    if (picked == null) return;
+
+    final nuevos = picked.files
+        .map(
+          (f) => EvidenciaAdjunto(
+            nombre: f.name,
+            path: f.path,
+            bytes: f.bytes,
+          ),
+        )
+        .where(
+          (f) => (f.path?.trim().isNotEmpty ?? false) ||
+              ((f.bytes?.isNotEmpty ?? false)),
+        )
+        .toList();
+
+    if (nuevos.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No se pudieron leer los archivos seleccionados.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      for (final e in nuevos) {
+        final yaExiste = _evidencias.any(
+          (x) => x.nombre == e.nombre && x.path == e.path,
+        );
+        if (!yaExiste) _evidencias.add(e);
+      }
+    });
   }
 
   List<Map<String, num>> _buildInsumosUsados() {
@@ -92,12 +148,52 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Padding(
-                padding: EdgeInsets.all(12),
-                child: Text(
-                  '📸 Evidencias: por ahora simuladas (PC). '
-                  'Más adelante conectamos selector de archivos/cámara.',
-                  style: TextStyle(fontSize: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '📸 Evidencias de cierre',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Adjunta fotos o PDF de evidencias para enviar al cierre.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _pickEvidencias,
+                          icon: const Icon(Icons.attach_file),
+                          label: const Text('Agregar archivos'),
+                        ),
+                        const SizedBox(width: 8),
+                        Text('${_evidencias.length} archivo(s)'),
+                      ],
+                    ),
+                    if (_evidencias.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      ..._evidencias.map(
+                        (e) => Row(
+                          children: [
+                            const Icon(Icons.insert_drive_file, size: 16),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                e.nombre,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -295,6 +391,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                       observaciones: _obsCtrl.text.trim().isEmpty
                           ? null
                           : _obsCtrl.text.trim(),
+                      evidencias: _evidencias,
                     ),
                   );
                 },
