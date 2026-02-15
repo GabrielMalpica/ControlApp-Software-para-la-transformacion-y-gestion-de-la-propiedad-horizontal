@@ -52,6 +52,10 @@ class _TareasPageState extends State<TareasPage> {
   int? _operarioId;
   String _filtroOperario = 'HOY';
 
+  String? _rol;
+  int? _operarioId;
+  String _filtroOperario = 'HOY';
+
   @override
   void initState() {
     super.initState();
@@ -402,6 +406,9 @@ class _TareasPageState extends State<TareasPage> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error al eliminar tarea: $e')));
     }
+    final entries = map.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return {for (final e in entries) e.key: e.value};
   }
 
   Widget _buildOperarioBody() {
@@ -555,6 +562,21 @@ class _TareasPageState extends State<TareasPage> {
         ),
       ),
     );
+
+    if (ok != true) return;
+    try {
+      await _tareaApi.eliminarTarea(tarea.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tarea eliminada correctamente')),
+      );
+      await _cargarTareas();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al eliminar tarea: $e')));
+    }
   }
 
   Widget _buildGeneralBody() {
