@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../model/tarea_model.dart';
 import '../model/inventario_item_model.dart';
@@ -8,7 +9,14 @@ class CerrarTareaResult {
   /// [{insumoId: 1, cantidad: 0.3}, ...]
   final List<Map<String, num>> insumosUsados;
 
-  CerrarTareaResult({required this.insumosUsados, this.observaciones});
+  /// paths locales (desktop/mobile). En web no aplica con este flujo actual.
+  final List<String> evidenciaPaths;
+
+  CerrarTareaResult({
+    required this.insumosUsados,
+    this.observaciones,
+    this.evidenciaPaths = const [],
+  });
 }
 
 class CerrarTareaSheet extends StatefulWidget {
@@ -28,6 +36,7 @@ class CerrarTareaSheet extends StatefulWidget {
 class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
   final _obsCtrl = TextEditingController();
   final List<_ConsumoRow> _rows = [];
+  final List<String> _evidenciaPaths = [];
 
   @override
   void initState() {
@@ -42,6 +51,40 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
       r.qtyCtrl.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _pickEvidencias() async {
+    final picked = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      type: FileType.custom,
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
+    );
+
+    if (picked == null) return;
+
+    final nuevos = picked.files
+        .map((f) => f.path)
+        .whereType<String>()
+        .where((p) => p.trim().isNotEmpty)
+        .toList();
+
+    if (nuevos.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No se pudieron leer rutas de archivos. En web este flujo no usa path.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      for (final p in nuevos) {
+        if (!_evidenciaPaths.contains(p)) _evidenciaPaths.add(p);
+      }
+    });
   }
 
   List<Map<String, num>> _buildInsumosUsados() {
@@ -92,12 +135,52 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Padding(
-                padding: EdgeInsets.all(12),
-                child: Text(
-                  '📸 Evidencias: por ahora simuladas (PC). '
-                  'Más adelante conectamos selector de archivos/cámara.',
-                  style: TextStyle(fontSize: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '📸 Evidencias de cierre',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Adjunta fotos o PDF de evidencias para enviar al cierre.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _pickEvidencias,
+                          icon: const Icon(Icons.attach_file),
+                          label: const Text('Agregar archivos'),
+                        ),
+                        const SizedBox(width: 8),
+                        Text('${_evidenciaPaths.length} archivo(s)'),
+                      ],
+                    ),
+                    if (_evidenciaPaths.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      ..._evidenciaPaths.map(
+                        (p) => Row(
+                          children: [
+                            const Icon(Icons.insert_drive_file, size: 16),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                p.split('/').last,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
@@ -295,6 +378,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                       observaciones: _obsCtrl.text.trim().isEmpty
                           ? null
                           : _obsCtrl.text.trim(),
+                      evidenciaPaths: _evidenciaPaths,
                     ),
                   );
                 },

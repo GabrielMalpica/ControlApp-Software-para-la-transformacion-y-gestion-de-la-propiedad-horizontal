@@ -48,10 +48,31 @@ class _TareasPageState extends State<TareasPage> {
   int? _operarioId;
   String _filtroOperario = 'HOY';
 
+  String? _rol;
+  int? _operarioId;
+  String _filtroOperario = 'HOY';
+
   @override
   void initState() {
     super.initState();
     _init();
+  }
+
+  Future<void> _init() async {
+    await _cargarSesion();
+    await _cargarTareas();
+  }
+
+  Future<void> _cargarSesion() async {
+    final rol = await _session.getRol();
+    final userId = await _session.getUserId();
+    if (!mounted) return;
+    setState(() {
+      _rol = rol;
+      _operarioId = int.tryParse(userId ?? '');
+    });
+  }
+
   }
 
   Future<void> _init() async {
@@ -185,6 +206,15 @@ class _TareasPageState extends State<TareasPage> {
     return '$dd/$mm/$yy';
   }
 
+  }
+
+  String _fmtDate(DateTime d) {
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final yy = d.year.toString();
+    return '$dd/$mm/$yy';
+  }
+
   String _fmtDateTime(DateTime d) {
     final hh = d.hour.toString().padLeft(2, '0');
     final mi = d.minute.toString().padLeft(2, '0');
@@ -223,6 +253,32 @@ class _TareasPageState extends State<TareasPage> {
       );
       return;
     }
+
+    final inventarioNit = (t.conjuntoId != null && t.conjuntoId!.isNotEmpty)
+        ? t.conjuntoId!
+        : widget.nit;
+
+    List<InventarioItemResponse> inventario = [];
+    try {
+      inventario = await _inventarioApi.listarInventarioConjunto(inventarioNit);
+    } catch (_) {}
+
+    final result = await showModalBottomSheet<CerrarTareaResult>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => CerrarTareaSheet(tarea: t, inventario: inventario),
+    );
+
+    if (result == null) return;
+
+    try {
+      await _operarioApi.cerrarTareaConEvidencias(
+        operarioId: _operarioId!,
+        tareaId: t.id,
+        observaciones: result.observaciones,
+        insumosUsados: result.insumosUsados,
+        evidenciaPaths: result.evidenciaPaths,
+      );
 
     List<InventarioItemResponse> inventario = [];
     try {
@@ -415,7 +471,96 @@ class _TareasPageState extends State<TareasPage> {
         ),
       ),
     );
+
+    if (ok != true) return;
+    try {
+      await _tareaApi.eliminarTarea(tarea.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tarea eliminada correctamente')),
+      );
+      await _cargarTareas();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al eliminar tarea: $e')));
+    }
   }
+
+  Widget _buildOperarioBody() {
+    final list = _tareasFiltradasOperario;
+    if (list.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [_filters(), const SizedBox(height: 16), const Text('No hay actividades para este filtro.')],
+      );
+    }
+
+    final grouped = _agruparPorDia(list);
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(12),
+      children: [
+        _filters(),
+        const SizedBox(height: 10),
+        const Text('TODO por día', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 10),
+        ...grouped.entries.map((e) {
+          final day = e.key;
+          final tasks = e.value;
+          return Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            child: ExpansionTile(
+              initiallyExpanded: true,
+              title: Text('${_fmtDate(day)} • ${tasks.length} actividad(es)'),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Column(children: tasks.map(_taskTile).toList()),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _filters() {
+    const opts = [
+      'HOY',
+      'PENDIENTES',
+      'VENCIDAS',
+      'RECHAZADAS',
+      'PENDIENTE_APROBACION',
+      'TODAS',
+    ];
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            for (final f in opts)
+              ChoiceChip(
+                label: Text(f.replaceAll('_', ' ')),
+                selected: _filtroOperario == f,
+                onSelected: (_) => setState(() => _filtroOperario = f),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGeneralBody() {
+    if (_tareas.isEmpty) {
+      return const Center(child: Text('No hay tareas asignadas para este conjunto.'));
+    }
 
   Widget _buildGeneralBody() {
     if (_tareas.isEmpty) {
