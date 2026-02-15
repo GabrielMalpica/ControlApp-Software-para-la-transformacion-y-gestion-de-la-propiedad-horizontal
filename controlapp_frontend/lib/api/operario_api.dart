@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
-import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:http/http.dart' as http;
 
@@ -23,7 +23,9 @@ class OperarioApi {
     };
   }
 
-  Future<List<TareaModel>> listarTareasOperario({required int operarioId}) async {
+  Future<List<TareaModel>> listarTareasOperario({
+    required int operarioId,
+  }) async {
     final uri = Uri.parse(
       '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas',
     );
@@ -48,38 +50,38 @@ class OperarioApi {
     required int operarioId,
     required int tareaId,
     String? observaciones,
-    DateTime? fechaFinalizarTarea,
     List<Map<String, num>> insumosUsados = const [],
     List<EvidenciaAdjunto> evidencias = const [],
-    @Deprecated('Usa evidencias') List<String> evidenciaPaths = const [],
   }) async {
+    final token = await _session.getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('Token requerido (no hay sesión guardada)');
+    }
+
     final uri = Uri.parse(
       '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas/$tareaId/cerrar',
     );
 
     final req = http.MultipartRequest('POST', uri);
-    req.headers.addAll(await _authHeaders());
+
+    req.headers.addAll({
+      'Authorization': 'Bearer $token',
+      'x-empresa-id': AppConstants.empresaNit,
+      'Accept': 'application/json',
+    });
 
     if (observaciones != null && observaciones.trim().isNotEmpty) {
       req.fields['observaciones'] = observaciones.trim();
     }
-    if (fechaFinalizarTarea != null) {
-      req.fields['fechaFinalizarTarea'] = fechaFinalizarTarea.toIso8601String();
-    }
+
     if (insumosUsados.isNotEmpty) {
       req.fields['insumosUsados'] = jsonEncode(insumosUsados);
     }
 
-    final evidenciasNormalizadas = <EvidenciaAdjunto>[
-      ...evidencias,
-      ...evidenciaPaths
-          .where((p) => p.trim().isNotEmpty)
-          .map((p) => EvidenciaAdjunto(nombre: p.split('/').last, path: p)),
-    ];
-
-    for (final evidencia in evidenciasNormalizadas) {
-      final path = evidencia.path?.trim();
-      final bytes = evidencia.bytes;
+    // ✅ adjuntar evidencias (web: bytes, mobile: path)
+    for (final e in evidencias) {
+      final path = e.path?.trim();
+      final bytes = e.bytes;
 
       if (path != null && path.isNotEmpty) {
         final file = File(path);
@@ -91,11 +93,7 @@ class OperarioApi {
 
       if (kIsWeb && bytes != null && bytes.isNotEmpty) {
         req.files.add(
-          http.MultipartFile.fromBytes(
-            'files',
-            bytes,
-            filename: evidencia.nombre,
-          ),
+          http.MultipartFile.fromBytes('files', bytes, filename: e.nombre),
         );
       }
     }

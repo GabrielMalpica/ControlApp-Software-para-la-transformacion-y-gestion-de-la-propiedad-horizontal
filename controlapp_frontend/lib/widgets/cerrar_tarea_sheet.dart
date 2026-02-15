@@ -1,15 +1,18 @@
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+
 import '../model/tarea_model.dart';
 import '../model/inventario_item_model.dart';
 import '../model/evidencia_adjunto_model.dart';
 
 class CerrarTareaResult {
   final String? observaciones;
-
-  /// [{insumoId: 1, cantidad: 0.3}, ...]
   final List<Map<String, num>> insumosUsados;
 
+  /// ✅ Evidencias listas para multipart:
+  /// - Mobile/Desktop: path
+  /// - Web: bytes
   final List<EvidenciaAdjunto> evidencias;
 
   CerrarTareaResult({
@@ -22,12 +25,14 @@ class CerrarTareaResult {
 
 class CerrarTareaSheet extends StatefulWidget {
   final TareaModel tarea;
+
+  /// ✅ default seguro para evitar null/undefined
   final List<InventarioItemResponse> inventario;
 
   const CerrarTareaSheet({
     super.key,
     required this.tarea,
-    required this.inventario,
+    this.inventario = const [],
   });
 
   @override
@@ -36,12 +41,18 @@ class CerrarTareaSheet extends StatefulWidget {
 
 class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
   final _obsCtrl = TextEditingController();
+
+  /// filas para consumo
   final List<_ConsumoRow> _rows = [];
+  final List<EvidenciaAdjunto> _evidencias = [];
+
+  /// ✅ evidencias unificadas (path o bytes)
   final List<EvidenciaAdjunto> _evidencias = [];
 
   @override
   void initState() {
     super.initState();
+    // Si hay inventario, arrancamos con una fila para facilitar
     if (widget.inventario.isNotEmpty) _rows.add(_ConsumoRow());
   }
 
@@ -57,45 +68,52 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
   Future<void> _pickEvidencias() async {
     final picked = await FilePicker.platform.pickFiles(
       allowMultiple: true,
-      withData: true,
+      withData: kIsWeb, // ✅ en web necesitamos bytes
       type: FileType.custom,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
     );
 
     if (picked == null) return;
 
-    final nuevos = picked.files
-        .map(
-          (f) => EvidenciaAdjunto(
-            nombre: f.name,
-            path: f.path,
-            bytes: f.bytes,
-          ),
-        )
-        .where(
-          (f) => (f.path?.trim().isNotEmpty ?? false) ||
-              ((f.bytes?.isNotEmpty ?? false)),
-        )
-        .toList();
+    final nuevos = <EvidenciaAdjunto>[];
+
+    for (final f in picked.files) {
+      final nombre = (f.name).trim().isEmpty ? 'archivo' : f.name.trim();
+
+      // Web: bytes
+      if (kIsWeb) {
+        final bytes = f.bytes;
+        if (bytes != null && bytes.isNotEmpty) {
+          nuevos.add(EvidenciaAdjunto(path: null, nombre: nombre, bytes: bytes));
+        }
+        continue;
+      }
+
+      // Mobile/Desktop: path
+      final path = f.path;
+      if (path != null && path.trim().isNotEmpty) {
+        nuevos.add(EvidenciaAdjunto(path: path.trim(), nombre: nombre, bytes: null));
+      }
+    }
 
     if (nuevos.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No se pudieron leer los archivos seleccionados.',
-          ),
-        ),
+        const SnackBar(content: Text('No se pudieron leer archivos seleccionados.')),
       );
       return;
     }
 
     setState(() {
       for (final e in nuevos) {
-        final yaExiste = _evidencias.any(
-          (x) => x.nombre == e.nombre && x.path == e.path,
-        );
-        if (!yaExiste) _evidencias.add(e);
+        // Evitar duplicados: por path en mobile o por (nombre+len) en web
+        final exists = _evidencias.any((x) {
+          if (!kIsWeb) return (x.path ?? '') == (e.path ?? '');
+          final xl = x.bytes?.length ?? 0;
+          final el = e.bytes?.length ?? 0;
+          return (x.nombre == e.nombre) && (xl == el) && xl > 0;
+        });
+        if (!exists) _evidencias.add(e);
       }
     });
   }
@@ -111,9 +129,21 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
     return out;
   }
 
+  String _displayName(EvidenciaAdjunto e) {
+    // En mobile podemos mostrar filename desde path si viene, si no el nombre
+    final p = e.path;
+    if (p != null && p.trim().isNotEmpty) {
+      final norm = p.replaceAll('\\', '/');
+      final idx = norm.lastIndexOf('/');
+      return idx >= 0 ? norm.substring(idx + 1) : norm;
+    }
+    return e.nombre;
+  }
+
   @override
   Widget build(BuildContext context) {
     final alto = MediaQuery.of(context).size.height * 0.82;
+    final inv = widget.inventario; // ✅ nunca null
 
     return SizedBox(
       height: alto,
@@ -145,18 +175,13 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
             Card(
               elevation: 0,
               color: Colors.amber.shade50,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '📸 Evidencias de cierre',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
+                    const Text('📸 Evidencias de cierre', style: TextStyle(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 6),
                     const Text(
                       'Adjunta fotos o PDF de evidencias para enviar al cierre.',
@@ -176,22 +201,27 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                     ),
                     if (_evidencias.isNotEmpty) ...[
                       const SizedBox(height: 6),
-                      ..._evidencias.map(
-                        (e) => Row(
+                      ..._evidencias.map((e) {
+                        return Row(
                           children: [
                             const Icon(Icons.insert_drive_file, size: 16),
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
-                                e.nombre,
+                                _displayName(e),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 12),
                               ),
                             ),
+                            IconButton(
+                              tooltip: 'Quitar',
+                              onPressed: () => setState(() => _evidencias.remove(e)),
+                              icon: const Icon(Icons.close, size: 18),
+                            ),
                           ],
-                        ),
-                      ),
+                        );
+                      }),
                     ],
                   ],
                 ),
@@ -199,36 +229,29 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
             ),
             const SizedBox(height: 12),
 
+            // Maquinaria
             if (widget.tarea.maquinariasAsignadas.isNotEmpty) ...[
-              const Text(
-                'Maquinaria asignada',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
+              const Text('Maquinaria asignada', style: TextStyle(fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: widget.tarea.maquinariasAsignadas.map((m) {
-                  return Chip(
-                    avatar: const Icon(Icons.precision_manufacturing, size: 18),
-                    label: Text(m.nombre),
-                  );
-                }).toList(),
+                children: widget.tarea.maquinariasAsignadas
+                    .map((m) => Chip(
+                          avatar: const Icon(Icons.precision_manufacturing, size: 18),
+                          label: Text(m.nombre),
+                        ))
+                    .toList(),
               ),
               const SizedBox(height: 12),
             ] else ...[
-              Text(
-                'Maquinaria asignada: ninguna.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-              ),
+              Text('Maquinaria asignada: ninguna.', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
               const SizedBox(height: 12),
             ],
 
+            // Herramientas
             if (widget.tarea.herramientasAsignadas.isNotEmpty) ...[
-              const Text(
-                'Herramientas asignadas',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
+              const Text('Herramientas asignadas', style: TextStyle(fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
               Column(
                 children: widget.tarea.herramientasAsignadas.map((h) {
@@ -247,31 +270,23 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
               ),
               const SizedBox(height: 12),
             ] else ...[
-              Text(
-                'Herramientas asignadas: ninguna.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-              ),
+              Text('Herramientas asignadas: ninguna.', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
               const SizedBox(height: 12),
             ],
 
             Row(
               children: [
-                const Text(
-                  'Insumos usados',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
+                const Text('Insumos usados', style: TextStyle(fontWeight: FontWeight.w800)),
                 const Spacer(),
                 TextButton.icon(
-                  onPressed: widget.inventario.isEmpty
-                      ? null
-                      : () => setState(() => _rows.add(_ConsumoRow())),
+                  onPressed: inv.isEmpty ? null : () => setState(() => _rows.add(_ConsumoRow())),
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Agregar'),
                 ),
               ],
             ),
 
-            if (widget.inventario.isEmpty)
+            if (inv.isEmpty)
               Text(
                 'No hay inventario disponible (o no se pudo cargar). Puedes cerrar sin insumos.',
                 style: TextStyle(color: Colors.grey.shade700),
@@ -287,9 +302,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                     InventarioItemResponse? item;
                     if (row.insumoId != null) {
                       try {
-                        item = widget.inventario.firstWhere(
-                          (x) => x.insumoId == row.insumoId,
-                        );
+                        item = inv.firstWhere((x) => x.insumoId == row.insumoId);
                       } catch (_) {
                         item = null;
                       }
@@ -297,9 +310,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
 
                     return Card(
                       elevation: 1,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       child: Padding(
                         padding: const EdgeInsets.all(12),
                         child: Column(
@@ -311,29 +322,21 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                                 border: OutlineInputBorder(),
                                 isDense: true,
                               ),
-                              items: widget.inventario.map((x) {
-                                return DropdownMenuItem<int>(
-                                  value: x.insumoId,
-                                  child: Text(
-                                    '${x.nombre} (${x.cantidad} ${x.unidad})',
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (v) =>
-                                  setState(() => row.insumoId = v),
+                              items: inv
+                                  .map((x) => DropdownMenuItem<int>(
+                                        value: x.insumoId,
+                                        child: Text('${x.nombre} (${x.cantidad} ${x.unidad})'),
+                                      ))
+                                  .toList(),
+                              onChanged: (v) => setState(() => row.insumoId = v),
                             ),
                             const SizedBox(height: 10),
                             TextField(
                               controller: row.qtyCtrl,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               decoration: InputDecoration(
                                 labelText: 'Cantidad usada',
-                                hintText: item == null
-                                    ? 'Ej: 0.5'
-                                    : 'En ${item.unidad}',
+                                hintText: item == null ? 'Ej: 0.5' : 'En ${item.unidad}',
                                 border: const OutlineInputBorder(),
                                 isDense: true,
                               ),
@@ -345,10 +348,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                                   Expanded(
                                     child: Text(
                                       'Stock: ${item.cantidad} ${item.unidad}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade700,
-                                      ),
+                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                                     ),
                                   ),
                                 IconButton(
@@ -388,10 +388,8 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                     context,
                     CerrarTareaResult(
                       insumosUsados: _buildInsumosUsados(),
-                      observaciones: _obsCtrl.text.trim().isEmpty
-                          ? null
-                          : _obsCtrl.text.trim(),
-                      evidencias: _evidencias,
+                      observaciones: _obsCtrl.text.trim().isEmpty ? null : _obsCtrl.text.trim(),
+                      evidencias: _evidencias, // ✅ listo para web+mobile
                     ),
                   );
                 },

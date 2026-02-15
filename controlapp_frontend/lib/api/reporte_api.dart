@@ -47,8 +47,9 @@ class ReporteApi {
     if (resp.body.isEmpty) return [];
     final decoded = jsonDecode(resp.body);
     if (decoded is List) return decoded;
-    if (decoded is Map && decoded['data'] is List)
+    if (decoded is Map && decoded['data'] is List) {
       return decoded['data'] as List;
+    }
     return [];
   }
 
@@ -210,5 +211,20 @@ class ReporteApi {
           (e) => TareaDetalleRow.fromJson((e as Map).cast<String, dynamic>()),
         )
         .toList();
+  }
+
+  Future<ZonificacionPreventivasResponse> zonificacionPreventivas({
+    required DateTime desde,
+    required DateTime hasta,
+    String? conjuntoId,
+    bool soloActivas = true,
+  }) async {
+    final j = await _getJson('/zonificacion/preventivas', {
+      'desde': desde.toIso8601String(),
+      'hasta': hasta.toIso8601String(),
+      'conjuntoId': conjuntoId,
+      'soloActivas': soloActivas ? 'true' : 'false',
+    });
+    return ZonificacionPreventivasResponse.fromJson(j);
   }
 }

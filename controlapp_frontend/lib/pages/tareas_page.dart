@@ -1,8 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/inventario_api.dart';
 import 'package:flutter_application_1/api/operario_api.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 import '../service/app_constants.dart';
 import '../api/tarea_api.dart';
@@ -32,8 +33,11 @@ class _TareasPageState extends State<TareasPage> {
   String? _error;
   List<TareaModel> _tareas = [];
 
+  // sesión
   String? _rol;
   int? _operarioId;
+
+  // filtros para vista operario
   String _filtroOperario = 'HOY';
 
   @override
@@ -50,6 +54,7 @@ class _TareasPageState extends State<TareasPage> {
   Future<void> _cargarSesion() async {
     final rol = await _session.getRol();
     final userId = await _session.getUserId();
+
     if (!mounted) return;
     setState(() {
       _rol = rol;
@@ -60,6 +65,8 @@ class _TareasPageState extends State<TareasPage> {
   bool _esOperario() => (_rol ?? '').toLowerCase() == 'operario';
 
   Future<void> _cargarTareas() async {
+    if (!mounted) return;
+
     setState(() {
       _cargando = true;
       _error = null;
@@ -67,6 +74,7 @@ class _TareasPageState extends State<TareasPage> {
 
     try {
       List<TareaModel> lista;
+
       if (_esOperario()) {
         if (_operarioId == null) {
           throw Exception('No se pudo identificar el operario en sesión.');
@@ -82,7 +90,8 @@ class _TareasPageState extends State<TareasPage> {
       if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _cargando = false);
+      if (!mounted) return;
+      setState(() => _cargando = false);
     }
   }
 
@@ -92,6 +101,7 @@ class _TareasPageState extends State<TareasPage> {
       throw Exception('Token requerido (no hay sesión guardada)');
     }
 
+    // OJO: revisa tu ruta real; aquí usé la que tú tenías
     final uri = Uri.parse(
       '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas',
     );
@@ -135,7 +145,7 @@ class _TareasPageState extends State<TareasPage> {
   List<TareaModel> get _tareasFiltradasOperario {
     final hoy = _dayOnly(DateTime.now());
 
-    return _tareas.where((t) {
+    final out = _tareas.where((t) {
       switch (_filtroOperario) {
         case 'HOY':
           return _dayOnly(t.fechaInicio) == hoy || _dayOnly(t.fechaFin) == hoy;
@@ -151,8 +161,9 @@ class _TareasPageState extends State<TareasPage> {
         default:
           return true;
       }
-    }).toList()
-      ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+    }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+
+    return out;
   }
 
   Map<DateTime, List<TareaModel>> _agruparPorDia(List<TareaModel> items) {
@@ -206,8 +217,11 @@ class _TareasPageState extends State<TareasPage> {
 
   Future<void> _cerrarComoOperario(TareaModel t) async {
     if (_operarioId == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se pudo resolver el operario de sesión.')),
+        const SnackBar(
+          content: Text('No se pudo resolver el operario de sesión.'),
+        ),
       );
       return;
     }
@@ -219,8 +233,11 @@ class _TareasPageState extends State<TareasPage> {
     List<InventarioItemResponse> inventario = [];
     try {
       inventario = await _inventarioApi.listarInventarioConjunto(inventarioNit);
-    } catch (_) {}
+    } catch (_) {
+      // si falla inventario, igual dejamos cerrar la tarea sin bloquear
+    }
 
+    if (!mounted) return;
     final result = await showModalBottomSheet<CerrarTareaResult>(
       context: context,
       isScrollControlled: true,
@@ -260,23 +277,36 @@ class _TareasPageState extends State<TareasPage> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        title: Text(t.descripcion, style: const TextStyle(fontWeight: FontWeight.w700)),
+        title: Text(
+          t.descripcion,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('🕒 ${_fmtDateTime(t.fechaInicio)} → ${_fmtDateTime(t.fechaFin)}'),
+            Text(
+              '🕒 ${_fmtDateTime(t.fechaInicio)} → ${_fmtDateTime(t.fechaFin)}',
+            ),
             if (t.ubicacionNombre != null || t.elementoNombre != null)
-              Text('📍 ${t.ubicacionNombre ?? '-'} / ${t.elementoNombre ?? '-'}'),
+              Text(
+                '📍 ${t.ubicacionNombre ?? '-'} / ${t.elementoNombre ?? '-'}',
+              ),
             if (_esVencida(t))
               const Text(
                 '⚠️ Vencida',
-                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             Row(
               children: [
                 Icon(Icons.circle, size: 9, color: c),
                 const SizedBox(width: 6),
-                Text(estado, style: TextStyle(color: c, fontWeight: FontWeight.bold)),
+                Text(
+                  estado,
+                  style: TextStyle(color: c, fontWeight: FontWeight.bold),
+                ),
               ],
             ),
           ],
@@ -315,7 +345,10 @@ class _TareasPageState extends State<TareasPage> {
         title: const Text('Eliminar tarea'),
         content: Text('¿Seguro que deseas eliminar "${tarea.descripcion}"?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
@@ -324,7 +357,10 @@ class _TareasPageState extends State<TareasPage> {
       ),
     );
 
-    if (ok != true) return;
+    final uri = Uri.parse(
+      '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas',
+    );
+
     try {
       await _tareaApi.eliminarTarea(tarea.id);
       if (!mounted) return;
@@ -338,46 +374,9 @@ class _TareasPageState extends State<TareasPage> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error al eliminar tarea: $e')));
     }
-  }
-
-  Widget _buildOperarioBody() {
-    final list = _tareasFiltradasOperario;
-    if (list.isEmpty) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
-        children: [_filters(), const SizedBox(height: 16), const Text('No hay actividades para este filtro.')],
-      );
-    }
-
-    final grouped = _agruparPorDia(list);
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(12),
-      children: [
-        _filters(),
-        const SizedBox(height: 10),
-        const Text('TODO por día', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        const SizedBox(height: 10),
-        ...grouped.entries.map((e) {
-          final day = e.key;
-          final tasks = e.value;
-          return Card(
-            margin: const EdgeInsets.only(bottom: 10),
-            child: ExpansionTile(
-              initiallyExpanded: true,
-              title: Text('${_fmtDate(day)} • ${tasks.length} actividad(es)'),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Column(children: tasks.map(_taskTile).toList()),
-                ),
-              ],
-            ),
-          );
-        }),
-      ],
-    );
+    final entries = map.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return {for (final e in entries) e.key: e.value};
   }
 
   Widget _filters() {
@@ -409,9 +408,76 @@ class _TareasPageState extends State<TareasPage> {
     );
   }
 
+  Widget _buildOperarioBody() {
+    final list = _tareasFiltradasOperario;
+
+    if (list.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          _filters(),
+          const SizedBox(height: 16),
+          const Text('No hay actividades para este filtro.'),
+        ],
+      );
+    }
+
+    final grouped = _agruparPorDia(list);
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(12),
+      children: [
+        _filters(),
+        const SizedBox(height: 10),
+        const Text(
+          'TODO por día',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        const SizedBox(height: 10),
+        ...grouped.entries.map((e) {
+          final day = e.key;
+          final tasks = e.value;
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            child: ExpansionTile(
+              initiallyExpanded: true,
+              title: Text('${_fmtDate(day)} • ${tasks.length} actividad(es)'),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Column(children: tasks.map(_taskTile).toList()),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+
+    if (ok != true) return;
+    try {
+      await _tareaApi.eliminarTarea(tarea.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tarea eliminada correctamente')),
+      );
+      await _cargarTareas();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al eliminar tarea: $e')));
+    }
+  }
+
   Widget _buildGeneralBody() {
     if (_tareas.isEmpty) {
-      return const Center(child: Text('No hay tareas asignadas para este conjunto.'));
+      return const Center(
+        child: Text('No hay tareas asignadas para este conjunto.'),
+      );
     }
 
     return ListView.separated(
@@ -435,7 +501,10 @@ class _TareasPageState extends State<TareasPage> {
             children: [
               const Icon(Icons.error_outline, color: Colors.red, size: 40),
               const SizedBox(height: 12),
-              Text('Error al cargar actividades:\n$_error', textAlign: TextAlign.center),
+              Text(
+                'Error al cargar actividades:\n$_error',
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 12),
               ElevatedButton.icon(
                 onPressed: _cargarTareas,

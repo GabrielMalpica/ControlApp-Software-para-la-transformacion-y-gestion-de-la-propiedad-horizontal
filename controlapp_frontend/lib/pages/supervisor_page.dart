@@ -148,16 +148,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
                   ),
                 ),
               ),
-              SizedBox(
-                height: 46,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Container(color: color.withOpacity(0.10)),
-                    CustomPaint(painter: _BubblePatternPainter(color)),
-                  ],
-                ),
-              ),
+              Container(height: 46, color: color.withOpacity(0.10)),
             ],
           ),
         ),
@@ -259,94 +250,90 @@ class _SupervisorPageState extends State<SupervisorPage> {
             style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
           ),
           const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final count = _gridCountForWidth(constraints.maxWidth);
-              return GridView.count(
-                shrinkWrap: true,
-                crossAxisCount: count,
-                crossAxisSpacing: 14,
-                mainAxisSpacing: 14,
-                childAspectRatio: 1.05,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  _smallCard(
-                    "Tareas",
-                    Icons.assignment,
-                    AppTheme.green,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(SupervisorTareasPage(nit: nit));
-                    },
-                  ),
-                  _smallCard(
-                    "Solicitudes",
-                    Icons.pending_actions,
-                    AppTheme.primary,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(SolicitudesPage(nit: nit));
-                    },
-                  ),
-                  _smallCard(
-                    "Cronograma",
-                    Icons.calendar_month,
-                    Colors.purple,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(CronogramaPage(nit: nit));
-                    },
-                  ),
-                  _smallCard(
-                    "Inventario",
-                    Icons.inventory_2_outlined,
-                    AppTheme.yellow,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(
-                        InventarioPage(
-                          nit: nit,
-                          empresaId: AppConstants.empresaNit,
-                        ),
-                      );
-                    },
-                  ),
-                  _smallCard(
-                    "Maquinaria",
-                    Icons.precision_manufacturing,
-                    AppTheme.red,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(MaquinariaPage(nit: nit));
-                    },
-                  ),
-                  _smallCard(
-                    "Reportes",
-                    Icons.bar_chart,
-                    Colors.teal,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(ReportesPage(nit: nit));
-                    },
-                  ),
-                  _smallCard(
-                    "Preventivas",
-                    Icons.build_circle_outlined,
-                    Colors.deepOrange,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(PreventivasPage(nit: nit));
-                    },
-                  ),
-                  _smallCard(
-                    "Recargar",
-                    Icons.refresh,
-                    Colors.blueGrey,
-                    onTap: _cargarConjuntos,
-                  ),
-                ],
-              );
-            },
+
+          GridView.count(
+            shrinkWrap: true,
+            crossAxisCount: 4, // ✅ cuadritos pequeños como gerente
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.05,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              _smallCard(
+                "Tareas",
+                Icons.assignment,
+                AppTheme.green,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(SupervisorTareasPage(nit: nit));
+                },
+              ),
+              _smallCard(
+                "Solicitudes",
+                Icons.pending_actions,
+                AppTheme.primary,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(SolicitudesPage(nit: nit));
+                },
+              ),
+              _smallCard(
+                "Cronograma",
+                Icons.calendar_month,
+                Colors.purple,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(CronogramaPage(nit: nit));
+                },
+              ),
+              _smallCard(
+                "Inventario",
+                Icons.inventory_2_outlined,
+                AppTheme.yellow,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(
+                    InventarioPage(
+                      nit: nit,
+                      empresaId: AppConstants.empresaNit,
+                    ),
+                  );
+                },
+              ),
+              _smallCard(
+                "Maquinaria",
+                Icons.precision_manufacturing,
+                AppTheme.red,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(MaquinariaPage(nit: nit));
+                },
+              ),
+              _smallCard(
+                "Reportes",
+                Icons.bar_chart,
+                Colors.teal,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(ReportesPage(nit: nit));
+                },
+              ),
+              _smallCard(
+                "Preventivas",
+                Icons.build_circle_outlined,
+                Colors.deepOrange,
+                onTap: () {
+                  if (!_requiereConjuntoOrWarn()) return;
+                  _go(PreventivasPage(nit: nit));
+                },
+              ),
+              _smallCard(
+                "Recargar",
+                Icons.refresh,
+                Colors.blueGrey,
+                onTap: _cargarConjuntos,
+              ),
+            ],
           ),
         ],
       ),

@@ -8,7 +8,9 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_application_1/api/reporte_api.dart';
 import 'package:flutter_application_1/model/reporte_model.dart';
 import 'package:flutter_application_1/pdf/pdf_download.dart';
+import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/chart_capture.dart';
+import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -30,6 +32,7 @@ class ReportesDashboardPage extends StatefulWidget {
 
 class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   final _api = ReporteApi();
+  final _session = SessionService();
 
   late DateTime _desde;
   late DateTime _hasta;
@@ -40,10 +43,8 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   bool _loading = false;
   bool _generandoPdf = false;
   String? _error;
+  Map<String, String>? _evidenceHeaders;
 
-  /// Ã¢Å“â€¦ cuando estÃƒÂ¡ true:
-  /// - desactiva animaciones de charts
-  /// - asegura que el host offscreen pinte estable antes de capturar
   bool _captureMode = false;
 
   ReporteKpis? _kpis;
@@ -54,17 +55,17 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   List<UsoEquipoRow> _maq = [];
   List<UsoEquipoRow> _herr = [];
 
-  // Ã¢Å“â€¦ Informes usa tareas detalle
+  // ✅ Informes usa tareas detalle
   List<TareaDetalleRow> _tareasDetalle = [];
 
-  // Ã¢Å“â€¦ Keys para capturar charts (Offstage + RepaintBoundary)
+  // ✅ Keys para capturar charts (Offstage + RepaintBoundary)
   final GlobalKey _kPieEstados = GlobalKey();
   final GlobalKey _kLineSerie = GlobalKey();
   final GlobalKey _kPieTipos = GlobalKey();
   final GlobalKey _kBarInsumos = GlobalKey();
 
   /// =========================
-  ///  Ã¢Å“â€¦ ANÃƒÂLISIS EDITABLES
+  ///  ✅ ANÁLISIS EDITABLES
   /// =========================
   late final _a11Ctrl = TextEditingController();
   late final _p11Ctrl = TextEditingController();
@@ -78,7 +79,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   late final _a14Ctrl = TextEditingController();
   late final _p14Ctrl = TextEditingController();
 
-  /// Si luego quieres IA: aquÃƒÂ­ queda el Ã¢â‚¬Å“huecoÃ¢â‚¬Â (por ahora genera texto bÃƒÂ¡sico).
+  /// Si luego quieres IA: aquí queda el “hueco” (por ahora genera texto básico).
   bool _analisisInicializado = false;
 
   @override
@@ -95,7 +96,19 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         : (ref == null || ref.isEmpty)
         ? null
         : ref;
+    _preloadEvidenceHeaders();
     _cargarTodo();
+  }
+
+  Future<void> _preloadEvidenceHeaders() async {
+    final token = await _session.getToken();
+    if (!mounted) return;
+
+    final headers = <String, String>{'x-empresa-id': AppConstants.empresaNit};
+    if (token != null && token.trim().isNotEmpty) {
+      headers['Authorization'] = 'Bearer ${token.trim()}';
+    }
+    setState(() => _evidenceHeaders = headers);
   }
 
   @override
@@ -189,7 +202,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       final conjuntoId = _conjuntoId;
       if (!_esReporteGeneral && conjuntoId == null) {
         throw Exception(
-          'No se recibio el conjuntoId/NIT. Esta pagina solo funciona por conjunto.',
+          'No se recibió el conjuntoId/NIT. Esta página solo funciona por conjunto.',
         );
       }
 
@@ -239,7 +252,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 .where((r) => _matchesConjuntoRef(r, conjuntoId!))
                 .toList();
 
-      // Ã¢Å“â€¦ NUEVO: tareas detalle (correctivas + preventivas)
+      // ✅ NUEVO: tareas detalle (correctivas + preventivas)
       final tareasDetalle = await _api.mensualDetalle(
         desde: _desde,
         hasta: _hasta,
@@ -257,12 +270,12 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         _tareasDetalle = tareasDetalle;
       });
 
-      // Ã¢Å“â€¦ inicializa los anÃƒÂ¡lisis solo una vez (editable por usuario)
+      // ✅ inicializa los análisis solo una vez (editable por usuario)
       if (!_analisisInicializado) {
         _seedAnalisisEditable();
         _analisisInicializado = true;
       } else {
-        // si quieres que al cambiar rango se regenere, puedes poner un botÃƒÂ³n Ã¢â‚¬Å“RegenerarÃ¢â‚¬Â
+        // si quieres que al cambiar rango se regenere, puedes poner un botón “Regenerar”
       }
     } catch (e) {
       setState(() => _error = e.toString());
@@ -291,8 +304,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         59,
         59,
       );
-      _analisisInicializado =
-          false; // para que regenere en el prÃƒÂ³ximo cargar
+      _analisisInicializado = false; // para que regenere en el próximo cargar
     });
     _cargarTodo();
   }
@@ -311,7 +323,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     return {'preventivas': prev, 'correctivas': corr};
   }
 
-  // ===================== ANÃƒÂLISIS Ã¢â‚¬Å“BÃƒÂSICOÃ¢â‚¬Â + EDITABLE =====================
+  // ===================== ANÁLISIS “BÁSICO” + EDITABLE =====================
 
   void _seedAnalisisEditable() {
     final k = _kpis;
@@ -325,26 +337,25 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     // 1.1 Tipos
     if (prev + corr == 0) {
       _a11Ctrl.text = 'No se registran tareas en el periodo seleccionado.';
-      _p11Ctrl.text =
-          'Validar programaciÃƒÂ³n y confirmar operaciÃƒÂ³n del periodo.';
+      _p11Ctrl.text = 'Validar programación y confirmar operación del periodo.';
     } else if (corr > prev) {
       _a11Ctrl.text =
-          'Se observa mayor proporciÃƒÂ³n de correctivas frente a preventivas. '
-          'Esto suele indicar recurrencia de fallas o baja ejecuciÃƒÂ³n preventiva.';
+          'Se observa mayor proporción de correctivas frente a preventivas. '
+          'Esto suele indicar recurrencia de fallas o baja ejecución preventiva.';
       _p11Ctrl.text =
-          'Reforzar plan preventivo, revisar causas raÃƒÂ­z de correctivas repetidas y priorizar actividades de control.';
+          'Reforzar plan preventivo, revisar causas raíz de correctivas repetidas y priorizar actividades de control.';
     } else {
       _a11Ctrl.text =
-          'La ejecuciÃƒÂ³n preventiva se mantiene estable frente a las correctivas. '
+          'La ejecución preventiva se mantiene estable frente a las correctivas. '
           'Esto contribuye a reducir incidencias y mejorar continuidad del servicio.';
       _p11Ctrl.text =
-          'Mantener programaciÃƒÂ³n preventiva y monitorear correctivas para evitar recurrencia.';
+          'Mantener programación preventiva y monitorear correctivas para evitar recurrencia.';
     }
 
     // 1.2 Estados
     if (k.total == 0) {
       _a12Ctrl.text = 'No hay datos de estados porque no se registran tareas.';
-      _p12Ctrl.text = 'Confirmar operaciÃƒÂ³n/cargue de tareas.';
+      _p12Ctrl.text = 'Confirmar operación/cargue de tareas.';
     } else {
       final tasa = kd.tasaCierrePct;
       final rej = kd.rechazadas;
@@ -353,7 +364,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
 
       if (tasa < 75) {
         _a12Ctrl.text =
-            'La tasa de cierre es baja ($tasa%). Se evidencian tareas pendientes o con cierre tardÃƒÂ­o.';
+            'La tasa de cierre es baja ($tasa%). Se evidencian tareas pendientes o con cierre tardío.';
       } else if (tasa < 90) {
         _a12Ctrl.text =
             'La tasa de cierre es media ($tasa%). Existe oportunidad de mejorar tiempos y aprobaciones.';
@@ -365,19 +376,20 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       final bullets = <String>[];
       if (rej > 0)
         bullets.add('Rechazadas: $rej (revisar causas y evidencias).');
-      if (nocomp > 0)
+      if (nocomp > 0) {
         bullets.add(
           'No completadas: $nocomp (validar accesos/insumos/tiempos).',
         );
+      }
       if (pend > 0)
-        bullets.add('Pendientes aprobaciÃƒÂ³n: $pend (acelerar VoBo).');
+        bullets.add('Pendientes aprobación: $pend (acelerar VoBo).');
 
       _a12Ctrl.text += bullets.isEmpty
           ? ''
-          : '\n' + bullets.map((e) => 'Ã¢â‚¬Â¢ $e').join('\n');
+          : '\n' + bullets.map((e) => '• $e').join('\n');
 
       _p12Ctrl.text =
-          'Estandarizar evidencias, validar checklist de cierre y asegurar aprobaciÃƒÂ³n oportuna con administraciÃƒÂ³n/interventorÃƒÂ­a.';
+          'Estandarizar evidencias, validar checklist de cierre y asegurar aprobación oportuna con administración/interventoría.';
     }
 
     // 1.3 Serie diaria
@@ -385,7 +397,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     if (s == null || s.days.isEmpty) {
       _a13Ctrl.text = 'No hay serie diaria disponible para el periodo.';
       _p13Ctrl.text =
-          'Validar que el endpoint de serie diaria estÃƒÂ© retornando datos.';
+          'Validar que el endpoint de serie diaria esté retornando datos.';
     } else {
       // picos simples
       int maxVal = 0;
@@ -399,17 +411,17 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         }
       }
       _a13Ctrl.text =
-          'La tendencia diaria muestra variaciÃƒÂ³n de carga. '
-          '${maxDay != null ? 'Mayor pico el dÃƒÂ­a $maxDay con $maxVal tareas.' : ''}';
+          'La tendencia diaria muestra variación de carga. '
+          '${maxDay != null ? 'Mayor pico el día $maxDay con $maxVal tareas.' : ''}';
       _p13Ctrl.text =
-          'Balancear carga en dÃƒÂ­as pico, confirmar disponibilidad de personal y priorizar tareas crÃƒÂ­ticas.';
+          'Balancear carga en días pico, confirmar disponibilidad de personal y priorizar tareas críticas.';
     }
 
     // 1.4 Insumos
     if (!_esReporteGeneral && _conjuntoId == null) {
-      _a14Ctrl.text = 'No se recibio conjuntoId/NIT para analizar insumos.';
+      _a14Ctrl.text = 'No se recibió conjuntoId/NIT para analizar insumos.';
       _p14Ctrl.text =
-          'Abrir esta pagina desde un conjunto valido y regenerar el informe.';
+          'Abrir esta página desde un conjunto válido y regenerar el informe.';
     } else if (_insumos.isEmpty) {
       _a14Ctrl.text = 'No se registran consumos de insumos en el periodo.';
       _p14Ctrl.text =
@@ -420,11 +432,11 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       final t = top.first;
       _a14Ctrl.text =
           '${_esReporteGeneral ? 'Consolidado de todos los conjuntos del periodo. ' : ''}'
-          'Se evidencia consumo de insumos asociado a la operacion del periodo. '
+          'Se evidencia consumo de insumos asociado a la operación del periodo. '
           'Insumo principal: ${t.nombre} (${t.cantidad.toStringAsFixed(2)} ${t.unidad}).';
       _p14Ctrl.text =
           '${_esReporteGeneral ? 'Priorizar control de abastecimiento global y estandarizar consumos entre conjuntos. ' : ''}'
-          'Revisar reposicion, validar rendimientos y evitar sobreconsumo. Mantener control por tarea.';
+          'Revisar reposición, validar rendimientos y evitar sobreconsumo. Mantener control por tarea.';
     }
   }
 
@@ -440,7 +452,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   Future<Map<String, Uint8List>> _captureChartsForPdf() async {
     setState(() => _captureMode = true);
 
-    // 2 frames + pequeÃƒÂ±o delay para asegurar paint estable (web)
+    // 2 frames + pequeño delay para asegurar paint estable (web)
     await WidgetsBinding.instance.endOfFrame;
     await WidgetsBinding.instance.endOfFrame;
     await Future.delayed(const Duration(milliseconds: 120));
@@ -553,12 +565,12 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     final x = s
         .trim()
         .toLowerCase()
-        .replaceAll('ÃƒÂ¡', 'a')
-        .replaceAll('ÃƒÂ©', 'e')
-        .replaceAll('ÃƒÂ­', 'i')
-        .replaceAll('ÃƒÂ³', 'o')
-        .replaceAll('ÃƒÂº', 'u')
-        .replaceAll('ÃƒÂ±', 'n')
+        .replaceAll('á', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ú', 'u')
+        .replaceAll('ñ', 'n')
         .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
         .replaceAll(RegExp(r'_+'), '_')
         .replaceAll(RegExp(r'^_|_$'), '');
@@ -745,7 +757,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               ),
               pw.SizedBox(height: 8),
               pw.Text(
-                'Analisis',
+                'Análisis',
                 style: pw.TextStyle(
                   fontSize: 10,
                   fontWeight: pw.FontWeight.bold,
@@ -757,7 +769,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               ),
               pw.SizedBox(height: 6),
               pw.Text(
-                'Plan de accion',
+                'Plan de acción',
                 style: pw.TextStyle(
                   fontSize: 10,
                   fontWeight: pw.FontWeight.bold,
@@ -891,12 +903,12 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               pw.Text(t.descripcion, style: const pw.TextStyle(fontSize: 9)),
               pw.SizedBox(height: 4),
               pw.Text(
-                'Inicio: ${fechaHoraFmt.format(t.fechaInicio)} | Fin: ${fechaHoraFmt.format(t.fechaFin)} | Duracion: ${t.duracionMinutos} min',
+                'Inicio: ${fechaHoraFmt.format(t.fechaInicio)} | Fin: ${fechaHoraFmt.format(t.fechaFin)} | Duración: ${t.duracionMinutos} min',
                 style: const pw.TextStyle(fontSize: 8),
               ),
               if ((t.ubicacion ?? '').isNotEmpty)
                 pw.Text(
-                  'Ubicacion: ${t.ubicacion}',
+                  'Ubicación: ${t.ubicacion}',
                   style: const pw.TextStyle(fontSize: 8),
                 ),
               if ((t.elemento ?? '').isNotEmpty)
@@ -974,7 +986,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               child: pw.Row(
                 children: [
                   pw.Text(
-                    'INFORME DE GESTION',
+                    'INFORME DE GESTIÓN',
                     style: pw.TextStyle(
                       fontSize: 12,
                       fontWeight: pw.FontWeight.bold,
@@ -1001,7 +1013,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                   ),
                   pw.Spacer(),
                   pw.Text(
-                    'Pagina ${ctx.pageNumber} de ${ctx.pagesCount}',
+                    'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
                     style: const pw.TextStyle(fontSize: 8),
                   ),
                 ],
@@ -1034,7 +1046,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                   metricCard('Rechazadas', kd.rechazadas.toString()),
                   metricCard('No completadas', kd.noCompletadas.toString()),
                   metricCard(
-                    'Pend. aprobacion',
+                    'Pend. aprobación',
                     kd.pendientesAprobacion.toString(),
                   ),
                   metricCard('% cierre', '${kd.tasaCierrePct}%'),
@@ -1044,7 +1056,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               ),
 
               pw.SizedBox(height: 10),
-              sectionTitle('2. Distribucion y Tendencias'),
+              sectionTitle('2. Distribución y Tendencias'),
               chartSection(
                 title: '2.1 Preventivas vs Correctivas',
                 imageBytes: charts['tipos']!,
@@ -1052,13 +1064,13 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 actionPlan: _p11Ctrl.text,
               ),
               chartSection(
-                title: '2.2 Distribucion por estado',
+                title: '2.2 Distribución por estado',
                 imageBytes: charts['estados']!,
                 analysis: _a12Ctrl.text,
                 actionPlan: _p12Ctrl.text,
               ),
               chartSection(
-                title: '2.3 Tareas por dia (tendencia)',
+                title: '2.3 Tareas por día (tendencia)',
                 imageBytes: charts['serie']!,
                 analysis: _a13Ctrl.text,
                 actionPlan: _p13Ctrl.text,
@@ -1087,7 +1099,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 data: insumosTable,
               ),
 
-              sectionTitle('4. Registro Fotografico y Tareas'),
+              sectionTitle('4. Registro Fotográfico y Tareas'),
               if (_tareasDetalle.isEmpty)
                 pw.Container(
                   padding: const pw.EdgeInsets.all(10),
@@ -1117,7 +1129,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         await Printing.layoutPdf(name: filename, onLayout: (_) async => bytes);
       }
     } catch (e, st) {
-      debugPrint('Error PDF Gestion: $e\n$st');
+      debugPrint('Error PDF Gestión: $e\n$st');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -1133,7 +1145,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     }
   }
 
-  // ======================= PDF DETALLADO (tu versiÃƒÂ³n) =======================
+  // ======================= PDF DETALLADO (tu versión) =======================
 
   Future<void> _generarInformeDetalladoPdf() async {
     if (_tareasDetalle.isEmpty) return;
@@ -1162,7 +1174,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             ),
             pw.SizedBox(height: 6),
             pw.Text(
-              'Tareas: ${_tareasDetalle.length} Ã¢â‚¬Â¢ Rango: ${dfRango.format(_desde)} Ã¢â€ â€™ ${dfRango.format(_hasta)}',
+              'Tareas: ${_tareasDetalle.length} • Rango: ${dfRango.format(_desde)} → ${dfRango.format(_hasta)}',
               style: const pw.TextStyle(fontSize: 11),
             ),
             pw.SizedBox(height: 12),
@@ -1183,7 +1195,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                       ].where((e) => e.trim().isNotEmpty).join(' ');
                       return extra.isEmpty ? n : '$n ($extra)';
                     })
-                    .join(' Ã¢â‚¬Â¢ ');
+                    .join(' • ');
               }
 
               return pw.Container(
@@ -1197,12 +1209,12 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Text(
-                      '${t.tipo} Ã¢â‚¬Â¢ ${t.estado}',
+                      '${t.tipo} • ${t.estado}',
                       style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                     ),
                     pw.SizedBox(height: 3),
                     pw.Text(
-                      'ID ${t.id} Ã¢â‚¬Â¢ ${t.descripcion}',
+                      'ID ${t.id} • ${t.descripcion}',
                       style: const pw.TextStyle(fontSize: 11),
                     ),
                     pw.SizedBox(height: 3),
@@ -1215,13 +1227,13 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                       style: const pw.TextStyle(fontSize: 10),
                     ),
                     pw.Text(
-                      'DuraciÃƒÂ³n: ${t.duracionMinutos} min',
+                      'Duración: ${t.duracionMinutos} min',
                       style: const pw.TextStyle(fontSize: 10),
                     ),
                     pw.SizedBox(height: 6),
                     if ((t.ubicacion ?? '').isNotEmpty)
                       pw.Text(
-                        'UbicaciÃƒÂ³n: ${t.ubicacion}',
+                        'Ubicación: ${t.ubicacion}',
                         style: const pw.TextStyle(fontSize: 10),
                       ),
                     if ((t.elemento ?? '').isNotEmpty)
@@ -1269,15 +1281,12 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                     else
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: evid
-                            .take(8)
-                            .map(
-                              (u) => pw.Text(
-                                '- $u',
-                                style: const pw.TextStyle(fontSize: 9),
-                              ),
-                            )
-                            .toList(),
+                        children: evid.take(8).map((u) {
+                          return pw.Text(
+                            '- $u',
+                            style: const pw.TextStyle(fontSize: 9),
+                          );
+                        }).toList(),
                       ),
                   ],
                 ),
@@ -1366,7 +1375,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                               icon: Icons.date_range,
                               title: 'Rango',
                               subtitle:
-                                  '${df.format(_desde)} Ã¢â€ â€™ ${df.format(_hasta)}',
+                                  '${df.format(_desde)} → ${df.format(_hasta)}',
                               onTap: _pickRango,
                             ),
                           ),
@@ -1391,7 +1400,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              'Esta pagina requiere conjuntoId/NIT desde la navegacion.',
+                              'Esta página requiere conjuntoId/NIT desde la navegación.',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.black54,
@@ -1422,14 +1431,14 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               ],
             ),
 
-            // Ã¢Å“â€¦ Host real fuera de pantalla (para captura)
+            // ✅ Host real fuera de pantalla (para captura)
             Positioned(
               left: -5000,
               top: 0,
               child: IgnorePointer(
                 child: Material(
                   color: Colors
-                      .white, // Ã¢Å“â€¦ importante para que capture no quede transparente
+                      .white, // ✅ importante para que capture no quede transparente
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1607,7 +1616,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               Icons.warning_amber,
             ),
             _kpiTile(
-              'Pend. aprobaciÃƒÂ³n',
+              'Pend. aprobación',
               kd.pendientesAprobacion.toString(),
               Icons.hourglass_bottom,
             ),
@@ -1625,7 +1634,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           ],
         ),
         const SizedBox(height: 14),
-        _sectionTitle('DistribuciÃƒÂ³n por estado'),
+        _sectionTitle('Distribución por estado'),
         const SizedBox(height: 8),
         _card(
           child: SizedBox(
@@ -1640,7 +1649,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           ),
         ),
         const SizedBox(height: 14),
-        _sectionTitle('Tareas por dÃƒÂ­a (tendencia)'),
+        _sectionTitle('Tareas por día (tendencia)'),
         const SizedBox(height: 8),
         _card(child: SizedBox(height: 260, child: _lineSerieDiaria())),
         const SizedBox(height: 14),
@@ -2171,7 +2180,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'ID: ${r.operarioId} Ã¢â‚¬Â¢ Prom: $promHoras h',
+                    'ID: ${r.operarioId} • Prom: $promHoras h',
                     style: const TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                   const SizedBox(height: 10),
@@ -2204,7 +2213,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   Widget _tabInsumos() {
     if (!_esReporteGeneral && _conjuntoId == null) {
       return const Center(
-        child: Text('No se recibio el conjuntoId/NIT para cargar insumos.'),
+        child: Text('No se recibió el conjuntoId/NIT para cargar insumos.'),
       );
     }
     if (_insumos.isEmpty) {
@@ -2256,7 +2265,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Cantidad: ${r.cantidad.toStringAsFixed(2)} ${r.unidad} Ã¢â‚¬Â¢ Usos: ${r.usos}',
+                    'Cantidad: ${r.cantidad.toStringAsFixed(2)} ${r.unidad} • Usos: ${r.usos}',
                     style: const TextStyle(fontSize: 12, color: Colors.black87),
                   ),
                 ],
@@ -2337,7 +2346,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     );
   }
 
-  /// versiÃƒÂ³n Ã¢â‚¬Å“simpleÃ¢â‚¬Â para imprimir insumos en el PDF incluso si no hay conjuntoId
+  /// versión “simple” para imprimir insumos en el PDF incluso si no hay conjuntoId
   Widget _barInsumosForPdf() {
     if (_insumos.isEmpty) {
       return const Center(child: Text('Sin insumos en este rango.'));
@@ -2640,7 +2649,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        _sectionTitle('AnÃƒÂ¡lisis editable (se imprimen en el PDF)'),
+        _sectionTitle('Análisis editable (se imprimen en el PDF)'),
         const SizedBox(height: 8),
         _card(
           child: Column(
@@ -2651,14 +2660,10 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 _p11Ctrl,
               ),
               const Divider(),
-              _analisisBlock(
-                '1.2 DistribuciÃƒÂ³n por estado',
-                _a12Ctrl,
-                _p12Ctrl,
-              ),
+              _analisisBlock('1.2 Distribución por estado', _a12Ctrl, _p12Ctrl),
               const Divider(),
               _analisisBlock(
-                '1.3 Tareas por dÃƒÂ­a (tendencia)',
+                '1.3 Tareas por día (tendencia)',
                 _a13Ctrl,
                 _p13Ctrl,
               ),
@@ -2678,7 +2683,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         ),
         const SizedBox(height: 14),
 
-        _sectionTitle('Informes automÃƒÂ¡ticos'),
+        _sectionTitle('Informes automáticos'),
         const SizedBox(height: 8),
         _card(
           child: Row(
@@ -2696,7 +2701,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                         )
                       : const Icon(Icons.insights),
                   label: Text(
-                    _generandoPdf ? 'Generando...' : 'GestiÃ³n(PDF plantilla)',
+                    _generandoPdf ? 'Generando...' : 'Gestión (PDF plantilla)',
                   ),
                 ),
               ),
@@ -2770,7 +2775,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                '${t.estado} Ã¢â‚¬Â¢ ${df.format(t.fechaInicio)} Ã¢â€ â€™ ${df.format(t.fechaFin)} Ã¢â‚¬Â¢ ${t.duracionMinutos} min',
+                                '${t.estado} • ${df.format(t.fechaInicio)} → ${df.format(t.fechaFin)} • ${t.duracionMinutos} min',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.black54,
@@ -2813,7 +2818,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           controller: analisis,
           maxLines: 4,
           decoration: const InputDecoration(
-            labelText: 'ANÃƒÂLISIS MES',
+            labelText: 'ANÁLISIS MES',
             border: OutlineInputBorder(),
             isDense: true,
           ),
@@ -2823,7 +2828,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           controller: plan,
           maxLines: 2,
           decoration: const InputDecoration(
-            labelText: 'PLAN DE ACCIÃƒâ€œN',
+            labelText: 'PLAN DE ACCIÓN',
             border: OutlineInputBorder(),
             isDense: true,
           ),
@@ -2832,7 +2837,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     );
   }
 
-  // ======================= MODAL (tu versiÃƒÂ³n) =======================
+  // ======================= MODAL (tu versión) =======================
 
   void _openTareaModal(TareaDetalleRow t) {
     final df = DateFormat('dd/MM/yyyy HH:mm', 'es');
@@ -2884,9 +2889,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                     children: [
                       _kv('Inicio', df.format(t.fechaInicio)),
                       _kv('Fin', df.format(t.fechaFin)),
-                      _kv('DuraciÃƒÂ³n', '${t.duracionMinutos} min'),
+                      _kv('Duración', '${t.duracionMinutos} min'),
                       if ((t.ubicacion ?? '').isNotEmpty)
-                        _kv('UbicaciÃƒÂ³n', t.ubicacion!),
+                        _kv('Ubicación', t.ubicacion!),
                       if ((t.elemento ?? '').isNotEmpty)
                         _kv('Elemento', t.elemento!),
                       if ((t.supervisor ?? '').isNotEmpty)
@@ -3022,7 +3027,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     );
   }
 
-  /// Tabla Ã¢â‚¬Å“bonitaÃ¢â‚¬Â (sin DataTable para que no se rompa en web)
+  /// Tabla “bonita” (sin DataTable para que no se rompa en web)
   Widget _resourceTable({
     required String title,
     required List<Map<String, dynamic>> rows,

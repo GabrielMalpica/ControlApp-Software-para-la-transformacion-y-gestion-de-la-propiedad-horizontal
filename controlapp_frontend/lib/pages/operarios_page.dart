@@ -76,17 +76,31 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                   ),
                 ),
               ),
-              SizedBox(
-                height: 46,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Container(color: color.withOpacity(0.10)),
-                    CustomPaint(painter: _BubblePatternPainter(color)),
-                  ],
-                ),
-              ),
+              Container(height: 46, color: color.withOpacity(0.10)),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 🔹 Sección de atajos (sin crear tarea, solo solicitud insumo)
+  Widget _atajos() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(color: Colors.black12.withOpacity(0.05), blurRadius: 5),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Atajos",
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
         ),
       ),
@@ -136,88 +150,42 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEAF4EE),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.black12.withOpacity(0.05)),
-              ),
-              child: Row(
-                children: [
-                  const CircleAvatar(
-                    radius: 16,
-                    backgroundColor: Color(0xFF0B6E3D),
-                    child: Icon(Icons.apartment, color: Colors.white, size: 18),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          "Conjunto asignado",
-                          style: TextStyle(fontSize: 12, color: Colors.black54),
-                        ),
-                        Text(
-                          widget.nit,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              "Panel general",
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-            ),
-            const SizedBox(height: 12),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final count = _gridCountForWidth(constraints.maxWidth);
-                return GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: count,
-                  crossAxisSpacing: 14,
-                  mainAxisSpacing: 14,
-                  childAspectRatio: 1.05,
-                  children: [
-                    _simpleCard(
-                      "Tareas",
-                      AppTheme.green,
-                      Icons.assignment,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => TareasPage(nit: widget.nit),
-                          ),
-                        );
-                      },
-                    ),
-                    _simpleCard(
-                      "Solicitudes",
-                      AppTheme.primary,
-                      Icons.pending_actions,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => SolicitudesPage(nit: widget.nit),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                );
-              },
+            // 🔹 Paneles principales (solo tareas y solicitudes)
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 1.05,
+              children: [
+                _simpleCard(
+                  "Tareas",
+                  AppTheme.green,
+                  Icons.assignment,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TareasPage(nit: widget.nit),
+                      ),
+                    );
+                  },
+                ),
+                _simpleCard(
+                  "Solicitudes",
+                  AppTheme.primary,
+                  Icons.pending_actions,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SolicitudesPage(nit: widget.nit),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
           ],
         ),

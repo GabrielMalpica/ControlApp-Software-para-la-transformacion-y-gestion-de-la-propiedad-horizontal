@@ -49,6 +49,7 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
   }
 
   Future<void> _cargar() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -92,19 +93,19 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
     final s = (e ?? '').toUpperCase();
     switch (s) {
       case 'PENDIENTE_APROBACION':
-        return Colors.orange.shade800;
+        return Colors.orange;
       case 'APROBADA':
-        return Colors.green.shade700;
+        return Colors.green;
       case 'RECHAZADA':
-        return Colors.red.shade800;
+        return Colors.red;
       case 'EN_PROCESO':
-        return Colors.blue.shade700;
+        return Colors.blue;
       case 'ASIGNADA':
-        return Colors.indigo.shade700;
+        return Colors.indigo;
       case 'NO_COMPLETADA':
-        return Colors.red.shade700;
+        return Colors.red;
       default:
-        return Colors.grey.shade700;
+        return Colors.grey;
     }
   }
 
@@ -114,7 +115,7 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
   }
 
   Future<void> _accionCerrar(TareaModel t) async {
-    List<InventarioItemResponse> inventario;
+    List<InventarioItemResponse> inventario = [];
     try {
       inventario = await _inventarioApi.listarInventarioConjunto(widget.nit);
     } catch (e) {
@@ -122,11 +123,9 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('⚠️ No pude cargar inventario: $e')),
       );
-      // igual dejamos cerrar sin insumos si quieres; pero mejor permitir cerrar con inventario vacío:
-      inventario = [];
+      // seguimos con inventario vacío
     }
 
-    // 2) Abrir sheet
     final res = await showModalBottomSheet<CerrarTareaResult>(
       context: context,
       isScrollControlled: true,
@@ -179,9 +178,7 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
 
     final weekStart = _weekStartOfMonthByIndex(year, month, _semanaImprimir);
     final weekEnd = weekStart.add(const Duration(days: 6)); // L-D
-    // Si quieres L-S: weekStart + 5
 
-    // Filtrar tareas del operario (ya vienen filtradas por _filtradas)
     final tareasSemana = _filtradas.where((t) {
       final d = _dayOnly(t.fechaInicio);
       return !d.isBefore(_dayOnly(weekStart)) && !d.isAfter(_dayOnly(weekEnd));
@@ -405,8 +402,6 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
               style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
             ),
             const SizedBox(height: 10),
-
-            // ✅ SOLO CERRAR
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -418,7 +413,6 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
                 ),
               ],
             ),
-
             const SizedBox(height: 6),
             Text(
               'Nota: El veredicto (aprobar/rechazar) lo hace el Jefe de Operaciones.',

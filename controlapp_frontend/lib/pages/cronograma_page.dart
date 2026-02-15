@@ -326,7 +326,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   Future<void> _accionCerrarDesdeCronograma(TareaModel t) async {
-    List<InventarioItemResponse> inventario;
+    List<InventarioItemResponse> inventario = [];
 
     try {
       inventario = await _inventarioApi.listarInventarioConjunto(widget.nit);
@@ -335,7 +335,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('⚠️ No pude cargar inventario: $e')),
       );
-      inventario = [];
+      // seguimos con inventario vacío
     }
 
     final res = await showModalBottomSheet<CerrarTareaResult>(
@@ -351,7 +351,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
         tareaId: t.id,
         observaciones: res.observaciones,
         insumosUsados: res.insumosUsados,
-        evidencias: res.evidencias,
+        evidencias: res.evidencias, // ✅ aquí
       );
 
       if (!mounted) return;
