@@ -85,6 +85,13 @@ class _SupervisorPageState extends State<SupervisorPage> {
     return false;
   }
 
+  int _gridCountForWidth(double w) {
+    if (w >= 1100) return 4;
+    if (w >= 800) return 4;
+    if (w >= 520) return 3;
+    return 2;
+  }
+
   /// Tarjeta pequeña tipo gerente
   Widget _smallCard(
     String title,
@@ -94,35 +101,65 @@ class _SupervisorPageState extends State<SupervisorPage> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
             BoxShadow(
-              color: Colors.black12.withOpacity(0.05),
-              blurRadius: 5,
-              offset: const Offset(0, 2),
+              color: Color(0x14000000),
+              blurRadius: 18,
+              offset: Offset(0, 8),
             ),
           ],
         ),
-        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: color.withOpacity(0.15),
-              child: Icon(icon, color: color, size: 22),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-            ),
-          ],
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Column(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 78,
+                        height: 78,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: color.withOpacity(0.12),
+                        ),
+                        child: Icon(icon, size: 44, color: color),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 46,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Container(color: color.withOpacity(0.10)),
+                    CustomPaint(painter: _BubblePatternPainter(color)),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -218,94 +255,98 @@ class _SupervisorPageState extends State<SupervisorPage> {
           _buildSelectorConjuntoCard(conjunto),
           const SizedBox(height: 20),
           const Text(
-            "Panel del Supervisor",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            "Panel general",
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
           ),
           const SizedBox(height: 12),
-
-          GridView.count(
-            shrinkWrap: true,
-            crossAxisCount: 4, // ✅ cuadritos pequeños como gerente
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 1.2,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              _smallCard(
-                "Tareas",
-                Icons.assignment,
-                AppTheme.green,
-                onTap: () {
-                  if (!_requiereConjuntoOrWarn()) return;
-                  _go(SupervisorTareasPage(nit: nit));
-                },
-              ),
-              _smallCard(
-                "Solicitudes",
-                Icons.pending_actions,
-                AppTheme.primary,
-                onTap: () {
-                  if (!_requiereConjuntoOrWarn()) return;
-                  _go(SolicitudesPage(nit: nit));
-                },
-              ),
-              _smallCard(
-                "Cronograma",
-                Icons.calendar_month,
-                Colors.purple,
-                onTap: () {
-                  if (!_requiereConjuntoOrWarn()) return;
-                  _go(CronogramaPage(nit: nit));
-                },
-              ),
-              _smallCard(
-                "Inventario",
-                Icons.inventory_2_outlined,
-                AppTheme.yellow,
-                onTap: () {
-                  if (!_requiereConjuntoOrWarn()) return;
-                  _go(
-                    InventarioPage(
-                      nit: nit,
-                      empresaId: AppConstants.empresaNit,
-                    ),
-                  );
-                },
-              ),
-              _smallCard(
-                "Maquinaria",
-                Icons.precision_manufacturing,
-                AppTheme.red,
-                onTap: () {
-                  if (!_requiereConjuntoOrWarn()) return;
-                  _go(MaquinariaPage(nit: nit));
-                },
-              ),
-              _smallCard(
-                "Reportes",
-                Icons.bar_chart,
-                Colors.teal,
-                onTap: () {
-                  if (!_requiereConjuntoOrWarn()) return;
-                  _go(ReportesPage(nit: nit));
-                },
-              ),
-              _smallCard(
-                "Preventivas",
-                Icons.build_circle_outlined,
-                Colors.deepOrange,
-                onTap: () {
-                  if (!_requiereConjuntoOrWarn()) return;
-                  _go(PreventivasPage(nit: nit));
-                },
-              ),
-              _smallCard(
-                "Recargar",
-                Icons.refresh,
-                Colors.blueGrey,
-                onTap: _cargarConjuntos,
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final count = _gridCountForWidth(constraints.maxWidth);
+              return GridView.count(
+                shrinkWrap: true,
+                crossAxisCount: count,
+                crossAxisSpacing: 14,
+                mainAxisSpacing: 14,
+                childAspectRatio: 1.05,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _smallCard(
+                    "Tareas",
+                    Icons.assignment,
+                    AppTheme.green,
+                    onTap: () {
+                      if (!_requiereConjuntoOrWarn()) return;
+                      _go(SupervisorTareasPage(nit: nit));
+                    },
+                  ),
+                  _smallCard(
+                    "Solicitudes",
+                    Icons.pending_actions,
+                    AppTheme.primary,
+                    onTap: () {
+                      if (!_requiereConjuntoOrWarn()) return;
+                      _go(SolicitudesPage(nit: nit));
+                    },
+                  ),
+                  _smallCard(
+                    "Cronograma",
+                    Icons.calendar_month,
+                    Colors.purple,
+                    onTap: () {
+                      if (!_requiereConjuntoOrWarn()) return;
+                      _go(CronogramaPage(nit: nit));
+                    },
+                  ),
+                  _smallCard(
+                    "Inventario",
+                    Icons.inventory_2_outlined,
+                    AppTheme.yellow,
+                    onTap: () {
+                      if (!_requiereConjuntoOrWarn()) return;
+                      _go(
+                        InventarioPage(
+                          nit: nit,
+                          empresaId: AppConstants.empresaNit,
+                        ),
+                      );
+                    },
+                  ),
+                  _smallCard(
+                    "Maquinaria",
+                    Icons.precision_manufacturing,
+                    AppTheme.red,
+                    onTap: () {
+                      if (!_requiereConjuntoOrWarn()) return;
+                      _go(MaquinariaPage(nit: nit));
+                    },
+                  ),
+                  _smallCard(
+                    "Reportes",
+                    Icons.bar_chart,
+                    Colors.teal,
+                    onTap: () {
+                      if (!_requiereConjuntoOrWarn()) return;
+                      _go(ReportesPage(nit: nit));
+                    },
+                  ),
+                  _smallCard(
+                    "Preventivas",
+                    Icons.build_circle_outlined,
+                    Colors.deepOrange,
+                    onTap: () {
+                      if (!_requiereConjuntoOrWarn()) return;
+                      _go(PreventivasPage(nit: nit));
+                    },
+                  ),
+                  _smallCard(
+                    "Recargar",
+                    Icons.refresh,
+                    Colors.blueGrey,
+                    onTap: _cargarConjuntos,
+                  ),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -359,4 +400,31 @@ class _SupervisorPageState extends State<SupervisorPage> {
       body: _buildBody(),
     );
   }
+}
+
+
+class _BubblePatternPainter extends CustomPainter {
+  final Color color;
+  _BubblePatternPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withOpacity(0.18)
+      ..style = PaintingStyle.fill;
+
+    const xs = [0.04, 0.10, 0.22, 0.34, 0.48, 0.62, 0.74, 0.86, 0.92];
+    const ys = [0.64, 0.32, 0.78, 0.40, 0.70, 0.36, 0.78, 0.52, 0.30];
+    const rs = [3.5, 4.6, 2.8, 5.0, 3.8, 4.2, 3.0, 4.8, 3.2];
+
+    for (var i = 0; i < xs.length; i++) {
+      final c = Offset(size.width * xs[i], size.height * ys[i]);
+      canvas.drawCircle(c, rs[i], paint);
+      canvas.drawCircle(c.translate(18, -4), rs[i] * 0.55, paint);
+      canvas.drawCircle(c.translate(-14, 6), rs[i] * 0.45, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
