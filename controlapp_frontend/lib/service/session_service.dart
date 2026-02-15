@@ -76,6 +76,7 @@ class SessionService {
     return _memUserId;
   }
 
+
   Future<String?> getRol() async {
     if (_memRol != null && _memRol!.isNotEmpty) return _memRol;
 

@@ -21,6 +21,27 @@ class OperarioApi {
     };
   }
 
+  Future<List<TareaModel>> listarTareasOperario({required int operarioId}) async {
+    final uri = Uri.parse(
+      '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas',
+    );
+
+    final resp = await http.get(uri, headers: await _authHeaders());
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error al listar tareas del operario: ${resp.statusCode} - ${resp.body}',
+      );
+    }
+
+    final decoded = jsonDecode(resp.body);
+    if (decoded is! List) return [];
+
+    return decoded
+        .map((e) => TareaModel.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
   Future<void> cerrarTareaConEvidencias({
     required int operarioId,
     required int tareaId,
