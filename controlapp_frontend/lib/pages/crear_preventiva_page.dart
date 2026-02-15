@@ -181,7 +181,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         nit: widget.nit,
         fechaInicioUso: inicio,
         fechaFinUso: finUso,
-        excluirTareaId: null,
+        excluirTareaId: widget.existente?.id,
       );
       print(r);
 
@@ -1124,7 +1124,28 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   List<MaquinariaDisponibleItem> _opcionesMaquinariaDropdown() {
     if (_dispMaq == null) return [];
 
-    return [..._dispMaq!.propiasDisponibles, ..._dispMaq!.empresaDisponibles];
+    final ocupadasIds = _ocupadaPorId.keys.toSet();
+    final seen = <int>{};
+    final opciones = <MaquinariaDisponibleItem>[];
+
+    for (final m in [
+      ..._dispMaq!.propiasDisponibles,
+      ..._dispMaq!.empresaDisponibles,
+    ]) {
+      if (ocupadasIds.contains(m.id)) continue;
+      if (!seen.add(m.id)) continue;
+      opciones.add(m);
+    }
+
+    opciones.sort((a, b) {
+      final origenA = a.origen.trim().toUpperCase();
+      final origenB = b.origen.trim().toUpperCase();
+      final byOrigen = origenA.compareTo(origenB);
+      if (byOrigen != 0) return byOrigen;
+      return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+    });
+
+    return opciones;
   }
 
   String _labelMaq(MaquinariaDisponibleItem m) {

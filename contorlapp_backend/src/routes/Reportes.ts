@@ -12,6 +12,7 @@ router.get("/por-conjunto", c.resumenPorConjunto);
 router.get("/por-operario", c.resumenPorOperario);
 router.get("/duracion-promedio", c.duracionPromedioPorEstado);
 router.get("/mensual-detalle", c.reporteMensualDetalle);
+router.get("/zonificacion/preventivas", c.zonificacionPreventivas);
 router.get("/maquinaria/top", c.usoMaquinariaTop);
 router.get("/herramientas/top", c.usoHerramientaTop);
 router.get("/tipos", c.conteoPorTipo);
