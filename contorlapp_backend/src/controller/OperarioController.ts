@@ -89,6 +89,31 @@ export class OperarioController {
     } catch (err) { next(err); }
   };
 
+  // POST /operarios/:operarioId/tareas/:tareaId/cerrar
+  cerrarTareaConEvidencias: RequestHandler = async (req, res, next) => {
+    try {
+      const { operarioId } = OperarioIdParam.parse(req.params);
+      const { tareaId } = TareaIdParam.parse(req.params);
+
+      const service = new OperarioService(prisma, operarioId);
+      const files = (req.files as Express.Multer.File[]) ?? [];
+
+      await service.cerrarTareaConEvidencias(
+        tareaId,
+        {
+          observaciones: req.body.observaciones,
+          fechaFinalizarTarea: req.body.fechaFinalizarTarea,
+          insumosUsados: req.body.insumosUsados,
+        },
+        files,
+      );
+
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   // POST /operarios/:operarioId/tareas/:tareaId/no-completada
   marcarComoNoCompletada: RequestHandler = async (req, res, next) => {
     try {

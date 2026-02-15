@@ -1,8 +1,16 @@
 // src/services/OperarioService.ts
-import { PrismaClient } from "../generated/prisma";
+import {
+  PrismaClient,
+  EstadoTarea,
+  EstadoUsoHerramienta,
+  TipoMovimientoInsumo,
+  Prisma,
+} from "../generated/prisma";
 import { z } from "zod";
 import { TareaService } from "./TareaServices";
 import { InventarioService } from "./InventarioServices";
+import { uploadEvidenciaToDrive } from "../utils/drive_evidencias";
+import fs from "fs";
 
 const TareaIdDTO = z.object({ tareaId: z.number().int().positive() });
 
@@ -20,6 +28,12 @@ const MarcarCompletadaDTO = z.object({
 });
 
 const FechaDTO = z.object({ fecha: z.coerce.date() });
+
+const CerrarMultipartDTO = z.object({
+  observaciones: z.string().optional(),
+  fechaFinalizarTarea: z.string().optional(),
+  insumosUsados: z.string().optional(),
+});
 
 export class OperarioService {
   constructor(private prisma: PrismaClient, private operarioId: number) {}
@@ -165,6 +179,191 @@ export class OperarioService {
         elemento: true,
         conjunto: true,
       },
+    });
+  }
+
+  async cerrarTareaConEvidencias(
+    tareaId: number,
+    payload: unknown,
+    files: Express.Multer.File[],
+  ) {
+    const dto = CerrarMultipartDTO.parse(payload ?? {});
+    const fechaCierre = dto.fechaFinalizarTarea
+      ? new Date(dto.fechaFinalizarTarea)
+      : new Date();
+
+    const tarea = await this.prisma.tarea.findUnique({
+      where: { id: tareaId },
+      select: {
+        id: true,
+        estado: true,
+        evidencias: true,
+        conjuntoId: true,
+        operarios: { select: { id: true } },
+        conjunto: { select: { nit: true, nombre: true } },
+      },
+    });
+
+    if (!tarea) throw new Error("❌ Tarea no encontrada.");
+
+    const operarioAsignado = tarea.operarios.some(
+      (o) => o.id === this.operarioId.toString(),
+    );
+    if (!operarioAsignado) {
+      throw new Error("❌ Esta tarea no está asignada al operario autenticado.");
+    }
+
+    const permitidos = new Set<EstadoTarea>([
+      EstadoTarea.ASIGNADA,
+      EstadoTarea.EN_PROCESO,
+      EstadoTarea.COMPLETADA,
+    ]);
+
+    if (!permitidos.has(tarea.estado)) {
+      throw new Error(`No puedes cerrar una tarea en estado ${tarea.estado}.`);
+    }
+
+    if (!tarea.conjuntoId) {
+      throw new Error(
+        "La tarea no tiene conjunto asignado, no puedo descontar inventario.",
+      );
+    }
+
+    let insumosUsados: Array<{ insumoId: number; cantidad: number }> = [];
+    if (dto.insumosUsados && dto.insumosUsados.trim().length) {
+      try {
+        insumosUsados = z
+          .array(
+            z.object({
+              insumoId: z.number().int().positive(),
+              cantidad: z.number().positive(),
+            }),
+          )
+          .parse(JSON.parse(dto.insumosUsados));
+      } catch {
+        throw new Error(
+          "insumosUsados debe ser un JSON válido: [{insumoId, cantidad}]",
+        );
+      }
+    }
+
+    const urls: string[] = [];
+    try {
+      for (const f of files ?? []) {
+        const url = await uploadEvidenciaToDrive({
+          filePath: f.path,
+          fileName: `Tarea_${tareaId}_${fechaCierre
+            .toISOString()
+            .replace(/[:.]/g, "-")}_${f.originalname}`,
+          mimeType: f.mimetype,
+          conjuntoNit: tarea.conjunto?.nit ?? tarea.conjuntoId,
+          conjuntoNombre: tarea.conjunto?.nombre ?? undefined,
+          fecha: fechaCierre,
+        });
+        urls.push(url);
+      }
+    } finally {
+      for (const f of files ?? []) {
+        try {
+          if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+        } catch {}
+      }
+    }
+
+    const evidenciasMerge = [...(tarea.evidencias ?? []), ...urls];
+
+    await this.prisma.$transaction(async (tx) => {
+      const inventario = await tx.inventario.findUnique({
+        where: { conjuntoId: tarea.conjuntoId! },
+        select: { id: true },
+      });
+
+      if (!inventario) {
+        throw new Error("No existe inventario para este conjunto.");
+      }
+
+      for (const item of insumosUsados) {
+        const invItem = await tx.inventarioInsumo.findUnique({
+          where: {
+            inventarioId_insumoId: {
+              inventarioId: inventario.id,
+              insumoId: item.insumoId,
+            },
+          },
+          select: { id: true, cantidad: true },
+        });
+
+        if (!invItem) {
+          throw new Error(
+            `El insumo ${item.insumoId} no existe en inventario del conjunto.`,
+          );
+        }
+
+        const actual = invItem.cantidad;
+        const usar = new Prisma.Decimal(item.cantidad);
+
+        if (usar.lte(0)) continue;
+        if (actual.lt(usar)) {
+          throw new Error(
+            `Stock insuficiente para insumo ${item.insumoId}. Stock=${actual.toString()} / Usar=${usar.toString()}`,
+          );
+        }
+
+        await tx.inventarioInsumo.update({
+          where: { id: invItem.id },
+          data: { cantidad: actual.minus(usar) },
+        });
+
+        await tx.consumoInsumo.create({
+          data: {
+            inventario: { connect: { id: inventario.id } },
+            insumo: { connect: { id: item.insumoId } },
+            tipo: TipoMovimientoInsumo.SALIDA,
+            tarea: { connect: { id: tareaId } },
+            operario: { connect: { id: this.operarioId.toString() } },
+            cantidad: usar,
+            fecha: fechaCierre,
+            observacion: `Consumo en cierre de tarea #${tareaId} por operario ${this.operarioId}`,
+          },
+        });
+      }
+
+      await tx.usoMaquinaria.updateMany({
+        where: { tareaId, fechaFin: null },
+        data: {
+          fechaFin: fechaCierre,
+          operarioId: this.operarioId.toString(),
+          observacion: "Devuelta al cerrar tarea por operario",
+        },
+      });
+
+      await tx.usoHerramienta.updateMany({
+        where: { tareaId, fechaFin: null },
+        data: {
+          fechaFin: fechaCierre,
+          operarioId: this.operarioId.toString(),
+          estado: EstadoUsoHerramienta.DEVUELTA,
+          observacion: "Devuelta al cerrar tarea por operario",
+        },
+      });
+
+      await tx.maquinariaConjunto.updateMany({
+        where: { tareaId },
+        data: { tareaId: null, operarioId: null, fechaDevolucionEstimada: null },
+      });
+
+      await tx.tarea.update({
+        where: { id: tareaId },
+        data: {
+          evidencias: evidenciasMerge,
+          observaciones: dto.observaciones ?? undefined,
+          insumosUsados: insumosUsados as any,
+          estado: EstadoTarea.PENDIENTE_APROBACION,
+          fechaFinalizarTarea: fechaCierre,
+          finalizadaPorId: this.operarioId.toString(),
+          finalizadaPorRol: "OPERARIO",
+        },
+      });
     });
   }
 
