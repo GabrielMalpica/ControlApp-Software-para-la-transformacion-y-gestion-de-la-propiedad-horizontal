@@ -94,35 +94,56 @@ class _SupervisorPageState extends State<SupervisorPage> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [
             BoxShadow(
-              color: Colors.black12.withOpacity(0.05),
-              blurRadius: 5,
-              offset: const Offset(0, 2),
+              color: Color(0x14000000),
+              blurRadius: 18,
+              offset: Offset(0, 8),
             ),
           ],
         ),
-        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: color.withOpacity(0.15),
-              child: Icon(icon, color: color, size: 22),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-            ),
-          ],
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Column(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 78,
+                        height: 78,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: color.withOpacity(0.12),
+                        ),
+                        child: Icon(icon, size: 44, color: color),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Container(height: 46, color: color.withOpacity(0.10)),
+            ],
+          ),
         ),
       ),
     );
@@ -228,7 +249,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
             crossAxisCount: 4, // ✅ cuadritos pequeños como gerente
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            childAspectRatio: 1.2,
+            childAspectRatio: 1.05,
             physics: const NeverScrollableScrollPhysics(),
             children: [
               _smallCard(
