@@ -56,6 +56,10 @@ class _TareasPageState extends State<TareasPage> {
   int? _operarioId;
   String _filtroOperario = 'HOY';
 
+  String? _rol;
+  int? _operarioId;
+  String _filtroOperario = 'HOY';
+
   @override
   void initState() {
     super.initState();

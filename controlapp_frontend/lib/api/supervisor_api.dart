@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
+import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:http/http.dart' as http;
@@ -73,7 +74,7 @@ class SupervisorApi {
     String? observaciones,
     DateTime? fechaFinalizarTarea,
     List<Map<String, num>> insumosUsados = const [],
-    List<String> evidenciaPaths = const [],
+    List<EvidenciaAdjunto> evidencias = const [],
   }) async {
     final uri = Uri.parse(
       '${AppConstants.supervisorBase}/tareas/$tareaId/cerrar',
@@ -92,23 +93,31 @@ class SupervisorApi {
       req.fields['insumosUsados'] = jsonEncode(insumosUsados);
     }
 
-    // ✅ MULTER ESPERA field "files"
-    for (final path in evidenciaPaths) {
-      if (path.trim().isEmpty) continue;
+    for (final evidencia in evidencias) {
+      final path = evidencia.path?.trim();
+      final bytes = evidencia.bytes;
 
-      if (kIsWeb) {
-        throw Exception('En web no hay File path. Para web toca XFile/bytes.');
+      if (path != null && path.isNotEmpty) {
+        final file = File(path);
+        if (await file.exists()) {
+          req.files.add(await http.MultipartFile.fromPath('files', path));
+          continue;
+        }
       }
 
-      final file = File(path);
-      if (!await file.exists()) continue;
-
-      req.files.add(await http.MultipartFile.fromPath('files', path));
+      if (kIsWeb && bytes != null && bytes.isNotEmpty) {
+        req.files.add(
+          http.MultipartFile.fromBytes(
+            'files',
+            bytes,
+            filename: evidencia.nombre,
+          ),
+        );
+      }
     }
 
     final streamed = await req.send();
     final body = await streamed.stream.bytesToString();
-    print(body);
 
     if (streamed.statusCode != 200) {
       throw Exception('Error cerrando tarea: ${streamed.statusCode} - $body');

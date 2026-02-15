@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../model/tarea_model.dart';
 import '../model/inventario_item_model.dart';
+import '../model/evidencia_adjunto_model.dart';
 
 class CerrarTareaResult {
   final String? observaciones;
@@ -18,6 +19,7 @@ class CerrarTareaResult {
     this.evidenciaPaths = const [],
   });
 }
+
 
 class CerrarTareaSheet extends StatefulWidget {
   final TareaModel tarea;
