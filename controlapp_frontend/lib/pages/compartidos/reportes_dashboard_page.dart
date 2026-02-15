@@ -45,9 +45,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   String? _error;
   Map<String, String>? _evidenceHeaders;
 
-  /// ✅ cuando está true:
-  /// - desactiva animaciones de charts
-  /// - asegura que el host offscreen pinte estable antes de capturar
   bool _captureMode = false;
 
   ReporteKpis? _kpis;
