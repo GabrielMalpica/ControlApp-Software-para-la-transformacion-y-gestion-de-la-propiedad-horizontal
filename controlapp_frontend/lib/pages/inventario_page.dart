@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../service/theme.dart';
+import '../service/session_service.dart';
 import '../api/inventario_api.dart';
 import '../model/inventario_item_model.dart';
 import 'solicitud_insumo_page.dart';
@@ -23,9 +24,11 @@ class InventarioPage extends StatefulWidget {
 
 class _InventarioPageState extends State<InventarioPage> {
   final InventarioApi _api = InventarioApi();
+  final SessionService _session = SessionService();
 
   // ✅ Tipo actual
   TipoInventario _tipoInventario = TipoInventario.INSUMOS;
+  bool _esGerente = false;
 
   // =============================
   // Herramientas
@@ -33,14 +36,12 @@ class _InventarioPageState extends State<InventarioPage> {
   final HerramientaApi _herrApi = HerramientaApi();
   bool _cargandoHerr = false;
   List<HerramientaStockResponse> _herrItems = [];
-  final Set<int> _selectedHerramientaIds = {};
 
   // =============================
   // Insumos
   // =============================
   bool _cargando = false;
   List<InventarioItemResponse> _items = [];
-  final Set<int> _selectedInsumoIds = {};
 
   // Search
   String _q = '';
@@ -53,6 +54,7 @@ class _InventarioPageState extends State<InventarioPage> {
   @override
   void initState() {
     super.initState();
+    _cargarRolUsuario();
     _cargar();
   }
 
@@ -62,19 +64,19 @@ class _InventarioPageState extends State<InventarioPage> {
   }
 
   // ✅ carga según tipo
+  Future<void> _cargarRolUsuario() async {
+    final rol = (await _session.getRol() ?? '').trim().toLowerCase();
+    if (!mounted) return;
+    setState(() => _esGerente = rol == 'gerente');
+  }
+
   Future<void> _cargar() async {
     if (_tipoInventario == TipoInventario.INSUMOS) {
       setState(() => _cargando = true);
       try {
         final data = await _api.listarInventarioConjunto(widget.nit);
         if (!mounted) return;
-
-        setState(() {
-          _items = data;
-          _selectedInsumoIds.removeWhere(
-            (id) => !_items.any((x) => x.insumoId == id),
-          );
-        });
+        setState(() => _items = data);
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -100,12 +102,7 @@ class _InventarioPageState extends State<InventarioPage> {
             .toList();
 
         if (!mounted) return;
-        setState(() {
-          _herrItems = parsed;
-          _selectedHerramientaIds.removeWhere(
-            (id) => !_herrItems.any((x) => x.herramientaId == id),
-          );
-        });
+        setState(() => _herrItems = parsed);
       } catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -203,6 +200,7 @@ class _InventarioPageState extends State<InventarioPage> {
                 "Insumos",
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
+              showCheckboxColumn: false,
               availableRowsPerPage: const [8, 10, 20, 50],
               rowsPerPage: _rowsPerPage,
               onRowsPerPageChanged: (v) {
@@ -235,14 +233,9 @@ class _InventarioPageState extends State<InventarioPage> {
                   label: const Text("AVAILABLE"),
                   onSort: (i, asc) => _sort<num>(i, asc, (d) => d.cantidad),
                 ),
-                const DataColumn(label: Text("THRESHOLD")),
                 const DataColumn(label: Text("STATUS")),
               ],
-              source: _InventarioDataSource(
-                data: filtrados,
-                selectedIds: _selectedInsumoIds,
-                onSelectionChanged: () => setState(() {}),
-              ),
+              source: _InventarioDataSource(data: filtrados),
             ),
           ),
         ),
@@ -284,6 +277,7 @@ class _InventarioPageState extends State<InventarioPage> {
                 "Herramientas",
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
+              showCheckboxColumn: false,
               availableRowsPerPage: const [8, 10, 20, 50],
               rowsPerPage: _rowsPerPage,
               onRowsPerPageChanged: (v) {
@@ -297,11 +291,7 @@ class _InventarioPageState extends State<InventarioPage> {
                 DataColumn(numeric: true, label: Text("AVAILABLE")),
                 DataColumn(label: Text("STATE")),
               ],
-              source: _HerramientaDataSource(
-                data: filtrados,
-                selectedIds: _selectedHerramientaIds,
-                onSelectionChanged: () => setState(() {}),
-              ),
+              source: _HerramientaDataSource(data: filtrados),
             ),
           ),
         ),
@@ -413,15 +403,11 @@ class _InventarioPageState extends State<InventarioPage> {
             Row(
               children: [
                 const Spacer(),
-                _ghostButton(
-                  icon: _tipoInventario == TipoInventario.INSUMOS
-                      ? Icons.add_shopping_cart_outlined
-                      : Icons.add,
-                  label: _tipoInventario == TipoInventario.INSUMOS
-                      ? "Solicitar insumos"
-                      : "Agregar herramienta",
-                  onTap: () async {
-                    if (_tipoInventario == TipoInventario.INSUMOS) {
+                if (_tipoInventario == TipoInventario.INSUMOS)
+                  _ghostButton(
+                    icon: Icons.add_shopping_cart_outlined,
+                    label: "Solicitar insumos",
+                    onTap: () async {
                       await Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -430,7 +416,13 @@ class _InventarioPageState extends State<InventarioPage> {
                         ),
                       );
                       _cargar();
-                    } else {
+                    },
+                  ),
+                if (_tipoInventario == TipoInventario.HERRAMIENTAS && _esGerente)
+                  _ghostButton(
+                    icon: Icons.add,
+                    label: "Agregar herramienta",
+                    onTap: () async {
                       final changed = await showDialog<bool>(
                         context: context,
                         barrierDismissible: false,
@@ -444,9 +436,8 @@ class _InventarioPageState extends State<InventarioPage> {
                       if (changed == true) {
                         _cargar(); // recarga tabla herramientas
                       }
-                    }
-                  },
-                ),
+                    },
+                  ),
               ],
             ),
 
@@ -549,22 +540,13 @@ class _InventarioPageState extends State<InventarioPage> {
 
 class _InventarioDataSource extends DataTableSource {
   final List<InventarioItemResponse> data;
-  final Set<int> selectedIds; // insumoId
-  final VoidCallback onSelectionChanged;
 
-  _InventarioDataSource({
-    required this.data,
-    required this.selectedIds,
-    required this.onSelectionChanged,
-  });
+  _InventarioDataSource({required this.data});
 
   @override
   DataRow? getRow(int index) {
     if (index >= data.length) return null;
     final inv = data[index];
-
-    final rowId = inv.insumoId;
-    final isSelected = selectedIds.contains(rowId);
 
     final statusTxt = inv.agotado ? "Out" : (inv.estaBajo ? "Low" : "Ok");
     final statusColor = inv.agotado
@@ -573,19 +555,6 @@ class _InventarioDataSource extends DataTableSource {
 
     return DataRow.byIndex(
       index: index,
-      selected: isSelected,
-      onSelectChanged: (v) {
-        if (v == null) return;
-
-        if (v) {
-          selectedIds.add(rowId);
-        } else {
-          selectedIds.remove(rowId);
-        }
-
-        onSelectionChanged();
-        notifyListeners();
-      },
       cells: [
         DataCell(
           Text(inv.nombre, style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -593,7 +562,6 @@ class _InventarioDataSource extends DataTableSource {
         DataCell(Text(inv.categoria ?? "-")),
         DataCell(Text(inv.unidad.isEmpty ? "-" : inv.unidad)),
         DataCell(Text(inv.cantidad.toString())),
-        DataCell(Text(inv.umbralUsado?.toString() ?? "-")),
         DataCell(
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -619,29 +587,20 @@ class _InventarioDataSource extends DataTableSource {
   int get rowCount => data.length;
 
   @override
-  int get selectedRowCount => selectedIds.length;
+  int get selectedRowCount => 0;
 }
 
 // ================= DataSource HERRAMIENTAS =================
 
 class _HerramientaDataSource extends DataTableSource {
   final List<HerramientaStockResponse> data;
-  final Set<int> selectedIds; // herramientaId
-  final VoidCallback onSelectionChanged;
 
-  _HerramientaDataSource({
-    required this.data,
-    required this.selectedIds,
-    required this.onSelectionChanged,
-  });
+  _HerramientaDataSource({required this.data});
 
   @override
   DataRow? getRow(int index) {
     if (index >= data.length) return null;
     final h = data[index];
-
-    final rowId = h.herramientaId;
-    final isSelected = selectedIds.contains(rowId);
 
     final estadoTxt = h.estado.label;
     final estadoColor = (h.estado == EstadoHerramientaStock.OPERATIVA)
@@ -652,19 +611,6 @@ class _HerramientaDataSource extends DataTableSource {
 
     return DataRow.byIndex(
       index: index,
-      selected: isSelected,
-      onSelectChanged: (v) {
-        if (v == null) return;
-
-        if (v) {
-          selectedIds.add(rowId);
-        } else {
-          selectedIds.remove(rowId);
-        }
-
-        onSelectionChanged();
-        notifyListeners();
-      },
       cells: [
         DataCell(
           Text(h.nombre, style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -697,7 +643,7 @@ class _HerramientaDataSource extends DataTableSource {
   int get rowCount => data.length;
 
   @override
-  int get selectedRowCount => selectedIds.length;
+  int get selectedRowCount => 0;
 }
 
 // ================= ✅ DIALOG AGREGAR HERRAMIENTA =================

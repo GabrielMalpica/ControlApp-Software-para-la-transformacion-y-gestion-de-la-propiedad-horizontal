@@ -75,7 +75,6 @@ class SupervisorApi {
     DateTime? fechaFinalizarTarea,
     List<Map<String, num>> insumosUsados = const [],
     List<EvidenciaAdjunto> evidencias = const [],
-    @Deprecated('Usa evidencias') List<String> evidenciaPaths = const [],
   }) async {
     final uri = Uri.parse(
       '${AppConstants.supervisorBase}/tareas/$tareaId/cerrar',
@@ -94,14 +93,7 @@ class SupervisorApi {
       req.fields['insumosUsados'] = jsonEncode(insumosUsados);
     }
 
-    final evidenciasNormalizadas = <EvidenciaAdjunto>[
-      ...evidencias,
-      ...evidenciaPaths
-          .where((p) => p.trim().isNotEmpty)
-          .map((p) => EvidenciaAdjunto(nombre: p.split('/').last, path: p)),
-    ];
-
-    for (final evidencia in evidenciasNormalizadas) {
+    for (final evidencia in evidencias) {
       final path = evidencia.path?.trim();
       final bytes = evidencia.bytes;
 

@@ -10,12 +10,13 @@ class CerrarTareaResult {
   /// [{insumoId: 1, cantidad: 0.3}, ...]
   final List<Map<String, num>> insumosUsados;
 
-  final List<EvidenciaAdjunto> evidencias;
+  /// paths locales (desktop/mobile). En web no aplica con este flujo actual.
+  final List<String> evidenciaPaths;
 
   CerrarTareaResult({
     required this.insumosUsados,
     this.observaciones,
-    this.evidencias = const [],
+    this.evidenciaPaths = const [],
   });
 }
 
@@ -37,7 +38,7 @@ class CerrarTareaSheet extends StatefulWidget {
 class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
   final _obsCtrl = TextEditingController();
   final List<_ConsumoRow> _rows = [];
-  final List<EvidenciaAdjunto> _evidencias = [];
+  final List<String> _evidenciaPaths = [];
 
   @override
   void initState() {
@@ -57,7 +58,6 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
   Future<void> _pickEvidencias() async {
     final picked = await FilePicker.platform.pickFiles(
       allowMultiple: true,
-      withData: true,
       type: FileType.custom,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
     );
@@ -65,17 +65,9 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
     if (picked == null) return;
 
     final nuevos = picked.files
-        .map(
-          (f) => EvidenciaAdjunto(
-            nombre: f.name,
-            path: f.path,
-            bytes: f.bytes,
-          ),
-        )
-        .where(
-          (f) => (f.path?.trim().isNotEmpty ?? false) ||
-              ((f.bytes?.isNotEmpty ?? false)),
-        )
+        .map((f) => f.path)
+        .whereType<String>()
+        .where((p) => p.trim().isNotEmpty)
         .toList();
 
     if (nuevos.isEmpty) {
@@ -83,7 +75,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'No se pudieron leer los archivos seleccionados.',
+            'No se pudieron leer rutas de archivos. En web este flujo no usa path.',
           ),
         ),
       );
@@ -91,11 +83,8 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
     }
 
     setState(() {
-      for (final e in nuevos) {
-        final yaExiste = _evidencias.any(
-          (x) => x.nombre == e.nombre && x.path == e.path,
-        );
-        if (!yaExiste) _evidencias.add(e);
+      for (final p in nuevos) {
+        if (!_evidenciaPaths.contains(p)) _evidenciaPaths.add(p);
       }
     });
   }
@@ -171,19 +160,19 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                           label: const Text('Agregar archivos'),
                         ),
                         const SizedBox(width: 8),
-                        Text('${_evidencias.length} archivo(s)'),
+                        Text('${_evidenciaPaths.length} archivo(s)'),
                       ],
                     ),
-                    if (_evidencias.isNotEmpty) ...[
+                    if (_evidenciaPaths.isNotEmpty) ...[
                       const SizedBox(height: 6),
-                      ..._evidencias.map(
-                        (e) => Row(
+                      ..._evidenciaPaths.map(
+                        (p) => Row(
                           children: [
                             const Icon(Icons.insert_drive_file, size: 16),
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
-                                e.nombre,
+                                p.split('/').last,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 12),
@@ -391,7 +380,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                       observaciones: _obsCtrl.text.trim().isEmpty
                           ? null
                           : _obsCtrl.text.trim(),
-                      evidencias: _evidencias,
+                      evidenciaPaths: _evidenciaPaths,
                     ),
                   );
                 },

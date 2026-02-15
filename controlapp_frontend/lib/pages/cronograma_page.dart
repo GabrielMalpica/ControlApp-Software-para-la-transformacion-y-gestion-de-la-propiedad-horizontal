@@ -351,7 +351,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
         tareaId: t.id,
         observaciones: res.observaciones,
         insumosUsados: res.insumosUsados,
-        evidencias: res.evidencias,
+        evidenciaPaths: res.evidenciaPaths,
       );
 
       if (!mounted) return;
