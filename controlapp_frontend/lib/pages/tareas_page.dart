@@ -37,6 +37,10 @@ class _TareasPageState extends State<TareasPage> {
   // filtros para vista operario
   String _filtroOperario = 'HOY';
 
+  String? _rol;
+  int? _operarioId;
+  String _filtroOperario = 'HOY';
+
   @override
   void initState() {
     super.initState();
@@ -82,9 +86,7 @@ class _TareasPageState extends State<TareasPage> {
       if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
-      if (mounted) {
-        setState(() => _cargando = false);
-      }
+      if (mounted) setState(() => _cargando = false);
     }
   }
 
@@ -107,7 +109,11 @@ class _TareasPageState extends State<TareasPage> {
       ),
     );
 
-    if (ok != true) return;
+  bool _esVencida(TareaModel t) {
+    final e = (t.estado ?? '').toUpperCase();
+    if (e == 'APROBADA' || e == 'COMPLETADA') return false;
+    return t.fechaFin.isBefore(DateTime.now());
+  }
 
     try {
       await _tareaApi.eliminarTarea(tarea.id);
@@ -125,6 +131,16 @@ class _TareasPageState extends State<TareasPage> {
         ),
       );
     }
+    final entries = map.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return {for (final e in entries) e.key: e.value};
+  }
+
+  String _fmtDate(DateTime d) {
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    final yy = d.year.toString();
+    return '$dd/$mm/$yy';
   }
 
   Color _colorPorEstado(String? estado) {
@@ -136,8 +152,10 @@ class _TareasPageState extends State<TareasPage> {
       case 'PENDIENTE_APROBACION':
         return Colors.deepPurple;
       case 'COMPLETADA':
+      case 'APROBADA':
         return Colors.green;
       case 'RECHAZADA':
+      case 'NO_COMPLETADA':
       case 'CANCELADA':
         return Colors.red;
       default:
@@ -276,9 +294,9 @@ class _TareasPageState extends State<TareasPage> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final primary = AppTheme.primary;
+  Widget _taskTile(TareaModel t) {
+    final c = _estadoColor(t.estado);
+    final estado = (t.estado ?? 'SIN_ESTADO').replaceAll('_', ' ');
 
   Future<void> _cerrarComoOperario(TareaModel t) async {
     if (_operarioId == null) {
