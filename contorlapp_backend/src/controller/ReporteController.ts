@@ -46,6 +46,16 @@ const EstadoQuery = RangoQueryBase.merge(
   message: "hasta debe ser >= desde",
 });
 
+const ZonificacionPreventivasQuery = RangoQueryBase.merge(
+  z.object({
+    conjuntoId: z.string().min(1).optional(),
+    soloActivas: z.enum(["true", "false", "1", "0"]).optional(),
+  }),
+).refine((d) => d.hasta >= d.desde, {
+  path: ["hasta"],
+  message: "hasta debe ser >= desde",
+});
+
 export class ReporteController {
   // =========================
   // DASHBOARD (NUEVOS)
@@ -112,6 +122,24 @@ export class ReporteController {
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await service.reporteMensualDetalle(q);
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /reporte/zonificacion/preventivas?desde=&hasta=&conjuntoId?&soloActivas=true|false
+  zonificacionPreventivas: RequestHandler = async (req, res, next) => {
+    try {
+      const raw = ZonificacionPreventivasQuery.parse(req.query);
+      const q = {
+        ...raw,
+        soloActivas:
+          raw.soloActivas == null
+            ? undefined
+            : raw.soloActivas === "true" || raw.soloActivas === "1",
+      };
+      const out = await service.zonificacionPreventivas(q);
       res.json(out);
     } catch (err) {
       next(err);

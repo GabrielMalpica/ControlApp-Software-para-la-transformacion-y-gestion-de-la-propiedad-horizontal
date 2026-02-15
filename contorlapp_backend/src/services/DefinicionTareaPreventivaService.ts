@@ -1542,9 +1542,9 @@ export class DefinicionTareaPreventivaService {
     const ocupadas = await this.prisma.usoMaquinaria.findMany({
       where: {
         maquinariaId: { in: idsInteres },
-        ...(excluirTareaId ? { tareaId: { not: excluirTareaId } } : {}),
+        ...(excluirTareaId != null ? { tareaId: { not: excluirTareaId } } : {}),
         fechaInicio: { lt: finReserva },
-        fechaFin: { gt: iniReserva },
+        OR: [{ fechaFin: null }, { fechaFin: { gt: iniReserva } }],
       },
       select: {
         id: true,
@@ -1564,6 +1564,7 @@ export class DefinicionTareaPreventivaService {
       },
     });
 
+    const OPEN_END_FAR_FUTURE = new Date(2099, 11, 31, 23, 59, 59, 999);
     const ocupadasSet = new Set(ocupadas.map((o) => o.maquinariaId));
 
     const propiasDisponibles = propias
@@ -1590,7 +1591,7 @@ export class DefinicionTareaPreventivaService {
     const ocupadasDetalle = ocupadas.map((o) => ({
       maquinariaId: o.maquinariaId,
       ini: o.fechaInicio,
-      fin: o.fechaFin,
+      fin: o.fechaFin ?? OPEN_END_FAR_FUTURE,
       tareaId: o.tareaId,
       conjuntoId: o.tarea?.conjuntoId ?? null,
       descripcion: o.tarea?.descripcion ?? null,
