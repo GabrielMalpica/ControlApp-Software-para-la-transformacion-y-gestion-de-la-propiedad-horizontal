@@ -78,6 +78,7 @@ class AgendaMaquinaBlock {
 class AgendaReservaItem {
   final int usoId;
   final int tareaId;
+  final String? conjuntoId;
   final String? conjuntoNombre;
   final String? descripcion;
   final String entrega; // yyyy-mm-dd
@@ -92,6 +93,7 @@ class AgendaReservaItem {
   AgendaReservaItem({
     required this.usoId,
     required this.tareaId,
+    this.conjuntoId,
     required this.entrega,
     required this.recogida,
     required this.grupo,
@@ -113,6 +115,7 @@ class AgendaReservaItem {
     return AgendaReservaItem(
       usoId: (json['usoId'] as num).toInt(),
       tareaId: (json['tareaId'] as num).toInt(),
+      conjuntoId: json['conjuntoId']?.toString(),
       entrega: (json['entrega'] ?? '').toString(),
       recogida: (json['recogida'] ?? '').toString(),
       grupo: (json['grupo'] as num).toInt(),

@@ -31,6 +31,18 @@ class _TareasPageState extends State<TareasPage> {
   bool _cargando = true;
   String? _error;
   List<TareaModel> _tareas = [];
+  String? _rol;
+  int? _operarioId;
+
+  String? _rol;
+  int? _operarioId;
+
+  // filtros para vista operario
+  String _filtroOperario = 'HOY';
+
+  String? _rol;
+  int? _operarioId;
+  String _filtroOperario = 'HOY';
 
   String? _rol;
   int? _operarioId;
