@@ -98,6 +98,26 @@ function buildDayRange(desde: Date, hasta: Date) {
   return out;
 }
 
+const WEEKDAY_NAMES_ES = [
+  "domingo",
+  "lunes",
+  "martes",
+  "miercoles",
+  "jueves",
+  "viernes",
+  "sabado",
+] as const;
+
+function parseLocalIsoDate(isoDate: string) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1);
+}
+
+function weekdayNameEsFromIsoDate(isoDate: string) {
+  const d = parseLocalIsoDate(isoDate);
+  return WEEKDAY_NAMES_ES[d.getDay()] ?? "desconocido";
+}
+
 type PlanInsumoItem = {
   insumoId: number;
   consumoPorUnidad: number;
@@ -427,8 +447,12 @@ export class ReporteService {
       if (!series[dk]) continue;
       series[dk][t.estado] = (series[dk][t.estado] ?? 0) + 1;
     }
+    const dayLabels = days.map((d) => weekdayNameEsFromIsoDate(d));
+    const dayNamesByDate = Object.fromEntries(
+      days.map((d) => [d, weekdayNameEsFromIsoDate(d)]),
+    ) as Record<string, string>;
 
-    return { ok: true, days, series };
+    return { ok: true, days, dayLabels, dayNamesByDate, series };
   }
 
   // =========================================================

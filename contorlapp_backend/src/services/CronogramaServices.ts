@@ -64,6 +64,23 @@ function overlap(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) {
   return aStart <= bEnd && bStart <= aEnd;
 }
 
+const WEEKDAY_NAMES_ES = [
+  "domingo",
+  "lunes",
+  "martes",
+  "miercoles",
+  "jueves",
+  "viernes",
+  "sabado",
+] as const;
+
+function dateKeyLocal(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export class CronogramaService {
   constructor(private prisma: PrismaClient, private conjuntoId: string) {}
 
@@ -447,12 +464,17 @@ export class CronogramaService {
 
     // bucket por día (1..31)
     const daysInMonth = new Date(anio, mes, 0).getDate();
-    const dias = Array.from({ length: daysInMonth }, (_, i) => ({
-      dia: i + 1,
-      total: 0,
-      preventivas: 0,
-      correctivas: 0,
-    }));
+    const dias = Array.from({ length: daysInMonth }, (_, i) => {
+      const fecha = new Date(anio, mes - 1, i + 1);
+      return {
+        dia: i + 1,
+        fecha: dateKeyLocal(fecha),
+        nombreDia: WEEKDAY_NAMES_ES[fecha.getDay()],
+        total: 0,
+        preventivas: 0,
+        correctivas: 0,
+      };
+    });
 
     for (const t of tareas) {
       // marca todos los días que toca (por si cruza)
