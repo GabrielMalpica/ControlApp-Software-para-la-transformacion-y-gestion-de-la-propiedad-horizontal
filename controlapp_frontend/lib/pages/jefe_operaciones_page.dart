@@ -62,7 +62,6 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
     }
   }
 
-  /// 🔹 Tarjeta simple
   int _gridCountForWidth(double w) {
     if (w >= 1100) return 4;
     if (w >= 800) return 4;
@@ -97,68 +96,10 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
             children: [
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 78,
-                        height: 78,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: color.withOpacity(0.12),
-                        ),
-                        child: Icon(icon, size: 44, color: color),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 14,
                   ),
-                ),
-              ),
-              Container(height: 46, color: color.withOpacity(0.10)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 🔹 Atajos (usa el NIT seleccionado)
-  Widget _atajos(String nit) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(color: Colors.black12.withOpacity(0.05), blurRadius: 5),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Atajos",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -203,12 +144,16 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
     );
   }
 
-  /// 🔹 Atajos (usa el NIT seleccionado)
   Widget _buildBody() {
     if (_loading) return const Center(child: CircularProgressIndicator());
 
     if (_error != null) {
-      return Center(child: Text("Error cargando conjuntos: $_error"));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text("Error cargando conjuntos: $_error"),
+        ),
+      );
     }
 
     final conjunto = _conjuntoSeleccionado;
@@ -223,143 +168,164 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
 
     final nit = conjunto.nit;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ✅ Selector tipo gerente (más bonito que el Row simple)
-          Card(
-            elevation: 1,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  Icon(Icons.apartment, color: AppTheme.primary),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          "Conjunto seleccionado",
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                        Text(
-                          conjunto.nombre,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        Text("NIT: $nit", style: const TextStyle(fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                  DropdownButton<String>(
-                    value: _conjuntoSeleccionadoNit,
-                    underline: const SizedBox.shrink(),
-                    items: _conjuntos
-                        .map(
-                          (c) => DropdownMenuItem<String>(
-                            value: c.nit,
-                            child: Text(
-                              c.nombre,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) =>
-                        setState(() => _conjuntoSeleccionadoNit = v),
-                  ),
-                ],
-              ),
-            ),
-          ),
+    return LayoutBuilder(
+      builder: (context, c) {
+        final cols = _gridCountForWidth(c.maxWidth);
 
-          const SizedBox(height: 20),
-
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 1.05,
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _simpleCard(
-                "Tareas",
-                AppTheme.green,
-                Icons.assignment,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => JefeOperacionesPendientesPage(conjuntoId: nit)),
-                  );
-                },
-              ),
-              _simpleCard(
-                "Solicitudes",
-                AppTheme.primary,
-                Icons.pending_actions,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => SolicitudesPage(nit: nit),
-                    ),
-                  );
-                },
-              ),
-              _simpleCard(
-                "Maquinaria",
-                AppTheme.red,
-                Icons.precision_manufacturing,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => MaquinariaPage(nit: nit)),
-                  );
-                },
-              ),
-              _simpleCard(
-                "Inventario",
-                AppTheme.yellow,
-                Icons.inventory,
-                onTap: () {
-                  // ✅ FIX: inventario usa NIT del conjunto + empresaId
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => InventarioPage(
-                        nit: nit,
-                        empresaId: AppConstants.empresaNit,
+              Card(
+                elevation: 1,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.apartment, color: AppTheme.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Conjunto seleccionado",
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            Text(
+                              conjunto.nombre,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            Text(
+                              "NIT: $nit",
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
+                      DropdownButton<String>(
+                        value: _conjuntoSeleccionadoNit,
+                        underline: const SizedBox.shrink(),
+                        items: _conjuntos
+                            .map(
+                              (c) => DropdownMenuItem<String>(
+                                value: c.nit,
+                                child: SizedBox(
+                                  width: 220,
+                                  child: Text(
+                                    c.nombre,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) =>
+                            setState(() => _conjuntoSeleccionadoNit = v),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              _simpleCard(
-                "Cronograma",
-                Colors.purple,
-                Icons.calendar_month,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => CronogramaPage(nit: nit, )),
-                  );
-                },
-              ),
+              const SizedBox(height: 20),
+
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: cols,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1.05,
+                children: [
+                  _simpleCard(
+                    "Tareas",
+                    AppTheme.green,
+                    Icons.assignment,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              JefeOperacionesPendientesPage(conjuntoId: nit),
+                        ),
+                      );
+                    },
+                  ),
+                  _simpleCard(
+                    "Solicitudes",
+                    AppTheme.primary,
+                    Icons.pending_actions,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SolicitudesPage(nit: nit),
+                        ),
+                      );
+                    },
+                  ),
+                  _simpleCard(
+                    "Maquinaria",
+                    AppTheme.red,
+                    Icons.precision_manufacturing,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MaquinariaPage(nit: nit),
+                        ),
+                      );
+                    },
+                  ),
+                  _simpleCard(
+                    "Inventario",
+                    AppTheme.yellow,
+                    Icons.inventory,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => InventarioPage(
+                            nit: nit,
+                            empresaId: AppConstants.empresaNit,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  _simpleCard(
+                    "Cronograma",
+                    Colors.purple,
+                    Icons.calendar_month,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CronogramaPage(nit: nit),
+                        ),
+                      );
+                    },
+                  ),
                 ],
-              );
-            },
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -385,7 +351,6 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
     );
   }
 }
-
 
 class _BubblePatternPainter extends CustomPainter {
   final Color color;

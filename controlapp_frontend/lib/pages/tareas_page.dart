@@ -101,7 +101,6 @@ class _TareasPageState extends State<TareasPage> {
       throw Exception('Token requerido (no hay sesión guardada)');
     }
 
-    // OJO: revisa tu ruta real; aquí usé la que tú tenías
     final uri = Uri.parse(
       '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas',
     );
@@ -234,7 +233,7 @@ class _TareasPageState extends State<TareasPage> {
     try {
       inventario = await _inventarioApi.listarInventarioConjunto(inventarioNit);
     } catch (_) {
-      // si falla inventario, igual dejamos cerrar la tarea sin bloquear
+      // no bloqueamos el cierre si falla inventario
     }
 
     if (!mounted) return;
@@ -252,7 +251,7 @@ class _TareasPageState extends State<TareasPage> {
         tareaId: t.id,
         observaciones: result.observaciones,
         insumosUsados: result.insumosUsados,
-        evidencias: result.evidencias,
+        evidencias: result.evidencias, // ✅ correcto
       );
 
       if (!mounted) return;
@@ -357,9 +356,7 @@ class _TareasPageState extends State<TareasPage> {
       ),
     );
 
-    final uri = Uri.parse(
-      '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas',
-    );
+    if (ok != true) return;
 
     try {
       await _tareaApi.eliminarTarea(tarea.id);
@@ -374,9 +371,6 @@ class _TareasPageState extends State<TareasPage> {
         context,
       ).showSnackBar(SnackBar(content: Text('Error al eliminar tarea: $e')));
     }
-    final entries = map.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
-    return {for (final e in entries) e.key: e.value};
   }
 
   Widget _filters() {
@@ -456,21 +450,6 @@ class _TareasPageState extends State<TareasPage> {
         }),
       ],
     );
-
-    if (ok != true) return;
-    try {
-      await _tareaApi.eliminarTarea(tarea.id);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tarea eliminada correctamente')),
-      );
-      await _cargarTareas();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error al eliminar tarea: $e')));
-    }
   }
 
   Widget _buildGeneralBody() {

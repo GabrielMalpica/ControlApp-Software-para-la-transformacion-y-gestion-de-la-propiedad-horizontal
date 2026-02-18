@@ -46,9 +46,6 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
   final List<_ConsumoRow> _rows = [];
   final List<EvidenciaAdjunto> _evidencias = [];
 
-  /// ✅ evidencias unificadas (path o bytes)
-  final List<EvidenciaAdjunto> _evidencias = [];
-
   @override
   void initState() {
     super.initState();

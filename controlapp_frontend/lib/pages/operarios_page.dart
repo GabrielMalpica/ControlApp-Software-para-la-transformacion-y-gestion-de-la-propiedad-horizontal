@@ -48,7 +48,10 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
             children: [
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 14,
+                  ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -76,7 +79,18 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                   ),
                 ),
               ),
-              Container(height: 46, color: color.withOpacity(0.10)),
+
+              // ✅ franja con patrón
+              SizedBox(
+                height: 46,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Container(color: color.withOpacity(0.10)),
+                    CustomPaint(painter: _BubblePatternPainter(color)),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -84,7 +98,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
     );
   }
 
-  /// 🔹 Sección de atajos (sin crear tarea, solo solicitud insumo)
+  /// 🔹 Sección de atajos (si quieres)
   Widget _atajos() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -97,14 +111,41 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
+        children: const [
+          Text(
             "Atajos",
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
-        ),
+          SizedBox(height: 10),
+          Text(
+            "• Aquí puedes poner accesos rápidos (ej: “Solicitar insumo”)",
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> _confirmLogout() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cerrar sesión'),
+        content: const Text('¿Seguro que quieres salir?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Salir'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true && mounted) logout(context);
   }
 
   @override
@@ -113,87 +154,76 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
-        title: Text(
+        title: const Text(
           "Panel del Operario",
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: Colors.white),
         ),
         actions: [
           IconButton(
             tooltip: 'Cerrar sesión',
             icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () async {
-              final ok = await showDialog<bool>(
-                context: context,
-                builder: (_) => AlertDialog(
-                  title: const Text('Cerrar sesión'),
-                  content: const Text('¿Seguro que quieres salir?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancelar'),
-                    ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Salir'),
-                    ),
-                  ],
-                ),
-              );
-
-              if (ok == true) logout(context);
-            },
+            onPressed: _confirmLogout,
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 🔹 Paneles principales (solo tareas y solicitudes)
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.05,
+      body: LayoutBuilder(
+        builder: (context, c) {
+          final cols = _gridCountForWidth(c.maxWidth);
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _simpleCard(
-                  "Tareas",
-                  AppTheme.green,
-                  Icons.assignment,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => TareasPage(nit: widget.nit),
-                      ),
-                    );
-                  },
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: cols, // ✅ ahora sí responsivo
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 1.05,
+                  children: [
+                    _simpleCard(
+                      "Tareas",
+                      AppTheme.green,
+                      Icons.assignment,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => TareasPage(nit: widget.nit),
+                          ),
+                        );
+                      },
+                    ),
+                    _simpleCard(
+                      "Solicitudes",
+                      AppTheme.primary,
+                      Icons.pending_actions,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SolicitudesPage(nit: widget.nit),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
-                _simpleCard(
-                  "Solicitudes",
-                  AppTheme.primary,
-                  Icons.pending_actions,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SolicitudesPage(nit: widget.nit),
-                      ),
-                    );
-                  },
-                ),
+
+                const SizedBox(height: 14),
+
+                // ✅ opcional
+                _atajos(),
               ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 }
-
 
 class _BubblePatternPainter extends CustomPainter {
   final Color color;
