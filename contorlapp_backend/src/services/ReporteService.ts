@@ -74,6 +74,13 @@ type RowOperario = {
   noCompletadas: number;
   pendientesAprobacion: number;
   minutosPromedio: number;
+  minutosAsignadosSemana: number;
+  minutosAsignadosMes: number;
+  minutosDisponiblesSemana: number;
+  minutosDisponiblesMes: number;
+  usoSemanalPct: number;
+  usoMensualPct: number;
+  conjuntoCapacidadId: string | null;
 };
 
 function dayKey(d: Date) {
@@ -163,6 +170,162 @@ function toNumberSafe(v: unknown): number {
 function toStringSafe(v: unknown, fallback = ""): string {
   const s = String(v ?? "").trim();
   return s.length > 0 ? s : fallback;
+}
+
+function extraerMotivoUsuarioReemplazo(v: unknown): string | null {
+  const raw = String(v ?? "").trim();
+  if (!raw) return null;
+
+  const matchTagNuevo = raw.match(/MOTIVO_USUARIO:\s*(.+)$/i);
+  if (matchTagNuevo?.[1]) {
+    const txt = matchTagNuevo[1].trim();
+    return txt.length > 0 ? txt : null;
+  }
+
+  const marker = "Motivo usuario:";
+  const idx = raw.indexOf(marker);
+  if (idx < 0) return null;
+  const motivo = raw.slice(idx + marker.length).trim();
+  return motivo.length > 0 ? motivo : null;
+}
+
+function extraerTagReemplazo(v: unknown, tag: "RESULTADO" | "ACCION"): string | null {
+  const raw = String(v ?? "").trim();
+  if (!raw) return null;
+  const m = raw.match(new RegExp(`${tag}:([A-Z_]+)`));
+  return m?.[1] ?? null;
+}
+
+type Patron =
+  | "MEDIO_DIAS_INTERCALADOS"
+  | "MEDIO_SEMANA_SABADO"
+  | "MEDIO_SEMANA_SABADO_TARDE";
+
+function clampInterval(i: number, f: number, start: number, end: number) {
+  const ii = Math.max(i, start);
+  const ff = Math.min(f, end);
+  return ff > ii ? { i: ii, f: ff } : null;
+}
+
+function restarDescanso(
+  intervals: Array<{ i: number; f: number }>,
+  descansoI?: number,
+  descansoF?: number,
+) {
+  if (
+    descansoI == null ||
+    descansoF == null ||
+    !Number.isFinite(descansoI) ||
+    !Number.isFinite(descansoF) ||
+    descansoF <= descansoI
+  ) {
+    return intervals;
+  }
+
+  const out: Array<{ i: number; f: number }> = [];
+  for (const it of intervals) {
+    if (descansoF <= it.i || descansoI >= it.f) {
+      out.push(it);
+      continue;
+    }
+    if (descansoI > it.i) out.push({ i: it.i, f: Math.min(descansoI, it.f) });
+    if (descansoF < it.f) out.push({ i: Math.max(descansoF, it.i), f: it.f });
+  }
+  return out.filter((x) => x.f > x.i);
+}
+
+function allowedIntervalsForUser(params: {
+  dia: string;
+  startMin: number;
+  endMin: number;
+  jornadaLaboral: string | null;
+  patronJornada: string | null;
+}) {
+  const { dia, startMin, endMin, jornadaLaboral, patronJornada } = params;
+  if (endMin <= startMin) return [] as Array<{ i: number; f: number }>;
+
+  if (!jornadaLaboral || jornadaLaboral === "COMPLETA") {
+    return [{ i: startMin, f: endMin }];
+  }
+
+  if (jornadaLaboral !== "MEDIO_TIEMPO") {
+    return [{ i: startMin, f: endMin }];
+  }
+
+  const p = patronJornada as Patron | null;
+  if (!p) return [];
+
+  const m13 = 13 * 60;
+  const m16 = 16 * 60;
+
+  if (p === "MEDIO_DIAS_INTERCALADOS") {
+    if (dia === "LUNES" || dia === "MIERCOLES") {
+      return [{ i: startMin, f: endMin }];
+    }
+    if (dia === "VIERNES") {
+      const x = clampInterval(startMin, startMin + 6 * 60, startMin, endMin);
+      return x ? [x] : [];
+    }
+    return [];
+  }
+
+  if (p === "MEDIO_SEMANA_SABADO") {
+    if (
+      dia === "LUNES" ||
+      dia === "MARTES" ||
+      dia === "MIERCOLES" ||
+      dia === "JUEVES" ||
+      dia === "VIERNES"
+    ) {
+      const x = clampInterval(startMin, startMin + 4 * 60, startMin, endMin);
+      return x ? [x] : [];
+    }
+    if (dia === "SABADO") {
+      const x = clampInterval(startMin, startMin + 2 * 60, startMin, endMin);
+      return x ? [x] : [];
+    }
+    return [];
+  }
+
+  if (p === "MEDIO_SEMANA_SABADO_TARDE") {
+    if (
+      dia === "LUNES" ||
+      dia === "MARTES" ||
+      dia === "MIERCOLES" ||
+      dia === "JUEVES" ||
+      dia === "VIERNES"
+    ) {
+      const x = clampInterval(m13, m16, startMin, endMin);
+      return x ? [x] : [];
+    }
+    if (dia === "SABADO") {
+      const x = clampInterval(startMin, startMin + 2 * 60, startMin, endMin);
+      return x ? [x] : [];
+    }
+    return [];
+  }
+
+  return [{ i: startMin, f: endMin }];
+}
+
+function pickConjuntoConMasCarga(counter?: Map<string, number>) {
+  if (!counter || counter.size === 0) return null;
+  let bestId: string | null = null;
+  let best = -1;
+  for (const [cid, c] of counter) {
+    if (c > best) {
+      best = c;
+      bestId = cid;
+    }
+  }
+  return bestId;
+}
+
+function toMinHHmm(raw: string | null | undefined) {
+  const x = String(raw ?? "").trim();
+  if (!x) return 0;
+  const [hh, mm] = x.split(":").map(Number);
+  return (Number.isFinite(hh) ? hh : 0) * 60 + (Number.isFinite(mm) ? mm : 0);
 }
 
 function parsePlanInsumos(raw: unknown): PlanInsumoItem[] {
@@ -529,6 +692,7 @@ export class ReporteService {
         fechaFin: { lte: hasta },
       },
       select: {
+        conjuntoId: true,
         estado: true,
         fechaInicio: true,
         fechaFin: true,
@@ -539,6 +703,7 @@ export class ReporteService {
     });
 
     const map = new Map<string, RowOperario>();
+    const conteoConjuntoPorOperario = new Map<string, Map<string, number>>();
 
     for (const t of tareas) {
       const durMin = Math.max(
@@ -559,6 +724,13 @@ export class ReporteService {
             noCompletadas: 0,
             pendientesAprobacion: 0,
             minutosPromedio: 0,
+            minutosAsignadosSemana: 0,
+            minutosAsignadosMes: 0,
+            minutosDisponiblesSemana: 0,
+            minutosDisponiblesMes: 0,
+            usoSemanalPct: 0,
+            usoMensualPct: 0,
+            conjuntoCapacidadId: null,
           });
         }
 
@@ -570,14 +742,181 @@ export class ReporteService {
         if (t.estado === EstadoTarea.NO_COMPLETADA) row.noCompletadas++;
         if (t.estado === EstadoTarea.PENDIENTE_APROBACION)
           row.pendientesAprobacion++;
+        row.minutosAsignadosMes += durMin;
 
         row.minutosPromedio = Math.round(
           (row.minutosPromedio * (row.total - 1) + durMin) / row.total,
         );
+
+        if (t.conjuntoId) {
+          if (!conteoConjuntoPorOperario.has(id)) {
+            conteoConjuntoPorOperario.set(id, new Map<string, number>());
+          }
+          const cMap = conteoConjuntoPorOperario.get(id)!;
+          cMap.set(t.conjuntoId, (cMap.get(t.conjuntoId) ?? 0) + 1);
+        }
       }
     }
 
-    const data = Array.from(map.values()).sort((a, b) => b.total - a.total);
+    const data = Array.from(map.values());
+
+    const operarioIds = data.map((r) => r.operarioId);
+    const opRows =
+      operarioIds.length > 0
+        ? await this.prisma.operario.findMany({
+            where: { id: { in: operarioIds } },
+            select: {
+              id: true,
+              usuario: { select: { jornadaLaboral: true, patronJornada: true } },
+            },
+          })
+        : [];
+    const opById = new Map(
+      opRows.map((o) => [
+        o.id,
+        {
+          jornadaLaboral: o.usuario?.jornadaLaboral ?? null,
+          patronJornada: o.usuario?.patronJornada ?? null,
+        },
+      ]),
+    );
+
+    const targetConjuntoByOperario = new Map<string, string | null>();
+    for (const row of data) {
+      if (conjuntoId) {
+        targetConjuntoByOperario.set(row.operarioId, conjuntoId);
+        continue;
+      }
+      const target = pickConjuntoConMasCarga(
+        conteoConjuntoPorOperario.get(row.operarioId),
+      );
+      targetConjuntoByOperario.set(row.operarioId, target);
+    }
+
+    const conjuntoIdsNecesarios = Array.from(
+      new Set(
+        Array.from(targetConjuntoByOperario.values()).filter(
+          (x): x is string => typeof x === "string" && x.trim().length > 0,
+        ),
+      ),
+    );
+
+    const horariosRows =
+      conjuntoIdsNecesarios.length > 0
+        ? await this.prisma.conjuntoHorario.findMany({
+            where: { conjuntoId: { in: conjuntoIdsNecesarios } },
+            select: {
+              conjuntoId: true,
+              dia: true,
+              horaApertura: true,
+              horaCierre: true,
+              descansoInicio: true,
+              descansoFin: true,
+            },
+          })
+        : [];
+
+    const horariosByConjunto = new Map<
+      string,
+      Array<{
+        dia: string;
+        horaApertura: string;
+        horaCierre: string;
+        descansoInicio: string | null;
+        descansoFin: string | null;
+      }>
+    >();
+    for (const h of horariosRows) {
+      if (!horariosByConjunto.has(h.conjuntoId)) {
+        horariosByConjunto.set(h.conjuntoId, []);
+      }
+      horariosByConjunto.get(h.conjuntoId)!.push({
+        dia: String(h.dia),
+        horaApertura: h.horaApertura,
+        horaCierre: h.horaCierre,
+        descansoInicio: h.descansoInicio,
+        descansoFin: h.descansoFin,
+      });
+    }
+
+    const fallbackConjuntos =
+      conjuntoIdsNecesarios.length > 0
+        ? await this.prisma.conjunto.findMany({
+            where: { nit: { in: conjuntoIdsNecesarios } },
+            select: {
+              nit: true,
+              limiteHorasSemanaOverride: true,
+              empresa: { select: { limiteHorasSemana: true } },
+            },
+          })
+        : [];
+    const fallbackSemanaMinByConjunto = new Map<string, number>(
+      fallbackConjuntos.map((c) => [
+        c.nit,
+        (c.limiteHorasSemanaOverride ?? c.empresa?.limiteHorasSemana ?? 42) *
+          60,
+      ]),
+    );
+
+    for (const row of data) {
+      row.minutosAsignadosSemana = Math.round(row.minutosAsignadosMes / 4);
+
+      const cid = targetConjuntoByOperario.get(row.operarioId) ?? null;
+      row.conjuntoCapacidadId = cid;
+
+      let capacidadSemanaMin = 0;
+      if (cid) {
+        const horarioSemanal = horariosByConjunto.get(cid) ?? [];
+        const op = opById.get(row.operarioId);
+
+        if (horarioSemanal.length > 0) {
+          for (const h of horarioSemanal) {
+            const startMin = toMinHHmm(h.horaApertura);
+            const endMin = toMinHHmm(h.horaCierre);
+            if (endMin <= startMin) continue;
+
+            const allowedRaw = allowedIntervalsForUser({
+              dia: h.dia,
+              startMin,
+              endMin,
+              jornadaLaboral: op?.jornadaLaboral ?? null,
+              patronJornada: op?.patronJornada ?? null,
+            });
+            const allowed = restarDescanso(
+              allowedRaw,
+              h.descansoInicio ? toMinHHmm(h.descansoInicio) : undefined,
+              h.descansoFin ? toMinHHmm(h.descansoFin) : undefined,
+            );
+
+            for (const a of allowed) {
+              capacidadSemanaMin += Math.max(0, a.f - a.i);
+            }
+          }
+        } else {
+          const fallback = fallbackSemanaMinByConjunto.get(cid) ?? 42 * 60;
+          if (op?.jornadaLaboral === "MEDIO_TIEMPO") {
+            capacidadSemanaMin = Math.round(fallback * 0.5);
+          } else {
+            capacidadSemanaMin = fallback;
+          }
+        }
+      }
+
+      row.minutosDisponiblesSemana = capacidadSemanaMin;
+      row.minutosDisponiblesMes = capacidadSemanaMin * 4;
+      row.usoSemanalPct =
+        capacidadSemanaMin > 0
+          ? Math.round((row.minutosAsignadosSemana / capacidadSemanaMin) * 100)
+          : 0;
+      row.usoMensualPct =
+        row.minutosDisponiblesMes > 0
+          ? Math.round(
+              (row.minutosAsignadosMes / row.minutosDisponiblesMes) * 100,
+            )
+          : 0;
+    }
+
+    data.sort((a, b) => b.total - a.total);
     return { ok: true, data };
   }
 
@@ -776,6 +1115,167 @@ export class ReporteService {
 
     const ids = tareas.map((t) => t.id);
 
+    const tareasPreventivasReemplazadasEnRango = tareas.filter(
+      (t) =>
+        t.tipo === "PREVENTIVA" &&
+        t.reprogramada === true &&
+        t.reprogramadaPorTareaId != null,
+    );
+
+    // Incluye reemplazos ocurridos en el rango aunque la tarea haya sido
+    // reprogramada fuera del mes (fechaInicio/fechaFin ya cambiaron).
+    const tareasPreventivasReemplazadasPorEvento =
+      await this.prisma.tarea.findMany({
+        where: {
+          ...(conjuntoId ? { conjuntoId } : {}),
+          tipo: "PREVENTIVA" as any,
+          reprogramada: true,
+          reprogramadaPorTareaId: { not: null },
+          reprogramadaEn: { gte: desde, lte: hasta },
+        },
+        orderBy: [{ reprogramadaEn: "asc" }, { id: "asc" }],
+        include: {
+          conjunto: true,
+          ubicacion: true,
+          elemento: true,
+          supervisor: { include: { usuario: true } },
+          operarios: { include: { usuario: true } },
+        },
+      });
+
+    const byId = new Map<number, (typeof tareas)[number]>();
+    for (const t of tareasPreventivasReemplazadasEnRango) byId.set(t.id, t);
+    for (const t of tareasPreventivasReemplazadasPorEvento) byId.set(t.id, t);
+    const tareasPreventivasReemplazadas = Array.from(byId.values());
+
+    const correctivaIdsReemplazo = Array.from(
+      new Set(
+        tareasPreventivasReemplazadas
+          .map((t) => t.reprogramadaPorTareaId)
+          .filter((id): id is number => typeof id === "number" && id > 0),
+      ),
+    );
+
+    const correctivasReemplazo =
+      correctivaIdsReemplazo.length > 0
+        ? await this.prisma.tarea.findMany({
+            where: { id: { in: correctivaIdsReemplazo } },
+            select: {
+              id: true,
+              tipo: true,
+              prioridad: true,
+              descripcion: true,
+              fechaInicio: true,
+              fechaFin: true,
+            },
+          })
+        : [];
+    const correctivaById = new Map(correctivasReemplazo.map((t) => [t.id, t]));
+
+    const reemplazosPreventivaPorCorrectiva = tareasPreventivasReemplazadas.map(
+      (t) => {
+        const correctivaId = t.reprogramadaPorTareaId as number;
+        const correctiva = correctivaById.get(correctivaId);
+        const motivo = t.reprogramadaMotivo ?? null;
+        const motivoUsuario = extraerMotivoUsuarioReemplazo(motivo);
+        const resultado = extraerTagReemplazo(motivo, "RESULTADO");
+        const accion = extraerTagReemplazo(motivo, "ACCION");
+        const noCompletadaPorReemplazo =
+          t.estado === EstadoTarea.NO_COMPLETADA &&
+          t.reprogramada === true &&
+          t.reprogramadaPorTareaId != null;
+        const refCorrectiva = correctiva
+          ? `#${correctiva.id}${correctiva.descripcion ? ` (${correctiva.descripcion})` : ""}`
+          : `#${correctivaId}`;
+        const motivoNoCompletada = noCompletadaPorReemplazo
+          ? `No fue completada porque fue reemplazada por la correctiva ${refCorrectiva}.`
+          : null;
+
+        return {
+          tareaPreventivaId: t.id,
+          descripcion: t.descripcion,
+          prioridad: t.prioridad,
+          fechaInicio: t.fechaInicio,
+          fechaFin: t.fechaFin,
+          reemplazadaEn: t.reprogramadaEn ?? null,
+          motivo,
+          motivoUsuario,
+          accion,
+          resultado,
+          estadoActual: t.estado,
+          noCompletadaPorReemplazo,
+          motivoNoCompletada,
+          reemplazadaPor: correctiva
+            ? {
+                tareaId: correctiva.id,
+                tipo: correctiva.tipo,
+                prioridad: correctiva.prioridad,
+                descripcion: correctiva.descripcion,
+                fechaInicio: correctiva.fechaInicio,
+                fechaFin: correctiva.fechaFin,
+              }
+            : {
+                tareaId: correctivaId,
+                tipo: "CORRECTIVA",
+                prioridad: null,
+                descripcion: null,
+                fechaInicio: null,
+                fechaFin: null,
+              },
+        };
+      },
+    );
+
+    const preventivasReemplazadasByCorrectiva = new Map<
+      number,
+      Array<{ tareaId: number; descripcion: string; estadoActual: string }>
+    >();
+    for (const rep of reemplazosPreventivaPorCorrectiva) {
+      const correctivaId = rep.reemplazadaPor?.tareaId;
+      if (typeof correctivaId !== "number" || correctivaId <= 0) continue;
+      if (!preventivasReemplazadasByCorrectiva.has(correctivaId)) {
+        preventivasReemplazadasByCorrectiva.set(correctivaId, []);
+      }
+      preventivasReemplazadasByCorrectiva.get(correctivaId)!.push({
+        tareaId: rep.tareaPreventivaId,
+        descripcion: rep.descripcion,
+        estadoActual: rep.estadoActual,
+      });
+    }
+
+    const resumenReemplazos = {
+      huboReemplazos: reemplazosPreventivaPorCorrectiva.length > 0,
+      total: reemplazosPreventivaPorCorrectiva.length,
+      p1: reemplazosPreventivaPorCorrectiva.filter((r) => r.prioridad === 1)
+        .length,
+      p2: reemplazosPreventivaPorCorrectiva.filter((r) => r.prioridad === 2)
+        .length,
+      p3: reemplazosPreventivaPorCorrectiva.filter((r) => r.prioridad === 3)
+        .length,
+      correctivasInvolucradas: correctivaIdsReemplazo.length,
+      conMotivoUsuario: reemplazosPreventivaPorCorrectiva.filter(
+        (r) => r.motivoUsuario != null,
+      ).length,
+      canceladas: reemplazosPreventivaPorCorrectiva.filter(
+        (r) =>
+          String(r.resultado ?? "").startsWith("CANCELADA") ||
+          r.estadoActual === EstadoTarea.PENDIENTE_REPROGRAMACION ||
+          r.estadoActual === EstadoTarea.NO_COMPLETADA,
+      ).length,
+      noCompletadas: reemplazosPreventivaPorCorrectiva.filter(
+        (r) => r.estadoActual === EstadoTarea.NO_COMPLETADA,
+      ).length,
+      reprogramadas: reemplazosPreventivaPorCorrectiva.filter(
+        (r) => r.resultado === "REPROGRAMADA",
+      ).length,
+      canceladasAuto: reemplazosPreventivaPorCorrectiva.filter(
+        (r) => r.resultado === "CANCELADA_AUTO",
+      ).length,
+      canceladasSinCupo: reemplazosPreventivaPorCorrectiva.filter(
+        (r) => r.resultado === "CANCELADA_SIN_CUPO",
+      ).length,
+    };
+
     // Insumos por tarea (ConsumoInsumo sí tiene fecha)
     const consumos = await this.prisma.consumoInsumo.findMany({
       where: {
@@ -873,6 +1373,36 @@ export class ReporteService {
       const operarios = (t.operarios ?? [])
         .map((op) => op.usuario?.nombre)
         .filter((x): x is string => Boolean(x));
+      const reemplazaPreventivas =
+        preventivasReemplazadasByCorrectiva.get(t.id) ?? [];
+      const esTareaReemplazo =
+        t.tipo === "CORRECTIVA" && reemplazaPreventivas.length > 0;
+      const correctivaReemplazo =
+        t.reprogramadaPorTareaId != null
+          ? correctivaById.get(t.reprogramadaPorTareaId)
+          : undefined;
+      const noCompletadaPorReemplazo =
+        t.estado === EstadoTarea.NO_COMPLETADA &&
+        t.reprogramada === true &&
+        t.reprogramadaPorTareaId != null;
+      const refCorrectiva = correctivaReemplazo
+        ? `#${correctivaReemplazo.id}${correctivaReemplazo.descripcion ? ` (${correctivaReemplazo.descripcion})` : ""}`
+        : t.reprogramadaPorTareaId != null
+          ? `#${t.reprogramadaPorTareaId}`
+          : null;
+      const motivoNoCompletada = noCompletadaPorReemplazo
+        ? `No fue completada porque fue reemplazada por la correctiva ${refCorrectiva}.`
+        : null;
+      const resumenReemplazo = reemplazaPreventivas
+        .slice(0, 3)
+        .map((x) => {
+          const desc = String(x.descripcion ?? "").trim();
+          return desc.length > 0 ? `#${x.tareaId} (${desc})` : `#${x.tareaId}`;
+        })
+        .join(", ");
+      const motivoTareaReemplazo = esTareaReemplazo
+        ? `Esta fue la correctiva de reemplazo para ${resumenReemplazo}${reemplazaPreventivas.length > 3 ? ` y ${reemplazaPreventivas.length - 3} tarea(s) más` : ""}.`
+        : null;
 
       return {
         id: t.id,
@@ -882,6 +1412,7 @@ export class ReporteService {
         fechaInicio: t.fechaInicio,
         fechaFin: t.fechaFin,
         duracionMinutos: t.duracionMinutos,
+        prioridad: t.prioridad,
         fechaVerificacion: t.fechaVerificacion ?? null,
 
         conjunto: {
@@ -897,6 +1428,28 @@ export class ReporteService {
 
         observaciones: t.observaciones ?? null,
         observacionesRechazo: t.observacionesRechazo ?? null,
+        reprogramada: t.reprogramada ?? false,
+        reprogramadaEn: t.reprogramadaEn ?? null,
+        reprogramadaMotivo: t.reprogramadaMotivo ?? null,
+        reprogramadaPorTareaId: t.reprogramadaPorTareaId ?? null,
+        noCompletadaPorReemplazo,
+        motivoNoCompletada,
+        esTareaReemplazo,
+        motivoTareaReemplazo,
+        reemplazaPreventivas,
+        reemplazadaPor:
+          t.reprogramadaPorTareaId != null
+            ? {
+                tareaId: correctivaReemplazo?.id ?? t.reprogramadaPorTareaId,
+                tipo: correctivaReemplazo?.tipo ?? "CORRECTIVA",
+                prioridad: correctivaReemplazo?.prioridad ?? null,
+                descripcion: correctivaReemplazo?.descripcion ?? null,
+                fechaInicio: correctivaReemplazo?.fechaInicio ?? null,
+                fechaFin: correctivaReemplazo?.fechaFin ?? null,
+              }
+            : null,
+        fechaInicioOriginal: t.fechaInicioOriginal ?? null,
+        fechaFinOriginal: t.fechaFinOriginal ?? null,
 
         evidencias: t.evidencias ?? [],
 
@@ -911,7 +1464,35 @@ export class ReporteService {
       };
     });
 
-    return { ok: true, data };
+    const byEstado = data.reduce(
+      (acc, t) => {
+        acc[t.estado] = (acc[t.estado] ?? 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+    const noCompletadasPorReemplazo = data.filter(
+      (t) => t.noCompletadaPorReemplazo === true,
+    ).length;
+    const resumenEstados = {
+      total: data.length,
+      byEstado,
+      noCompletadas: byEstado[EstadoTarea.NO_COMPLETADA] ?? 0,
+      noCompletadasPorReemplazo,
+    };
+    const graficaEstados = Object.entries(byEstado).map(([estado, cantidad]) => ({
+      estado,
+      cantidad,
+    }));
+
+    return {
+      ok: true,
+      resumenEstados,
+      graficaEstados,
+      resumenReemplazos,
+      reemplazosPreventivaPorCorrectiva,
+      data,
+    };
   }
 
   // 10) Conteo por tipo (PREVENTIVA vs CORRECTIVA)

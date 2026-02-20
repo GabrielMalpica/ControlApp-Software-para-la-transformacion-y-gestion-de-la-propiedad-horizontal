@@ -262,16 +262,16 @@ export class GerenteController {
       const tipo = String(body?.tipo ?? "CORRECTIVA").toUpperCase();
       const prioridad = Number(body?.prioridad ?? 2);
 
-      // ✅ 1) Correctiva P1: entra por reglas (buscar hueco / reemplazos P3/P2)
-      if (tipo === "CORRECTIVA" && prioridad === 1) {
-        const r = await service.crearCorrectivaP1ConReglas(body);
+      // ✅ 1) Correctiva P1/P2/P3: entra por reglas de conflicto/reemplazo
+      if (tipo === "CORRECTIVA" && [1, 2, 3].includes(prioridad)) {
+        const r: any = await service.crearCorrectivaConReglas(body);
 
-        // A) Creada sin reemplazo (en hueco) → 201
+        // A) Creada sin reemplazo
         if (r.ok && r.mode === "CREADA_SIN_REEMPLAZO") {
           res.status(201).json({
             ok: true,
-            tareaId: r.createdP1Id,
-            createdP1Id: r.createdP1Id,
+            tareaId: r.createdId ?? r.createdP1Id,
+            createdId: r.createdId ?? r.createdP1Id,
             message: r.message,
             ajustadaAutomaticamente: r.ajustadaAutomaticamente ?? false,
             motivoAjuste: r.motivoAjuste ?? null,
@@ -283,21 +283,31 @@ export class GerenteController {
           return;
         }
 
-        // B) Auto reemplazo P3 → 200 (para UI info)
-        if (r.ok && r.mode === "AUTO_REEMPLAZO_P3") {
+        // B) Auto reemplazo
+        if (r.ok && (r.mode === "AUTO_REEMPLAZO" || r.mode === "AUTO_REEMPLAZO_P3")) {
           res.status(200).json({
             ok: true,
-            tareaId: r.createdP1Id,
-            createdP1Id: r.createdP1Id,
-            autoReplaced: r.info?.reemplazadas ?? [],
+            tareaId: r.createdId ?? r.createdP1Id,
+            createdId: r.createdId ?? r.createdP1Id,
+            autoReplaced: r.autoReplaced ?? r.info?.reemplazadas ?? [],
             reemplazadasIds: r.reemplazadasIds ?? [],
+            reprogramadasIds: r.reprogramadasIds ?? [],
+            canceladasIds: r.canceladasIds ?? [],
+            canceladasSinCupoIds: r.canceladasSinCupoIds ?? [],
+            noCompletadasIds: r.noCompletadasIds ?? [],
+            message: r.message,
           });
           return;
         }
 
-        // C) Requiere confirmación P2 → 200 con flag para UI
-        if (r.ok && r.mode === "REQUIERE_CONFIRMACION_P2") {
-          const reemplazablesP2 = (r.opciones ?? []).flatMap((op: any) => {
+        // C) Requiere decisión manual (mover/reemplazar o reemplazar directo)
+        if (
+          r.ok &&
+          (r.mode === "REQUIERE_DECISION_REEMPLAZO" ||
+            r.mode === "REQUIERE_CONFIRMACION_P2" ||
+            r.mode === "REQUIERE_CONFIRMACION_P1")
+        ) {
+          const reemplazables = (r.opciones ?? []).flatMap((op: any) => {
             return (op.tareas ?? []).map((t: any) => ({
               id: t.id,
               prioridad: t.prioridad,
@@ -308,13 +318,35 @@ export class GerenteController {
             }));
           });
 
+          const replacementPriority = Number(r.prioridadObjetivo ?? prioridad);
+          const isCritical = replacementPriority === 1;
+
           res.status(200).json({
             needsReplacement: true,
             ok: false,
             message: r.message,
-            reemplazablesP2,
-            suggestedInicio: r.slotSugerido?.fechaInicio ?? null,
-            suggestedFin: r.slotSugerido?.fechaFin ?? null,
+            decisionMode: r.decisionMode ?? "REEMPLAZAR",
+            replacementPriority,
+            criticalConfirmation: isCritical,
+            confirmationVariant: r.confirmationVariant ?? r.estiloConfirmacion,
+            confirmationColor:
+              (r.confirmationColor ?? r.colorConfirmacion) === "red"
+                ? "#DC2626"
+                : "#D97706",
+            confirmationTitle: r.confirmationTitle ?? r.tituloConfirmacion,
+            confirmationRequiresReason:
+              r.confirmationRequiresReason ?? r.requiereMotivo ?? true,
+            requiresReplacementAction: r.requiresReplacementAction ?? true,
+            reasonHint:
+              "Debes indicar por que se autoriza este reemplazo antes de confirmar.",
+            reemplazables,
+            reemplazablesP2: replacementPriority === 2 ? reemplazables : [],
+            reemplazablesP1: replacementPriority === 1 ? reemplazables : [],
+            opcionesAuto: r.opcionesAuto ?? [],
+            opcionesConfirmacion: r.opcionesConfirmacion ?? [],
+            suggestedInicio:
+              r.suggestedInicio ?? r.slotSugerido?.fechaInicio ?? null,
+            suggestedFin: r.suggestedFin ?? r.slotSugerido?.fechaFin ?? null,
           });
           return;
         }
@@ -322,7 +354,7 @@ export class GerenteController {
         // D) No se pudo
         res.status(200).json({
           ok: false,
-          reason: r.reason,
+          reason: "reason" in r ? r.reason : "SIN_HUECO",
           message: r.message,
         });
         return;
@@ -341,7 +373,7 @@ export class GerenteController {
 
   asignarTareaConReemplazo = async (req: any, res: any) => {
     try {
-      const out = await service.asignarTareaConReemplazo(req.body);
+      const out = await service.asignarTareaConReemplazoV2(req.body);
       if (out?.ok === false) return res.status(400).json(out);
       return res.status(200).json(out);
     } catch (e: any) {

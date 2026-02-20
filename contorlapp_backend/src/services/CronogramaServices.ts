@@ -45,7 +45,9 @@ const TareasPorFiltroDTO = z
       );
     },
     { message: "Debe enviar fechaExacta o un rango (fechaInicio y fechaFin)." }
-  );
+      );
+
+const ESTADOS_NO_CRONOGRAMA = ["PENDIENTE_REPROGRAMACION"] as any;
 
 /** Util: sumar minutos a una fecha (sin mutar la original) */
 function addMinutes(d: Date, minutes: number) {
@@ -95,6 +97,7 @@ export class CronogramaService {
 
     const where: any = {
       conjuntoId: this.conjuntoId,
+      estado: { notIn: ESTADOS_NO_CRONOGRAMA },
       fechaFin: { gte: inicioMes },
       fechaInicio: { lte: finMes },
     };
@@ -119,6 +122,7 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         operarios: { some: { id: operarioId.toString() } },
       },
       include: {
@@ -135,6 +139,7 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         fechaInicio: { lte: fecha },
         fechaFin: { gte: fecha },
       },
@@ -152,6 +157,7 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         // solape de rangos
         fechaFin: { gte: fechaInicio },
         fechaInicio: { lte: fechaFin },
@@ -172,6 +178,7 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         // según tu versión de Prisma, podrías necesitar { is: { nombre: ... } }
         ubicacion: { nombre: { equals: ubicacion, mode: "insensitive" } },
       },
@@ -219,6 +226,7 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         operarios: f.operarioId
           ? { some: { id: f.operarioId.toString() } }
           : undefined,
@@ -256,6 +264,7 @@ export class CronogramaService {
     const tareas = await this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         fechaFin: { gte: inicioDia },
         fechaInicio: { lte: finDia },
       },
@@ -313,6 +322,7 @@ export class CronogramaService {
     const tareas = await this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         fechaFin: { gte: lunes },
         fechaInicio: { lte: domingo },
       },
@@ -450,6 +460,7 @@ export class CronogramaService {
 
     const where: any = {
       conjuntoId: this.conjuntoId,
+      estado: { notIn: ESTADOS_NO_CRONOGRAMA },
       fechaFin: { gte: start },
       fechaInicio: { lte: end },
     };
@@ -516,6 +527,7 @@ export class CronogramaService {
     const tareas = await this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         operarios: { some: { id: operarioId.toString() } },
         fechaFin: { gte: fechaInicio },
         fechaInicio: { lte: fechaFin },
@@ -568,7 +580,10 @@ export class CronogramaService {
    */
   async exportarComoEventosCalendario() {
     const tareas = await this.prisma.tarea.findMany({
-      where: { conjuntoId: this.conjuntoId },
+      where: {
+        conjuntoId: this.conjuntoId,
+        estado: { notIn: ESTADOS_NO_CRONOGRAMA },
+      },
       include: {
         ubicacion: true,
         elemento: true,
