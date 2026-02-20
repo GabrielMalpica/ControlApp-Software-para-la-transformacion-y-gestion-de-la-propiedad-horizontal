@@ -110,6 +110,21 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texto)));
   }
 
+  List<int> _toIntIds(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw.map((e) => int.tryParse(e.toString())).whereType<int>().toList();
+  }
+
+  void _informarNoCompletadasPorReemplazo(dynamic idsRaw) {
+    if (!mounted) return;
+    final ids = _toIntIds(idsRaw);
+    if (ids.isEmpty) return;
+    final texto = ids.length == 1
+        ? '1 preventiva quedó en NO_COMPLETADA por reemplazo.'
+        : '${ids.length} preventivas quedaron en NO_COMPLETADA por reemplazo.';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texto)));
+  }
+
   Future<void> _cargarInicial() async {
     try {
       final conjuntos = await _gerenteApi.listarConjuntos();
@@ -617,76 +632,213 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     );
   }
 
-  Future<List<int>?> _dialogReemplazo(List<dynamic> reemplazables) async {
-    final selected = <int>{};
+  Future<String?> _dialogMoverOReemplazar(DateTime ini, DateTime fin) {
+    return showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("No hay espacio en esa hora"),
+        content: Text(
+          "La hora solicitada está ocupada.\n\n"
+          "Sugerencia disponible: ${_fmtDateTime(ini)} → ${_fmtDateTime(fin)}\n\n"
+          "¿Deseas mover la correctiva a ese hueco o reemplazar la tarea preventiva que bloquea?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text("Cancelar"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, "MOVE"),
+            child: const Text("Mover a sugerencia"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, "REPLACE"),
+            child: const Text("Reemplazar preventiva"),
+          ),
+        ],
+      ),
+    );
+  }
 
+  Future<List<int>?> _dialogSeleccionOpcionReemplazo(
+    List<dynamic> opciones, {
+    required bool critical,
+    String? title,
+  }) async {
+    if (opciones.isEmpty) return null;
+
+    if (opciones.length == 1) {
+      final o = (opciones.first as Map).cast<String, dynamic>();
+      final resumen = (o['resumen'] ?? 'Se reemplazará una preventiva')
+          .toString();
+      final idsRaw = (o['reemplazarIds'] as List?) ?? const [];
+      final ids = idsRaw
+          .map((e) => int.tryParse(e.toString()))
+          .whereType<int>()
+          .toList();
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: critical ? const Color(0xFFFEE2E2) : null,
+          title: Text(
+            title ??
+                (critical ? "Confirmación crítica" : "Confirmar reemplazo"),
+            style: TextStyle(color: critical ? const Color(0xFFB91C1C) : null),
+          ),
+          content: Text(resumen),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("No"),
+            ),
+            ElevatedButton(
+              style: critical
+                  ? ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFDC2626),
+                    )
+                  : null,
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("Sí, reemplazar"),
+            ),
+          ],
+        ),
+      );
+      if (ok == true && ids.isNotEmpty) return ids;
+      return null;
+    }
+
+    int selectedIndex = 0;
     return showDialog<List<int>>(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setStateDialog) {
-            return AlertDialog(
-              title: const Text("Reemplazar tareas (P2/P3)"),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: reemplazables.isEmpty
-                    ? const Text("No hay tareas reemplazables (P2 o P3).")
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: reemplazables.length,
-                        itemBuilder: (_, i) {
-                          final t = reemplazables[i] as Map<String, dynamic>;
-                          final id = int.parse(t['id'].toString());
-                          final desc = (t['descripcion'] ?? '').toString();
-                          final tipo = (t['tipo'] ?? '').toString();
-                          final ini = DateTime.parse(
-                            t['fechaInicio'].toString(),
-                          ).toLocal();
-                          final fin = DateTime.parse(
-                            t['fechaFin'].toString(),
-                          ).toLocal();
-                          final p = t['prioridad'] != null
-                              ? int.tryParse(t['prioridad'].toString())
-                              : null;
-
-                          final checked = selected.contains(id);
-
-                          return CheckboxListTile(
-                            value: checked,
-                            title: Text(desc.isEmpty ? 'Tarea $id' : desc),
-                            subtitle: Text(
-                              'ID: $id | $tipo | ${_fmtDateTime(ini)} - ${_fmtDateTime(fin)}'
-                              '${p != null ? " | P$p" : ""}',
-                            ),
-                            onChanged: (v) {
-                              if (v == true) {
-                                selected.add(id);
-                              } else {
-                                selected.remove(id);
-                              }
-                              setStateDialog(() {});
-                            },
-                          );
-                        },
-                      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) {
+          return AlertDialog(
+            backgroundColor: critical ? const Color(0xFFFEE2E2) : null,
+            title: Text(
+              title ?? "Elegir opción de reemplazo",
+              style: TextStyle(
+                color: critical ? const Color(0xFFB91C1C) : null,
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, null),
-                  child: const Text("Cancelar"),
-                ),
-                ElevatedButton(
-                  onPressed: selected.isEmpty
-                      ? null
-                      : () => Navigator.pop(ctx, selected.toList()),
-                  child: const Text("Reemplazar y crear correctiva P1"),
-                ),
-              ],
-            );
-          },
-        );
-      },
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: opciones.length,
+                itemBuilder: (_, i) {
+                  final o = (opciones[i] as Map).cast<String, dynamic>();
+                  final resumen = (o['resumen'] ?? 'Opción ${i + 1}')
+                      .toString();
+                  return RadioListTile<int>(
+                    value: i,
+                    groupValue: selectedIndex,
+                    title: Text(resumen),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setStateDialog(() => selectedIndex = v);
+                    },
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, null),
+                child: const Text("Cancelar"),
+              ),
+              ElevatedButton(
+                style: critical
+                    ? ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFDC2626),
+                      )
+                    : null,
+                onPressed: () {
+                  final selected = (opciones[selectedIndex] as Map)
+                      .cast<String, dynamic>();
+                  final idsRaw =
+                      (selected['reemplazarIds'] as List?) ?? const [];
+                  final ids = idsRaw
+                      .map((e) => int.tryParse(e.toString()))
+                      .whereType<int>()
+                      .toList();
+                  Navigator.pop(ctx, ids.isEmpty ? null : ids);
+                },
+                child: const Text("Continuar"),
+              ),
+            ],
+          );
+        },
+      ),
     );
+  }
+
+  Future<String?> _dialogAccionReemplazo() {
+    return showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("¿Qué hacer con la preventiva reemplazada?"),
+        content: const Text(
+          "Puedes reprogramarla dentro del mes o cancelarla definitivamente.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text("Cancelar"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, "CANCELAR"),
+            child: const Text("Cancelar preventiva"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, "REPROGRAMAR"),
+            child: const Text("Reprogramar preventiva"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _dialogMotivoReemplazo({required bool critical}) async {
+    final ctrl = TextEditingController();
+    final out = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: critical ? const Color(0xFFFEE2E2) : null,
+        title: Text(
+          "Motivo del reemplazo",
+          style: TextStyle(color: critical ? const Color(0xFFB91C1C) : null),
+        ),
+        content: TextField(
+          controller: ctrl,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: "Escribe el motivo (obligatorio)",
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text("Cancelar"),
+          ),
+          ElevatedButton(
+            style: critical
+                ? ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFDC2626),
+                  )
+                : null,
+            onPressed: () {
+              final txt = ctrl.text.trim();
+              if (txt.length < 3) return;
+              Navigator.pop(context, txt);
+            },
+            child: const Text("Guardar motivo"),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    return out;
   }
 
   Future<void> _guardarTarea() async {
@@ -781,6 +933,10 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       // ✅ CAMBIO: si fue OK, mostrar AlertDialog si el backend ajustó horario
       if (_backendOk(resp)) {
         if (resp is Map) {
+          final autoOk = (resp['autoReplaced'] as List?) ?? const [];
+          _informarAutoReemplazos(autoOk);
+          _informarNoCompletadasPorReemplazo(resp['noCompletadasIds']);
+
           final solIni = _parseDt(resp['solicitadaInicio']);
           final solFin = _parseDt(resp['solicitadaFin']);
           final asgIni = _parseDt(resp['asignadaInicio']);
@@ -815,21 +971,23 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         return;
       }
 
-      // ✅ Caso reemplazo (correctiva P1)
-      if (resp is Map && resp['needsReplacement'] == true) {
-        final autoReplaced = (resp['autoReplaced'] as List?) ?? [];
+      // Caso: conflicto con preventiva y requiere decision de reemplazo.
+      if (resp['needsReplacement'] == true) {
+        final respMap = resp.cast<String, dynamic>();
+        final autoReplaced = (respMap['autoReplaced'] as List?) ?? const [];
         _informarAutoReemplazos(autoReplaced);
 
-        if (resp['suggestedInicio'] != null && resp['suggestedFin'] != null) {
-          final sugIni = DateTime.parse(
-            resp['suggestedInicio'].toString(),
-          ).toLocal();
-          final sugFin = DateTime.parse(
-            resp['suggestedFin'].toString(),
-          ).toLocal();
+        final sugIni = _parseDt(respMap['suggestedInicio']);
+        final sugFin = _parseDt(respMap['suggestedFin']);
+        final decisionMode = (respMap['decisionMode'] ?? 'REEMPLAZAR')
+            .toString()
+            .toUpperCase();
 
-          final usar = await _dialogSugerenciaHorario(sugIni, sugFin);
-          if (usar == true) {
+        if (decisionMode == 'MOVER_O_REEMPLAZAR' &&
+            sugIni != null &&
+            sugFin != null) {
+          final decision = await _dialogMoverOReemplazar(sugIni, sugFin);
+          if (decision == 'MOVE') {
             final req2 = TareaRequest(
               descripcion: req.descripcion,
               fechaInicio: sugIni,
@@ -847,99 +1005,221 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             );
 
             final resp2 = await _tareaApi.crearTarea(req2);
-
             if (_backendOk(resp2)) {
-              final auto2 =
-                  (resp2 is Map ? (resp2['autoReplaced'] as List?) : null) ??
-                  [];
+              final auto2 = (resp2['autoReplaced'] as List?) ?? const [];
               _informarAutoReemplazos(auto2);
+              _informarNoCompletadasPorReemplazo(resp2['noCompletadasIds']);
               _onSuccess();
+              return;
+            }
+
+            await _mostrarErrorBackend(resp2);
+            return;
+          }
+
+          if (decision != 'REPLACE') {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Operacion cancelada.')),
+            );
+            return;
+          }
+        }
+
+        List<int> toIds(dynamic raw) {
+          if (raw is! List) return const [];
+          return raw
+              .map((e) => int.tryParse(e.toString()))
+              .whereType<int>()
+              .toList();
+        }
+
+        bool sameIds(List<int> a, List<int> b) {
+          if (a.length != b.length) return false;
+          final aa = [...a]..sort();
+          final bb = [...b]..sort();
+          for (var i = 0; i < aa.length; i++) {
+            if (aa[i] != bb[i]) return false;
+          }
+          return true;
+        }
+
+        String resumenFallback(Map<String, dynamic> t) {
+          final id = t['id'];
+          final prioridad = t['prioridad'];
+          final desc = (t['descripcion'] ?? '').toString().trim();
+          final base = 'Reemplazar preventiva ID $id (P$prioridad)';
+          return desc.isEmpty ? base : '$base - $desc';
+        }
+
+        final opcionesAutoRaw = (respMap['opcionesAuto'] as List?) ?? const [];
+        final opcionesConfirmRaw =
+            (respMap['opcionesConfirmacion'] as List?) ?? const [];
+        final opcionesDisponibles = <Map<String, dynamic>>[];
+
+        for (final raw in opcionesAutoRaw) {
+          if (raw is! Map) continue;
+          final o = raw.cast<String, dynamic>();
+          final ids = toIds(o['reemplazarIds']);
+          if (ids.isEmpty) continue;
+          opcionesDisponibles.add({
+            ...o,
+            'reemplazarIds': ids,
+            'requiresConfirm': false,
+            'requiresReason': false,
+            'critical': false,
+            'resumen': (o['resumen'] ?? 'Reemplazo automatico').toString(),
+          });
+        }
+
+        for (final raw in opcionesConfirmRaw) {
+          if (raw is! Map) continue;
+          final o = raw.cast<String, dynamic>();
+          final ids = toIds(o['reemplazarIds']);
+          if (ids.isEmpty) continue;
+          final prioridadObjetivo =
+              int.tryParse((o['prioridadObjetivo'] ?? '').toString()) ?? 3;
+          final tipoConfirm = (o['tipoConfirmacion'] ?? '').toString();
+          final critical =
+              tipoConfirm.toUpperCase() == 'CONFIRM_DANGER' ||
+              prioridadObjetivo == 1;
+          opcionesDisponibles.add({
+            ...o,
+            'reemplazarIds': ids,
+            'requiresConfirm': true,
+            'requiresReason': prioridadObjetivo <= 2,
+            'critical': critical,
+            'resumen': (o['resumen'] ?? 'Requiere confirmacion de reemplazo')
+                .toString(),
+          });
+        }
+
+        if (opcionesDisponibles.isEmpty) {
+          final reemplazables = (respMap['reemplazables'] as List?) ?? const [];
+          final replacementPriority =
+              int.tryParse((respMap['replacementPriority'] ?? '').toString()) ??
+              3;
+          final fallbackCritical =
+              respMap['criticalConfirmation'] == true ||
+              replacementPriority == 1;
+          final fallbackRequiresReason =
+              respMap['confirmationRequiresReason'] == true ||
+              replacementPriority <= 2;
+
+          for (final raw in reemplazables) {
+            if (raw is! Map) continue;
+            final t = raw.cast<String, dynamic>();
+            final id = int.tryParse((t['id'] ?? '').toString());
+            if (id == null) continue;
+            opcionesDisponibles.add({
+              'reemplazarIds': [id],
+              'resumen': resumenFallback(t),
+              'requiresConfirm': true,
+              'requiresReason': fallbackRequiresReason,
+              'critical': fallbackCritical,
+            });
+          }
+        }
+
+        if (opcionesDisponibles.isEmpty) {
+          await _mostrarErrorBackend(respMap);
+          return;
+        }
+
+        final hasCritical = opcionesDisponibles.any(
+          (o) => o['critical'] == true,
+        );
+        final titleBackend = (respMap['confirmationTitle'] ?? '')
+            .toString()
+            .trim();
+        final title = titleBackend.isNotEmpty
+            ? titleBackend
+            : (hasCritical
+                  ? 'Alerta critica de reemplazo prioridad 1'
+                  : 'Confirmar reemplazo de preventiva');
+
+        final idsSeleccionados = await _dialogSeleccionOpcionReemplazo(
+          opcionesDisponibles,
+          critical: hasCritical,
+          title: title,
+        );
+        if (idsSeleccionados == null || idsSeleccionados.isEmpty) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Operacion cancelada.')));
+          return;
+        }
+
+        Map<String, dynamic>? seleccion;
+        for (final o in opcionesDisponibles) {
+          if (sameIds(toIds(o['reemplazarIds']), idsSeleccionados)) {
+            seleccion = o;
+            break;
+          }
+        }
+
+        final requiereConfirmacion = seleccion?['requiresConfirm'] == true;
+        final confirmacionCritica = seleccion?['critical'] == true;
+        final requiereAccion =
+            (respMap['requiresReplacementAction'] == true) ||
+            requiereConfirmacion;
+        final requiereMotivo =
+            (seleccion?['requiresReason'] == true) ||
+            (respMap['confirmationRequiresReason'] == true &&
+                requiereConfirmacion);
+
+        String? accionReemplazadas;
+        String? motivoReemplazo;
+        if (requiereAccion) {
+          accionReemplazadas = await _dialogAccionReemplazo();
+          if (accionReemplazadas == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Operacion cancelada.')),
+            );
+            return;
+          }
+
+          if (requiereMotivo) {
+            motivoReemplazo = await _dialogMotivoReemplazo(
+              critical: confirmacionCritica,
+            );
+            if (motivoReemplazo == null || motivoReemplazo.trim().isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Debe ingresar un motivo.')),
+              );
               return;
             }
           }
         }
 
-        final reemplazablesP2 =
-            (resp['reemplazablesP2'] as List?) ??
-            (resp['reemplazables'] as List?) ??
-            [];
+        final resp3 = await _tareaApi.crearTareaConReemplazo(
+          tarea: req,
+          reemplazarIds: idsSeleccionados,
+          accionReemplazadas: accionReemplazadas,
+          motivoReemplazo: motivoReemplazo,
+        );
 
-        if (reemplazablesP2.isEmpty) {
-          await _mostrarErrorBackend(resp);
-          return;
-        }
+        if (_backendOk(resp3)) {
+          final auto3 = (resp3['autoReplaced'] as List?) ?? const [];
+          _informarAutoReemplazos(auto3);
+          _informarNoCompletadasPorReemplazo(resp3['noCompletadasIds']);
 
-        if (reemplazablesP2.length == 1) {
-          final t = reemplazablesP2.first as Map<String, dynamic>;
-          final id = int.parse(t['id'].toString());
-          final desc = (t['descripcion'] ?? '').toString();
-
-          final ok = await showDialog<bool>(
-            context: context,
-            builder: (_) => AlertDialog(
-              title: const Text("Confirmar reemplazo"),
-              content: Text(
-                "¿Deseas reemplazar esta tarea P2?\n\nID: $id\n$desc",
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text("No"),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text("Sí, reemplazar"),
-                ),
-              ],
-            ),
-          );
-
-          if (ok != true) {
+          final canceladasSinCupo =
+              (resp3['canceladasSinCupoIds'] as List?) ?? const [];
+          if (canceladasSinCupo.isNotEmpty) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Operación cancelada.')),
+              SnackBar(
+                content: Text(
+                  'Preventivas canceladas por falta de cupo: ${canceladasSinCupo.length}',
+                ),
+              ),
             );
-            return;
           }
 
-          final resp3 = await _tareaApi.crearTareaConReemplazo(
-            tarea: req,
-            reemplazarIds: [id],
-          );
-
-          if (_backendOk(resp3)) {
-            final auto3 =
-                (resp3 is Map ? (resp3['autoReplaced'] as List?) : null) ?? [];
-            _informarAutoReemplazos(auto3);
-            _onSuccess();
-            return;
-          }
-
-          await _mostrarErrorBackend(resp3);
+          _onSuccess();
           return;
         }
 
-        final ids = await _dialogReemplazo(reemplazablesP2);
-        if (ids != null && ids.isNotEmpty) {
-          final resp3 = await _tareaApi.crearTareaConReemplazo(
-            tarea: req,
-            reemplazarIds: ids,
-          );
-
-          if (_backendOk(resp3)) {
-            final auto3 =
-                (resp3 is Map ? (resp3['autoReplaced'] as List?) : null) ?? [];
-            _informarAutoReemplazos(auto3);
-            _onSuccess();
-            return;
-          }
-
-          await _mostrarErrorBackend(resp3);
-          return;
-        }
-
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Operación cancelada.')));
+        await _mostrarErrorBackend(resp3);
         return;
       }
 

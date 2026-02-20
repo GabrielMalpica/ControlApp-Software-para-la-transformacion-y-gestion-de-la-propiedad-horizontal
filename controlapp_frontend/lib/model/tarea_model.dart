@@ -126,6 +126,10 @@ class TareaModel {
   final List<InsumoProgramado> insumosProgramados;
 
   final String? insumoPrincipalUnidad;
+  final bool reprogramada;
+  final DateTime? reprogramadaEn;
+  final String? reprogramadaMotivo;
+  final int? reprogramadaPorTareaId;
 
   TareaModel({
     required this.id,
@@ -161,6 +165,10 @@ class TareaModel {
     this.maquinariasAsignadas = const [],
     this.insumosProgramados = const [],
     this.insumoPrincipalUnidad,
+    this.reprogramada = false,
+    this.reprogramadaEn,
+    this.reprogramadaMotivo,
+    this.reprogramadaPorTareaId,
   });
 
   /// ✅ Helpers para UI (si quieres mostrar horas)
@@ -280,6 +288,14 @@ class TareaModel {
         .toList();
 
     final insumoPrincipalUnidad = json['insumoPrincipalUnidad']?.toString();
+    final reprogramada = json['reprogramada'] == true;
+    final reprogramadaEn = json['reprogramadaEn'] != null
+        ? DateTime.tryParse(json['reprogramadaEn'].toString())?.toLocal()
+        : null;
+    final reprogramadaMotivo = json['reprogramadaMotivo']?.toString();
+    final reprogramadaPorTareaId = json['reprogramadaPorTareaId'] != null
+        ? int.tryParse(json['reprogramadaPorTareaId'].toString())
+        : null;
 
     return TareaModel(
       id: int.tryParse(json['id']?.toString() ?? '') ?? 0,
@@ -324,6 +340,10 @@ class TareaModel {
       maquinariasAsignadas: maquinariasAsignadas,
       insumosProgramados: insumosProg,
       insumoPrincipalUnidad: insumoPrincipalUnidad,
+      reprogramada: reprogramada,
+      reprogramadaEn: reprogramadaEn,
+      reprogramadaMotivo: reprogramadaMotivo,
+      reprogramadaPorTareaId: reprogramadaPorTareaId,
     );
   }
 
@@ -363,6 +383,10 @@ class TareaModel {
         .toList(),
     'insumosProgramados': insumosProgramados.map((e) => e.toJson()).toList(),
     'insumoPrincipalUnidad': insumoPrincipalUnidad,
+    'reprogramada': reprogramada,
+    'reprogramadaEn': reprogramadaEn?.toIso8601String(),
+    'reprogramadaMotivo': reprogramadaMotivo,
+    'reprogramadaPorTareaId': reprogramadaPorTareaId,
   };
 
   TareaModel copyWith({
@@ -405,6 +429,10 @@ class TareaModel {
     List<MaquinariaAsignada>? maquinariasAsignadas,
     List<InsumoProgramado>? insumosProgramados,
     String? insumoPrincipalUnidad,
+    bool? reprogramada,
+    DateTime? reprogramadaEn,
+    String? reprogramadaMotivo,
+    int? reprogramadaPorTareaId,
   }) {
     return TareaModel(
       id: id ?? this.id,
@@ -444,6 +472,11 @@ class TareaModel {
       insumosProgramados: insumosProgramados ?? this.insumosProgramados,
       insumoPrincipalUnidad:
           insumoPrincipalUnidad ?? this.insumoPrincipalUnidad,
+      reprogramada: reprogramada ?? this.reprogramada,
+      reprogramadaEn: reprogramadaEn ?? this.reprogramadaEn,
+      reprogramadaMotivo: reprogramadaMotivo ?? this.reprogramadaMotivo,
+      reprogramadaPorTareaId:
+          reprogramadaPorTareaId ?? this.reprogramadaPorTareaId,
     );
   }
 }

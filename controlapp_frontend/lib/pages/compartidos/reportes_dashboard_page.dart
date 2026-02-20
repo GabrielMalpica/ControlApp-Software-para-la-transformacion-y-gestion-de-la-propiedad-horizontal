@@ -360,6 +360,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       final tasa = kd.tasaCierrePct;
       final rej = kd.rechazadas;
       final nocomp = kd.noCompletadas;
+      final noCompPorReemplazo = _tareasDetalle
+          .where((t) => t.noCompletadaPorReemplazo)
+          .length;
       final pend = kd.pendientesAprobacion;
 
       if (tasa < 75) {
@@ -379,6 +382,11 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       if (nocomp > 0) {
         bullets.add(
           'No completadas: $nocomp (validar accesos/insumos/tiempos).',
+        );
+      }
+      if (noCompPorReemplazo > 0) {
+        bullets.add(
+          'No completadas por reemplazo: $noCompPorReemplazo (confirmar trazabilidad con correctivas que las reemplazaron).',
         );
       }
       if (pend > 0)
@@ -544,6 +552,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       add('https://drive.google.com/uc?export=view&id=$driveId');
       add('https://drive.google.com/uc?export=download&id=$driveId');
       add('https://lh3.googleusercontent.com/d/$driveId=w2000');
+      add('https://lh3.googleusercontent.com/d/$driveId=s2000');
+      add('https://drive.usercontent.google.com/download?id=$driveId&export=view');
+      add('https://drive.usercontent.google.com/download?id=$driveId&export=download');
     }
 
     return out;
@@ -858,6 +869,12 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       pw.Widget tareaBlock(TareaDetalleRow t) {
         final evid = t.evidencias.take(4).toList();
         final evidWidgets = <pw.Widget>[];
+        final motivoNoComp = (t.motivoNoCompletada ?? '').trim();
+        final motivoReemplazo = _replacementInfoText(t);
+        final reemplazoWarn = _replacementWarn(t);
+        final refReemplazo = t.reemplazadaPorTareaId != null
+            ? '#${t.reemplazadaPorTareaId}${(t.reemplazadaPorDescripcion ?? '').trim().isNotEmpty ? " (${t.reemplazadaPorDescripcion})" : ""}'
+            : null;
 
         for (final raw in evid) {
           final key = raw.trim();
@@ -925,6 +942,54 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 pw.Text(
                   'Operarios: ${t.operarios.join(', ')}',
                   style: const pw.TextStyle(fontSize: 8),
+                ),
+              if (t.esTareaReemplazo)
+                pw.Container(
+                  margin: const pw.EdgeInsets.only(top: 4),
+                  padding: const pw.EdgeInsets.all(6),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex(
+                      reemplazoWarn ? '#FFF7ED' : '#ECFDF5',
+                    ),
+                    border: pw.Border.all(
+                      color: PdfColor.fromHex(
+                        reemplazoWarn ? '#FDBA74' : '#86EFAC',
+                      ),
+                    ),
+                    borderRadius: pw.BorderRadius.circular(4),
+                  ),
+                  child: pw.Text(
+                    motivoReemplazo,
+                    style: pw.TextStyle(
+                      fontSize: 8,
+                      color: PdfColor.fromHex(
+                        reemplazoWarn ? '#9A3412' : '#166534',
+                      ),
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+              if (t.noCompletadaPorReemplazo || motivoNoComp.isNotEmpty)
+                pw.Container(
+                  margin: const pw.EdgeInsets.only(top: 4),
+                  padding: const pw.EdgeInsets.all(6),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex('#FEF2F2'),
+                    border: pw.Border.all(color: PdfColor.fromHex('#FCA5A5')),
+                    borderRadius: pw.BorderRadius.circular(4),
+                  ),
+                  child: pw.Text(
+                    motivoNoComp.isNotEmpty
+                        ? motivoNoComp
+                        : (refReemplazo != null
+                              ? 'No fue completada porque fue reemplazada por la correctiva $refReemplazo.'
+                              : 'No fue completada por reemplazo.'),
+                    style: pw.TextStyle(
+                      fontSize: 8,
+                      color: PdfColor.fromHex('#991B1B'),
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
                 ),
               pw.SizedBox(height: 4),
               pw.Text(
@@ -1180,6 +1245,12 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             pw.SizedBox(height: 12),
             ..._tareasDetalle.map((t) {
               final evid = t.evidencias;
+              final motivoNoComp = (t.motivoNoCompletada ?? '').trim();
+              final refReemplazo = t.reemplazadaPorTareaId != null
+                  ? '#${t.reemplazadaPorTareaId}${(t.reemplazadaPorDescripcion ?? '').trim().isNotEmpty ? " (${t.reemplazadaPorDescripcion})" : ""}'
+                  : null;
+              final motivoReemplazo = _replacementInfoText(t);
+              final reemplazoWarn = _replacementWarn(t);
 
               String miniList(List<Map<String, dynamic>> xs) {
                 if (xs.isEmpty) return 'Sin datos';
@@ -1250,6 +1321,56 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                       pw.Text(
                         'Operarios: ${t.operarios.join(', ')}',
                         style: const pw.TextStyle(fontSize: 10),
+                      ),
+                    if (t.esTareaReemplazo)
+                      pw.Container(
+                        margin: const pw.EdgeInsets.only(top: 4),
+                        padding: const pw.EdgeInsets.all(6),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColor.fromHex(
+                            reemplazoWarn ? '#FFF7ED' : '#ECFDF5',
+                          ),
+                          border: pw.Border.all(
+                            color: PdfColor.fromHex(
+                              reemplazoWarn ? '#FDBA74' : '#86EFAC',
+                            ),
+                          ),
+                          borderRadius: pw.BorderRadius.circular(4),
+                        ),
+                        child: pw.Text(
+                          motivoReemplazo,
+                          style: pw.TextStyle(
+                            fontSize: 9,
+                            color: PdfColor.fromHex(
+                              reemplazoWarn ? '#9A3412' : '#166534',
+                            ),
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    if (t.noCompletadaPorReemplazo || motivoNoComp.isNotEmpty)
+                      pw.Container(
+                        margin: const pw.EdgeInsets.only(top: 4),
+                        padding: const pw.EdgeInsets.all(6),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColor.fromHex('#FEF2F2'),
+                          border: pw.Border.all(
+                            color: PdfColor.fromHex('#FCA5A5'),
+                          ),
+                          borderRadius: pw.BorderRadius.circular(4),
+                        ),
+                        child: pw.Text(
+                          motivoNoComp.isNotEmpty
+                              ? motivoNoComp
+                              : (refReemplazo != null
+                                    ? 'No fue completada porque fue reemplazada por la correctiva $refReemplazo.'
+                                    : 'No fue completada por reemplazo.'),
+                          style: pw.TextStyle(
+                            fontSize: 9,
+                            color: PdfColor.fromHex('#991B1B'),
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
                       ),
                     pw.SizedBox(height: 6),
                     pw.Text(
@@ -1608,17 +1729,29 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           runSpacing: 10,
           children: [
             _kpiTile('Total', k.total.toString(), Icons.assignment),
-            _kpiTile('Aprobadas', kd.aprobadas.toString(), Icons.verified),
-            _kpiTile('Rechazadas', kd.rechazadas.toString(), Icons.block),
+            _kpiTile(
+              'Aprobadas',
+              kd.aprobadas.toString(),
+              Icons.verified,
+              accentColor: _estadoColor('APROBADA'),
+            ),
+            _kpiTile(
+              'Rechazadas',
+              kd.rechazadas.toString(),
+              Icons.block,
+              accentColor: _estadoColor('RECHAZADA'),
+            ),
             _kpiTile(
               'No completadas',
               kd.noCompletadas.toString(),
               Icons.warning_amber,
+              accentColor: _estadoColor('NO_COMPLETADA'),
             ),
             _kpiTile(
               'Pend. aprobación',
               kd.pendientesAprobacion.toString(),
               Icons.hourglass_bottom,
+              accentColor: _estadoColor('PENDIENTE_APROBACION'),
             ),
             _kpiTile('% Cierre', '${kd.tasaCierrePct}%', Icons.trending_up),
             _kpiTile(
@@ -1686,7 +1819,56 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     );
   }
 
-  Widget _kpiTile(String title, String value, IconData icon) {
+  String _estadoKey(String estado) {
+    return estado
+        .trim()
+        .toUpperCase()
+        .replaceAll('Á', 'A')
+        .replaceAll('É', 'E')
+        .replaceAll('Í', 'I')
+        .replaceAll('Ó', 'O')
+        .replaceAll('Ú', 'U')
+        .replaceAll('Ñ', 'N')
+        .replaceAll(RegExp(r'[\s\-]+'), '_');
+  }
+
+  Color _estadoColor(String estado) {
+    switch (_estadoKey(estado)) {
+      case 'ASIGNADA':
+        return Colors.blue.shade600;
+      case 'EN_PROCESO':
+        return Colors.indigo.shade500;
+      case 'COMPLETADA':
+        return Colors.teal.shade500;
+      case 'APROBADA':
+        return Colors.green.shade600;
+      case 'PENDIENTE_APROBACION':
+        return Colors.orange.shade300;
+      case 'RECHAZADA':
+        return Colors.deepOrange.shade700;
+      case 'NO_COMPLETADA':
+        return Colors.red.shade600;
+      case 'PENDIENTE_REPROGRAMACION':
+        return Colors.brown.shade500;
+      default:
+        return AppTheme.primary;
+    }
+  }
+
+  Color _estadoOnColor(String estado) {
+    final base = _estadoColor(estado);
+    return ThemeData.estimateBrightnessForColor(base) == Brightness.dark
+        ? Colors.white
+        : Colors.black87;
+  }
+
+  Widget _kpiTile(
+    String title,
+    String value,
+    IconData icon, {
+    Color? accentColor,
+  }) {
+    final accent = accentColor ?? AppTheme.primary;
     return _card(
       padding: const EdgeInsets.all(12),
       child: SizedBox(
@@ -1697,10 +1879,10 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: AppTheme.primary.withOpacity(.12),
+                color: accent.withOpacity(.12),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: AppTheme.primary),
+              child: Icon(icon, color: accent),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1786,17 +1968,18 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     for (int i = 0; i < entries.length; i++) {
       final e = entries[i];
       final pct = (e.value / total) * 100;
-      final c = i.isEven ? AppTheme.primary : AppTheme.primary.withOpacity(.55);
+      final c = _estadoColor(e.key);
+      final onC = _estadoOnColor(e.key);
 
       sections.add(
         PieChartSectionData(
           value: e.value.toDouble(),
           title: pct >= 8 ? '${pct.toStringAsFixed(0)}%' : '',
           radius: 70,
-          titleStyle: const TextStyle(
+          titleStyle: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w800,
-            color: Colors.white,
+            color: onC,
           ),
           color: c,
         ),
@@ -1823,9 +2006,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       itemBuilder: (_, i) {
         final e = entries[i];
         final pct = (e.value / total) * 100;
-        final c = i.isEven
-            ? AppTheme.primary
-            : AppTheme.primary.withOpacity(.55);
+        final c = _estadoColor(e.key);
         return Row(
           children: [
             Container(
@@ -2141,6 +2322,70 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     );
   }
 
+  String _horasFromMin(int minutos) {
+    final h = minutos / 60.0;
+    return '${h.toStringAsFixed(1)} h';
+  }
+
+  Color _usoColor(double pctRaw) {
+    final pct = pctRaw.isFinite ? pctRaw : 0.0;
+    if (pct < 70) return Colors.red.shade600;
+    if (pct < 90) return Colors.orange.shade500;
+    return Colors.green.shade600;
+  }
+
+  Widget _usoCargaBar({
+    required String label,
+    required double pctRaw,
+    required String detalle,
+  }) {
+    final pct = pctRaw.isFinite ? pctRaw : 0.0;
+    final progress = (pct / 100).clamp(0.0, 1.0).toDouble();
+    final color = _usoColor(pct);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: Colors.black87,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '${pct.toStringAsFixed(0)}%',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 10,
+            backgroundColor: Colors.black12,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          detalle,
+          style: const TextStyle(fontSize: 11, color: Colors.black54),
+        ),
+      ],
+    );
+  }
+
   // ======================= TAB: OPERARIOS =======================
 
   Widget _tabOperarios() {
@@ -2157,13 +2402,28 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         const SizedBox(height: 8),
         _card(child: SizedBox(height: 280, child: _barTopOperarios())),
         const SizedBox(height: 14),
-        _sectionTitle('Ranking (12)'),
+        _card(
+          child: Text(
+            'Uso de horas asignadas: <70% rojo, 70%-90% naranja, 90%-100% verde.',
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.black87,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        _sectionTitle('Ranking y carga (12)'),
         const SizedBox(height: 8),
         ...top.map((r) {
           final total = r.total <= 0 ? 1 : r.total;
           final aprob = r.aprobadas / total;
           final rech = r.rechazadas / total;
           final promHoras = (r.minutosPromedio / 60).toStringAsFixed(2);
+          final asigSem = _horasFromMin(r.minutosAsignadosSemana);
+          final asigMes = _horasFromMin(r.minutosAsignadosMes);
+          final dispSem = _horasFromMin(r.minutosDisponiblesSemana);
+          final dispMes = _horasFromMin(r.minutosDisponiblesMes);
 
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
@@ -2183,10 +2443,32 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                     'ID: ${r.operarioId} • Prom: $promHoras h',
                     style: const TextStyle(fontSize: 12, color: Colors.black54),
                   ),
+                  if ((r.conjuntoCapacidadId ?? '').trim().isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Capacidad base: ${r.conjuntoCapacidadId}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   _miniRatioBar('Aprobadas', aprob),
                   const SizedBox(height: 6),
                   _miniRatioBar('Rechazadas', rech),
+                  const SizedBox(height: 10),
+                  _usoCargaBar(
+                    label: 'Uso semanal',
+                    pctRaw: r.usoSemanalPct,
+                    detalle: 'Asignadas $asigSem de $dispSem disponibles.',
+                  ),
+                  const SizedBox(height: 8),
+                  _usoCargaBar(
+                    label: 'Uso mensual',
+                    pctRaw: r.usoMensualPct,
+                    detalle: 'Asignadas $asigMes de $dispMes disponibles.',
+                  ),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 10,
@@ -2197,6 +2479,8 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                       _miniPill('Rech', r.rechazadas),
                       _miniPill('NoComp', r.noCompletadas),
                       _miniPill('Pend', r.pendientesAprobacion),
+                      _miniTextPill('Sem', '$asigSem / $dispSem'),
+                      _miniTextPill('Mes', '$asigMes / $dispMes'),
                     ],
                   ),
                 ],
@@ -2774,13 +3058,41 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                                 ),
                               ),
                               const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  _chipState(t.estado),
+                                  if (t.esTareaReemplazo)
+                                    _replacementInfoChip(t, compact: true),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
                               Text(
-                                '${t.estado} • ${df.format(t.fechaInicio)} → ${df.format(t.fechaFin)} • ${t.duracionMinutos} min',
+                                '${df.format(t.fechaInicio)} → ${df.format(t.fechaFin)} • ${t.duracionMinutos} min',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.black54,
                                 ),
                               ),
+                              if (t.noCompletadaPorReemplazo ||
+                                  (t.motivoNoCompletada ?? '')
+                                      .trim()
+                                      .isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  (t.motivoNoCompletada ?? '').trim().isNotEmpty
+                                      ? t.motivoNoCompletada!.trim()
+                                      : (t.reemplazadaPorTareaId != null
+                                            ? 'No fue completada porque fue reemplazada por la correctiva #${t.reemplazadaPorTareaId}.'
+                                            : 'No fue completada por reemplazo.'),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 6),
                               Text(
                                 'Evidencias: ${t.evidencias.length}',
@@ -2858,6 +3170,10 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                     _chipBadge(t.tipo),
                     const SizedBox(width: 8),
                     _chipState(t.estado),
+                    if (t.esTareaReemplazo) ...[
+                      const SizedBox(width: 8),
+                      _replacementInfoChip(t),
+                    ],
                     const Spacer(),
                     TextButton.icon(
                       onPressed: () => Navigator.of(context).pop(),
@@ -2898,6 +3214,18 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                         _kv('Supervisor', t.supervisor!),
                       if (t.operarios.isNotEmpty)
                         _kv('Operarios', t.operarios.join(', ')),
+                      if (t.esTareaReemplazo)
+                        _kv('Aviso reemplazo', _replacementInfoText(t)),
+                      if (t.noCompletadaPorReemplazo ||
+                          (t.motivoNoCompletada ?? '').trim().isNotEmpty)
+                        _kv(
+                          'Motivo no completada',
+                          (t.motivoNoCompletada ?? '').trim().isNotEmpty
+                              ? t.motivoNoCompletada!.trim()
+                              : (t.reemplazadaPorTareaId != null
+                                    ? 'Fue reemplazada por la correctiva #${t.reemplazadaPorTareaId}.'
+                                    : 'No completada por reemplazo.'),
+                        ),
                     ],
                   ),
                 ),
@@ -2999,19 +3327,92 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   }
 
   Widget _chipState(String txt) {
+    final bg = _estadoColor(txt);
+    final fg = _estadoOnColor(txt);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(.04),
+        color: bg.withOpacity(.14),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black12),
+        border: Border.all(color: bg.withOpacity(.42)),
       ),
       child: Text(
         txt,
-        style: const TextStyle(
-          color: Colors.black87,
+        style: TextStyle(color: fg, fontWeight: FontWeight.w900, fontSize: 12),
+      ),
+    );
+  }
+
+  bool _replacementWarn(TareaDetalleRow t) {
+    final estado = _estadoKey(t.estado);
+    return estado != 'APROBADA' && estado != 'COMPLETADA';
+  }
+
+  List<String> _replacementRefs(TareaDetalleRow t) {
+    return t.reemplazaPreventivas
+        .map((m) {
+          final raw = m['tareaId'];
+          final descripcion = (m['descripcion'] ?? '').toString().trim();
+          final descCorta = descripcion.length > 52
+              ? '${descripcion.substring(0, 52).trim()}...'
+              : descripcion;
+          if (raw is num) {
+            return descCorta.isNotEmpty
+                ? '#${raw.toInt()} ($descCorta)'
+                : '#${raw.toInt()}';
+          }
+          final asInt = int.tryParse('${raw ?? ''}');
+          if (asInt == null) return null;
+          return descCorta.isNotEmpty ? '#$asInt ($descCorta)' : '#$asInt';
+        })
+        .whereType<String>()
+        .toList();
+  }
+
+  String _replacementInfoText(TareaDetalleRow t) {
+    final explicit = (t.motivoTareaReemplazo ?? '').trim();
+    if (explicit.isNotEmpty) return explicit;
+
+    final refs = _replacementRefs(t);
+
+    if (refs.isNotEmpty) {
+      final cut = refs.take(3).toList();
+      final extra = refs.length > cut.length
+          ? ' y ${refs.length - cut.length} más'
+          : '';
+      return 'Esta fue el reemplazo de ${cut.join(', ')}$extra.';
+    }
+
+    return 'Esta fue el reemplazo de una preventiva.';
+  }
+
+  Widget _replacementInfoChip(TareaDetalleRow t, {bool compact = false}) {
+    final warn = _replacementWarn(t);
+    final base = warn ? Colors.orange.shade600 : Colors.green.shade600;
+    final refs = _replacementRefs(t);
+    final maxRefs = compact ? 1 : 2;
+    final slice = refs.take(maxRefs).toList();
+    final suffix = refs.length > slice.length ? ' +' : '';
+    final label = slice.isNotEmpty
+        ? 'Reemplazo de ${slice.join(', ')}$suffix'
+        : (compact ? 'Reemplazo' : 'Reemplazo de preventiva');
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 9 : 10,
+        vertical: compact ? 5 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: base.withOpacity(.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: base.withOpacity(.36)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: base,
           fontWeight: FontWeight.w900,
-          fontSize: 12,
+          fontSize: compact ? 11 : 12,
         ),
       ),
     );
@@ -3136,6 +3537,25 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       ),
     );
   }
+
+  Widget _miniTextPill(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.black12),
+        color: Colors.white,
+      ),
+      child: Text(
+        '$label: $value',
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: Colors.black87,
+        ),
+      ),
+    );
+  }
 }
 
 class _EvidenceImage extends StatefulWidget {
@@ -3181,9 +3601,16 @@ class _EvidenceImageState extends State<_EvidenceImage> {
     }
 
     final url = cleanUrls[_index];
+    final driveLike =
+        url.contains('drive.google.com') ||
+        url.contains('drive.usercontent.google.com') ||
+        url.contains('googleusercontent.com');
     return Image.network(
       url,
       fit: widget.fit,
+      webHtmlElementStrategy: driveLike
+          ? WebHtmlElementStrategy.prefer
+          : WebHtmlElementStrategy.never,
       errorBuilder: (_, __, ___) {
         _tryNext();
         return const Center(

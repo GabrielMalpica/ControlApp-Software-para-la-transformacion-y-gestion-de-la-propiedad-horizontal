@@ -132,7 +132,16 @@ class _CronogramaPageState extends State<CronogramaPage> {
   List<TareaModel> get _tareasFiltradas =>
       _tareasMes.where(_pasaFiltros).toList();
 
+  bool _esCanceladaPorReemplazo(TareaModel t) {
+    final estado = (t.estado ?? '').trim().toUpperCase();
+    return estado == 'NO_COMPLETADA' &&
+        t.reprogramada == true &&
+        t.reprogramadaPorTareaId != null;
+  }
+
   bool _pasaFiltros(TareaModel t) {
+    if (_esCanceladaPorReemplazo(t)) return false;
+
     // Tipo
     if (_filtroTipo != 'TODAS') {
       final tipo = (t.tipo ?? '').toUpperCase();
@@ -171,6 +180,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final ubis = <String>{};
 
     for (final t in _tareasMes) {
+      if (_esCanceladaPorReemplazo(t)) continue;
+
       final u = _nombreUbicacion(t);
       if (u != null && u.trim().isNotEmpty) ubis.add(u.trim());
 
@@ -1580,6 +1591,40 @@ class _WeekScheduleView extends StatefulWidget {
   State<_WeekScheduleView> createState() => _WeekScheduleViewState();
 }
 
+class _WeekTaskSpan {
+  final TareaModel tarea;
+  final DateTime inicio;
+  final DateTime fin;
+
+  const _WeekTaskSpan({
+    required this.tarea,
+    required this.inicio,
+    required this.fin,
+  });
+}
+
+class _WeekTaskPlacement {
+  final TareaModel tarea;
+  final int dayIndex;
+  final DateTime inicio;
+  final DateTime fin;
+  final DateTime groupEnd;
+  final int groupSize;
+  final int orderInGroup;
+  final List<String> groupTitles;
+
+  const _WeekTaskPlacement({
+    required this.tarea,
+    required this.dayIndex,
+    required this.inicio,
+    required this.fin,
+    required this.groupEnd,
+    required this.groupSize,
+    required this.orderInGroup,
+    required this.groupTitles,
+  });
+}
+
 class _WeekScheduleViewState extends State<_WeekScheduleView> {
   final ScrollController _hCtrl = ScrollController();
   final ScrollController _vCtrl = ScrollController();
@@ -1620,6 +1665,104 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     return !dd.isBefore(start) && dd.isBefore(end);
   }
 
+  DateTime _ensureEndAfterStart(DateTime start, DateTime end) {
+    if (end.isAfter(start)) return end;
+    return start.add(const Duration(minutes: 1));
+  }
+
+  List<_WeekTaskPlacement> _buildTaskPlacements() {
+    final spansByDay = List.generate(7, (_) => <_WeekTaskSpan>[]);
+
+    for (final t in widget.tareas) {
+      final inicio = t.fechaInicio.toLocal();
+      if (!_isWithinWeek(inicio)) continue;
+
+      final day = _dayIndex(inicio);
+      if (day < 0 || day > 6) continue;
+
+      final fin = _ensureEndAfterStart(inicio, t.fechaFin.toLocal());
+      spansByDay[day].add(_WeekTaskSpan(tarea: t, inicio: inicio, fin: fin));
+    }
+
+    final out = <_WeekTaskPlacement>[];
+
+    for (int day = 0; day < 7; day++) {
+      final daySpans = spansByDay[day]
+        ..sort((a, b) {
+          final byStart = a.inicio.compareTo(b.inicio);
+          if (byStart != 0) return byStart;
+          final byEnd = a.fin.compareTo(b.fin);
+          if (byEnd != 0) return byEnd;
+          return a.tarea.id.compareTo(b.tarea.id);
+        });
+
+      if (daySpans.isEmpty) continue;
+
+      final group = <_WeekTaskSpan>[];
+      DateTime? groupEnd;
+
+      void flushGroup() {
+        if (group.isEmpty) return;
+        out.addAll(_buildGroupPlacements(group, day));
+        group.clear();
+        groupEnd = null;
+      }
+
+      for (final span in daySpans) {
+        if (group.isEmpty) {
+          group.add(span);
+          groupEnd = span.fin;
+          continue;
+        }
+
+        final overlapsGroup = span.inicio.isBefore(groupEnd!);
+        if (overlapsGroup) {
+          group.add(span);
+          if (span.fin.isAfter(groupEnd!)) groupEnd = span.fin;
+          continue;
+        }
+
+        flushGroup();
+        group.add(span);
+        groupEnd = span.fin;
+      }
+
+      flushGroup();
+    }
+
+    return out;
+  }
+
+  List<_WeekTaskPlacement> _buildGroupPlacements(
+    List<_WeekTaskSpan> group,
+    int dayIndex,
+  ) {
+    final groupEnd = group
+        .map((e) => e.fin)
+        .reduce((a, b) => a.isAfter(b) ? a : b);
+    final groupTitles = group
+        .map((e) => e.tarea.descripcion.trim())
+        .where((e) => e.isNotEmpty)
+        .toList(growable: false);
+
+    return group
+        .asMap()
+        .entries
+        .map(
+          (entry) => _WeekTaskPlacement(
+            tarea: entry.value.tarea,
+            dayIndex: dayIndex,
+            inicio: entry.value.inicio,
+            fin: entry.value.fin,
+            groupEnd: groupEnd,
+            groupSize: group.length,
+            orderInGroup: entry.key,
+            groupTitles: groupTitles,
+          ),
+        )
+        .toList();
+  }
+
   @override
   void dispose() {
     _hCtrl.dispose();
@@ -1631,6 +1774,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   Widget build(BuildContext context) {
     final hours = horaFin - horaInicio;
     final heightGrid = (hours * 60) * pxPorMin;
+    final taskPlacements = _buildTaskPlacements();
 
     final bg = Colors.white;
     final line = Colors.grey.shade300;
@@ -1756,86 +1900,208 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 color: Colors.orange.withOpacity(0.12),
                               ),
                             ),
-                            ...widget.tareas
-                                .where(
-                                  (t) => _isWithinWeek(t.fechaInicio.toLocal()),
-                                )
-                                .map((t) {
-                                  final ini = t.fechaInicio.toLocal();
-                                  final fin = t.fechaFin.toLocal();
+                            ...taskPlacements.map((placement) {
+                              final t = placement.tarea;
+                              final ini = placement.inicio;
+                              final fin = placement.fin;
 
-                                  final day = _dayIndex(ini);
-                                  if (day < 0 || day > 6)
-                                    return const SizedBox.shrink();
+                              final startMin = _minutesFromStart(ini);
+                              final durMin = fin.difference(ini).inMinutes;
 
-                                  final startMin = _minutesFromStart(ini);
-                                  final durMin = fin.difference(ini).inMinutes;
+                              const dayPadding = 6.0;
+                              final left =
+                                  anchoHora +
+                                  placement.dayIndex * colWidth +
+                                  dayPadding;
+                              final top = startMin * pxPorMin;
+                              final fullWidth = colWidth - (dayPadding * 2);
 
-                                  final left = anchoHora + day * colWidth + 6;
-                                  final top = startMin * pxPorMin;
-                                  final height = (durMin * pxPorMin).clamp(
+                              final colorBase = AppTheme.primary;
+                              final fill = colorBase.withOpacity(0.12);
+                              final border = colorBase.withOpacity(0.55);
+
+                              final horaIni = DateFormat('HH:mm').format(ini);
+                              final horaFinStr = DateFormat(
+                                'HH:mm',
+                              ).format(fin);
+                              final horaFinGrupo = DateFormat(
+                                'HH:mm',
+                              ).format(placement.groupEnd);
+
+                              if (placement.groupSize > 1) {
+                                if (placement.orderInGroup != 0) {
+                                  return const SizedBox.shrink();
+                                }
+
+                                final colors = [
+                                  Colors.red.shade400,
+                                  Colors.blue.shade500,
+                                  Colors.green.shade500,
+                                  Colors.orange.shade500,
+                                ];
+                                final dotCount = placement.groupSize > 4
+                                    ? 4
+                                    : placement.groupSize;
+                                final resumen = placement.groupTitles
+                                    .take(2)
+                                    .join(' / ');
+                                final extra = placement.groupSize - 2;
+                                const markerHeight = 68.0;
+
+                                return Positioned(
+                                  left: left,
+                                  top: top,
+                                  width: fullWidth,
+                                  height: markerHeight,
+                                  child: GestureDetector(
+                                    onTap: () => widget.onTapTarea(t),
+                                    child: Container(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        8,
+                                        7,
+                                        8,
+                                        7,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withOpacity(0.14),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: Colors.amber.shade700,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              ...List.generate(dotCount, (i) {
+                                                return Container(
+                                                  width: 10,
+                                                  height: 10,
+                                                  margin: EdgeInsets.only(
+                                                    right: i == dotCount - 1
+                                                        ? 0
+                                                        : 4,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color:
+                                                        colors[i %
+                                                            colors.length],
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          2,
+                                                        ),
+                                                  ),
+                                                );
+                                              }),
+                                              if (placement.groupSize >
+                                                  dotCount) ...[
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  '+${placement.groupSize - dotCount}',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: text,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  'Superposicion detectada',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: text,
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Aqui hay ${placement.groupSize} tareas superpuestas. Filtra por operario para verlo mejor.',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: subtext,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra mas' : ''}'}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: subtext,
+                                              fontSize: 10,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              final height =
+                                  ((durMin <= 0 ? 1 : durMin) * pxPorMin).clamp(
                                     18.0,
                                     9999.0,
                                   );
 
-                                  final colorBase = AppTheme.primary;
-                                  final fill = colorBase.withOpacity(0.12);
-                                  final border = colorBase.withOpacity(0.55);
-
-                                  final horaIni = DateFormat(
-                                    'HH:mm',
-                                  ).format(ini);
-                                  final horaFinStr = DateFormat(
-                                    'HH:mm',
-                                  ).format(fin);
-
-                                  return Positioned(
-                                    left: left,
-                                    top: top,
-                                    width: colWidth - 12,
-                                    height: height,
-                                    child: GestureDetector(
-                                      onTap: () => widget.onTapTarea(t),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: fill,
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                          border: Border.all(
-                                            color: border,
-                                            width: 1,
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              t.descripcion,
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                color: text,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 6),
-                                            Text(
-                                              '$horaIni - $horaFinStr',
-                                              style: TextStyle(
-                                                color: subtext,
-                                                fontSize: 11,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                              return Positioned(
+                                left: left,
+                                top: top,
+                                width: fullWidth,
+                                height: height,
+                                child: GestureDetector(
+                                  onTap: () => widget.onTapTarea(t),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: fill,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: border,
+                                        width: 1,
                                       ),
                                     ),
-                                  );
-                                }),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          t.descripcion,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: text,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          '$horaIni - $horaFinStr',
+                                          style: TextStyle(
+                                            color: subtext,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
                           ],
                         ),
                       ),

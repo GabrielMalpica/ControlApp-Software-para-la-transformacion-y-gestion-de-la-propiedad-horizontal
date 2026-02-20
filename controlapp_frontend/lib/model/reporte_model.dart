@@ -262,6 +262,13 @@ class ResumenOperarioRow {
   final int noCompletadas;
   final int pendientesAprobacion;
   final int minutosPromedio;
+  final int minutosAsignadosSemana;
+  final int minutosAsignadosMes;
+  final int minutosDisponiblesSemana;
+  final int minutosDisponiblesMes;
+  final double usoSemanalPct;
+  final double usoMensualPct;
+  final String? conjuntoCapacidadId;
 
   ResumenOperarioRow({
     required this.operarioId,
@@ -272,6 +279,13 @@ class ResumenOperarioRow {
     required this.noCompletadas,
     required this.pendientesAprobacion,
     required this.minutosPromedio,
+    required this.minutosAsignadosSemana,
+    required this.minutosAsignadosMes,
+    required this.minutosDisponiblesSemana,
+    required this.minutosDisponiblesMes,
+    required this.usoSemanalPct,
+    required this.usoMensualPct,
+    required this.conjuntoCapacidadId,
   });
 
   factory ResumenOperarioRow.fromJson(Map<String, dynamic> json) =>
@@ -284,10 +298,19 @@ class ResumenOperarioRow {
         noCompletadas: _toInt(json['noCompletadas']),
         pendientesAprobacion: _toInt(json['pendientesAprobacion']),
         minutosPromedio: _toInt(json['minutosPromedio']),
+        minutosAsignadosSemana: _toInt(json['minutosAsignadosSemana']),
+        minutosAsignadosMes: _toInt(json['minutosAsignadosMes']),
+        minutosDisponiblesSemana: _toInt(json['minutosDisponiblesSemana']),
+        minutosDisponiblesMes: _toInt(json['minutosDisponiblesMes']),
+        usoSemanalPct: _toDouble(json['usoSemanalPct']),
+        usoMensualPct: _toDouble(json['usoMensualPct']),
+        conjuntoCapacidadId: json['conjuntoCapacidadId']?.toString(),
       );
 
   static int _toInt(dynamic v) =>
       (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
+  static double _toDouble(dynamic v) =>
+      (v is num) ? v.toDouble() : double.tryParse('$v') ?? 0.0;
 }
 
 class InsumoUsoRow {
@@ -423,6 +446,14 @@ class PdfDatasetRow {
   final List<RecursoUsoRow> maquinaria;
   final List<RecursoUsoRow> herramientas;
 
+  final bool noCompletadaPorReemplazo;
+  final String? motivoNoCompletada;
+  final int? reemplazadaPorTareaId;
+  final String? reemplazadaPorDescripcion;
+  final bool esTareaReemplazo;
+  final String? motivoTareaReemplazo;
+  final List<Map<String, dynamic>> reemplazaPreventivas;
+
   PdfDatasetRow({
     required this.id,
     required this.descripcion,
@@ -444,6 +475,13 @@ class PdfDatasetRow {
     required this.insumos,
     required this.maquinaria,
     required this.herramientas,
+    this.noCompletadaPorReemplazo = false,
+    this.motivoNoCompletada,
+    this.reemplazadaPorTareaId,
+    this.reemplazadaPorDescripcion,
+    this.esTareaReemplazo = false,
+    this.motivoTareaReemplazo,
+    this.reemplazaPreventivas = const [],
   });
 
   factory PdfDatasetRow.fromJson(Map<String, dynamic> json) {
@@ -463,6 +501,9 @@ class PdfDatasetRow {
         : null;
     final ubic = (json['ubicacion'] is Map) ? (json['ubicacion'] as Map) : null;
     final elem = (json['elemento'] is Map) ? (json['elemento'] as Map) : null;
+    final reemplazadaPor = (json['reemplazadaPor'] is Map)
+        ? (json['reemplazadaPor'] as Map).cast<String, dynamic>()
+        : null;
 
     return PdfDatasetRow(
       id: (json['id'] is num)
@@ -500,6 +541,20 @@ class PdfDatasetRow {
       insumos: mapRecursos(json['insumos'], idKey: 'insumoId'),
       maquinaria: mapRecursos(json['maquinaria'], idKey: 'maquinariaId'),
       herramientas: mapRecursos(json['herramientas'], idKey: 'herramientaId'),
+      noCompletadaPorReemplazo: json['noCompletadaPorReemplazo'] == true,
+      motivoNoCompletada: json['motivoNoCompletada']?.toString(),
+      reemplazadaPorTareaId: (reemplazadaPor?['tareaId'] is num)
+          ? (reemplazadaPor!['tareaId'] as num).toInt()
+          : int.tryParse('${reemplazadaPor?['tareaId'] ?? ''}'),
+      reemplazadaPorDescripcion: reemplazadaPor?['descripcion']?.toString(),
+      esTareaReemplazo: json['esTareaReemplazo'] == true,
+      motivoTareaReemplazo: json['motivoTareaReemplazo']?.toString(),
+      reemplazaPreventivas: (json['reemplazaPreventivas'] is List)
+          ? (json['reemplazaPreventivas'] as List)
+                .whereType<Map>()
+                .map((m) => m.cast<String, dynamic>())
+                .toList()
+          : const <Map<String, dynamic>>[],
     );
   }
 
@@ -538,6 +593,13 @@ class TareaDetalleRow {
   final List<Map<String, dynamic>> herramientas;
 
   final List<String> evidencias;
+  final bool noCompletadaPorReemplazo;
+  final String? motivoNoCompletada;
+  final int? reemplazadaPorTareaId;
+  final String? reemplazadaPorDescripcion;
+  final bool esTareaReemplazo;
+  final String? motivoTareaReemplazo;
+  final List<Map<String, dynamic>> reemplazaPreventivas;
 
   TareaDetalleRow({
     required this.id,
@@ -555,6 +617,13 @@ class TareaDetalleRow {
     required this.maquinaria,
     required this.herramientas,
     required this.evidencias,
+    this.noCompletadaPorReemplazo = false,
+    this.motivoNoCompletada,
+    this.reemplazadaPorTareaId,
+    this.reemplazadaPorDescripcion,
+    this.esTareaReemplazo = false,
+    this.motivoTareaReemplazo,
+    this.reemplazaPreventivas = const [],
   });
 
   static DateTime _dt(dynamic v) =>
@@ -600,6 +669,30 @@ class TareaDetalleRow {
                   .toList()
             : <Map<String, dynamic>>[],
         evidencias: _toEvidenceUrls(json['evidencias']),
+        noCompletadaPorReemplazo: json['noCompletadaPorReemplazo'] == true,
+        motivoNoCompletada: json['motivoNoCompletada']?.toString(),
+        reemplazadaPorTareaId: (() {
+          final rep = (json['reemplazadaPor'] is Map)
+              ? (json['reemplazadaPor'] as Map).cast<String, dynamic>()
+              : null;
+          if (rep?['tareaId'] is num) return (rep!['tareaId'] as num).toInt();
+          final raw = rep?['tareaId'] ?? json['reprogramadaPorTareaId'];
+          return int.tryParse('${raw ?? ''}');
+        })(),
+        reemplazadaPorDescripcion: (() {
+          final rep = (json['reemplazadaPor'] is Map)
+              ? (json['reemplazadaPor'] as Map).cast<String, dynamic>()
+              : null;
+          return rep?['descripcion']?.toString();
+        })(),
+        esTareaReemplazo: json['esTareaReemplazo'] == true,
+        motivoTareaReemplazo: json['motivoTareaReemplazo']?.toString(),
+        reemplazaPreventivas: (json['reemplazaPreventivas'] is List)
+            ? (json['reemplazaPreventivas'] as List)
+                  .whereType<Map>()
+                  .map((m) => m.cast<String, dynamic>())
+                  .toList()
+            : const <Map<String, dynamic>>[],
       );
 }
 

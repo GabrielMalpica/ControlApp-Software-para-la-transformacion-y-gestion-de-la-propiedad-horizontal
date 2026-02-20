@@ -128,14 +128,18 @@ class TareaApi {
   Future<Map<String, dynamic>> crearTareaConReemplazo({
     required TareaRequest tarea,
     required List<int> reemplazarIds,
-    String? motivo,
+    String? motivoReemplazo,
+    String? accionReemplazadas, // REPROGRAMAR | CANCELAR
   }) async {
     final resp = await _client.post(
       '${AppConstants.gerenteBase}/tareas/reemplazo',
       body: {
         'tarea': tarea.toJson(),
         'reemplazarIds': reemplazarIds,
-        if (motivo != null && motivo.trim().isNotEmpty) 'motivo': motivo.trim(),
+        if (accionReemplazadas != null && accionReemplazadas.trim().isNotEmpty)
+          'accionReemplazadas': accionReemplazadas.trim(),
+        if (motivoReemplazo != null && motivoReemplazo.trim().isNotEmpty)
+          'motivoReemplazo': motivoReemplazo.trim(),
       },
     );
 
@@ -145,7 +149,9 @@ class TareaApi {
       if (decoded is Map<String, dynamic>) data = decoded;
     }
 
+    if (data.containsKey('ok')) return data;
     if (resp.statusCode == 200 || resp.statusCode == 201) return data;
+    if (resp.statusCode == 400 && data.isNotEmpty) return data;
 
     throw Exception(
       'Error al crear con reemplazo: ${resp.statusCode} - ${resp.body}',
