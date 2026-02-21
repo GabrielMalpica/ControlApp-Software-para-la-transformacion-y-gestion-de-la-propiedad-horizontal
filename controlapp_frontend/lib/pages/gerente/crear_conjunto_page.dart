@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
-import 'package:flutter_application_1/repositories/usuario_repository.dart';
 import 'package:flutter_application_1/service/theme.dart';
 
 const _diasSemana = <String>[
@@ -46,8 +45,6 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
   final _valorAgregadoCtrl = TextEditingController();
 
   final GerenteApi _gerenteApi = GerenteApi();
-  final UsuarioRepository _usuarioRepo = UsuarioRepository();
-
   bool _isSaving = false;
 
   // Admin seleccionado
