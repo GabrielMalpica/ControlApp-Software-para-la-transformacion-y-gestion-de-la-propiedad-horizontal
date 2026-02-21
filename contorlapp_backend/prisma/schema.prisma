@@ -11,7 +11,6 @@ generator client {
 
 generator erd {
   provider = "prisma-erd-generator"
-  output   = "./ERD.svg"
   // engine = "graphviz"
   // theme  = "dark"
 }
