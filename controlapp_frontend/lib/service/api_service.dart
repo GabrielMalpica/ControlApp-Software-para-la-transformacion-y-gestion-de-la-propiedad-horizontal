@@ -1,8 +1,11 @@
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+import 'package:http/http.dart' as http;
+
+import 'app_constants.dart';
+
 class ApiService {
-  static const String baseUrl = 'http://localhost:3000';
+  static String get baseUrl => AppConstants.baseUrl;
 
   static Future<List<dynamic>> getOperarios(String nit) async {
     final res = await http.get(Uri.parse('$baseUrl/conjuntos/$nit/operarios'));
@@ -11,7 +14,8 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>?> getAdministrador(String nit) async {
-    final res = await http.get(Uri.parse('$baseUrl/conjuntos/$nit/administrador'));
+    final res =
+        await http.get(Uri.parse('$baseUrl/conjuntos/$nit/administrador'));
     if (res.statusCode == 200) return jsonDecode(res.body)['administrador'];
     throw Exception('Error al obtener administrador');
   }

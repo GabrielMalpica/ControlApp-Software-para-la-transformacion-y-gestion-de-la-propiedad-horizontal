@@ -1,7 +1,7 @@
-import type { PrismaClient } from "../generated/prisma";
-import { Rol, TipoFuncion, EstadoTarea } from "../generated/prisma";
+import type { PrismaClient } from "@prisma/client";
+import { Rol, TipoFuncion, EstadoTarea } from "@prisma/client";
 import bcrypt from "bcrypt";
-import { Prisma } from "../generated/prisma";
+import { Prisma } from "@prisma/client";
 
 import {
   CrearUsuarioDTO,

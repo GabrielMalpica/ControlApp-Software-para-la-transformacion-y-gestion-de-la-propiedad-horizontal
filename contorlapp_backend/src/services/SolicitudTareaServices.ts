@@ -1,4 +1,4 @@
-import { PrismaClient, EstadoSolicitud } from "../generated/prisma";
+import { PrismaClient, EstadoSolicitud } from "@prisma/client";
 import { z } from "zod";
 
 const IdDTO = z.object({ id: z.number().int().positive() });
