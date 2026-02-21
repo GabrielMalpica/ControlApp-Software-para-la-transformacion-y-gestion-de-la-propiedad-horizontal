@@ -17,6 +17,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class ReportesDashboardPage extends StatefulWidget {
   final String? conjuntoIdInicial;
   final bool modoGeneral;
@@ -1201,9 +1203,10 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     } catch (e, st) {
       debugPrint('Error PDF Gestión: $e\n$st');
       if (mounted) {
-        ScaffoldMessenger.of(
+        AppFeedback.showFromSnackBar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error generando PDF: $e')));
+          SnackBar(content: Text('Error generando PDF: $e')),
+        );
       }
     } finally {
       if (mounted) {
@@ -1635,9 +1638,10 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     } catch (e, st) {
       debugPrint('Error PDF Gestion V2: $e\n$st');
       if (mounted) {
-        ScaffoldMessenger.of(
+        AppFeedback.showFromSnackBar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error generando PDF: $e')));
+          SnackBar(content: Text('Error generando PDF: $e')),
+        );
       }
     } finally {
       if (mounted) {
@@ -2295,9 +2299,10 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     } catch (e, st) {
       debugPrint('Error PDF Detallado V2: $e\n$st');
       if (mounted) {
-        ScaffoldMessenger.of(
+        AppFeedback.showFromSnackBar(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error generando PDF: $e')));
+          SnackBar(content: Text('Error generando PDF: $e')),
+        );
       }
     } finally {
       if (mounted) {

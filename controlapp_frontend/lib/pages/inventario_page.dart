@@ -10,6 +10,8 @@ import 'solicitud_insumo_page.dart';
 import '../api/herramienta_api.dart';
 import '../model/herramienta_model.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 enum TipoInventario { INSUMOS, HERRAMIENTAS }
 
 class InventarioPage extends StatefulWidget {
@@ -79,7 +81,8 @@ class _InventarioPageState extends State<InventarioPage> {
         setState(() => _items = data);
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppFeedback.showFromSnackBar(
+          context,
           SnackBar(
             content: Text('Error cargando inventario: $e'),
             backgroundColor: Colors.red,
@@ -105,7 +108,8 @@ class _InventarioPageState extends State<InventarioPage> {
         setState(() => _herrItems = parsed);
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppFeedback.showFromSnackBar(
+          context,
           SnackBar(
             content: Text('Error cargando herramientas: $e'),
             backgroundColor: Colors.red,
@@ -418,7 +422,8 @@ class _InventarioPageState extends State<InventarioPage> {
                       _cargar();
                     },
                   ),
-                if (_tipoInventario == TipoInventario.HERRAMIENTAS && _esGerente)
+                if (_tipoInventario == TipoInventario.HERRAMIENTAS &&
+                    _esGerente)
                   _ghostButton(
                     icon: Icons.add,
                     label: "Agregar herramienta",
@@ -743,7 +748,8 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
 
   Future<void> _guardar() async {
     if (_selected == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text("Selecciona una herramienta")),
       );
       return;
@@ -751,9 +757,10 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
 
     final cant = _parseNumNullable(_cantidadCtrl.text);
     if (cant == null || cant <= 0) {
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text("Cantidad inválida")));
+        SnackBar(content: Text("Cantidad inválida")),
+      );
       return;
     }
 
@@ -769,14 +776,13 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
 
       Navigator.pop(context, true);
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(content: Text("✅ Agregada: ${_selected!.nombre}")),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("❌ $e")));
+      AppFeedback.showFromSnackBar(context, SnackBar(content: Text("❌ $e")));
     }
   }
 

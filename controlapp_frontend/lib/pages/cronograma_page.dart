@@ -13,6 +13,8 @@ import '../api/cronograma_api.dart';
 import '../model/tarea_model.dart';
 import '../service/theme.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 enum _VistaCronograma { mensual, semanal }
 
 class CronogramaPage extends StatefulWidget {
@@ -343,7 +345,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
       inventario = await _inventarioApi.listarInventarioConjunto(widget.nit);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(content: Text('⚠️ No pude cargar inventario: $e')),
       );
       // seguimos con inventario vacío
@@ -366,7 +369,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('✅ Tarea cerrada. Quedó PENDIENTE_APROBACION.'),
         ),
@@ -375,9 +379,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
       await _cargarDatos();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(SnackBar(content: Text('❌ Error cerrando: $e')));
+        SnackBar(content: Text('❌ Error cerrando: $e')),
+      );
     }
   }
 

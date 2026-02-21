@@ -5,6 +5,8 @@ import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/utils/enums/usuario_enums.dart';
 import 'package:flutter_application_1/utils/enums/usuario_enums_service.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class EditarUsuarioPage extends StatefulWidget {
   final Usuario usuario;
 
@@ -150,7 +152,8 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     // ✅ Validación extra recomendada
     if (_debeMostrarPatron &&
         (patronJornada == null || patronJornada!.isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text("Seleccione el patrón de medio tiempo"),
           backgroundColor: Colors.orange,
@@ -188,7 +191,8 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
       await _usuarioRepository.editarUsuario(widget.usuario.cedula, cambios);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text("✅ Usuario actualizado correctamente"),
           backgroundColor: Colors.green,
@@ -197,7 +201,8 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text("❌ Error al actualizar usuario: $e"),
           backgroundColor: Colors.red,

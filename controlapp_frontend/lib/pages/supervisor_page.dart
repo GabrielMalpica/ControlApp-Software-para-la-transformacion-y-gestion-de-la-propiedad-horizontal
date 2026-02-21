@@ -15,6 +15,8 @@ import 'reportes_page.dart';
 import 'preventivas_page.dart';
 import '../service/app_constants.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class SupervisorPage extends StatefulWidget {
   const SupervisorPage({super.key});
 
@@ -73,7 +75,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    AppFeedback.showFromSnackBar(context, SnackBar(content: Text(msg)));
   }
 
   void _go(Widget page) {
@@ -121,7 +123,10 @@ class _SupervisorPageState extends State<SupervisorPage> {
             children: [
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 14,
+                  ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -390,7 +395,6 @@ class _SupervisorPageState extends State<SupervisorPage> {
     );
   }
 }
-
 
 class _BubblePatternPainter extends CustomPainter {
   final Color color;

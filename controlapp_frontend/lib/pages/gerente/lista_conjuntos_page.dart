@@ -6,6 +6,8 @@ import '../../service/theme.dart';
 import 'crear_conjunto_page.dart';
 import 'detalle_conjunto_page.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 const List<String> _diasSemana = <String>[
   'LUNES',
   'MARTES',
@@ -144,7 +146,8 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
     try {
       await _api.eliminarConjunto(c.nit);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('Conjunto eliminado correctamente'),
           backgroundColor: Colors.green,
@@ -153,7 +156,8 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
       _loadConjuntos();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al eliminar: $e'),
           backgroundColor: Colors.red,
@@ -271,7 +275,8 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
                 await _api.actualizarConjunto(c.nit, horarios: payload);
                 if (!mounted || !sheetContext.mounted) return;
                 Navigator.of(sheetContext).pop(true);
-                ScaffoldMessenger.of(this.context).showSnackBar(
+                AppFeedback.showFromSnackBar(
+                  this.context,
                   const SnackBar(
                     content: Text('Horarios actualizados'),
                     backgroundColor: Colors.green,

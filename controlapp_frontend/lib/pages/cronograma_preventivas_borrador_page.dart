@@ -10,6 +10,8 @@ import '../api/cronograma_api.dart';
 import '../model/tarea_model.dart';
 import '../service/theme.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 enum _VistaCronograma { mensual, semanal }
 
 class CronogramaPreventivasBorradorPage extends StatefulWidget {
@@ -583,7 +585,8 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   bool get _hayTareas => _tareasMes.isNotEmpty;
-  DateTime get _inicioPeriodoSeleccionado => DateTime(_anioActual, _mesActual, 1);
+  DateTime get _inicioPeriodoSeleccionado =>
+      DateTime(_anioActual, _mesActual, 1);
   DateTime get _inicioVentanaPublicacion =>
       _inicioPeriodoSeleccionado.subtract(const Duration(days: 7));
   bool get _ventanaPublicacionAbierta =>
@@ -591,14 +594,18 @@ class _CronogramaPreventivasBorradorPageState
 
   String get _mensajeVentanaPublicacion {
     final desde = DateFormat('dd/MM/yyyy').format(_inicioVentanaPublicacion);
-    final periodo = DateFormat('MMMM yyyy', 'es').format(_inicioPeriodoSeleccionado);
+    final periodo = DateFormat(
+      'MMMM yyyy',
+      'es',
+    ).format(_inicioPeriodoSeleccionado);
     return 'La publicación de $periodo se habilita desde $desde.';
   }
 
   Future<void> _publicarCronograma() async {
     if (!_hayTareas || _publicando) return;
     if (!_ventanaPublicacionAbierta) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text(_mensajeVentanaPublicacion),
           backgroundColor: Colors.orange.shade800,
@@ -642,7 +649,8 @@ class _CronogramaPreventivasBorradorPageState
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text(
             'Cronograma publicado. Publicadas: ${res['publicadas'] ?? res['publicadasSimples'] ?? '-'}',
@@ -653,7 +661,8 @@ class _CronogramaPreventivasBorradorPageState
       await _cargarDatos();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error publicando cronograma: $e'),
           backgroundColor: Colors.red,

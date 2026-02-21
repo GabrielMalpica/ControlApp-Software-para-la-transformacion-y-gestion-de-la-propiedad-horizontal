@@ -33,6 +33,8 @@ import '../cronograma_page.dart';
 import '../crear_cronograma_page.dart';
 import 'crear_conjunto_page.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 /// ---------- TOP LEVEL HELPERS (para que no rompa en Flutter Web) ----------
 
 class _Tile {
@@ -162,7 +164,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
   }
 
   void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    AppFeedback.showFromSnackBar(context, SnackBar(content: Text(msg)));
   }
 
   bool _requiereConjuntoOrWarn() {

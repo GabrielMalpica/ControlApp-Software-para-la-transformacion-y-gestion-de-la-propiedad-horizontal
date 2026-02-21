@@ -4,6 +4,8 @@ import '../service/theme.dart';
 import '../api/solicitud_insumo_api.dart';
 import '../service/app_constants.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 enum EstadoSolicitudUi { PENDIENTE, APROBADA }
 
 extension EstadoSolicitudUiExt on EstadoSolicitudUi {
@@ -82,13 +84,15 @@ class _SolicitudesPageState extends State<SolicitudesPage> {
     try {
       await _api.aprobar(s.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Solicitud aprobada ✅')));
+        SnackBar(content: Text('Solicitud aprobada ✅')),
+      );
       await _cargar();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error aprobando: $e'),
           backgroundColor: Colors.red,
@@ -101,13 +105,15 @@ class _SolicitudesPageState extends State<SolicitudesPage> {
     try {
       await _api.rechazar(s.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Solicitud rechazada 🧾')));
+        SnackBar(content: Text('Solicitud rechazada 🧾')),
+      );
       await _cargar();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error rechazando: $e'),
           backgroundColor: Colors.red,

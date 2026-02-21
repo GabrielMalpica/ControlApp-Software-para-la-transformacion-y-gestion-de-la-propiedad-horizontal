@@ -7,6 +7,8 @@ import '../model/tarea_model.dart';
 import '../model/usuario_model.dart';
 import '../service/theme.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class EditarTareaPage extends StatefulWidget {
   final String nit; // NIT del conjunto
   final TareaModel tarea; // tarea a editar
@@ -104,7 +106,8 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
     } catch (e) {
       if (!mounted) return;
       _cargandoInicial = false;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error cargando datos iniciales: $e'),
           backgroundColor: Colors.red,
@@ -159,7 +162,8 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
 
   Future<void> _mostrarSelectorOperarios() async {
     if (_operarios.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('No hay operarios en este conjunto')),
       );
       return;
@@ -233,21 +237,24 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
 
     final conjunto = _conjuntoSeleccionado;
     if (conjunto == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('No hay conjunto seleccionado')),
       );
       return;
     }
 
     if (fechaInicio == null || fechaFin == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('Seleccione fecha de inicio y fin')),
       );
       return;
     }
 
     if (_ubicacionSeleccionada == null || _elementoSeleccionado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('Seleccione ubicación y elemento')),
       );
       return;
@@ -255,14 +262,16 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
 
     final duracion = int.tryParse(_duracionCtrl.text);
     if (duracion == null || duracion <= 0) {
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Duración inválida')));
+        SnackBar(content: Text('Duración inválida')),
+      );
       return;
     }
 
     if (_operariosSeleccionadosIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('Seleccione al menos un operario')),
       );
       return;
@@ -289,7 +298,8 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
       await _tareaApi.editarTarea(widget.tarea.id, req);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('✅ Tarea actualizada correctamente'),
           backgroundColor: Colors.green,
@@ -298,7 +308,8 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al actualizar tarea: $e'),
           backgroundColor: Colors.red,

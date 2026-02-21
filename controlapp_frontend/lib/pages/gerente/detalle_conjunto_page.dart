@@ -5,6 +5,8 @@ import '../../model/conjunto_model.dart';
 import '../../model/usuario_model.dart';
 import '../../service/theme.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 const Map<String, int> _dayOrder = <String, int>{
   'LUNES': 1,
   'MARTES': 2,
@@ -165,9 +167,10 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
   }
 
   void _showSnack(String text, {Color color = Colors.green}) {
-    ScaffoldMessenger.of(
+    AppFeedback.showFromSnackBar(
       context,
-    ).showSnackBar(SnackBar(content: Text(text), backgroundColor: color));
+      SnackBar(content: Text(text), backgroundColor: color),
+    );
   }
 
   Future<void> _seleccionarFecha({

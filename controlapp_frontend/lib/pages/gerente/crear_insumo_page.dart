@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/empresa_api.dart';
 import '../../model/insumo_model.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class CrearInsumoPage extends StatefulWidget {
   final String nit; // NIT de la empresa
 
@@ -59,13 +61,15 @@ class _CrearInsumoPageState extends State<CrearInsumoPage> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(content: Text('Insumo creado: ${creado.nombre}')),
       );
       Navigator.of(context).pop(creado);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al crear insumo: $e'),
           backgroundColor: Colors.red,

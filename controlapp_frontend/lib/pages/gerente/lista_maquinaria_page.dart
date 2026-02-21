@@ -6,6 +6,8 @@ import '../../model/conjunto_model.dart';
 import '../../model/maquinaria_model.dart';
 import '../../service/theme.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class ListaMaquinariaGlobalPage extends StatefulWidget {
   final String empresaNit;
   const ListaMaquinariaGlobalPage({super.key, required this.empresaNit});
@@ -68,7 +70,8 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
       setState(() => _items = data);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al cargar maquinaria: $e'),
           backgroundColor: Colors.red,

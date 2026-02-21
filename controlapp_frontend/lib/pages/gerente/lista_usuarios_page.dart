@@ -6,6 +6,8 @@ import 'package:flutter_application_1/pages/gerente/crear_usuario_page.dart';
 import 'editar_usuario_page.dart';
 import 'detalle_usuario_page.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class ListaUsuariosPage extends StatefulWidget {
   final String nit; // para crear admin vinculados al conjunto/empresa
 
@@ -121,7 +123,8 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
     try {
       await _usuarioRepository.eliminarUsuario(usuario.cedula);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text("✅ Usuario eliminado correctamente"),
           backgroundColor: Colors.green,
@@ -130,7 +133,8 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
       _cargarUsuarios();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text("❌ Error al eliminar usuario: $e"),
           backgroundColor: Colors.red,

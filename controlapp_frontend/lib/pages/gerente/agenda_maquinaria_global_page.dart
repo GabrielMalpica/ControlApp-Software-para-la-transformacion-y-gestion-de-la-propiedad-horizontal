@@ -3,6 +3,8 @@ import 'package:flutter_application_1/api/agenda_api.dart';
 import 'package:flutter_application_1/model/agenda_model.dart';
 import 'package:flutter_application_1/model/maquinaria_model.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class AgendaMaquinariaGlobalExcelPage extends StatefulWidget {
   final String empresaNit;
   const AgendaMaquinariaGlobalExcelPage({super.key, required this.empresaNit});
@@ -48,7 +50,8 @@ class _AgendaMaquinariaGlobalExcelPageState
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     } finally {

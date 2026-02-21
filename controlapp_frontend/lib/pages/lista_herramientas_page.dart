@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../api/herramienta_api.dart';
 import '../../model/herramienta_model.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 /// ✅ Lista del CATÁLOGO de herramientas (empresa).
 /// Esto NO es el inventario del conjunto.
 /// - Se crea/edita/elimina "Martillo, Escoba, Alicate..."
@@ -10,10 +12,7 @@ import '../../model/herramienta_model.dart';
 class ListaHerramientasPage extends StatefulWidget {
   final String empresaId;
 
-  const ListaHerramientasPage({
-    super.key,
-    required this.empresaId,
-  });
+  const ListaHerramientasPage({super.key, required this.empresaId});
 
   @override
   State<ListaHerramientasPage> createState() => _ListaHerramientasPageState();
@@ -100,13 +99,15 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
     try {
       await _api.eliminarHerramienta(herramientaId: h.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text("🧹 Herramienta eliminada.")),
       );
       await _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(content: Text("❌ ${e.toString()}")),
       );
     }
@@ -175,119 +176,126 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
               child: _cargando
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
-                      ? _ErrorView(
-                          message: _error!,
-                          onRetry: _load,
-                        )
-                      : _items.isEmpty
-                          ? _EmptyView(
-                              onCreatePressed: () {
-                                // Aquí navegas a tu CrearHerramientaPage
-                                // y al volver, refrescas:
-                                // final changed = await Navigator.push(...);
-                                // if (changed == true) _load();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text("Abre tu CrearHerramientaPage desde aquí 👍"),
-                                  ),
-                                );
-                              },
-                            )
-                          : RefreshIndicator(
-                              onRefresh: _load,
-                              child: ListView.separated(
-                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                                itemCount: _items.length,
-                                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                                itemBuilder: (context, index) {
-                                  final h = _items[index];
+                  ? _ErrorView(message: _error!, onRetry: _load)
+                  : _items.isEmpty
+                  ? _EmptyView(
+                      onCreatePressed: () {
+                        // Aquí navegas a tu CrearHerramientaPage
+                        // y al volver, refrescas:
+                        // final changed = await Navigator.push(...);
+                        // if (changed == true) _load();
+                        AppFeedback.showFromSnackBar(
+                          context,
+                          const SnackBar(
+                            content: Text(
+                              "Abre tu CrearHerramientaPage desde aquí 👍",
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        itemCount: _items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (context, index) {
+                          final h = _items[index];
 
-                                  return Card(
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                      side: const BorderSide(color: Colors.black12),
+                          return Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              side: const BorderSide(color: Colors.black12),
+                            ),
+                            child: ListTile(
+                              title: Text(
+                                h.nombre,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              subtitle: Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 6,
+                                      children: [
+                                        _ChipInfo(
+                                          icon: Icons.straighten,
+                                          text: "Unidad: ${h.unidad}",
+                                        ),
+                                        _ChipInfo(
+                                          icon: Icons.settings_suggest,
+                                          text:
+                                              "Control: ${_modoLabel(h.modoControl)}",
+                                        ),
+                                        if (h.vidaUtilDias != null)
+                                          _ChipInfo(
+                                            icon: Icons.timer_outlined,
+                                            text:
+                                                "Vida útil: ${h.vidaUtilDias} días",
+                                          ),
+                                        if (h.umbralBajo != null)
+                                          _ChipInfo(
+                                            icon: Icons.warning_amber_rounded,
+                                            text: "Umbral: ${h.umbralBajo}",
+                                          ),
+                                      ],
                                     ),
-                                    child: ListTile(
-                                      title: Text(
-                                        h.nombre,
-                                        style: const TextStyle(fontWeight: FontWeight.w700),
-                                      ),
-                                      subtitle: Padding(
-                                        padding: const EdgeInsets.only(top: 6),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Wrap(
-                                              spacing: 8,
-                                              runSpacing: 6,
-                                              children: [
-                                                _ChipInfo(
-                                                  icon: Icons.straighten,
-                                                  text: "Unidad: ${h.unidad}",
-                                                ),
-                                                _ChipInfo(
-                                                  icon: Icons.settings_suggest,
-                                                  text: "Control: ${_modoLabel(h.modoControl)}",
-                                                ),
-                                                if (h.vidaUtilDias != null)
-                                                  _ChipInfo(
-                                                    icon: Icons.timer_outlined,
-                                                    text: "Vida útil: ${h.vidaUtilDias} días",
-                                                  ),
-                                                if (h.umbralBajo != null)
-                                                  _ChipInfo(
-                                                    icon: Icons.warning_amber_rounded,
-                                                    text: "Umbral: ${h.umbralBajo}",
-                                                  ),
-                                              ],
-                                            ),
-                                          ],
+                                  ],
+                                ),
+                              ),
+                              trailing: PopupMenuButton<String>(
+                                onSelected: (v) async {
+                                  if (v == "delete") {
+                                    await _confirmDelete(h);
+                                  } else if (v == "edit") {
+                                    AppFeedback.showFromSnackBar(
+                                      context,
+                                      const SnackBar(
+                                        content: Text(
+                                          "Aquí conectas tu EditarHerramientaPage ✍️",
                                         ),
                                       ),
-                                      trailing: PopupMenuButton<String>(
-                                        onSelected: (v) async {
-                                          if (v == "delete") {
-                                            await _confirmDelete(h);
-                                          } else if (v == "edit") {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(
-                                                content: Text("Aquí conectas tu EditarHerramientaPage ✍️"),
-                                              ),
-                                            );
-                                          }
-                                        },
-                                        itemBuilder: (_) => const [
-                                          PopupMenuItem(
-                                            value: "edit",
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.edit, size: 18),
-                                                SizedBox(width: 8),
-                                                Text("Editar"),
-                                              ],
-                                            ),
-                                          ),
-                                          PopupMenuItem(
-                                            value: "delete",
-                                            child: Row(
-                                              children: [
-                                                Icon(Icons.delete_outline, size: 18),
-                                                SizedBox(width: 8),
-                                                Text("Eliminar"),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      onTap: () {
-                                        // Si quieres, al tocar podrías ir al detalle
-                                      },
-                                    ),
-                                  );
+                                    );
+                                  }
                                 },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                    value: "edit",
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit, size: 18),
+                                        SizedBox(width: 8),
+                                        Text("Editar"),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: "delete",
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.delete_outline, size: 18),
+                                        SizedBox(width: 8),
+                                        Text("Eliminar"),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
+                              onTap: () {
+                                // Si quieres, al tocar podrías ir al detalle
+                              },
                             ),
+                          );
+                        },
+                      ),
+                    ),
             ),
           ],
         ),
@@ -302,8 +310,11 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
           // );
           // if (changed == true) _load();
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Conecta aquí tu CrearHerramientaPage ✅")),
+          AppFeedback.showFromSnackBar(
+            context,
+            const SnackBar(
+              content: Text("Conecta aquí tu CrearHerramientaPage ✅"),
+            ),
           );
         },
         icon: const Icon(Icons.add),
@@ -352,11 +363,7 @@ class _ChipInfo extends StatelessWidget {
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16),
-          const SizedBox(width: 6),
-          Text(text),
-        ],
+        children: [Icon(icon, size: 16), const SizedBox(width: 6), Text(text)],
       ),
     );
   }
@@ -420,10 +427,7 @@ class _ErrorView extends StatelessWidget {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 6),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-            ),
+            Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 14),
             ElevatedButton.icon(
               onPressed: onRetry,

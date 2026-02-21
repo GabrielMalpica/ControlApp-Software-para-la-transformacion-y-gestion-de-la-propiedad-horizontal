@@ -4,6 +4,8 @@ import '../../api/empresa_api.dart';
 import '../../model/insumo_model.dart';
 import '../../service/theme.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class ListaInsumosPage extends StatefulWidget {
   const ListaInsumosPage({super.key});
 
@@ -31,7 +33,8 @@ class _ListaInsumosPageState extends State<ListaInsumosPage> {
       setState(() => _insumos = data);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al cargar insumos: $e'),
           backgroundColor: Colors.red,
@@ -67,12 +70,14 @@ class _ListaInsumosPageState extends State<ListaInsumosPage> {
       await _api.eliminarInsumo(insumo.id);
       await _cargarInsumos();
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Insumo eliminado')));
+        SnackBar(content: Text('Insumo eliminado')),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al eliminar: $e'),
           backgroundColor: Colors.red,
@@ -185,12 +190,14 @@ class _ListaInsumosPageState extends State<ListaInsumosPage> {
       await _api.editarInsumo(insumo.id, req);
       await _cargarInsumos();
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Insumo actualizado')));
+        SnackBar(content: Text('Insumo actualizado')),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al actualizar: $e'),
           backgroundColor: Colors.red,

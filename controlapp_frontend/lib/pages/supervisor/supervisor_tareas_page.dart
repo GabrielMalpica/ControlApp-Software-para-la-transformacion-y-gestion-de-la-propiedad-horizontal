@@ -8,6 +8,8 @@ import 'package:flutter_application_1/service/theme.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class SupervisorTareasPage extends StatefulWidget {
   final String nit; // conjunto
 
@@ -120,7 +122,8 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
       inventario = await _inventarioApi.listarInventarioConjunto(widget.nit);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(content: Text('⚠️ No pude cargar inventario: $e')),
       );
       // seguimos con inventario vacío
@@ -143,7 +146,8 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('✅ Tarea cerrada. Quedó PENDIENTE_APROBACION.'),
         ),
@@ -151,9 +155,10 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
       await _cargar();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(SnackBar(content: Text('❌ Error cerrando: $e')));
+        SnackBar(content: Text('❌ Error cerrando: $e')),
+      );
     }
   }
 
@@ -166,7 +171,8 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
   Future<void> _imprimirSemanaSeleccionada() async {
     if (_filtroOperario == 'TODOS') {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('Selecciona un operario en los filtros')),
       );
       return;

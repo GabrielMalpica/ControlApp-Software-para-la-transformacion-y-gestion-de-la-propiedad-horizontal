@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../api/herramienta_api.dart';
 import '../../model/herramienta_model.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
 // Si ya tienes tu theme.dart y colores corporativos, puedes importar y usarlo.
 // import '../../service/theme.dart';
 
@@ -70,7 +71,8 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text("✅ Herramienta creada. A trabajar con estilo."),
         ),
@@ -82,9 +84,10 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
       ); // devuelve true para refrescar listado si quieres
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(SnackBar(content: Text("❌ ${e.toString()}")));
+        SnackBar(content: Text("❌ ${e.toString()}")),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -259,7 +262,8 @@ class _ReadOnlyField extends StatelessWidget {
             // Copiar sin dependencia extra (Clipboard está en services)
             // Si quieres, lo activamos con:
             // Clipboard.setData(ClipboardData(text: value));
-            ScaffoldMessenger.of(context).showSnackBar(
+            AppFeedback.showFromSnackBar(
+              context,
               const SnackBar(
                 content: Text("📋 Copia manual: Ctrl+C (modo pro)"),
               ),

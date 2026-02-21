@@ -6,6 +6,8 @@ import '../../model/conjunto_model.dart';
 import '../../model/maquinaria_model.dart';
 import '../../service/theme.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class CrearMaquinariaPage extends StatefulWidget {
   final String nit; // nit empresa
   final MaquinariaResponse? maquinaria; // null = crear, no null = editar
@@ -81,7 +83,8 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
 
     // Validación extra: si es CONJUNTO debe haber NIT
     if (_prop == PropietarioMaquinaria.CONJUNTO && _conjuntoPropId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('Selecciona el conjunto propietario.'),
           backgroundColor: Colors.red,
@@ -109,7 +112,8 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
       }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text(
             widget.modoEdicion ? 'Maquinaria actualizada' : 'Maquinaria creada',
@@ -119,7 +123,8 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al guardar maquinaria: $e'),
           backgroundColor: Colors.red,

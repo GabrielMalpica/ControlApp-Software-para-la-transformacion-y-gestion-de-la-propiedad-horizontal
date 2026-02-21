@@ -14,6 +14,8 @@ import '../service/theme.dart';
 import '../widgets/cerrar_tarea_sheet.dart';
 import 'editar_tarea_page.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class TareasPage extends StatefulWidget {
   final String nit;
 
@@ -217,7 +219,8 @@ class _TareasPageState extends State<TareasPage> {
   Future<void> _cerrarComoOperario(TareaModel t) async {
     if (_operarioId == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('No se pudo resolver el operario de sesión.'),
         ),
@@ -255,7 +258,8 @@ class _TareasPageState extends State<TareasPage> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('✅ Tarea cerrada. Quedó pendiente aprobación.'),
         ),
@@ -263,9 +267,10 @@ class _TareasPageState extends State<TareasPage> {
       await _cargarTareas();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(SnackBar(content: Text('❌ Error cerrando tarea: $e')));
+        SnackBar(content: Text('❌ Error cerrando tarea: $e')),
+      );
     }
   }
 
@@ -361,15 +366,17 @@ class _TareasPageState extends State<TareasPage> {
     try {
       await _tareaApi.eliminarTarea(tarea.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('Tarea eliminada correctamente')),
       );
       await _cargarTareas();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error al eliminar tarea: $e')));
+        SnackBar(content: Text('Error al eliminar tarea: $e')),
+      );
     }
   }
 

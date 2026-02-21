@@ -8,6 +8,7 @@ import '../model/preventiva_model.dart' as pm;
 import '../model/conjunto_model.dart';
 import '../model/usuario_model.dart';
 import '../service/theme.dart';
+import 'package:flutter_application_1/service/app_feedback.dart';
 import 'crear_preventiva_page.dart' as ce;
 
 class PreventivasPage extends StatefulWidget {
@@ -49,7 +50,8 @@ class _PreventivasPageState extends State<PreventivasPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al cargar preventivas: $e'),
           backgroundColor: Colors.red,
@@ -176,12 +178,14 @@ class _PreventivasPageState extends State<PreventivasPage> {
       await _preventivaApi.eliminar(widget.nit, def.id);
       await _cargar();
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Definición eliminada')));
+        SnackBar(content: Text('Definición eliminada')),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al eliminar: $e'),
           backgroundColor: Colors.red,
@@ -236,7 +240,8 @@ class _PreventivasPageState extends State<PreventivasPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al generar cronograma borrador: $e'),
           backgroundColor: Colors.red,

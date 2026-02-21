@@ -7,6 +7,8 @@ import '../model/insumo_model.dart';
 import '../model/solicitud_insumo_model.dart';
 import '../service/app_constants.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class SolicitudInsumoPage extends StatefulWidget {
   final String conjuntoNit;
   const SolicitudInsumoPage({super.key, required this.conjuntoNit});
@@ -60,7 +62,8 @@ class _SolicitudInsumoPageState extends State<SolicitudInsumoPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error cargando solicitud: $e'),
           backgroundColor: Colors.red,
@@ -85,7 +88,8 @@ class _SolicitudInsumoPageState extends State<SolicitudInsumoPage> {
 
   Future<void> _enviar() async {
     if (_carrito.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('No has agregado insumos a la solicitud.'),
         ),
@@ -114,13 +118,15 @@ class _SolicitudInsumoPageState extends State<SolicitudInsumoPage> {
       await _solApi.crearSolicitud(req);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Solicitud enviada ✅')));
+        SnackBar(content: Text('Solicitud enviada ✅')),
+      );
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al enviar solicitud: $e'),
           backgroundColor: Colors.red,

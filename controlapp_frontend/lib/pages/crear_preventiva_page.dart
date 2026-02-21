@@ -18,6 +18,8 @@ import '../model/herramienta_model.dart';
 
 import '../service/theme.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 enum SnackType { info, success, error }
 
 class CrearEditarPreventivaPage extends StatefulWidget {
@@ -907,9 +909,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         bg = Colors.blue; // o AppTheme.primary
     }
 
-    ScaffoldMessenger.of(
+    AppFeedback.showFromSnackBar(
       context,
-    ).showSnackBar(SnackBar(content: Text(msg), backgroundColor: bg));
+      SnackBar(content: Text(msg), backgroundColor: bg),
+    );
   }
 
   Future<void> _showFriendlyErrorDialog({

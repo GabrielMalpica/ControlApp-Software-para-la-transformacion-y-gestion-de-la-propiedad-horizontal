@@ -10,6 +10,8 @@ import '../model/conjunto_model.dart';
 import '../model/maquinaria_model.dart';
 import '../service/theme.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class CrearTareaPage extends StatefulWidget {
   final String nit;
 
@@ -107,7 +109,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         ? 'Se reemplazó automáticamente una tarea de prioridad 3.'
         : 'Se reemplazó automáticamente la(s) tarea(s) P3: ${ids.join(", ")}.';
 
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texto)));
+    AppFeedback.showFromSnackBar(context, SnackBar(content: Text(texto)));
   }
 
   List<int> _toIntIds(dynamic raw) {
@@ -122,7 +124,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     final texto = ids.length == 1
         ? '1 preventiva quedó en NO_COMPLETADA por reemplazo.'
         : '${ids.length} preventivas quedaron en NO_COMPLETADA por reemplazo.';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texto)));
+    AppFeedback.showFromSnackBar(context, SnackBar(content: Text(texto)));
   }
 
   Future<void> _cargarInicial() async {
@@ -151,7 +153,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _cargandoInicial = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error cargando datos iniciales: $e'),
           backgroundColor: Colors.red,
@@ -209,7 +212,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
   Future<void> _mostrarSelectorOperarios() async {
     if (_operarios.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('No hay operarios en este conjunto')),
       );
       return;
@@ -277,7 +281,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
   Future<void> _mostrarSelectorMaquinaria() async {
     if (_maquinariaDisponible.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('No hay maquinaria disponible')),
       );
       return;
@@ -422,7 +427,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
       return true;
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('No se pudo validar límite semanal: $e'),
           backgroundColor: Colors.red,
@@ -434,7 +440,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
   void _onSuccess() {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    AppFeedback.showFromSnackBar(
+      context,
       const SnackBar(
         content: Text('✅ Tarea creada correctamente'),
         backgroundColor: Colors.green,
@@ -586,7 +593,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         final nuevaDur = sugFin.difference(sugIni).inMinutes;
         if (nuevaDur > 0) _duracionCtrl.text = nuevaDur.toString();
 
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppFeedback.showFromSnackBar(
+          context,
           const SnackBar(content: Text('✅ Sugerencia aplicada al formulario.')),
         );
       }
@@ -846,21 +854,24 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
     final conjunto = _conjuntoSeleccionado;
     if (conjunto == null) {
-      ScaffoldMessenger.of(
+      AppFeedback.showFromSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Seleccione un conjunto')));
+        SnackBar(content: Text('Seleccione un conjunto')),
+      );
       return;
     }
 
     if (fechaInicio == null || fechaFin == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('Seleccione fecha de inicio y fin')),
       );
       return;
     }
 
     if (_horaInicio == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('Seleccione la hora de inicio')),
       );
       return;
@@ -871,7 +882,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         fechaInicio!.month == fechaFin!.month &&
         fechaInicio!.day == fechaFin!.day;
     if (!mismoDia) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('Por ahora debe ser dentro de un solo día.'),
         ),
@@ -880,7 +892,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     }
 
     if (_ubicacionSeleccionada == null || _elementoSeleccionado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('Seleccione ubicación y elemento')),
       );
       return;
@@ -888,14 +901,16 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
     final duracionMin = int.tryParse(_duracionCtrl.text.trim());
     if (duracionMin == null || duracionMin <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('Duración (minutos) inválida')),
       );
       return;
     }
 
     if (_operariosSeleccionadosIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(content: Text('Seleccione al menos un operario')),
       );
       return;
@@ -1018,7 +1033,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           }
 
           if (decision != 'REPLACE') {
-            ScaffoldMessenger.of(context).showSnackBar(
+            AppFeedback.showFromSnackBar(
+              context,
               const SnackBar(content: Text('Operacion cancelada.')),
             );
             return;
@@ -1143,9 +1159,10 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           title: title,
         );
         if (idsSeleccionados == null || idsSeleccionados.isEmpty) {
-          ScaffoldMessenger.of(
+          AppFeedback.showFromSnackBar(
             context,
-          ).showSnackBar(const SnackBar(content: Text('Operacion cancelada.')));
+            SnackBar(content: Text('Operacion cancelada.')),
+          );
           return;
         }
 
@@ -1172,7 +1189,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         if (requiereAccion) {
           accionReemplazadas = await _dialogAccionReemplazo();
           if (accionReemplazadas == null) {
-            ScaffoldMessenger.of(context).showSnackBar(
+            AppFeedback.showFromSnackBar(
+              context,
               const SnackBar(content: Text('Operacion cancelada.')),
             );
             return;
@@ -1183,7 +1201,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               critical: confirmacionCritica,
             );
             if (motivoReemplazo == null || motivoReemplazo.trim().isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
+              AppFeedback.showFromSnackBar(
+                context,
                 const SnackBar(content: Text('Debe ingresar un motivo.')),
               );
               return;
@@ -1206,7 +1225,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           final canceladasSinCupo =
               (resp3['canceladasSinCupoIds'] as List?) ?? const [];
           if (canceladasSinCupo.isNotEmpty) {
-            ScaffoldMessenger.of(context).showSnackBar(
+            AppFeedback.showFromSnackBar(
+              context,
               SnackBar(
                 content: Text(
                   'Preventivas canceladas por falta de cupo: ${canceladasSinCupo.length}',
@@ -1227,7 +1247,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       return;
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error al crear tarea: $e'),
           backgroundColor: Colors.red,

@@ -12,6 +12,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class JefeOperacionesPendientesPage extends StatefulWidget {
   final String? conjuntoId; // opcional
   const JefeOperacionesPendientesPage({super.key, this.conjuntoId});
@@ -221,7 +223,8 @@ class _JefeOperacionesPendientesPageState
           builder: (ctx, setModal) {
             Future<void> pickCam() async {
               if (!_isMobile) {
-                ScaffoldMessenger.of(context).showSnackBar(
+                AppFeedback.showFromSnackBar(
+                  context,
                   const SnackBar(
                     content: Text('Cámara solo disponible en móvil.'),
                   ),
@@ -672,7 +675,8 @@ class _JefeOperacionesPendientesPageState
 
                                   if (out['ok'] == false) {
                                     if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
+                                    AppFeedback.showFromSnackBar(
+                                      context,
                                       SnackBar(
                                         content: Text(
                                           out['error']?.toString() ?? 'Error',
@@ -686,7 +690,8 @@ class _JefeOperacionesPendientesPageState
                                   Navigator.pop(ctx);
                                   await _cargar();
 
-                                  ScaffoldMessenger.of(context).showSnackBar(
+                                  AppFeedback.showFromSnackBar(
+                                    context,
                                     SnackBar(
                                       content: Text(
                                         accion == 'APROBAR'
@@ -699,7 +704,8 @@ class _JefeOperacionesPendientesPageState
                                   );
                                 } catch (e) {
                                   if (!mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
+                                  AppFeedback.showFromSnackBar(
+                                    context,
                                     SnackBar(content: Text('Error: $e')),
                                   );
                                 }

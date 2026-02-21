@@ -4,6 +4,8 @@ import 'package:table_calendar/table_calendar.dart';
 import '../api/festivo_api.dart';
 import '../service/theme.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class FestivosPage extends StatefulWidget {
   const FestivosPage({super.key});
 
@@ -74,7 +76,8 @@ class _FestivosPageState extends State<FestivosPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _cargando = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error cargando festivos: $e'),
           backgroundColor: Colors.red,
@@ -157,7 +160,8 @@ class _FestivosPageState extends State<FestivosPage> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('✅ Festivos guardados'),
           backgroundColor: Colors.green,
@@ -165,7 +169,8 @@ class _FestivosPageState extends State<FestivosPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error guardando festivos: $e'),
           backgroundColor: Colors.red,

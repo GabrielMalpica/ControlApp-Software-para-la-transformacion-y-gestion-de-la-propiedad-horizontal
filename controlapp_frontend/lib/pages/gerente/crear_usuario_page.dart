@@ -8,6 +8,8 @@ import '../../repositories/usuario_repository.dart';
 import '../../utils/enums/usuario_enums.dart';
 import '../../utils/enums/usuario_enums_service.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class CrearUsuarioPage extends StatefulWidget {
   final String nit;
 
@@ -165,7 +167,8 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
     if (!_formKey.currentState!.validate()) return;
 
     if (rolSeleccionado == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text("Seleccione un rol para el usuario"),
           backgroundColor: Colors.orange,
@@ -177,7 +180,8 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
     // ✅ Validación patrón de medio tiempo
     if (rolSeleccionado == 'operario' && jornada == 'MEDIO_TIEMPO') {
       if (patronJornada == null || patronJornada!.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppFeedback.showFromSnackBar(
+          context,
           const SnackBar(
             content: Text("Seleccione el patrón de medio tiempo"),
             backgroundColor: Colors.orange,
@@ -190,7 +194,8 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
     // Validaciones extra para operario
     if (rolSeleccionado == 'operario') {
       if (funcionesSeleccionadas.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppFeedback.showFromSnackBar(
+          context,
           const SnackBar(
             content: Text("Seleccione al menos una función para el operario"),
             backgroundColor: Colors.orange,
@@ -199,7 +204,8 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
         return;
       }
       if (fechaIngresoOperario == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppFeedback.showFromSnackBar(
+          context,
           const SnackBar(
             content: Text("Seleccione la fecha de ingreso del operario"),
             backgroundColor: Colors.orange,
@@ -259,7 +265,8 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text("✅ Usuario y rol creados correctamente"),
           backgroundColor: Colors.green,
@@ -302,7 +309,8 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text("❌ Error al crear usuario: $e"),
           backgroundColor: Colors.red,

@@ -3,6 +3,8 @@ import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
 import 'package:flutter_application_1/service/theme.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 const _diasSemana = <String>[
   'LUNES',
   'MARTES',
@@ -80,7 +82,8 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     } catch (e) {
       // solo mostramos snack si algo falla
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('Error cargando administradores: $e'),
           backgroundColor: Colors.red,
@@ -171,7 +174,8 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     if (!_formKey.currentState!.validate()) return;
 
     if (_tiposServicioSeleccionados.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('Seleccione al menos un tipo de servicio'),
           backgroundColor: Colors.orange,
@@ -181,7 +185,8 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     }
 
     if (_fechaInicioContrato == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('Seleccione la fecha de inicio del contrato'),
           backgroundColor: Colors.orange,
@@ -195,7 +200,8 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     if (_valorMensualCtrl.text.trim().isNotEmpty) {
       valorMensual = double.tryParse(_valorMensualCtrl.text.trim());
       if (valorMensual == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        AppFeedback.showFromSnackBar(
+          context,
           const SnackBar(
             content: Text('Valor mensual inválido'),
             backgroundColor: Colors.orange,
@@ -265,7 +271,8 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         const SnackBar(
           content: Text('✅ Conjunto creado correctamente'),
           backgroundColor: Colors.green,
@@ -275,7 +282,8 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
       Navigator.pop(context); // volver al dashboard o a la lista
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      AppFeedback.showFromSnackBar(
+        context,
         SnackBar(
           content: Text('❌ Error al crear conjunto: $e'),
           backgroundColor: Colors.red,

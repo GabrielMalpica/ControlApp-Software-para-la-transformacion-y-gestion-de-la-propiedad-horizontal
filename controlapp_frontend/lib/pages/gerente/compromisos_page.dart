@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../service/theme.dart';
 
+import 'package:flutter_application_1/service/app_feedback.dart';
+
 class CompromisosPage extends StatefulWidget {
   final String nit;
 
@@ -133,7 +135,7 @@ class _CompromisosPageState extends State<CompromisosPage> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    AppFeedback.showFromSnackBar(context, SnackBar(content: Text(msg)));
   }
 
   @override
