@@ -714,7 +714,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         }),
       ]),
       _TileSection("Analisis y control", [
-        _Tile("Reportes", Icons.bar_chart, AppTheme.green, () {
+        _Tile("Reporte conjunto", Icons.bar_chart, AppTheme.green, () {
           Navigator.push(
             context,
             MaterialPageRoute(

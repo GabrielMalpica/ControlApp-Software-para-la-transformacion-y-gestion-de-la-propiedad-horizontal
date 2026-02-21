@@ -1,17 +1,17 @@
 import 'dart:html' as html;
 import 'dart:typed_data';
 
-Future<void> downloadPdfWeb(List<int> bytes, String filename) async {
-  final blob = html.Blob([Uint8List.fromList(bytes)], 'application/pdf');
+Future<void> downloadPdfWeb(Uint8List bytes, String filename) async {
+  final blob = html.Blob([bytes], 'application/pdf');
   final url = html.Url.createObjectUrlFromBlob(blob);
 
-  final a = html.AnchorElement(href: url)
-    ..download = filename
-    ..style.display = 'none';
+  final anchor = html.AnchorElement(href: url)
+    ..style.display = 'none'
+    ..download = filename;
 
-  html.document.body!.children.add(a);
-  a.click();
-  a.remove();
+  html.document.body?.children.add(anchor);
+  anchor.click();
+  anchor.remove();
 
   html.Url.revokeObjectUrl(url);
 }
