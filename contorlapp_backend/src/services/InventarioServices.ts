@@ -1,6 +1,6 @@
 // src/services/InventarioService.ts
-import { TipoMovimientoInsumo } from "../generated/prisma";
-import { Prisma, PrismaClient } from "../generated/prisma";
+import { TipoMovimientoInsumo } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { decToNumber, toDec } from "../utils/decimal";
 
