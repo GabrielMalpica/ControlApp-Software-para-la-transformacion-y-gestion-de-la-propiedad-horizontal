@@ -11,6 +11,7 @@ import { TareaService } from "./TareaServices";
 import { InventarioService } from "./InventarioServices";
 import { uploadEvidenciaToDrive } from "../utils/drive_evidencias";
 import fs from "fs";
+import { NotificacionService } from "./NotificacionService";
 
 const TareaIdDTO = z.object({ tareaId: z.number().int().positive() });
 
@@ -196,9 +197,11 @@ export class OperarioService {
       where: { id: tareaId },
       select: {
         id: true,
+        descripcion: true,
         estado: true,
         evidencias: true,
         conjuntoId: true,
+        supervisorId: true,
         operarios: { select: { id: true } },
         conjunto: { select: { nit: true, nombre: true } },
       },
@@ -365,6 +368,20 @@ export class OperarioService {
         },
       });
     });
+
+    try {
+      const notificaciones = new NotificacionService(this.prisma);
+      await notificaciones.notificarCierreTarea({
+        tareaId,
+        descripcionTarea: tarea.descripcion,
+        conjuntoId: tarea.conjuntoId,
+        actorId: this.operarioId.toString(),
+        actorRol: "OPERARIO",
+        supervisorId: tarea.supervisorId,
+      });
+    } catch (e) {
+      console.error("No se pudo notificar cierre de tarea (operario):", e);
+    }
   }
 
   /** Suma de horas en la semana (lunes a domingo) de la fecha dada */

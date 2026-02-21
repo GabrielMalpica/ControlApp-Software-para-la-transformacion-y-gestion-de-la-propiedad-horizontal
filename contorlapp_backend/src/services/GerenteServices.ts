@@ -43,6 +43,7 @@ import {
   buildBloqueosPorDescanso,
   buildBloqueosPorPatronJornada,
 } from "./DefinicionTareaPreventivaService";
+import { NotificacionService } from "./NotificacionService";
 
 export const AsignarConReemplazoDTO = z.object({
   tarea: CrearTareaDTO,
@@ -142,8 +143,21 @@ const ESTADOS_REEMPLAZABLES = [
   EstadoTarea.EN_PROCESO,
 ] as const;
 
+const ESTADOS_BLOQUEADOS_PARA_REEMPLAZO = [
+  EstadoTarea.APROBADA,
+  EstadoTarea.PENDIENTE_REPROGRAMACION,
+] as const;
+
 export class GerenteService {
   constructor(private prisma: PrismaClient) {}
+
+  private extraerAsignadorId(payload: unknown): string | null {
+    if (!payload || typeof payload !== "object") return null;
+    const raw = (payload as { asignadorId?: unknown }).asignadorId;
+    if (raw == null) return null;
+    const id = String(raw).trim();
+    return id.length > 0 ? id : null;
+  }
 
   /* ===================== EMPRESA ===================== */
 
@@ -1234,6 +1248,7 @@ export class GerenteService {
   }
 
   async asignarTarea(payload: unknown) {
+    const asignadorId = this.extraerAsignadorId(payload);
     const dto = CrearTareaDTO.parse(payload);
 
     const inicio = dto.fechaInicio;
@@ -1519,6 +1534,17 @@ export class GerenteService {
         }
       }
 
+      if (operariosIds.length) {
+        const notificaciones = new NotificacionService(tx as any);
+        await notificaciones.notificarAsignacionTareaOperarios({
+          tareaId: tarea.id,
+          descripcionTarea: dto.descripcion,
+          conjuntoId: dto.conjuntoId ?? null,
+          operariosIds,
+          asignadorId,
+        });
+      }
+
       return {
         ok: true,
         message: "Tarea creada correctamente",
@@ -1733,6 +1759,7 @@ export class GerenteService {
   }
 
   async asignarTareaConReemplazoV2(payload: unknown): Promise<any> {
+    const asignadorId = this.extraerAsignadorId(payload);
     const parsed = AsignarConReemplazoV2DTO.safeParse(payload);
     if (!parsed.success) {
       return {
@@ -1839,6 +1866,18 @@ export class GerenteService {
             ok: false,
             reason: "REEMPLAZO_SOLO_PREVENTIVA",
             message: "Solo se pueden reemplazar tareas preventivas.",
+          };
+        }
+        if (
+          (ESTADOS_BLOQUEADOS_PARA_REEMPLAZO as readonly string[]).includes(
+            t.estado as any,
+          )
+        ) {
+          return {
+            ok: false,
+            reason: "NO_REEMPLAZAR_NO_ACTIVA",
+            message:
+              "No se pueden reemplazar tareas preventivas en estado APROBADA o PENDIENTE_REPROGRAMACION.",
           };
         }
         if (!prioridadesPermitidas.includes(t.prioridad ?? 2)) {
@@ -2163,6 +2202,17 @@ export class GerenteService {
         }
       }
 
+      if (operariosIds.length) {
+        const notificaciones = new NotificacionService(tx as any);
+        await notificaciones.notificarAsignacionTareaOperarios({
+          tareaId: nuevaCorrectiva.id,
+          descripcionTarea: dto.descripcion,
+          conjuntoId: dto.conjuntoId,
+          operariosIds,
+          asignadorId,
+        });
+      }
+
       return {
         ok: true,
         message: "Correctiva creada y reemplazos procesados.",
@@ -2309,7 +2359,11 @@ export class GerenteService {
     const excluyeIds = async (t: (typeof candidatas)[number]) => {
       if (!t.grupoPlanId) return new Set([t.id]);
       const grupo = await prisma.tarea.findMany({
-        where: { grupoPlanId: t.grupoPlanId },
+        where: {
+          grupoPlanId: t.grupoPlanId,
+          conjuntoId,
+          estado: { in: ESTADOS_REEMPLAZABLES as any },
+        },
         select: {
           id: true,
           tipo: true,
@@ -2489,8 +2543,21 @@ export class GerenteService {
   }
 
   async editarTarea(tareaId: number, payload: unknown) {
+    const asignadorId = this.extraerAsignadorId(payload);
     const dto = EditarTareaDTO.parse(payload);
     const data: Prisma.TareaUpdateInput = {};
+
+    const tareaAntes =
+      dto.operariosIds !== undefined
+        ? await this.prisma.tarea.findUnique({
+            where: { id: tareaId },
+            select: {
+              descripcion: true,
+              conjuntoId: true,
+              operarios: { select: { id: true } },
+            },
+          })
+        : null;
 
     if (dto.descripcion !== undefined) data.descripcion = dto.descripcion;
     if (dto.fechaInicio !== undefined)
@@ -2535,7 +2602,39 @@ export class GerenteService {
       };
     }
 
-    return this.prisma.tarea.update({ where: { id: tareaId }, data });
+    const updated = await this.prisma.tarea.update({
+      where: { id: tareaId },
+      data,
+    });
+
+    if (dto.operariosIds !== undefined) {
+      const anteriores = new Set(
+        (tareaAntes?.operarios ?? []).map((o) => o.id.toString()),
+      );
+      const actuales = dto.operariosIds.map((id) => id.toString());
+      const nuevosAsignados = actuales.filter((id) => !anteriores.has(id));
+
+      if (nuevosAsignados.length > 0) {
+        try {
+          const notificaciones = new NotificacionService(this.prisma);
+          await notificaciones.notificarAsignacionTareaOperarios({
+            tareaId,
+            descripcionTarea:
+              updated.descripcion ?? tareaAntes?.descripcion ?? `Tarea ${tareaId}`,
+            conjuntoId: updated.conjuntoId ?? tareaAntes?.conjuntoId ?? null,
+            operariosIds: nuevosAsignados,
+            asignadorId,
+          });
+        } catch (e) {
+          console.error(
+            "No se pudo notificar asignacion de tarea en edicion:",
+            e,
+          );
+        }
+      }
+    }
+
+    return updated;
   }
 
   async listarTareasPorConjunto(conjuntoId: string) {

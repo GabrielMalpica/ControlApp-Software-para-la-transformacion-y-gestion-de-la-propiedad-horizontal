@@ -5,11 +5,12 @@ import {
   AprobarSolicitudInsumoDTO,
   FiltroSolicitudInsumoDTO,
 } from "../model/SolicitudInsumo";
+import { NotificacionService } from "./NotificacionService";
 
 export class SolicitudInsumoService {
   constructor(private prisma: PrismaClient) {}
 
-  async crear(payload: unknown) {
+  async crear(payload: unknown, actorId?: string | null) {
     const dto = CrearSolicitudInsumoDTO.parse(payload);
 
     // Validaciones básicas
@@ -30,7 +31,7 @@ export class SolicitudInsumoService {
     }
 
     // Crear con nested create en la relación insumosSolicitados
-    return this.prisma.solicitudInsumo.create({
+    const creada = await this.prisma.solicitudInsumo.create({
       data: {
         conjuntoId: dto.conjuntoId,
         empresaId: dto.empresaId ?? null,
@@ -48,6 +49,23 @@ export class SolicitudInsumoService {
         },
       },
     });
+
+    try {
+      const notificaciones = new NotificacionService(this.prisma);
+      await notificaciones.notificarSolicitudInsumosCreada({
+        solicitudId: creada.id,
+        conjuntoId: dto.conjuntoId,
+        totalItems: dto.items.length,
+        actorId: actorId ?? null,
+      });
+    } catch (e) {
+      console.error(
+        "No se pudo notificar creacion de solicitud de insumos:",
+        e,
+      );
+    }
+
+    return creada;
   }
 
   async aprobar(id: number, payload: unknown) {

@@ -26,7 +26,8 @@ export class SolicitudInsumoController {
 
   crear: RequestHandler = async (req, res, next) => {
     try {
-      const out = await service.crear(req.body);
+      const actorId = req.user?.sub ? String(req.user.sub) : null;
+      const out = await service.crear(req.body, actorId);
       res.status(201).json(out);
     } catch (err) {
       next(err);

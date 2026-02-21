@@ -1407,6 +1407,7 @@ export class ReporteService {
       return {
         id: t.id,
         tipo: t.tipo,
+        frecuencia: t.frecuencia ?? null,
         descripcion: t.descripcion,
         estado: t.estado,
         fechaInicio: t.fechaInicio,

@@ -23,6 +23,7 @@ import HerramientasStockRoutes from "./HerramientaStock"
 import AuthRoutes from "./auth"
 import AgendaRoutes from './Agenda';
 import JefeOperacionesRoutes from './JefeOperaciones'
+import NotificacionesRoutes from "./Notificaciones";
 
 const rutas = Router();
 
@@ -50,5 +51,6 @@ rutas.use('/herramientas', HerramientasStockRoutes);
 rutas.use('/auth', AuthRoutes);
 rutas.use('/agenda', AgendaRoutes);
 rutas.use('/jefe-operaciones', JefeOperacionesRoutes);
+rutas.use('/notificaciones', NotificacionesRoutes);
 
 export default rutas;

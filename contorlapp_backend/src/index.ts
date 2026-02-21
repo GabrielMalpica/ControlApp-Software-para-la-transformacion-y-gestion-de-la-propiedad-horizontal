@@ -9,6 +9,7 @@ import express, {
 import cors from "cors";
 import rutas from "./routes/Rutas";
 import { prisma } from "./db/prisma";
+import { bootstrapNotificacionesSchema } from "./services/NotificacionService";
 
 if (!process.env.JWT_SECRET) {
   throw new Error("Falta JWT_SECRET en el archivo .env");
@@ -24,7 +25,7 @@ app.set("json replacer", (_k: string, v: unknown) =>
 
 /* --------------------------------- health -------------------------------- */
 app.get("/", (_req: Request, res: Response) => {
-  res.send("🚀 API viva");
+  res.send("API viva");
 });
 
 app.get("/ping", async (_req: Request, res: Response, next: NextFunction) => {
@@ -41,7 +42,7 @@ app.use(rutas);
 
 /* ----------------------- middleware de error (tipado) --------------------- */
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
-  console.error("❌ Error:", err);
+  console.error("Error:", err);
 
   // Zod
   if (err?.name === "ZodError") {
@@ -49,7 +50,7 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
-  // Si en tu código lanzas e.status, respétalo
+  // Si en tu codigo lanzas e.status, respetalo
   const status = typeof err?.status === "number" ? err.status : 500;
   res.status(status).json({ error: err?.message ?? "Error interno" });
 };
@@ -58,9 +59,18 @@ app.use(errorHandler);
 
 /* ------------------------------- levantar server -------------------------- */
 const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`🟢 API escuchando en http://localhost:${PORT}`);
-});
+(async () => {
+  try {
+    await bootstrapNotificacionesSchema(prisma);
+    console.log("Notificaciones inicializadas");
+  } catch (e) {
+    console.error("No se pudo inicializar tabla de notificaciones:", e);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`API escuchando en http://localhost:${PORT}`);
+  });
+})();
 
 /* -------------------------- cierre elegante Prisma ------------------------ */
 process.on("SIGINT", async () => {

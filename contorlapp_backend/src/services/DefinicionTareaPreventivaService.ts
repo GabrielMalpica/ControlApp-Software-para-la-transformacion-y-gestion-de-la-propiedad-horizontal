@@ -144,6 +144,30 @@ const EditarBloqueBorradorDTO = z.object({
 export class DefinicionTareaPreventivaService {
   constructor(private prisma: PrismaClient) {}
 
+  private validarVentanaPublicacion(params: {
+    anio: number;
+    mes: number;
+    diasAnticipacion?: number;
+    ahora?: Date;
+  }) {
+    const { anio, mes, diasAnticipacion = 7, ahora = new Date() } = params;
+
+    const inicioPeriodo = new Date(anio, mes - 1, 1, 0, 0, 0, 0);
+    const apertura = new Date(inicioPeriodo);
+    apertura.setDate(apertura.getDate() - diasAnticipacion);
+
+    if (+ahora < +apertura) {
+      const ymd = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+          d.getDate(),
+        ).padStart(2, "0")}`;
+
+      throw new Error(
+        `El cronograma ${anio}-${String(mes).padStart(2, "0")} solo se puede publicar desde ${ymd(apertura)} (7 días antes del inicio del periodo: ${ymd(inicioPeriodo)}).`,
+      );
+    }
+  }
+
   /* =========================
    * CRUD BÁSICO
    * ======================= */
@@ -733,6 +757,8 @@ export class DefinicionTareaPreventivaService {
   }) {
     const { conjuntoId, anio, mes } = params;
 
+    this.validarVentanaPublicacion({ anio, mes, diasAnticipacion: 7 });
+
     const borradores = await this.prisma.tarea.findMany({
       where: {
         conjuntoId,
@@ -747,6 +773,7 @@ export class DefinicionTareaPreventivaService {
         fechaFin: true,
         maquinariaPlanJson: true,
         grupoPlanId: true,
+        descripcion: true,
       },
       orderBy: [{ id: "asc" }],
     });
@@ -782,6 +809,7 @@ export class DefinicionTareaPreventivaService {
         fechaInicio: t.fechaInicio,
         fechaFin: t.fechaFin,
         maquinariaPlanJson: t.maquinariaPlanJson,
+        descripcion: t.descripcion,
       })),
       diasEntregaRecogida: new Set([1, 3, 6]), // L, X, S
       excluirTareaIds: [],
@@ -1539,7 +1567,12 @@ export class DefinicionTareaPreventivaService {
       };
     }
 
-    const ocupadas = await this.prisma.usoMaquinaria.findMany({
+    const overlaps = (aIni: Date, aFin: Date, bIni: Date, bFin: Date) =>
+      aIni < bFin && bIni < aFin;
+
+    const OPEN_END_FAR_FUTURE = new Date(2099, 11, 31, 23, 59, 59, 999);
+
+    const ocupadasReservadas = await this.prisma.usoMaquinaria.findMany({
       where: {
         maquinariaId: { in: idsInteres },
         ...(excluirTareaId != null ? { tareaId: { not: excluirTareaId } } : {}),
@@ -1559,13 +1592,150 @@ export class DefinicionTareaPreventivaService {
             descripcion: true,
             fechaInicio: true,
             fechaFin: true,
+            borrador: true,
           },
         },
       },
     });
 
-    const OPEN_END_FAR_FUTURE = new Date(2099, 11, 31, 23, 59, 59, 999);
-    const ocupadasSet = new Set(ocupadas.map((o) => o.maquinariaId));
+    const getMaqIds = (json: any): number[] => {
+      if (!Array.isArray(json)) return [];
+      return json
+        .map((x) => Number(x?.maquinariaId))
+        .filter((n) => Number.isFinite(n) && n > 0);
+    };
+
+    const idsInteresSet = new Set(idsInteres);
+    const bufferDiasBorrador = 4; // cubre corrimiento de entrega/recogida (L/X/S)
+    const inicioBusquedaBorrador = new Date(iniReserva);
+    inicioBusquedaBorrador.setDate(
+      inicioBusquedaBorrador.getDate() - bufferDiasBorrador,
+    );
+    const finBusquedaBorrador = new Date(finReserva);
+    finBusquedaBorrador.setDate(finBusquedaBorrador.getDate() + bufferDiasBorrador);
+
+    const borradores = await this.prisma.tarea.findMany({
+      where: {
+        borrador: true,
+        tipo: TipoTarea.PREVENTIVA,
+        fechaInicio: { lt: finBusquedaBorrador },
+        fechaFin: { gt: inicioBusquedaBorrador },
+        ...(excluirTareaId != null ? { id: { not: excluirTareaId } } : {}),
+      },
+      select: {
+        id: true,
+        conjuntoId: true,
+        descripcion: true,
+        fechaInicio: true,
+        fechaFin: true,
+        grupoPlanId: true,
+        maquinariaPlanJson: true,
+      },
+      orderBy: [{ id: "asc" }],
+    });
+
+    type GrupoBorrador = {
+      key: string;
+      conjuntoId: string | null;
+      descripcion: string | null;
+      tareaIdRepresentante: number;
+      maqIds: number[];
+      usoIni: Date;
+      usoFin: Date;
+    };
+
+    const gruposBorrador = new Map<string, GrupoBorrador>();
+
+    for (const t of borradores) {
+      const maqIds = Array.from(
+        new Set(
+          getMaqIds(t.maquinariaPlanJson).filter((id) => idsInteresSet.has(id)),
+        ),
+      );
+      if (!maqIds.length) continue;
+
+      const key = t.grupoPlanId ? `G:${t.grupoPlanId}` : `T:${t.id}`;
+      const g = gruposBorrador.get(key);
+      if (!g) {
+        gruposBorrador.set(key, {
+          key,
+          conjuntoId: t.conjuntoId ?? null,
+          descripcion: t.descripcion ?? null,
+          tareaIdRepresentante: t.id,
+          maqIds,
+          usoIni: t.fechaInicio,
+          usoFin: t.fechaFin,
+        });
+      } else {
+        g.maqIds = Array.from(new Set(g.maqIds.concat(maqIds)));
+        if (+t.fechaInicio < +g.usoIni) g.usoIni = t.fechaInicio;
+        if (+t.fechaFin > +g.usoFin) g.usoFin = t.fechaFin;
+        if (t.id < g.tareaIdRepresentante) {
+          g.tareaIdRepresentante = t.id;
+          g.descripcion = t.descripcion ?? g.descripcion;
+          g.conjuntoId = t.conjuntoId ?? g.conjuntoId;
+        }
+      }
+    }
+
+    const ocupadasBorrador: Array<{
+      maquinariaId: number;
+      ini: Date;
+      fin: Date;
+      tareaId: number;
+      conjuntoId: string | null;
+      descripcion: string;
+      fuente: "BORRADOR_PREVENTIVA";
+    }> = [];
+
+    for (const g of gruposBorrador.values()) {
+      const rangoBorrador = this.calcularRangoReserva({
+        fechaInicioUso: g.usoIni,
+        fechaFinUso: g.usoFin,
+        diasEntregaRecogida,
+      });
+
+      if (
+        !overlaps(
+          iniReserva,
+          finReserva,
+          rangoBorrador.iniReserva,
+          rangoBorrador.finReserva,
+        )
+      ) {
+        continue;
+      }
+
+      const desc = (g.descripcion ?? "Preventiva en borrador").trim();
+      for (const maquinariaId of g.maqIds) {
+        ocupadasBorrador.push({
+          maquinariaId,
+          ini: rangoBorrador.iniReserva,
+          fin: rangoBorrador.finReserva,
+          tareaId: g.tareaIdRepresentante,
+          conjuntoId: g.conjuntoId ?? null,
+          descripcion: `[BORRADOR] ${desc}`,
+          fuente: "BORRADOR_PREVENTIVA",
+        });
+      }
+    }
+
+    const ocupadasDetalle = [
+      ...ocupadasReservadas.map((o) => ({
+        maquinariaId: o.maquinariaId,
+        ini: o.fechaInicio,
+        fin: o.fechaFin ?? OPEN_END_FAR_FUTURE,
+        tareaId: o.tareaId,
+        conjuntoId: o.tarea?.conjuntoId ?? null,
+        descripcion: o.tarea?.borrador
+          ? `[BORRADOR] ${(o.tarea?.descripcion ?? "Tarea en borrador").trim()}`
+          : o.tarea?.descripcion ?? null,
+        fuente: "RESERVA_PUBLICADA" as const,
+      })),
+      ...ocupadasBorrador,
+    ];
+
+    const ocupadasSet = new Set(ocupadasDetalle.map((o) => o.maquinariaId));
 
     const propiasDisponibles = propias
       .filter((m) => !ocupadasSet.has(m.id))
@@ -1587,15 +1757,6 @@ export class DefinicionTareaPreventivaService {
         origen: "EMPRESA" as const,
         empresaId: m.empresaId,
       }));
-
-    const ocupadasDetalle = ocupadas.map((o) => ({
-      maquinariaId: o.maquinariaId,
-      ini: o.fechaInicio,
-      fin: o.fechaFin ?? OPEN_END_FAR_FUTURE,
-      tareaId: o.tareaId,
-      conjuntoId: o.tarea?.conjuntoId ?? null,
-      descripcion: o.tarea?.descripcion ?? null,
-    }));
 
     return {
       ok: true,
@@ -1657,6 +1818,7 @@ export class DefinicionTareaPreventivaService {
       fechaInicio: Date;
       fechaFin: Date;
       maquinariaPlanJson: any;
+      descripcion?: string | null;
     }>;
     diasEntregaRecogida: Set<number>;
     excluirTareaIds?: number[];
@@ -1685,6 +1847,7 @@ export class DefinicionTareaPreventivaService {
       key: string; // "G:<grupoPlanId>" o "T:<tareaId>"
       tareaIds: number[];
       tareaIdRepresentante: number;
+      descripcionRepresentante: string | null;
       maqIds: number[];
       usoIni: Date;
       usoFin: Date;
@@ -1704,6 +1867,7 @@ export class DefinicionTareaPreventivaService {
           key,
           tareaIds: [t.id],
           tareaIdRepresentante: t.id,
+          descripcionRepresentante: t.descripcion ?? null,
           maqIds: Array.from(new Set(maqIds)),
           usoIni: t.fechaInicio,
           usoFin: t.fechaFin,
@@ -1713,7 +1877,10 @@ export class DefinicionTareaPreventivaService {
         g.maqIds = Array.from(new Set(g.maqIds.concat(maqIds)));
         if (+t.fechaInicio < +g.usoIni) g.usoIni = t.fechaInicio;
         if (+t.fechaFin > +g.usoFin) g.usoFin = t.fechaFin;
-        if (t.id < g.tareaIdRepresentante) g.tareaIdRepresentante = t.id;
+        if (t.id < g.tareaIdRepresentante) {
+          g.tareaIdRepresentante = t.id;
+          g.descripcionRepresentante = t.descripcion ?? g.descripcionRepresentante;
+        }
       }
     }
 
@@ -1731,6 +1898,7 @@ export class DefinicionTareaPreventivaService {
         key: g.key,
         tareaIds: g.tareaIds,
         tareaIdRepresentante: g.tareaIdRepresentante,
+        descripcion: g.descripcionRepresentante,
         maqIds: g.maqIds,
         entregaDia,
         recogidaDia,
@@ -1742,6 +1910,43 @@ export class DefinicionTareaPreventivaService {
     if (!plan.length) return { ok: true, creadas: 0 };
 
     // 3) Query única
+    const overlaps = (aIni: Date, aFin: Date, bIni: Date, bFin: Date) =>
+      aIni < bFin && bIni < aFin;
+
+    const conflictosInternos: Array<any> = [];
+    for (let i = 0; i < plan.length; i++) {
+      const a = plan[i];
+      for (let j = i + 1; j < plan.length; j++) {
+        const b = plan[j];
+        if (a.key === b.key) continue;
+        if (!overlaps(a.iniReserva, a.finReserva, b.iniReserva, b.finReserva))
+          continue;
+
+        const maqSetB = new Set<number>(b.maqIds);
+        for (const maquinariaId of a.maqIds) {
+          if (!maqSetB.has(maquinariaId)) continue;
+          conflictosInternos.push({
+            tareaId: a.tareaIdRepresentante,
+            maquinariaId,
+            rangoSolicitado: {
+              ini: a.iniReserva.toISOString(),
+              fin: a.finReserva.toISOString(),
+              entrega: sameDayKey(a.entregaDia),
+              recogida: sameDayKey(a.recogidaDia),
+            },
+            ocupadoPor: {
+              usoId: 0,
+              tareaId: b.tareaIdRepresentante,
+              conjuntoId,
+              descripcion: `[BORRADOR] ${(b.descripcion ?? "Preventiva en borrador").trim()}`,
+              ini: b.iniReserva.toISOString(),
+              fin: b.finReserva.toISOString(),
+            },
+          });
+        }
+      }
+    }
+
     const allMaqIds = Array.from(new Set(plan.flatMap((p) => p.maqIds)));
     const minIni = new Date(Math.min(...plan.map((p) => +p.iniReserva)));
     const maxFin = new Date(Math.max(...plan.map((p) => +p.finReserva)));
@@ -1769,15 +1974,13 @@ export class DefinicionTareaPreventivaService {
             descripcion: true,
             fechaInicio: true,
             fechaFin: true,
+            borrador: true,
           },
         },
       },
     });
 
     // 4) Validación exacta
-    const overlaps = (aIni: Date, aFin: Date, bIni: Date, bFin: Date) =>
-      aIni < bFin && bIni < aFin;
-
     const OPEN_END_FAR_FUTURE = new Date(2099, 11, 31, 23, 59, 59, 999);
 
     const byMaq = new Map<number, typeof conflictosDB>();
@@ -1787,7 +1990,7 @@ export class DefinicionTareaPreventivaService {
       byMaq.set(u.maquinariaId, arr);
     }
 
-    const conflictos: Array<any> = [];
+    const conflictos: Array<any> = [...conflictosInternos];
 
     for (const p of plan) {
       for (const maquinariaId of p.maqIds) {
@@ -1809,7 +2012,9 @@ export class DefinicionTareaPreventivaService {
                 usoId: u.id,
                 tareaId: u.tareaId,
                 conjuntoId: u.tarea?.conjuntoId ?? null,
-                descripcion: u.tarea?.descripcion ?? null,
+                descripcion: u.tarea?.borrador
+                  ? `[BORRADOR] ${(u.tarea?.descripcion ?? "Tarea en borrador").trim()}`
+                  : u.tarea?.descripcion ?? null,
                 ini: u.fechaInicio.toISOString(),
                 fin: (u.fechaFin ?? OPEN_END_FAR_FUTURE).toISOString(),
               },

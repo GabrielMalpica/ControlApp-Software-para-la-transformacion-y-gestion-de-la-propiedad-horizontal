@@ -10,6 +10,7 @@ import { z } from "zod";
 import { InventarioService } from "./InventarioServices";
 import { uploadEvidenciaToDrive } from "../utils/drive_evidencias";
 import fs from "fs";
+import { NotificacionService } from "./NotificacionService";
 
 /**
  * Supervisor Fase 1:
@@ -534,9 +535,11 @@ export class SupervisorService {
       where: { id: tareaId },
       select: {
         id: true,
+        descripcion: true,
         estado: true,
         evidencias: true,
         conjuntoId: true,
+        supervisorId: true,
         conjunto: { select: { nit: true, nombre: true } },
       },
     });
@@ -703,6 +706,20 @@ export class SupervisorService {
         },
       });
     });
+
+    try {
+      const notificaciones = new NotificacionService(this.prisma);
+      await notificaciones.notificarCierreTarea({
+        tareaId,
+        descripcionTarea: tarea.descripcion,
+        conjuntoId: tarea.conjuntoId,
+        actorId: this.supervisorId,
+        actorRol: "SUPERVISOR",
+        supervisorId: tarea.supervisorId,
+      });
+    } catch (e) {
+      console.error("No se pudo notificar cierre de tarea (supervisor):", e);
+    }
   }
 
   /**

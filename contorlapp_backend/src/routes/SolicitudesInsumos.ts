@@ -1,9 +1,12 @@
 // src/routes/solicitudesInsumos.ts
 import { Router } from "express";
 import { SolicitudInsumoController } from "../controller/SolicitudInsumoController";
+import { authRequired } from "../middlewares/auth.middleware";
 
 const router = Router();
 const controller = new SolicitudInsumoController();
+
+router.use(authRequired);
 
 router.post("/", controller.crear);
 router.get("/", controller.listar);
