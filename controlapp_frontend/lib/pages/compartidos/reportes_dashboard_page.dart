@@ -1666,7 +1666,13 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         .replaceAll(RegExp(r'[\s\-]+'), '_');
   }
 
-  bool _isDailyFrequencyV2(String? raw) => _frequencyKeyV2(raw) == 'DIARIA';
+  bool _isDailyFrequencyV2(String? raw) {
+    final key = _frequencyKeyV2(raw);
+    return key == 'DIARIA' ||
+        key == 'DIARIO' ||
+        key.startsWith('DIARIA_') ||
+        key.startsWith('DIARIO_');
+  }
 
   String _normalizeTaskGroupValueV2(String value) {
     return value
@@ -1872,30 +1878,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         return miniList(agg.values.toList(), max: max);
       }
 
-      pw.Widget tag(
-        String text, {
-        PdfColor? bg,
-        PdfColor? border,
-        PdfColor? fg,
-      }) {
-        return pw.Container(
-          padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-          decoration: pw.BoxDecoration(
-            color: bg ?? PdfColor.fromHex('#EFF6FF'),
-            borderRadius: pw.BorderRadius.circular(999),
-            border: pw.Border.all(color: border ?? PdfColor.fromHex('#BFDBFE')),
-          ),
-          child: pw.Text(
-            text,
-            style: pw.TextStyle(
-              fontSize: 7,
-              color: fg ?? PdfColor.fromHex('#1E3A8A'),
-              fontWeight: pw.FontWeight.bold,
-            ),
-          ),
-        );
-      }
-
       pw.Widget evidenceTile(pw.ImageProvider? img) {
         return pw.Container(
           width: 88,
@@ -1960,16 +1942,35 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             .toSet()
             .toList();
 
+        String? reemplazadaPorRef(TareaDetalleRow t) {
+          if (t.reemplazadaPorTareaId == null) return null;
+          final desc = (t.reemplazadaPorDescripcion ?? '').trim();
+          return desc.isNotEmpty
+              ? '#${t.reemplazadaPorTareaId} ($desc)'
+              : '#${t.reemplazadaPorTareaId}';
+        }
+
+        final reemplazaRefs = tasks
+            .expand(_replacementRefs)
+            .map((r) => r.trim())
+            .where((r) => r.isNotEmpty)
+            .toSet()
+            .toList();
+        final reemplazadaPorRefs = tasks
+            .map(reemplazadaPorRef)
+            .whereType<String>()
+            .map((r) => r.trim())
+            .where((r) => r.isNotEmpty)
+            .toSet()
+            .toList();
+        final tieneReemplazo = tasks.any((t) => t.esTareaReemplazo);
         final motivoNoComp = (principal.motivoNoCompletada ?? '').trim();
-        final refReemplazo = principal.reemplazadaPorTareaId != null
-            ? '#${principal.reemplazadaPorTareaId}${(principal.reemplazadaPorDescripcion ?? '').trim().isNotEmpty ? " (${principal.reemplazadaPorDescripcion})" : ""}'
-            : null;
+        final refReemplazo = reemplazadaPorRef(principal);
         final motivoReemplazo = _replacementInfoText(principal);
-        final reemplazoWarn = _replacementWarn(principal);
 
         final resumenTexto = uniqueDays >= totalDiasRango
-            ? 'Se ejecuto diariamente durante todo el periodo.'
-            : 'Se registraron $uniqueDays de $totalDiasRango dias del periodo.';
+            ? 'Esta tarea se hizo todos los dias del mes.'
+            : 'Esta tarea se hizo de forma diaria durante el mes ($uniqueDays de $totalDiasRango dias con registro).';
 
         final insumosTxt = resumenDiario
             ? mergedResourceList(tasks, (t) => t.insumos)
@@ -1981,209 +1982,175 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             ? mergedResourceList(tasks, (t) => t.herramientas)
             : miniList(principal.herramientas);
 
+        String safe(String? v) {
+          final txt = (v ?? '').trim();
+          return txt.isEmpty ? '-' : txt;
+        }
+
+        pw.Widget cell(String txt, {bool bold = false}) {
+          return pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+            child: pw.Text(
+              clipText(txt, max: 120),
+              style: pw.TextStyle(
+                fontSize: 7.5,
+                fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+              ),
+            ),
+          );
+        }
+
+        pw.TableRow kvRow({
+          required String k1,
+          required String v1,
+          required String k2,
+          required String v2,
+        }) {
+          return pw.TableRow(
+            children: [
+              cell(k1, bold: true),
+              cell(v1),
+              cell(k2, bold: true),
+              cell(v2),
+            ],
+          );
+        }
+
+        final reemplazaTxt = reemplazaRefs.isNotEmpty
+            ? reemplazaRefs.join(', ')
+            : (tieneReemplazo ? clipText(motivoReemplazo, max: 110) : '-');
+        final reemplazadaTxt = reemplazadaPorRefs.isNotEmpty
+            ? reemplazadaPorRefs.join(', ')
+            : (refReemplazo ?? '-');
+
         return pw.Container(
-          padding: const pw.EdgeInsets.all(10),
+          padding: const pw.EdgeInsets.all(8),
           decoration: pw.BoxDecoration(
             color: PdfColors.white,
             border: pw.Border.all(color: PdfColor.fromHex('#D1D5DB')),
-            borderRadius: pw.BorderRadius.circular(10),
+            borderRadius: pw.BorderRadius.circular(8),
           ),
           child: pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pw.Row(
-                children: [
-                  pw.Expanded(
-                    child: pw.Text(
-                      resumenDiario
-                          ? '${principal.tipo} | RESUMEN DIARIO'
-                          : '${principal.tipo} | ${principal.estado}',
-                      style: pw.TextStyle(
-                        fontSize: 10,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColor.fromHex('#1F3A5F'),
-                      ),
-                    ),
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 6,
+                ),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#F3F4F6'),
+                  borderRadius: pw.BorderRadius.circular(6),
+                ),
+                child: pw.Text(
+                  resumenDiario
+                      ? 'TAREA (RESUMEN DIARIO) - ${principal.tipo}'
+                      : 'TAREA - ${principal.tipo}',
+                  style: pw.TextStyle(
+                    fontSize: 9,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#111827'),
                   ),
-                  pw.Text(
-                    resumenDiario
-                        ? '${tasks.length} registros'
-                        : 'ID ${principal.id}',
-                    style: pw.TextStyle(
-                      fontSize: 8,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColor.fromHex('#111827'),
-                    ),
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 4),
-              pw.Text(
-                clipText(principal.descripcion, max: 190),
-                style: const pw.TextStyle(fontSize: 8),
-              ),
-              pw.SizedBox(height: 5),
-              pw.Wrap(
-                spacing: 5,
-                runSpacing: 5,
-                children: [
-                  tag('Frecuencia: ${frequencyLabel(principal.frecuencia)}'),
-                  if (resumenDiario)
-                    tag('Estados: ${clipText(estados.join(', '), max: 44)}')
-                  else
-                    tag('Estado: ${principal.estado}'),
-                  tag(
-                    'Tipo: ${principal.tipo}',
-                    bg: PdfColor.fromHex('#F5F3FF'),
-                    border: PdfColor.fromHex('#DDD6FE'),
-                    fg: PdfColor.fromHex('#5B21B6'),
-                  ),
-                ],
+                ),
               ),
               pw.SizedBox(height: 6),
-              if (resumenDiario)
-                pw.Text(
-                  'Periodo consolidado: ${dfShort.format(first.fechaInicio)} - ${dfShort.format(last.fechaFin)}',
-                  style: const pw.TextStyle(fontSize: 8),
-                )
-              else ...[
-                pw.Text(
-                  'Inicio: ${df.format(principal.fechaInicio)}',
-                  style: const pw.TextStyle(fontSize: 8),
-                ),
-                pw.Text(
-                  'Fin: ${df.format(principal.fechaFin)} | Duracion: ${principal.duracionMinutos} min',
-                  style: const pw.TextStyle(fontSize: 8),
-                ),
-              ],
-              if ((principal.ubicacion ?? '').trim().isNotEmpty)
-                pw.Text(
-                  'Ubicacion: ${clipText(principal.ubicacion ?? '', max: 80)}',
-                  style: const pw.TextStyle(fontSize: 8),
-                ),
-              if ((principal.elemento ?? '').trim().isNotEmpty)
-                pw.Text(
-                  'Elemento: ${clipText(principal.elemento ?? '', max: 80)}',
-                  style: const pw.TextStyle(fontSize: 8),
-                ),
-              if (supervisors.isNotEmpty)
-                pw.Text(
-                  'Supervisor(es): ${clipText(supervisors.join(', '), max: 100)}',
-                  style: const pw.TextStyle(fontSize: 8),
-                ),
-              if (operarios.isNotEmpty)
-                pw.Text(
-                  'Operario(s): ${clipText(operarios.join(', '), max: 120)}',
-                  style: const pw.TextStyle(fontSize: 8),
-                ),
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColor.fromHex('#D1D5DB')),
+                columnWidths: const {
+                  0: pw.FlexColumnWidth(1.1),
+                  1: pw.FlexColumnWidth(1.9),
+                  2: pw.FlexColumnWidth(1.1),
+                  3: pw.FlexColumnWidth(1.9),
+                },
+                children: [
+                  kvRow(
+                    k1: 'ID',
+                    v1: resumenDiario
+                        ? 'Multiple (${tasks.length})'
+                        : '${principal.id}',
+                    k2: 'Estado',
+                    v2: resumenDiario ? estados.join(', ') : principal.estado,
+                  ),
+                  kvRow(
+                    k1: 'Frecuencia',
+                    v1: frequencyLabel(principal.frecuencia),
+                    k2: 'Tipo',
+                    v2: principal.tipo,
+                  ),
+                  kvRow(
+                    k1: resumenDiario ? 'Periodo' : 'Inicio',
+                    v1: resumenDiario
+                        ? '${dfShort.format(first.fechaInicio)} - ${dfShort.format(last.fechaFin)}'
+                        : df.format(principal.fechaInicio),
+                    k2: resumenDiario ? 'Registros' : 'Fin',
+                    v2: resumenDiario
+                        ? '${tasks.length}'
+                        : '${df.format(principal.fechaFin)} (${principal.duracionMinutos} min)',
+                  ),
+                  kvRow(
+                    k1: 'Ubicacion',
+                    v1: safe(principal.ubicacion),
+                    k2: 'Elemento',
+                    v2: safe(principal.elemento),
+                  ),
+                  kvRow(
+                    k1: 'Supervisor',
+                    v1: supervisors.isEmpty ? '-' : supervisors.join(', '),
+                    k2: 'Operarios',
+                    v2: operarios.isEmpty ? '-' : operarios.join(', '),
+                  ),
+                  kvRow(
+                    k1: 'Insumos',
+                    v1: insumosTxt,
+                    k2: 'Maquinaria',
+                    v2: maquinariaTxt,
+                  ),
+                  kvRow(
+                    k1: 'Herramientas',
+                    v1: herramientasTxt,
+                    k2: 'Reemplaza',
+                    v2: reemplazaTxt,
+                  ),
+                  kvRow(
+                    k1: 'Reemplazada por',
+                    v1: reemplazadaTxt,
+                    k2: 'Evidencias',
+                    v2: '${evidenciaRaw.length}',
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 5),
+              pw.Text(
+                'Descripcion: ${clipText(principal.descripcion, max: 220)}',
+                style: const pw.TextStyle(fontSize: 7.5),
+              ),
               if (resumenDiario)
                 pw.Text(
                   resumenTexto,
                   style: pw.TextStyle(
-                    fontSize: 8,
-                    color: PdfColor.fromHex('#065F46'),
+                    fontSize: 7.5,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
-              if (principal.esTareaReemplazo)
-                pw.Container(
-                  margin: const pw.EdgeInsets.only(top: 4),
-                  padding: const pw.EdgeInsets.all(5),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex(
-                      reemplazoWarn ? '#FFF7ED' : '#ECFDF5',
-                    ),
-                    border: pw.Border.all(
-                      color: PdfColor.fromHex(
-                        reemplazoWarn ? '#FDBA74' : '#86EFAC',
-                      ),
-                    ),
-                    borderRadius: pw.BorderRadius.circular(4),
-                  ),
-                  child: pw.Text(
-                    clipText(motivoReemplazo, max: 180),
-                    style: pw.TextStyle(
-                      fontSize: 8,
-                      color: PdfColor.fromHex(
-                        reemplazoWarn ? '#9A3412' : '#166534',
-                      ),
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
+              if (motivoNoComp.isNotEmpty)
+                pw.Text(
+                  'Motivo no completada: ${clipText(motivoNoComp, max: 220)}',
+                  style: const pw.TextStyle(fontSize: 7.5),
                 ),
-              if (principal.noCompletadaPorReemplazo || motivoNoComp.isNotEmpty)
-                pw.Container(
-                  margin: const pw.EdgeInsets.only(top: 4),
-                  padding: const pw.EdgeInsets.all(5),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('#FEF2F2'),
-                    border: pw.Border.all(color: PdfColor.fromHex('#FCA5A5')),
-                    borderRadius: pw.BorderRadius.circular(4),
-                  ),
-                  child: pw.Text(
-                    clipText(
-                      motivoNoComp.isNotEmpty
-                          ? motivoNoComp
-                          : (refReemplazo != null
-                                ? 'No fue completada porque fue reemplazada por la correctiva $refReemplazo.'
-                                : 'No fue completada por reemplazo.'),
-                      max: 180,
-                    ),
-                    style: pw.TextStyle(
-                      fontSize: 8,
-                      color: PdfColor.fromHex('#991B1B'),
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ),
-              pw.SizedBox(height: 6),
-              pw.Text(
-                'Insumos: $insumosTxt',
-                style: const pw.TextStyle(fontSize: 8),
-              ),
-              pw.Text(
-                'Maquinaria: $maquinariaTxt',
-                style: const pw.TextStyle(fontSize: 8),
-              ),
-              pw.Text(
-                'Herramientas: $herramientasTxt',
-                style: const pw.TextStyle(fontSize: 8),
-              ),
-              pw.SizedBox(height: 6),
-              pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Expanded(
-                    child: pw.Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: evidenciaRaw.isEmpty
-                          ? [evidenceTile(null)]
-                          : evidenciaRaw
-                                .take(3)
-                                .map(
-                                  (raw) => evidenceTile(
-                                    evidenceImageByRaw[raw.trim()],
-                                  ),
-                                )
-                                .toList(),
-                    ),
-                  ),
-                  pw.SizedBox(width: 8),
-                  pw.Container(
-                    width: 95,
-                    padding: const pw.EdgeInsets.all(6),
-                    decoration: pw.BoxDecoration(
-                      color: PdfColor.fromHex('#F9FAFB'),
-                      border: pw.Border.all(color: PdfColor.fromHex('#E5E7EB')),
-                      borderRadius: pw.BorderRadius.circular(6),
-                    ),
-                    child: pw.Text(
-                      'Evidencias: ${evidenciaRaw.length}',
-                      style: const pw.TextStyle(fontSize: 8),
-                    ),
-                  ),
-                ],
+              pw.SizedBox(height: 5),
+              pw.Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: evidenciaRaw.isEmpty
+                    ? [evidenceTile(null)]
+                    : evidenciaRaw
+                          .take(3)
+                          .map(
+                            (raw) =>
+                                evidenceTile(evidenceImageByRaw[raw.trim()]),
+                          )
+                          .toList(),
               ),
             ],
           ),
@@ -2207,6 +2174,125 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
       );
 
+      int countEstado(String estado) =>
+          _tareasDetalle.where((t) => _estadoKey(t.estado) == estado).length;
+
+      final resumenConteos = <List<String>>[
+        ['Total tareas (registros)', '${_tareasDetalle.length}'],
+        ['Tareas visibles en PDF', '${items.length}'],
+        ['Asignadas', '${countEstado('ASIGNADA')}'],
+        ['En proceso', '${countEstado('EN_PROCESO')}'],
+        ['Completadas', '${countEstado('COMPLETADA')}'],
+        ['Aprobadas', '${countEstado('APROBADA')}'],
+        ['Pendientes aprobación', '${countEstado('PENDIENTE_APROBACION')}'],
+        ['No completadas', '${countEstado('NO_COMPLETADA')}'],
+        [
+          'Pendientes reprogramación',
+          '${countEstado('PENDIENTE_REPROGRAMACION')}',
+        ],
+        ['Rechazadas', '${countEstado('RECHAZADA')}'],
+        [
+          'Tareas que reemplazan',
+          '${_tareasDetalle.where((t) => t.esTareaReemplazo).length}',
+        ],
+        [
+          'Tareas reemplazadas',
+          '${_tareasDetalle.where((t) => t.noCompletadaPorReemplazo || t.reemplazadaPorTareaId != null).length}',
+        ],
+      ];
+
+      pw.TableRow resumenRow(String k, String v) {
+        return pw.TableRow(
+          children: [
+            pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(
+                horizontal: 6,
+                vertical: 5,
+              ),
+              child: pw.Text(
+                k,
+                style: pw.TextStyle(
+                  fontSize: 9,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ),
+            pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(
+                horizontal: 6,
+                vertical: 5,
+              ),
+              child: pw.Text(v, style: const pw.TextStyle(fontSize: 9)),
+            ),
+          ],
+        );
+      }
+
+      doc.addPage(
+        pw.Page(
+          pageTheme: pageTheme,
+          build: (_) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Container(
+                  width: double.infinity,
+                  padding: const pw.EdgeInsets.all(10),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColors.white,
+                    borderRadius: pw.BorderRadius.circular(8),
+                    border: pw.Border.all(color: PdfColor.fromHex('#D1D5DB')),
+                  ),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'INFORME DETALLADO DE TAREAS',
+                        style: pw.TextStyle(
+                          fontSize: 14,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColor.fromHex('#111827'),
+                        ),
+                      ),
+                      pw.SizedBox(height: 3),
+                      pw.Text(
+                        'Conjunto: $cliente | Rango: ${dfShort.format(_desde)} - ${dfShort.format(_hasta)}',
+                        style: const pw.TextStyle(fontSize: 9),
+                      ),
+                      pw.Text(
+                        'Resumen general del periodo',
+                        style: pw.TextStyle(
+                          fontSize: 9,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                pw.SizedBox(height: 10),
+                pw.Table(
+                  border: pw.TableBorder.all(
+                    color: PdfColor.fromHex('#D1D5DB'),
+                  ),
+                  columnWidths: const {
+                    0: pw.FlexColumnWidth(2.4),
+                    1: pw.FlexColumnWidth(1),
+                  },
+                  children: resumenConteos
+                      .map((r) => resumenRow(r[0], r[1]))
+                      .toList(),
+                ),
+                pw.SizedBox(height: 10),
+                pw.Text(
+                  'Las siguientes hojas muestran 2 tablitas por página (1 tablita = 1 tarea visible del informe detallado).',
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+
       for (var i = 0; i < pages.length; i++) {
         final pageItems = pages[i];
         doc.addPage(
@@ -2219,9 +2305,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                   pw.Container(
                     padding: const pw.EdgeInsets.all(10),
                     decoration: pw.BoxDecoration(
-                      color: PdfColor.fromHex('#EEF2FF'),
+                      color: PdfColors.white,
                       borderRadius: pw.BorderRadius.circular(8),
-                      border: pw.Border.all(color: PdfColor.fromHex('#C7D2FE')),
+                      border: pw.Border.all(color: PdfColor.fromHex('#D1D5DB')),
                     ),
                     child: pw.Column(
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -2234,12 +2320,12 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                                 style: pw.TextStyle(
                                   fontSize: 13,
                                   fontWeight: pw.FontWeight.bold,
-                                  color: PdfColor.fromHex('#312E81'),
+                                  color: PdfColor.fromHex('#111827'),
                                 ),
                               ),
                             ),
                             pw.Text(
-                              'Hoja ${i + 1}/${pages.length}',
+                              'Hoja tareas ${i + 1}/${pages.length}',
                               style: const pw.TextStyle(fontSize: 9),
                             ),
                           ],
