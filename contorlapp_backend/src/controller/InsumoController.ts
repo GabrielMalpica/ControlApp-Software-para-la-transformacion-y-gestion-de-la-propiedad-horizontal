@@ -5,7 +5,7 @@ import {
   FiltroInsumoDTO,
   insumoPublicSelect,
   toInsumoPublico,
-} from "../model/Insumo";
+} from "../model/Insumo_tmp";
 
 const EMPRESA_CORPORATIVA = "CORPORATIVO";
 

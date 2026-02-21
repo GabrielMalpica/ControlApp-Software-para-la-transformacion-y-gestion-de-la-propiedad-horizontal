@@ -9,24 +9,24 @@ import {
   usuarioPublicSelect,
   toUsuarioPublico,
   UsuarioPublico,
-} from "../model/Usuario";
+} from "../model/Usuario_tmp";
 
-import { CrearGerenteDTO } from "../model/Gerente";
+import { CrearGerenteDTO } from "../model/Gerente_tmp";
 import { CrearAdministradorDTO } from "../model/Administrador";
-import { CrearJefeOperacionesDTO } from "../model/JefeOperaciones";
-import { CrearSupervisorDTO } from "../model/Supervisor";
-import { CrearOperarioDTO, EditarOperarioDTO } from "../model/Operario";
+import { CrearJefeOperacionesDTO } from "../model/JefeOperaciones_tmp";
+import { CrearSupervisorDTO } from "../model/Supervisor_tmp";
+import { CrearOperarioDTO, EditarOperarioDTO } from "../model/Operario_tmp";
 
 import {
   conjuntoPublicSelect,
   CrearConjuntoDTO,
   EditarConjuntoDTO,
   toConjuntoPublico,
-} from "../model/Conjunto";
+} from "../model/Conjunto_tmp";
 
-import { CrearTareaDTO, EditarTareaDTO } from "../model/Tarea";
+import { CrearTareaDTO, EditarTareaDTO } from "../model/Tarea_tmp";
 
-import { CrearInsumoDTO, insumoPublicSelect } from "../model/Insumo";
+import { CrearInsumoDTO, insumoPublicSelect } from "../model/Insumo_tmp";
 
 import { z } from "zod";
 import {

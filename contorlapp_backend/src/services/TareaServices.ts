@@ -7,7 +7,7 @@ import {
   FiltroTareaDTO,
   tareaPublicSelect,
   toTareaPublica,
-} from "../model/Tarea";
+} from "../model/Tarea_tmp";
 
 const EvidenciaDTO = z.object({ imagen: z.string().min(1) });
 
