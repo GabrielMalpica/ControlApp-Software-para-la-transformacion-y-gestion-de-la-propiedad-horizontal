@@ -4,7 +4,10 @@
   "main": "index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn src/index.ts",
-    "test-prisma": "ts-node test.ts"
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "start": "prisma migrate deploy && node dist/index.js",
+    "test-prisma": "ts-node test.ts",
+    "postinstall": "prisma generate"
   },
   "keywords": [],
   "author": "",
