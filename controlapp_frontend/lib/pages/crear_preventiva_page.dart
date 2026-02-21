@@ -1617,19 +1617,49 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     ),
                     const SizedBox(height: 10),
                     if (_dispMaq != null) ...[
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
-                        child: Text(
-                          '✅ Empresa: ${_dispMaq!.empresaDisponibles.length} | '
-                          '✅ Conjunto: ${_dispMaq!.propiasDisponibles.length} | '
-                          '⛔ Ocupadas: ${_dispMaq!.ocupadas.length}',
-                          style: const TextStyle(fontWeight: FontWeight.w800),
-                        ),
+                      Builder(
+                        builder: (_) {
+                          final ocupadasBorrador = _dispMaq!.ocupadas
+                              .where(
+                                (o) =>
+                                    (o.fuente ?? '').trim().toUpperCase() ==
+                                    'BORRADOR_PREVENTIVA',
+                              )
+                              .length;
+
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '✅ Empresa: ${_dispMaq!.empresaDisponibles.length} | '
+                                  '✅ Conjunto: ${_dispMaq!.propiasDisponibles.length} | '
+                                  '⛔ Ocupadas: ${_dispMaq!.ocupadas.length}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                if (ocupadasBorrador > 0) ...[
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Aviso: $ocupadasBorrador ocupación(es) vienen de preventivas en borrador. '
+                                    'Si se solapan, el cronograma no podrá publicarse.',
+                                    style: TextStyle(
+                                      color: Colors.orange.shade900,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 10),
                     ],
@@ -1880,6 +1910,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     border: const OutlineInputBorder(),
                     helperText: ocupada == null
                         ? null
+                        : (ocupada.fuente ?? '').trim().toUpperCase() ==
+                              'BORRADOR_PREVENTIVA'
+                        ? '⛔ Ocupada por otra preventiva en borrador: ${ocupada.descripcion ?? ''}'
+                              .trim()
                         : '⛔ Ocupada: ${ocupada.descripcion ?? ''}'.trim(),
                   ),
                   value: row.maquinariaId,

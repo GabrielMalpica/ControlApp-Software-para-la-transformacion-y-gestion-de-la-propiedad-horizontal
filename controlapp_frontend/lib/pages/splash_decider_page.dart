@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
+import 'package:flutter_application_1/service/notificaciones_center.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 
 class SplashDeciderPage extends StatefulWidget {
@@ -29,7 +30,8 @@ class _SplashDeciderPageState extends State<SplashDeciderPage> {
     }
 
     try {
-      final me = await _authApi.me(); // valida token con backend
+      final me = await _authApi.me();
+      await NotificacionesCenter.instance.start();
       if (!mounted) return;
 
       switch (me.rol) {
@@ -52,7 +54,7 @@ class _SplashDeciderPageState extends State<SplashDeciderPage> {
           Navigator.pushReplacementNamed(context, '/login');
       }
     } catch (_) {
-      // token inválido/expirado
+      NotificacionesCenter.instance.stop();
       await _session.clear();
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/login');

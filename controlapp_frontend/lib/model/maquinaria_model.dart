@@ -188,6 +188,7 @@ class MaquinariaOcupadaItem {
   final int? tareaId;
   final String? conjuntoId;
   final String? descripcion;
+  final String? fuente; // RESERVA_PUBLICADA | BORRADOR_PREVENTIVA
 
   MaquinariaOcupadaItem({
     required this.maquinariaId,
@@ -196,6 +197,7 @@ class MaquinariaOcupadaItem {
     this.tareaId,
     this.conjuntoId,
     this.descripcion,
+    this.fuente,
   });
 
   factory MaquinariaOcupadaItem.fromJson(Map<String, dynamic> json) {
@@ -206,6 +208,7 @@ class MaquinariaOcupadaItem {
       tareaId: (json['tareaId'] as num?)?.toInt(),
       conjuntoId: json['conjuntoId']?.toString(),
       descripcion: json['descripcion']?.toString(),
+      fuente: json['fuente']?.toString(),
     );
   }
 }

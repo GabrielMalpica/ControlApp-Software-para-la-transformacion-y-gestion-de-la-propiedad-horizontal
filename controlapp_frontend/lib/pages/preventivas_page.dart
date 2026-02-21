@@ -192,8 +192,27 @@ class _PreventivasPageState extends State<PreventivasPage> {
 
   Future<void> _generarCronogramaBorradorYVer() async {
     final ahora = DateTime.now();
-    final anio = ahora.year;
-    final mes = ahora.month;
+    int anio = ahora.year;
+    int mes = ahora.month;
+
+    final hoy = DateTime(ahora.year, ahora.month, ahora.day);
+    final ultimoDiaMes = DateTime(ahora.year, ahora.month + 1, 0);
+    final cierreMes = DateTime(
+      ultimoDiaMes.year,
+      ultimoDiaMes.month,
+      ultimoDiaMes.day,
+    );
+    final diasRestantes = cierreMes.difference(hoy).inDays;
+
+    // En la última semana del mes, prepara por defecto el periodo siguiente.
+    if (diasRestantes <= 7) {
+      if (mes == 12) {
+        mes = 1;
+        anio += 1;
+      } else {
+        mes += 1;
+      }
+    }
 
     setState(() => _generando = true);
     try {

@@ -553,8 +553,12 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       add('https://drive.google.com/uc?export=download&id=$driveId');
       add('https://lh3.googleusercontent.com/d/$driveId=w2000');
       add('https://lh3.googleusercontent.com/d/$driveId=s2000');
-      add('https://drive.usercontent.google.com/download?id=$driveId&export=view');
-      add('https://drive.usercontent.google.com/download?id=$driveId&export=download');
+      add(
+        'https://drive.usercontent.google.com/download?id=$driveId&export=view',
+      );
+      add(
+        'https://drive.usercontent.google.com/download?id=$driveId&export=download',
+      );
     }
 
     return out;
@@ -601,6 +605,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     return id;
   }
 
+  // ignore: unused_element
   Future<void> _generarInformeGestionPdf() async {
     final k = _kpis;
     final s = _serie;
@@ -1212,6 +1217,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
 
   // ======================= PDF DETALLADO (tu versión) =======================
 
+  // ignore: unused_element
   Future<void> _generarInformeDetalladoPdf() async {
     if (_tareasDetalle.isEmpty) return;
 
@@ -1430,6 +1436,873 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       await downloadPdfWeb(bytes, filename);
     } else {
       await Printing.layoutPdf(name: filename, onLayout: (_) async => bytes);
+    }
+  }
+
+  Future<void> _generarInformeGestionPdfV2() async {
+    if (_kpis == null) return;
+
+    setState(() => _generandoPdf = true);
+
+    try {
+      final charts = await _captureChartsForPdf();
+
+      final fontRegular = pw.Font.ttf(
+        await rootBundle.load('assets/fonts/Roboto-Regular.ttf'),
+      );
+      final fontBold = pw.Font.ttf(
+        await rootBundle.load('assets/fonts/Roboto-Bold.ttf'),
+      );
+
+      final doc = pw.Document();
+      final rangoFmt = DateFormat('dd/MM/yyyy', 'es');
+      final mesNombre = DateFormat('MMMM', 'es').format(_desde);
+      final anio = _desde.year.toString();
+      final cliente = _conjuntoNombreForReport();
+
+      pw.Widget chartSection({
+        required String title,
+        required Uint8List imageBytes,
+        required String analysis,
+        required String actionPlan,
+      }) {
+        return pw.Container(
+          margin: const pw.EdgeInsets.only(bottom: 10),
+          padding: const pw.EdgeInsets.all(10),
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: PdfColors.grey400),
+            borderRadius: pw.BorderRadius.circular(8),
+          ),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                title,
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              pw.Container(
+                height: 200,
+                alignment: pw.Alignment.center,
+                child: pw.Image(
+                  pw.MemoryImage(imageBytes),
+                  fit: pw.BoxFit.contain,
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              pw.Text(
+                'Analisis',
+                style: pw.TextStyle(
+                  fontSize: 10,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.Text(
+                analysis.trim().isEmpty ? '-' : analysis,
+                style: const pw.TextStyle(fontSize: 9),
+              ),
+              pw.SizedBox(height: 6),
+              pw.Text(
+                'Plan de accion',
+                style: pw.TextStyle(
+                  fontSize: 10,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.Text(
+                actionPlan.trim().isEmpty ? '-' : actionPlan,
+                style: const pw.TextStyle(fontSize: 9),
+              ),
+            ],
+          ),
+        );
+      }
+
+      doc.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.fromLTRB(24, 24, 24, 24),
+          theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
+          header: (ctx) {
+            return pw.Container(
+              margin: const pw.EdgeInsets.only(bottom: 10),
+              child: pw.Row(
+                children: [
+                  pw.Text(
+                    'INFORME DE GESTION',
+                    style: pw.TextStyle(
+                      fontSize: 12,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColor.fromHex('#1F3A5F'),
+                    ),
+                  ),
+                  pw.Spacer(),
+                  pw.Text(
+                    '${rangoFmt.format(_desde)} - ${rangoFmt.format(_hasta)}',
+                    style: const pw.TextStyle(fontSize: 9),
+                  ),
+                ],
+              ),
+            );
+          },
+          footer: (ctx) {
+            return pw.Container(
+              margin: const pw.EdgeInsets.only(top: 10),
+              child: pw.Row(
+                children: [
+                  pw.Text(
+                    'Conjunto: $cliente',
+                    style: const pw.TextStyle(fontSize: 8),
+                  ),
+                  pw.Spacer(),
+                  pw.Text(
+                    'Pagina ${ctx.pageNumber} de ${ctx.pagesCount}',
+                    style: const pw.TextStyle(fontSize: 8),
+                  ),
+                ],
+              ),
+            );
+          },
+          build: (_) {
+            return [
+              pw.Text(
+                'Periodo: ${mesNombre.toUpperCase()} $anio',
+                style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'Cliente/Conjunto: $cliente',
+                style: const pw.TextStyle(fontSize: 9),
+              ),
+              pw.SizedBox(height: 6),
+              pw.Container(
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  color: PdfColor.fromHex('#EFF6FF'),
+                  borderRadius: pw.BorderRadius.circular(8),
+                  border: pw.Border.all(color: PdfColor.fromHex('#93C5FD')),
+                ),
+                child: pw.Text(
+                  'Este informe contiene unicamente graficas de gestion y sus analisis predefinidos.',
+                  style: const pw.TextStyle(fontSize: 9),
+                ),
+              ),
+              pw.SizedBox(height: 10),
+              chartSection(
+                title: '1. Preventivas vs Correctivas',
+                imageBytes: charts['tipos']!,
+                analysis: _a11Ctrl.text,
+                actionPlan: _p11Ctrl.text,
+              ),
+              chartSection(
+                title: '2. Distribucion por estado',
+                imageBytes: charts['estados']!,
+                analysis: _a12Ctrl.text,
+                actionPlan: _p12Ctrl.text,
+              ),
+              chartSection(
+                title: '3. Tareas por dia (tendencia)',
+                imageBytes: charts['serie']!,
+                analysis: _a13Ctrl.text,
+                actionPlan: _p13Ctrl.text,
+              ),
+              chartSection(
+                title: '4. Uso de insumos',
+                imageBytes: charts['insumos']!,
+                analysis: _a14Ctrl.text,
+                actionPlan: _p14Ctrl.text,
+              ),
+            ];
+          },
+        ),
+      );
+
+      final bytes = await doc.save();
+      final filename =
+          'Informe_de_gestion_${_safeFile(cliente)}_${_safeFile(mesNombre)}_$anio.pdf';
+
+      if (kIsWeb) {
+        await downloadPdfWeb(bytes, filename);
+      } else {
+        await Printing.layoutPdf(name: filename, onLayout: (_) async => bytes);
+      }
+    } catch (e, st) {
+      debugPrint('Error PDF Gestion V2: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error generando PDF: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _generandoPdf = false;
+          _captureMode = false;
+        });
+      }
+    }
+  }
+
+  String _frequencyKeyV2(String? raw) {
+    return (raw ?? '')
+        .trim()
+        .toUpperCase()
+        .replaceAll('Á', 'A')
+        .replaceAll('É', 'E')
+        .replaceAll('Í', 'I')
+        .replaceAll('Ó', 'O')
+        .replaceAll('Ú', 'U')
+        .replaceAll('Ñ', 'N')
+        .replaceAll(RegExp(r'[\s\-]+'), '_');
+  }
+
+  bool _isDailyFrequencyV2(String? raw) => _frequencyKeyV2(raw) == 'DIARIA';
+
+  String _normalizeTaskGroupValueV2(String value) {
+    return value
+        .trim()
+        .toUpperCase()
+        .replaceAll('Á', 'A')
+        .replaceAll('É', 'E')
+        .replaceAll('Í', 'I')
+        .replaceAll('Ó', 'O')
+        .replaceAll('Ú', 'U')
+        .replaceAll('Ñ', 'N')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'[^A-Z0-9 ]'), '');
+  }
+
+  List<Map<String, dynamic>> _buildDetallePdfItemsV2() {
+    final ordered = [..._tareasDetalle]
+      ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+
+    final dailyBuckets = <String, List<TareaDetalleRow>>{};
+    final items = <Map<String, dynamic>>[];
+
+    for (final t in ordered) {
+      if (!_isDailyFrequencyV2(t.frecuencia)) {
+        items.add({
+          'esResumenDiario': false,
+          'principal': t,
+          'tareas': <TareaDetalleRow>[t],
+          'inicio': t.fechaInicio,
+        });
+        continue;
+      }
+
+      final key = [
+        _normalizeTaskGroupValueV2(t.tipo),
+        _normalizeTaskGroupValueV2(t.descripcion),
+        _normalizeTaskGroupValueV2(t.ubicacion ?? ''),
+        _normalizeTaskGroupValueV2(t.elemento ?? ''),
+      ].join('|');
+
+      dailyBuckets.putIfAbsent(key, () => <TareaDetalleRow>[]).add(t);
+    }
+
+    for (final bucket in dailyBuckets.values) {
+      bucket.sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+      if (bucket.length == 1) {
+        final only = bucket.first;
+        items.add({
+          'esResumenDiario': false,
+          'principal': only,
+          'tareas': <TareaDetalleRow>[only],
+          'inicio': only.fechaInicio,
+        });
+        continue;
+      }
+
+      final principal = bucket.first;
+      items.add({
+        'esResumenDiario': true,
+        'principal': principal,
+        'tareas': bucket,
+        'inicio': principal.fechaInicio,
+      });
+    }
+
+    items.sort(
+      (a, b) => (a['inicio'] as DateTime).compareTo(b['inicio'] as DateTime),
+    );
+    return items;
+  }
+
+  Future<void> _generarInformeDetalladoPdfV2() async {
+    if (_tareasDetalle.isEmpty) return;
+
+    setState(() => _generandoPdf = true);
+
+    try {
+      final fontRegular = pw.Font.ttf(
+        await rootBundle.load('assets/fonts/Roboto-Regular.ttf'),
+      );
+      final fontBold = pw.Font.ttf(
+        await rootBundle.load('assets/fonts/Roboto-Bold.ttf'),
+      );
+
+      final doc = pw.Document();
+      final df = DateFormat('dd/MM/yyyy HH:mm', 'es');
+      final dfShort = DateFormat('dd/MM/yyyy', 'es');
+      final mes = DateFormat('MMMM', 'es').format(_desde);
+      final anio = DateFormat('yyyy', 'es').format(_desde);
+      final cliente = _conjuntoNombreForReport();
+
+      final items = _buildDetallePdfItemsV2();
+      if (items.isEmpty) return;
+
+      final totalDiasRango =
+          DateTime(
+            _hasta.year,
+            _hasta.month,
+            _hasta.day,
+          ).difference(DateTime(_desde.year, _desde.month, _desde.day)).inDays +
+          1;
+
+      final imageCache = <String, pw.ImageProvider>{};
+      final evidenceImageByRaw = <String, pw.ImageProvider?>{};
+
+      Future<pw.ImageProvider?> loadEvidenceImage(String raw) async {
+        final candidates = _evidenceUrlCandidates(raw);
+        for (final u in candidates) {
+          if (imageCache.containsKey(u)) return imageCache[u];
+          try {
+            final img = await networkImage(u);
+            imageCache[u] = img;
+            return img;
+          } catch (_) {
+            // intenta siguiente candidato
+          }
+        }
+        return null;
+      }
+
+      final raws = items
+          .expand((item) => (item['tareas'] as List<TareaDetalleRow>))
+          .expand((t) => t.evidencias.take(4))
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet();
+      for (final raw in raws) {
+        evidenceImageByRaw[raw] = await loadEvidenceImage(raw);
+      }
+
+      String clipText(String value, {int max = 180}) {
+        final v = value.trim();
+        if (v.length <= max) return v;
+        return '${v.substring(0, max).trim()}...';
+      }
+
+      String frequencyLabel(String? raw) {
+        switch (_frequencyKeyV2(raw)) {
+          case 'DIARIA':
+            return 'DIARIA';
+          case 'SEMANAL':
+            return 'SEMANAL';
+          case 'QUINCENAL':
+            return 'QUINCENAL';
+          case 'MENSUAL':
+            return 'MENSUAL';
+          default:
+            return (raw ?? '-').trim().isEmpty ? '-' : (raw ?? '-').trim();
+        }
+      }
+
+      double toDouble(dynamic v) {
+        if (v == null) return 0;
+        if (v is num) return v.toDouble();
+        return double.tryParse('$v') ?? 0;
+      }
+
+      String miniList(List<Map<String, dynamic>> rows, {int max = 4}) {
+        if (rows.isEmpty) return 'Sin datos';
+        return rows
+            .take(max)
+            .map((m) {
+              final nombre = (m['nombre'] ?? '-').toString().trim();
+              final cantidad = toDouble(m['cantidad']);
+              final unidad = (m['unidad'] ?? '').toString().trim();
+              final qty = cantidad > 0
+                  ? (cantidad % 1 == 0
+                        ? cantidad.toStringAsFixed(0)
+                        : cantidad.toStringAsFixed(2))
+                  : '';
+              final extra = [
+                qty,
+                unidad,
+              ].where((x) => x.trim().isNotEmpty).join(' ');
+              return extra.isEmpty ? nombre : '$nombre ($extra)';
+            })
+            .join(' | ');
+      }
+
+      String mergedResourceList(
+        List<TareaDetalleRow> tasks,
+        List<Map<String, dynamic>> Function(TareaDetalleRow) selector, {
+        int max = 4,
+      }) {
+        final agg = <String, Map<String, dynamic>>{};
+        for (final t in tasks) {
+          for (final r in selector(t)) {
+            final nombre = (r['nombre'] ?? '-').toString().trim();
+            final unidad = (r['unidad'] ?? '').toString().trim();
+            final key = '${nombre.toUpperCase()}|${unidad.toUpperCase()}';
+            final slot = agg.putIfAbsent(
+              key,
+              () => <String, dynamic>{
+                'nombre': nombre,
+                'unidad': unidad,
+                'cantidad': 0.0,
+              },
+            );
+            slot['cantidad'] =
+                (slot['cantidad'] as double) + toDouble(r['cantidad']);
+          }
+        }
+        return miniList(agg.values.toList(), max: max);
+      }
+
+      pw.Widget tag(
+        String text, {
+        PdfColor? bg,
+        PdfColor? border,
+        PdfColor? fg,
+      }) {
+        return pw.Container(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+          decoration: pw.BoxDecoration(
+            color: bg ?? PdfColor.fromHex('#EFF6FF'),
+            borderRadius: pw.BorderRadius.circular(999),
+            border: pw.Border.all(color: border ?? PdfColor.fromHex('#BFDBFE')),
+          ),
+          child: pw.Text(
+            text,
+            style: pw.TextStyle(
+              fontSize: 7,
+              color: fg ?? PdfColor.fromHex('#1E3A8A'),
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+        );
+      }
+
+      pw.Widget evidenceTile(pw.ImageProvider? img) {
+        return pw.Container(
+          width: 88,
+          height: 62,
+          decoration: pw.BoxDecoration(
+            border: pw.Border.all(color: PdfColors.grey400),
+            borderRadius: pw.BorderRadius.circular(5),
+          ),
+          child: img == null
+              ? pw.Center(
+                  child: pw.Text(
+                    'Sin imagen',
+                    style: const pw.TextStyle(fontSize: 7),
+                  ),
+                )
+              : pw.ClipRRect(
+                  horizontalRadius: 5,
+                  verticalRadius: 5,
+                  child: pw.Image(img, fit: pw.BoxFit.cover),
+                ),
+        );
+      }
+
+      pw.Widget tareaCard(Map<String, dynamic> item) {
+        final resumenDiario = item['esResumenDiario'] == true;
+        final principal = item['principal'] as TareaDetalleRow;
+        final tasks = (item['tareas'] as List<TareaDetalleRow>)
+          ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+
+        final first = tasks.first;
+        final last = tasks.last;
+        final uniqueDays = tasks
+            .map(
+              (t) => DateTime(
+                t.fechaInicio.year,
+                t.fechaInicio.month,
+                t.fechaInicio.day,
+              ).millisecondsSinceEpoch,
+            )
+            .toSet()
+            .length;
+        final supervisors = tasks
+            .map((t) => (t.supervisor ?? '').trim())
+            .where((s) => s.isNotEmpty)
+            .toSet()
+            .toList();
+        final operarios = tasks
+            .expand((t) => t.operarios)
+            .map((o) => o.trim())
+            .where((o) => o.isNotEmpty)
+            .toSet()
+            .toList();
+        final estados = tasks
+            .map((t) => t.estado.trim())
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList();
+        final evidenciaRaw = tasks
+            .expand((t) => t.evidencias)
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList();
+
+        final motivoNoComp = (principal.motivoNoCompletada ?? '').trim();
+        final refReemplazo = principal.reemplazadaPorTareaId != null
+            ? '#${principal.reemplazadaPorTareaId}${(principal.reemplazadaPorDescripcion ?? '').trim().isNotEmpty ? " (${principal.reemplazadaPorDescripcion})" : ""}'
+            : null;
+        final motivoReemplazo = _replacementInfoText(principal);
+        final reemplazoWarn = _replacementWarn(principal);
+
+        final resumenTexto = uniqueDays >= totalDiasRango
+            ? 'Se ejecuto diariamente durante todo el periodo.'
+            : 'Se registraron $uniqueDays de $totalDiasRango dias del periodo.';
+
+        final insumosTxt = resumenDiario
+            ? mergedResourceList(tasks, (t) => t.insumos)
+            : miniList(principal.insumos);
+        final maquinariaTxt = resumenDiario
+            ? mergedResourceList(tasks, (t) => t.maquinaria)
+            : miniList(principal.maquinaria);
+        final herramientasTxt = resumenDiario
+            ? mergedResourceList(tasks, (t) => t.herramientas)
+            : miniList(principal.herramientas);
+
+        return pw.Container(
+          padding: const pw.EdgeInsets.all(10),
+          decoration: pw.BoxDecoration(
+            color: PdfColors.white,
+            border: pw.Border.all(color: PdfColor.fromHex('#D1D5DB')),
+            borderRadius: pw.BorderRadius.circular(10),
+          ),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                children: [
+                  pw.Expanded(
+                    child: pw.Text(
+                      resumenDiario
+                          ? '${principal.tipo} | RESUMEN DIARIO'
+                          : '${principal.tipo} | ${principal.estado}',
+                      style: pw.TextStyle(
+                        fontSize: 10,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColor.fromHex('#1F3A5F'),
+                      ),
+                    ),
+                  ),
+                  pw.Text(
+                    resumenDiario
+                        ? '${tasks.length} registros'
+                        : 'ID ${principal.id}',
+                    style: pw.TextStyle(
+                      fontSize: 8,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColor.fromHex('#111827'),
+                    ),
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                clipText(principal.descripcion, max: 190),
+                style: const pw.TextStyle(fontSize: 8),
+              ),
+              pw.SizedBox(height: 5),
+              pw.Wrap(
+                spacing: 5,
+                runSpacing: 5,
+                children: [
+                  tag('Frecuencia: ${frequencyLabel(principal.frecuencia)}'),
+                  if (resumenDiario)
+                    tag('Estados: ${clipText(estados.join(', '), max: 44)}')
+                  else
+                    tag('Estado: ${principal.estado}'),
+                  tag(
+                    'Tipo: ${principal.tipo}',
+                    bg: PdfColor.fromHex('#F5F3FF'),
+                    border: PdfColor.fromHex('#DDD6FE'),
+                    fg: PdfColor.fromHex('#5B21B6'),
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 6),
+              if (resumenDiario)
+                pw.Text(
+                  'Periodo consolidado: ${dfShort.format(first.fechaInicio)} - ${dfShort.format(last.fechaFin)}',
+                  style: const pw.TextStyle(fontSize: 8),
+                )
+              else ...[
+                pw.Text(
+                  'Inicio: ${df.format(principal.fechaInicio)}',
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+                pw.Text(
+                  'Fin: ${df.format(principal.fechaFin)} | Duracion: ${principal.duracionMinutos} min',
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+              ],
+              if ((principal.ubicacion ?? '').trim().isNotEmpty)
+                pw.Text(
+                  'Ubicacion: ${clipText(principal.ubicacion ?? '', max: 80)}',
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+              if ((principal.elemento ?? '').trim().isNotEmpty)
+                pw.Text(
+                  'Elemento: ${clipText(principal.elemento ?? '', max: 80)}',
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+              if (supervisors.isNotEmpty)
+                pw.Text(
+                  'Supervisor(es): ${clipText(supervisors.join(', '), max: 100)}',
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+              if (operarios.isNotEmpty)
+                pw.Text(
+                  'Operario(s): ${clipText(operarios.join(', '), max: 120)}',
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+              if (resumenDiario)
+                pw.Text(
+                  resumenTexto,
+                  style: pw.TextStyle(
+                    fontSize: 8,
+                    color: PdfColor.fromHex('#065F46'),
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              if (principal.esTareaReemplazo)
+                pw.Container(
+                  margin: const pw.EdgeInsets.only(top: 4),
+                  padding: const pw.EdgeInsets.all(5),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex(
+                      reemplazoWarn ? '#FFF7ED' : '#ECFDF5',
+                    ),
+                    border: pw.Border.all(
+                      color: PdfColor.fromHex(
+                        reemplazoWarn ? '#FDBA74' : '#86EFAC',
+                      ),
+                    ),
+                    borderRadius: pw.BorderRadius.circular(4),
+                  ),
+                  child: pw.Text(
+                    clipText(motivoReemplazo, max: 180),
+                    style: pw.TextStyle(
+                      fontSize: 8,
+                      color: PdfColor.fromHex(
+                        reemplazoWarn ? '#9A3412' : '#166534',
+                      ),
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+              if (principal.noCompletadaPorReemplazo || motivoNoComp.isNotEmpty)
+                pw.Container(
+                  margin: const pw.EdgeInsets.only(top: 4),
+                  padding: const pw.EdgeInsets.all(5),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex('#FEF2F2'),
+                    border: pw.Border.all(color: PdfColor.fromHex('#FCA5A5')),
+                    borderRadius: pw.BorderRadius.circular(4),
+                  ),
+                  child: pw.Text(
+                    clipText(
+                      motivoNoComp.isNotEmpty
+                          ? motivoNoComp
+                          : (refReemplazo != null
+                                ? 'No fue completada porque fue reemplazada por la correctiva $refReemplazo.'
+                                : 'No fue completada por reemplazo.'),
+                      max: 180,
+                    ),
+                    style: pw.TextStyle(
+                      fontSize: 8,
+                      color: PdfColor.fromHex('#991B1B'),
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+              pw.SizedBox(height: 6),
+              pw.Text(
+                'Insumos: $insumosTxt',
+                style: const pw.TextStyle(fontSize: 8),
+              ),
+              pw.Text(
+                'Maquinaria: $maquinariaTxt',
+                style: const pw.TextStyle(fontSize: 8),
+              ),
+              pw.Text(
+                'Herramientas: $herramientasTxt',
+                style: const pw.TextStyle(fontSize: 8),
+              ),
+              pw.SizedBox(height: 6),
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    child: pw.Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: evidenciaRaw.isEmpty
+                          ? [evidenceTile(null)]
+                          : evidenciaRaw
+                                .take(3)
+                                .map(
+                                  (raw) => evidenceTile(
+                                    evidenceImageByRaw[raw.trim()],
+                                  ),
+                                )
+                                .toList(),
+                    ),
+                  ),
+                  pw.SizedBox(width: 8),
+                  pw.Container(
+                    width: 95,
+                    padding: const pw.EdgeInsets.all(6),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColor.fromHex('#F9FAFB'),
+                      border: pw.Border.all(color: PdfColor.fromHex('#E5E7EB')),
+                      borderRadius: pw.BorderRadius.circular(6),
+                    ),
+                    child: pw.Text(
+                      'Evidencias: ${evidenciaRaw.length}',
+                      style: const pw.TextStyle(fontSize: 8),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      }
+
+      List<List<Map<String, dynamic>>> chunkedItems(
+        List<Map<String, dynamic>> source,
+      ) {
+        final out = <List<Map<String, dynamic>>>[];
+        for (var i = 0; i < source.length; i += 2) {
+          out.add(source.sublist(i, math.min(i + 2, source.length)));
+        }
+        return out;
+      }
+
+      final pages = chunkedItems(items);
+      final pageTheme = pw.PageTheme(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(18),
+        theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
+      );
+
+      for (var i = 0; i < pages.length; i++) {
+        final pageItems = pages[i];
+        doc.addPage(
+          pw.Page(
+            pageTheme: pageTheme,
+            build: (_) {
+              return pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(10),
+                    decoration: pw.BoxDecoration(
+                      color: PdfColor.fromHex('#EEF2FF'),
+                      borderRadius: pw.BorderRadius.circular(8),
+                      border: pw.Border.all(color: PdfColor.fromHex('#C7D2FE')),
+                    ),
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Row(
+                          children: [
+                            pw.Expanded(
+                              child: pw.Text(
+                                'INFORME DETALLADO DE TAREAS',
+                                style: pw.TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: pw.FontWeight.bold,
+                                  color: PdfColor.fromHex('#312E81'),
+                                ),
+                              ),
+                            ),
+                            pw.Text(
+                              'Hoja ${i + 1}/${pages.length}',
+                              style: const pw.TextStyle(fontSize: 9),
+                            ),
+                          ],
+                        ),
+                        pw.SizedBox(height: 3),
+                        pw.Text(
+                          'Conjunto: $cliente | Rango: ${dfShort.format(_desde)} - ${dfShort.format(_hasta)}',
+                          style: const pw.TextStyle(fontSize: 8),
+                        ),
+                        pw.Text(
+                          'Tareas visibles: ${items.length} (diarias repetitivas consolidadas)',
+                          style: const pw.TextStyle(fontSize: 8),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  pw.Expanded(child: tareaCard(pageItems[0])),
+                  pw.SizedBox(height: 10),
+                  pw.Expanded(
+                    child: pageItems.length > 1
+                        ? tareaCard(pageItems[1])
+                        : pw.Container(
+                            decoration: pw.BoxDecoration(
+                              border: pw.Border.all(
+                                color: PdfColor.fromHex('#E5E7EB'),
+                              ),
+                              borderRadius: pw.BorderRadius.circular(10),
+                            ),
+                            child: pw.Center(
+                              child: pw.Text(
+                                'Fin de pagina',
+                                style: const pw.TextStyle(
+                                  fontSize: 10,
+                                  color: PdfColors.grey600,
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      }
+
+      final bytes = await doc.save();
+      final filename =
+          'Informe_detallado_${_safeFile(cliente)}_${_safeFile(mes)}_$anio.pdf';
+
+      if (kIsWeb) {
+        await downloadPdfWeb(bytes, filename);
+      } else {
+        await Printing.layoutPdf(name: filename, onLayout: (_) async => bytes);
+      }
+    } catch (e, st) {
+      debugPrint('Error PDF Detallado V2: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error generando PDF: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _generandoPdf = false);
+      }
     }
   }
 
@@ -2976,7 +3849,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 child: ElevatedButton.icon(
                   onPressed: (_kpis == null || _generandoPdf)
                       ? null
-                      : _generarInformeGestionPdf,
+                      : _generarInformeGestionPdfV2,
                   icon: _generandoPdf
                       ? const SizedBox(
                           width: 18,
@@ -2985,7 +3858,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                         )
                       : const Icon(Icons.insights),
                   label: Text(
-                    _generandoPdf ? 'Generando...' : 'Gestión (PDF plantilla)',
+                    _generandoPdf ? 'Generando...' : 'Gestión (solo gráficas)',
                   ),
                 ),
               ),
@@ -2994,7 +3867,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 child: ElevatedButton.icon(
                   onPressed: _tareasDetalle.isEmpty
                       ? null
-                      : _generarInformeDetalladoPdf,
+                      : _generarInformeDetalladoPdfV2,
                   icon: const Icon(Icons.list_alt),
                   label: const Text('Detallado (PDF)'),
                 ),

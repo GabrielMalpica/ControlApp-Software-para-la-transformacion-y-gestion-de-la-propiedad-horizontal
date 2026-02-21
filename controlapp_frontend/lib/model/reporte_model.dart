@@ -420,7 +420,8 @@ class PdfDatasetRow {
   final int id;
   final String descripcion;
   final String estado;
-  final String tipo; // ✅ PREVENTIVA / CORRECTIVA
+  final String tipo; // PREVENTIVA / CORRECTIVA
+  final String? frecuencia;
 
   final DateTime fechaInicio;
   final DateTime fechaFin;
@@ -441,7 +442,7 @@ class PdfDatasetRow {
 
   final List<String> evidencias;
 
-  // ✅ detalle real
+  // detalle real
   final List<RecursoUsoRow> insumos;
   final List<RecursoUsoRow> maquinaria;
   final List<RecursoUsoRow> herramientas;
@@ -459,6 +460,7 @@ class PdfDatasetRow {
     required this.descripcion,
     required this.estado,
     required this.tipo,
+    this.frecuencia,
     required this.fechaInicio,
     required this.fechaFin,
     required this.duracionMinutos,
@@ -511,7 +513,8 @@ class PdfDatasetRow {
           : int.tryParse('${json['id']}') ?? 0,
       descripcion: (json['descripcion'] ?? '').toString(),
       estado: (json['estado'] ?? '').toString(),
-      tipo: (json['tipo'] ?? 'CORRECTIVA').toString(), // ✅ default
+      tipo: (json['tipo'] ?? 'CORRECTIVA').toString(),
+      frecuencia: json['frecuencia']?.toString(),
 
       fechaInicio: _dt(json['fechaInicio']),
       fechaFin: _dt(json['fechaFin']),
@@ -577,6 +580,7 @@ class PdfDatasetRow {
 class TareaDetalleRow {
   final int id;
   final String tipo;
+  final String? frecuencia;
   final String estado;
   final String descripcion;
   final DateTime fechaInicio;
@@ -604,6 +608,7 @@ class TareaDetalleRow {
   TareaDetalleRow({
     required this.id,
     required this.tipo,
+    this.frecuencia,
     required this.estado,
     required this.descripcion,
     required this.fechaInicio,
@@ -634,6 +639,7 @@ class TareaDetalleRow {
       TareaDetalleRow(
         id: (json['id'] as num).toInt(),
         tipo: (json['tipo'] ?? '').toString(),
+        frecuencia: json['frecuencia']?.toString(),
         estado: (json['estado'] ?? '').toString(),
         descripcion: (json['descripcion'] ?? '').toString(),
         fechaInicio: _dt(json['fechaInicio']),

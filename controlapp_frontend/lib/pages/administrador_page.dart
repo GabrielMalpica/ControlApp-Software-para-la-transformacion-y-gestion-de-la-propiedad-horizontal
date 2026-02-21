@@ -3,6 +3,7 @@ import 'package:flutter_application_1/api/administrador_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/session_service.dart';
+import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import '../service/theme.dart';
 import 'inventario_page.dart';
 
@@ -250,6 +251,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
           style: TextStyle(color: Colors.white),
         ),
         actions: [
+          const NotificacionesAction(),
           IconButton(
             tooltip: "Recargar",
             onPressed: _cargarConjuntos,

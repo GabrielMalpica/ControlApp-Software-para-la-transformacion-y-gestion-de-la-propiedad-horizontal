@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'app.dart'; // tu archivo principal o MyApp
+
+import 'app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializeDateFormatting('es', null); // ✅ Inicializa el locale español
+  await initializeDateFormatting('es', null);
   runApp(const MyApp());
 }

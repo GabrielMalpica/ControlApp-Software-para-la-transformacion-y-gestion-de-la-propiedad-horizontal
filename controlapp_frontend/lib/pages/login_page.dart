@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
+import 'package:flutter_application_1/service/notificaciones_center.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 
 class LoginPage extends StatefulWidget {
@@ -45,6 +46,7 @@ class _LoginPageState extends State<LoginPage> {
         nombre: resp.user.nombre,
         userId: resp.user.id,
       );
+      await NotificacionesCenter.instance.start();
 
       _goByRol(resp.user.rol);
     } catch (e) {

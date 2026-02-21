@@ -583,9 +583,29 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   bool get _hayTareas => _tareasMes.isNotEmpty;
+  DateTime get _inicioPeriodoSeleccionado => DateTime(_anioActual, _mesActual, 1);
+  DateTime get _inicioVentanaPublicacion =>
+      _inicioPeriodoSeleccionado.subtract(const Duration(days: 7));
+  bool get _ventanaPublicacionAbierta =>
+      !DateTime.now().isBefore(_inicioVentanaPublicacion);
+
+  String get _mensajeVentanaPublicacion {
+    final desde = DateFormat('dd/MM/yyyy').format(_inicioVentanaPublicacion);
+    final periodo = DateFormat('MMMM yyyy', 'es').format(_inicioPeriodoSeleccionado);
+    return 'La publicación de $periodo se habilita desde $desde.';
+  }
 
   Future<void> _publicarCronograma() async {
     if (!_hayTareas || _publicando) return;
+    if (!_ventanaPublicacionAbierta) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_mensajeVentanaPublicacion),
+          backgroundColor: Colors.orange.shade800,
+        ),
+      );
+      return;
+    }
 
     final confirmar = await showDialog<bool>(
       context: context,
@@ -1899,7 +1919,8 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   Widget _buildBottomBar() {
-    final puedePublicar = _hayTareas && !_loading && !_publicando;
+    final puedePublicar =
+        _hayTareas && !_loading && !_publicando && _ventanaPublicacionAbierta;
 
     return SafeArea(
       child: Padding(
@@ -1922,7 +1943,9 @@ class _CronogramaPreventivasBorradorPageState
               _publicando
                   ? 'Publicando...'
                   : _hayTareas
-                  ? 'Publicar cronograma'
+                  ? (_ventanaPublicacionAbierta
+                        ? 'Publicar cronograma'
+                        : 'Publicación disponible 7 días antes')
                   : 'No hay tareas para publicar',
             ),
           ),

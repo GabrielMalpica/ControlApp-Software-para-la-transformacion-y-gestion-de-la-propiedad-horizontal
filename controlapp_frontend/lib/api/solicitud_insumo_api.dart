@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../model/solicitud_insumo_model.dart';
+import '../service/app_constants.dart';
+import '../service/session_service.dart';
 
 class SolicitudInsumoItemResponse {
   final int insumoId;
@@ -108,13 +110,22 @@ class SolicitudInsumoResponse {
 class SolicitudInsumoApi {
   final String baseUrl;
   final String? authToken;
+  final SessionService _session = SessionService();
 
   SolicitudInsumoApi({required this.baseUrl, this.authToken});
 
-  Map<String, String> _headers() => {
-    'Content-Type': 'application/json',
-    if (authToken != null) 'Authorization': 'Bearer $authToken',
-  };
+  Future<Map<String, String>> _headers() async {
+    final token = (authToken != null && authToken!.trim().isNotEmpty)
+        ? authToken!.trim()
+        : (await _session.getToken())?.trim();
+
+    return {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'x-empresa-id': AppConstants.empresaNit,
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+  }
 
   Uri _uri(String path, [Map<String, String>? q]) =>
       Uri.parse('$baseUrl$path').replace(queryParameters: q);
@@ -126,15 +137,16 @@ class SolicitudInsumoApi {
     DateTime? fechaHasta,
   }) async {
     final q = <String, String>{};
-    if (conjuntoId != null && conjuntoId.isNotEmpty)
+    if (conjuntoId != null && conjuntoId.isNotEmpty) {
       q['conjuntoId'] = conjuntoId;
+    }
     if (aprobado != null) q['aprobado'] = aprobado.toString();
     if (fechaDesde != null) q['fechaDesde'] = fechaDesde.toIso8601String();
     if (fechaHasta != null) q['fechaHasta'] = fechaHasta.toIso8601String();
 
     final resp = await http.get(
       _uri('/solicitud-insumo', q.isEmpty ? null : q),
-      headers: _headers(),
+      headers: await _headers(),
     );
 
     if (resp.statusCode != 200) {
@@ -153,7 +165,7 @@ class SolicitudInsumoApi {
   Future<void> crearSolicitud(SolicitudInsumoRequest request) async {
     final resp = await http.post(
       _uri('/solicitud-insumo'),
-      headers: _headers(),
+      headers: await _headers(),
       body: jsonEncode(request.toJson()),
     );
 
@@ -165,7 +177,7 @@ class SolicitudInsumoApi {
   Future<SolicitudInsumoResponse> obtener(int id) async {
     final resp = await http.get(
       _uri('/solicitud-insumo/$id'),
-      headers: _headers(),
+      headers: await _headers(),
     );
 
     if (resp.statusCode != 200) {
@@ -190,7 +202,7 @@ class SolicitudInsumoApi {
 
     final resp = await http.post(
       _uri('/solicitud-insumo/$id/aprobar'),
-      headers: _headers(),
+      headers: await _headers(),
       body: jsonEncode(body),
     );
 
@@ -208,7 +220,7 @@ class SolicitudInsumoApi {
   Future<void> rechazar(int id) async {
     final resp = await http.delete(
       _uri('/solicitud-insumo/$id'),
-      headers: _headers(),
+      headers: await _headers(),
     );
 
     if (resp.statusCode != 204) {
