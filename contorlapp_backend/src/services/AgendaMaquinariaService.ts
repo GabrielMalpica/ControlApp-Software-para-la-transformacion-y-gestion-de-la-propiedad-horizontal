@@ -1,5 +1,5 @@
 // src/services/AgendaMaquinariaService.ts
-import type { PrismaClient } from "../generated/prisma";
+import type { PrismaClient } from "@prisma/client";
 
 type AgendaParams = {
   empresaNit: string;

@@ -1,4 +1,4 @@
-import { Prisma } from "../generated/prisma";
+import { Prisma } from "@prisma/client";
 import type { DbClient } from "../db/types";
 
 type JsonMap = Record<string, unknown>;
