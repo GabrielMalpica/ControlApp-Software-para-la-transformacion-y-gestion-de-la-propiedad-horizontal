@@ -1,8 +1,10 @@
 // lib/pages/cronograma_preventivas_borrador_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:flutter_application_1/api/preventiva_api.dart';
+import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/novedad_cronograma_model.dart';
 import 'package:intl/intl.dart';
 
@@ -34,6 +36,7 @@ class CronogramaPreventivasBorradorPage extends StatefulWidget {
 class _CronogramaPreventivasBorradorPageState
     extends State<CronogramaPreventivasBorradorPage> {
   final _cronogramaApi = CronogramaApi();
+  final _conjuntoApi = ConjuntoApi();
   final _festivoApi = FestivoApi();
   final _preventivaApi = DefinicionPreventivaApi();
 
@@ -73,6 +76,12 @@ class _CronogramaPreventivasBorradorPageState
   // ✅ Para no mostrar el cuadro de novedades repetido en el mismo periodo
   final Set<String> _novedadesMostradasPorPeriodo = {};
 
+  int _horaInicioJornada = 8;
+  int _horaFinJornada = 16;
+  int? _horaDescansoInicio;
+  int? _horaDescansoFin;
+  String _resumenHorario = 'Horario: 08:00 - 16:00';
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +98,118 @@ class _CronogramaPreventivasBorradorPageState
   void _initMes() {
     _inicioMes = DateTime(_anioActual, _mesActual, 1);
     _daysInMonth = DateUtils.getDaysInMonth(_anioActual, _mesActual);
+  }
+
+  TimeOfDay? _parseHora(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final parts = raw.trim().split(':');
+    if (parts.length < 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
+      return null;
+    }
+    return TimeOfDay(hour: h, minute: m);
+  }
+
+  int _toMinutes(TimeOfDay t) => t.hour * 60 + t.minute;
+
+  String _fmtMinutes(int minutes) {
+    final h = (minutes ~/ 60).toString().padLeft(2, '0');
+    final m = (minutes % 60).toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  void _aplicarHorarioConjunto({
+    required List<HorarioConjunto> horarios,
+    required List<TareaModel> tareasMes,
+  }) {
+    int? minApertura;
+    int? maxCierre;
+    int? minDescanso;
+    int? maxDescanso;
+
+    for (final h in horarios) {
+      final apertura = _parseHora(h.horaApertura);
+      final cierre = _parseHora(h.horaCierre);
+      if (apertura == null || cierre == null) continue;
+
+      final aperMin = _toMinutes(apertura);
+      final cierMin = _toMinutes(cierre);
+      if (cierMin <= aperMin) continue;
+
+      minApertura = minApertura == null
+          ? aperMin
+          : (aperMin < minApertura ? aperMin : minApertura);
+      maxCierre = maxCierre == null
+          ? cierMin
+          : (cierMin > maxCierre ? cierMin : maxCierre);
+
+      final descansoInicio = _parseHora(h.descansoInicio);
+      final descansoFin = _parseHora(h.descansoFin);
+      if (descansoInicio == null || descansoFin == null) continue;
+
+      final dIniMin = _toMinutes(descansoInicio);
+      final dFinMin = _toMinutes(descansoFin);
+      if (dFinMin <= dIniMin) continue;
+
+      minDescanso = minDescanso == null
+          ? dIniMin
+          : (dIniMin < minDescanso ? dIniMin : minDescanso);
+      maxDescanso = maxDescanso == null
+          ? dFinMin
+          : (dFinMin > maxDescanso ? dFinMin : maxDescanso);
+    }
+
+    if (minApertura == null || maxCierre == null) {
+      for (final t in tareasMes) {
+        final ini = t.fechaInicio.toLocal();
+        final fin = t.fechaFin.toLocal();
+        final iniMin = ini.hour * 60 + ini.minute;
+        final finMin = fin.hour * 60 + fin.minute;
+        if (finMin <= iniMin) continue;
+
+        minApertura = minApertura == null
+            ? iniMin
+            : (iniMin < minApertura ? iniMin : minApertura);
+        maxCierre = maxCierre == null
+            ? finMin
+            : (finMin > maxCierre ? finMin : maxCierre);
+      }
+    }
+
+    minApertura ??= 8 * 60;
+    maxCierre ??= 16 * 60;
+
+    final inicioHora = (minApertura ~/ 60).clamp(0, 23);
+    int finHora = ((maxCierre + 59) ~/ 60).clamp(1, 24);
+    if (finHora <= inicioHora) {
+      finHora = (inicioHora + 1).clamp(1, 24);
+    }
+
+    int? descansoInicioHora;
+    int? descansoFinHora;
+    if (minDescanso != null &&
+        maxDescanso != null &&
+        maxDescanso > minDescanso) {
+      final inicioDesc = (minDescanso ~/ 60).clamp(inicioHora, finHora - 1);
+      final finDesc = ((maxDescanso + 59) ~/ 60).clamp(inicioDesc + 1, finHora);
+      if (finDesc > inicioDesc) {
+        descansoInicioHora = inicioDesc;
+        descansoFinHora = finDesc;
+      }
+    }
+
+    final tieneDescanso =
+        minDescanso != null && maxDescanso != null && maxDescanso > minDescanso;
+
+    _horaInicioJornada = inicioHora;
+    _horaFinJornada = finHora;
+    _horaDescansoInicio = descansoInicioHora;
+    _horaDescansoFin = descansoFinHora;
+    _resumenHorario = tieneDescanso
+        ? 'Horario: ${_fmtMinutes(minApertura)} - ${_fmtMinutes(maxCierre)} (descanso ${_fmtMinutes(minDescanso)}-${_fmtMinutes(maxDescanso)})'
+        : 'Horario: ${_fmtMinutes(minApertura)} - ${_fmtMinutes(maxCierre)}';
   }
 
   String _toYmd(DateTime d) =>
@@ -541,6 +662,10 @@ class _CronogramaPreventivasBorradorPageState
       final desde = DateTime(_anioActual, _mesActual, 1);
       final hasta = DateTime(_anioActual, _mesActual, _daysInMonth);
 
+      final horariosFuture = _conjuntoApi
+          .obtenerHorariosConjunto(widget.nit)
+          .catchError((_) => <HorarioConjunto>[]);
+
       final results = await Future.wait([
         _cronogramaApi.cronogramaMensual(
           nit: widget.nit,
@@ -550,10 +675,12 @@ class _CronogramaPreventivasBorradorPageState
           tipo: 'PREVENTIVA',
         ),
         _festivoApi.listarFestivosRango(desde: desde, hasta: hasta, pais: 'CO'),
+        horariosFuture,
       ]);
 
       final lista = results[0] as List<TareaModel>;
       final festivos = results[1] as List<FestivoItem>;
+      final horarios = results[2] as List<HorarioConjunto>;
 
       final filtradas = lista
           .where((t) => _isInThisMonth(t.fechaInicio))
@@ -575,6 +702,7 @@ class _CronogramaPreventivasBorradorPageState
         _reconstruirFiltrosDisponibles();
         _festivosYmd = setYmd;
         _festivoNombrePorYmd = nombrePorYmd;
+        _aplicarHorarioConjunto(horarios: horarios, tareasMes: filtradas);
         _recalcularResumenDias();
       });
     } catch (e) {
@@ -1258,17 +1386,15 @@ class _CronogramaPreventivasBorradorPageState
 
   // ===== bloques por hora (modal diario, se mantiene) =====
   List<_BloqueHora> _generarBloquesDia(DateTime fecha) {
-    const int horaInicioJornada = 8;
-    const int horaFinJornada = 16;
-    const bool excluirAlmuerzo = true;
-    const int horaAlmuerzoInicio = 13;
-    const int horaAlmuerzoFin = 14;
-
     final fechaLocal = fecha.toLocal();
     final List<_BloqueHora> bloques = [];
 
-    for (int h = horaInicioJornada; h < horaFinJornada; h++) {
-      if (excluirAlmuerzo && h >= horaAlmuerzoInicio && h < horaAlmuerzoFin) {
+    for (int h = _horaInicioJornada; h < _horaFinJornada; h++) {
+      final tieneDescanso =
+          _horaDescansoInicio != null &&
+          _horaDescansoFin != null &&
+          _horaDescansoFin! > _horaDescansoInicio!;
+      if (tieneDescanso && h >= _horaDescansoInicio! && h < _horaDescansoFin!) {
         continue;
       }
 
@@ -1884,6 +2010,10 @@ class _CronogramaPreventivasBorradorPageState
       return _WeekScheduleView(
         weekStart: weekStart,
         tareas: tareas,
+        horaInicio: _horaInicioJornada,
+        horaFin: _horaFinJornada,
+        horaDescansoInicio: _horaDescansoInicio,
+        horaDescansoFin: _horaDescansoFin,
         onTapTarea: (t) => _mostrarDetalleTarea(t, context),
       );
     }
@@ -1897,7 +2027,7 @@ class _CronogramaPreventivasBorradorPageState
             items: [
               'Tareas semana: ${tareas.length}',
               'Tareas mes: ${_tareasFiltradas.length}',
-              'Horario: 08:00 - 16:00 (almuerzo 13-14)',
+              _resumenHorario,
             ],
             child: Padding(
               padding: const EdgeInsets.only(top: 12),
@@ -1911,6 +2041,10 @@ class _CronogramaPreventivasBorradorPageState
           child: _WeekScheduleView(
             weekStart: weekStart,
             tareas: tareas,
+            horaInicio: _horaInicioJornada,
+            horaFin: _horaFinJornada,
+            horaDescansoInicio: _horaDescansoInicio,
+            horaDescansoFin: _horaDescansoFin,
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
           ),
         ),
@@ -1972,11 +2106,19 @@ class _CronogramaPreventivasBorradorPageState
 class _WeekScheduleView extends StatefulWidget {
   final DateTime weekStart; // lunes 00:00
   final List<TareaModel> tareas;
+  final int horaInicio;
+  final int horaFin;
+  final int? horaDescansoInicio;
+  final int? horaDescansoFin;
   final void Function(TareaModel t) onTapTarea;
 
   const _WeekScheduleView({
     required this.weekStart,
     required this.tareas,
+    required this.horaInicio,
+    required this.horaFin,
+    this.horaDescansoInicio,
+    this.horaDescansoFin,
     required this.onTapTarea,
   });
 
@@ -2022,16 +2164,17 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   final ScrollController _hCtrl = ScrollController();
   final ScrollController _vCtrl = ScrollController();
 
-  static const int horaInicio = 8;
-  static const int horaFin = 16;
-
   // ✅ más “respirable”
   static const double pxPorMin = 1.6; // estaba 1.2
   static const double anchoHora = 56;
   static const double altoHeader = 44;
 
+  int get _horaInicio => widget.horaInicio;
+  int get _horaFin => widget.horaFin;
+  int get _horasVisible => (_horaFin - _horaInicio).clamp(1, 24);
+
   int _minutesFromStart(DateTime d) {
-    final start = DateTime(d.year, d.month, d.day, horaInicio);
+    final start = DateTime(d.year, d.month, d.day, _horaInicio);
     return d.difference(start).inMinutes;
   }
 
@@ -2068,13 +2211,38 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     final spansByDay = List.generate(7, (_) => <_WeekTaskSpan>[]);
 
     for (final t in widget.tareas) {
-      final inicio = t.fechaInicio.toLocal();
-      if (!_isWithinWeek(inicio)) continue;
+      final inicioOriginal = t.fechaInicio.toLocal();
+      if (!_isWithinWeek(inicioOriginal)) continue;
 
-      final day = _dayIndex(inicio);
+      final day = _dayIndex(inicioOriginal);
       if (day < 0 || day > 6) continue;
 
-      final fin = _ensureEndAfterStart(inicio, t.fechaFin.toLocal());
+      final finOriginal = _ensureEndAfterStart(
+        inicioOriginal,
+        t.fechaFin.toLocal(),
+      );
+      final inicioJornada = DateTime(
+        inicioOriginal.year,
+        inicioOriginal.month,
+        inicioOriginal.day,
+        _horaInicio,
+      );
+      final finJornada = DateTime(
+        inicioOriginal.year,
+        inicioOriginal.month,
+        inicioOriginal.day,
+        _horaFin,
+      );
+
+      if (!finOriginal.isAfter(inicioJornada) ||
+          !inicioOriginal.isBefore(finJornada)) {
+        continue;
+      }
+
+      final inicio = inicioOriginal.isBefore(inicioJornada)
+          ? inicioJornada
+          : inicioOriginal;
+      final fin = finOriginal.isAfter(finJornada) ? finJornada : finOriginal;
       spansByDay[day].add(_WeekTaskSpan(tarea: t, inicio: inicio, fin: fin));
     }
 
@@ -2166,7 +2334,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
   @override
   Widget build(BuildContext context) {
-    final hours = horaFin - horaInicio; // 8 horas: 08..16
+    final hours = _horasVisible;
     final heightGrid = (hours * 60) * pxPorMin;
     final taskPlacements = _buildTaskPlacements();
 
@@ -2176,9 +2344,13 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     final text = Colors.grey.shade900;
     final subtext = Colors.grey.shade700;
 
-    // ==== Banda de almuerzo 13:00 - 14:00 ====
-    final lunchStartMin = (13 - horaInicio) * 60; // 13:00
-    final lunchDurMin = 60;
+    final lunchStartMin = widget.horaDescansoInicio != null
+        ? (widget.horaDescansoInicio! - _horaInicio) * 60
+        : null;
+    final lunchDurMin =
+        widget.horaDescansoInicio != null && widget.horaDescansoFin != null
+        ? (widget.horaDescansoFin! - widget.horaDescansoInicio!) * 60
+        : null;
 
     return LayoutBuilder(
       builder: (context, c) {
@@ -2263,6 +2435,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                     child: _HoursColumnDark(
                                       pxPorMin: pxPorMin,
                                       textColor: subtext,
+                                      horaInicio: _horaInicio,
+                                      horaFin: _horaFin,
                                     ),
                                   ),
                                   ...List.generate(7, (_) {
@@ -2290,16 +2464,19 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                               );
                             }),
 
-                            // ✅ banda de almuerzo
-                            Positioned(
-                              left: anchoHora,
-                              right: 0,
-                              top: lunchStartMin * pxPorMin,
-                              height: lunchDurMin * pxPorMin,
-                              child: Container(
-                                color: Colors.orange.withOpacity(0.12),
+                            if (lunchStartMin != null &&
+                                lunchDurMin != null &&
+                                lunchDurMin > 0 &&
+                                lunchStartMin >= 0)
+                              Positioned(
+                                left: anchoHora,
+                                right: 0,
+                                top: lunchStartMin * pxPorMin,
+                                height: lunchDurMin * pxPorMin,
+                                child: Container(
+                                  color: Colors.orange.withOpacity(0.12),
+                                ),
                               ),
-                            ),
 
                             // tareas
                             ...taskPlacements.map((placement) {
@@ -2522,14 +2699,19 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 class _HoursColumnDark extends StatelessWidget {
   final double pxPorMin;
   final Color textColor;
+  final int horaInicio;
+  final int horaFin;
 
-  const _HoursColumnDark({required this.pxPorMin, required this.textColor});
+  const _HoursColumnDark({
+    required this.pxPorMin,
+    required this.textColor,
+    required this.horaInicio,
+    required this.horaFin,
+  });
 
   @override
   Widget build(BuildContext context) {
-    const int horaInicio = 8;
-    const int horaFin = 16;
-    final hours = horaFin - horaInicio; // 8
+    final hours = (horaFin - horaInicio).clamp(1, 24);
 
     return LayoutBuilder(
       builder: (context, c) {
