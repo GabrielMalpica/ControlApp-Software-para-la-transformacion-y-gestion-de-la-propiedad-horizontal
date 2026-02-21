@@ -1,6 +1,6 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import type { PrismaClient } from "../generated/prisma";
+import type { PrismaClient } from "@prisma/client";
 
 export class AuthService {
   constructor(private prisma: PrismaClient) {}
