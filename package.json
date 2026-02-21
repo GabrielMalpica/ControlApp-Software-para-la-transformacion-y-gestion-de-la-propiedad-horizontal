@@ -1,6 +1,5 @@
 {
   "private": true,
-  "workspaces": ["contorlapp_backend"],
   "scripts": {
     "start": "npm --prefix contorlapp_backend start",
     "build": "npm --prefix contorlapp_backend run build"
