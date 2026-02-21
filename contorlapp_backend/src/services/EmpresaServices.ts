@@ -11,7 +11,7 @@ import {
   InsumoPublico,
   insumoPublicSelect,
   toInsumoPublico,
-} from "../model/Insumo_tmp";
+} from "../model/Insumo";
 
 import {
   CrearEmpresaDTO,
@@ -27,7 +27,7 @@ import {
   maquinariaCatalogoSelect,
   maquinariaConjuntoSelect,
   PrestarMaquinariaAConjuntoDTO,
-} from "../model/Maquinaria_tmp";
+} from "../model/Maquinaria";
 
 /** Zod local para setear el límite semanal directamente */
 const SetLimiteHorasDTO = z.object({

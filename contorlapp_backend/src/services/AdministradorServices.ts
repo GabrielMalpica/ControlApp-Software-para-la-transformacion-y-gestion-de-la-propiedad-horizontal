@@ -1,5 +1,5 @@
 import { PrismaClient } from "../generated/prisma";
-import { CrearSolicitudTareaDTO } from "../model/SolicitudTarea_tmp";
+import { CrearSolicitudTareaDTO } from "../model/SolicitudTarea";
 import {
   CrearSolicitudInsumoDTO,
   SolicitudInsumoItemDTO,

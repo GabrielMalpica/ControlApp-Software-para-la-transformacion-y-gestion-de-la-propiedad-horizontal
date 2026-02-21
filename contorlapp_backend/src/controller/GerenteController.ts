@@ -3,7 +3,7 @@ import { RequestHandler } from "express";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
 import { GerenteService } from "../services/GerenteServices";
-import { ListarUsuariosDTO, UsuarioIdParam } from "../model/Gerente_tmp";
+import { ListarUsuariosDTO, UsuarioIdParam } from "../model/Gerente";
 
 // ── Schemas de params simples ────────────────────────────────────────────────
 const IdParam = z.object({ id: z.coerce.number().int().positive() });
