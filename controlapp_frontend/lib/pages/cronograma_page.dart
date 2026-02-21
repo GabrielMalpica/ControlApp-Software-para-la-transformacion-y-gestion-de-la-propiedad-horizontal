@@ -520,6 +520,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   Widget _buildFiltrosMensualCompacto() {
+    final w = MediaQuery.of(context).size.width;
+    final isNarrow = w < 760;
+
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -545,21 +548,31 @@ class _CronogramaPageState extends State<CronogramaPage> {
               ],
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(child: _ddTipo()),
-                const SizedBox(width: 10),
-                Expanded(child: _ddEstado()),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(child: _ddOperario()),
-                const SizedBox(width: 10),
-                Expanded(child: _ddUbicacion()),
-              ],
-            ),
+            if (isNarrow) ...[
+              _ddTipo(),
+              const SizedBox(height: 10),
+              _ddEstado(),
+              const SizedBox(height: 10),
+              _ddOperario(),
+              const SizedBox(height: 10),
+              _ddUbicacion(),
+            ] else ...[
+              Row(
+                children: [
+                  Expanded(child: _ddTipo()),
+                  const SizedBox(width: 10),
+                  Expanded(child: _ddEstado()),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(child: _ddOperario()),
+                  const SizedBox(width: 10),
+                  Expanded(child: _ddUbicacion()),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -999,61 +1012,75 @@ class _CronogramaPageState extends State<CronogramaPage> {
                   ),
                   const Divider(height: 1),
                   Expanded(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: ListView.separated(
-                            padding: const EdgeInsets.all(8),
-                            itemCount: bloques.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 4),
-                            itemBuilder: (context, index) {
-                              final b = bloques[index];
-                              final horaIni = TimeOfDay.fromDateTime(
-                                b.inicio,
-                              ).format(ctx);
-                              final horaFin = TimeOfDay.fromDateTime(
-                                b.fin,
-                              ).format(ctx);
-                              final count = b.tareas.length;
-                              final seleccionado = bloqueSeleccionado == b;
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isNarrow = constraints.maxWidth < 820;
 
-                              return Card(
-                                color: seleccionado
-                                    ? AppTheme.primary.withOpacity(0.1)
-                                    : Colors.white,
-                                child: ListTile(
-                                  title: Text('$horaIni - $horaFin'),
-                                  subtitle: Text(
-                                    '$count ${count == 1 ? 'tarea' : 'tareas'}',
-                                  ),
-                                  onTap: () => seleccionarBloque(b),
+                        Widget bloquesList() => ListView.separated(
+                          padding: const EdgeInsets.all(8),
+                          itemCount: bloques.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 4),
+                          itemBuilder: (context, index) {
+                            final b = bloques[index];
+                            final horaIni = TimeOfDay.fromDateTime(
+                              b.inicio,
+                            ).format(ctx);
+                            final horaFin = TimeOfDay.fromDateTime(
+                              b.fin,
+                            ).format(ctx);
+                            final count = b.tareas.length;
+                            final seleccionado = bloqueSeleccionado == b;
+
+                            return Card(
+                              color: seleccionado
+                                  ? AppTheme.primary.withOpacity(0.1)
+                                  : Colors.white,
+                              child: ListTile(
+                                title: Text('$horaIni - $horaFin'),
+                                subtitle: Text(
+                                  '$count ${count == 1 ? 'tarea' : 'tareas'}',
                                 ),
+                                onTap: () => seleccionarBloque(b),
+                              ),
+                            );
+                          },
+                        );
+
+                        Widget tareasList() => bloqueSeleccionado == null
+                            ? const Center(
+                                child: Text(
+                                  'Selecciona un bloque para ver las tareas.',
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: const EdgeInsets.all(8),
+                                itemCount: bloqueSeleccionado!.tareas.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 8),
+                                itemBuilder: (context, index) {
+                                  final t = bloqueSeleccionado!.tareas[index];
+                                  return _buildTareaTile(t, ctx);
+                                },
                               );
-                            },
-                          ),
-                        ),
-                        Expanded(
-                          flex: 3,
-                          child: bloqueSeleccionado == null
-                              ? const Center(
-                                  child: Text(
-                                    'Selecciona un bloque para ver las tareas.',
-                                  ),
-                                )
-                              : ListView.separated(
-                                  padding: const EdgeInsets.all(8),
-                                  itemCount: bloqueSeleccionado!.tareas.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(height: 8),
-                                  itemBuilder: (context, index) {
-                                    final t = bloqueSeleccionado!.tareas[index];
-                                    return _buildTareaTile(t, ctx);
-                                  },
-                                ),
-                        ),
-                      ],
+
+                        if (isNarrow) {
+                          return Column(
+                            children: [
+                              SizedBox(height: 210, child: bloquesList()),
+                              const Divider(height: 1),
+                              Expanded(child: tareasList()),
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          children: [
+                            Expanded(flex: 2, child: bloquesList()),
+                            Expanded(flex: 3, child: tareasList()),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ],
@@ -1446,6 +1473,98 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final end = _endOfWeekSunday(_semanaBase);
     final rangoSemana =
         "${DateFormat('dd MMM', 'es').format(start)} - ${DateFormat('dd MMM', 'es').format(end)}";
+    final isNarrow = MediaQuery.of(context).size.width < 880;
+
+    if (isNarrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<_VistaCronograma>(
+              segments: const [
+                ButtonSegment(
+                  value: _VistaCronograma.mensual,
+                  label: Text('Mensual'),
+                  icon: Icon(Icons.calendar_month),
+                ),
+                ButtonSegment(
+                  value: _VistaCronograma.semanal,
+                  label: Text('Semanal'),
+                  icon: Icon(Icons.view_week),
+                ),
+              ],
+              selected: {_vista},
+              onSelectionChanged: (s) => setState(() => _vista = s.first),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                if (_vista == _VistaCronograma.mensual) ...[
+                  IconButton(
+                    tooltip: 'Mes anterior',
+                    onPressed: () => _cambiarMes(-1),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Text(
+                    '$mesNombre $_anioActual',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Mes siguiente',
+                    onPressed: () => _cambiarMes(1),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.filter_alt_outlined, size: 18),
+                    label: Text(
+                      _hayFiltrosActivos() ? 'Filtros â€¢' : 'Filtros',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () => setState(
+                      () => _mostrarFiltrosMensual = !_mostrarFiltrosMensual,
+                    ),
+                  ),
+                ] else ...[
+                  IconButton(
+                    tooltip: 'Semana anterior',
+                    onPressed: () => setState(
+                      () => _semanaBase = _semanaBase.subtract(
+                        const Duration(days: 7),
+                      ),
+                    ),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Text(
+                    rangoSemana,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Semana siguiente',
+                    onPressed: () => setState(
+                      () => _semanaBase = _semanaBase.add(
+                        const Duration(days: 7),
+                      ),
+                    ),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      );
+    }
 
     return Row(
       children: [
@@ -1786,7 +1905,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
     return LayoutBuilder(
       builder: (context, c) {
-        const minDayCol = 120.0;
+        final minDayCol = c.maxWidth < 700 ? 96.0 : 120.0;
         final available = c.maxWidth - anchoHora;
         final colWidth = (available / 7).clamp(minDayCol, 9999.0);
         final totalWidth = anchoHora + colWidth * 7;
@@ -2065,7 +2184,13 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 child: GestureDetector(
                                   onTap: () => widget.onTapTarea(t),
                                   child: Container(
-                                    padding: const EdgeInsets.all(8),
+                                    clipBehavior: Clip.hardEdge,
+                                    padding: EdgeInsets.fromLTRB(
+                                      6,
+                                      height < 30 ? 1 : (height < 42 ? 3 : 8),
+                                      6,
+                                      height < 30 ? 1 : (height < 42 ? 3 : 8),
+                                    ),
                                     decoration: BoxDecoration(
                                       color: fill,
                                       borderRadius: BorderRadius.circular(10),
@@ -2074,29 +2199,42 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                         width: 1,
                                       ),
                                     ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          t.descripcion,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: text,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          '$horaIni - $horaFinStr',
-                                          style: TextStyle(
-                                            color: subtext,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ],
+                                    child: LayoutBuilder(
+                                      builder: (context, box) {
+                                        final h = box.maxHeight;
+                                        final tiny = h < 26;
+                                        final compact = h < 42;
+
+                                        return Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              t.descripcion,
+                                              maxLines: compact ? 1 : 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: text,
+                                                fontSize: tiny
+                                                    ? 9
+                                                    : (compact ? 10 : 12),
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            if (!compact) ...[
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                '$horaIni - $horaFinStr',
+                                                style: TextStyle(
+                                                  color: subtext,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        );
+                                      },
                                     ),
                                   ),
                                 ),

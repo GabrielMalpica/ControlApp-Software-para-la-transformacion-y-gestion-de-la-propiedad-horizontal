@@ -8,6 +8,7 @@ import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.
 import 'package:flutter_application_1/pages/crear_herramienta_page.dart';
 import 'package:flutter_application_1/pages/festivos_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
+import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_insumo_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_conjuntos_page.dart';
@@ -39,6 +40,12 @@ class _Tile {
   final Color color;
   final VoidCallback onTap;
   _Tile(this.title, this.icon, this.color, this.onTap);
+}
+
+class _TileSection {
+  final String title;
+  final List<_Tile> tiles;
+  const _TileSection(this.title, this.tiles);
 }
 
 class _BubblePatternPainter extends CustomPainter {
@@ -325,6 +332,52 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
     );
   }
 
+  Widget _sectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.primary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionGrid(List<_Tile> tiles, int crossAxisCount) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        crossAxisSpacing: 14,
+        mainAxisSpacing: 14,
+        childAspectRatio: 1.05,
+      ),
+      itemCount: tiles.length,
+      itemBuilder: (_, i) {
+        final t = tiles[i];
+        return _dashboardCard(
+          title: t.title,
+          icon: t.icon,
+          accent: t.color,
+          onTap: t.onTap,
+        );
+      },
+    );
+  }
+
   // =========================
   // PopupMenu (Atajos)
   // =========================
@@ -582,98 +635,113 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
     final Conjunto conjunto = _conjuntoSeleccionado!;
     final String nit = conjunto.nit;
 
-    final tiles = <_Tile>[
-      _Tile("Usuarios", Icons.people_outline, AppTheme.green, () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => UsuariosConjuntoPage(conjuntoNit: nit),
-          ),
-        );
-      }),
-      _Tile("Tareas", Icons.assignment, AppTheme.green, () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => TareasPage(nit: nit)),
-        );
-      }),
-      _Tile(
-        "Crear tarea correctiva",
-        Icons.add_task,
-        Colors.teal,
-        () {
+    final sections = <_TileSection>[
+      _TileSection("Operacion diaria", [
+        _Tile(
+          "Crear tarea correctiva",
+          Icons.emergency_rounded,
+          Colors.red,
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => CrearTareaPage(nit: nit)),
+            );
+          },
+        ),
+        _Tile("Tareas", Icons.assignment, AppTheme.green, () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => CrearTareaPage(nit: nit)),
+            MaterialPageRoute(builder: (_) => TareasPage(nit: nit)),
           );
-        },
-      ),
-      _Tile("Solicitudes", Icons.pending_actions, AppTheme.green, () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => SolicitudesPage(nit: nit)),
-        );
-      }),
-      _Tile("Maquinaria", Icons.precision_manufacturing, AppTheme.yellow, () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AgendaMaquinariaPage(conjuntoId: nit),
-          ),
-        );
-      }),
-      _Tile("Inventario", Icons.inventory_2_outlined, AppTheme.yellow, () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => InventarioPage(nit: nit, empresaId: '901191875-4'),
-          ),
-        );
-      }),
-      _Tile("Cronograma", Icons.calendar_month, Colors.purple, () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => CronogramaPage(nit: nit)),
-        );
-      }),
-      _Tile("Reportes", Icons.bar_chart, AppTheme.green, () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ReportesDashboardPage(conjuntoIdInicial: nit),
-          ),
-        );
-      }),
-      _Tile(
-        "Reportes generales",
-        Icons.analytics_outlined,
-        AppTheme.yellow,
-        () {
+        }),
+        _Tile("Compromisos", Icons.checklist_rounded, Colors.indigo, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => CompromisosPage(nit: nit)),
+          );
+        }),
+        _Tile("Solicitudes", Icons.pending_actions, AppTheme.green, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => SolicitudesPage(nit: nit)),
+          );
+        }),
+      ]),
+      _TileSection("Planeacion y recursos", [
+        _Tile(
+          "Definir tarea preventiva",
+          Icons.build_circle_outlined,
+          Colors.deepOrange,
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PreventivasPage(nit: nit)),
+            );
+          },
+        ),
+        _Tile("Cronograma", Icons.calendar_month, Colors.purple, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => CronogramaPage(nit: nit)),
+          );
+        }),
+        _Tile("Maquinaria", Icons.precision_manufacturing, AppTheme.yellow, () {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => const ReportesGeneralDashboardPage(),
+              builder: (_) => AgendaMaquinariaPage(conjuntoId: nit),
             ),
           );
-        },
-      ),
-      _Tile("Zonificacion", Icons.map_outlined, Colors.teal, () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ZonificacionPage()),
-        );
-      }),
-      _Tile(
-        "Definir tarea preventiva",
-        Icons.build_circle_outlined,
-        Colors.deepOrange,
-        () {
+        }),
+        _Tile("Inventario", Icons.inventory_2_outlined, AppTheme.yellow, () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => PreventivasPage(nit: nit)),
+            MaterialPageRoute(
+              builder: (_) =>
+                  InventarioPage(nit: nit, empresaId: '901191875-4'),
+            ),
           );
-        },
-      ),
+        }),
+      ]),
+      _TileSection("Gestion de conjunto", [
+        _Tile("Usuarios", Icons.people_outline, AppTheme.green, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => UsuariosConjuntoPage(conjuntoNit: nit),
+            ),
+          );
+        }),
+      ]),
+      _TileSection("Analisis y control", [
+        _Tile("Reportes", Icons.bar_chart, AppTheme.green, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ReportesDashboardPage(conjuntoIdInicial: nit),
+            ),
+          );
+        }),
+        _Tile(
+          "Reportes generales",
+          Icons.analytics_outlined,
+          AppTheme.yellow,
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ReportesGeneralDashboardPage(),
+              ),
+            );
+          },
+        ),
+        _Tile("Zonificacion", Icons.map_outlined, Colors.teal, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ZonificacionPage()),
+          );
+        }),
+      ]),
     ];
 
     return SingleChildScrollView(
@@ -691,25 +759,22 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           LayoutBuilder(
             builder: (context, constraints) {
               final count = _gridCountForWidth(constraints.maxWidth);
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: count,
-                  crossAxisSpacing: 14,
-                  mainAxisSpacing: 14,
-                  childAspectRatio: 1.05,
-                ),
-                itemCount: tiles.length,
-                itemBuilder: (_, i) {
-                  final t = tiles[i];
-                  return _dashboardCard(
-                    title: t.title,
-                    icon: t.icon,
-                    accent: t.color,
-                    onTap: t.onTap,
-                  );
-                },
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: sections
+                    .map(
+                      (s) => Padding(
+                        padding: const EdgeInsets.only(bottom: 18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _sectionHeader(s.title),
+                            _sectionGrid(s.tiles, count),
+                          ],
+                        ),
+                      ),
+                    )
+                    .toList(),
               );
             },
           ),
