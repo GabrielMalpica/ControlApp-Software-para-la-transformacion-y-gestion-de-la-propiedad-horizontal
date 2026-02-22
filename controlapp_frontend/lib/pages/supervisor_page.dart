@@ -3,6 +3,7 @@ import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/supervisor/supervisor_tareas_page.dart';
 import 'package:flutter_application_1/service/logout.dart';
+import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 
 import '../service/theme.dart';
@@ -358,6 +359,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
         ),
         actions: [
           const NotificacionesAction(),
+          const CambiarContrasenaAction(),
           IconButton(
             tooltip: "Recargar conjuntos",
             onPressed: _cargarConjuntos,

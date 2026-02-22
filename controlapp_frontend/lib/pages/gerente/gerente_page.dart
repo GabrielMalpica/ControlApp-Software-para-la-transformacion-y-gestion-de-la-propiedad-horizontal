@@ -21,6 +21,7 @@ import 'package:flutter_application_1/pages/lista_herramientas_page.dart';
 import 'package:flutter_application_1/pages/preventivas_page.dart';
 import 'package:flutter_application_1/pages/tareas_page.dart';
 import 'package:flutter_application_1/service/logout.dart';
+import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 
 import '../../service/theme.dart';
@@ -801,6 +802,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         ),
         actions: [
           const NotificacionesAction(),
+          const CambiarContrasenaAction(),
           IconButton(
             tooltip: "Recargar conjuntos",
             onPressed: _cargarConjuntos,
