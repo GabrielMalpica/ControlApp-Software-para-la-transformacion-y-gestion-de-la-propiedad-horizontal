@@ -10,6 +10,7 @@ import cors from "cors";
 import rutas from "./routes/Rutas";
 import { prisma } from "./db/prisma";
 import { bootstrapNotificacionesSchema } from "./services/NotificacionService";
+import { bootstrapUsuariosIniciales } from "./services/bootstrapUsuariosIniciales";
 
 if (!process.env.JWT_SECRET) {
   throw new Error("Falta JWT_SECRET en el archivo .env");
@@ -60,6 +61,13 @@ app.use(errorHandler);
 /* ------------------------------- levantar server -------------------------- */
 const PORT = 3000;
 (async () => {
+  try {
+    await bootstrapUsuariosIniciales(prisma);
+    console.log("Usuarios iniciales verificados");
+  } catch (e) {
+    console.error("No se pudieron bootstrapear usuarios iniciales:", e);
+  }
+
   try {
     await bootstrapNotificacionesSchema(prisma);
     console.log("Notificaciones inicializadas");
