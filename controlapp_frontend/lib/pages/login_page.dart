@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/service/notificaciones_center.dart';
 import 'package:flutter_application_1/service/session_service.dart';
+import 'package:flutter_application_1/widgets/password_dialogs.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -144,6 +145,31 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                   onSubmitted: (_) => _loading ? null : _submit(),
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              SizedBox(
+                width: 280,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _loading
+                        ? null
+                        : () => showRecoverPasswordDialog(
+                            context,
+                            initialCorreo: _correoCtrl.text.trim(),
+                            onSuccess:
+                                ({
+                                  required String correo,
+                                  required String nuevaContrasena,
+                                }) {
+                                  _correoCtrl.text = correo;
+                                  _passCtrl.text = nuevaContrasena;
+                                },
+                          ),
+                    child: const Text('Olvide mi contrasena'),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
