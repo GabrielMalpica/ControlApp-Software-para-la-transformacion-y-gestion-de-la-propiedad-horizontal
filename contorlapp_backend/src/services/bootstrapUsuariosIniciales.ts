@@ -1,5 +1,5 @@
 import bcrypt from "bcrypt";
-import type { PrismaClient } from "../generated/prisma";
+import type { PrismaClient } from "@prisma/client";
 
 type SeedGerente = {
   id: string;
@@ -51,28 +51,23 @@ export async function bootstrapUsuariosIniciales(db: PrismaClient) {
     const telefono = normalizarTelefono(g.telefono);
     const fechaNacimiento = new Date(`${g.fechaNacimiento}T00:00:00.000Z`);
 
+    // Si el correo ya existe con otro id, se toma ese usuario y se fuerza contraseña.
     const usuarioConCorreo = await db.usuario.findUnique({
       where: { correo },
       select: { id: true },
     });
-
-    if (usuarioConCorreo && usuarioConCorreo.id !== g.id) {
-      console.warn(
-        `[bootstrapUsuariosIniciales] No se crea ${g.id}: el correo ${correo} ya pertenece a ${usuarioConCorreo.id}.`,
-      );
-      continue;
-    }
-
     const usuarioPorId = await db.usuario.findUnique({
       where: { id: g.id },
       select: { id: true },
     });
 
-    if (!usuarioPorId) {
-      const hash = await bcrypt.hash(g.id, 10); // clave inicial = cedula
+    const targetUserId = usuarioConCorreo?.id ?? usuarioPorId?.id ?? g.id;
+    const hash = await bcrypt.hash(g.id, 10); // forzar clave temporal = cédula del seed
+
+    if (!usuarioConCorreo && !usuarioPorId) {
       await db.usuario.create({
         data: {
-          id: g.id,
+          id: targetUserId,
           nombre: g.nombre,
           correo,
           contrasena: hash,
@@ -84,10 +79,11 @@ export async function bootstrapUsuariosIniciales(db: PrismaClient) {
       });
     } else {
       await db.usuario.update({
-        where: { id: g.id },
+        where: { id: targetUserId },
         data: {
           nombre: g.nombre,
           correo,
+          contrasena: hash,
           rol: "gerente",
           activo: true,
           telefono,
@@ -97,10 +93,10 @@ export async function bootstrapUsuariosIniciales(db: PrismaClient) {
     }
 
     await db.gerente.upsert({
-      where: { id: g.id },
+      where: { id: targetUserId },
       update: { empresaId },
       create: {
-        id: g.id,
+        id: targetUserId,
         empresaId,
       },
     });
