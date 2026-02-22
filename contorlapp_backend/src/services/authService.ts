@@ -2,14 +2,6 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import type { PrismaClient } from "@prisma/client";
 
-type HttpError = Error & { status?: number };
-
-function makeHttpError(status: number, message: string): HttpError {
-  const err = new Error(message) as HttpError;
-  err.status = status;
-  return err;
-}
-
 export class AuthService {
   constructor(private prisma: PrismaClient) {}
 
