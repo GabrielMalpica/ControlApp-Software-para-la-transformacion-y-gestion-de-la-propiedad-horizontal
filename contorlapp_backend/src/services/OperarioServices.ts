@@ -5,7 +5,7 @@ import {
   EstadoUsoHerramienta,
   TipoMovimientoInsumo,
   Prisma,
-} from "../generated/prisma";
+} from "@prisma/client";
 import { z } from "zod";
 import { TareaService } from "./TareaServices";
 import { InventarioService } from "./InventarioServices";

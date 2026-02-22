@@ -1,21 +1,23 @@
-# flutter_application_1
+# ControlApp Frontend (Flutter)
 
-A new Flutter project.
+## Configuración de API
 
-## Getting Started
+El frontend usa una URL base configurable por `--dart-define`.
 
-This project is a starting point for a Flutter application.
+- Variable: `API_BASE_URL`
+- Valor por defecto: `https://controlapp-software-para-la-transformacion-y-ges-production.up.railway.app`
 
-A few resources to get you started if this is your first Flutter project:
+### Producción (Railway)
+No necesitas pasar nada extra si quieres usar la URL por defecto.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### Desarrollo local
+Si quieres apuntar al backend local, ejecuta con:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter run --dart-define=API_BASE_URL=http://localhost:3000
+```
 
-## Pull request conflict tip
+> En emulador Android normalmente debes usar `http://10.0.2.2:3000`.
 
-When resolving merge conflicts in GitHub for frontend files, prefer **Accept incoming change** when the PR contains the latest UI update.
-Using **Accept both changes** can accidentally keep duplicated or outdated blocks unless you manually edit the result.
+## Nota
+Todas las APIs deben usar `AppConstants.baseUrl` para evitar tener URLs hardcodeadas a `localhost`.
