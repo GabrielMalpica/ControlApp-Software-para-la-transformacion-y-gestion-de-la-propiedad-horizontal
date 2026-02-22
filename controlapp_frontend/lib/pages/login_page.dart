@@ -12,6 +12,9 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  static const _logoUrl =
+      'https://controlsas.com.co/wp-content/uploads/2025/07/Mesa-de-trabajo-3@3x-1.png';
+
   final _correoCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
 
@@ -26,6 +29,18 @@ class _LoginPageState extends State<LoginPage> {
     _correoCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
+  }
+
+  String _friendlyError(Object e) {
+    var out = e.toString().trim();
+    if (out.isEmpty) return 'No se pudo iniciar sesion.';
+
+    final rx = RegExp(r'^[A-Za-z]*Exception:\s*', caseSensitive: false);
+    while (rx.hasMatch(out)) {
+      out = out.replaceFirst(rx, '').trim();
+    }
+
+    return out.isEmpty ? 'No se pudo iniciar sesion.' : out;
   }
 
   Future<void> _submit() async {
@@ -51,14 +66,13 @@ class _LoginPageState extends State<LoginPage> {
 
       _goByRol(resp.user.rol);
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = _friendlyError(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
   void _goByRol(String rol) {
-    // Ajusta nombres de rutas a las tuyas reales
     switch (rol) {
       case 'gerente':
         Navigator.pushReplacementNamed(context, '/home-gerente');
@@ -82,39 +96,64 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final logoWidth = (screenWidth - 48).clamp(220, 560).toDouble();
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(32.0),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // ✅ Placeholder para poner tu logo por URL cuando lo tengas
               SizedBox(
-                width: 560,
-                child: AspectRatio(
-                  aspectRatio: 3.2,
-                  child: Container(
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF3F4F6),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                    ),
-                    child: const Text(
-                      'Aquí va el logo (Image.network con URL)',
-                      style: TextStyle(color: Colors.black54),
+                width: logoWidth,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE6EAF0)),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x12000000),
+                        blurRadius: 20,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: SizedBox(
+                    height: 120,
+                    child: Image.network(
+                      _logoUrl,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                      webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return const Center(child: CircularProgressIndicator());
+                      },
+                      errorBuilder: (_, __, ___) => const Center(
+                        child: Text(
+                          'No se pudo cargar el logo',
+                          style: TextStyle(color: Colors.black54),
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
 
               SizedBox(
-                width: 280,
+                width: 300,
                 child: TextField(
                   controller: _correoCtrl,
+                  keyboardType: TextInputType.emailAddress,
                   decoration: InputDecoration(
                     labelText: 'Correo',
                     contentPadding: const EdgeInsets.symmetric(
@@ -127,15 +166,15 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
 
               SizedBox(
-                width: 280,
+                width: 300,
                 child: TextField(
                   controller: _passCtrl,
                   obscureText: true,
                   decoration: InputDecoration(
-                    labelText: 'Contraseña',
+                    labelText: 'Contrasena',
                     contentPadding: const EdgeInsets.symmetric(
                       vertical: 10,
                       horizontal: 12,
@@ -147,12 +186,12 @@ class _LoginPageState extends State<LoginPage> {
                   onSubmitted: (_) => _loading ? null : _submit(),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
 
               SizedBox(
-                width: 280,
+                width: 300,
                 child: Align(
-                  alignment: Alignment.centerRight,
+                  alignment: Alignment.center,
                   child: TextButton(
                     onPressed: _loading
                         ? null
@@ -172,22 +211,23 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
 
-              if (_error != null)
+              if (_error != null) ...[
                 SizedBox(
-                  width: 280,
+                  width: 300,
                   child: Text(
                     _error!,
+                    textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.red),
                   ),
                 ),
-
-              const SizedBox(height: 12),
+                const SizedBox(height: 10),
+              ] else
+                const SizedBox(height: 6),
 
               SizedBox(
-                width: 160,
-                height: 42,
+                width: 170,
+                height: 44,
                 child: ElevatedButton(
                   onPressed: _loading ? null : _submit,
                   style: ElevatedButton.styleFrom(
