@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CategoriaInsumo } from "../generated/prisma";
+import { CategoriaInsumo } from "@prisma/client";
 
 /** Dominio base 1:1 con Prisma */
 export interface InsumoDominio {
