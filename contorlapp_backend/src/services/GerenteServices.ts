@@ -666,7 +666,27 @@ export class GerenteService {
         "âŒ El conjunto tiene maquinaria activa asignada (propia o prestada).",
       );
 
-    await this.prisma.conjunto.delete({ where: { nit: conjuntoId } });
+    await this.prisma.$transaction(async (tx) => {
+      const inventario = await tx.inventario.findUnique({
+        where: { conjuntoId },
+        select: { id: true },
+      });
+
+      if (inventario) {
+        await tx.inventarioInsumo.deleteMany({
+          where: { inventarioId: inventario.id },
+        });
+
+        await tx.inventario.delete({ where: { conjuntoId } });
+      }
+
+      await tx.maquinariaConjunto.deleteMany({ where: { conjuntoId } });
+      await tx.solicitudInsumo.deleteMany({ where: { conjuntoId } });
+      await tx.solicitudMaquinaria.deleteMany({ where: { conjuntoId } });
+      await tx.solicitudTarea.deleteMany({ where: { conjuntoId } });
+
+      await tx.conjunto.delete({ where: { nit: conjuntoId } });
+    });
   }
 
   async asignarOperarioAConjunto(args: {

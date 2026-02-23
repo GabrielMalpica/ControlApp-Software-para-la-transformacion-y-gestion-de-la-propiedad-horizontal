@@ -144,6 +144,11 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
     );
 
     if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+
     Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
   }
 

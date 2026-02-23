@@ -92,6 +92,11 @@ class _CrearInsumoPageState extends State<CrearInsumoPage> {
     );
 
     if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+
     Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
   }
 
