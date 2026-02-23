@@ -14,7 +14,14 @@ export class AuthService {
   constructor(private prisma: PrismaClient) {}
 
   async login(correo: string, contrasena: string) {
-    const usuario = await this.prisma.usuario.findUnique({ where: { correo } });
+    const usuario = await this.prisma.usuario.findFirst({
+      where: {
+        correo: {
+          equals: correo.trim(),
+          mode: "insensitive",
+        },
+      },
+    });
 
     if (!usuario) throw makeHttpError(404, "Usuario no encontrado");
 
