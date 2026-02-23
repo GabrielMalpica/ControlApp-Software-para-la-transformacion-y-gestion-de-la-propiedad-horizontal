@@ -1,4 +1,4 @@
-import { PrismaClient } from "../generated/prisma";
+import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 
 const NombreDTO = z.object({ nombre: z.string().min(1) });

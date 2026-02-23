@@ -1,7 +1,7 @@
-import type { PrismaClient } from "../generated/prisma";
-import { Rol, TipoFuncion, EstadoTarea } from "../generated/prisma";
+import type { PrismaClient } from "@prisma/client";
+import { Rol, TipoFuncion, EstadoTarea } from "@prisma/client";
 import bcrypt from "bcrypt";
-import { Prisma } from "../generated/prisma";
+import { Prisma } from "@prisma/client";
 
 import {
   CrearUsuarioDTO,
@@ -150,6 +150,24 @@ const ESTADOS_BLOQUEADOS_PARA_REEMPLAZO = [
 
 export class GerenteService {
   constructor(private prisma: PrismaClient) {}
+
+  private async resolverEmpresaNit(): Promise<string> {
+    const empresaFija = await this.prisma.empresa.findUnique({
+      where: { nit: EMPRESA_ID_FIJA },
+      select: { nit: true },
+    });
+
+    if (empresaFija) return empresaFija.nit;
+
+    const primeraEmpresa = await this.prisma.empresa.findFirst({
+      select: { nit: true },
+      orderBy: { id: "asc" },
+    });
+
+    if (primeraEmpresa) return primeraEmpresa.nit;
+
+    throw new Error("No hay empresa registrada. Crea primero una empresa para poder crear/listar conjuntos.");
+  }
 
   private extraerAsignadorId(payload: unknown): string | null {
     if (!payload || typeof payload !== "object") return null;
@@ -407,7 +425,7 @@ export class GerenteService {
         direccion: dto.direccion,
         correo: dto.correo,
 
-        empresaId: EMPRESA_ID_FIJA,
+        empresaId: await this.resolverEmpresaNit(),
         administradorId,
 
         fechaInicioContrato: dto.fechaInicioContrato ?? null,
@@ -461,7 +479,7 @@ export class GerenteService {
   async listarConjuntos() {
     const conjuntos = await this.prisma.conjunto.findMany({
       where: {
-        empresaId: EMPRESA_ID_FIJA,
+        empresaId: await this.resolverEmpresaNit(),
       },
       include: {
         administrador: {
