@@ -21,7 +21,7 @@ import 'package:flutter_application_1/pages/lista_herramientas_page.dart';
 import 'package:flutter_application_1/pages/preventivas_page.dart';
 import 'package:flutter_application_1/pages/tareas_page.dart';
 import 'package:flutter_application_1/service/logout.dart';
-import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
+import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 
 import '../../service/theme.dart';
@@ -539,62 +539,73 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
     ];
   }
 
-  void _handleQuickAction(_QuickAction action) {
+  Future<void> _handleQuickAction(_QuickAction action) async {
     final String? nit = _conjuntoSeleccionado?.nit;
 
-    void go(Widget page) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    Future<void> go(Widget page) async {
+      final changed = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => page),
+      );
+
+      if (!mounted) return;
+      if (changed == true) {
+        await _cargarConjuntos();
+        if (mounted) {
+          _snack("Cambios guardados correctamente.");
+        }
+      }
     }
 
     switch (action) {
       case _QuickAction.usuariosGestion:
         if (!_requiereConjuntoOrWarn()) return;
-        go(ListaUsuariosPage(nit: nit!));
+        await go(ListaUsuariosPage(nit: nit!));
         return;
 
       case _QuickAction.usuarioCrear:
         if (!_requiereConjuntoOrWarn()) return;
-        go(CrearUsuarioPage(nit: nit!));
+        await go(CrearUsuarioPage(nit: nit!));
         return;
 
       case _QuickAction.conjuntoCrear:
-        go(CrearConjuntoPage(nit: nit ?? ''));
+        await go(CrearConjuntoPage(nit: AppConstants.empresaNit));
         return;
 
       case _QuickAction.conjuntosGestion:
-        go(ListaConjuntosPage(nit: nit ?? ''));
+        await go(ListaConjuntosPage(nit: nit ?? ''));
         return;
 
       case _QuickAction.crearInsumo:
         if (!_requiereConjuntoOrWarn()) return;
-        go(CrearInsumoPage(nit: nit!));
+        await go(CrearInsumoPage(nit: nit!));
         return;
 
       case _QuickAction.crearMaquinaria:
-        go(const CrearMaquinariaPage(nit: '901191875-4'));
+        await go(const CrearMaquinariaPage(nit: '901191875-4'));
         return;
 
       case _QuickAction.crearHerramienta:
         if (!_requiereConjuntoOrWarn()) return;
-        go(CrearHerramientaPage(empresaId: '901191875-4'));
+        await go(CrearHerramientaPage(empresaId: '901191875-4'));
         return;
 
       case _QuickAction.catalogoInsumos:
-        go(const ListaInsumosPage());
+        await go(const ListaInsumosPage());
         return;
 
       case _QuickAction.catalogoMaquinaria:
-        go(ListaMaquinariaGlobalPage(empresaNit: '901191875-4'));
+        await go(ListaMaquinariaGlobalPage(empresaNit: '901191875-4'));
         return;
 
       case _QuickAction.catalogoHerramientas:
         if (!_requiereConjuntoOrWarn()) return;
-        go(ListaHerramientasPage(empresaId: '901191875-4'));
+        await go(ListaHerramientasPage(empresaId: '901191875-4'));
         return;
 
       case _QuickAction.tareaCrear:
         if (!_requiereConjuntoOrWarn()) return;
-        go(CrearTareaPage(nit: nit!));
+        await go(CrearTareaPage(nit: nit!));
         return;
 
       case _QuickAction.solicitudInsumo:
@@ -604,16 +615,16 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
       case _QuickAction.agendaMaquinaria:
         if (!_requiereConjuntoOrWarn()) return;
-        go(AgendaMaquinariaGlobalExcelPage(empresaNit: '901191875-4'));
+        await go(AgendaMaquinariaGlobalExcelPage(empresaNit: '901191875-4'));
         return;
 
       case _QuickAction.cronogramaCrear:
         if (!_requiereConjuntoOrWarn()) return;
-        go(CrearCronogramaPage(nit: nit!));
+        await go(CrearCronogramaPage(nit: nit!));
         return;
 
       case _QuickAction.festivosCrear:
-        go(FestivosPage());
+        await go(FestivosPage());
         return;
     }
   }

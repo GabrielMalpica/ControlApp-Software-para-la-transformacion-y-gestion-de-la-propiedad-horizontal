@@ -112,14 +112,6 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
       }
 
       if (!mounted) return;
-      AppFeedback.showFromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            widget.modoEdicion ? 'Maquinaria actualizada' : 'Maquinaria creada',
-          ),
-        ),
-      );
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
