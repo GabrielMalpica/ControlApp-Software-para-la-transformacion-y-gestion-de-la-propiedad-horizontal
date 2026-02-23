@@ -5,7 +5,7 @@ import {
   TipoTarea,
   Frecuencia,
   EstadoTarea,
-} from "../generated/prisma";
+} from "@prisma/client";
 import { HorarioDia } from "./agenda";
 
 export type Intervalo = { i: number; f: number }; // minutos dentro del día [0..1440]
