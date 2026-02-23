@@ -7,6 +7,25 @@ const prisma = new PrismaClient();
 
 const defaultPassword = process.env.SEED_DEFAULT_PASSWORD || 'ControlApp123*';
 
+
+const EMPRESA_CONTROL = {
+  nit: '901191875-4',
+  nombre: 'ControlApp',
+};
+
+async function seedEmpresaControl() {
+  await prisma.empresa.upsert({
+    where: { nit: EMPRESA_CONTROL.nit },
+    update: { nombre: EMPRESA_CONTROL.nombre },
+    create: {
+      nit: EMPRESA_CONTROL.nit,
+      nombre: EMPRESA_CONTROL.nombre,
+    },
+  });
+
+  console.log(`[seed] Empresa control lista: ${EMPRESA_CONTROL.nit}`);
+}
+
 const gerentes = [
   {
     id: '1019043425',
@@ -63,14 +82,16 @@ async function seedGerente(persona, passwordHash) {
 
   await prisma.gerente.upsert({
     where: { id: persona.id },
-    update: {},
-    create: { id: persona.id },
+    update: { empresaId: EMPRESA_CONTROL.nit },
+    create: { id: persona.id, empresaId: EMPRESA_CONTROL.nit },
   });
 
   console.log(`[seed] Gerente listo: ${persona.nombre} (${persona.id})`);
 }
 
 async function main() {
+  await seedEmpresaControl();
+
   const passwordHash = await bcrypt.hash(defaultPassword, 10);
 
   for (const persona of gerentes) {
