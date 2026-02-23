@@ -1,6 +1,6 @@
 // src/models/inventarioInsumo.ts
 import { z } from "zod";
-import { CategoriaInsumo } from "../generated/prisma";
+import { CategoriaInsumo } from "@prisma/client";
 import { decToNumber } from "../utils/decimal";
 
 /** Dominio 1:1 con Prisma */

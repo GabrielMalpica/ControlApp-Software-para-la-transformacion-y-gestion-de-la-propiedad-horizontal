@@ -271,15 +271,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
       );
 
       if (!mounted) return;
-      AppFeedback.showFromSnackBar(
-        context,
-        const SnackBar(
-          content: Text('✅ Conjunto creado correctamente'),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      Navigator.pop(context); // volver al dashboard o a la lista
+      Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
