@@ -70,18 +70,7 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
       );
 
       if (!mounted) return;
-
-      AppFeedback.showFromSnackBar(
-        context,
-        const SnackBar(
-          content: Text("✅ Herramienta creada. A trabajar con estilo."),
-        ),
-      );
-
-      Navigator.pop(
-        context,
-        true,
-      ); // devuelve true para refrescar listado si quieres
+      await _mostrarGuardadoYVolverMenu();
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
@@ -91,6 +80,26 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _mostrarGuardadoYVolverMenu() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Éxito'),
+        content: const Text('Guardado correctamente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
   }
 
   @override

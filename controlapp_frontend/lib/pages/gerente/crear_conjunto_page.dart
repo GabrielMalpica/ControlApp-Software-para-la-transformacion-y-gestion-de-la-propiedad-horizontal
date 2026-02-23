@@ -271,7 +271,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
       );
 
       if (!mounted) return;
-      Navigator.pop(context, true);
+      await _mostrarGuardadoYVolverMenu();
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
@@ -301,6 +301,26 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
       u.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _mostrarGuardadoYVolverMenu() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Éxito'),
+        content: const Text('Guardado correctamente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
   }
 
   @override

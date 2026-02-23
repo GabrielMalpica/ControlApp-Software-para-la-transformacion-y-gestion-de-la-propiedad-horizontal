@@ -264,49 +264,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
       }
 
       if (!mounted) return;
-
-      AppFeedback.showFromSnackBar(
-        context,
-        const SnackBar(
-          content: Text("✅ Usuario y rol creados correctamente"),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      // Limpiar formulario
-      _formKey.currentState!.reset();
-      _nombreCtrl.clear();
-      _correoCtrl.clear();
-      _telefonoCtrl.clear();
-      _direccionCtrl.clear();
-      _cedulaCtrl.clear();
-      _observacionesOperarioCtrl.clear();
-
-      setState(() {
-        rolSeleccionado = null;
-        estadoCivilSeleccionado = null;
-        fechaNacimiento = null;
-        tipoSangre = null;
-        eps = null;
-        fondo = null;
-        tipoContrato = null;
-        jornada = null;
-        tallaCamisa = null;
-        tallaPantalon = null;
-        tallaCalzado = null;
-        padresVivos = true;
-        numeroHijos = 0;
-
-        // ✅ NUEVO
-        activo = true;
-        patronJornada = null;
-
-        funcionesSeleccionadas.clear();
-        cursoSalvamentoAcuatico = false;
-        cursoAlturas = false;
-        examenIngreso = false;
-        fechaIngresoOperario = null;
-      });
+      await _mostrarGuardadoYVolverMenu();
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
@@ -330,6 +288,26 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
     _cedulaCtrl.dispose();
     _observacionesOperarioCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _mostrarGuardadoYVolverMenu() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Éxito'),
+        content: const Text('Guardado correctamente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
   }
 
   @override

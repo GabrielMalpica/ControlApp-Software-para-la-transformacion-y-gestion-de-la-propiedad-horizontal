@@ -112,7 +112,7 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
       }
 
       if (!mounted) return;
-      Navigator.of(context).pop(true);
+      await _mostrarGuardadoYVolverMenu();
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
@@ -125,6 +125,26 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _mostrarGuardadoYVolverMenu() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Éxito'),
+        content: const Text('Guardado correctamente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
   }
 
   @override
