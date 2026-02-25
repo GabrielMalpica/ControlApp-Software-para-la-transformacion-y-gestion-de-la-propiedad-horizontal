@@ -3,6 +3,7 @@ import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 
 import '../service/theme.dart';
@@ -342,6 +343,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
         ),
         actions: [
           const NotificacionesAction(),
+          const CambiarContrasenaAction(),
           IconButton(
             tooltip: "Recargar conjuntos",
             onPressed: _cargarConjuntos,
