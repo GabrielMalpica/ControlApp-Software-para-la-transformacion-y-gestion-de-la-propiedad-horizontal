@@ -5,8 +5,13 @@ import '../../service/theme.dart';
 
 class UsuariosConjuntoPage extends StatefulWidget {
   final String conjuntoNit;
+  final Conjunto? conjuntoInicial;
 
-  const UsuariosConjuntoPage({super.key, required this.conjuntoNit});
+  const UsuariosConjuntoPage({
+    super.key,
+    required this.conjuntoNit,
+    this.conjuntoInicial,
+  });
 
   @override
   State<UsuariosConjuntoPage> createState() => _UsuariosConjuntoPageState();
@@ -19,7 +24,11 @@ class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
   @override
   void initState() {
     super.initState();
-    _futureConjunto = _api.obtenerConjunto(widget.conjuntoNit);
+    if (widget.conjuntoInicial != null) {
+      _futureConjunto = Future.value(widget.conjuntoInicial!);
+    } else {
+      _futureConjunto = _api.obtenerConjunto(widget.conjuntoNit);
+    }
   }
 
   @override
