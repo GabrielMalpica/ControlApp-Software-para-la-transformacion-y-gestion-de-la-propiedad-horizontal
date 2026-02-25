@@ -1,6 +1,6 @@
 // src/models/cronograma.ts
 import { z } from "zod";
-import { EstadoTarea, TipoTarea, Frecuencia } from "../generated/prisma";
+import { EstadoTarea, TipoTarea, Frecuencia } from "@prisma/client";
 
 /**
  * DTO para crear/actualizar un cronograma (lote de tareas) dentro de un conjunto.

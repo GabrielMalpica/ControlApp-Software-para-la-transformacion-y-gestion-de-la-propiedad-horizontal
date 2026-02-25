@@ -1,5 +1,5 @@
 // src/services/ReporteService.ts
-import { PrismaClient, EstadoTarea } from "../generated/prisma";
+import { PrismaClient, EstadoTarea } from "@prisma/client";
 import { z } from "zod";
 import { decToNumber } from "../utils/decimal";
 
