@@ -1,13 +1,13 @@
 // src/services/DefinicionTareaPreventivaService.ts
 
-import type { PrismaClient } from "../generated/prisma";
+import type { PrismaClient } from "@prisma/client";
 import {
   Prisma,
   TipoTarea,
   EstadoTarea,
   Frecuencia,
   DiaSemana,
-} from "../generated/prisma";
+} from "@prisma/client";
 import { z } from "zod";
 
 import {

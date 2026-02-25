@@ -7,6 +7,7 @@ import express, {
   ErrorRequestHandler,
 } from "express";
 import cors from "cors";
+import { Prisma } from "@prisma/client";
 import rutas from "./routes/Rutas";
 import { prisma } from "./db/prisma";
 import { bootstrapNotificacionesSchema } from "./services/NotificacionService";
@@ -47,6 +48,21 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   // Zod
   if (err?.name === "ZodError") {
     res.status(400).json({ error: err.issues ?? err.errors });
+    return;
+  }
+
+  // Prisma unique constraint
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    const target = Array.isArray((err.meta as any)?.target)
+      ? (err.meta as any).target.join(",")
+      : String((err.meta as any)?.target ?? "");
+
+    if (target.includes("Conjunto") || target.includes("nit")) {
+      res.status(409).json({ error: "Ya existe un conjunto con ese NIT." });
+      return;
+    }
+
+    res.status(409).json({ error: "El registro ya existe y debe ser único." });
     return;
   }
 
