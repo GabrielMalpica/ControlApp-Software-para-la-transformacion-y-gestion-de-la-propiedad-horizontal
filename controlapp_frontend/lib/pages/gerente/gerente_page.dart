@@ -649,6 +649,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
     final Conjunto conjunto = _conjuntoSeleccionado!;
     final String nit = conjunto.nit;
+    final String nombreConjunto = conjunto.nombre;
 
     final sections = <_TileSection>[
       _TileSection("Operacion diaria", [
@@ -672,7 +673,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         _Tile("Compromisos", Icons.checklist_rounded, Colors.indigo, () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => CompromisosPage(nit: nit)),
+            MaterialPageRoute(
+              builder: (_) => CompromisosPage(
+                nit: nit,
+                nombreConjunto: nombreConjunto,
+              ),
+            ),
           );
         }),
         _Tile("Solicitudes", Icons.pending_actions, AppTheme.green, () {
