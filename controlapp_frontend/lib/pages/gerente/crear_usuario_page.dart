@@ -158,7 +158,9 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
 
       // ✅ NUEVO
       activo: activo,
-      patronJornada: patronJornada,
+      patronJornada: (rolSeleccionado == 'operario' && jornada == 'MEDIO_TIEMPO')
+          ? patronJornada
+          : null,
     );
   }
 
@@ -219,9 +221,11 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
 
     setState(() => _isSaving = true);
 
+    Usuario? usuarioCreado;
+
     try {
       // 1️⃣ Crear el usuario base
-      final usuarioCreado = await _usuarioRepository.crearUsuario(usuario);
+      usuarioCreado = await _usuarioRepository.crearUsuario(usuario);
 
       // 2️⃣ Asignar el rol correspondiente usando endpoints del gerente
       switch (rolSeleccionado) {
@@ -266,6 +270,14 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
       if (!mounted) return;
       await _mostrarGuardadoYVolverMenu();
     } catch (e) {
+      if (usuarioCreado != null) {
+        try {
+          await _usuarioRepository.eliminarUsuario(usuarioCreado.cedula);
+        } catch (_) {
+          // Si falla la compensación, conservamos el error original
+        }
+      }
+
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
@@ -704,11 +716,6 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                               patronJornada = null;
                             }
 
-                            // si es operario y jornada completa -> patrón completa
-                            if (rolSeleccionado == 'operario' &&
-                                jornada == 'COMPLETA') {
-                              patronJornada = 'COMPLETA';
-                            }
                           });
                         },
                         decoration: const InputDecoration(
@@ -752,22 +759,9 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                           setState(() {
                             jornada = v;
 
-                            // ✅ auto-ajuste de patrón
-                            if (rolSeleccionado == 'operario') {
-                              if (jornada == 'COMPLETA') {
-                                patronJornada = 'COMPLETA';
-                              } else if (jornada != 'MEDIO_TIEMPO') {
-                                // otros tipos futuros
-                                if (patronJornada != 'COMPLETA') {
-                                  patronJornada = null;
-                                }
-                              } else {
-                                // MEDIO_TIEMPO: si venía en COMPLETA, limpiamos para obligar selección
-                                if (patronJornada == 'COMPLETA') {
-                                  patronJornada = null;
-                                }
-                              }
-                            } else {
+                            // ✅ patrón solo aplica a operario en medio tiempo
+                            if (rolSeleccionado != 'operario' ||
+                                jornada != 'MEDIO_TIEMPO') {
                               patronJornada = null;
                             }
                           });
