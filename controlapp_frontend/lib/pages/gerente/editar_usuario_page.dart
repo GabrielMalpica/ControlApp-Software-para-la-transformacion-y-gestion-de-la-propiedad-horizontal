@@ -171,14 +171,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
       await _usuarioRepository.editarUsuario(widget.usuario.cedula, cambios);
 
       if (!mounted) return;
-      AppFeedback.showFromSnackBar(
-        context,
-        const SnackBar(
-          content: Text("✅ Usuario actualizado correctamente"),
-          backgroundColor: Colors.green,
-        ),
-      );
-      Navigator.of(context).pop(true);
+      await _mostrarGuardadoYVolverMenu();
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
@@ -191,6 +184,26 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
+  }
+
+  Future<void> _mostrarGuardadoYVolverMenu() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Éxito'),
+        content: const Text('Usuario actualizado correctamente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    Navigator.of(context).pop(true);
   }
 
   @override
