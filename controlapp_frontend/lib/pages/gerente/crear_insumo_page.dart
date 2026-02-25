@@ -57,15 +57,10 @@ class _CrearInsumoPageState extends State<CrearInsumoPage> {
       );
 
       // 🔽 SOLO ESTA LÍNEA IMPORTA
-      final creado = await _api.crearInsumoCatalogo(req);
+      await _api.crearInsumoCatalogo(req);
 
       if (!mounted) return;
-
-      AppFeedback.showFromSnackBar(
-        context,
-        SnackBar(content: Text('Insumo creado: ${creado.nombre}')),
-      );
-      Navigator.of(context).pop(creado);
+      await _mostrarGuardadoYVolverMenu();
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
@@ -78,6 +73,31 @@ class _CrearInsumoPageState extends State<CrearInsumoPage> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _mostrarGuardadoYVolverMenu() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Éxito'),
+        content: const Text('Guardado correctamente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+
+    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
   }
 
   @override
