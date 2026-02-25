@@ -7,6 +7,7 @@ import {
   EstadoTarea,
   Frecuencia,
   DiaSemana,
+  Rol,
 } from "@prisma/client";
 import { z } from "zod";
 
@@ -144,6 +145,61 @@ const EditarBloqueBorradorDTO = z.object({
 export class DefinicionTareaPreventivaService {
   constructor(private prisma: PrismaClient) {}
 
+  private async resolverSupervisorId(supervisorId: number): Promise<string> {
+    const sid = supervisorId.toString();
+
+    const supervisor = await this.prisma.supervisor.findUnique({
+      where: { id: sid },
+      select: { id: true },
+    });
+    if (supervisor) return sid;
+
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: sid },
+      select: { id: true, rol: true },
+    });
+
+    if (!usuario) {
+      const e: any = new Error(
+        "El supervisor seleccionado no existe. Actualiza la lista e inténtalo de nuevo.",
+      );
+      e.status = 400;
+      throw e;
+    }
+
+    if (usuario.rol !== Rol.supervisor) {
+      const e: any = new Error(
+        "El usuario seleccionado no tiene perfil de supervisor. Verifica la selección.",
+      );
+      e.status = 400;
+      throw e;
+    }
+
+    const empresa = await this.prisma.empresa.findFirst({ select: { nit: true } });
+    if (!empresa) {
+      const e: any = new Error(
+        "No hay una empresa configurada para asociar el supervisor. Si el problema continúa, contacta al área de TI.",
+      );
+      e.status = 500;
+      throw e;
+    }
+
+    try {
+      await this.prisma.supervisor.create({
+        data: {
+          id: sid,
+          empresaId: empresa.nit,
+        },
+      });
+    } catch (err: any) {
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== "P2002") {
+        throw err;
+      }
+    }
+
+    return sid;
+  }
+
   private validarVentanaPublicacion(params: {
     anio: number;
     mes: number;
@@ -174,6 +230,11 @@ export class DefinicionTareaPreventivaService {
 
   async crear(payload: unknown) {
     const dto = CrearDefinicionPreventivaDTO.parse(payload);
+
+    const supervisorIdResuelto =
+      dto.supervisorId != null
+        ? await this.resolverSupervisorId(dto.supervisorId)
+        : null;
 
     const duracionMinutosFija =
       dto.duracionMinutosFija ??
@@ -226,9 +287,9 @@ export class DefinicionTareaPreventivaService {
         ? (dto.herramientasPlanJson as unknown as Prisma.InputJsonValue)
         : undefined,
 
-      // supervisor (relación) (ojo: si tu id es number en Prisma, NO conviertas a string)
-      supervisor: dto.supervisorId
-        ? { connect: { id: dto.supervisorId.toString() } }
+      // supervisor (relación)
+      supervisor: supervisorIdResuelto
+        ? { connect: { id: supervisorIdResuelto } }
         : undefined,
 
       activo: dto.activo ?? true,
@@ -381,7 +442,11 @@ export class DefinicionTareaPreventivaService {
           ? undefined
           : (dto as any).supervisorId === null
             ? { disconnect: true }
-            : { connect: { id: (dto as any).supervisorId.toString() } },
+            : {
+                connect: {
+                  id: await this.resolverSupervisorId((dto as any).supervisorId),
+                },
+              },
     };
 
     // relaciones operarios

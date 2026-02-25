@@ -1,5 +1,11 @@
 import type { PrismaClient } from "@prisma/client";
-import { Rol, TipoFuncion, EstadoTarea } from "@prisma/client";
+import {
+  Rol,
+  TipoFuncion,
+  EstadoTarea,
+  JornadaLaboral,
+  PatronJornada,
+} from "@prisma/client";
 import bcrypt from "bcrypt";
 import { Prisma } from "@prisma/client";
 
@@ -129,6 +135,15 @@ type ReemplazoPropuesta =
 
 const EMPRESA_ID_FIJA = "901191875-4";
 
+function normalizarPatronJornada(
+  jornadaLaboral: JornadaLaboral | null | undefined,
+  patronJornada: PatronJornada | null | undefined,
+): PatronJornada | null {
+  return jornadaLaboral === JornadaLaboral.MEDIO_TIEMPO
+    ? (patronJornada ?? null)
+    : null;
+}
+
 const ESTADOS_NO_BLOQUEAN_AGENDA = [
   EstadoTarea.PENDIENTE_REPROGRAMACION,
   EstadoTarea.COMPLETADA,
@@ -241,7 +256,7 @@ export class GerenteService {
         tipoContrato: dto.tipoContrato,
         jornadaLaboral: dto.jornadaLaboral,
         activo: dto.activo ?? true,
-        patronJornada: dto.patronJornada ?? null,
+        patronJornada: normalizarPatronJornada(dto.jornadaLaboral, dto.patronJornada),
       },
       select: usuarioPublicSelect,
     });
@@ -261,6 +276,15 @@ export class GerenteService {
     }
 
     const data: any = { ...dto };
+
+    if (Object.prototype.hasOwnProperty.call(dto, "jornadaLaboral")) {
+      data.patronJornada = normalizarPatronJornada(
+        dto.jornadaLaboral ?? null,
+        dto.patronJornada ?? null,
+      );
+    } else if (Object.prototype.hasOwnProperty.call(dto, "patronJornada")) {
+      data.patronJornada = dto.patronJornada ?? null;
+    }
     if (dto.contrasena) {
       data.contrasena = await bcrypt.hash(dto.contrasena, 10);
     } else {
@@ -3004,4 +3028,3 @@ export class GerenteService {
     }
   }
 }
-
