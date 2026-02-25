@@ -1,5 +1,11 @@
 class AppConstants {
-  static const String baseUrl = "http://localhost:3000";
+  /// Cambia en build/run con:
+  /// --dart-define=API_BASE_URL=http://localhost:3000
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue:
+        'https://controlapp-software-para-la-transformacion-y-ges-production.up.railway.app',
+  );
 
   // 🔹 Prefijo de todo lo que maneja el GerenteController
   static const String gerenteBase = "$baseUrl/gerente";
@@ -7,7 +13,6 @@ class AppConstants {
 
   static const String empresaBase = "$baseUrl/empresa";
   static String maquinariaEmpresa(String nit) => "$empresaBase/$nit/maquinaria";
-
 
   // 🔹 Usuarios
   static const String usuarios = "$gerenteBase/usuarios";

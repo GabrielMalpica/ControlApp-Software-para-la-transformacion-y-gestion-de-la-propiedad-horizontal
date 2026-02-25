@@ -7,6 +7,7 @@ import express, {
   ErrorRequestHandler,
 } from "express";
 import cors from "cors";
+import { Prisma } from "@prisma/client";
 import rutas from "./routes/Rutas";
 import { prisma } from "./db/prisma";
 import { bootstrapNotificacionesSchema } from "./services/NotificacionService";
@@ -50,9 +51,60 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
+  // Prisma unique constraint
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    const target = Array.isArray((err.meta as any)?.target)
+      ? (err.meta as any).target.join(",")
+      : String((err.meta as any)?.target ?? "");
+
+    if (target.includes("Conjunto") || target.includes("nit")) {
+      res.status(409).json({ error: "Ya existe un conjunto con ese NIT." });
+      return;
+    }
+
+    res.status(409).json({ error: "El registro ya existe y debe ser único." });
+    return;
+  }
+
+  // Prisma registro relacionado/no encontrado
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+    const cause = String((err.meta as any)?.cause ?? "").toLowerCase();
+
+    if (cause.includes("supervisor")) {
+      res.status(400).json({
+        error:
+          "No se pudo completar la operación porque el supervisor seleccionado no existe. Actualiza la lista e inténtalo nuevamente.",
+      });
+      return;
+    }
+
+    res.status(400).json({
+      error:
+        "No se pudo completar la operación porque faltan datos relacionados o ya no existen.",
+    });
+    return;
+  }
+
+  // Otros errores Prisma: no exponer detalles técnicos
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    res.status(500).json({
+      error:
+        "Ocurrió un error técnico al procesar la solicitud. Si el problema continúa, por favor contacta al área de TI.",
+    });
+    return;
+  }
+
   // Si en tu codigo lanzas e.status, respetalo
   const status = typeof err?.status === "number" ? err.status : 500;
-  res.status(status).json({ error: err?.message ?? "Error interno" });
+  if (status >= 500) {
+    res.status(status).json({
+      error:
+        "Ocurrió un error inesperado. Si el problema continúa, por favor contacta al área de TI.",
+    });
+    return;
+  }
+
+  res.status(status).json({ error: err?.message ?? "No se pudo completar la solicitud." });
 };
 
 app.use(errorHandler);
