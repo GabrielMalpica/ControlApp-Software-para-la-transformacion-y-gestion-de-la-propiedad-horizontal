@@ -9,8 +9,13 @@ import 'package:flutter_application_1/service/app_feedback.dart';
 
 class CompromisosPage extends StatefulWidget {
   final String nit;
+  final String nombreConjunto;
 
-  const CompromisosPage({super.key, required this.nit});
+  const CompromisosPage({
+    super.key,
+    required this.nit,
+    required this.nombreConjunto,
+  });
 
   @override
   State<CompromisosPage> createState() => _CompromisosPageState();
@@ -165,7 +170,7 @@ class _CompromisosPageState extends State<CompromisosPage> {
                       border: Border.all(color: Colors.black12),
                     ),
                     child: Text(
-                      'Conjunto ${widget.nit}\nPendientes: $pendientes',
+                      'Conjunto ${widget.nombreConjunto}\nPendientes: $pendientes',
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         height: 1.35,

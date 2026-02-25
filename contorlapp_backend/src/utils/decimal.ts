@@ -1,4 +1,4 @@
-import { Prisma } from "../generated/prisma";
+import { Prisma } from "@prisma/client";
 
 export const toDec = (n: number | string) => new Prisma.Decimal(n);
 

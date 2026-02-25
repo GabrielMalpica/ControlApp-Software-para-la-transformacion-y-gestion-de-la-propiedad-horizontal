@@ -5,7 +5,7 @@ import {
   EstadoTarea,
   EstadoUsoHerramienta,
   TipoMovimientoInsumo,
-} from "../generated/prisma";
+} from "@prisma/client";
 import { z } from "zod";
 import { InventarioService } from "./InventarioServices";
 import { uploadEvidenciaToDrive } from "../utils/drive_evidencias";
