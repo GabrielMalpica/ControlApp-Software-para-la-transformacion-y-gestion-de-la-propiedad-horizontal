@@ -15,7 +15,7 @@ import {
   TipoContrato,
   TipoSangre,
   Rol, // aunque en el modelo 'rol' es String, usamos este enum para validar
-} from "../generated/prisma";
+} from "@prisma/client";
 
 /**
  * Nota: En tu Prisma, Usuario.id es Int @id (SIN autoincrement).

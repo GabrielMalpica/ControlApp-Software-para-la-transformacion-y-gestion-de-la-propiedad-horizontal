@@ -1,13 +1,13 @@
 // src/services/DefinicionTareaPreventivaService.ts
 
-import type { PrismaClient } from "../generated/prisma";
+import type { PrismaClient } from "@prisma/client";
 import {
   Prisma,
   TipoTarea,
   EstadoTarea,
   Frecuencia,
   DiaSemana,
-} from "../generated/prisma";
+} from "@prisma/client";
 import { z } from "zod";
 
 import {
@@ -175,6 +175,20 @@ export class DefinicionTareaPreventivaService {
   async crear(payload: unknown) {
     const dto = CrearDefinicionPreventivaDTO.parse(payload);
 
+    if (dto.supervisorId != null) {
+      const supervisor = await this.prisma.supervisor.findUnique({
+        where: { id: dto.supervisorId.toString() },
+        select: { id: true },
+      });
+      if (!supervisor) {
+        const e: any = new Error(
+          "El supervisor seleccionado no existe o no está disponible. Verifica la selección e inténtalo de nuevo.",
+        );
+        e.status = 400;
+        throw e;
+      }
+    }
+
     const duracionMinutosFija =
       dto.duracionMinutosFija ??
       (dto.duracionHorasFija != null
@@ -226,7 +240,7 @@ export class DefinicionTareaPreventivaService {
         ? (dto.herramientasPlanJson as unknown as Prisma.InputJsonValue)
         : undefined,
 
-      // supervisor (relación) (ojo: si tu id es number en Prisma, NO conviertas a string)
+      // supervisor (relación)
       supervisor: dto.supervisorId
         ? { connect: { id: dto.supervisorId.toString() } }
         : undefined,
