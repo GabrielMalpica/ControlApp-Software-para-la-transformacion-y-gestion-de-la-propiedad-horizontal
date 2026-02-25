@@ -1,11 +1,12 @@
 class AppConstants {
   /// Cambia en build/run con:
   /// --dart-define=API_BASE_URL=http://localhost:3000
-  static const String baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue:
-        'https://controlapp-software-para-la-transformacion-y-ges-production.up.railway.app',
-  );
+  static const String baseUrl = 'http://localhost:3000';
+  // static const String baseUrl = String.fromEnvironment(
+  //   'API_BASE_URL',
+  //   defaultValue:
+  //       'https://controlapp-software-para-la-transformacion-y-ges-production.up.railway.app',
+  // );
 
   // 🔹 Prefijo de todo lo que maneja el GerenteController
   static const String gerenteBase = "$baseUrl/gerente";
