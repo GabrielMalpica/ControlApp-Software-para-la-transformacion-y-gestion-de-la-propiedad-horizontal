@@ -66,9 +66,45 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
+  // Prisma registro relacionado/no encontrado
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+    const cause = String((err.meta as any)?.cause ?? "").toLowerCase();
+
+    if (cause.includes("supervisor")) {
+      res.status(400).json({
+        error:
+          "No se pudo completar la operación porque el supervisor seleccionado no existe. Actualiza la lista e inténtalo nuevamente.",
+      });
+      return;
+    }
+
+    res.status(400).json({
+      error:
+        "No se pudo completar la operación porque faltan datos relacionados o ya no existen.",
+    });
+    return;
+  }
+
+  // Otros errores Prisma: no exponer detalles técnicos
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    res.status(500).json({
+      error:
+        "Ocurrió un error técnico al procesar la solicitud. Si el problema continúa, por favor contacta al área de TI.",
+    });
+    return;
+  }
+
   // Si en tu codigo lanzas e.status, respetalo
   const status = typeof err?.status === "number" ? err.status : 500;
-  res.status(status).json({ error: err?.message ?? "Error interno" });
+  if (status >= 500) {
+    res.status(status).json({
+      error:
+        "Ocurrió un error inesperado. Si el problema continúa, por favor contacta al área de TI.",
+    });
+    return;
+  }
+
+  res.status(status).json({ error: err?.message ?? "No se pudo completar la solicitud." });
 };
 
 app.use(errorHandler);
