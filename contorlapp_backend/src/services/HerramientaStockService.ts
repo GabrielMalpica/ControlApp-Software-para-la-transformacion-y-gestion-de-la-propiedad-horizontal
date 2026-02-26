@@ -1,4 +1,4 @@
-import { PrismaClient } from "../generated/prisma";
+import { PrismaClient } from "@prisma/client";
 
 type EstadoStock = "OPERATIVA" | "DANADA" | "PERDIDA" | "BAJA";
 
