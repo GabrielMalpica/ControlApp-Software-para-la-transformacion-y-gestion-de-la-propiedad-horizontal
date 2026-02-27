@@ -24,7 +24,31 @@ class DefinicionPreventivaApi {
       );
     }
 
-    final List<dynamic> data = jsonDecode(resp.body);
+    final decoded = jsonDecode(resp.body);
+    final List<dynamic> data;
+
+    if (decoded is List) {
+      data = decoded;
+    } else if (decoded is Map<String, dynamic>) {
+      final candidates = [
+        decoded['items'],
+        decoded['data'],
+        decoded['preventivas'],
+        decoded['definiciones'],
+      ];
+
+      List<dynamic> found = const [];
+      for (final candidate in candidates) {
+        if (candidate is List) {
+          found = candidate;
+          break;
+        }
+      }
+      data = found;
+    } else {
+      data = const [];
+    }
+
     return data
         .map((e) => DefinicionPreventiva.fromJson(e as Map<String, dynamic>))
         .toList();
