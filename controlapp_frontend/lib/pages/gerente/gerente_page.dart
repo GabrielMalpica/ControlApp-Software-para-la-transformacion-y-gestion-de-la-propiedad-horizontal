@@ -819,6 +819,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         ),
         actions: [
           const NotificacionesAction(),
+          const CambiarContrasenaAction(),
           IconButton(
             tooltip: "Recargar conjuntos",
             onPressed: _cargarConjuntos,

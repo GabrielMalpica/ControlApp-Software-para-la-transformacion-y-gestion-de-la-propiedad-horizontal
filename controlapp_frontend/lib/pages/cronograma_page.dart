@@ -21,8 +21,13 @@ enum _VistaCronograma { mensual, semanal }
 
 class CronogramaPage extends StatefulWidget {
   final String nit;
+  final bool soloLectura;
 
-  const CronogramaPage({super.key, required this.nit});
+  const CronogramaPage({
+    super.key,
+    required this.nit,
+    this.soloLectura = false,
+  });
 
   @override
   State<CronogramaPage> createState() => _CronogramaPageState();
@@ -462,6 +467,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   // =======================
 
   bool _puedeCerrar(TareaModel t) {
+    if (widget.soloLectura) return false;
     final e = (t.estado ?? '').toUpperCase();
     return e == 'ASIGNADA' || e == 'EN_PROCESO' || e == 'COMPLETADA';
   }

@@ -132,6 +132,7 @@ app.use(errorHandler);
 /* ------------------------------- levantar server -------------------------- */
 const PORT = 3000;
 (async () => {
+
   try {
     await bootstrapNotificacionesSchema(prisma);
     console.log("Notificaciones inicializadas");
