@@ -1,6 +1,6 @@
 // src/services/CronogramaService.ts
 import { z } from "zod";
-import type{ PrismaClient } from "../generated/prisma";
+import type{ PrismaClient } from "@prisma/client";
 
 // DTOs locales de filtros para este servicio
 const OperarioIdDTO = z.object({ operarioId: z.number().int().positive() });

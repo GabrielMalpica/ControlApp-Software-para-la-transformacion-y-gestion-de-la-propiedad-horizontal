@@ -10,8 +10,28 @@ class FestivoItem {
   FestivoItem({required this.fecha, this.nombre});
 
   factory FestivoItem.fromJson(Map<String, dynamic> json) {
-    final raw = DateTime.parse(json['fecha']).toLocal();
-    final d = DateTime(raw.year, raw.month, raw.day); // normalizado
+    final raw = json['fecha']?.toString() ?? '';
+
+    // Evita corrimientos por zona horaria cuando el backend envía fecha en UTC.
+    final yyyyMmDd = raw.length >= 10 ? raw.substring(0, 10) : raw;
+    final parts = yyyyMmDd.split('-');
+
+    DateTime d;
+    if (parts.length == 3) {
+      final y = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      final day = int.tryParse(parts[2]);
+      if (y != null && m != null && day != null) {
+        d = DateTime(y, m, day);
+      } else {
+        final parsed = DateTime.parse(raw).toLocal();
+        d = DateTime(parsed.year, parsed.month, parsed.day);
+      }
+    } else {
+      final parsed = DateTime.parse(raw).toLocal();
+      d = DateTime(parsed.year, parsed.month, parsed.day);
+    }
+
     return FestivoItem(fecha: d, nombre: json['nombre']?.toString());
   }
 

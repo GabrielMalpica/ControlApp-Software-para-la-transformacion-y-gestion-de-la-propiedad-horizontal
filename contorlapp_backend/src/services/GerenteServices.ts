@@ -1,7 +1,13 @@
-import type { PrismaClient } from "../generated/prisma";
-import { Rol, TipoFuncion, EstadoTarea } from "../generated/prisma";
+import type { PrismaClient } from "@prisma/client";
+import {
+  Rol,
+  TipoFuncion,
+  EstadoTarea,
+  JornadaLaboral,
+  PatronJornada,
+} from "@prisma/client";
 import bcrypt from "bcrypt";
-import { Prisma } from "../generated/prisma";
+import { Prisma } from "@prisma/client";
 
 import {
   CrearUsuarioDTO,
@@ -129,6 +135,15 @@ type ReemplazoPropuesta =
 
 const EMPRESA_ID_FIJA = "901191875-4";
 
+function normalizarPatronJornada(
+  jornadaLaboral: JornadaLaboral | null | undefined,
+  patronJornada: PatronJornada | null | undefined,
+): PatronJornada | null {
+  return jornadaLaboral === JornadaLaboral.MEDIO_TIEMPO
+    ? (patronJornada ?? null)
+    : null;
+}
+
 const ESTADOS_NO_BLOQUEAN_AGENDA = [
   EstadoTarea.PENDIENTE_REPROGRAMACION,
   EstadoTarea.COMPLETADA,
@@ -223,7 +238,7 @@ export class GerenteService {
         tipoContrato: dto.tipoContrato,
         jornadaLaboral: dto.jornadaLaboral,
         activo: dto.activo ?? true,
-        patronJornada: dto.patronJornada ?? null,
+        patronJornada: normalizarPatronJornada(dto.jornadaLaboral, dto.patronJornada),
       },
       select: usuarioPublicSelect,
     });
@@ -243,6 +258,15 @@ export class GerenteService {
     }
 
     const data: any = { ...dto };
+
+    if (Object.prototype.hasOwnProperty.call(dto, "jornadaLaboral")) {
+      data.patronJornada = normalizarPatronJornada(
+        dto.jornadaLaboral ?? null,
+        dto.patronJornada ?? null,
+      );
+    } else if (Object.prototype.hasOwnProperty.call(dto, "patronJornada")) {
+      data.patronJornada = dto.patronJornada ?? null;
+    }
     if (dto.contrasena) {
       data.contrasena = await bcrypt.hash(dto.contrasena, 10);
     } else {
@@ -598,20 +622,63 @@ export class GerenteService {
     }
 
     if (dto.ubicaciones !== undefined) {
-      data.ubicaciones = {
-        deleteMany: {},
-        create: dto.ubicaciones.map((u) => ({
-          nombre: u.nombre,
-          elementos:
-            u.elementos && u.elementos.length
-              ? {
-                  create: u.elementos.map((nombreElem) => ({
-                    nombre: nombreElem,
-                  })),
-                }
-              : undefined,
-        })),
-      };
+      const ubicacionesActuales = await this.prisma.ubicacion.findMany({
+        where: { conjuntoId },
+        select: {
+          id: true,
+          nombre: true,
+          elementos: { select: { id: true, nombre: true } },
+        },
+      });
+
+      const byNombre = new Map(
+        ubicacionesActuales.map((u) => [u.nombre.trim().toLowerCase(), u]),
+      );
+
+      for (const u of dto.ubicaciones) {
+        const key = u.nombre.trim().toLowerCase();
+        const existente = byNombre.get(key);
+
+        if (!existente) {
+          await this.prisma.ubicacion.create({
+            data: {
+              nombre: u.nombre,
+              conjunto: { connect: { nit: conjuntoId } },
+              elementos:
+                u.elementos && u.elementos.length
+                  ? {
+                      create: u.elementos.map((nombreElem) => ({
+                        nombre: nombreElem,
+                      })),
+                    }
+                  : undefined,
+            },
+          });
+          continue;
+        }
+
+        if (u.elementos && u.elementos.length > 0) {
+          const existentesElem = new Set(
+            existente.elementos.map((e) => e.nombre.trim().toLowerCase()),
+          );
+
+          const nuevos = u.elementos
+            .filter(
+              (nombreElem) =>
+                !existentesElem.has(nombreElem.trim().toLowerCase()),
+            )
+            .map((nombreElem) => ({ nombre: nombreElem }));
+
+          if (nuevos.length > 0) {
+            await this.prisma.elemento.createMany({
+              data: nuevos.map((n) => ({
+                nombre: n.nombre,
+                ubicacionId: existente.id,
+              })),
+            });
+          }
+        }
+      }
     }
 
     const actualizado = await this.prisma.conjunto.update({
@@ -648,7 +715,27 @@ export class GerenteService {
         "âŒ El conjunto tiene maquinaria activa asignada (propia o prestada).",
       );
 
-    await this.prisma.conjunto.delete({ where: { nit: conjuntoId } });
+    await this.prisma.$transaction(async (tx) => {
+      const inventario = await tx.inventario.findUnique({
+        where: { conjuntoId },
+        select: { id: true },
+      });
+
+      if (inventario) {
+        await tx.inventarioInsumo.deleteMany({
+          where: { inventarioId: inventario.id },
+        });
+
+        await tx.inventario.delete({ where: { conjuntoId } });
+      }
+
+      await tx.maquinariaConjunto.deleteMany({ where: { conjuntoId } });
+      await tx.solicitudInsumo.deleteMany({ where: { conjuntoId } });
+      await tx.solicitudMaquinaria.deleteMany({ where: { conjuntoId } });
+      await tx.solicitudTarea.deleteMany({ where: { conjuntoId } });
+
+      await tx.conjunto.delete({ where: { nit: conjuntoId } });
+    });
   }
 
   async asignarOperarioAConjunto(args: {
@@ -2762,14 +2849,14 @@ export class GerenteService {
       where: {
         operarios: { some: { id: operarioId } }, // ya es string, no hace falta toString()
         estado: {
-          in: ["ASIGNADA", "EN_PROCESO", "PENDIENTE_APROBACION"],
+          in: ["ASIGNADA", "EN_PROCESO"],
         },
       },
       select: { id: true },
     });
 
     if (tareasPendientes.length > 0) {
-      throw new Error("âŒ El operario tiene tareas pendientes.");
+      throw new Error("No se puede eliminar el operario porque aún tiene tareas activas (asignadas o en proceso).");
     }
 
     // 2) Borrar operario + usuario dentro de una misma transacciÃ³n
@@ -2966,4 +3053,3 @@ export class GerenteService {
     }
   }
 }
-

@@ -70,25 +70,14 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
 
     // ✅ Inicializar nuevos campos (asegúrate que existan en tu Usuario model)
     activo = u.activo;
-    patronJornada = u.patronJornada;
+    patronJornada = jornada == 'MEDIO_TIEMPO' ? u.patronJornada : null;
 
     _cargarEnums();
   }
 
   String prettyPatronJornada(String? raw) {
-    if (raw == null || raw.isEmpty) return "-";
-
-    switch (raw) {
-      case 'COMPLETA':
-        return 'Completa (normal)';
-      case 'MEDIO_LV4_S2':
-        return 'Medio tiempo: L–V 4h + S 2h';
-      case 'MEDIO_LX8_V6':
-        return 'Medio tiempo: L 8h + X 8h + V 6h';
-      default:
-        // fallback por si mañana agregas más
-        return prettyEnum(raw);
-    }
+    if (raw == null || raw.isEmpty) return '-';
+    return prettyEnum(raw);
   }
 
   Future<void> _cargarEnums() async {
@@ -136,15 +125,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     }
   }
 
-  bool get _debeMostrarPatron {
-    // ✅ Si jornada es MEDIO_TIEMPO, mostrar
-    if (jornada == 'MEDIO_TIEMPO') return true;
-
-    // ✅ Si ya viene guardado un patrón medio tiempo, también mostrarlo
-    if ((patronJornada ?? '').startsWith('MEDIO_')) return true;
-
-    return false;
-  }
+  bool get _debeMostrarPatron => jornada == 'MEDIO_TIEMPO';
 
   Future<void> _guardarCambios() async {
     if (!_formKey.currentState!.validate()) return;
@@ -184,21 +165,13 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
 
         // ✅ NUEVOS
         'activo': activo,
-        if (jornada == 'MEDIO_TIEMPO') 'patronJornada': patronJornada,
-        if (jornada != 'MEDIO_TIEMPO') 'patronJornada': null,
+        'patronJornada': jornada == 'MEDIO_TIEMPO' ? patronJornada : null,
       };
 
       await _usuarioRepository.editarUsuario(widget.usuario.cedula, cambios);
 
       if (!mounted) return;
-      AppFeedback.showFromSnackBar(
-        context,
-        const SnackBar(
-          content: Text("✅ Usuario actualizado correctamente"),
-          backgroundColor: Colors.green,
-        ),
-      );
-      Navigator.of(context).pop(true);
+      await _mostrarGuardadoYVolverMenu();
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
@@ -211,6 +184,26 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
+  }
+
+  Future<void> _mostrarGuardadoYVolverMenu() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Éxito'),
+        content: const Text('Usuario actualizado correctamente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    Navigator.of(context).pop(true);
   }
 
   @override
@@ -536,11 +529,6 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
 
                             if (jornada != 'MEDIO_TIEMPO') {
                               patronJornada = null;
-                            } else {
-                              // MEDIO_TIEMPO: si venía COMPLETA, limpiar para obligar selección
-                              if (patronJornada == 'COMPLETA') {
-                                patronJornada = null;
-                              }
                             }
                           });
                         },
