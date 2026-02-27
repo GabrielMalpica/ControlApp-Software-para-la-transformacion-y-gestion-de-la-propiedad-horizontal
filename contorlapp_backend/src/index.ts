@@ -66,6 +66,26 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
+
+  // Prisma foreign key constraint
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+    const constraint = String((err.meta as any)?.constraint ?? "");
+
+    if (constraint.includes("Tarea_ubicacionId_fkey")) {
+      res.status(400).json({
+        error:
+          "No se pudo actualizar el conjunto porque hay tareas asociadas a ubicaciones existentes. Evita eliminar ubicaciones con tareas históricas.",
+      });
+      return;
+    }
+
+    res.status(400).json({
+      error:
+        "No se pudo completar la operación porque existen datos relacionados que lo impiden.",
+    });
+    return;
+  }
+
   // Prisma registro relacionado/no encontrado
   if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
     const cause = String((err.meta as any)?.cause ?? "").toLowerCase();

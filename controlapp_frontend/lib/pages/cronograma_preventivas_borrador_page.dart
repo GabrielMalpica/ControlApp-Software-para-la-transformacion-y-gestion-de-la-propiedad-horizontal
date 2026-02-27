@@ -1253,7 +1253,7 @@ class _CronogramaPreventivasBorradorPageState
                     if (dom) {
                       headerColor = Colors.yellow.shade300;
                     } else if (fest) {
-                      headerColor = const Color(0xFFFFB74D); // festivo
+                      headerColor = const Color(0xFFE53935); // festivo
                     } else {
                       headerColor = Colors.green.shade200;
                     }
@@ -1303,7 +1303,7 @@ class _CronogramaPreventivasBorradorPageState
                     if (dom) {
                       header2Color = Colors.yellow.shade300;
                     } else if (fest) {
-                      header2Color = const Color(0xFFFFE0B2); // festivo // 👈 festivo
+                      header2Color = const Color(0xFFFFCDD2); // festivo // 👈 festivo
                     } else {
                       header2Color = Colors.grey.shade100;
                     }
@@ -1378,7 +1378,7 @@ class _CronogramaPreventivasBorradorPageState
                           color: dom
                               ? Colors.yellow.shade200
                               : fest
-                              ? const Color(0xFFFFF3E0)
+                              ? const Color(0xFFFFEBEE)
                               : Colors.white,
                           child: Text(
                             val,
@@ -2441,12 +2441,12 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: fest
-                                      ? const Color(0xFFFFE0B2)
+                                      ? const Color(0xFFFFCDD2)
                                       : Colors.transparent,
                                   borderRadius: BorderRadius.circular(8),
                                   border: fest
                                       ? Border.all(
-                                          color: const Color(0xFFFF9800),
+                                          color: const Color(0xFFD32F2F),
                                           width: 1,
                                         )
                                       : null,
@@ -2455,7 +2455,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   child: Text(
                                     fest ? "$label ${d.day} • F" : "$label ${d.day}",
                                     style: TextStyle(
-                                      color: fest ? const Color(0xFFE65100) : text,
+                                      color: fest ? const Color(0xFFB71C1C) : text,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
