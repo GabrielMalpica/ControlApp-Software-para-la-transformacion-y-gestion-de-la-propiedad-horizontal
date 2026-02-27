@@ -1,5 +1,5 @@
 // src/services/TareaService.ts
-import { PrismaClient, EstadoTarea, TipoTarea } from "../generated/prisma";
+import { PrismaClient, EstadoTarea, TipoTarea } from "@prisma/client";
 import { z } from "zod";
 import {
   CrearTareaDTO,
