@@ -144,9 +144,9 @@ class DefinicionPreventivaApi {
 
     // ✅ AHORA DEVUELVE JSON: {creadas, novedades}
     final decoded = jsonDecode(resp.body);
-    if (decoded is Map<String, dynamic>) return decoded;
-
-    // fallback por si backend responde otra cosa
+    if (decoded is Map<String, dynamic>) {
+      return _normalizarRespuestaGenerarCronograma(decoded);
+    }
     return {'creadas': 0, 'novedades': []};
   }
 
@@ -225,6 +225,64 @@ class DefinicionPreventivaApi {
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     return DisponibilidadMaquinariaResponse.fromJson(data);
   }
+}
+
+Map<String, dynamic> _normalizarRespuestaGenerarCronograma(
+  Map<String, dynamic> raw,
+) {
+  final candidatos = <Map<String, dynamic>>[
+    raw,
+    if (raw['data'] is Map<String, dynamic>)
+      raw['data'] as Map<String, dynamic>,
+    if (raw['resultado'] is Map<String, dynamic>)
+      raw['resultado'] as Map<String, dynamic>,
+    if (raw['result'] is Map<String, dynamic>)
+      raw['result'] as Map<String, dynamic>,
+  ];
+
+  Map<String, dynamic> elegido = raw;
+  for (final c in candidatos) {
+    if (c.containsKey('creadas') || c.containsKey('novedades')) {
+      elegido = c;
+      break;
+    }
+  }
+
+  final creadas = _parseIntFlexible(
+    elegido['creadas'] ??
+        elegido['totalCreadas'] ??
+        elegido['creadasCount'] ??
+        raw['creadas'] ??
+        raw['totalCreadas'] ??
+        raw['creadasCount'],
+  );
+
+  final novedadesRaw =
+      elegido['novedades'] ??
+      elegido['items'] ??
+      elegido['listaNovedades'] ??
+      raw['novedades'];
+
+  List<dynamic> novedades = const [];
+  if (novedadesRaw is List) {
+    novedades = novedadesRaw;
+  } else if (novedadesRaw is Map<String, dynamic>) {
+    final nested =
+        novedadesRaw['items'] ??
+        novedadesRaw['novedades'] ??
+        novedadesRaw['data'];
+    if (nested is List) {
+      novedades = nested;
+    }
+  }
+
+  return {'creadas': creadas, 'novedades': novedades};
+}
+
+int _parseIntFlexible(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse('${value ?? 0}') ?? 0;
 }
 
 class ApiError implements Exception {
