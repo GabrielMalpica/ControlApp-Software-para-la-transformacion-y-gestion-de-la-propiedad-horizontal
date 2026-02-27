@@ -640,20 +640,63 @@ export class GerenteService {
     }
 
     if (dto.ubicaciones !== undefined) {
-      data.ubicaciones = {
-        deleteMany: {},
-        create: dto.ubicaciones.map((u) => ({
-          nombre: u.nombre,
-          elementos:
-            u.elementos && u.elementos.length
-              ? {
-                  create: u.elementos.map((nombreElem) => ({
-                    nombre: nombreElem,
-                  })),
-                }
-              : undefined,
-        })),
-      };
+      const ubicacionesActuales = await this.prisma.ubicacion.findMany({
+        where: { conjuntoId },
+        select: {
+          id: true,
+          nombre: true,
+          elementos: { select: { id: true, nombre: true } },
+        },
+      });
+
+      const byNombre = new Map(
+        ubicacionesActuales.map((u) => [u.nombre.trim().toLowerCase(), u]),
+      );
+
+      for (const u of dto.ubicaciones) {
+        const key = u.nombre.trim().toLowerCase();
+        const existente = byNombre.get(key);
+
+        if (!existente) {
+          await this.prisma.ubicacion.create({
+            data: {
+              nombre: u.nombre,
+              conjunto: { connect: { nit: conjuntoId } },
+              elementos:
+                u.elementos && u.elementos.length
+                  ? {
+                      create: u.elementos.map((nombreElem) => ({
+                        nombre: nombreElem,
+                      })),
+                    }
+                  : undefined,
+            },
+          });
+          continue;
+        }
+
+        if (u.elementos && u.elementos.length > 0) {
+          const existentesElem = new Set(
+            existente.elementos.map((e) => e.nombre.trim().toLowerCase()),
+          );
+
+          const nuevos = u.elementos
+            .filter(
+              (nombreElem) =>
+                !existentesElem.has(nombreElem.trim().toLowerCase()),
+            )
+            .map((nombreElem) => ({ nombre: nombreElem }));
+
+          if (nuevos.length > 0) {
+            await this.prisma.elemento.createMany({
+              data: nuevos.map((n) => ({
+                nombre: n.nombre,
+                ubicacionId: existente.id,
+              })),
+            });
+          }
+        }
+      }
     }
 
     const actualizado = await this.prisma.conjunto.update({
@@ -2824,14 +2867,14 @@ export class GerenteService {
       where: {
         operarios: { some: { id: operarioId } }, // ya es string, no hace falta toString()
         estado: {
-          in: ["ASIGNADA", "EN_PROCESO", "PENDIENTE_APROBACION"],
+          in: ["ASIGNADA", "EN_PROCESO"],
         },
       },
       select: { id: true },
     });
 
     if (tareasPendientes.length > 0) {
-      throw new Error("âŒ El operario tiene tareas pendientes.");
+      throw new Error("No se puede eliminar el operario porque aún tiene tareas activas (asignadas o en proceso).");
     }
 
     // 2) Borrar operario + usuario dentro de una misma transacciÃ³n
