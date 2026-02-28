@@ -911,7 +911,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                     if (dom) {
                       headerColor = Colors.yellow.shade300;
                     } else if (fest) {
-                      headerColor = Colors.red.shade200;
+                      headerColor = const Color(0xFFE53935); // festivo
                     } else {
                       headerColor = Colors.green.shade200;
                     }
@@ -961,7 +961,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                     if (dom) {
                       header2Color = Colors.yellow.shade300;
                     } else if (fest) {
-                      header2Color = Colors.red.shade100;
+                      header2Color = const Color(0xFFFFCDD2); // festivo
                     } else {
                       header2Color = Colors.grey.shade100;
                     }
@@ -1036,7 +1036,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                           color: dom
                               ? Colors.yellow.shade200
                               : fest
-                              ? Colors.red.shade50
+                              ? const Color(0xFFFFEBEE)
                               : Colors.white,
                           child: Text(
                             val,
@@ -1781,6 +1781,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
         horaFin: _horaFinJornada,
         horaDescansoInicio: _horaDescansoInicio,
         horaDescansoFin: _horaDescansoFin,
+        esFestivo: _esFestivo,
+        nombreFestivo: _nombreFestivo,
         onTapTarea: (t) => _mostrarDetalleTarea(t, context),
       );
     }
@@ -1812,6 +1814,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
             horaFin: _horaFinJornada,
             horaDescansoInicio: _horaDescansoInicio,
             horaDescansoFin: _horaDescansoFin,
+            esFestivo: _esFestivo,
+            nombreFestivo: _nombreFestivo,
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
           ),
         ),
@@ -1841,6 +1845,8 @@ class _WeekScheduleView extends StatefulWidget {
   final int horaFin;
   final int? horaDescansoInicio;
   final int? horaDescansoFin;
+  final bool Function(DateTime d) esFestivo;
+  final String? Function(DateTime d) nombreFestivo;
   final void Function(TareaModel t) onTapTarea;
 
   const _WeekScheduleView({
@@ -1850,6 +1856,8 @@ class _WeekScheduleView extends StatefulWidget {
     required this.horaFin,
     this.horaDescansoInicio,
     this.horaDescansoFin,
+    required this.esFestivo,
+    required this.nombreFestivo,
     required this.onTapTarea,
   });
 
@@ -2125,14 +2133,43 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                             "Sáb",
                             "Dom",
                           ][i];
+                          final fest = widget.esFestivo(d);
+                          final festivoNombre = widget.nombreFestivo(d);
                           return SizedBox(
                             width: colWidth,
-                            child: Center(
-                              child: Text(
-                                "$label ${d.day}",
-                                style: TextStyle(
-                                  color: text,
-                                  fontWeight: FontWeight.w600,
+                            child: Tooltip(
+                              message: fest
+                                  ? 'Festivo${festivoNombre != null ? ': $festivoNombre' : ''}'
+                                  : '',
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                  vertical: 4,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: fest
+                                      ? const Color(0xFFFFCDD2)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: fest
+                                      ? Border.all(
+                                          color: const Color(0xFFD32F2F),
+                                          width: 1,
+                                        )
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    fest ? "$label ${d.day} • F" : "$label ${d.day}",
+                                    style: TextStyle(
+                                      color: fest ? const Color(0xFFB71C1C) : text,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),

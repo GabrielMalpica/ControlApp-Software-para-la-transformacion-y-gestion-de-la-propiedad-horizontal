@@ -12,7 +12,7 @@ import {
   TipoContrato,
   TipoFuncion,
   PatronJornada,
-} from "../generated/prisma";
+} from "@prisma/client";
 
 const router = Router();
 

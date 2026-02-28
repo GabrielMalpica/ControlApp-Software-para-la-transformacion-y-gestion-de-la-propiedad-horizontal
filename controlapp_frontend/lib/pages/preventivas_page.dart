@@ -39,26 +39,54 @@ class _PreventivasPageState extends State<PreventivasPage> {
 
   Future<void> _cargar() async {
     setState(() => _cargando = true);
-    try {
-      final conjunto = await _gerenteApi.obtenerConjunto(widget.nit);
-      final defs = await _preventivaApi.listarPorConjunto(widget.nit);
 
-      setState(() {
-        _conjunto = conjunto;
-        _items = defs;
-        _operarios = conjunto.operarios;
-      });
+    Conjunto? conjunto;
+    List<pm.DefinicionPreventiva> defs = const [];
+    Object? errorConjunto;
+    Object? errorDefs;
+
+    try {
+      conjunto = await _gerenteApi.obtenerConjunto(widget.nit);
     } catch (e) {
-      if (!mounted) return;
+      errorConjunto = e;
+    }
+
+    try {
+      defs = await _preventivaApi.listarPorConjunto(widget.nit);
+    } catch (e) {
+      errorDefs = e;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _conjunto = conjunto;
+      _items = defs;
+      _operarios = conjunto?.operarios ?? [];
+      _cargando = false;
+    });
+
+    if (errorDefs != null) {
       AppFeedback.showFromSnackBar(
         context,
         SnackBar(
-          content: Text('Error al cargar preventivas: $e'),
+          content: Text('Error al cargar preventivas: $errorDefs'),
           backgroundColor: Colors.red,
         ),
       );
-    } finally {
-      if (mounted) setState(() => _cargando = false);
+      return;
+    }
+
+    if (errorConjunto != null) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text(
+            'Se cargaron las preventivas, pero no fue posible cargar el detalle del conjunto.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
   }
 
