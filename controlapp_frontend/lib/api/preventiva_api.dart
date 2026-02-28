@@ -205,8 +205,8 @@ class DefinicionPreventivaApi {
     int? excluirTareaId,
   }) async {
     final qp = <String, String>{
-      'fechaInicioUso': fechaInicioUso.toIso8601String(),
-      'fechaFinUso': fechaFinUso.toIso8601String(),
+      'fechaInicioUso': fechaInicioUso.toUtc().toIso8601String(),
+      'fechaFinUso': fechaFinUso.toUtc().toIso8601String(),
       if (excluirTareaId != null) 'excluirTareaId': excluirTareaId.toString(),
     };
 

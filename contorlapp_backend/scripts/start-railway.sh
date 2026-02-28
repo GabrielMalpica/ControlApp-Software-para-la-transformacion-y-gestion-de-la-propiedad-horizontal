@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export TZ="${TZ:-America/Bogota}"
+
 # Prefer explicit DATABASE_URL. If it's not present, map common Railway/Postgres vars.
 if [ -z "${DATABASE_URL:-}" ]; then
   for candidate in DATABASE_PRIVATE_URL DATABASE_PUBLIC_URL POSTGRES_URL POSTGRES_PRISMA_URL; do

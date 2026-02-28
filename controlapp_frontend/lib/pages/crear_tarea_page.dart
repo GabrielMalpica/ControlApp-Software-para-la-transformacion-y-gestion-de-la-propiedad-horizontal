@@ -624,11 +624,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       return;
     }
 
-    Navigator.pushNamedAndRemoveUntil(
-      context,
-      '/home-gerente',
-      (route) => false,
-    );
+    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
   }
 
   String _fmtDateTime(DateTime d) {

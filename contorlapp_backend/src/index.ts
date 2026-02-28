@@ -1,5 +1,7 @@
 // src/index.ts
 import "dotenv/config";
+
+process.env.TZ = process.env.TZ || "America/Bogota";
 import express, {
   Request,
   Response,

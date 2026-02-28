@@ -1309,9 +1309,7 @@ class _CronogramaPreventivasBorradorPageState
                     if (dom) {
                       header2Color = Colors.yellow.shade300;
                     } else if (fest) {
-                      header2Color = const Color(
-                        0xFFFFCDD2,
-                      ); // festivo // 👈 festivo
+                      header2Color = const Color(0xFFFFCDD2); // festivo // 👈 festivo
                     } else {
                       header2Color = Colors.grey.shade100;
                     }
@@ -2461,13 +2459,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 ),
                                 child: Center(
                                   child: Text(
-                                    fest
-                                        ? "$label ${d.day} • F"
-                                        : "$label ${d.day}",
+                                    fest ? "$label ${d.day} • F" : "$label ${d.day}",
                                     style: TextStyle(
-                                      color: fest
-                                          ? const Color(0xFFB71C1C)
-                                          : text,
+                                      color: fest ? const Color(0xFFB71C1C) : text,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),

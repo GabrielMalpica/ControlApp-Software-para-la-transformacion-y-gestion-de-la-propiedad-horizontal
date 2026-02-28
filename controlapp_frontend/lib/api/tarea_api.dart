@@ -44,7 +44,6 @@ class TareaRequest {
 
   Map<String, dynamic> toJson() => {
     'descripcion': descripcion,
-    // Enviamos en UTC para evitar corrimientos por zona horaria del servidor.
     'fechaInicio': fechaInicio.toUtc().toIso8601String(),
     'fechaFin': fechaFin.toUtc().toIso8601String(),
     'duracionMinutos': duracionMinutos,
