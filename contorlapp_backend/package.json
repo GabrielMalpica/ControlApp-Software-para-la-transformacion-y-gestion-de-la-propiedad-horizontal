@@ -6,8 +6,9 @@
     "dev": "ts-node-dev --respawn src/index.ts",
     "build": "node ./node_modules/typescript/bin/tsc -p tsconfig.json",
     "postinstall": "prisma generate",
-    "start": "prisma migrate deploy && node dist/index.js",
-    "test-prisma": "ts-node test.ts"
+    "start": "./scripts/start-railway.sh",
+    "test-prisma": "ts-node test.ts",
+    "clear-maquinaria": "node ./scripts/clear-maquinaria.js"
   },
   "keywords": [],
   "author": "",

@@ -1,6 +1,6 @@
 // src/models/tarea.ts
 import { z } from "zod";
-import { EstadoTarea, TipoTarea, Frecuencia } from "../generated/prisma";
+import { EstadoTarea, TipoTarea, Frecuencia } from "@prisma/client";
 
 export const InsumoUsadoItemDTO = z.object({
   insumoId: z.number().int().positive(),

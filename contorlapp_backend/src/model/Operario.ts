@@ -1,7 +1,7 @@
 import { z } from "zod";
 import {
   TipoFuncion,
-} from "../generated/prisma";
+} from "@prisma/client";
 
 
 /** Mismo tipo de ID que en Prisma: Int (misma FK que Usuario.id) */
