@@ -386,24 +386,30 @@ class _CronogramaPreventivasBorradorPageState
         // tamanoBloqueMinutos: 60,
       );
 
-      final creadas = int.tryParse('${(gen is Map) ? gen['creadas'] : 0}') ?? 0;
+      final creadas = int.tryParse('${gen['creadas'] ?? 0}') ?? 0;
 
-      final rawNovedades = (gen is Map) ? gen['novedades'] : null;
-      final novedades = (rawNovedades is List)
+      final rawNovedades = gen['novedades'];
+      final rawNovedadesList = (rawNovedades is List)
           ? rawNovedades
-                .map(
-                  (e) => NovedadCronogramaModel.fromJson(
-                    Map<String, dynamic>.from(e),
-                  ),
-                )
-                .toList()
-          : <NovedadCronogramaModel>[];
+          : (rawNovedades is Map && rawNovedades['items'] is List)
+          ? (rawNovedades['items'] as List)
+          : const [];
+
+      final novedades = <NovedadCronogramaModel>[];
+      for (final e in rawNovedadesList) {
+        if (e is! Map) continue;
+        final map = <String, dynamic>{};
+        e.forEach((k, v) => map['$k'] = v);
+        novedades.add(NovedadCronogramaModel.fromJson(map));
+      }
 
       // 2) Cargar cronograma (como antes)
       await _cargarDatos(); // deja _loading en false al final
 
       // 3) Mostrar cuadro grande solo 1 vez por periodo
-      if (mounted && !_novedadesMostradasPorPeriodo.contains(periodoKey)) {
+      final yaMostrada = _novedadesMostradasPorPeriodo.contains(periodoKey);
+      final mostrarAhora = !yaMostrada || novedades.isNotEmpty;
+      if (mounted && mostrarAhora) {
         _novedadesMostradasPorPeriodo.add(periodoKey);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _mostrarModalNovedades(creadas: creadas, novedades: novedades);
