@@ -1,6 +1,6 @@
 // src/model/Conjunto.ts
 import { z } from "zod";
-import { DiaSemana, TipoServicio } from "../generated/prisma";
+import { DiaSemana, TipoServicio } from "@prisma/client";
 
 /** Tipo horario (usar enums de Prisma) */
 export const HorarioDTO = z

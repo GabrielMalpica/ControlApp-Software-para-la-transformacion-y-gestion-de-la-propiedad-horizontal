@@ -1,4 +1,4 @@
-import { PrismaClient } from "../generated/prisma";
+import { PrismaClient } from "@prisma/client";
 import { CrearSolicitudTareaDTO } from "../model/SolicitudTarea";
 import {
   CrearSolicitudInsumoDTO,

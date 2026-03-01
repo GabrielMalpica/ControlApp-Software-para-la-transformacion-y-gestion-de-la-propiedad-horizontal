@@ -47,6 +47,7 @@ class ListaConjuntosPage extends StatefulWidget {
 class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
   final GerenteApi _api = GerenteApi();
   late Future<List<Conjunto>> _futureConjuntos;
+  bool _hasChanges = false;
 
   @override
   void initState() {
@@ -153,6 +154,7 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
           backgroundColor: Colors.green,
         ),
       );
+      _hasChanges = true;
       _loadConjuntos();
     } catch (e) {
       if (!mounted) return;
@@ -474,7 +476,9 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
       },
     );
 
-    if (updated == true) _loadConjuntos();
+    if (updated == true) {
+      _loadConjuntos();
+    }
   }
 
   Widget _timeBox({
@@ -507,6 +511,10 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context, _hasChanges),
+        ),
         title: const Text('Conjuntos', style: TextStyle(color: Colors.white)),
         actions: [
           IconButton(
@@ -517,7 +525,20 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
                 MaterialPageRoute(
                   builder: (_) => CrearConjuntoPage(nit: widget.nit),
                 ),
-              ).then((_) => _loadConjuntos());
+              ).then((changed) {
+                if (changed == true) {
+                  _hasChanges = true;
+                  _loadConjuntos();
+                  if (!mounted) return;
+                  AppFeedback.showFromSnackBar(
+                    context,
+                    const SnackBar(
+                      content: Text('✅ Conjunto creado correctamente'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              });
             },
             icon: const Icon(Icons.add_business, color: Colors.white),
           ),

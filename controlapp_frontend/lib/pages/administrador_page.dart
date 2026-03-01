@@ -61,6 +61,13 @@ class _AdministradorPageState extends State<AdministradorPage> {
     }
   }
 
+  int _gridCountForWidth(double w) {
+    if (w >= 1100) return 4;
+    if (w >= 800) return 4;
+    if (w >= 520) return 3;
+    return 2;
+  }
+
   /// 🔹 Tarjeta simple
   Widget _simpleCard(
     String title,
@@ -117,7 +124,16 @@ class _AdministradorPageState extends State<AdministradorPage> {
                   ),
                 ),
               ),
-              Container(height: 46, color: color.withOpacity(0.10)),
+              SizedBox(
+                height: 46,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Container(color: color.withOpacity(0.10)),
+                    CustomPaint(painter: _BubblePatternPainter(color)),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -148,41 +164,57 @@ class _AdministradorPageState extends State<AdministradorPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ✅ Selector de conjunto estilo gerente
-          Card(
-            elevation: 1,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF4EE),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.black12.withOpacity(0.05)),
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  Icon(Icons.apartment, color: AppTheme.primary),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          "Conjunto seleccionado",
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                        Text(
-                          conjunto.nombre,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        Text(
-                          "NIT: ${conjunto.nit}",
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ],
-                    ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  DropdownButton<String>(
+                  child: const Icon(Icons.apartment, color: AppTheme.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Conjunto seleccionado",
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        conjunto.nombre,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "NIT: ${conjunto.nit}",
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.black12.withOpacity(0.08)),
+                  ),
+                  child: DropdownButton<String>(
                     value: _conjuntoSeleccionadoNit,
                     underline: const SizedBox.shrink(),
                     items: _conjuntos
@@ -200,18 +232,21 @@ class _AdministradorPageState extends State<AdministradorPage> {
                       setState(() => _conjuntoSeleccionadoNit = v);
                     },
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
 
           const SizedBox(height: 20),
 
           // ✅ Acciones del admin (por ahora sin menú derecha)
-          GridView.count(
+          LayoutBuilder(
+            builder: (context, c) {
+              final cols = _gridCountForWidth(c.maxWidth);
+              return GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
+            crossAxisCount: cols,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
             childAspectRatio: 1.05,
@@ -233,7 +268,9 @@ class _AdministradorPageState extends State<AdministradorPage> {
                   );
                 },
               ),
-            ],
+              ],
+              );
+            },
           ),
         ],
       ),
@@ -263,4 +300,30 @@ class _AdministradorPageState extends State<AdministradorPage> {
       body: _buildBody(),
     );
   }
+}
+
+class _BubblePatternPainter extends CustomPainter {
+  final Color color;
+  _BubblePatternPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withOpacity(0.18)
+      ..style = PaintingStyle.fill;
+
+    const xs = [0.04, 0.10, 0.22, 0.34, 0.48, 0.62, 0.74, 0.86, 0.92];
+    const ys = [0.64, 0.32, 0.78, 0.40, 0.70, 0.36, 0.78, 0.52, 0.30];
+    const rs = [3.5, 4.6, 2.8, 5.0, 3.8, 4.2, 3.0, 4.8, 3.2];
+
+    for (var i = 0; i < xs.length; i++) {
+      final c = Offset(size.width * xs[i], size.height * ys[i]);
+      canvas.drawCircle(c, rs[i], paint);
+      canvas.drawCircle(c.translate(18, -4), rs[i] * 0.55, paint);
+      canvas.drawCircle(c.translate(-14, 6), rs[i] * 0.45, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

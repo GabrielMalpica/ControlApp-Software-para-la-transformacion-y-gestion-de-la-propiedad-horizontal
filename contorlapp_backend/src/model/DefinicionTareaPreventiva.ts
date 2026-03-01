@@ -1,6 +1,6 @@
 // src/model/DefinicionTareaPreventiva.ts
 import { z } from "zod";
-import { DiaSemana, Frecuencia, UnidadCalculo } from "../generated/prisma";
+import { DiaSemana, Frecuencia, UnidadCalculo } from "@prisma/client";
 
 /** Dominio base 1:1 (aprox) con Prisma */
 export interface DefinicionTareaPreventivaDominio {
