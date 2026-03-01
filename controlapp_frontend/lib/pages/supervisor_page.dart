@@ -9,7 +9,7 @@ import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import '../service/theme.dart';
 
 import 'solicitudes_page.dart';
-import 'maquinaria_page.dart';
+import 'agenda_maquinaria_page.dart';
 import 'inventario_page.dart';
 import 'cronograma_page.dart';
 import 'reportes_page.dart';
@@ -332,7 +332,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
                 AppTheme.red,
                 onTap: () {
                   if (!_requiereConjuntoOrWarn()) return;
-                  _go(MaquinariaPage(nit: nit));
+                  _go(AgendaMaquinariaPage(conjuntoId: nit));
                 },
               ),
               _smallCard(
