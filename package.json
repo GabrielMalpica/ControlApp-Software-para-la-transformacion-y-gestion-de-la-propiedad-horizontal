@@ -1,7 +1,8 @@
 {
   "private": true,
   "scripts": {
-    "start": "npm --prefix contorlapp_backend start",
-    "build": "npm --prefix contorlapp_backend run build"
+    "install:backend": "npm --prefix contorlapp_backend install --include=dev",
+    "build": "npm run install:backend && npm --prefix contorlapp_backend run build",
+    "start": "npm --prefix contorlapp_backend start"
   }
 }

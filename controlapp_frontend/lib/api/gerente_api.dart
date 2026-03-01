@@ -1,5 +1,5 @@
-import 'package:flutter_application_1/model/conjunto_model.dart';
-import 'package:flutter_application_1/model/usuario_model.dart';
+import '../model/conjunto_model.dart';
+import '../model/usuario_model.dart';
 import 'dart:convert';
 
 import '../service/api_client.dart';
