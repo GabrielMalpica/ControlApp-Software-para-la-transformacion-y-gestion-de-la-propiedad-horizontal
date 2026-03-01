@@ -6,7 +6,7 @@ import {
   PropietarioMaquinaria,
   TipoTenenciaMaquinaria,
   EstadoAsignacionMaquinaria,
-} from "../generated/prisma";
+} from "@prisma/client";
 
 /* ===================== DOMINIO ===================== */
 

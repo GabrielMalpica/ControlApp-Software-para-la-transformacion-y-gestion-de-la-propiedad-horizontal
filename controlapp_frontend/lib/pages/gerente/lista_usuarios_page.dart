@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/model/usuario_model.dart';
-import 'package:flutter_application_1/repositories/usuario_repository.dart';
-import 'package:flutter_application_1/service/theme.dart';
-import 'package:flutter_application_1/pages/gerente/crear_usuario_page.dart';
+import '../../model/usuario_model.dart';
+import '../../repositories/usuario_repository.dart';
+import '../../service/theme.dart';
+import 'crear_usuario_page.dart';
 import 'editar_usuario_page.dart';
 import 'detalle_usuario_page.dart';
 
-import 'package:flutter_application_1/service/app_feedback.dart';
+import '../../service/app_feedback.dart';
 
 class ListaUsuariosPage extends StatefulWidget {
   final String nit; // para crear admin vinculados al conjunto/empresa

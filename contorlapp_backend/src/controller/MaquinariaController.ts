@@ -1,7 +1,7 @@
 // src/controllers/MaquinariaController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
-import { PrismaClient } from "../generated/prisma";
+import { PrismaClient } from "@prisma/client";
 import { MaquinariaService } from "../services/MaquinariaServices";
 
 // Params y body mínimos

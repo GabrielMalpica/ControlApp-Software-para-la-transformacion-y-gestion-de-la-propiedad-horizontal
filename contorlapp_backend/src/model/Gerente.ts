@@ -1,6 +1,6 @@
 // src/models/gerente.ts
 import { z } from "zod";
-import { Rol } from "../generated/prisma";
+import { Rol } from "@prisma/client";
 
 /** Tipo base para el ID (mismo que Usuario.id) */
 export type GerenteId = number;
