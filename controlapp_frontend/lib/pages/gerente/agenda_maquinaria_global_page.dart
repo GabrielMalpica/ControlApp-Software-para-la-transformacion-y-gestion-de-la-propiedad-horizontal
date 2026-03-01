@@ -74,12 +74,27 @@ class _AgendaMaquinariaGlobalExcelPageState
           Expanded(
             child: blocks.isEmpty
                 ? const Center(child: Text('Sin datos para este mes'))
-                : Row(
-                    children: [
-                      SizedBox(width: 340, child: _panelListaMaquinas(blocks)),
-                      const VerticalDivider(width: 1),
-                      Expanded(child: _panelExcel(blocks[_selectedIndex])),
-                    ],
+                : LayoutBuilder(
+                    builder: (context, c) {
+                      final mobile = c.maxWidth < 980;
+                      if (!mobile) {
+                        return Row(
+                          children: [
+                            SizedBox(width: 340, child: _panelListaMaquinas(blocks)),
+                            const VerticalDivider(width: 1),
+                            Expanded(child: _panelExcel(blocks[_selectedIndex])),
+                          ],
+                        );
+                      }
+
+                      return Column(
+                        children: [
+                          SizedBox(height: 240, child: _panelListaMaquinas(blocks)),
+                          const Divider(height: 1),
+                          Expanded(child: _panelExcel(blocks[_selectedIndex])),
+                        ],
+                      );
+                    },
                   ),
           ),
         ],
@@ -93,9 +108,12 @@ class _AgendaMaquinariaGlobalExcelPageState
   Widget _filtros() {
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: Row(
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
         children: [
-          Expanded(
+          SizedBox(
+            width: 160,
             child: DropdownButtonFormField<int>(
               value: _mes,
               decoration: const InputDecoration(
@@ -108,8 +126,8 @@ class _AgendaMaquinariaGlobalExcelPageState
               onChanged: (v) => setState(() => _mes = v ?? _mes),
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
+          SizedBox(
+            width: 160,
             child: DropdownButtonFormField<int>(
               value: _anio,
               decoration: const InputDecoration(
@@ -122,7 +140,6 @@ class _AgendaMaquinariaGlobalExcelPageState
               onChanged: (v) => setState(() => _anio = v ?? _anio),
             ),
           ),
-          const SizedBox(width: 10),
           IconButton(
             tooltip: 'Actualizar',
             icon: const Icon(Icons.refresh),
