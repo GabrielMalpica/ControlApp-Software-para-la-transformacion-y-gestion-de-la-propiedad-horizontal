@@ -179,46 +179,54 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Card(
-                elevation: 1,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF4EE),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.black12.withOpacity(0.05)),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.apartment, color: AppTheme.primary),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              "Conjunto seleccionado",
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                            ),
-                            Text(
-                              conjunto.nombre,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                            Text(
-                              "NIT: $nit",
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ],
-                        ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      DropdownButton<String>(
+                      child: const Icon(Icons.apartment, color: AppTheme.primary),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "Conjunto seleccionado",
+                            style: TextStyle(fontSize: 12, color: Colors.black54),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            conjunto.nombre,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text("NIT: $nit", style: const TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.black12.withOpacity(0.08)),
+                      ),
+                      child: DropdownButton<String>(
                         value: _conjuntoSeleccionadoNit,
                         underline: const SizedBox.shrink(),
                         items: _conjuntos
@@ -238,8 +246,8 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
                         onChanged: (v) =>
                             setState(() => _conjuntoSeleccionadoNit = v),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 20),
