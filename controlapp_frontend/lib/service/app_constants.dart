@@ -1,32 +1,60 @@
 class AppConstants {
-  static const String baseUrl = "http://localhost:3000";
+  static const String _railwayBaseUrl =
+      'https://controlapp-software-para-la-transformacion-y-ges-production.up.railway.app';
+
+  /// Cambia en build/run con:
+  /// --dart-define=API_BASE_URL=https://tu-api
+  static const String _apiBaseFromEnv = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: '',
+  );
+
+  /// Base URL efectiva en runtime.
+  /// Si el build trae localhost pero la app NO corre en localhost (ej: producción web),
+  /// forzamos Railway para evitar que apunte al backend local por error.
+  static String get baseUrl {
+    final env = _apiBaseFromEnv.trim();
+    if (env.isEmpty) return _railwayBaseUrl;
+
+    final host = Uri.base.host.toLowerCase();
+    final runningOnLocalhost = host == 'localhost' || host == '127.0.0.1';
+
+    final envLower = env.toLowerCase();
+    final envPointsToLocal =
+        envLower.contains('localhost') || envLower.contains('127.0.0.1');
+
+    if (envPointsToLocal && !runningOnLocalhost) {
+      return _railwayBaseUrl;
+    }
+
+    return env;
+  }
 
   // 🔹 Prefijo de todo lo que maneja el GerenteController
-  static const String gerenteBase = "$baseUrl/gerente";
+  static String get gerenteBase => "$baseUrl/gerente";
   static const empresaNit = '901191875-4';
 
-  static const String empresaBase = "$baseUrl/empresa";
+  static String get empresaBase => "$baseUrl/empresa";
   static String maquinariaEmpresa(String nit) => "$empresaBase/$nit/maquinaria";
 
-
   // 🔹 Usuarios
-  static const String usuarios = "$gerenteBase/usuarios";
+  static String get usuarios => "$gerenteBase/usuarios";
 
   // 🔹 Asignación de roles
-  static const String operarios = "$gerenteBase/operarios";
-  static const String supervisores = "$baseUrl/supervisores";
-  static const String supervisorBase = "$baseUrl/supervisor";
-  static const String administradores = "$gerenteBase/administradores";
-  static const String jefeOperacionesBase = "$baseUrl/jefe-operaciones";
-  static const String reportesBase = "$baseUrl/reporte";
+  static String get operarios => "$gerenteBase/operarios";
+  static String get supervisores => "$baseUrl/supervisores";
+  static String get supervisorBase => "$baseUrl/supervisor";
+  static String get administradores => "$gerenteBase/administradores";
+  static String get jefeOperacionesBase => "$baseUrl/jefe-operaciones";
+  static String get reportesBase => "$baseUrl/reporte";
 
   // 🔹 Catálogo de enums para usuario
-  static const String usuarioEnums = "$gerenteBase/enums-usuario";
+  static String get usuarioEnums => "$gerenteBase/enums-usuario";
 
-  static const String conjuntosGerente = "$gerenteBase/conjuntos";
+  static String get conjuntosGerente => "$gerenteBase/conjuntos";
 
-  static const String definicionPreventivaBase =
+  static String get definicionPreventivaBase =>
       "$baseUrl/definicion-preventiva";
 
-  static const String cronogramaBase = "$baseUrl/cronograma";
+  static String get cronogramaBase => "$baseUrl/cronograma";
 }

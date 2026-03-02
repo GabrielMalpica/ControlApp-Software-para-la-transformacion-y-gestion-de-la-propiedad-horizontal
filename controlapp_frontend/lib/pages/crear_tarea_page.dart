@@ -438,16 +438,30 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     }
   }
 
-  void _onSuccess() {
+  Future<void> _onSuccess() async {
     if (!mounted) return;
-    AppFeedback.showFromSnackBar(
-      context,
-      const SnackBar(
-        content: Text('✅ Tarea creada correctamente'),
-        backgroundColor: Colors.green,
+
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Éxito'),
+        content: const Text('Tarea correctiva creada correctamente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Aceptar'),
+          ),
+        ],
       ),
     );
-    Navigator.pop(context, true);
+
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+
+    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
   }
 
   String _fmtDateTime(DateTime d) {
@@ -982,7 +996,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           }
         }
 
-        _onSuccess();
+        await _onSuccess();
         return;
       }
 
@@ -1024,7 +1038,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               final auto2 = (resp2['autoReplaced'] as List?) ?? const [];
               _informarAutoReemplazos(auto2);
               _informarNoCompletadasPorReemplazo(resp2['noCompletadasIds']);
-              _onSuccess();
+              await _onSuccess();
               return;
             }
 
@@ -1235,7 +1249,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             );
           }
 
-          _onSuccess();
+          await _onSuccess();
           return;
         }
 

@@ -460,7 +460,7 @@ class _CronogramaPreventivasBorradorPageState
     String _title(NovedadCronogramaModel n) {
       switch (n.tipo) {
         case 'FESTIVO_MOVIDO':
-          return 'Festivo: tarea movida';
+          return 'Movido por festivo/domingo';
         case 'REEMPLAZO_PRIORIDAD':
           return 'Reemplazo por prioridad';
         case 'SIN_CANDIDATAS':
@@ -477,7 +477,30 @@ class _CronogramaPreventivasBorradorPageState
       final pr = n.prioridad != null ? 'Prioridad: ${n.prioridad}' : '';
 
       if (n.tipo == 'FESTIVO_MOVIDO') {
-        return '$desc\n$pr\n${n.fechaOriginal ?? '—'} → ${n.fechaNueva ?? '—'}';
+        DateTime? _parseYmd(String? ymd) {
+          if (ymd == null || ymd.trim().isEmpty) return null;
+          try {
+            return DateTime.parse(ymd.trim());
+          } catch (_) {
+            return null;
+          }
+        }
+
+        final fO = _parseYmd(n.fechaOriginal);
+        final fN = _parseYmd(n.fechaNueva);
+        final movidaSiguienteDia =
+            fO != null && fN != null && fN.difference(fO).inDays == 1;
+
+        final fechaOriginalEsDomingo = fO?.weekday == DateTime.sunday;
+        final motivo = fechaOriginalEsDomingo
+            ? (movidaSiguienteDia
+                ? 'Se movió al siguiente día porque la fecha original era domingo.'
+                : 'Se reprogramó porque la fecha original coincidía con un domingo.')
+            : (movidaSiguienteDia
+                ? 'Se movió al siguiente día porque la fecha original era festiva.'
+                : 'Se reprogramó porque la fecha original coincidía con un festivo.');
+
+        return '$desc\n$pr\n$motivo\n${n.fechaOriginal ?? '—'} → ${n.fechaNueva ?? '—'}';
       }
 
       if (n.tipo == 'REEMPLAZO_PRIORIDAD') {
@@ -547,8 +570,8 @@ class _CronogramaPreventivasBorradorPageState
                     ),
                     child: Text(
                       novedades.isEmpty
-                          ? 'No hubo novedades. El borrador se generó sin mover tareas por festivos y sin reemplazos por prioridad.'
-                          : 'Estas son las novedades detectadas al generar el borrador (movimientos por festivos, reemplazos por prioridad y/o casos sin hueco).',
+                          ? 'No hubo novedades. El borrador se generó sin mover tareas por festivos/domingos y sin reemplazos por prioridad.'
+                          : 'Estas son las novedades detectadas al generar el borrador (movimientos por festivos/domingos, reemplazos por prioridad y/o casos sin hueco).',
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.grey.shade900,
@@ -1235,7 +1258,7 @@ class _CronogramaPreventivasBorradorPageState
                     if (dom) {
                       headerColor = Colors.yellow.shade300;
                     } else if (fest) {
-                      headerColor = Colors.red.shade200;
+                      headerColor = const Color(0xFFE53935); // festivo
                     } else {
                       headerColor = Colors.green.shade200;
                     }
@@ -1285,7 +1308,7 @@ class _CronogramaPreventivasBorradorPageState
                     if (dom) {
                       header2Color = Colors.yellow.shade300;
                     } else if (fest) {
-                      header2Color = Colors.red.shade100; // 👈 festivo
+                      header2Color = const Color(0xFFFFCDD2); // festivo // 👈 festivo
                     } else {
                       header2Color = Colors.grey.shade100;
                     }
@@ -1360,7 +1383,7 @@ class _CronogramaPreventivasBorradorPageState
                           color: dom
                               ? Colors.yellow.shade200
                               : fest
-                              ? Colors.red.shade50
+                              ? const Color(0xFFFFEBEE)
                               : Colors.white,
                           child: Text(
                             val,
@@ -2014,6 +2037,8 @@ class _CronogramaPreventivasBorradorPageState
         horaFin: _horaFinJornada,
         horaDescansoInicio: _horaDescansoInicio,
         horaDescansoFin: _horaDescansoFin,
+        esFestivo: _esFestivo,
+        nombreFestivo: _nombreFestivo,
         onTapTarea: (t) => _mostrarDetalleTarea(t, context),
       );
     }
@@ -2045,6 +2070,8 @@ class _CronogramaPreventivasBorradorPageState
             horaFin: _horaFinJornada,
             horaDescansoInicio: _horaDescansoInicio,
             horaDescansoFin: _horaDescansoFin,
+            esFestivo: _esFestivo,
+            nombreFestivo: _nombreFestivo,
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
           ),
         ),
@@ -2110,6 +2137,8 @@ class _WeekScheduleView extends StatefulWidget {
   final int horaFin;
   final int? horaDescansoInicio;
   final int? horaDescansoFin;
+  final bool Function(DateTime d) esFestivo;
+  final String? Function(DateTime d) nombreFestivo;
   final void Function(TareaModel t) onTapTarea;
 
   const _WeekScheduleView({
@@ -2119,6 +2148,8 @@ class _WeekScheduleView extends StatefulWidget {
     required this.horaFin,
     this.horaDescansoInicio,
     this.horaDescansoFin,
+    required this.esFestivo,
+    required this.nombreFestivo,
     required this.onTapTarea,
   });
 
@@ -2396,14 +2427,43 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                             "Sáb",
                             "Dom",
                           ][i];
+                          final fest = widget.esFestivo(d);
+                          final festivoNombre = widget.nombreFestivo(d);
                           return SizedBox(
                             width: colWidth,
-                            child: Center(
-                              child: Text(
-                                "$label ${d.day}",
-                                style: TextStyle(
-                                  color: text,
-                                  fontWeight: FontWeight.w600,
+                            child: Tooltip(
+                              message: fest
+                                  ? 'Festivo${festivoNombre != null ? ': $festivoNombre' : ''}'
+                                  : '',
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                  vertical: 4,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: fest
+                                      ? const Color(0xFFFFCDD2)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: fest
+                                      ? Border.all(
+                                          color: const Color(0xFFD32F2F),
+                                          width: 1,
+                                        )
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    fest ? "$label ${d.day} • F" : "$label ${d.day}",
+                                    style: TextStyle(
+                                      color: fest ? const Color(0xFFB71C1C) : text,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),

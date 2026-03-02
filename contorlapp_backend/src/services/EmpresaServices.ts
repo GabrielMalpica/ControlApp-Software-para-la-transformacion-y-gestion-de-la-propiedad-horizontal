@@ -1,7 +1,7 @@
 // src/services/EmpresaService.ts
 import {
   EstadoSolicitud,
-} from "../generated/prisma";
+} from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
 import {

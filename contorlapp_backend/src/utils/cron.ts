@@ -1,6 +1,6 @@
 // src/utils/cron.ts
 import cron from "node-cron";
-import { PrismaClient } from "../generated/prisma";
+import { PrismaClient } from "@prisma/client";
 import { DefinicionTareaPreventivaService } from "../services/DefinicionTareaPreventivaService";
 
 const prisma = new PrismaClient();
