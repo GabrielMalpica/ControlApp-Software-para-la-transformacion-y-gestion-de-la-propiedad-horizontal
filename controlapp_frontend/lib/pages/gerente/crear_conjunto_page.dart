@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/api/gerente_api.dart';
+import '../../api/gerente_api.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
 import 'package:flutter_application_1/service/theme.dart';
 
@@ -271,15 +271,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
       );
 
       if (!mounted) return;
-      AppFeedback.showFromSnackBar(
-        context,
-        const SnackBar(
-          content: Text('✅ Conjunto creado correctamente'),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      Navigator.pop(context); // volver al dashboard o a la lista
+      await _mostrarGuardadoYVolverMenu();
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
@@ -309,6 +301,31 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
       u.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _mostrarGuardadoYVolverMenu() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Éxito'),
+        content: const Text('Guardado correctamente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+
+    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
   }
 
   @override

@@ -5,7 +5,7 @@ import {
   TipoTarea,
   Frecuencia,
   EstadoTarea,
-} from "../generated/prisma";
+} from "@prisma/client";
 import { HorarioDia } from "./agenda";
 
 export type Intervalo = { i: number; f: number }; // minutos dentro del día [0..1440]
@@ -223,7 +223,10 @@ export function siguienteDiaHabil(params: {
     x.setDate(x.getDate() + 1);
     const key = ymdLocal(x);
     const ds = dateToDiaSemana(x);
-    if (!festivosSet.has(key) && horariosPorDia.has(ds)) return new Date(x);
+    const esDomingo = ds === ("DOMINGO" as DiaSemana);
+    if (!esDomingo && !festivosSet.has(key) && horariosPorDia.has(ds)) {
+      return new Date(x);
+    }
   }
   return null;
 }
@@ -1044,11 +1047,12 @@ export function findNextValidDay(params: {
     }
 
     const esFestivo = festivosSet.has(ymdLocal(cur));
+    const esDomingo = ds === ("DOMINGO" as DiaSemana);
 
     // ✅ REGLA:
-    // - prioridad 1: si cae en festivo, SE MUEVE al siguiente día hábil (no se programa en festivo)
-    // - prioridad 2-3: si cae en festivo, NO se crea (se omite)
-    if (esFestivo) {
+    // - prioridad 1: si cae en festivo o domingo, SE MUEVE al siguiente día hábil
+    // - prioridad 2-3: si cae en festivo o domingo, NO se crea (se omite)
+    if (esFestivo || esDomingo) {
       if (prioridad === 1) {
         cur.setDate(cur.getDate() + 1);
         continue; // sigue buscando el próximo día hábil con horario

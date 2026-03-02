@@ -1,6 +1,6 @@
 // src/models/solicitudTarea.ts
 import { z } from "zod";
-import { EstadoSolicitud } from "../generated/prisma";
+import { EstadoSolicitud } from "@prisma/client";
 
 /** Crear solicitud de tarea asociada a conjunto/ubicación/elemento */
 export const CrearSolicitudTareaDTO = z.object({
