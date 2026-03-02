@@ -1031,9 +1031,11 @@ export class DefinicionTareaPreventivaService {
         });
         if (!diaProgramable) continue;
 
-        // ✅ log: cayó en festivo y se movió
+        // ✅ log: cayó en festivo/domingo y se movió
+        const diaBaseEsFestivo = festivosSet.has(dayKey(diaBase));
+        const diaBaseEsDomingo = dateToDiaSemana(diaBase) === DiaSemana.DOMINGO;
         if (
-          festivosSet.has(dayKey(diaBase)) &&
+          (diaBaseEsFestivo || diaBaseEsDomingo) &&
           dayKey(diaProgramable) !== dayKey(diaBase)
         ) {
           novedades.push({
