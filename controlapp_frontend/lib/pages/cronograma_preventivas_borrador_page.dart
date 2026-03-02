@@ -466,7 +466,7 @@ class _CronogramaPreventivasBorradorPageState
     String _title(NovedadCronogramaModel n) {
       switch (n.tipo) {
         case 'FESTIVO_MOVIDO':
-          return 'Movido por festivo';
+          return 'Movido por festivo/domingo';
         case 'REEMPLAZO_PRIORIDAD':
           return 'Reemplazo por prioridad';
         case 'SIN_CANDIDATAS':
@@ -497,9 +497,14 @@ class _CronogramaPreventivasBorradorPageState
         final movidaSiguienteDia =
             fO != null && fN != null && fN.difference(fO).inDays == 1;
 
-        final motivo = movidaSiguienteDia
-            ? 'Se movió al siguiente día porque la fecha original era festiva.'
-            : 'Se reprogramó porque la fecha original coincidía con un festivo.';
+        final fechaOriginalEsDomingo = fO?.weekday == DateTime.sunday;
+        final motivo = fechaOriginalEsDomingo
+            ? (movidaSiguienteDia
+                ? 'Se movió al siguiente día porque la fecha original era domingo.'
+                : 'Se reprogramó porque la fecha original coincidía con un domingo.')
+            : (movidaSiguienteDia
+                ? 'Se movió al siguiente día porque la fecha original era festiva.'
+                : 'Se reprogramó porque la fecha original coincidía con un festivo.');
 
         return '$desc\n$pr\n$motivo\n${n.fechaOriginal ?? '—'} → ${n.fechaNueva ?? '—'}';
       }
@@ -571,8 +576,8 @@ class _CronogramaPreventivasBorradorPageState
                     ),
                     child: Text(
                       novedades.isEmpty
-                          ? 'No hubo novedades. El borrador se generó sin mover tareas por festivos y sin reemplazos por prioridad.'
-                          : 'Estas son las novedades detectadas al generar el borrador (movimientos por festivos, reemplazos por prioridad y/o casos sin hueco).',
+                          ? 'No hubo novedades. El borrador se generó sin mover tareas por festivos/domingos y sin reemplazos por prioridad.'
+                          : 'Estas son las novedades detectadas al generar el borrador (movimientos por festivos/domingos, reemplazos por prioridad y/o casos sin hueco).',
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.grey.shade900,
