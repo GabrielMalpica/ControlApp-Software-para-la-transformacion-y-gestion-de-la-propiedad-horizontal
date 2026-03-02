@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/administrador_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/pages/agenda_maquinaria_page.dart';
+import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.dart';
+import 'package:flutter_application_1/pages/cronograma_page.dart';
+import 'package:flutter_application_1/pages/gerente/usuarios_conjunto_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/session_service.dart';
+import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import '../service/theme.dart';
 import 'inventario_page.dart';
@@ -96,7 +101,10 @@ class _AdministradorPageState extends State<AdministradorPage> {
             children: [
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 14,
+                  ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -139,6 +147,10 @@ class _AdministradorPageState extends State<AdministradorPage> {
         ),
       ),
     );
+  }
+
+  void _go(Widget page) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
   }
 
   Widget _buildBody() {
@@ -256,14 +268,10 @@ class _AdministradorPageState extends State<AdministradorPage> {
                 AppTheme.yellow,
                 Icons.inventory,
                 onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => InventarioPage(
-                        nit: conjunto.nit,
-                        empresaId:
-                            AppConstants.empresaNit, // ✅ arregla tu widget.,
-                      ),
+                  _go(
+                    InventarioPage(
+                      nit: conjunto.nit,
+                      empresaId: AppConstants.empresaNit,
                     ),
                   );
                 },
@@ -289,6 +297,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
         ),
         actions: [
           const NotificacionesAction(),
+          const CambiarContrasenaAction(),
           IconButton(
             tooltip: "Recargar",
             onPressed: _cargarConjuntos,
