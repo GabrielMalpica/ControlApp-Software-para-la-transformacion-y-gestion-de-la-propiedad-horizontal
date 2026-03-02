@@ -99,34 +99,6 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
     );
   }
 
-  /// 🔹 Sección de atajos (si quieres)
-  Widget _atajos() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(color: Colors.black12.withOpacity(0.05), blurRadius: 5),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Text(
-            "Atajos",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          SizedBox(height: 10),
-          Text(
-            "• Aquí puedes poner accesos rápidos (ej: “Solicitar insumo”)",
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _confirmLogout() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -177,6 +149,11 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const Text(
+                  "Panel general",
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                const SizedBox(height: 12),
                 GridView.count(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -213,11 +190,6 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                     ),
                   ],
                 ),
-
-                const SizedBox(height: 14),
-
-                // ✅ opcional
-                _atajos(),
               ],
             ),
           );
@@ -252,4 +224,3 @@ class _BubblePatternPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-

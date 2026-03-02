@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/api/gerente_api.dart';
+import '../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/supervisor/supervisor_tareas_page.dart';
 import 'package:flutter_application_1/service/logout.dart';
@@ -8,7 +8,7 @@ import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import '../service/theme.dart';
 
 import 'solicitudes_page.dart';
-import 'maquinaria_page.dart';
+import 'agenda_maquinaria_page.dart';
 import 'inventario_page.dart';
 import 'cronograma_page.dart';
 import 'reportes_page.dart';
@@ -165,35 +165,54 @@ class _SupervisorPageState extends State<SupervisorPage> {
   Widget _buildSelectorConjuntoCard(Conjunto conjunto) {
     final nit = conjunto.nit;
 
-    return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Icon(Icons.apartment, color: AppTheme.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Conjunto seleccionado",
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  Text(
-                    conjunto.nombre,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  Text("NIT: $nit", style: const TextStyle(fontSize: 12)),
-                ],
-              ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF4EE),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black12.withOpacity(0.05)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
             ),
-            DropdownButton<String>(
+            child: const Icon(Icons.apartment, color: AppTheme.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Conjunto seleccionado",
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  conjunto.nombre,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text("NIT: $nit", style: const TextStyle(fontSize: 12)),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.black12.withOpacity(0.08)),
+            ),
+            child: DropdownButton<String>(
               value: _conjuntoSeleccionadoNit,
               underline: const SizedBox.shrink(),
               items: _conjuntos
@@ -207,13 +226,10 @@ class _SupervisorPageState extends State<SupervisorPage> {
               onChanged: (v) async {
                 if (v == null) return;
                 setState(() => _conjuntoSeleccionadoNit = v);
-
-                // 🔹 Hook para cargas futuras por conjunto (si las agregas)
-                // await _cargarResumenSupervisor(v);
               },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -244,22 +260,25 @@ class _SupervisorPageState extends State<SupervisorPage> {
 
     final nit = conjunto.nit;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSelectorConjuntoCard(conjunto),
-          const SizedBox(height: 20),
-          const Text(
-            "Panel general",
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-          ),
-          const SizedBox(height: 12),
+    return LayoutBuilder(
+      builder: (context, c) {
+        final cols = _gridCountForWidth(c.maxWidth);
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildSelectorConjuntoCard(conjunto),
+              const SizedBox(height: 20),
+              const Text(
+                "Panel general",
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+              ),
+              const SizedBox(height: 12),
 
-          GridView.count(
+              GridView.count(
             shrinkWrap: true,
-            crossAxisCount: 4, // ✅ cuadritos pequeños como gerente
+            crossAxisCount: cols,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
             childAspectRatio: 1.05,
@@ -312,7 +331,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
                 AppTheme.red,
                 onTap: () {
                   if (!_requiereConjuntoOrWarn()) return;
-                  _go(MaquinariaPage(nit: nit));
+                  _go(AgendaMaquinariaPage(conjuntoId: nit));
                 },
               ),
               _smallCard(
@@ -340,9 +359,11 @@ class _SupervisorPageState extends State<SupervisorPage> {
                 onTap: _cargarConjuntos,
               ),
             ],
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 

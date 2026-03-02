@@ -271,157 +271,146 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
             });
           }
 
-          return Row(
+          Widget catalogo() => Column(
             children: [
-              // ======= IZQUIERDA: CATÁLOGO =======
-              SizedBox(
-                width: 360,
-                child: Column(
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(12, 12, 12, 8),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Máquinas',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(12, 0, 12, 12),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Propias del conjunto + con agenda del conjunto',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.black54,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Card(
-                        margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          side: BorderSide(
-                            color: Colors.black12.withOpacity(.08),
-                          ),
-                        ),
-                        child: ListView.separated(
-                          itemCount: maquinas.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (context, i) {
-                            final m = maquinas[i];
-                            final selected = _seleccionada?.id == m.id;
-                            final esPropia = _esPropiaDelConjunto(m);
-
-                            final subtitle =
-                                [
-                                      m.marca,
-                                      m.tipo.label,
-                                      esPropia ? 'Propia' : 'Con agenda',
-                                      if (m.propietarioTipo != null)
-                                        m.propietarioTipo!.label,
-                                      if (m.conjuntoPropietarioId != null)
-                                        'Conjunto: ${m.conjuntoPropietarioId}',
-                                    ]
-                                    .where(
-                                      (x) => x.toString().trim().isNotEmpty,
-                                    )
-                                    .join(' • ');
-
-                            return ListTile(
-                              selected: selected,
-                              selectedTileColor: Colors.green.withOpacity(.08),
-                              leading: CircleAvatar(
-                                radius: 18,
-                                backgroundColor:
-                                    (selected ? Colors.green : Colors.black12)
-                                        .withOpacity(.12),
-                                child: Icon(
-                                  Icons.precision_manufacturing,
-                                  size: 18,
-                                  color: selected
-                                      ? Colors.green
-                                      : Colors.black54,
-                                ),
-                              ),
-                              title: Text(
-                                m.nombre,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontWeight: selected
-                                      ? FontWeight.w800
-                                      : FontWeight.w600,
-                                ),
-                              ),
-                              subtitle: Text(
-                                subtitle,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              trailing: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.black12.withOpacity(.08),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  m.estado.label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                              onTap: () async {
-                                setState(() {
-                                  _seleccionada = m;
-                                  _agendaSeleccionada = null;
-                                  _errorAgenda = null;
-                                });
-                                await _cargarAgendaMaquinaSeleccionada();
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
+              const Padding(
+                padding: EdgeInsets.fromLTRB(12, 12, 12, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Máquinas',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                  ),
                 ),
               ),
-
-              const VerticalDivider(width: 1),
-
-              // ======= DERECHA: TABLA =======
+              const Padding(
+                padding: EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Propias del conjunto + con agenda del conjunto',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.black54,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
               Expanded(
-                child: _seleccionada == null
-                    ? const Center(
-                        child: Text(
-                          'Selecciona una máquina para ver su programación',
+                child: Card(
+                  margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: Colors.black12.withOpacity(.08)),
+                  ),
+                  child: ListView.separated(
+                    itemCount: maquinas.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, i) {
+                      final m = maquinas[i];
+                      final selected = _seleccionada?.id == m.id;
+                      final esPropia = _esPropiaDelConjunto(m);
+
+                      final subtitle =
+                          [
+                                m.marca,
+                                m.tipo.label,
+                                esPropia ? 'Propia' : 'Con agenda',
+                                if (m.propietarioTipo != null)
+                                  m.propietarioTipo!.label,
+                                if (m.conjuntoPropietarioId != null)
+                                  'Conjunto: ${m.conjuntoPropietarioId}',
+                              ]
+                              .where((x) => x.toString().trim().isNotEmpty)
+                              .join(' • ');
+
+                      return ListTile(
+                        selected: selected,
+                        selectedTileColor: Colors.green.withOpacity(.08),
+                        leading: CircleAvatar(
+                          radius: 18,
+                          backgroundColor:
+                              (selected ? Colors.green : Colors.black12)
+                                  .withOpacity(.12),
+                          child: Icon(
+                            Icons.precision_manufacturing,
+                            size: 18,
+                            color: selected ? Colors.green : Colors.black54,
+                          ),
                         ),
-                      )
-                    : _cargandoAgenda
-                    ? const Center(child: CircularProgressIndicator())
-                    : _errorAgenda != null
-                    ? Center(child: Text('Error agenda: $_errorAgenda'))
-                    : _buildPlanilla(mesLabel),
+                        title: Text(
+                          m.nombre,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black12.withOpacity(.08),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            m.estado.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                          ),
+                        ),
+                        onTap: () async {
+                          setState(() {
+                            _seleccionada = m;
+                            _agendaSeleccionada = null;
+                            _errorAgenda = null;
+                          });
+                          await _cargarAgendaMaquinaSeleccionada();
+                        },
+                      );
+                    },
+                  ),
+                ),
               ),
             ],
+          );
+
+          Widget detalle() => _seleccionada == null
+              ? const Center(child: Text('Selecciona una máquina para ver su programación'))
+              : _cargandoAgenda
+              ? const Center(child: CircularProgressIndicator())
+              : _errorAgenda != null
+              ? Center(child: Text('Error agenda: $_errorAgenda'))
+              : _buildPlanilla(mesLabel);
+
+          return LayoutBuilder(
+            builder: (context, c) {
+              final mobile = c.maxWidth < 980;
+              if (!mobile) {
+                return Row(
+                  children: [
+                    SizedBox(width: 360, child: catalogo()),
+                    const VerticalDivider(width: 1),
+                    Expanded(child: detalle()),
+                  ],
+                );
+              }
+
+              return Column(
+                children: [
+                  SizedBox(height: 260, child: catalogo()),
+                  const Divider(height: 1),
+                  Expanded(child: detalle()),
+                ],
+              );
+            },
           );
         },
       ),
