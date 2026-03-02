@@ -406,10 +406,13 @@ class _CronogramaPreventivasBorradorPageState
       // 2) Cargar cronograma (como antes)
       await _cargarDatos(); // deja _loading en false al final
 
-      // 3) Mostrar cuadro grande solo 1 vez por periodo
-      final yaMostrada = _novedadesMostradasPorPeriodo.contains(periodoKey);
-      final mostrarAhora = !yaMostrada || novedades.isNotEmpty;
-      if (mounted && mostrarAhora) {
+      // 3) Mostrar novedades:
+      // - Si hay novedades, SIEMPRE mostrar (aunque ya se haya abierto antes en el periodo).
+      // - Si no hay novedades, mostrar solo 1 vez por periodo para no molestar.
+      final debeMostrarModal =
+          novedades.isNotEmpty || !_novedadesMostradasPorPeriodo.contains(periodoKey);
+
+      if (mounted && debeMostrarModal) {
         _novedadesMostradasPorPeriodo.add(periodoKey);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _mostrarModalNovedades(creadas: creadas, novedades: novedades);
