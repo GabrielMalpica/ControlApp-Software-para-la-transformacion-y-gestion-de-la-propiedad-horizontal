@@ -350,6 +350,169 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     return DateTime(fecha.year, fecha.month, fecha.day, hora.hour, hora.minute);
   }
 
+  int _minutosDelDia(DateTime d) => d.hour * 60 + d.minute;
+
+  int? _parseHoraMin(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final parts = raw.trim().split(':');
+    if (parts.length < 2) return null;
+
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
+      return null;
+    }
+    return (h * 60) + m;
+  }
+
+  String _fmtMin(int min) {
+    final h = (min ~/ 60).toString().padLeft(2, '0');
+    final m = (min % 60).toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  String _normalizarDia(String raw) {
+    var out = raw.trim().toUpperCase();
+    const repl = {
+      'Á': 'A',
+      'É': 'E',
+      'Í': 'I',
+      'Ó': 'O',
+      'Ú': 'U',
+      'Ü': 'U',
+      'Ñ': 'N',
+      '_': '',
+      '-': '',
+      ' ': '',
+    };
+    repl.forEach((k, v) => out = out.replaceAll(k, v));
+    return out;
+  }
+
+  int? _weekdayDesdeDiaHorario(String? rawDia) {
+    if (rawDia == null) return null;
+    switch (_normalizarDia(rawDia)) {
+      case 'LUNES':
+      case 'MONDAY':
+        return DateTime.monday;
+      case 'MARTES':
+      case 'TUESDAY':
+        return DateTime.tuesday;
+      case 'MIERCOLES':
+      case 'WEDNESDAY':
+        return DateTime.wednesday;
+      case 'JUEVES':
+      case 'THURSDAY':
+        return DateTime.thursday;
+      case 'VIERNES':
+      case 'FRIDAY':
+        return DateTime.friday;
+      case 'SABADO':
+      case 'SATURDAY':
+        return DateTime.saturday;
+      case 'DOMINGO':
+      case 'SUNDAY':
+        return DateTime.sunday;
+      default:
+        return null;
+    }
+  }
+
+  String _nombreDiaEs(int weekday) {
+    switch (weekday) {
+      case DateTime.monday:
+        return 'lunes';
+      case DateTime.tuesday:
+        return 'martes';
+      case DateTime.wednesday:
+        return 'miercoles';
+      case DateTime.thursday:
+        return 'jueves';
+      case DateTime.friday:
+        return 'viernes';
+      case DateTime.saturday:
+        return 'sabado';
+      case DateTime.sunday:
+        return 'domingo';
+      default:
+        return 'dia';
+    }
+  }
+
+  String? _validarDentroHorarioConjunto(DateTime inicio, DateTime fin) {
+    final conjunto = _conjuntoSeleccionado;
+    if (conjunto == null) return null;
+
+    if (!fin.isAfter(inicio)) {
+      return 'La hora de fin debe ser posterior a la hora de inicio.';
+    }
+
+    final mismoDia =
+        inicio.year == fin.year &&
+        inicio.month == fin.month &&
+        inicio.day == fin.day;
+    if (!mismoDia) {
+      return 'La correctiva debe iniciar y terminar el mismo dia, dentro del horario del conjunto.';
+    }
+
+    final horarios = conjunto.horarios;
+    if (horarios.isEmpty) {
+      return 'El conjunto no tiene horarios configurados. Configuralos antes de agendar correctivas.';
+    }
+
+    final horariosDelDia = horarios
+        .where((h) => _weekdayDesdeDiaHorario(h.dia) == inicio.weekday)
+        .toList();
+    if (horariosDelDia.isEmpty) {
+      return 'El conjunto no tiene horario para ${_nombreDiaEs(inicio.weekday)}.';
+    }
+
+    final iniMin = _minutosDelDia(inicio);
+    final finMin = _minutosDelDia(fin);
+
+    bool hayHorarioValido = false;
+    final rangosPermitidos = <String>[];
+
+    for (final h in horariosDelDia) {
+      final apertura = _parseHoraMin(h.horaApertura);
+      final cierre = _parseHoraMin(h.horaCierre);
+      if (apertura == null || cierre == null || cierre <= apertura) continue;
+
+      hayHorarioValido = true;
+
+      final descansoInicio = _parseHoraMin(h.descansoInicio);
+      final descansoFin = _parseHoraMin(h.descansoFin);
+      final tieneDescanso =
+          descansoInicio != null &&
+          descansoFin != null &&
+          descansoInicio > apertura &&
+          descansoFin < cierre &&
+          descansoFin > descansoInicio;
+
+      if (!tieneDescanso) {
+        rangosPermitidos.add('${_fmtMin(apertura)}-${_fmtMin(cierre)}');
+        if (iniMin >= apertura && finMin <= cierre) return null;
+        continue;
+      }
+
+      rangosPermitidos.add(
+        '${_fmtMin(apertura)}-${_fmtMin(descansoInicio!)} y ${_fmtMin(descansoFin!)}-${_fmtMin(cierre)}',
+      );
+      final cabeAntesDescanso = iniMin >= apertura && finMin <= descansoInicio;
+      final cabeDespuesDescanso = iniMin >= descansoFin && finMin <= cierre;
+      if (cabeAntesDescanso || cabeDespuesDescanso) return null;
+    }
+
+    if (!hayHorarioValido) {
+      return 'El horario de ${_nombreDiaEs(inicio.weekday)} esta mal configurado en el conjunto.';
+    }
+
+    final detalle = rangosPermitidos.isEmpty
+        ? ''
+        : ' Horario permitido: ${rangosPermitidos.join(' | ')}.';
+    return 'Solo se puede agendar dentro del horario del conjunto.$detalle';
+  }
+
   DateTime _inicioSemana(DateTime d) {
     final diff = d.weekday - DateTime.monday;
     return DateTime(d.year, d.month, d.day).subtract(Duration(days: diff));
@@ -932,6 +1095,15 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
     final inicio = _combinarFechaYHora(fechaInicio!, _horaInicio!);
     final fin = inicio.add(Duration(minutes: duracionMin));
+
+    final errorHorario = _validarDentroHorarioConjunto(inicio, fin);
+    if (errorHorario != null) {
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(errorHorario)),
+      );
+      return;
+    }
 
     final okSemana = await _validarLimiteSemanal(inicio, duracionMin);
     if (!okSemana) return;
