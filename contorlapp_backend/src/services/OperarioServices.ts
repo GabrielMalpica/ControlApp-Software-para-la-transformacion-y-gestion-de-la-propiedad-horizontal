@@ -54,9 +54,17 @@ export class OperarioService {
 
     const tarea = await this.prisma.tarea.findUnique({
       where: { id: tareaId },
-      select: { fechaInicio: true, duracionMinutos: true, id: true },
+      select: {
+        fechaInicio: true,
+        duracionMinutos: true,
+        id: true,
+        borrador: true,
+      },
     });
-    if (!tarea) throw new Error("❌ Tarea no encontrada");
+    if (!tarea) throw new Error("Tarea no encontrada");
+    if (tarea.borrador) {
+      throw new Error("No se puede asignar una tarea en borrador.");
+    }
 
     const limite = await this.getLimiteHorasSemana();
     const horasSemana = await this.horasAsignadasEnSemana(tarea.fechaInicio);
@@ -80,6 +88,13 @@ export class OperarioService {
   /** Inicia una tarea (cambia estado a EN_PROCESO) */
   async iniciarTarea(payload: unknown) {
     const { tareaId } = TareaIdDTO.parse(payload);
+    const tarea = await this.prisma.tarea.findUnique({
+      where: { id: tareaId },
+      select: { id: true, borrador: true },
+    });
+    if (!tarea || tarea.borrador) {
+      throw new Error("La tarea no existe o está en borrador.");
+    }
     const tareaService = new TareaService(this.prisma, tareaId);
     await tareaService.iniciarTarea();
   }
@@ -99,9 +114,12 @@ export class OperarioService {
 
     const tarea = await this.prisma.tarea.findUnique({
       where: { id: tareaId },
-      include: { conjunto: true },
+      select: { id: true, conjuntoId: true, borrador: true },
     });
     if (!tarea) throw new Error("❌ Tarea no encontrada.");
+    if (tarea.borrador) {
+      throw new Error("No se puede completar una tarea en borrador.");
+    }
     if (tarea.conjuntoId === null) {
       throw new Error("❌ La tarea no tiene un conjunto asignado.");
     }
@@ -153,6 +171,13 @@ export class OperarioService {
   /** Marca una tarea como NO_COMPLETADA */
   async marcarComoNoCompletada(payload: unknown) {
     const { tareaId } = TareaIdDTO.parse(payload);
+    const tarea = await this.prisma.tarea.findUnique({
+      where: { id: tareaId },
+      select: { id: true, borrador: true },
+    });
+    if (!tarea || tarea.borrador) {
+      throw new Error("La tarea no existe o está en borrador.");
+    }
     const tareaService = new TareaService(this.prisma, tareaId);
     await tareaService.marcarNoCompletada();
   }
@@ -163,6 +188,7 @@ export class OperarioService {
     return this.prisma.tarea.findMany({
       where: {
         operarios: { some: { id: this.operarioId.toString() } },
+        borrador: false,
         fechaInicio: { lte: fecha },
         fechaFin: { gte: fecha },
       },
@@ -173,6 +199,7 @@ export class OperarioService {
     return this.prisma.tarea.findMany({
       where: {
         operarios: { some: { id: this.operarioId.toString() } },
+        borrador: false,
       },
       orderBy: { fechaInicio: "asc" },
       include: {
@@ -199,6 +226,7 @@ export class OperarioService {
         id: true,
         descripcion: true,
         estado: true,
+        borrador: true,
         evidencias: true,
         conjuntoId: true,
         supervisorId: true,
@@ -208,6 +236,9 @@ export class OperarioService {
     });
 
     if (!tarea) throw new Error("❌ Tarea no encontrada.");
+    if (tarea.borrador) {
+      throw new Error("No se puede cerrar una tarea en borrador.");
+    }
 
     const operarioAsignado = tarea.operarios.some(
       (o) => o.id === this.operarioId.toString(),
@@ -394,6 +425,7 @@ export class OperarioService {
     const tareas = await this.prisma.tarea.findMany({
       where: {
         operarios: { some: { id: this.operarioId.toString() } },
+        borrador: false,
         fechaFin: { gte: inicio },
         fechaInicio: { lte: fin },
       },

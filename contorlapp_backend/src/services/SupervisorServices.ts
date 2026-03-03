@@ -128,7 +128,7 @@ export class SupervisorService {
 
     if (dto.conjuntoId) where.conjuntoId = dto.conjuntoId;
     if (dto.estado) where.estado = dto.estado as any;
-    if (dto.borrador !== undefined) where.borrador = dto.borrador;
+    where.borrador = dto.borrador ?? false;
 
     if (dto.operarioId) where.operarios = { some: { id: dto.operarioId } };
 

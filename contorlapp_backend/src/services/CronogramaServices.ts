@@ -123,6 +123,7 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        borrador: false,
         estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         operarios: { some: { id: operarioId.toString() } },
       },
@@ -140,6 +141,7 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        borrador: false,
         estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         fechaInicio: { lte: fecha },
         fechaFin: { gte: fecha },
@@ -158,6 +160,7 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        borrador: false,
         estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         // solape de rangos
         fechaFin: { gte: fechaInicio },
@@ -179,6 +182,7 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        borrador: false,
         estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         // según tu versión de Prisma, podrías necesitar { is: { nombre: ... } }
         ubicacion: { nombre: { equals: ubicacion, mode: "insensitive" } },
@@ -227,6 +231,7 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        borrador: false,
         estado: { notIn: ESTADOS_NO_CRONOGRAMA },
         operarios: f.operarioId
           ? { some: { id: f.operarioId.toString() } }

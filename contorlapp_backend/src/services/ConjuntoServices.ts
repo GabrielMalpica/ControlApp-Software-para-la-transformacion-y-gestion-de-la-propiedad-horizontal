@@ -348,6 +348,7 @@ export class ConjuntoService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        borrador: false,
         fechaInicio: { lte: fecha },
         fechaFin: { gte: fecha },
       },
@@ -359,6 +360,7 @@ export class ConjuntoService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        borrador: false,
         operarios: { some: { id: operarioId.toString() } },
       },
     });
@@ -369,6 +371,7 @@ export class ConjuntoService {
     return this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
+        borrador: false,
         ubicacion: { nombre: { equals: nombreUbicacion, mode: "insensitive" } },
       },
     });

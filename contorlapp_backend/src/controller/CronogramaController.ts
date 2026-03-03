@@ -90,7 +90,7 @@ export class CronogramaController {
       const mes = Number(req.query.mes);
       const borrador =
         req.query.borrador === undefined
-          ? undefined
+          ? false
           : String(req.query.borrador) === "true";
       const service = new CronogramaService(prisma, conjuntoId);
       const list = await service.cronogramaMensual({ anio, mes, borrador });
@@ -116,7 +116,7 @@ export class CronogramaController {
         | undefined;
       const borrador =
         req.query.borrador == null
-          ? undefined
+          ? false
           : String(req.query.borrador) === "true";
 
       if (
