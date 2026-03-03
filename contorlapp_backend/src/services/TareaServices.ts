@@ -8,6 +8,7 @@ import {
   tareaPublicSelect,
   toTareaPublica,
 } from "../model/Tarea";
+import { isFestivoDate } from "../utils/schedulerUtils";
 
 const EvidenciaDTO = z.object({ imagen: z.string().min(1) });
 
@@ -94,6 +95,18 @@ export class TareaService {
 
   static async crearTareaCorrectiva(prisma: PrismaClient, payload: unknown) {
     const dto = CrearTareaDTO.parse(payload);
+
+    const esDomingo = dto.fechaInicio.getDay() === 0;
+    const esFestivo = await isFestivoDate({
+      prisma,
+      fecha: dto.fechaInicio,
+      pais: "CO",
+    });
+    if (esDomingo || esFestivo) {
+      throw new Error(
+        "No se permite programar tareas en domingos o festivos.",
+      );
+    }
 
     // Operarios (M:N)
     const operariosConnect =

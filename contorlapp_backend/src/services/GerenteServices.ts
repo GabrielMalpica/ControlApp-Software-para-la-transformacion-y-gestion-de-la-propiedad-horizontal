@@ -40,6 +40,7 @@ import {
   buildAgendaPorOperarioDia,
   buscarHuecoDiaConSplitEarliest,
   dateToDiaSemana,
+  isFestivoDate,
   Intervalo,
   mergeIntervalos,
   toMin,
@@ -190,6 +191,25 @@ export class GerenteService {
     if (raw == null) return null;
     const id = String(raw).trim();
     return id.length > 0 ? id : null;
+  }
+
+  private async validarFechaLaborable(fecha: Date) {
+    const esDomingo = fecha.getDay() === 0;
+    const esFestivo = await isFestivoDate({
+      prisma: this.prisma,
+      fecha,
+      pais: "CO",
+    });
+
+    if (esDomingo || esFestivo) {
+      return {
+        ok: false as const,
+        reason: "FECHA_NO_LABORABLE" as const,
+        message: "No se pueden programar tareas en domingos o festivos.",
+      };
+    }
+
+    return null;
   }
 
   /* ===================== EMPRESA ===================== */
@@ -1357,6 +1377,9 @@ export class GerenteService {
     const dto = CrearTareaDTO.parse(payload);
 
     const inicio = dto.fechaInicio;
+    const noLaborable = await this.validarFechaLaborable(inicio);
+    if (noLaborable) return noLaborable;
+
     const periodoAnio = inicio.getFullYear();
     const periodoMes = inicio.getMonth() + 1;
 
@@ -1679,6 +1702,9 @@ export class GerenteService {
     }
 
     const inicio = dto.fechaInicio;
+    const noLaborable = await this.validarFechaLaborable(inicio);
+    if (noLaborable) return noLaborable;
+
     const durMin =
       dto.duracionMinutos ??
       (dto.duracionHoras
@@ -1902,6 +1928,9 @@ export class GerenteService {
     }
 
     const inicio = dto.fechaInicio;
+    const noLaborable = await this.validarFechaLaborable(inicio);
+    if (noLaborable) return noLaborable;
+
     const durMin =
       dto.duracionMinutos ??
       (dto.duracionHoras

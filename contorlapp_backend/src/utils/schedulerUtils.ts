@@ -1,6 +1,7 @@
 // src/utils/schedulerUtils.ts
 import {
   PrismaClient,
+  Prisma,
   DiaSemana,
   TipoTarea,
   Frecuencia,
@@ -138,16 +139,35 @@ export async function getFestivosSet(params: {
   fin: Date;
 }): Promise<Set<string>> {
   const { prisma, pais, inicio, fin } = params;
+  const desde = ymdLocal(inicio);
+  const hasta = ymdLocal(fin);
 
-  const festivos = await prisma.festivo.findMany({
-    where: {
-      pais,
-      fecha: { gte: inicio, lte: fin },
-    },
-    select: { fecha: true },
-  });
+  const rows = await prisma.$queryRaw<Array<{ fecha_key: string }>>`
+    SELECT to_char(f."fecha"::date, 'YYYY-MM-DD') AS fecha_key
+    FROM "Festivo" f
+    WHERE f."pais" = ${pais}
+      AND f."fecha"::date BETWEEN to_date(${desde}, 'YYYY-MM-DD') AND to_date(${hasta}, 'YYYY-MM-DD')
+    ORDER BY f."fecha"::date ASC
+  `;
 
-  return new Set(festivos.map((f) => ymdLocal(f.fecha)));
+  return new Set(rows.map((r) => r.fecha_key));
+}
+
+export async function isFestivoDate(params: {
+  prisma: PrismaClient | Prisma.TransactionClient;
+  fecha: Date;
+  pais?: string;
+}): Promise<boolean> {
+  const { prisma, fecha, pais = "CO" } = params;
+  const key = ymdLocal(fecha);
+  const rows = await prisma.$queryRaw<Array<{ hit: number }>>`
+    SELECT 1 AS hit
+    FROM "Festivo" f
+    WHERE f."pais" = ${pais}
+      AND f."fecha"::date = to_date(${key}, 'YYYY-MM-DD')
+    LIMIT 1
+  `;
+  return rows.length > 0;
 }
 
 export async function getHorarioConDescansoDia(params: {

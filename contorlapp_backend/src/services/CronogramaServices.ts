@@ -1,6 +1,7 @@
 // src/services/CronogramaService.ts
 import { z } from "zod";
 import type{ PrismaClient } from "@prisma/client";
+import { isFestivoDate } from "../utils/schedulerUtils";
 
 // DTOs locales de filtros para este servicio
 const OperarioIdDTO = z.object({ operarioId: z.number().int().positive() });
@@ -565,6 +566,18 @@ export class CronogramaService {
         message: "fechaFin debe ser >= fechaInicio",
       })
       .parse(payload);
+
+    const esDomingo = fechaInicio.getDay() === 0;
+    const esFestivo = await isFestivoDate({
+      prisma: this.prisma,
+      fecha: fechaInicio,
+      pais: "CO",
+    });
+    if (esDomingo || esFestivo) {
+      throw new Error(
+        "No se permite reprogramar tareas a domingos o festivos.",
+      );
+    }
 
     return this.prisma.tarea.update({
       where: { id: tareaId },

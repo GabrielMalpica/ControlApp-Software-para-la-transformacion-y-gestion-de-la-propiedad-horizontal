@@ -26,11 +26,13 @@ import {
   findNextValidDay,
   getFestivosSet,
   intentarReemplazoPorPrioridadBaja,
+  isFestivoDate,
   mergeIntervalos,
   siguienteDiaHabil,
   splitMinutes,
   toDateAtMin,
   toMin,
+  ymdLocal,
 } from "../utils/schedulerUtils";
 
 import { buildMaquinariaNoDisponibleError } from "../utils/errorFormat";
@@ -77,10 +79,17 @@ type NovedadCronograma =
       descripcion: string;
       prioridad: number;
       fecha: string;
+    }
+  | {
+      tipo: "FESTIVO_OMITIDO";
+      defId: number;
+      descripcion: string;
+      prioridad: number;
+      fecha: string;
+      motivo: "FESTIVO" | "DOMINGO";
     };
 
-const dayKey = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const dayKey = (d: Date) => ymdLocal(d);
 
 /* =========================================================
  * DTOs internos (Zod)
@@ -919,11 +928,6 @@ export class DefinicionTareaPreventivaService {
       incluirPublicadasEnAgenda = true,
     } = params;
 
-    const dayKey = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-        d.getDate(),
-      ).padStart(2, "0")}`;
-
     const novedades: NovedadCronograma[] = [];
 
     // 1️⃣ Definiciones activas
@@ -1029,7 +1033,21 @@ export class DefinicionTareaPreventivaService {
           horariosPorDia,
           festivosSet,
         });
-        if (!diaProgramable) continue;
+        if (!diaProgramable) {
+          const diaBaseEsFestivo = festivosSet.has(dayKey(diaBase));
+          const diaBaseEsDomingo = dateToDiaSemana(diaBase) === DiaSemana.DOMINGO;
+          if (diaBaseEsFestivo || diaBaseEsDomingo) {
+            novedades.push({
+              tipo: "FESTIVO_OMITIDO",
+              defId: def.id,
+              descripcion: def.descripcion,
+              prioridad,
+              fecha: dayKey(diaBase),
+              motivo: diaBaseEsDomingo ? "DOMINGO" : "FESTIVO",
+            });
+          }
+          continue;
+        }
 
         // ✅ log: cayó en festivo/domingo y se movió
         const diaBaseEsFestivo = festivosSet.has(dayKey(diaBase));
@@ -1447,6 +1465,18 @@ export class DefinicionTareaPreventivaService {
     if (dto.fechaFin < dto.fechaInicio)
       throw new Error("fechaFin >= fechaInicio");
 
+    const inicioEsDomingo = dto.fechaInicio.getDay() === 0;
+    const inicioEsFestivo = await isFestivoDate({
+      prisma: this.prisma,
+      fecha: dto.fechaInicio,
+      pais: "CO",
+    });
+    if (inicioEsDomingo || inicioEsFestivo) {
+      throw new Error(
+        "No se permite programar tareas preventivas en domingos o festivos.",
+      );
+    }
+
     if (dto.operariosIds?.length) {
       for (const opId of dto.operariosIds) {
         const choque = await this.prisma.tarea.findFirst({
@@ -1541,6 +1571,20 @@ export class DefinicionTareaPreventivaService {
 
     const fechaInicio = dto.fechaInicio ?? undefined;
     const fechaFin = dto.fechaFin ?? undefined;
+
+    if (fechaInicio) {
+      const inicioEsDomingo = fechaInicio.getDay() === 0;
+      const inicioEsFestivo = await isFestivoDate({
+        prisma: this.prisma,
+        fecha: fechaInicio,
+        pais: "CO",
+      });
+      if (inicioEsDomingo || inicioEsFestivo) {
+        throw new Error(
+          "No se permite programar tareas preventivas en domingos o festivos.",
+        );
+      }
+    }
 
     if (fechaInicio && fechaFin && operariosIdsFinal.length) {
       for (const opId of operariosIdsFinal) {
