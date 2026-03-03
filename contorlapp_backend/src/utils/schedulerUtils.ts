@@ -1040,12 +1040,6 @@ export function findNextValidDay(params: {
     }
 
     const ds = dateToDiaSemana(cur);
-    const tieneHorario = horariosPorDia.has(ds);
-    if (!tieneHorario) {
-      cur.setDate(cur.getDate() + 1);
-      continue;
-    }
-
     const esFestivo = festivosSet.has(ymdLocal(cur));
     const esDomingo = ds === ("DOMINGO" as DiaSemana);
 
@@ -1058,6 +1052,12 @@ export function findNextValidDay(params: {
         continue; // sigue buscando el próximo día hábil con horario
       }
       return null; // prioridad 2-3: se omite
+    }
+
+    const tieneHorario = horariosPorDia.has(ds);
+    if (!tieneHorario) {
+      cur.setDate(cur.getDate() + 1);
+      continue;
     }
 
     return new Date(cur);

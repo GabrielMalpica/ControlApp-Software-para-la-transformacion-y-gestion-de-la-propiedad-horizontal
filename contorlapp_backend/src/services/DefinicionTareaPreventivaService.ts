@@ -1113,7 +1113,33 @@ export class DefinicionTareaPreventivaService {
           for (let guardDia = 0; guardDia < 31; guardDia++) {
             if (!diaParte) break;
 
+            // Nunca crear bloques fuera del periodo solicitado.
+            if (
+              diaParte.getFullYear() !== periodoAnio ||
+              diaParte.getMonth() + 1 !== periodoMes
+            ) {
+              diaParte = null;
+              break;
+            }
+
+            const diaParteKey = dayKey(diaParte);
             const ds = dateToDiaSemana(diaParte);
+            const esDomingo = ds === DiaSemana.DOMINGO;
+            const esFestivo = festivosSet.has(diaParteKey);
+
+            // Regla dura: no se agenda en domingo/festivo.
+            if (esDomingo || esFestivo) {
+              if (prioridad === 1) {
+                diaParte = siguienteDiaHabil({
+                  fecha: diaParte,
+                  festivosSet,
+                  horariosPorDia,
+                });
+                continue;
+              }
+              break;
+            }
+
             const horario = horariosPorDia.get(ds);
             if (!horario) {
               diaParte = siguienteDiaHabil({
