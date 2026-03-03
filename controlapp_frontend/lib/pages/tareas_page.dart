@@ -92,8 +92,9 @@ class _TareasPageState extends State<TareasPage> {
       if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
-      if (!mounted) return;
-      setState(() => _cargando = false);
+      if (mounted) {
+        setState(() => _cargando = false);
+      }
     }
   }
 
@@ -127,6 +128,7 @@ class _TareasPageState extends State<TareasPage> {
 
     return decoded
         .map((e) => TareaModel.fromJson((e as Map).cast<String, dynamic>()))
+        .where((t) => !t.borrador)
         .toList();
   }
 

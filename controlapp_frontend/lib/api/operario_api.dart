@@ -43,6 +43,7 @@ class OperarioApi {
 
     return decoded
         .map((e) => TareaModel.fromJson((e as Map).cast<String, dynamic>()))
+        .where((t) => !t.borrador)
         .toList();
   }
 
