@@ -1,7 +1,7 @@
 // lib/model/novedad_cronograma_model.dart
 
 class NovedadCronogramaModel {
-  /// Ejemplos: FESTIVO_MOVIDO | REEMPLAZO_PRIORIDAD | SIN_CANDIDATAS | SIN_HUECO | OTRO
+  /// Ejemplos: FESTIVO_MOVIDO | FESTIVO_OMITIDO | REEMPLAZO_PRIORIDAD | SIN_CANDIDATAS | SIN_HUECO | OTRO
   final String tipo;
 
   final int? defId;
@@ -54,6 +54,9 @@ class NovedadCronogramaModel {
         case 'FESTIVO_MOVIDO':
         case 'FESTIVOMOVIDO':
           return 'FESTIVO_MOVIDO';
+        case 'FESTIVO_OMITIDO':
+        case 'FESTIVOOMITIDO':
+          return 'FESTIVO_OMITIDO';
         case 'REEMPLAZO_PRIORIDAD':
         case 'REEMPLAZOPRIORIDAD':
           return 'REEMPLAZO_PRIORIDAD';

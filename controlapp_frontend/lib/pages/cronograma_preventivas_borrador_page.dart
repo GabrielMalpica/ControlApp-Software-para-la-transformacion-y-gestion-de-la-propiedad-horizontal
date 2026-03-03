@@ -440,6 +440,8 @@ class _CronogramaPreventivasBorradorPageState
       switch (tipo) {
         case 'FESTIVO_MOVIDO':
           return Icons.event_busy;
+        case 'FESTIVO_OMITIDO':
+          return Icons.event_busy;
         case 'REEMPLAZO_PRIORIDAD':
           return Icons.swap_horiz;
         case 'SIN_CANDIDATAS':
@@ -454,6 +456,8 @@ class _CronogramaPreventivasBorradorPageState
     Color _color(String tipo) {
       switch (tipo) {
         case 'FESTIVO_MOVIDO':
+          return Colors.red.shade700;
+        case 'FESTIVO_OMITIDO':
           return Colors.red.shade700;
         case 'REEMPLAZO_PRIORIDAD':
           return Colors.indigo.shade700;
@@ -470,6 +474,8 @@ class _CronogramaPreventivasBorradorPageState
       switch (n.tipo) {
         case 'FESTIVO_MOVIDO':
           return 'Movido por festivo/domingo';
+        case 'FESTIVO_OMITIDO':
+          return 'Omitida por festivo/domingo';
         case 'REEMPLAZO_PRIORIDAD':
           return 'Reemplazo por prioridad';
         case 'SIN_CANDIDATAS':
@@ -510,6 +516,13 @@ class _CronogramaPreventivasBorradorPageState
                 : 'Se reprogramó porque la fecha original coincidía con un festivo.');
 
         return '$desc\n$pr\n$motivo\n${n.fechaOriginal ?? '—'} → ${n.fechaNueva ?? '—'}';
+      }
+
+      if (n.tipo == 'FESTIVO_OMITIDO') {
+        final razon = (n.fechaOriginal ?? n.fecha ?? '').isEmpty
+            ? 'No se programó por festivo/domingo.'
+            : 'No se programó para respetar domingo/festivo.';
+        return '$desc\n$pr\n$razon\nFecha: ${n.fecha ?? n.fechaOriginal ?? '—'}';
       }
 
       if (n.tipo == 'REEMPLAZO_PRIORIDAD') {
