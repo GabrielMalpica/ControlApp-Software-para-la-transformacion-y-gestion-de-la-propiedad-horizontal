@@ -75,6 +75,7 @@ class _CronogramaPreventivasBorradorPageState
 
   // ✅ Para no mostrar el cuadro de novedades repetido en el mismo periodo
   final Set<String> _novedadesMostradasPorPeriodo = {};
+  final Map<String, Map<String, dynamic>> _confirmacionesReemplazoPorCaso = {};
 
   int _horaInicioJornada = 8;
   int _horaFinJornada = 16;
@@ -358,6 +359,7 @@ class _CronogramaPreventivasBorradorPageState
       _initMes();
       _semanaBase = DateTime(_anioActual, _mesActual, 1);
     });
+    _confirmacionesReemplazoPorCaso.clear();
 
     // ✅ al cambiar mes: generar + novedades + cargar
     await _generarYcargarAlEntrar();
@@ -384,25 +386,12 @@ class _CronogramaPreventivasBorradorPageState
         nit: widget.nit,
         anio: _anioActual,
         mes: _mesActual,
+        confirmacionesReemplazo: _confirmacionesPeriodoActual(),
         // tamanoBloqueMinutos: 60,
       );
 
       final creadas = int.tryParse('${gen['creadas'] ?? 0}') ?? 0;
-
-      final rawNovedades = gen['novedades'];
-      final rawNovedadesList = (rawNovedades is List)
-          ? rawNovedades
-          : (rawNovedades is Map && rawNovedades['items'] is List)
-          ? (rawNovedades['items'] as List)
-          : const [];
-
-      final novedades = <NovedadCronogramaModel>[];
-      for (final e in rawNovedadesList) {
-        if (e is! Map) continue;
-        final map = <String, dynamic>{};
-        e.forEach((k, v) => map['$k'] = v);
-        novedades.add(NovedadCronogramaModel.fromJson(map));
-      }
+      final novedades = _parseNovedadesGeneracion(gen);
 
       // 2) Cargar cronograma (como antes)
       await _cargarDatos(); // deja _loading en false al final
@@ -426,6 +415,95 @@ class _CronogramaPreventivasBorradorPageState
         _loading = false;
       });
     }
+  }
+
+  String get _periodoKeyActual =>
+      '${_anioActual.toString().padLeft(4, '0')}-${_mesActual.toString().padLeft(2, '0')}';
+
+  String _decisionKeyFromNovedad(NovedadCronogramaModel n) {
+    final defId = n.defId ?? 0;
+    final fecha = (n.fecha ?? '').trim();
+    final prioridadSolicitante = n.prioridad ?? 0;
+    final prioridadObjetivo = n.prioridadObjetivo ?? 0;
+    return '$_periodoKeyActual|$defId|$fecha|$prioridadSolicitante|$prioridadObjetivo';
+  }
+
+  List<Map<String, dynamic>> _confirmacionesPeriodoActual() {
+    final prefix = '$_periodoKeyActual|';
+    return _confirmacionesReemplazoPorCaso.entries
+        .where((e) => e.key.startsWith(prefix))
+        .map((e) => Map<String, dynamic>.from(e.value))
+        .toList();
+  }
+
+  List<NovedadCronogramaModel> _parseNovedadesGeneracion(
+    Map<String, dynamic> gen,
+  ) {
+    final rawNovedades = gen['novedades'];
+    final rawNovedadesList = (rawNovedades is List)
+        ? rawNovedades
+        : (rawNovedades is Map && rawNovedades['items'] is List)
+        ? (rawNovedades['items'] as List)
+        : const [];
+
+    final novedades = <NovedadCronogramaModel>[];
+    for (final e in rawNovedadesList) {
+      if (e is! Map) continue;
+      final map = <String, dynamic>{};
+      e.forEach((k, v) => map['$k'] = v);
+      novedades.add(NovedadCronogramaModel.fromJson(map));
+    }
+    return novedades;
+  }
+
+  Map<String, dynamic> _buildPayloadDecision(
+    NovedadCronogramaModel n, {
+    required bool aceptar,
+  }) {
+    final candidataSugerida = n.candidatasIds.isNotEmpty
+        ? n.candidatasIds.first
+        : null;
+    return {
+      'defId': n.defId,
+      'fecha': n.fecha,
+      'prioridadSolicitante': n.prioridad,
+      'prioridadObjetivo': n.prioridadObjetivo,
+      'aceptar': aceptar,
+      if (aceptar && candidataSugerida != null)
+        'candidataId': candidataSugerida,
+    };
+  }
+
+  Future<List<NovedadCronogramaModel>> _resolverDecisionReemplazoNovedad({
+    required NovedadCronogramaModel novedad,
+    required bool aceptar,
+  }) async {
+    if (novedad.tipo != 'REQUIERE_CONFIRMACION_REEMPLAZO') return const [];
+    if (novedad.defId == null ||
+        novedad.fecha == null ||
+        novedad.prioridad == null ||
+        novedad.prioridadObjetivo == null) {
+      throw Exception(
+        'La novedad no trae datos suficientes para confirmar reemplazo.',
+      );
+    }
+
+    final key = _decisionKeyFromNovedad(novedad);
+    _confirmacionesReemplazoPorCaso[key] = _buildPayloadDecision(
+      novedad,
+      aceptar: aceptar,
+    );
+
+    final gen = await _preventivaApi.generarCronogramaMensual(
+      nit: widget.nit,
+      anio: _anioActual,
+      mes: _mesActual,
+      confirmacionesReemplazo: _confirmacionesPeriodoActual(),
+    );
+
+    final novedades = _parseNovedadesGeneracion(gen);
+    await _cargarDatos();
+    return novedades;
   }
 
   Future<void> _mostrarModalNovedades({
@@ -487,8 +565,8 @@ class _CronogramaPreventivasBorradorPageState
             'Para prioridad 2 se pide confirmacion.';
       }
       if (prioridad == 2) {
-        return 'Regla: prioridad 2 pide confirmacion para prioridad 2. '
-            'Las prioridad 3 se retiran y quedan registradas en el informe.';
+        return 'Regla: prioridad 2 no reemplaza de forma automatica. '
+            'Si hay candidatas prioridad 3, se solicita confirmacion.';
       }
       return 'Regla: prioridad 3 no reemplaza tareas.';
     }
@@ -575,7 +653,10 @@ class _CronogramaPreventivasBorradorPageState
 
       if (n.tipo == 'REEMPLAZO_PRIORIDAD') {
         final detalle = detalleReemplazo(n);
-        return '$desc\n$pr\nFecha: $fecha\n$detalle\nEste reemplazo queda reflejado en el informe.';
+        final extra = (n.mensaje ?? '').trim();
+        return '$desc\n$pr\nFecha: $fecha\n$detalle'
+            '${extra.isEmpty ? '' : '\n$extra'}\n'
+            'Este reemplazo queda reflejado en el informe.';
       }
 
       if (n.tipo == 'REQUIERE_CONFIRMACION_REEMPLAZO') {
@@ -622,6 +703,23 @@ class _CronogramaPreventivasBorradorPageState
           'Consulta el informe para trazabilidad completa.';
     }
 
+    String keyNovedad(NovedadCronogramaModel n) {
+      return '${n.tipo}|${n.defId ?? 0}|${n.fecha ?? ''}|${n.prioridad ?? 0}|${n.prioridadObjetivo ?? 0}';
+    }
+
+    String textoPreguntaReemplazo(NovedadCronogramaModel n) {
+      final objetivo = n.prioridadObjetivo != null
+          ? 'P${n.prioridadObjetivo}'
+          : 'prioridad inferior';
+      final candidata = n.candidatasIds.isNotEmpty
+          ? '#${n.candidatasIds.first}'
+          : 'la candidata sugerida';
+      return '¿Desea reemplazar esta tarea por $candidata ($objetivo)?';
+    }
+
+    var novedadesActuales = List<NovedadCronogramaModel>.from(novedades);
+    final enProceso = <String>{};
+
     await showDialog<void>(
       context: context,
       barrierDismissible: false, // ✅ solo cierra con Aceptar
@@ -630,151 +728,326 @@ class _CronogramaPreventivasBorradorPageState
         final h = MediaQuery.of(ctx).size.height;
         final dialogW = (w * 0.92).clamp(320.0, 900.0);
         final dialogH = (h * 0.76).clamp(360.0, 820.0);
-
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 18,
-            vertical: 18,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: SizedBox(
-            width: dialogW,
-            height: dialogH,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    titulo,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    subtitulo,
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withOpacity(0.06),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppTheme.primary.withOpacity(0.18),
-                      ),
-                    ),
-                    child: Text(
-                      novedades.isEmpty
-                          ? 'No hubo novedades. El borrador se generó sin mover tareas por festivos/domingos y sin reemplazos por prioridad.'
-                          : 'Estas son las novedades detectadas al generar el borrador (movimientos por festivos/domingos, reemplazos por prioridad y/o casos sin hueco).',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade900,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: novedades.isEmpty
-                        ? Center(
-                            child: Text(
-                              '✅ Sin novedades',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.green.shade700,
-                              ),
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: novedades.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 10),
-                            itemBuilder: (context, i) {
-                              final n = novedades[i];
-                              final c = colorForType(n.tipo);
-                              return Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: Colors.grey.shade300,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.03),
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 6),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      width: 38,
-                                      height: 38,
-                                      decoration: BoxDecoration(
-                                        color: c.withOpacity(0.10),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Icon(
-                                        iconForType(n.tipo),
-                                        color: c,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            titleForNovedad(n),
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            bodyForNovedad(n),
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              height: 1.25,
-                                              color: Colors.grey.shade800,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: ElevatedButton.icon(
-                      onPressed: () => Navigator.pop(ctx),
-                      icon: const Icon(Icons.check),
-                      label: const Text('Aceptar'),
-                    ),
-                  ),
-                ],
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 18,
+                vertical: 18,
               ),
-            ),
-          ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: SizedBox(
+                width: dialogW,
+                height: dialogH,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        titulo,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        subtitulo,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: AppTheme.primary.withOpacity(0.18),
+                          ),
+                        ),
+                        child: Text(
+                          novedadesActuales.isEmpty
+                              ? 'No hubo novedades. El borrador se generó sin mover tareas por festivos/domingos y sin reemplazos por prioridad.'
+                              : 'Estas son las novedades detectadas al generar el borrador (movimientos por festivos/domingos, reemplazos por prioridad y/o casos sin hueco).',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade900,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: novedadesActuales.isEmpty
+                            ? Center(
+                                child: Text(
+                                  '✅ Sin novedades',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.green.shade700,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: novedadesActuales.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 10),
+                                itemBuilder: (context, i) {
+                                  final n = novedadesActuales[i];
+                                  final c = colorForType(n.tipo);
+                                  final key = keyNovedad(n);
+                                  final procesando = enProceso.contains(key);
+                                  return Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.03),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 6),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          width: 38,
+                                          height: 38,
+                                          decoration: BoxDecoration(
+                                            color: c.withOpacity(0.10),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                          child: Icon(
+                                            iconForType(n.tipo),
+                                            color: c,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                titleForNovedad(n),
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                bodyForNovedad(n),
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  height: 1.25,
+                                                  color: Colors.grey.shade800,
+                                                ),
+                                              ),
+                                              if (n.tipo ==
+                                                  'REQUIERE_CONFIRMACION_REEMPLAZO') ...[
+                                                const SizedBox(height: 10),
+                                                Container(
+                                                  width: double.infinity,
+                                                  padding: const EdgeInsets.all(
+                                                    10,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: c.withOpacity(0.08),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: c.withOpacity(
+                                                        0.24,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        textoPreguntaReemplazo(
+                                                          n,
+                                                        ),
+                                                        style: const TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 8),
+                                                      Wrap(
+                                                        spacing: 8,
+                                                        runSpacing: 8,
+                                                        children: [
+                                                          OutlinedButton(
+                                                            onPressed:
+                                                                procesando
+                                                                ? null
+                                                                : () async {
+                                                                    setModalState(
+                                                                      () => enProceso
+                                                                          .add(
+                                                                            key,
+                                                                          ),
+                                                                    );
+                                                                    try {
+                                                                      final nuevas = await _resolverDecisionReemplazoNovedad(
+                                                                        novedad:
+                                                                            n,
+                                                                        aceptar:
+                                                                            false,
+                                                                      );
+                                                                      if (!ctx
+                                                                          .mounted) {
+                                                                        return;
+                                                                      }
+                                                                      setModalState(() {
+                                                                        novedadesActuales =
+                                                                            nuevas;
+                                                                        enProceso
+                                                                            .remove(
+                                                                              key,
+                                                                            );
+                                                                      });
+                                                                    } catch (
+                                                                      e
+                                                                    ) {
+                                                                      if (!ctx
+                                                                          .mounted) {
+                                                                        return;
+                                                                      }
+                                                                      setModalState(
+                                                                        () => enProceso
+                                                                            .remove(
+                                                                              key,
+                                                                            ),
+                                                                      );
+                                                                      AppFeedback.showFromSnackBar(
+                                                                        ctx,
+                                                                        SnackBar(
+                                                                          content: Text(
+                                                                            'No se pudo registrar la decision: $e',
+                                                                          ),
+                                                                          backgroundColor:
+                                                                              Colors.red,
+                                                                        ),
+                                                                      );
+                                                                    }
+                                                                  },
+                                                            child: const Text(
+                                                              'No reemplazar',
+                                                            ),
+                                                          ),
+                                                          ElevatedButton(
+                                                            onPressed:
+                                                                procesando
+                                                                ? null
+                                                                : () async {
+                                                                    setModalState(
+                                                                      () => enProceso
+                                                                          .add(
+                                                                            key,
+                                                                          ),
+                                                                    );
+                                                                    try {
+                                                                      final nuevas = await _resolverDecisionReemplazoNovedad(
+                                                                        novedad:
+                                                                            n,
+                                                                        aceptar:
+                                                                            true,
+                                                                      );
+                                                                      if (!ctx
+                                                                          .mounted) {
+                                                                        return;
+                                                                      }
+                                                                      setModalState(() {
+                                                                        novedadesActuales =
+                                                                            nuevas;
+                                                                        enProceso
+                                                                            .remove(
+                                                                              key,
+                                                                            );
+                                                                      });
+                                                                    } catch (
+                                                                      e
+                                                                    ) {
+                                                                      if (!ctx
+                                                                          .mounted) {
+                                                                        return;
+                                                                      }
+                                                                      setModalState(
+                                                                        () => enProceso
+                                                                            .remove(
+                                                                              key,
+                                                                            ),
+                                                                      );
+                                                                      AppFeedback.showFromSnackBar(
+                                                                        ctx,
+                                                                        SnackBar(
+                                                                          content: Text(
+                                                                            'No se pudo aplicar el reemplazo: $e',
+                                                                          ),
+                                                                          backgroundColor:
+                                                                              Colors.red,
+                                                                        ),
+                                                                      );
+                                                                    }
+                                                                  },
+                                                            child: const Text(
+                                                              'Si, reemplazar',
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton.icon(
+                          onPressed: () => Navigator.pop(ctx),
+                          icon: const Icon(Icons.check),
+                          label: const Text('Aceptar'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );

@@ -119,6 +119,7 @@ class DefinicionPreventivaApi {
     required int mes,
     int? tamanoBloqueHoras,
     int? tamanoBloqueMinutos,
+    List<Map<String, dynamic>>? confirmacionesReemplazo,
   }) async {
     final body = <String, dynamic>{
       'conjuntoId': nit,
@@ -129,6 +130,8 @@ class DefinicionPreventivaApi {
         'tamanoBloqueMinutos': tamanoBloqueMinutos,
       if (tamanoBloqueMinutos == null && tamanoBloqueHoras != null)
         'tamanoBloqueHoras': tamanoBloqueHoras,
+      if (confirmacionesReemplazo != null && confirmacionesReemplazo.isNotEmpty)
+        'confirmacionesReemplazo': confirmacionesReemplazo,
     };
 
     final resp = await _client.post(
