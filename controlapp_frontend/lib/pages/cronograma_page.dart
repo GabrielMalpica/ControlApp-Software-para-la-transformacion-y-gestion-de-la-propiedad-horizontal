@@ -871,7 +871,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
       return Container(
         width: w,
         height: h,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        padding: EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: h == null ? 12 : 8,
+        ),
         alignment: align,
         decoration: BoxDecoration(
           color: color ?? Colors.white,
@@ -891,219 +894,224 @@ class _CronogramaPageState extends State<CronogramaPage> {
           color: Colors.white,
         ),
         child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header 1
-              Row(
-                children: [
-                  cellBox(
-                    w: wFrecuencia,
-                    color: Colors.green.shade200,
-                    child: Text('Frecuencia', style: headerStyle),
-                  ),
-                  cellBox(
-                    w: wDiagnostico,
-                    color: Colors.green.shade200,
-                    child: Text('Tarea', style: headerStyle),
-                  ),
-                  cellBox(
-                    w: wUbicacion,
-                    color: Colors.green.shade200,
-                    child: Text('Ubicación', style: headerStyle),
-                  ),
-                  cellBox(
-                    w: wElemento,
-                    color: Colors.green.shade200,
-                    child: Text('Elemento', style: headerStyle),
-                  ),
-                  cellBox(
-                    w: wResponsable,
-                    color: Colors.green.shade200,
-                    child: Text('Responsable', style: headerStyle),
-                  ),
-                  ...dias.map((dia) {
-                    final fecha = DateTime(_anioActual, _mesActual, dia);
-                    final dom = _esDomingo(fecha);
-                    final fest = _esFestivo(fecha);
-
-                    Color headerColor;
-                    if (dom) {
-                      headerColor = Colors.yellow.shade300;
-                    } else if (fest) {
-                      headerColor = const Color(0xFFE53935); // festivo
-                    } else {
-                      headerColor = Colors.green.shade200;
-                    }
-
-                    return cellBox(
-                      w: wDia,
-                      color: headerColor,
-                      child: Tooltip(
-                        message: fest
-                            ? (_nombreFestivo(fecha) ?? 'Festivo')
-                            : '',
-                        child: Text(_weekdayLetter(fecha), style: headerStyle),
-                      ),
-                    );
-                  }),
-                ],
-              ),
-              // Header 2
-              Row(
-                children: [
-                  cellBox(
-                    w: wFrecuencia,
-                    color: Colors.white,
-                    child: const SizedBox.shrink(),
-                  ),
-                  cellBox(
-                    w: wDiagnostico,
-                    color: Colors.white,
-                    child: const SizedBox.shrink(),
-                  ),
-                  cellBox(
-                    w: wUbicacion,
-                    color: Colors.white,
-                    child: const SizedBox.shrink(),
-                  ),
-                  cellBox(
-                    w: wElemento,
-                    color: Colors.white,
-                    child: const SizedBox.shrink(),
-                  ),
-                  cellBox(
-                    w: wResponsable,
-                    color: Colors.white,
-                    child: const SizedBox.shrink(),
-                  ),
-                  ...dias.map((dia) {
-                    final fecha = DateTime(_anioActual, _mesActual, dia);
-                    final dom = _esDomingo(fecha);
-                    final fest = _esFestivo(fecha);
-
-                    Color header2Color;
-                    if (dom) {
-                      header2Color = Colors.yellow.shade300;
-                    } else if (fest) {
-                      header2Color = const Color(0xFFFFCDD2); // festivo
-                    } else {
-                      header2Color = Colors.grey.shade100;
-                    }
-
-                    return cellBox(
-                      w: wDia,
-                      color: header2Color,
-                      child: Tooltip(
-                        message: fest
-                            ? (_nombreFestivo(fecha) ?? 'Festivo')
-                            : '',
-                        child: Text(
-                          '$dia',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.grey.shade900,
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                ],
-              ),
-
-              // Body
-              ...filas.map((f) {
-                return Row(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header 1
+                Row(
                   children: [
                     cellBox(
                       w: wFrecuencia,
-                      h: hFila,
-                      align: Alignment.topLeft,
-                      child: Text(
-                        f.frecuencia,
-                        style: const TextStyle(fontSize: 12),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      color: Colors.green.shade200,
+                      child: Text('Frecuencia', style: headerStyle),
                     ),
                     cellBox(
                       w: wDiagnostico,
-                      h: hFila,
-                      align: Alignment.topLeft,
-                      child: Text(
-                        f.diagnostico,
-                        style: const TextStyle(fontSize: 12),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      color: Colors.green.shade200,
+                      child: Text('Tarea', style: headerStyle),
                     ),
                     cellBox(
                       w: wUbicacion,
-                      h: hFila,
-                      align: Alignment.topLeft,
-                      child: Text(
-                        f.ubicacion,
-                        style: const TextStyle(fontSize: 12),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      color: Colors.green.shade200,
+                      child: Text('Ubicación', style: headerStyle),
                     ),
                     cellBox(
                       w: wElemento,
-                      h: hFila,
-                      align: Alignment.topLeft,
-                      child: Text(
-                        f.objeto,
-                        style: const TextStyle(fontSize: 12),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      color: Colors.green.shade200,
+                      child: Text('Elemento', style: headerStyle),
                     ),
                     cellBox(
                       w: wResponsable,
-                      h: hFila,
-                      align: Alignment.topLeft,
-                      child: Text(
-                        f.responsable,
-                        style: const TextStyle(fontSize: 12, height: 1.3),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      color: Colors.green.shade200,
+                      child: Text('Responsable', style: headerStyle),
                     ),
                     ...dias.map((dia) {
                       final fecha = DateTime(_anioActual, _mesActual, dia);
                       final dom = _esDomingo(fecha);
                       final fest = _esFestivo(fecha);
-                      final val = f.porDia[dia] ?? '';
 
-                      return GestureDetector(
-                        onTap: () => _abrirDia(dia),
-                        child: cellBox(
-                          w: wDia,
-                          h: hFila,
-                          color: dom
-                              ? Colors.yellow.shade200
-                              : fest
-                              ? const Color(0xFFFFEBEE)
-                              : Colors.white,
+                      Color headerColor;
+                      if (dom) {
+                        headerColor = Colors.yellow.shade300;
+                      } else if (fest) {
+                        headerColor = const Color(0xFFE53935); // festivo
+                      } else {
+                        headerColor = Colors.green.shade200;
+                      }
+
+                      return cellBox(
+                        w: wDia,
+                        color: headerColor,
+                        child: Tooltip(
+                          message: fest
+                              ? (_nombreFestivo(fecha) ?? 'Festivo')
+                              : '',
                           child: Text(
-                            val,
-                            textAlign: TextAlign.center,
+                            _weekdayLetter(fecha),
+                            style: headerStyle,
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+                // Header 2
+                Row(
+                  children: [
+                    cellBox(
+                      w: wFrecuencia,
+                      color: Colors.white,
+                      child: const SizedBox.shrink(),
+                    ),
+                    cellBox(
+                      w: wDiagnostico,
+                      color: Colors.white,
+                      child: const SizedBox.shrink(),
+                    ),
+                    cellBox(
+                      w: wUbicacion,
+                      color: Colors.white,
+                      child: const SizedBox.shrink(),
+                    ),
+                    cellBox(
+                      w: wElemento,
+                      color: Colors.white,
+                      child: const SizedBox.shrink(),
+                    ),
+                    cellBox(
+                      w: wResponsable,
+                      color: Colors.white,
+                      child: const SizedBox.shrink(),
+                    ),
+                    ...dias.map((dia) {
+                      final fecha = DateTime(_anioActual, _mesActual, dia);
+                      final dom = _esDomingo(fecha);
+                      final fest = _esFestivo(fecha);
+
+                      Color header2Color;
+                      if (dom) {
+                        header2Color = Colors.yellow.shade300;
+                      } else if (fest) {
+                        header2Color = const Color(0xFFFFCDD2); // festivo
+                      } else {
+                        header2Color = Colors.grey.shade100;
+                      }
+
+                      return cellBox(
+                        w: wDia,
+                        color: header2Color,
+                        child: Tooltip(
+                          message: fest
+                              ? (_nombreFestivo(fecha) ?? 'Festivo')
+                              : '',
+                          child: Text(
+                            '$dia',
                             style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: _colorPorCodigo(val),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade900,
                             ),
                           ),
                         ),
                       );
                     }),
                   ],
-                );
-              }),
-            ],
+                ),
+
+                // Body
+                ...filas.map((f) {
+                  return Row(
+                    children: [
+                      cellBox(
+                        w: wFrecuencia,
+                        h: hFila,
+                        align: Alignment.topLeft,
+                        child: Text(
+                          f.frecuencia,
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      cellBox(
+                        w: wDiagnostico,
+                        h: hFila,
+                        align: Alignment.topLeft,
+                        child: Text(
+                          f.diagnostico,
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      cellBox(
+                        w: wUbicacion,
+                        h: hFila,
+                        align: Alignment.topLeft,
+                        child: Text(
+                          f.ubicacion,
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      cellBox(
+                        w: wElemento,
+                        h: hFila,
+                        align: Alignment.topLeft,
+                        child: Text(
+                          f.objeto,
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      cellBox(
+                        w: wResponsable,
+                        h: hFila,
+                        align: Alignment.topLeft,
+                        child: Text(
+                          f.responsable,
+                          style: const TextStyle(fontSize: 12, height: 1.3),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      ...dias.map((dia) {
+                        final fecha = DateTime(_anioActual, _mesActual, dia);
+                        final dom = _esDomingo(fecha);
+                        final fest = _esFestivo(fecha);
+                        final val = f.porDia[dia] ?? '';
+
+                        return GestureDetector(
+                          onTap: () => _abrirDia(dia),
+                          child: cellBox(
+                            w: wDia,
+                            h: hFila,
+                            color: dom
+                                ? Colors.yellow.shade200
+                                : fest
+                                ? const Color(0xFFFFEBEE)
+                                : Colors.white,
+                            child: Text(
+                              val,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: _colorPorCodigo(val),
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  );
+                }),
+              ],
+            ),
           ),
         ),
       ),

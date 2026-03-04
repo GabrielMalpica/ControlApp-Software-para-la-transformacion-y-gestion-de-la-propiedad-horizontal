@@ -408,7 +408,7 @@ function solapa(a, b) {
     return a.i < b.f && b.i < a.f;
 }
 async function intentarReemplazoPorPrioridadBaja(params) {
-    const { prisma, conjuntoId, fechaDia, startMin, endMin, bloqueos, durMin, payload, prioridadesCandidatas, incluirBorradorEnAgenda, onEvent, } = params;
+    const { prisma, conjuntoId, fechaDia, startMin, endMin, bloqueos, durMin, payload, prioridadesCandidatas, candidatasIdsPreferidas, incluirBorradorEnAgenda, onEvent, } = params;
     const operariosIds = payload.operariosIds ?? [];
     // 1) agenda actual del día
     const agenda = operariosIds.length
@@ -459,7 +459,7 @@ async function intentarReemplazoPorPrioridadBaja(params) {
     // 3) buscar candidatas del día (prioridades permitidas) para reemplazo
     const ini = new Date(fechaDia.getFullYear(), fechaDia.getMonth(), fechaDia.getDate(), 0, 0, 0, 0);
     const fin = new Date(fechaDia.getFullYear(), fechaDia.getMonth(), fechaDia.getDate(), 23, 59, 59, 999);
-    const candidatas = await prisma.tarea.findMany({
+    let candidatas = await prisma.tarea.findMany({
         where: {
             conjuntoId,
             fechaInicio: { lte: fin },
@@ -478,6 +478,26 @@ async function intentarReemplazoPorPrioridadBaja(params) {
         },
         orderBy: [{ prioridad: "desc" }, { fechaInicio: "asc" }],
     });
+    if (candidatasIdsPreferidas?.length) {
+        const ordenMap = new Map();
+        for (let i = 0; i < candidatasIdsPreferidas.length; i++) {
+            const id = Number(candidatasIdsPreferidas[i]);
+            if (!Number.isFinite(id))
+                continue;
+            ordenMap.set(id, i);
+        }
+        candidatas = candidatas
+            .filter((c) => ordenMap.has(c.id))
+            .sort((a, b) => {
+            const oa = ordenMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+            const ob = ordenMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+            if (oa !== ob)
+                return oa - ob;
+            if (a.prioridad !== b.prioridad)
+                return b.prioridad - a.prioridad;
+            return +a.fechaInicio - +b.fechaInicio;
+        });
+    }
     if (!candidatas.length) {
         onEvent?.({ tipo: "SIN_CANDIDATAS" });
         return { ok: false, reason: "SIN_CANDIDATAS" };
@@ -700,14 +720,14 @@ function findNextValidDay(params) {
         const esFestivo = festivosSet.has(ymdLocal(cur));
         const esDomingo = ds === "DOMINGO";
         // ✅ REGLA:
-        // - prioridad 1: si cae en festivo o domingo, SE MUEVE al siguiente día hábil
-        // - prioridad 2-3: si cae en festivo o domingo, NO se crea (se omite)
+        // - prioridad 1 y 2: si cae en festivo o domingo, SE MUEVE al siguiente día hábil
+        // - prioridad 3: si cae en festivo o domingo, NO se crea (se omite)
         if (esFestivo || esDomingo) {
-            if (prioridad === 1) {
+            if (prioridad === 1 || prioridad === 2) {
                 cur.setDate(cur.getDate() + 1);
                 continue; // sigue buscando el próximo día hábil con horario
             }
-            return null; // prioridad 2-3: se omite
+            return null; // prioridad 3: se omite
         }
         const tieneHorario = horariosPorDia.has(ds);
         if (!tieneHorario) {

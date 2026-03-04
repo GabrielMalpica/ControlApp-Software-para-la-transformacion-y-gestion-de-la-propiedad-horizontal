@@ -631,6 +631,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
   durMin: number;
   payload: CrearTareaPayload;
   prioridadesCandidatas?: Array<2 | 3>;
+  candidatasIdsPreferidas?: number[];
 
   // agenda
   incluirBorradorEnAgenda: boolean;
@@ -666,6 +667,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     durMin,
     payload,
     prioridadesCandidatas,
+    candidatasIdsPreferidas,
     incluirBorradorEnAgenda,
     onEvent,
   } = params;
@@ -752,7 +754,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     999,
   );
 
-  const candidatas = await prisma.tarea.findMany({
+  let candidatas = await prisma.tarea.findMany({
     where: {
       conjuntoId,
       fechaInicio: { lte: fin },
@@ -771,6 +773,25 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     },
     orderBy: [{ prioridad: "desc" }, { fechaInicio: "asc" }],
   });
+
+  if (candidatasIdsPreferidas?.length) {
+    const ordenMap = new Map<number, number>();
+    for (let i = 0; i < candidatasIdsPreferidas.length; i++) {
+      const id = Number(candidatasIdsPreferidas[i]);
+      if (!Number.isFinite(id)) continue;
+      ordenMap.set(id, i);
+    }
+
+    candidatas = candidatas
+      .filter((c) => ordenMap.has(c.id))
+      .sort((a, b) => {
+        const oa = ordenMap.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const ob = ordenMap.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        if (oa !== ob) return oa - ob;
+        if (a.prioridad !== b.prioridad) return b.prioridad - a.prioridad;
+        return +a.fechaInicio - +b.fechaInicio;
+      });
+  }
 
   if (!candidatas.length) {
     onEvent?.({ tipo: "SIN_CANDIDATAS" });
@@ -1071,14 +1092,14 @@ export function findNextValidDay(params: {
     const esDomingo = ds === ("DOMINGO" as DiaSemana);
 
     // ✅ REGLA:
-    // - prioridad 1: si cae en festivo o domingo, SE MUEVE al siguiente día hábil
-    // - prioridad 2-3: si cae en festivo o domingo, NO se crea (se omite)
+    // - prioridad 1 y 2: si cae en festivo o domingo, SE MUEVE al siguiente día hábil
+    // - prioridad 3: si cae en festivo o domingo, NO se crea (se omite)
     if (esFestivo || esDomingo) {
-      if (prioridad === 1) {
+      if (prioridad === 1 || prioridad === 2) {
         cur.setDate(cur.getDate() + 1);
         continue; // sigue buscando el próximo día hábil con horario
       }
-      return null; // prioridad 2-3: se omite
+      return null; // prioridad 3: se omite
     }
 
     const tieneHorario = horariosPorDia.has(ds);

@@ -190,6 +190,15 @@ export const FiltroDefinicionPreventivaDTO = z.object({
 });
 
 /** DTO para generar el cronograma/borrador mensual */
+const ConfirmacionReemplazoDTO = z.object({
+  defId: z.number().int().positive(),
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  prioridadSolicitante: z.number().int().min(1).max(3),
+  prioridadObjetivo: z.number().int().min(2).max(3),
+  aceptar: z.boolean(),
+  candidataId: z.number().int().positive().optional(),
+});
+
 export const GenerarCronogramaDTO = z.object({
   conjuntoId: z.string().min(3),
   anio: z.coerce.number().int().min(2000).max(2100),
@@ -201,6 +210,7 @@ export const GenerarCronogramaDTO = z.object({
     .min(1)
     .max(12 * 60)
     .optional(),
+  confirmacionesReemplazo: z.array(ConfirmacionReemplazoDTO).optional(),
 });
 
 // Alias opcional por compatibilidad

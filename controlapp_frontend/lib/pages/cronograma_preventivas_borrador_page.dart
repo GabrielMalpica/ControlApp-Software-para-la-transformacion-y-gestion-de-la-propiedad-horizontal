@@ -1311,7 +1311,10 @@ class _CronogramaPreventivasBorradorPageState
       return Container(
         width: w,
         height: h,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        padding: EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: h == null ? 12 : 8,
+        ),
         alignment: align,
         decoration: BoxDecoration(
           color: color ?? Colors.white,
@@ -1332,228 +1335,233 @@ class _CronogramaPreventivasBorradorPageState
           color: Colors.white,
         ),
         child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ===== Header 1: títulos fijos + letras de semana =====
-              Row(
-                children: [
-                  cellBox(
-                    w: wFrecuencia,
-                    color: Colors.green.shade200,
-                    align: Alignment.center,
-                    child: Text('Frecuencia', style: headerStyle),
-                  ),
-                  cellBox(
-                    w: wDiagnostico,
-                    color: Colors.green.shade200,
-                    align: Alignment.center,
-                    child: Text('Tarea', style: headerStyle),
-                  ),
-                  cellBox(
-                    w: wUbicacion,
-                    color: Colors.green.shade200,
-                    align: Alignment.center,
-                    child: Text('Ubicación', style: headerStyle),
-                  ),
-                  cellBox(
-                    w: wElemento,
-                    color: Colors.green.shade200,
-                    align: Alignment.center,
-                    child: Text('Elemento', style: headerStyle),
-                  ),
-                  cellBox(
-                    w: wResponsable,
-                    color: Colors.green.shade200,
-                    align: Alignment.center,
-                    child: Text('Responsable', style: headerStyle),
-                  ),
-                  ...dias.map((dia) {
-                    final fecha = DateTime(_anioActual, _mesActual, dia);
-                    final dom = _esDomingo(fecha);
-                    final fest = _esFestivo(fecha);
-
-                    Color headerColor;
-                    if (dom) {
-                      headerColor = Colors.yellow.shade300;
-                    } else if (fest) {
-                      headerColor = const Color(0xFFE53935); // festivo
-                    } else {
-                      headerColor = Colors.green.shade200;
-                    }
-
-                    return cellBox(
-                      w: wDia,
-                      color: headerColor,
-                      child: Tooltip(
-                        message: fest
-                            ? (_nombreFestivo(fecha) ?? 'Festivo')
-                            : '',
-                        child: Text(_weekdayLetter(fecha), style: headerStyle),
-                      ),
-                    );
-                  }),
-                ],
-              ),
-              // ===== Header 2: números de día =====
-              Row(
-                children: [
-                  cellBox(
-                    w: wFrecuencia,
-                    color: Colors.white,
-                    child: const SizedBox.shrink(),
-                  ),
-                  cellBox(
-                    w: wDiagnostico,
-                    color: Colors.white,
-                    child: const SizedBox.shrink(),
-                  ),
-                  cellBox(
-                    w: wUbicacion,
-                    color: Colors.white,
-                    child: const SizedBox.shrink(),
-                  ),
-                  cellBox(
-                    w: wElemento,
-                    color: Colors.white,
-                    child: const SizedBox.shrink(),
-                  ),
-                  cellBox(
-                    w: wResponsable,
-                    color: Colors.white,
-                    child: const SizedBox.shrink(),
-                  ),
-                  ...dias.map((dia) {
-                    final fecha = DateTime(_anioActual, _mesActual, dia);
-                    final dom = _esDomingo(fecha);
-                    final fest = _esFestivo(fecha);
-
-                    Color header2Color;
-                    if (dom) {
-                      header2Color = Colors.yellow.shade300;
-                    } else if (fest) {
-                      header2Color = const Color(
-                        0xFFFFCDD2,
-                      ); // festivo // 👈 festivo
-                    } else {
-                      header2Color = Colors.grey.shade100;
-                    }
-
-                    return cellBox(
-                      w: wDia,
-                      color: header2Color,
-                      child: Tooltip(
-                        message: fest
-                            ? (_nombreFestivo(fecha) ?? 'Festivo')
-                            : '',
-                        child: Text(
-                          '$dia',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.grey.shade900,
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                ],
-              ),
-
-              // ===== Body =====
-              ...filas.map((f) {
-                return Row(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ===== Header 1: títulos fijos + letras de semana =====
+                Row(
                   children: [
                     cellBox(
                       w: wFrecuencia,
-                      h: hFila,
-                      align: Alignment.topLeft,
-                      child: Text(
-                        f.frecuencia,
-                        style: const TextStyle(fontSize: 12),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      color: Colors.green.shade200,
+                      align: Alignment.center,
+                      child: Text('Frecuencia', style: headerStyle),
                     ),
                     cellBox(
                       w: wDiagnostico,
-                      h: hFila,
-                      align: Alignment.topLeft,
-                      child: Text(
-                        f.diagnostico,
-                        style: const TextStyle(fontSize: 12),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      color: Colors.green.shade200,
+                      align: Alignment.center,
+                      child: Text('Tarea', style: headerStyle),
                     ),
                     cellBox(
                       w: wUbicacion,
-                      h: hFila,
-                      align: Alignment.topLeft,
-                      child: Text(
-                        f.ubicacion,
-                        style: const TextStyle(fontSize: 12),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      color: Colors.green.shade200,
+                      align: Alignment.center,
+                      child: Text('Ubicación', style: headerStyle),
                     ),
                     cellBox(
                       w: wElemento,
-                      h: hFila,
-                      align: Alignment.topLeft,
-                      child: Text(
-                        f.objeto,
-                        style: const TextStyle(fontSize: 12),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      color: Colors.green.shade200,
+                      align: Alignment.center,
+                      child: Text('Elemento', style: headerStyle),
                     ),
                     cellBox(
                       w: wResponsable,
-                      h: hFila,
-                      align: Alignment.topLeft,
-                      child: Text(
-                        f.responsable,
-                        style: const TextStyle(fontSize: 12, height: 1.3),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      color: Colors.green.shade200,
+                      align: Alignment.center,
+                      child: Text('Responsable', style: headerStyle),
                     ),
                     ...dias.map((dia) {
                       final fecha = DateTime(_anioActual, _mesActual, dia);
                       final dom = _esDomingo(fecha);
                       final fest = _esFestivo(fecha);
-                      final val = f.porDia[dia] ?? '';
 
-                      return GestureDetector(
-                        onTap: () => _abrirDia(dia),
-                        child: cellBox(
-                          w: wDia,
-                          h: hFila,
-                          color: dom
-                              ? Colors.yellow.shade200
-                              : fest
-                              ? const Color(0xFFFFEBEE)
-                              : Colors.white,
+                      Color headerColor;
+                      if (dom) {
+                        headerColor = Colors.yellow.shade300;
+                      } else if (fest) {
+                        headerColor = const Color(0xFFE53935); // festivo
+                      } else {
+                        headerColor = Colors.green.shade200;
+                      }
+
+                      return cellBox(
+                        w: wDia,
+                        color: headerColor,
+                        child: Tooltip(
+                          message: fest
+                              ? (_nombreFestivo(fecha) ?? 'Festivo')
+                              : '',
                           child: Text(
-                            val,
-                            textAlign: TextAlign.center,
+                            _weekdayLetter(fecha),
+                            style: headerStyle,
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+                // ===== Header 2: números de día =====
+                Row(
+                  children: [
+                    cellBox(
+                      w: wFrecuencia,
+                      color: Colors.white,
+                      child: const SizedBox.shrink(),
+                    ),
+                    cellBox(
+                      w: wDiagnostico,
+                      color: Colors.white,
+                      child: const SizedBox.shrink(),
+                    ),
+                    cellBox(
+                      w: wUbicacion,
+                      color: Colors.white,
+                      child: const SizedBox.shrink(),
+                    ),
+                    cellBox(
+                      w: wElemento,
+                      color: Colors.white,
+                      child: const SizedBox.shrink(),
+                    ),
+                    cellBox(
+                      w: wResponsable,
+                      color: Colors.white,
+                      child: const SizedBox.shrink(),
+                    ),
+                    ...dias.map((dia) {
+                      final fecha = DateTime(_anioActual, _mesActual, dia);
+                      final dom = _esDomingo(fecha);
+                      final fest = _esFestivo(fecha);
+
+                      Color header2Color;
+                      if (dom) {
+                        header2Color = Colors.yellow.shade300;
+                      } else if (fest) {
+                        header2Color = const Color(
+                          0xFFFFCDD2,
+                        ); // festivo // 👈 festivo
+                      } else {
+                        header2Color = Colors.grey.shade100;
+                      }
+
+                      return cellBox(
+                        w: wDia,
+                        color: header2Color,
+                        child: Tooltip(
+                          message: fest
+                              ? (_nombreFestivo(fecha) ?? 'Festivo')
+                              : '',
+                          child: Text(
+                            '$dia',
                             style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: _colorPorCodigo(
-                                val,
-                              ), // Aqui se usa el color por codigo
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade900,
                             ),
                           ),
                         ),
                       );
                     }),
                   ],
-                );
-              }),
-            ],
+                ),
+
+                // ===== Body =====
+                ...filas.map((f) {
+                  return Row(
+                    children: [
+                      cellBox(
+                        w: wFrecuencia,
+                        h: hFila,
+                        align: Alignment.topLeft,
+                        child: Text(
+                          f.frecuencia,
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      cellBox(
+                        w: wDiagnostico,
+                        h: hFila,
+                        align: Alignment.topLeft,
+                        child: Text(
+                          f.diagnostico,
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      cellBox(
+                        w: wUbicacion,
+                        h: hFila,
+                        align: Alignment.topLeft,
+                        child: Text(
+                          f.ubicacion,
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      cellBox(
+                        w: wElemento,
+                        h: hFila,
+                        align: Alignment.topLeft,
+                        child: Text(
+                          f.objeto,
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      cellBox(
+                        w: wResponsable,
+                        h: hFila,
+                        align: Alignment.topLeft,
+                        child: Text(
+                          f.responsable,
+                          style: const TextStyle(fontSize: 12, height: 1.3),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      ...dias.map((dia) {
+                        final fecha = DateTime(_anioActual, _mesActual, dia);
+                        final dom = _esDomingo(fecha);
+                        final fest = _esFestivo(fecha);
+                        final val = f.porDia[dia] ?? '';
+
+                        return GestureDetector(
+                          onTap: () => _abrirDia(dia),
+                          child: cellBox(
+                            w: wDia,
+                            h: hFila,
+                            color: dom
+                                ? Colors.yellow.shade200
+                                : fest
+                                ? const Color(0xFFFFEBEE)
+                                : Colors.white,
+                            child: Text(
+                              val,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: _colorPorCodigo(
+                                  val,
+                                ), // Aqui se usa el color por codigo
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  );
+                }),
+              ],
+            ),
           ),
         ),
       ),
@@ -2107,6 +2115,98 @@ class _CronogramaPreventivasBorradorPageState
     final end = _endOfWeekSunday(_semanaBase);
     final rangoSemana =
         "${DateFormat('dd MMM', 'es').format(start)} - ${DateFormat('dd MMM', 'es').format(end)}";
+    final isNarrow = MediaQuery.of(context).size.width < 880;
+
+    if (isNarrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<_VistaCronograma>(
+              segments: const [
+                ButtonSegment(
+                  value: _VistaCronograma.mensual,
+                  label: Text('Mensual'),
+                  icon: Icon(Icons.calendar_month),
+                ),
+                ButtonSegment(
+                  value: _VistaCronograma.semanal,
+                  label: Text('Semanal'),
+                  icon: Icon(Icons.view_week),
+                ),
+              ],
+              selected: {_vista},
+              onSelectionChanged: (s) => setState(() => _vista = s.first),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                if (_vista == _VistaCronograma.mensual) ...[
+                  IconButton(
+                    tooltip: 'Mes anterior',
+                    onPressed: () => _cambiarMes(-1),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Text(
+                    '$mesNombre $_anioActual',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Mes siguiente',
+                    onPressed: () => _cambiarMes(1),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.filter_alt_outlined, size: 18),
+                    label: Text(
+                      _hayFiltrosActivos() ? 'Filtros â€¢' : 'Filtros',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () => setState(
+                      () => _mostrarFiltrosMensual = !_mostrarFiltrosMensual,
+                    ),
+                  ),
+                ] else ...[
+                  IconButton(
+                    tooltip: 'Semana anterior',
+                    onPressed: () => setState(
+                      () => _semanaBase = _semanaBase.subtract(
+                        const Duration(days: 7),
+                      ),
+                    ),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Text(
+                    rangoSemana,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Semana siguiente',
+                    onPressed: () => setState(
+                      () => _semanaBase = _semanaBase.add(
+                        const Duration(days: 7),
+                      ),
+                    ),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      );
+    }
 
     return Row(
       children: [
