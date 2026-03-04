@@ -752,7 +752,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
       final operarios = [...t.operariosNombres]..sort();
       final resp = operarios.isNotEmpty
-          ? operarios.join('\n')
+          ? operarios.join(', ')
           : (t.supervisorNombre ??
                 (t.supervisorId != null
                     ? 'ID ${t.supervisorId}'
@@ -848,9 +848,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
     const wFrecuencia = 120.0;
     const wDiagnostico = 260.0;
     const wUbicacion = 130.0;
-    const wObjeto = 130.0;
+    const wElemento = 130.0;
     const wResponsable = 250.0;
     const wDia = 34.0;
+    const hFila = 56.0;
 
     final headerStyle = TextStyle(
       fontSize: 12,
@@ -865,9 +866,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
       required Widget child,
       Color? color,
       Alignment align = Alignment.center,
+      double? h,
     }) {
       return Container(
         width: w,
+        height: h,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         alignment: align,
         decoration: BoxDecoration(
@@ -911,9 +914,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
                     child: Text('Ubicación', style: headerStyle),
                   ),
                   cellBox(
-                    w: wObjeto,
+                    w: wElemento,
                     color: Colors.green.shade200,
-                    child: Text('Objeto', style: headerStyle),
+                    child: Text('Elemento', style: headerStyle),
                   ),
                   cellBox(
                     w: wResponsable,
@@ -966,7 +969,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                     child: const SizedBox.shrink(),
                   ),
                   cellBox(
-                    w: wObjeto,
+                    w: wElemento,
                     color: Colors.white,
                     child: const SizedBox.shrink(),
                   ),
@@ -1016,43 +1019,56 @@ class _CronogramaPageState extends State<CronogramaPage> {
                   children: [
                     cellBox(
                       w: wFrecuencia,
-                      align: Alignment.centerLeft,
+                      h: hFila,
+                      align: Alignment.topLeft,
                       child: Text(
                         f.frecuencia,
                         style: const TextStyle(fontSize: 12),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     cellBox(
                       w: wDiagnostico,
-                      align: Alignment.centerLeft,
+                      h: hFila,
+                      align: Alignment.topLeft,
                       child: Text(
                         f.diagnostico,
                         style: const TextStyle(fontSize: 12),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     cellBox(
                       w: wUbicacion,
-                      align: Alignment.centerLeft,
+                      h: hFila,
+                      align: Alignment.topLeft,
                       child: Text(
                         f.ubicacion,
                         style: const TextStyle(fontSize: 12),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     cellBox(
-                      w: wObjeto,
-                      align: Alignment.centerLeft,
+                      w: wElemento,
+                      h: hFila,
+                      align: Alignment.topLeft,
                       child: Text(
                         f.objeto,
                         style: const TextStyle(fontSize: 12),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     cellBox(
                       w: wResponsable,
-                      align: Alignment.centerLeft,
+                      h: hFila,
+                      align: Alignment.topLeft,
                       child: Text(
                         f.responsable,
                         style: const TextStyle(fontSize: 12, height: 1.3),
-                        maxLines: 4,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -1066,6 +1082,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                         onTap: () => _abrirDia(dia),
                         child: cellBox(
                           w: wDia,
+                          h: hFila,
                           color: dom
                               ? Colors.yellow.shade200
                               : fest
@@ -1326,6 +1343,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final ubicacionLabel =
         t.ubicacionNombre ?? 'ID ${t.ubicacionId.toString()}';
     final elementoLabel = t.elementoNombre ?? 'ID ${t.elementoId.toString()}';
+    final prioridadLabel = 'P${t.prioridad}';
 
     final supervisorLabel =
         t.supervisorNombre ??
@@ -1400,6 +1418,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                           _infoRow('Estado', t.estado ?? '—'),
                           _infoRow('Tipo', t.tipo ?? '—'),
                           _infoRow('Frecuencia', t.frecuencia ?? '—'),
+                          _infoRow('Prioridad', prioridadLabel),
                           const SizedBox(height: 8),
                           _infoRow('Fecha inicio', fechaIniStr),
                           _infoRow('Fecha fin', fechaFinStr),
