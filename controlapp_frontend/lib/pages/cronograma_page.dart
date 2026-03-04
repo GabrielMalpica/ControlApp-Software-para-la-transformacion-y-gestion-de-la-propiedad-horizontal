@@ -296,6 +296,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   String? _nombreUbicacion(TareaModel t) => t.ubicacionNombre;
+  String? _nombreObjeto(TareaModel t) => t.elementoNombre;
 
   List<String> _nombresOperarios(TareaModel t) => t.operariosNombres;
 
@@ -745,17 +746,19 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     for (final t in _tareasFiltradas) {
       final ubic = (t.ubicacionNombre ?? 'ID ${t.ubicacionId}').trim();
+      final objeto = (_nombreObjeto(t) ?? 'ID ${t.elementoId}').trim();
       final freq = (t.frecuencia ?? '—').trim();
       final diag = (t.descripcion).trim();
 
-      final resp = t.operariosNombres.isNotEmpty
-          ? t.operariosNombres.join(', ')
+      final operarios = [...t.operariosNombres]..sort();
+      final resp = operarios.isNotEmpty
+          ? operarios.join('\n')
           : (t.supervisorNombre ??
                 (t.supervisorId != null
                     ? 'ID ${t.supervisorId}'
                     : 'Sin asignar'));
 
-      final key = '$freq||$diag||$ubic||$resp';
+      final key = '$freq||$diag||$ubic||$objeto||$resp';
 
       rows.putIfAbsent(
         key,
@@ -763,6 +766,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
           frecuencia: freq,
           diagnostico: diag,
           ubicacion: ubic,
+          objeto: objeto,
           responsable: resp,
           porDia: {},
         ),
@@ -780,7 +784,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
       if (c1 != 0) return c1;
       final c2 = a.diagnostico.compareTo(b.diagnostico);
       if (c2 != 0) return c2;
-      return a.ubicacion.compareTo(b.ubicacion);
+      final c3 = a.ubicacion.compareTo(b.ubicacion);
+      if (c3 != 0) return c3;
+      return a.objeto.compareTo(b.objeto);
     });
 
     return list;
@@ -841,8 +847,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     const wFrecuencia = 120.0;
     const wDiagnostico = 260.0;
-    const wUbicacion = 120.0;
-    const wResponsable = 140.0;
+    const wUbicacion = 130.0;
+    const wObjeto = 130.0;
+    const wResponsable = 250.0;
     const wDia = 34.0;
 
     final headerStyle = TextStyle(
@@ -861,7 +868,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
     }) {
       return Container(
         width: w,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         alignment: align,
         decoration: BoxDecoration(
           color: color ?? Colors.white,
@@ -902,6 +909,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
                     w: wUbicacion,
                     color: Colors.green.shade200,
                     child: Text('Ubicación', style: headerStyle),
+                  ),
+                  cellBox(
+                    w: wObjeto,
+                    color: Colors.green.shade200,
+                    child: Text('Objeto', style: headerStyle),
                   ),
                   cellBox(
                     w: wResponsable,
@@ -950,6 +962,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
                   ),
                   cellBox(
                     w: wUbicacion,
+                    color: Colors.white,
+                    child: const SizedBox.shrink(),
+                  ),
+                  cellBox(
+                    w: wObjeto,
                     color: Colors.white,
                     child: const SizedBox.shrink(),
                   ),
@@ -1022,11 +1039,21 @@ class _CronogramaPageState extends State<CronogramaPage> {
                       ),
                     ),
                     cellBox(
+                      w: wObjeto,
+                      align: Alignment.centerLeft,
+                      child: Text(
+                        f.objeto,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    cellBox(
                       w: wResponsable,
                       align: Alignment.centerLeft,
                       child: Text(
                         f.responsable,
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: 12, height: 1.3),
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     ...dias.map((dia) {
@@ -1662,7 +1689,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                   OutlinedButton.icon(
                     icon: const Icon(Icons.filter_alt_outlined, size: 18),
                     label: Text(
-                      _hayFiltrosActivos() ? 'Filtros â€¢' : 'Filtros',
+                      _hayFiltrosActivos() ? 'Filtros •' : 'Filtros',
                       style: const TextStyle(fontSize: 12),
                     ),
                     onPressed: () => setState(
@@ -2170,9 +2197,13 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 ),
                                 child: Center(
                                   child: Text(
-                                    fest ? "$label ${d.day} • F" : "$label ${d.day}",
+                                    fest
+                                        ? "$label ${d.day} • F"
+                                        : "$label ${d.day}",
                                     style: TextStyle(
-                                      color: fest ? const Color(0xFFB71C1C) : text,
+                                      color: fest
+                                          ? const Color(0xFFB71C1C)
+                                          : text,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
@@ -2735,6 +2766,7 @@ class _FilaCrono {
   final String frecuencia;
   final String diagnostico;
   final String ubicacion;
+  final String objeto;
   final String responsable;
   final Map<int, String> porDia;
 
@@ -2742,6 +2774,7 @@ class _FilaCrono {
     required this.frecuencia,
     required this.diagnostico,
     required this.ubicacion,
+    required this.objeto,
     required this.responsable,
     required this.porDia,
   });

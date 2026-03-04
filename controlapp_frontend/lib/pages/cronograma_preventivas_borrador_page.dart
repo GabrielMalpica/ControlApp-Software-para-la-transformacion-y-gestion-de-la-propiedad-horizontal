@@ -297,6 +297,7 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   String? _nombreUbicacion(TareaModel t) => t.ubicacionNombre;
+  String? _nombreObjeto(TareaModel t) => t.elementoNombre;
 
   List<String> _nombresOperarios(TareaModel t) => t.operariosNombres;
 
@@ -363,7 +364,7 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   /// ==============================
-  /// ✅ NUEVO: Generar borrador y mostrar “novedades”
+  /// NUEVO: Generar borrador y mostrar "novedades"
   /// (para que el cliente no quede a ciegas)
   /// ==============================
   Future<void> _generarYcargarAlEntrar() async {
@@ -410,7 +411,8 @@ class _CronogramaPreventivasBorradorPageState
       // - Si hay novedades, SIEMPRE mostrar (aunque ya se haya abierto antes en el periodo).
       // - Si no hay novedades, mostrar solo 1 vez por periodo para no molestar.
       final debeMostrarModal =
-          novedades.isNotEmpty || !_novedadesMostradasPorPeriodo.contains(periodoKey);
+          novedades.isNotEmpty ||
+          !_novedadesMostradasPorPeriodo.contains(periodoKey);
 
       if (mounted && debeMostrarModal) {
         _novedadesMostradasPorPeriodo.add(periodoKey);
@@ -436,7 +438,7 @@ class _CronogramaPreventivasBorradorPageState
     final titulo = 'Novedades del borrador ($mesNombre $_anioActual)';
     final subtitulo = 'Tareas creadas: $creadas';
 
-    IconData _icon(String tipo) {
+    IconData iconForType(String tipo) {
       switch (tipo) {
         case 'FESTIVO_MOVIDO':
           return Icons.event_busy;
@@ -444,6 +446,8 @@ class _CronogramaPreventivasBorradorPageState
           return Icons.event_busy;
         case 'REEMPLAZO_PRIORIDAD':
           return Icons.swap_horiz;
+        case 'REQUIERE_CONFIRMACION_REEMPLAZO':
+          return Icons.help_outline;
         case 'SIN_CANDIDATAS':
           return Icons.warning_amber_rounded;
         case 'SIN_HUECO':
@@ -453,7 +457,7 @@ class _CronogramaPreventivasBorradorPageState
       }
     }
 
-    Color _color(String tipo) {
+    Color colorForType(String tipo) {
       switch (tipo) {
         case 'FESTIVO_MOVIDO':
           return Colors.red.shade700;
@@ -461,6 +465,8 @@ class _CronogramaPreventivasBorradorPageState
           return Colors.red.shade700;
         case 'REEMPLAZO_PRIORIDAD':
           return Colors.indigo.shade700;
+        case 'REQUIERE_CONFIRMACION_REEMPLAZO':
+          return Colors.blueGrey.shade700;
         case 'SIN_CANDIDATAS':
           return Colors.orange.shade800;
         case 'SIN_HUECO':
@@ -470,29 +476,76 @@ class _CronogramaPreventivasBorradorPageState
       }
     }
 
-    String _title(NovedadCronogramaModel n) {
+    String idsLabel(List<int> ids) {
+      if (ids.isEmpty) return 'ninguna';
+      return ids.map((id) => '#$id').join(', ');
+    }
+
+    String reglaPrioridad(int? prioridad) {
+      if (prioridad == 1) {
+        return 'Regla: prioridad 1 reemplaza automaticamente prioridad 3. '
+            'Para prioridad 2 se pide confirmacion.';
+      }
+      if (prioridad == 2) {
+        return 'Regla: prioridad 2 pide confirmacion para prioridad 2. '
+            'Las prioridad 3 se retiran y quedan registradas en el informe.';
+      }
+      return 'Regla: prioridad 3 no reemplaza tareas.';
+    }
+
+    String fechaLabel(NovedadCronogramaModel n) {
+      return n.fecha ?? n.fechaOriginal ?? n.fechaNueva ?? '-';
+    }
+
+    String detalleReemplazo(NovedadCronogramaModel n) {
+      if (n.reprogramadasIds.isNotEmpty && n.nuevaTareaIds.isNotEmpty) {
+        final nuevasRef = idsLabel(n.nuevaTareaIds);
+        return n.reprogramadasIds
+            .map(
+              (oldId) =>
+                  'La preventiva #$oldId fue reemplazada por la tarea $nuevasRef.',
+            )
+            .join('\n');
+      }
+      if (n.reprogramadasIds.isNotEmpty) {
+        return 'Preventivas afectadas: ${idsLabel(n.reprogramadasIds)}.';
+      }
+      if (n.nuevaTareaIds.isNotEmpty) {
+        return 'Tareas creadas por reemplazo: ${idsLabel(n.nuevaTareaIds)}.';
+      }
+      return 'No llegaron IDs de reemplazo en esta novedad.';
+    }
+
+    String titleForNovedad(NovedadCronogramaModel n) {
       switch (n.tipo) {
         case 'FESTIVO_MOVIDO':
-          return 'Movido por festivo/domingo';
+          return 'Movida por festivo/domingo';
         case 'FESTIVO_OMITIDO':
           return 'Omitida por festivo/domingo';
         case 'REEMPLAZO_PRIORIDAD':
-          return 'Reemplazo por prioridad';
+          return 'Reemplazo aplicado';
+        case 'REQUIERE_CONFIRMACION_REEMPLAZO':
+          return 'Reemplazo pendiente de decision';
         case 'SIN_CANDIDATAS':
-          return 'No hay candidatas para reemplazo';
+          return 'Sin candidatas para reemplazo';
         case 'SIN_HUECO':
           return 'Sin hueco en agenda';
         default:
-          return 'Novedad';
+          final tipoTxt = n.tipo.replaceAll('_', ' ').trim();
+          if (tipoTxt.isEmpty || tipoTxt == 'OTRO') {
+            return 'Novedad registrada';
+          }
+          return 'Novedad registrada ($tipoTxt)';
       }
     }
 
-    String _body(NovedadCronogramaModel n) {
-      final desc = (n.descripcion ?? '—').trim();
-      final pr = n.prioridad != null ? 'Prioridad: ${n.prioridad}' : '';
+    String bodyForNovedad(NovedadCronogramaModel n) {
+      final desc = (n.descripcion ?? 'Sin descripcion').trim();
+      final pr = n.prioridad != null ? 'Prioridad: P${n.prioridad}' : '';
+      final fecha = fechaLabel(n);
 
       if (n.tipo == 'FESTIVO_MOVIDO') {
-        DateTime? _parseYmd(String? ymd) {
+        DateTime? parseYmd(String? ymd) {
           if (ymd == null || ymd.trim().isEmpty) return null;
           try {
             return DateTime.parse(ymd.trim());
@@ -501,45 +554,72 @@ class _CronogramaPreventivasBorradorPageState
           }
         }
 
-        final fO = _parseYmd(n.fechaOriginal);
-        final fN = _parseYmd(n.fechaNueva);
+        final fO = parseYmd(n.fechaOriginal);
+        final fN = parseYmd(n.fechaNueva);
         final movidaSiguienteDia =
             fO != null && fN != null && fN.difference(fO).inDays == 1;
-
         final fechaOriginalEsDomingo = fO?.weekday == DateTime.sunday;
         final motivo = fechaOriginalEsDomingo
             ? (movidaSiguienteDia
-                ? 'Se movió al siguiente día porque la fecha original era domingo.'
-                : 'Se reprogramó porque la fecha original coincidía con un domingo.')
+                  ? 'Se movio al siguiente dia porque la fecha original era domingo.'
+                  : 'Se reprogramo porque la fecha original era domingo.')
             : (movidaSiguienteDia
-                ? 'Se movió al siguiente día porque la fecha original era festiva.'
-                : 'Se reprogramó porque la fecha original coincidía con un festivo.');
-
-        return '$desc\n$pr\n$motivo\n${n.fechaOriginal ?? '—'} → ${n.fechaNueva ?? '—'}';
+                  ? 'Se movio al siguiente dia porque la fecha original era festiva.'
+                  : 'Se reprogramo porque la fecha original era festivo.');
+        return '$desc\n$pr\n$motivo\n${n.fechaOriginal ?? '-'} -> ${n.fechaNueva ?? '-'}';
       }
 
       if (n.tipo == 'FESTIVO_OMITIDO') {
-        final razon = (n.fechaOriginal ?? n.fecha ?? '').isEmpty
-            ? 'No se programó por festivo/domingo.'
-            : 'No se programó para respetar domingo/festivo.';
-        return '$desc\n$pr\n$razon\nFecha: ${n.fecha ?? n.fechaOriginal ?? '—'}';
+        return '$desc\n$pr\nNo se programo la tarea por festivo/domingo.\nFecha: $fecha';
       }
 
       if (n.tipo == 'REEMPLAZO_PRIORIDAD') {
-        final nuevas = n.nuevaTareaIds.isEmpty
-            ? '—'
-            : n.nuevaTareaIds.join(', ');
-        final reprog = n.reprogramadasIds.isEmpty
-            ? '—'
-            : n.reprogramadasIds.join(', ');
-        return '$desc\n$pr\nFecha: ${n.fecha ?? '—'}\nNuevas: $nuevas\nReprogramadas: $reprog';
+        final detalle = detalleReemplazo(n);
+        return '$desc\n$pr\nFecha: $fecha\n$detalle\nEste reemplazo queda reflejado en el informe.';
       }
 
-      if (n.tipo == 'SIN_CANDIDATAS' || n.tipo == 'SIN_HUECO') {
-        return '$desc\n$pr\nFecha: ${n.fecha ?? '—'}';
+      if (n.tipo == 'REQUIERE_CONFIRMACION_REEMPLAZO') {
+        final candTxt = n.candidatasIds.isEmpty
+            ? 'No se reportaron candidatas en backend.'
+            : 'Candidatas: ${idsLabel(n.candidatasIds)}.';
+        final prObjTxt = n.prioridadObjetivo != null
+            ? 'Prioridad objetivo a confirmar: P${n.prioridadObjetivo}.'
+            : '';
+        final msg = (n.mensaje ?? '').trim();
+        return '$desc\n$pr\nFecha: $fecha\n'
+            'Aun no se reemplazo ninguna tarea: se requiere decision manual.\n'
+            '$candTxt\n'
+            '${reglaPrioridad(n.prioridad)}'
+            '${prObjTxt.isEmpty ? '' : '\n$prObjTxt'}'
+            '${msg.isEmpty ? '' : '\n$msg'}';
       }
 
-      return '$desc\n$pr';
+      if (n.tipo == 'SIN_CANDIDATAS') {
+        final extra = (n.mensaje ?? '').trim();
+        return '$desc\n$pr\nFecha: $fecha\n'
+            'No se encontro una tarea candidata para reemplazar, por eso no hubo reemplazo.\n'
+            '${reglaPrioridad(n.prioridad)}\n'
+            'La novedad queda registrada en el informe.'
+            '${extra.isEmpty ? '' : '\n$extra'}';
+      }
+
+      if (n.tipo == 'SIN_HUECO') {
+        final extra = (n.mensaje ?? '').trim();
+        return '$desc\n$pr\nFecha: $fecha\n'
+            'No se encontro hueco en agenda y no se ejecuto reemplazo.\n'
+            '${reglaPrioridad(n.prioridad)}'
+            '${extra.isEmpty ? '' : '\n$extra'}';
+      }
+
+      final msg = (n.mensaje ?? '').trim();
+      final detalle =
+          (n.nuevaTareaIds.isNotEmpty || n.reprogramadasIds.isNotEmpty)
+          ? detalleReemplazo(n)
+          : 'No hubo reemplazo ejecutado en esta novedad.';
+      return '$desc\n$pr\nFecha: $fecha\n'
+          '${msg.isEmpty ? 'Novedad no clasificada por el backend.' : msg}\n'
+          '$detalle\n'
+          'Consulta el informe para trazabilidad completa.';
     }
 
     await showDialog<void>(
@@ -619,7 +699,7 @@ class _CronogramaPreventivasBorradorPageState
                                 const SizedBox(height: 10),
                             itemBuilder: (context, i) {
                               final n = novedades[i];
-                              final c = _color(n.tipo);
+                              final c = colorForType(n.tipo);
                               return Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
@@ -646,7 +726,10 @@ class _CronogramaPreventivasBorradorPageState
                                         color: c.withOpacity(0.10),
                                         borderRadius: BorderRadius.circular(12),
                                       ),
-                                      child: Icon(_icon(n.tipo), color: c),
+                                      child: Icon(
+                                        iconForType(n.tipo),
+                                        color: c,
+                                      ),
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
@@ -655,7 +738,7 @@ class _CronogramaPreventivasBorradorPageState
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            _title(n),
+                                            titleForNovedad(n),
                                             style: const TextStyle(
                                               fontSize: 14,
                                               fontWeight: FontWeight.w800,
@@ -663,7 +746,7 @@ class _CronogramaPreventivasBorradorPageState
                                           ),
                                           const SizedBox(height: 6),
                                           Text(
-                                            _body(n),
+                                            bodyForNovedad(n),
                                             style: TextStyle(
                                               fontSize: 12,
                                               height: 1.25,
@@ -1046,7 +1129,7 @@ class _CronogramaPreventivasBorradorPageState
             ),
             const SizedBox(height: 8),
 
-            // 2 columnas para que no quede “bloque ladrillo”
+            // 2 columnas para que no quede "bloque ladrillo"
             Row(
               children: [
                 Expanded(child: _ddTipo()),
@@ -1096,18 +1179,20 @@ class _CronogramaPreventivasBorradorPageState
 
     for (final t in _tareasFiltradas) {
       final ubic = (t.ubicacionNombre ?? 'ID ${t.ubicacionId}').trim();
+      final objeto = (_nombreObjeto(t) ?? 'ID ${t.elementoId}').trim();
       final freq = (t.frecuencia ?? '—').trim();
       final diag = (t.descripcion).trim();
 
       // responsable: prioriza operarios, si no supervisor
-      final resp = t.operariosNombres.isNotEmpty
-          ? t.operariosNombres.join(', ')
+      final operarios = [...t.operariosNombres]..sort();
+      final resp = operarios.isNotEmpty
+          ? operarios.join('\n')
           : (t.supervisorNombre ??
                 (t.supervisorId != null
                     ? 'ID ${t.supervisorId}'
                     : 'Sin asignar'));
 
-      final key = '$freq||$diag||$ubic||$resp';
+      final key = '$freq||$diag||$ubic||$objeto||$resp';
 
       rows.putIfAbsent(
         key,
@@ -1115,6 +1200,7 @@ class _CronogramaPreventivasBorradorPageState
           frecuencia: freq,
           diagnostico: diag,
           ubicacion: ubic,
+          objeto: objeto,
           responsable: resp,
           porDia: {},
         ),
@@ -1122,7 +1208,7 @@ class _CronogramaPreventivasBorradorPageState
 
       final day = t.fechaInicio.toLocal().day;
 
-      // Si hay varias tareas el mismo día para esa fila, mostramos la “más crítica”
+      // Si hay varias tareas el mismo dia para esa fila, mostramos la mas critica
       // Orden: X > R > O > vacío (ajusta si quieres)
       final s = _codigoEstado(t.estado);
       final actual = rows[key]!.porDia[day] ?? '';
@@ -1137,7 +1223,9 @@ class _CronogramaPreventivasBorradorPageState
       if (c1 != 0) return c1;
       final c2 = a.diagnostico.compareTo(b.diagnostico);
       if (c2 != 0) return c2;
-      return a.ubicacion.compareTo(b.ubicacion);
+      final c3 = a.ubicacion.compareTo(b.ubicacion);
+      if (c3 != 0) return c3;
+      return a.objeto.compareTo(b.objeto);
     });
 
     return list;
@@ -1199,8 +1287,9 @@ class _CronogramaPreventivasBorradorPageState
     // tamaños (ajusta si quieres)
     const wFrecuencia = 120.0;
     const wDiagnostico = 260.0;
-    const wUbicacion = 120.0;
-    const wResponsable = 140.0;
+    const wUbicacion = 130.0;
+    const wObjeto = 130.0;
+    const wResponsable = 250.0;
     const wDia = 34.0;
 
     final headerStyle = TextStyle(
@@ -1219,7 +1308,7 @@ class _CronogramaPreventivasBorradorPageState
     }) {
       return Container(
         width: w,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         alignment: align,
         decoration: BoxDecoration(
           color: color ?? Colors.white,
@@ -1264,6 +1353,12 @@ class _CronogramaPreventivasBorradorPageState
                     color: Colors.green.shade200,
                     align: Alignment.center,
                     child: Text('Ubicación', style: headerStyle),
+                  ),
+                  cellBox(
+                    w: wObjeto,
+                    color: Colors.green.shade200,
+                    align: Alignment.center,
+                    child: Text('Objeto', style: headerStyle),
                   ),
                   cellBox(
                     w: wResponsable,
@@ -1317,6 +1412,11 @@ class _CronogramaPreventivasBorradorPageState
                     child: const SizedBox.shrink(),
                   ),
                   cellBox(
+                    w: wObjeto,
+                    color: Colors.white,
+                    child: const SizedBox.shrink(),
+                  ),
+                  cellBox(
                     w: wResponsable,
                     color: Colors.white,
                     child: const SizedBox.shrink(),
@@ -1330,7 +1430,9 @@ class _CronogramaPreventivasBorradorPageState
                     if (dom) {
                       header2Color = Colors.yellow.shade300;
                     } else if (fest) {
-                      header2Color = const Color(0xFFFFCDD2); // festivo // 👈 festivo
+                      header2Color = const Color(
+                        0xFFFFCDD2,
+                      ); // festivo // 👈 festivo
                     } else {
                       header2Color = Colors.grey.shade100;
                     }
@@ -1385,11 +1487,21 @@ class _CronogramaPreventivasBorradorPageState
                       ),
                     ),
                     cellBox(
+                      w: wObjeto,
+                      align: Alignment.centerLeft,
+                      child: Text(
+                        f.objeto,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    cellBox(
                       w: wResponsable,
                       align: Alignment.centerLeft,
                       child: Text(
                         f.responsable,
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: 12, height: 1.3),
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     ...dias.map((dia) {
@@ -1413,7 +1525,9 @@ class _CronogramaPreventivasBorradorPageState
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w800,
-                              color: _colorPorCodigo(val), // 👈 AQUÍ SE USA
+                              color: _colorPorCodigo(
+                                val,
+                              ), // Aqui se usa el color por codigo
                             ),
                           ),
                         ),
@@ -1610,11 +1724,11 @@ class _CronogramaPreventivasBorradorPageState
           children: [
             const SizedBox(height: 4),
             Text(
-              '⏱ $durMin min (${durH.toStringAsFixed(1)} h)  •  $horaIni - $horaFin',
+              'Duracion: $durMin min (${durH.toStringAsFixed(1)} h) | $horaIni - $horaFin',
               style: const TextStyle(fontSize: 12),
             ),
             Text(
-              '🧑‍💼 Supervisor: $supervisor',
+              'Supervisor: $supervisor',
               style: const TextStyle(fontSize: 12),
             ),
             Text(
@@ -2217,7 +2331,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   final ScrollController _hCtrl = ScrollController();
   final ScrollController _vCtrl = ScrollController();
 
-  // ✅ más “respirable”
+  // Mas respirable
   static const double pxPorMin = 1.6; // estaba 1.2
   static const double anchoHora = 56;
   static const double altoHeader = 44;
@@ -2480,9 +2594,13 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 ),
                                 child: Center(
                                   child: Text(
-                                    fest ? "$label ${d.day} • F" : "$label ${d.day}",
+                                    fest
+                                        ? "$label ${d.day} • F"
+                                        : "$label ${d.day}",
                                     style: TextStyle(
-                                      color: fest ? const Color(0xFFB71C1C) : text,
+                                      color: fest
+                                          ? const Color(0xFFB71C1C)
+                                          : text,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
@@ -3034,6 +3152,7 @@ class _FilaCrono {
   final String frecuencia;
   final String diagnostico;
   final String ubicacion;
+  final String objeto;
   final String responsable;
   final Map<int, String> porDia;
 
@@ -3041,6 +3160,7 @@ class _FilaCrono {
     required this.frecuencia,
     required this.diagnostico,
     required this.ubicacion,
+    required this.objeto,
     required this.responsable,
     required this.porDia,
   });
