@@ -799,8 +799,19 @@ class DefinicionTareaPreventivaService {
                     if (!diaParte)
                         break;
                     let agendada = false;
-                    for (let guardDia = 0; guardDia < 31; guardDia++) {
+                    let pendienteConfirmacionP2 = null;
+                    let diasSinCandidatasP3 = 0;
+                    let diasConCandidatasP3SinHueco = 0;
+                    const fechasConCandidatasP3 = new Set();
+                    // Regla nueva: para P1, buscar hueco/reemplazo en ventana movil
+                    // de 7 dias (dia actual + 6), priorizando el dia mas cercano.
+                    const finSemanaBusqueda = new Date(diaParte);
+                    finSemanaBusqueda.setDate(finSemanaBusqueda.getDate() + 6);
+                    finSemanaBusqueda.setHours(23, 59, 59, 999);
+                    for (let guardDia = 0; guardDia < 8; guardDia++) {
                         if (!diaParte)
+                            break;
+                        if (prioridad === 1 && +diaParte > +finSemanaBusqueda)
                             break;
                         // Nunca crear bloques fuera del periodo solicitado.
                         if (diaParte.getFullYear() !== periodoAnio ||
@@ -988,9 +999,11 @@ class DefinicionTareaPreventivaService {
                                 bloqueos,
                                 durMin: durMinParte,
                                 payload,
+                                prioridadesCandidatas: [3],
                                 incluirBorradorEnAgenda: true,
                                 incluirPublicadasEnAgenda,
                                 onEvent: (ev) => {
+                                    const fechaIntento = dayKey(diaParte);
                                     if (ev.tipo === "REEMPLAZO") {
                                         if (ev.reprogramadasIds.length) {
                                             novedades.push({
@@ -1005,22 +1018,11 @@ class DefinicionTareaPreventivaService {
                                         }
                                     }
                                     else if (ev.tipo === "SIN_CANDIDATAS") {
-                                        novedades.push({
-                                            tipo: "SIN_CANDIDATAS",
-                                            defId: def.id,
-                                            descripcion: def.descripcion,
-                                            prioridad,
-                                            fecha: dayKey(diaParte),
-                                        });
+                                        diasSinCandidatasP3++;
                                     }
                                     else if (ev.tipo === "SIN_HUECO") {
-                                        novedades.push({
-                                            tipo: "SIN_HUECO",
-                                            defId: def.id,
-                                            descripcion: def.descripcion,
-                                            prioridad,
-                                            fecha: dayKey(diaParte),
-                                        });
+                                        diasConCandidatasP3SinHueco++;
+                                        fechasConCandidatasP3.add(fechaIntento);
                                     }
                                 },
                             });
@@ -1031,6 +1033,14 @@ class DefinicionTareaPreventivaService {
                                 agendada = true;
                                 break;
                             }
+                            // P2: no se reemplaza automaticamente, se reporta para confirmacion.
+                            const candidatasP2 = await listarCandidatasPorPrioridadDia(diaParte, [2]);
+                            if (candidatasP2.length) {
+                                pendienteConfirmacionP2 ?? (pendienteConfirmacionP2 = {
+                                    fecha: dayKey(diaParte),
+                                    candidatasIds: candidatasP2,
+                                });
+                            }
                             diaParte = (0, schedulerUtils_1.siguienteDiaHabil)({
                                 fecha: diaParte,
                                 festivosSet,
@@ -1040,6 +1050,47 @@ class DefinicionTareaPreventivaService {
                         }
                         // prioridad 2-3: si no cabe, se omite
                         break;
+                    }
+                    if (!agendada && prioridad === 1) {
+                        if (pendienteConfirmacionP2 != null) {
+                            const p3Contexto = diasConCandidatasP3SinHueco > 0
+                                ? ` Se evaluaron candidatas P3 en ${diasConCandidatasP3SinHueco} dia(s), pero no liberaron hueco.`
+                                : "";
+                            novedades.push({
+                                tipo: "REQUIERE_CONFIRMACION_REEMPLAZO",
+                                defId: def.id,
+                                descripcion: def.descripcion,
+                                prioridad,
+                                fecha: pendienteConfirmacionP2.fecha,
+                                prioridadObjetivo: 2,
+                                candidatasIds: pendienteConfirmacionP2.candidatasIds,
+                                mensaje: `No se encontro hueco ni reemplazo automatico (P3) en la ventana de 7 dias.${p3Contexto} Hay opcion de reemplazo con prioridad 2 y requiere confirmacion.`,
+                            });
+                        }
+                        else if (diasConCandidatasP3SinHueco > 0) {
+                            const fechas = Array.from(fechasConCandidatasP3).sort();
+                            const fechasTxt = fechas.length > 0
+                                ? ` Fechas evaluadas: ${fechas.slice(0, 4).join(", ")}${fechas.length > 4 ? ` (+${fechas.length - 4} mas)` : ""}.`
+                                : "";
+                            novedades.push({
+                                tipo: "SIN_HUECO",
+                                defId: def.id,
+                                descripcion: def.descripcion,
+                                prioridad,
+                                fecha: dayKey(diaParte ?? cursorDia),
+                                mensaje: `Se encontraron candidatas P3 en ${diasConCandidatasP3SinHueco} dia(s), pero ninguna libero hueco para ubicar la tarea dentro de la ventana de 7 dias.${fechasTxt}`,
+                            });
+                        }
+                        else {
+                            novedades.push({
+                                tipo: "SIN_CANDIDATAS",
+                                defId: def.id,
+                                descripcion: def.descripcion,
+                                prioridad,
+                                fecha: dayKey(diaParte ?? cursorDia),
+                                mensaje: `No se encontraron tareas candidatas P3 para reemplazo en la ventana de 7 dias (${diasSinCandidatasP3} dia(s) evaluados sin candidatas).`,
+                            });
+                        }
                     }
                     // mover cursor al siguiente día (para la siguiente parte)
                     cursorDia = new Date(diaParte ?? cursorDia);

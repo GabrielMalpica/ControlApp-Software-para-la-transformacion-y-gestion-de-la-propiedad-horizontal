@@ -25,6 +25,9 @@ fi
 echo "[startup] Running Prisma migrations..."
 npx prisma migrate deploy
 
+echo "[startup] Building TypeScript..."
+npm run build
+
 echo "[startup] Seeding initial managers..."
 node ./scripts/seed-initial-gerentes.js
 
