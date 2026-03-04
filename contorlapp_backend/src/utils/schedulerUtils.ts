@@ -630,6 +630,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
   // nueva tarea
   durMin: number;
   payload: CrearTareaPayload;
+  prioridadesCandidatas?: Array<2 | 3>;
 
   // agenda
   incluirBorradorEnAgenda: boolean;
@@ -664,6 +665,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     bloqueos,
     durMin,
     payload,
+    prioridadesCandidatas,
     incluirBorradorEnAgenda,
     onEvent,
   } = params;
@@ -725,7 +727,12 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     };
   }
 
-  // 3) buscar candidatas del día (prioridad 2–3) para reemplazo
+  const prioridadesPermitidas =
+    prioridadesCandidatas && prioridadesCandidatas.length
+      ? Array.from(new Set(prioridadesCandidatas))
+      : ([2, 3] as Array<2 | 3>);
+
+  // 3) buscar candidatas del día (prioridades permitidas) para reemplazo
   const ini = new Date(
     fechaDia.getFullYear(),
     fechaDia.getMonth(),
@@ -751,7 +758,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       fechaInicio: { lte: fin },
       fechaFin: { gte: ini },
       estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
-      prioridad: { in: [2, 3] },
+      prioridad: { in: prioridadesPermitidas },
     },
     select: {
       id: true,
@@ -762,7 +769,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       bloqueIndex: true,
       bloquesTotales: true,
     },
-    orderBy: [{ prioridad: "desc" }, { fechaInicio: "asc" }], // primero 3, luego 2
+    orderBy: [{ prioridad: "desc" }, { fechaInicio: "asc" }],
   });
 
   if (!candidatas.length) {

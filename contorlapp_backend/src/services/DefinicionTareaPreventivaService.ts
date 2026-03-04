@@ -56,6 +56,7 @@ type NovedadCronograma =
       prioridad: number;
       fechaOriginal: string;
       fechaNueva: string;
+      mensaje?: string;
     }
   | {
       tipo: "REEMPLAZO_PRIORIDAD";
@@ -65,6 +66,17 @@ type NovedadCronograma =
       fecha: string;
       nuevaTareaIds: number[];
       reprogramadasIds: number[];
+      mensaje?: string;
+    }
+  | {
+      tipo: "REQUIERE_CONFIRMACION_REEMPLAZO";
+      defId: number;
+      descripcion: string;
+      prioridad: number;
+      fecha: string;
+      prioridadObjetivo: number;
+      candidatasIds: number[];
+      mensaje: string;
     }
   | {
       tipo: "SIN_CANDIDATAS";
@@ -72,6 +84,7 @@ type NovedadCronograma =
       descripcion: string;
       prioridad: number;
       fecha: string;
+      mensaje?: string;
     }
   | {
       tipo: "SIN_HUECO";
@@ -79,6 +92,7 @@ type NovedadCronograma =
       descripcion: string;
       prioridad: number;
       fecha: string;
+      mensaje?: string;
     }
   | {
       tipo: "FESTIVO_OMITIDO";
@@ -87,6 +101,7 @@ type NovedadCronograma =
       prioridad: number;
       fecha: string;
       motivo: "FESTIVO" | "DOMINGO";
+      mensaje?: string;
     };
 
 const dayKey = (d: Date) => ymdLocal(d);
@@ -978,6 +993,46 @@ export class DefinicionTareaPreventivaService {
       inicio: inicioMes,
       fin: finMes,
     });
+
+    const listarCandidatasPorPrioridadDia = async (
+      fechaDia: Date,
+      prioridades: Array<2 | 3>,
+    ): Promise<number[]> => {
+      if (!prioridades.length) return [];
+
+      const ini = new Date(
+        fechaDia.getFullYear(),
+        fechaDia.getMonth(),
+        fechaDia.getDate(),
+        0,
+        0,
+        0,
+        0,
+      );
+      const fin = new Date(
+        fechaDia.getFullYear(),
+        fechaDia.getMonth(),
+        fechaDia.getDate(),
+        23,
+        59,
+        59,
+        999,
+      );
+
+      const rows = await this.prisma.tarea.findMany({
+        where: {
+          conjuntoId,
+          fechaInicio: { lte: fin },
+          fechaFin: { gte: ini },
+          estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
+          prioridad: { in: prioridades },
+        },
+        select: { id: true },
+        orderBy: [{ prioridad: "desc" }, { fechaInicio: "asc" }, { id: "asc" }],
+      });
+
+      return rows.map((r) => r.id);
+    };
 
     // 5️⃣ Limpiar borradores previos
     await this.prisma.tarea.deleteMany({
