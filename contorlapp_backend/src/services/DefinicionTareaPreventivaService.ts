@@ -2092,6 +2092,8 @@ export class DefinicionTareaPreventivaService {
         tareaIdRepresentante: g.tareaIdRepresentante,
         descripcion: g.descripcionRepresentante,
         maqIds: g.maqIds,
+        usoIni: g.usoIni,
+        usoFin: g.usoFin,
         entregaDia,
         recogidaDia,
         iniReserva,
@@ -2113,6 +2115,11 @@ export class DefinicionTareaPreventivaService {
         if (a.key === b.key) continue;
         if (!overlaps(a.iniReserva, a.finReserva, b.iniReserva, b.finReserva))
           continue;
+        const solapeUsoReal = overlaps(a.usoIni, a.usoFin, b.usoIni, b.usoFin);
+        // Nueva regla:
+        // Si la maquinaria ya esta en el conjunto y solo se solapan ventanas
+        // de entrega/recogida (no el uso real), se permite reutilizarla.
+        if (!solapeUsoReal) continue;
 
         const maqSetB = new Set<number>(b.maqIds);
         for (const maquinariaId of a.maqIds) {
@@ -2189,30 +2196,51 @@ export class DefinicionTareaPreventivaService {
         const ocup = byMaq.get(maquinariaId) ?? [];
         for (const u of ocup) {
           const uFin = u.fechaFin ?? OPEN_END_FAR_FUTURE;
+          const solapeReserva = overlaps(
+            p.iniReserva,
+            p.finReserva,
+            u.fechaInicio,
+            uFin,
+          );
+          if (!solapeReserva) continue;
 
-          if (overlaps(p.iniReserva, p.finReserva, u.fechaInicio, uFin)) {
-            conflictos.push({
-              tareaId: p.tareaIdRepresentante,
-              maquinariaId,
-              rangoSolicitado: {
-                ini: p.iniReserva.toISOString(),
-                fin: p.finReserva.toISOString(),
-                entrega: sameDayKey(p.entregaDia),
-                recogida: sameDayKey(p.recogidaDia),
-              },
-              ocupadoPor: {
-                usoId: u.id,
-                tareaId: u.tareaId,
-                conjuntoId: u.tarea?.conjuntoId ?? null,
-                descripcion: u.tarea?.borrador
-                  ? `[BORRADOR] ${(u.tarea?.descripcion ?? "Tarea en borrador").trim()}`
-                  : u.tarea?.descripcion ?? null,
-                ini: u.fechaInicio.toISOString(),
-                fin: (u.fechaFin ?? OPEN_END_FAR_FUTURE).toISOString(),
-              },
-            });
-            break;
+          const mismoConjunto = (u.tarea?.conjuntoId ?? null) === conjuntoId;
+          if (mismoConjunto) {
+            const usoOcupadoIni = u.tarea?.fechaInicio ?? u.fechaInicio;
+            const usoOcupadoFin =
+              u.tarea?.fechaFin ?? u.fechaFin ?? OPEN_END_FAR_FUTURE;
+            const solapeUsoReal = overlaps(
+              p.usoIni,
+              p.usoFin,
+              usoOcupadoIni,
+              usoOcupadoFin,
+            );
+            // Regla nueva para mismo conjunto:
+            // si no hay solape de uso real, se permite (la maquina permanece).
+            if (!solapeUsoReal) continue;
           }
+
+          conflictos.push({
+            tareaId: p.tareaIdRepresentante,
+            maquinariaId,
+            rangoSolicitado: {
+              ini: p.iniReserva.toISOString(),
+              fin: p.finReserva.toISOString(),
+              entrega: sameDayKey(p.entregaDia),
+              recogida: sameDayKey(p.recogidaDia),
+            },
+            ocupadoPor: {
+              usoId: u.id,
+              tareaId: u.tareaId,
+              conjuntoId: u.tarea?.conjuntoId ?? null,
+              descripcion: u.tarea?.borrador
+                ? `[BORRADOR] ${(u.tarea?.descripcion ?? "Tarea en borrador").trim()}`
+                : u.tarea?.descripcion ?? null,
+              ini: u.fechaInicio.toISOString(),
+              fin: (u.fechaFin ?? OPEN_END_FAR_FUTURE).toISOString(),
+            },
+          });
+          break;
         }
       }
     }

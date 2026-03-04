@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const SupervisorController_1 = require("../controller/SupervisorController");
+const role_middleware_1 = require("../middlewares/role.middleware");
+const auth_middleware_1 = require("../middlewares/auth.middleware");
+const upload_evidencias_1 = require("../middlewares/upload_evidencias");
+const router = (0, express_1.Router)();
+const ctrl = new SupervisorController_1.SupervisorController();
+router.use(auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("supervisor"));
+router.get("/tareas", ctrl.listarTareas);
+router.post("/tareas/:id/cerrar", upload_evidencias_1.uploadEvidencias.array("files", 10), ctrl.cerrarTarea);
+router.post("/tareas/:id/veredicto", ctrl.veredicto);
+router.get("/cronograma-imprimible", ctrl.cronogramaImprimible);
+exports.default = router;

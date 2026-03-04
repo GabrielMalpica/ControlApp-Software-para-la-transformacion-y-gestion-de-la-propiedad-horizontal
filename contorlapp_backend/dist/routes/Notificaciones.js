@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_middleware_1 = require("../middlewares/auth.middleware");
+const NotificacionController_1 = require("../controller/NotificacionController");
+const router = (0, express_1.Router)();
+const controller = new NotificacionController_1.NotificacionController();
+router.use(auth_middleware_1.authRequired);
+router.get("/", controller.listar);
+router.get("/no-leidas/count", controller.contarNoLeidas);
+router.patch("/leidas", controller.marcarTodasLeidas);
+router.patch("/:id/leida", controller.marcarLeida);
+exports.default = router;

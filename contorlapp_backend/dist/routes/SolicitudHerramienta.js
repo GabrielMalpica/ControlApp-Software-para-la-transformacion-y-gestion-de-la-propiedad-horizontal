@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const SolicitudHerramientaController_1 = require("../controller/SolicitudHerramientaController");
+const router = (0, express_1.Router)();
+const controller = new SolicitudHerramientaController_1.SolicitudHerramientaController();
+router.post("/", controller.crear);
+router.get("/", controller.listar);
+router.get("/:solicitudId", controller.obtener);
+// router.patch("/:solicitudId/estado", controller.cambiarEstado);
+exports.default = router;
