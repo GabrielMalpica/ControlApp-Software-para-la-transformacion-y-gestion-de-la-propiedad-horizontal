@@ -1779,8 +1779,8 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
               const SizedBox(height: 14),
 
-              SizedBox(
-                width: double.infinity,
+              Align(
+                alignment: Alignment.centerLeft,
                 child: ElevatedButton.icon(
                   onPressed: _guardando ? null : _guardar,
                   icon: _guardando
@@ -1793,20 +1793,8 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           ),
                         )
                       : const Icon(Icons.save),
-                  label: Text(
-                    _guardando ? 'Guardando...' : 'Guardar definición',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  label: Text(_guardando ? 'Guardando...' : 'Guardar'),
+                  style: AppTheme.saveButtonStyle,
                 ),
               ),
               const SizedBox(height: 18),

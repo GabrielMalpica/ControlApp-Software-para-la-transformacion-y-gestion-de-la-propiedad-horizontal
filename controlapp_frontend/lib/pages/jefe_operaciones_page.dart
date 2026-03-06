@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import '../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/jefe_operaciones/jefe_operaciones_pendientes_page.dart';
+import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 
 import '../service/theme.dart';
-import 'maquinaria_page.dart';
 import 'inventario_page.dart';
 import 'solicitudes_page.dart';
 import 'cronograma_page.dart';
@@ -69,6 +70,28 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
     if (w >= 800) return 4;
     if (w >= 520) return 3;
     return 2;
+  }
+
+  Future<void> _confirmLogout() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cerrar sesión'),
+        content: const Text('¿Seguro que quieres salir?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Salir'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true && mounted) logout(context);
   }
 
   Widget _simpleCard(
@@ -180,7 +203,10 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEAF4EE),
                   borderRadius: BorderRadius.circular(14),
@@ -195,7 +221,10 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
                         color: AppTheme.primary.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.apartment, color: AppTheme.primary),
+                      child: const Icon(
+                        Icons.apartment,
+                        color: AppTheme.primary,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -204,7 +233,10 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
                         children: [
                           const Text(
                             "Conjunto seleccionado",
-                            style: TextStyle(fontSize: 12, color: Colors.black54),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.black54,
+                            ),
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -215,7 +247,10 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
                             ),
                           ),
                           const SizedBox(height: 2),
-                          Text("NIT: $nit", style: const TextStyle(fontSize: 12)),
+                          Text(
+                            "NIT: $nit",
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         ],
                       ),
                     ),
@@ -224,7 +259,9 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.black12.withOpacity(0.08)),
+                        border: Border.all(
+                          color: Colors.black12.withOpacity(0.08),
+                        ),
                       ),
                       child: DropdownButton<String>(
                         value: _conjuntoSeleccionadoNit,
@@ -295,7 +332,9 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => MaquinariaPage(nit: nit),
+                          builder: (_) => AgendaMaquinariaGlobalExcelPage(
+                            empresaNit: AppConstants.empresaNit,
+                          ),
                         ),
                       );
                     },
@@ -356,6 +395,12 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
             tooltip: "Recargar conjuntos",
             onPressed: _cargarConjuntos,
             icon: const Icon(Icons.refresh, color: Colors.white),
+          ),
+          const SizedBox(width: 6),
+          IconButton(
+            tooltip: 'Cerrar sesión',
+            icon: const Icon(Icons.logout, color: Colors.white),
+            onPressed: _confirmLogout,
           ),
         ],
       ),

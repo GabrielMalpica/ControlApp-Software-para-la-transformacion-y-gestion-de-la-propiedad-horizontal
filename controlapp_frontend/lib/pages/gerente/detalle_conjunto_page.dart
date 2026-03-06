@@ -1100,41 +1100,36 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
     return _SectionCard(
       icon: Icons.save_outlined,
       title: 'Acciones de edicion',
-      child: Row(
+      child: Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 10,
+        runSpacing: 8,
         children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: _saving
-                  ? null
-                  : () {
-                      setState(() {
-                        _editMode = false;
-                        _formInicializado = false;
-                      });
-                    },
-              child: const Text('Cancelar'),
-            ),
+          OutlinedButton(
+            onPressed: _saving
+                ? null
+                : () {
+                    setState(() {
+                      _editMode = false;
+                      _formInicializado = false;
+                    });
+                  },
+            child: const Text('Cancelar'),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: _saving ? null : () => _guardarCambios(c),
-              icon: _saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.save),
-              label: Text(_saving ? 'Guardando...' : 'Guardar cambios'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.white,
-              ),
-            ),
+          ElevatedButton.icon(
+            onPressed: _saving ? null : () => _guardarCambios(c),
+            icon: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.save),
+            label: Text(_saving ? 'Guardando...' : 'Guardar'),
+            style: AppTheme.saveButtonStyle,
           ),
         ],
       ),

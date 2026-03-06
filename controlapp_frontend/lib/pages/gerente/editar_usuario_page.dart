@@ -574,9 +574,8 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
 
               const SizedBox(height: 20),
 
-              SizedBox(
-                width: double.infinity,
-                height: 48,
+              Align(
+                alignment: Alignment.centerLeft,
                 child: ElevatedButton.icon(
                   onPressed: _guardando ? null : _guardarCambios,
                   icon: _guardando
@@ -589,13 +588,8 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                           ),
                         )
                       : const Icon(Icons.save),
-                  label: Text(_guardando ? "Guardando..." : "Guardar cambios"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
+                  label: Text(_guardando ? "Guardando..." : "Guardar"),
+                  style: AppTheme.saveButtonStyle,
                 ),
               ),
             ],

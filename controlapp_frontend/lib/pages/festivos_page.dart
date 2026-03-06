@@ -265,19 +265,14 @@ class _FestivosPageState extends State<FestivosPage> {
                                         height: 16,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2,
+                                          color: Colors.white,
                                         ),
                                       )
                                     : const Icon(Icons.save),
                                 label: Text(
                                   _guardando ? 'Guardando...' : 'Guardar',
                                 ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppTheme.primary,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
+                                style: AppTheme.saveButtonStyle,
                               ),
                             ],
                           ),

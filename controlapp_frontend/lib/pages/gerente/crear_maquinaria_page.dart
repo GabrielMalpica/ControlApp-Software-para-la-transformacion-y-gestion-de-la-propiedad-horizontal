@@ -149,7 +149,11 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
       return;
     }
 
-    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/home-gerente',
+      (route) => false,
+    );
   }
 
   @override
@@ -280,22 +284,22 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
 
               const SizedBox(height: 20),
 
-              SizedBox(
-                width: double.infinity,
+              Align(
+                alignment: Alignment.centerLeft,
                 child: ElevatedButton.icon(
                   icon: _saving
                       ? const SizedBox(
                           height: 18,
                           width: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Icon(Icons.save),
-                  label: Text(
-                    _saving
-                        ? (isEdit ? 'Guardando cambios...' : 'Guardando...')
-                        : (isEdit ? 'Guardar cambios' : 'Guardar maquinaria'),
-                  ),
+                  label: Text(_saving ? 'Guardando...' : 'Guardar'),
                   onPressed: _saving ? null : _guardar,
+                  style: AppTheme.saveButtonStyle,
                 ),
               ),
             ],

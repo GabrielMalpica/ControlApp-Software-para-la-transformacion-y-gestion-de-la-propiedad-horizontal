@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/empresa_api.dart';
+import 'package:flutter_application_1/service/theme.dart';
 import '../../model/insumo_model.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -97,7 +98,11 @@ class _CrearInsumoPageState extends State<CrearInsumoPage> {
       return;
     }
 
-    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/home-gerente',
+      (route) => false,
+    );
   }
 
   @override
@@ -200,8 +205,8 @@ class _CrearInsumoPageState extends State<CrearInsumoPage> {
                     ),
                     const SizedBox(height: 24),
 
-                    SizedBox(
-                      width: double.infinity,
+                    Align(
+                      alignment: Alignment.centerLeft,
                       child: ElevatedButton.icon(
                         onPressed: _saving ? null : _guardar,
                         icon: _saving
@@ -210,12 +215,12 @@ class _CrearInsumoPageState extends State<CrearInsumoPage> {
                                 height: 18,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
+                                  color: Colors.white,
                                 ),
                               )
                             : const Icon(Icons.save),
-                        label: Text(
-                          _saving ? 'Guardando...' : 'Guardar insumo',
-                        ),
+                        label: Text(_saving ? 'Guardando...' : 'Guardar'),
+                        style: AppTheme.saveButtonStyle,
                       ),
                     ),
                   ],

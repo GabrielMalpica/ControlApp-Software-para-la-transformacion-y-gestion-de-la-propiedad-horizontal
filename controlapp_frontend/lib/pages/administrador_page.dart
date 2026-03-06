@@ -6,6 +6,7 @@ import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.
 import 'package:flutter_application_1/pages/cronograma_page.dart';
 import 'package:flutter_application_1/pages/gerente/usuarios_conjunto_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
@@ -71,6 +72,28 @@ class _AdministradorPageState extends State<AdministradorPage> {
     if (w >= 800) return 4;
     if (w >= 520) return 3;
     return 2;
+  }
+
+  Future<void> _confirmLogout() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cerrar sesión'),
+        content: const Text('¿Seguro que quieres salir?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Salir'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true && mounted) logout(context);
   }
 
   /// 🔹 Tarjeta simple
@@ -256,27 +279,27 @@ class _AdministradorPageState extends State<AdministradorPage> {
             builder: (context, c) {
               final cols = _gridCountForWidth(c.maxWidth);
               return GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: cols,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 1.05,
-            children: [
-              _simpleCard(
-                "Inventario",
-                AppTheme.yellow,
-                Icons.inventory,
-                onTap: () {
-                  _go(
-                    InventarioPage(
-                      nit: conjunto.nit,
-                      empresaId: AppConstants.empresaNit,
-                    ),
-                  );
-                },
-              ),
-              ],
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: cols,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1.05,
+                children: [
+                  _simpleCard(
+                    "Inventario",
+                    AppTheme.yellow,
+                    Icons.inventory,
+                    onTap: () {
+                      _go(
+                        InventarioPage(
+                          nit: conjunto.nit,
+                          empresaId: AppConstants.empresaNit,
+                        ),
+                      );
+                    },
+                  ),
+                ],
               );
             },
           ),
@@ -302,6 +325,12 @@ class _AdministradorPageState extends State<AdministradorPage> {
             tooltip: "Recargar",
             onPressed: _cargarConjuntos,
             icon: const Icon(Icons.refresh, color: Colors.white),
+          ),
+          const SizedBox(width: 6),
+          IconButton(
+            tooltip: 'Cerrar sesión',
+            icon: const Icon(Icons.logout, color: Colors.white),
+            onPressed: _confirmLogout,
           ),
           // ✅ Sin PopupMenuButton por ahora (tal como pediste)
         ],

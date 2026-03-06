@@ -4,8 +4,7 @@ import '../../api/herramienta_api.dart';
 import '../../model/herramienta_model.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
-// Si ya tienes tu theme.dart y colores corporativos, puedes importar y usarlo.
-// import '../../service/theme.dart';
+import '../../service/theme.dart';
 
 class CrearHerramientaPage extends StatefulWidget {
   /// NIT de la empresa (o el id que uses en backend como empresaId)
@@ -104,7 +103,11 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
       return;
     }
 
-    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/home-gerente',
+      (route) => false,
+    );
   }
 
   @override
@@ -242,10 +245,14 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
                       ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Icon(Icons.save),
-                  label: Text(_saving ? "Guardando..." : "Crear herramienta"),
+                  label: Text(_saving ? "Guardando..." : "Guardar"),
+                  style: AppTheme.saveButtonStyle,
                 ),
               ],
             ),

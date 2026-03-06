@@ -158,7 +158,8 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
 
       // ✅ NUEVO
       activo: activo,
-      patronJornada: (rolSeleccionado == 'operario' && jornada == 'MEDIO_TIEMPO')
+      patronJornada:
+          (rolSeleccionado == 'operario' && jornada == 'MEDIO_TIEMPO')
           ? patronJornada
           : null,
     );
@@ -324,7 +325,11 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
       return;
     }
 
-    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/home-gerente',
+      (route) => false,
+    );
   }
 
   @override
@@ -715,7 +720,6 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                             if (rolSeleccionado != 'operario') {
                               patronJornada = null;
                             }
-
                           });
                         },
                         decoration: const InputDecoration(
@@ -971,9 +975,8 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
               const SizedBox(height: 20),
 
               // ───────── BOTÓN GUARDAR ─────────
-              SizedBox(
-                width: double.infinity,
-                height: 48,
+              Align(
+                alignment: Alignment.centerLeft,
                 child: ElevatedButton.icon(
                   onPressed: _isSaving ? null : _guardarUsuario,
                   icon: _isSaving
@@ -986,14 +989,8 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                           ),
                         )
                       : const Icon(Icons.save),
-                  label: Text(_isSaving ? "Guardando..." : "Guardar Usuario"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    textStyle: const TextStyle(fontSize: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
+                  label: Text(_isSaving ? "Guardando..." : "Guardar"),
+                  style: AppTheme.saveButtonStyle,
                 ),
               ),
             ],

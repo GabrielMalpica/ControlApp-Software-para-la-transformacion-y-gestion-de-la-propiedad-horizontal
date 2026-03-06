@@ -437,32 +437,31 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-                      child: Row(
+                      child: Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: 10,
+                        runSpacing: 8,
                         children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: saving
-                                  ? null
-                                  : () => Navigator.pop(sheetContext, false),
-                              child: const Text('Cancelar'),
-                            ),
+                          OutlinedButton(
+                            onPressed: saving
+                                ? null
+                                : () => Navigator.pop(sheetContext, false),
+                            child: const Text('Cancelar'),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: saving ? null : guardar,
-                              icon: saving
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Icon(Icons.save),
-                              label: Text(saving ? 'Guardando...' : 'Guardar'),
-                            ),
+                          ElevatedButton.icon(
+                            onPressed: saving ? null : guardar,
+                            icon: saving
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.save),
+                            label: Text(saving ? 'Guardando...' : 'Guardar'),
+                            style: AppTheme.saveButtonStyle,
                           ),
                         ],
                       ),

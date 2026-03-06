@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/service/theme.dart';
 
 typedef RecoverPasswordSuccess =
     void Function({required String correo, required String nuevaContrasena});
@@ -168,11 +169,15 @@ Future<void> showChangePasswordDialog(BuildContext context) async {
               ),
               ElevatedButton(
                 onPressed: loading ? null : submit,
+                style: AppTheme.saveButtonStyle,
                 child: loading
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : const Text('Guardar'),
               ),

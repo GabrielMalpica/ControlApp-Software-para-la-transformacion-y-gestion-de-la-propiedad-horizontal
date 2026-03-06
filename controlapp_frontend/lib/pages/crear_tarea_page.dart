@@ -624,7 +624,11 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       return;
     }
 
-    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/home-gerente',
+      (route) => false,
+    );
   }
 
   String _fmtDateTime(DateTime d) {
@@ -1010,14 +1014,28 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             style: critical
                 ? ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFDC2626),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    minimumSize: const Size(0, 38),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   )
-                : null,
+                : AppTheme.saveButtonStyle,
             onPressed: () {
               final txt = ctrl.text.trim();
               if (txt.length < 3) return;
               Navigator.pop(context, txt);
             },
-            child: const Text("Guardar motivo"),
+            child: const Text("Guardar"),
           ),
         ],
       ),
@@ -1719,21 +1737,14 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : const Icon(Icons.save),
-                label: Text(_guardando ? "Guardando..." : "Guardar tarea"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
+                label: Text(_guardando ? "Guardando..." : "Guardar"),
+                style: AppTheme.saveButtonStyle,
               ),
             ],
           ),

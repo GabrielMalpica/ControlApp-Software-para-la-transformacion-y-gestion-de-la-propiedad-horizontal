@@ -888,6 +888,7 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
           onPressed: _loading ? null : _guardar,
           icon: const Icon(Icons.save),
           label: const Text("Guardar"),
+          style: AppTheme.saveButtonStyle,
         ),
       ],
     );

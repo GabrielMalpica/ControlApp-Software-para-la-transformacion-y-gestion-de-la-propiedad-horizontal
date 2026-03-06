@@ -325,7 +325,11 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
       return;
     }
 
-    Navigator.pushNamedAndRemoveUntil(context, '/home-gerente', (route) => false);
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/home-gerente',
+      (route) => false,
+    );
   }
 
   @override
@@ -752,9 +756,8 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
 
               const SizedBox(height: 20),
 
-              SizedBox(
-                width: double.infinity,
-                height: 48,
+              Align(
+                alignment: Alignment.centerLeft,
                 child: ElevatedButton.icon(
                   onPressed: _isSaving ? null : _guardarConjunto,
                   icon: _isSaving
@@ -767,13 +770,8 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                           ),
                         )
                       : const Icon(Icons.save),
-                  label: Text(_isSaving ? 'Guardando...' : 'Guardar conjunto'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
+                  label: Text(_isSaving ? 'Guardando...' : 'Guardar'),
+                  style: AppTheme.saveButtonStyle,
                 ),
               ),
             ],
