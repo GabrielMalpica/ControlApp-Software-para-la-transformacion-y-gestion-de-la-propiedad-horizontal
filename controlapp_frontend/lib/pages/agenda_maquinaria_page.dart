@@ -20,6 +20,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
   final _agendaApi = AgendaApi();
 
   late Future<List<MaquinariaResponse>> _fMaquinas;
+  final Map<int, AgendaMaquinaBlock> _bloquesAgendaPorMaquina = {};
 
   MaquinariaResponse? _seleccionada;
 
@@ -44,11 +45,10 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
     setState(() {
       _month = DateTime(_month.year, _month.month + delta, 1);
       _fMaquinas = _cargarCatalogoAgendaConjunto();
+      _agendaSeleccionada = null;
+      _errorAgenda = null;
+      _cargandoAgenda = false;
     });
-
-    if (_seleccionada != null) {
-      await _cargarAgendaMaquinaSeleccionada();
-    }
   }
 
   bool _esPropiaDelConjunto(MaquinariaResponse m) {
@@ -69,6 +69,61 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
     return false;
   }
 
+  bool _itemEsDelConjunto(AgendaReservaItem item) {
+    return (item.conjuntoId?.trim() ?? '') == widget.conjuntoId.trim();
+  }
+
+  Map<int, List<AgendaReservaItem>> _gruposVacios() {
+    return {
+      for (int grupo = 1; grupo <= 6; grupo++) grupo: <AgendaReservaItem>[],
+    };
+  }
+
+  Map<int, Map<int, List<AgendaReservaItem>>> _semanasVacias() {
+    return {
+      for (int semana = 1; semana <= 6; semana++) semana: _gruposVacios(),
+    };
+  }
+
+  AgendaMaquinaBlock _bloqueVacioPara(MaquinariaResponse maquinaria) {
+    return AgendaMaquinaBlock(
+      maquinaria: maquinaria,
+      semanas: _semanasVacias(),
+      reservasMes: 0,
+    );
+  }
+
+  AgendaMaquinaBlock _filtrarBloqueParaConjunto(
+    AgendaMaquinaBlock block, {
+    MaquinariaResponse? maquinaria,
+  }) {
+    final semanas = <int, Map<int, List<AgendaReservaItem>>>{};
+    final usoIds = <int>{};
+
+    for (int semana = 1; semana <= 6; semana++) {
+      final gruposSemana = <int, List<AgendaReservaItem>>{};
+      final gruposBase = block.semanas[semana];
+
+      for (int grupo = 1; grupo <= 6; grupo++) {
+        final items = (gruposBase?[grupo] ?? const <AgendaReservaItem>[])
+            .where(_itemEsDelConjunto)
+            .toList();
+        gruposSemana[grupo] = items;
+        for (final item in items) {
+          usoIds.add(item.usoId);
+        }
+      }
+
+      semanas[semana] = gruposSemana;
+    }
+
+    return AgendaMaquinaBlock(
+      maquinaria: maquinaria ?? block.maquinaria,
+      semanas: semanas,
+      reservasMes: usoIds.length,
+    );
+  }
+
   Future<List<MaquinariaResponse>> _cargarCatalogoAgendaConjunto() async {
     final results = await Future.wait([
       _conjuntoApi.listarMaquinariaConjunto(widget.conjuntoId),
@@ -81,6 +136,9 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
 
     final maquinariaConjunto = results[0] as List<MaquinariaResponse>;
     final agendaGlobal = results[1] as AgendaGlobalResponse;
+    final bloquesGlobales = {
+      for (final block in agendaGlobal.data) block.maquinaria.id: block,
+    };
 
     final idsConAgenda = agendaGlobal.data
         .where(_bloqueTieneAgendaDelConjunto)
@@ -88,16 +146,24 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
         .toSet();
 
     final byId = <int, MaquinariaResponse>{};
+    final bloquesPorId = <int, AgendaMaquinaBlock>{};
 
     for (final m in maquinariaConjunto) {
       if (_esPropiaDelConjunto(m)) {
         byId[m.id] = m;
+        final block = bloquesGlobales[m.id];
+        bloquesPorId[m.id] = block == null
+            ? _bloqueVacioPara(m)
+            : _filtrarBloqueParaConjunto(block, maquinaria: m);
       }
     }
 
     for (final b in agendaGlobal.data) {
       if (!idsConAgenda.contains(b.maquinaria.id)) continue;
+      final filtrado = _filtrarBloqueParaConjunto(b);
+      if (filtrado.reservasMes == 0) continue;
       byId.putIfAbsent(b.maquinaria.id, () => b.maquinaria);
+      bloquesPorId[b.maquinaria.id] = filtrado;
     }
 
     final salida = byId.values.toList()
@@ -107,6 +173,10 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
         if (rankA != rankB) return rankA.compareTo(rankB);
         return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
       });
+
+    _bloquesAgendaPorMaquina
+      ..clear()
+      ..addAll(bloquesPorId);
 
     return salida;
   }
@@ -200,6 +270,16 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
   static bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
+  Widget _buildDetalleAgenda(String mesLabel) {
+    if (_seleccionada == null) {
+      return const Center(
+        child: Text('Selecciona una maquina para ver su programacion'),
+      );
+    }
+
+    return _buildPlanilla(mesLabel);
+  }
+
   @override
   Widget build(BuildContext context) {
     final mesLabel =
@@ -233,13 +313,13 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
           IconButton(
             tooltip: 'Recargar',
             icon: const Icon(Icons.refresh),
-            onPressed: () async {
+            onPressed: () {
               setState(() {
                 _fMaquinas = _cargarCatalogoAgendaConjunto();
+                _agendaSeleccionada = null;
+                _errorAgenda = null;
+                _cargandoAgenda = false;
               });
-              if (_seleccionada != null) {
-                await _cargarAgendaMaquinaSeleccionada();
-              }
             },
           ),
           const SizedBox(width: 8),
@@ -366,13 +446,13 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
                           ),
                         ),
-                        onTap: () async {
+                        onTap: () {
                           setState(() {
                             _seleccionada = m;
                             _agendaSeleccionada = null;
                             _errorAgenda = null;
+                            _cargandoAgenda = false;
                           });
-                          await _cargarAgendaMaquinaSeleccionada();
                         },
                       );
                     },
@@ -398,7 +478,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                   children: [
                     SizedBox(width: 360, child: catalogo()),
                     const VerticalDivider(width: 1),
-                    Expanded(child: detalle()),
+                    Expanded(child: _buildDetalleAgenda(mesLabel)),
                   ],
                 );
               }
@@ -407,7 +487,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                 children: [
                   SizedBox(height: 260, child: catalogo()),
                   const Divider(height: 1),
-                  Expanded(child: detalle()),
+                  Expanded(child: _buildDetalleAgenda(mesLabel)),
                 ],
               );
             },
@@ -418,18 +498,16 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
   }
 
   Widget _buildPlanilla(String mesLabel) {
-    final reservas = _reservasDeSeleccionada();
-    final ubicaciones = _ubicaciones(reservas);
-    final observaciones = _observaciones(reservas);
+    final block =
+        _bloquesAgendaPorMaquina[_seleccionada!.id] ??
+        _bloqueVacioPara(_seleccionada!);
 
-    return _PlanillaProgramacion(
+    return _PlanillaProgramacionFiltrada(
       titulo: _seleccionada!.nombre.toUpperCase(),
       subTitulo: 'Periodo: $mesLabel',
-      reservas: reservas,
-      month: _month,
-      ubicaciones: ubicaciones,
-      observaciones: observaciones,
-      codeForDate: _codeForDate,
+      anio: _month.year,
+      mes: _month.month,
+      block: block,
     );
   }
 }
@@ -604,10 +682,11 @@ class _PlanillaProgramacion extends StatelessWidget {
   }
 
   Widget _weekBlock({required int semanaN, required _WeekRange week}) {
+    final visibleEndExclusive = week.start.add(Duration(days: _dias.length));
     final inWeek = reservas.where((r) {
       final ini = r.fechaInicio.toLocal();
       final fin = r.fechaFin.toLocal();
-      return ini.isBefore(week.end) && fin.isAfter(week.start);
+      return ini.isBefore(visibleEndExclusive) && fin.isAfter(week.start);
     }).toList();
 
     final ubicWeekSet = <String>{};
@@ -622,7 +701,7 @@ class _PlanillaProgramacion extends StatelessWidget {
       final o = r.observacion?.trim();
       if (o != null && o.isNotEmpty) obsWeekSet.add(o);
     }
-    final obsText = (obsWeekSet.toList()..sort()).take(3).join('\n');
+    final obsText = (obsWeekSet.toList()..sort()).join('\n');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -658,7 +737,7 @@ class _PlanillaProgramacion extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      '${_fmt(week.start)} → ${_fmt(week.end.subtract(const Duration(days: 1)))}',
+                      '${_fmt(week.start)} -> ${_fmt(visibleEndExclusive.subtract(const Duration(days: 1)))}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -745,7 +824,7 @@ class _PlanillaProgramacion extends StatelessWidget {
     final weeks = <_WeekRange>[];
     DateTime start = firstMonday;
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 6; i++) {
       final end = start.add(const Duration(days: 7));
       weeks.add(_WeekRange(start: start, end: end));
       start = end;
@@ -792,7 +871,6 @@ class _PlanillaProgramacion extends StatelessWidget {
           text,
           softWrap: true,
           overflow: TextOverflow.clip,
-          maxLines: 6,
           style: const TextStyle(fontWeight: FontWeight.w600, height: 1.2),
         ),
       ),
@@ -876,4 +954,433 @@ class _ChipLeyenda extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PlanillaProgramacionFiltrada extends StatelessWidget {
+  final String titulo;
+  final String subTitulo;
+  final int anio;
+  final int mes;
+  final AgendaMaquinaBlock block;
+
+  const _PlanillaProgramacionFiltrada({
+    required this.titulo,
+    required this.subTitulo,
+    required this.anio,
+    required this.mes,
+    required this.block,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final semanas = block.semanas.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    return Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.black12.withOpacity(.08)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(.10),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.calendar_month,
+                      color: Colors.green,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          titulo,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subTitulo,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Text(
+                      'Reservas: ${block.reservasMes}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: const [
+              _ChipLeyenda(texto: 'E = Entrega'),
+              _ChipLeyenda(texto: 'A = Actividad'),
+              _ChipLeyenda(texto: 'P = En sitio'),
+              _ChipLeyenda(texto: 'R = Retorno'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: semanas
+                    .map(
+                      (e) => _ExcelSemanaFiltrada(
+                        anio: anio,
+                        mes: mes,
+                        semana: e.key,
+                        grupos: e.value,
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExcelSemanaFiltrada extends StatelessWidget {
+  final int anio;
+  final int mes;
+  final int semana;
+  final Map<int, List<AgendaReservaItem>> grupos;
+
+  const _ExcelSemanaFiltrada({
+    required this.anio,
+    required this.mes,
+    required this.semana,
+    required this.grupos,
+  });
+
+  static const _days = ['L', 'M', 'M', 'J', 'V', 'S'];
+  static const double _wProg = 220;
+  static const double _wDay = 42;
+  static const double _wGroup = 160;
+  static const double _tableWidth = _wProg + (6 * _wDay) + (6 * _wGroup);
+
+  DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  DateTime _firstMondayOfGrid(int anio, int mes) {
+    final first = DateTime(anio, mes, 1);
+    final back = first.weekday - DateTime.monday;
+    return _startOfDay(first.subtract(Duration(days: back)));
+  }
+
+  DateTime _weekStart(int anio, int mes, int semana) {
+    final base = _firstMondayOfGrid(anio, mes);
+    return base.add(Duration(days: (semana - 1) * 7));
+  }
+
+  List<String> _dayNumbers(int anio, int mes, int semana) {
+    final start = _weekStart(anio, mes, semana);
+    return List.generate(6, (i) {
+      final d = start.add(Duration(days: i));
+      if (d.month != mes) return '';
+      return '${d.day}';
+    });
+  }
+
+  List<_ExcelRowFiltrada> _buildRows() {
+    final allItems = <AgendaReservaItem>[];
+    for (final entry in grupos.entries) {
+      allItems.addAll(entry.value);
+    }
+
+    final byConjunto = <String, List<AgendaReservaItem>>{};
+    for (final it in allItems) {
+      final nombre = (it.conjuntoNombre ?? '').trim();
+      final id = (it.conjuntoId ?? '').trim();
+      final label = nombre.isNotEmpty
+          ? nombre
+          : (id.isNotEmpty ? id : 'Conjunto seleccionado');
+      byConjunto.putIfAbsent(label, () => []).add(it);
+    }
+
+    final nombres = byConjunto.keys.toList()..sort();
+    if (nombres.isEmpty) {
+      return [
+        _ExcelRowFiltrada(
+          programacion: '-',
+          grid: List.filled(6, ''),
+          groupCells: List.filled(6, ''),
+        ),
+      ];
+    }
+
+    final out = <_ExcelRowFiltrada>[];
+    for (final nombre in nombres) {
+      final items = byConjunto[nombre] ?? const <AgendaReservaItem>[];
+      final mergedGrid = _mergeGrids(items);
+
+      int grupoMayor = 1;
+      if (items.isNotEmpty) {
+        grupoMayor = items
+            .map((it) => it.grupo)
+            .reduce((a, b) => a > b ? a : b)
+            .clamp(1, 6);
+      }
+
+      final groupCells = List<String>.generate(6, (index) {
+        final grupo = index + 1;
+        return grupo == grupoMayor ? nombre : '';
+      });
+
+      out.add(
+        _ExcelRowFiltrada(
+          programacion: nombre,
+          grid: mergedGrid,
+          groupCells: groupCells,
+        ),
+      );
+    }
+
+    return out;
+  }
+
+  List<String> _mergeGrids(List<AgendaReservaItem> items) {
+    List<String> ensure6(List<String> grid) =>
+        grid.length == 6 ? grid : List.filled(6, '');
+
+    int priority(String value) {
+      switch (value) {
+        case 'E':
+        case 'R':
+          return 4;
+        case 'A':
+          return 3;
+        case 'P':
+          return 2;
+        default:
+          return 1;
+      }
+    }
+
+    final merged = List<String>.filled(6, '');
+    for (final item in items) {
+      final grid = ensure6(item.grid);
+      for (int i = 0; i < 6; i++) {
+        if (priority(grid[i]) > priority(merged[i])) {
+          merged[i] = grid[i];
+        }
+      }
+    }
+    return merged;
+  }
+
+  Widget _hdr(String text, double width) {
+    return Container(
+      width: width,
+      height: 38,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.black12),
+        color: Colors.amber.shade300,
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+
+  Widget _hdrMultiline(String text, double width) {
+    return Container(
+      width: width,
+      height: 44,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.black12),
+        color: Colors.amber.shade300,
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+      ),
+    );
+  }
+
+  Widget _cellText(String text, double width, {bool alignLeft = false}) {
+    return Container(
+      width: width,
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      alignment: alignLeft ? Alignment.centerLeft : Alignment.center,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.black12),
+        color: Colors.white,
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+
+  Widget _cellCode(String code, double width) {
+    Color bg = Colors.white;
+    Color fg = Colors.black87;
+
+    switch (code) {
+      case 'E':
+        bg = Colors.blue.withOpacity(.15);
+        fg = Colors.blue.shade800;
+        break;
+      case 'A':
+        bg = Colors.green.withOpacity(.18);
+        fg = Colors.green.shade800;
+        break;
+      case 'P':
+        bg = Colors.amber.withOpacity(.20);
+        fg = Colors.brown.shade800;
+        break;
+      case 'R':
+        bg = Colors.red.withOpacity(.15);
+        fg = Colors.red.shade800;
+        break;
+    }
+
+    return Container(
+      width: width,
+      height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.black12),
+        color: bg,
+      ),
+      child: Text(
+        code,
+        style: TextStyle(fontWeight: FontWeight.w900, color: fg),
+      ),
+    );
+  }
+
+  Widget _headerRow() {
+    final numeros = _dayNumbers(anio, mes, semana);
+
+    return Row(
+      children: [
+        _hdr('PROGRAMACION', _wProg),
+        ...List.generate(
+          6,
+          (index) => _hdrMultiline('${_days[index]}\n${numeros[index]}', _wDay),
+        ),
+        for (int grupo = 1; grupo <= 6; grupo++) _hdr('GRUPO $grupo', _wGroup),
+      ],
+    );
+  }
+
+  Widget _rowWidget(_ExcelRowFiltrada row) {
+    return Row(
+      children: [
+        _cellText(row.programacion, _wProg, alignLeft: true),
+        ...List.generate(6, (index) => _cellCode(row.grid[index], _wDay)),
+        ...List.generate(
+          6,
+          (index) => _cellText(row.groupCells[index], _wGroup),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = _buildRows();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.black12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.lightGreen.shade300,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(10),
+              ),
+            ),
+            child: Text(
+              'SEMANA $semana',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: _tableWidth,
+              child: Column(
+                children: [_headerRow(), ...rows.map(_rowWidget)],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExcelRowFiltrada {
+  final String programacion;
+  final List<String> grid;
+  final List<String> groupCells;
+
+  _ExcelRowFiltrada({
+    required this.programacion,
+    required this.grid,
+    required this.groupCells,
+  });
 }
