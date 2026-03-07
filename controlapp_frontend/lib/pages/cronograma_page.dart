@@ -13,6 +13,7 @@ import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
 
 import '../api/cronograma_api.dart';
 import '../model/tarea_model.dart';
+import '../service/session_service.dart';
 import '../service/theme.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -41,6 +42,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   // ✅ para cerrar desde cronograma
   final _supervisorApi = SupervisorApi();
   final _inventarioApi = InventarioApi();
+  final _session = SessionService();
 
   bool _loading = true;
   String? _error;
@@ -80,6 +82,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   int? _horaDescansoInicio;
   int? _horaDescansoFin;
   String _resumenHorario = 'Horario: 08:00 - 16:00';
+  String? _rolActual;
 
   @override
   void initState() {
@@ -91,7 +94,14 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     _initMes();
     _semanaBase = DateTime(_anioActual, _mesActual, 1);
+    _cargarRol();
     _cargarDatos();
+  }
+
+  Future<void> _cargarRol() async {
+    final rol = (await _session.getRol())?.trim().toLowerCase();
+    if (!mounted) return;
+    setState(() => _rolActual = rol);
   }
 
   void _initMes() {
@@ -469,6 +479,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   bool _puedeCerrar(TareaModel t) {
     if (widget.soloLectura) return false;
+    final rol = (_rolActual ?? '').toLowerCase();
+    const rolesPermitidos = {'gerente', 'supervisor', 'jefe_operaciones'};
+    if (!rolesPermitidos.contains(rol)) return false;
     final e = (t.estado ?? '').toUpperCase();
     return e == 'ASIGNADA' || e == 'EN_PROCESO' || e == 'COMPLETADA';
   }
@@ -1155,6 +1168,245 @@ class _CronogramaPageState extends State<CronogramaPage> {
     return bloques;
   }
 
+  String _etiquetaConteoTareas(int total) {
+    if (total == 0) return 'Sin tareas';
+    return total == 1 ? '1 tarea' : '$total tareas';
+  }
+
+  String _resumenBloque(_BloqueHora bloque) {
+    if (bloque.tareas.isEmpty) {
+      return 'No hay tareas programadas en este bloque.';
+    }
+
+    final descripciones = bloque.tareas
+        .map((t) => t.descripcion.trim())
+        .where((d) => d.isNotEmpty)
+        .toList();
+
+    if (descripciones.isEmpty) {
+      return _etiquetaConteoTareas(bloque.tareas.length);
+    }
+
+    final visibles = descripciones.take(2).join(' | ');
+    if (descripciones.length <= 2) return visibles;
+    return '$visibles | +${descripciones.length - 2} mas';
+  }
+
+  Future<void> _abrirBloqueDia(_BloqueHora bloque, DateTime fechaBase) async {
+    final fechaLabel = DateFormat("d 'de' MMMM", 'es').format(fechaBase);
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final horaIni = TimeOfDay.fromDateTime(bloque.inicio).format(ctx);
+        final horaFin = TimeOfDay.fromDateTime(bloque.fin).format(ctx);
+
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: bloque.tareas.isEmpty ? 0.32 : 0.72,
+          minChildSize: 0.25,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) {
+            return Material(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Bloque $horaIni - $horaFin',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '$fechaLabel | ${_etiquetaConteoTareas(bloque.tareas.length)}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: bloque.tareas.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                'No hay tareas programadas en este bloque.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey.shade700),
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            controller: scrollController,
+                            padding: const EdgeInsets.all(16),
+                            itemCount: bloque.tareas.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              final t = bloque.tareas[index];
+                              return _buildTareaTile(t, ctx);
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDiaSheet(
+    BuildContext ctx,
+    double alto,
+    List<_BloqueHora> bloques,
+    DateTime fechaBase,
+  ) {
+    return SizedBox(
+      height: alto,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Tareas del dia',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        DateFormat("d 'de' MMMM", 'es').format(fechaBase),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              itemCount: bloques.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final b = bloques[index];
+                final horaIni = TimeOfDay.fromDateTime(b.inicio).format(ctx);
+                final horaFin = TimeOfDay.fromDateTime(b.fin).format(ctx);
+                final total = b.tareas.length;
+                final tieneTareas = total > 0;
+
+                return Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: tieneTareas ? 2 : 0,
+                  color: tieneTareas ? Colors.white : Colors.grey.shade50,
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    leading: CircleAvatar(
+                      radius: 20,
+                      backgroundColor: tieneTareas
+                          ? AppTheme.primary.withOpacity(0.12)
+                          : Colors.grey.shade200,
+                      child: Text(
+                        '$total',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: tieneTareas
+                              ? AppTheme.primary
+                              : Colors.grey.shade700,
+                        ),
+                      ),
+                    ),
+                    title: Text(
+                      '$horaIni - $horaFin',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _etiquetaConteoTareas(total),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _resumenBloque(b),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _abrirBloqueDia(b, fechaBase),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _abrirDia(int dia) async {
     final fechaBase = DateTime(_anioActual, _mesActual, dia);
 
@@ -1164,6 +1416,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       builder: (ctx) {
         final alto = MediaQuery.of(ctx).size.height * 0.8;
         final bloques = _generarBloquesDia(fechaBase);
+        return _buildDiaSheet(ctx, alto, bloques, fechaBase);
 
         _BloqueHora? bloqueSeleccionado;
 
@@ -1283,7 +1536,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
     setState(() => _recalcularResumenDias());
   }
 
-  Widget _buildTareaTile(TareaModel t, BuildContext ctx) {
+  Widget _buildTareaTile(
+    TareaModel t,
+    BuildContext ctx, {
+    VoidCallback? onTap,
+  }) {
     final iniLocal = t.fechaInicio.toLocal();
     final finLocal = t.fechaFin.toLocal();
 
@@ -1326,7 +1583,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
             ),
           ],
         ),
-        onTap: () => _mostrarDetalleTarea(t, ctx),
+        onTap: onTap ?? () => _mostrarDetalleTarea(t, ctx),
       ),
     );
   }

@@ -54,6 +54,100 @@ class _TareaLite {
   }
 }
 
+class _HorarioLite {
+  final String dia;
+  final int aperturaMin;
+  final int cierreMin;
+  final int? descansoInicioMin;
+  final int? descansoFinMin;
+
+  const _HorarioLite({
+    required this.dia,
+    required this.aperturaMin,
+    required this.cierreMin,
+    this.descansoInicioMin,
+    this.descansoFinMin,
+  });
+
+  int? get weekday => _weekdayDesdeDiaHorario(dia);
+
+  static _HorarioLite? tryParse(Map<String, dynamic> json) {
+    final dia = (json['dia'] ?? json['day'] ?? '').toString().trim();
+    final apertura = _parseHoraMin(
+      json['horaApertura'] ?? json['horaInicio'] ?? json['apertura'],
+    );
+    final cierre =
+        _parseHoraMin(json['horaCierre'] ?? json['horaFin'] ?? json['cierre']);
+
+    if (dia.isEmpty || apertura == null || cierre == null || cierre <= apertura) {
+      return null;
+    }
+
+    final descansoInicio = _parseHoraMin(json['descansoInicio']);
+    final descansoFin = _parseHoraMin(json['descansoFin']);
+    final tieneDescanso =
+        descansoInicio != null &&
+        descansoFin != null &&
+        descansoFin > descansoInicio;
+
+    return _HorarioLite(
+      dia: dia,
+      aperturaMin: apertura,
+      cierreMin: cierre,
+      descansoInicioMin: tieneDescanso ? descansoInicio : null,
+      descansoFinMin: tieneDescanso ? descansoFin : null,
+    );
+  }
+}
+
+class _GridHorarioConfig {
+  final int inicioMin;
+  final int finMin;
+  final int? descansoInicioMin;
+  final int? descansoFinMin;
+  final String resumen;
+
+  const _GridHorarioConfig({
+    required this.inicioMin,
+    required this.finMin,
+    this.descansoInicioMin,
+    this.descansoFinMin,
+    required this.resumen,
+  });
+}
+
+class _TaskSpan {
+  final _TareaLite tarea;
+  final int dayIndex;
+  final int startMin;
+  final int endMin;
+
+  const _TaskSpan({
+    required this.tarea,
+    required this.dayIndex,
+    required this.startMin,
+    required this.endMin,
+  });
+}
+
+class _TaskPlacement {
+  final _TareaLite tarea;
+  final int dayIndex;
+  final int startMin;
+  final int endMin;
+  final int column;
+  final int columnCount;
+
+  const _TaskPlacement({
+    required this.tarea,
+    required this.dayIndex,
+    required this.startMin,
+    required this.endMin,
+    required this.column,
+    required this.columnCount,
+  });
+}
+
 Future<void> imprimirCronogramaOperario(Map<String, dynamic> data) async {
   final fontRegular = pw.Font.ttf(
     await rootBundle.load('assets/fonts/Roboto-Regular.ttf'),
@@ -102,6 +196,14 @@ Future<void> imprimirCronogramaOperario(Map<String, dynamic> data) async {
       .map(_TareaLite.fromJson)
       .toList();
 
+  final horariosRaw = (data['horariosConjunto'] as List? ?? const []);
+  final horarios = horariosRaw
+      .whereType<Map>()
+      .map((e) => _HorarioLite.tryParse(e.cast<String, dynamic>()))
+      .whereType<_HorarioLite>()
+      .toList();
+  final horarioGrid = _resolverHorarioGrid(horarios: horarios, tareas: tareas);
+
   const dayCols = 6;
   const dayLabels = [
     'Lunes',
@@ -149,6 +251,13 @@ Future<void> imprimirCronogramaOperario(Map<String, dynamic> data) async {
                 ),
               ],
             ),
+            if (horarioGrid.resumen.isNotEmpty) ...[
+              pw.SizedBox(height: 6),
+              pw.Text(
+                horarioGrid.resumen,
+                style: const pw.TextStyle(fontSize: 10),
+              ),
+            ],
           ],
         ),
 
@@ -157,6 +266,7 @@ Future<void> imprimirCronogramaOperario(Map<String, dynamic> data) async {
           tareas: tareas,
           dayLabels: dayLabels,
           dayCols: dayCols,
+          horario: horarioGrid,
         ),
         pw.SizedBox(height: 14),
         pw.Row(
@@ -187,14 +297,22 @@ pw.Widget _buildCalendarGrid({
   required List<_TareaLite> tareas,
   required List<String> dayLabels,
   required int dayCols,
+  required _GridHorarioConfig horario,
 }) {
-  // Rango fijo 08:00 - 16:00 (por hora)
-  const int fixedStartMin = 8 * 60; // 08:00
-  const int fixedEndMin = 16 * 60; // 16:00 (borde final)
   const int stepMin = 60; // 1 hora por fila
+  final int fixedStartMin = horario.inicioMin;
+  final int fixedEndMin = horario.finMin;
 
-  // 8 filas: 8-9, 9-10, ..., 15-16
-  final int steps = ((fixedEndMin - fixedStartMin) / stepMin).ceil();
+  final int steps = math.max(
+    1,
+    ((fixedEndMin - fixedStartMin) / stepMin).ceil(),
+  );
+  final placements = _buildTaskPlacements(
+    tareas: tareas,
+    fixedStartMin: fixedStartMin,
+    fixedEndMin: fixedEndMin,
+    dayCols: dayCols,
+  );
 
   // Medidas
   const double timeColW = 70;
@@ -206,7 +324,7 @@ pw.Widget _buildCalendarGrid({
   final double gridH = coreH + bottomPad;
 
   double yForMin(int minutes) {
-    final clamped = minutes.clamp(fixedStartMin, fixedEndMin);
+    final clamped = _clampInt(minutes, fixedStartMin, fixedEndMin);
     final idx = (clamped - fixedStartMin) / stepMin;
     return dayHeaderH + (idx * stepH);
   }
@@ -329,6 +447,21 @@ pw.Widget _buildCalendarGrid({
                         ),
 
                       // Líneas verticales
+                      pw.Positioned(
+                        left: 0,
+                        top: coreH + 2,
+                        child: pw.SizedBox(
+                          width: timeColW,
+                          height: bottomPad - 2,
+                          child: pw.Padding(
+                            padding: const pw.EdgeInsets.only(left: 6),
+                            child: pw.Text(
+                              _fmtHHmmFromMinutes(fixedEndMin),
+                              style: const pw.TextStyle(fontSize: 10),
+                            ),
+                          ),
+                        ),
+                      ),
                       for (int d = 0; d <= dayCols; d++)
                         pw.Positioned(
                           left: timeColW + d * dayW,
@@ -345,11 +478,11 @@ pw.Widget _buildCalendarGrid({
               ),
             ),
 
-            // Banda almuerzo 13:00-14:00
-            ...() {
-              final top = yForMin(13 * 60);
-              final bottom = yForMin(14 * 60);
-              final h = (bottom - top).clamp(18.0, 9999.0);
+            if (horario.descansoInicioMin != null &&
+                horario.descansoFinMin != null) ...() {
+              final top = yForMin(horario.descansoInicioMin!);
+              final bottom = yForMin(horario.descansoFinMin!);
+              final h = math.max(18.0, bottom - top);
 
               return [
                 pw.Positioned(
@@ -367,7 +500,7 @@ pw.Widget _buildCalendarGrid({
                       child: pw.Align(
                         alignment: pw.Alignment.centerLeft,
                         child: pw.Text(
-                          'ALMUERZO',
+                          'DESCANSO',
                           style: pw.TextStyle(
                             fontSize: 12,
                             fontWeight: pw.FontWeight.bold,
@@ -382,26 +515,30 @@ pw.Widget _buildCalendarGrid({
             }(),
 
             // Bloques de tareas
-            ...tareas.expand((t) {
-              final dow0 = t.fechaInicio.weekday - 1; // Lunes=0
-              if (dow0 < 0 || dow0 >= dayCols) return <pw.Widget>[];
+            ...placements.expand((placement) {
+              final top = yForMin(placement.startMin);
+              final bottom = yForMin(placement.endMin);
 
-              final startMinRaw = _minutesOfDay(t.fechaInicio);
-              final endMinRaw = _minutesOfDay(t.fechaFin);
-              final endMinSafe = math.max(startMinRaw + 1, endMinRaw);
+              final height = math.max(10.0, bottom - top);
+              const outerPad = 3.0;
+              const columnGap = 4.0;
 
-              // clamp al rango fijo
-              final sMin = startMinRaw.clamp(fixedStartMin, fixedEndMin);
-              final eMin = endMinSafe.clamp(fixedStartMin, fixedEndMin);
+              final availableW = dayW - (outerPad * 2);
+              final columnCount = math.max(1, placement.columnCount);
+              final width = columnCount == 1
 
-              final top = yForMin(sMin);
-              final bottom = yForMin(eMin);
+                  ? availableW
+                  : (availableW - (columnGap * (columnCount - 1))) /
+                        columnCount;
 
               // mínimo para 3 líneas siempre
-              final height = math.max(60.0, bottom - top);
+              final left =
 
-              final left = timeColW + (dow0 * dayW) + 3;
-              final width = dayW - 6;
+                  timeColW +
+                  (placement.dayIndex * dayW) +
+                  outerPad +
+                  (placement.column * (width + columnGap));
+              final t = placement.tarea;
 
               final ubic = (t.ubicacionNombre ?? '').trim();
               final elem = (t.elementoNombre ?? '').trim();
@@ -416,6 +553,47 @@ pw.Widget _buildCalendarGrid({
               final timeLabel =
                   '${DateFormat('HH:mm').format(t.fechaInicio)} - ${DateFormat('HH:mm').format(t.fechaFin)}';
 
+              final ultraCompact = height < 18;
+              final compact = height < 36;
+              final padding = ultraCompact ? 2.0 : (compact ? 4.0 : 6.0);
+              final titleFont = ultraCompact ? 7.0 : (compact ? 8.0 : 10.0);
+              final bodyFont = ultraCompact ? 6.5 : (compact ? 7.0 : 9.0);
+              final content = <pw.Widget>[
+                if (ultraCompact)
+                  pw.Text(
+                    timeLabel,
+                    style: pw.TextStyle(
+                      fontSize: bodyFont,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                  )
+                else ...[
+                  pw.Text(
+                    t.descripcion,
+                    style: pw.TextStyle(
+                      fontSize: titleFont,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                  ),
+                  if (!compact && ubicElem.isNotEmpty) ...[
+                    pw.SizedBox(height: 2),
+                    pw.Text(
+                      ubicElem,
+                      style: pw.TextStyle(fontSize: bodyFont),
+                      maxLines: 1,
+                    ),
+                  ],
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    timeLabel,
+                    style: pw.TextStyle(fontSize: bodyFont),
+                    maxLines: 1,
+                  ),
+                ],
+              ];
+
               return [
                 pw.Positioned(
                   left: left,
@@ -424,7 +602,7 @@ pw.Widget _buildCalendarGrid({
                     width: width,
                     height: height,
                     child: pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
+                      padding: pw.EdgeInsets.all(padding),
                       decoration: pw.BoxDecoration(
                         color: PdfColors.green100,
                         border: pw.Border.all(
@@ -435,33 +613,12 @@ pw.Widget _buildCalendarGrid({
                       ),
                       child: pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          // 1) Nombre tarea
-                          pw.Text(
-                            t.descripcion,
-                            style: pw.TextStyle(
-                              fontSize: 11,
-                              fontWeight: pw.FontWeight.bold,
-                            ),
-                            maxLines: 1,
-                          ),
-                          pw.SizedBox(height: 3),
+                        mainAxisSize: pw.MainAxisSize.min,
+                        children: content,
 
                           // 2) Ubicación - Elemento
-                          pw.Text(
-                            ubicElem,
-                            style: const pw.TextStyle(fontSize: 10),
-                            maxLines: 1,
-                          ),
-                          pw.SizedBox(height: 3),
 
                           // 3) Hora
-                          pw.Text(
-                            timeLabel,
-                            style: const pw.TextStyle(fontSize: 10),
-                            maxLines: 1,
-                          ),
-                        ],
                       ),
                     ),
                   ),
@@ -489,6 +646,209 @@ DateTime? _parseYmd(String ymd) {
   }
 }
 
+_GridHorarioConfig _resolverHorarioGrid({
+  required List<_HorarioLite> horarios,
+  required List<_TareaLite> tareas,
+}) {
+  int? minApertura;
+  int? maxCierre;
+  int? minDescanso;
+  int? maxDescanso;
+  var usoHorarioConjunto = false;
+
+  for (final h in horarios) {
+    final weekday = h.weekday;
+    if (weekday == null || weekday == DateTime.sunday) continue;
+
+    usoHorarioConjunto = true;
+    minApertura = minApertura == null
+        ? h.aperturaMin
+        : math.min(minApertura, h.aperturaMin);
+    maxCierre = maxCierre == null ? h.cierreMin : math.max(maxCierre, h.cierreMin);
+
+    final descansoInicio = h.descansoInicioMin;
+    final descansoFin = h.descansoFinMin;
+    if (descansoInicio == null || descansoFin == null || descansoFin <= descansoInicio) {
+      continue;
+    }
+
+    minDescanso = minDescanso == null
+        ? descansoInicio
+        : math.min(minDescanso, descansoInicio);
+    maxDescanso = maxDescanso == null
+        ? descansoFin
+        : math.max(maxDescanso, descansoFin);
+  }
+
+  if (minApertura == null || maxCierre == null) {
+    usoHorarioConjunto = false;
+    for (final t in tareas) {
+      final iniMin = _minutesOfDay(t.fechaInicio);
+      final finMin = _minutesOfDay(t.fechaFin);
+      if (finMin <= iniMin) continue;
+
+      minApertura = minApertura == null ? iniMin : math.min(minApertura, iniMin);
+      maxCierre = maxCierre == null ? finMin : math.max(maxCierre, finMin);
+    }
+  }
+
+  minApertura ??= 8 * 60;
+  maxCierre ??= 16 * 60;
+
+  final inicioHora = _clampInt(minApertura ~/ 60, 0, 23);
+  var finHora = _clampInt((maxCierre + 59) ~/ 60, 1, 24);
+  if (finHora <= inicioHora) {
+    finHora = _clampInt(inicioHora + 1, 1, 24);
+  }
+
+  int? descansoInicioVisible;
+  int? descansoFinVisible;
+  if (minDescanso != null &&
+      maxDescanso != null &&
+      maxDescanso > minDescanso) {
+    final inicioRango = inicioHora * 60;
+    final finRango = finHora * 60;
+    descansoInicioVisible = _clampInt(minDescanso, inicioRango, finRango - 1);
+    descansoFinVisible = _clampInt(
+      maxDescanso,
+      descansoInicioVisible + 1,
+      finRango,
+    );
+  }
+
+  final tieneDescanso =
+      descansoInicioVisible != null && descansoFinVisible != null;
+  final resumenBase = usoHorarioConjunto ? 'Horario del conjunto' : 'Horario visible';
+  final resumen = tieneDescanso
+      ? '$resumenBase: ${_fmtHHmmFromMinutes(minApertura)} - ${_fmtHHmmFromMinutes(maxCierre)} '
+          '(descanso ${_fmtHHmmFromMinutes(descansoInicioVisible!)}-${_fmtHHmmFromMinutes(descansoFinVisible!)})'
+      : '$resumenBase: ${_fmtHHmmFromMinutes(minApertura)} - ${_fmtHHmmFromMinutes(maxCierre)}';
+
+  return _GridHorarioConfig(
+    inicioMin: inicioHora * 60,
+    finMin: finHora * 60,
+    descansoInicioMin: descansoInicioVisible,
+    descansoFinMin: descansoFinVisible,
+    resumen: resumen,
+  );
+}
+
+List<_TaskPlacement> _buildTaskPlacements({
+  required List<_TareaLite> tareas,
+  required int fixedStartMin,
+  required int fixedEndMin,
+  required int dayCols,
+}) {
+  final out = <_TaskPlacement>[];
+
+  for (var dayIndex = 0; dayIndex < dayCols; dayIndex++) {
+    final spans = tareas
+        .where((t) => (t.fechaInicio.weekday - 1) == dayIndex)
+        .map((t) {
+          final startMin = _clampInt(
+            _minutesOfDay(t.fechaInicio),
+            fixedStartMin,
+            fixedEndMin,
+          );
+          final rawEnd = math.max(
+            _minutesOfDay(t.fechaFin),
+            _minutesOfDay(t.fechaInicio) + 1,
+          );
+          final endMin = _clampInt(rawEnd, fixedStartMin, fixedEndMin);
+          return _TaskSpan(
+            tarea: t,
+            dayIndex: dayIndex,
+            startMin: startMin,
+            endMin: endMin,
+          );
+        })
+        .where((span) => span.endMin > span.startMin)
+        .toList()
+      ..sort((a, b) {
+        final startCmp = a.startMin.compareTo(b.startMin);
+        if (startCmp != 0) return startCmp;
+        return a.endMin.compareTo(b.endMin);
+      });
+
+    if (spans.isEmpty) continue;
+
+    var cluster = <_TaskSpan>[];
+    var clusterEnd = -1;
+
+    void flushCluster() {
+      if (cluster.isEmpty) return;
+      out.addAll(_assignTaskColumns(cluster));
+      cluster = <_TaskSpan>[];
+      clusterEnd = -1;
+    }
+
+    for (final span in spans) {
+      if (cluster.isEmpty) {
+        cluster.add(span);
+        clusterEnd = span.endMin;
+        continue;
+      }
+
+      if (span.startMin < clusterEnd) {
+        cluster.add(span);
+        clusterEnd = math.max(clusterEnd, span.endMin);
+        continue;
+      }
+
+      flushCluster();
+      cluster.add(span);
+      clusterEnd = span.endMin;
+    }
+
+    flushCluster();
+  }
+
+  return out;
+}
+
+List<_TaskPlacement> _assignTaskColumns(List<_TaskSpan> cluster) {
+  final columnEnds = <int>[];
+  final temp = <Map<String, dynamic>>[];
+
+  for (final span in cluster) {
+    var column = -1;
+    for (var i = 0; i < columnEnds.length; i++) {
+      if (span.startMin >= columnEnds[i]) {
+        column = i;
+        break;
+      }
+    }
+
+    if (column == -1) {
+      column = columnEnds.length;
+      columnEnds.add(span.endMin);
+    } else {
+      columnEnds[column] = span.endMin;
+    }
+
+    temp.add({
+      'span': span,
+      'column': column,
+    });
+  }
+
+  final columnCount = math.max(1, columnEnds.length);
+  return temp
+      .map((item) {
+        final span = item['span'] as _TaskSpan;
+        final column = item['column'] as int;
+        return _TaskPlacement(
+          tarea: span.tarea,
+          dayIndex: span.dayIndex,
+          startMin: span.startMin,
+          endMin: span.endMin,
+          column: column,
+          columnCount: columnCount,
+        );
+      })
+      .toList();
+}
+
 String _safeFileName(String s) {
   final cleaned = s
       .replaceAll(RegExp(r'[\\/:*?"<>|]'), '')
@@ -499,8 +859,69 @@ String _safeFileName(String s) {
 
 int _minutesOfDay(DateTime dt) => dt.hour * 60 + dt.minute;
 
+int _clampInt(int value, int min, int max) {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
 String _fmtHHmmFromMinutes(int m) {
   final hh = (m ~/ 60).toString().padLeft(2, '0');
   final mm = (m % 60).toString().padLeft(2, '0');
   return '$hh:$mm';
+}
+
+int? _parseHoraMin(dynamic raw) {
+  final value = raw?.toString().trim() ?? '';
+  if (value.isEmpty) return null;
+
+  final parts = value.split(':');
+  if (parts.length < 2) return null;
+
+  final hour = int.tryParse(parts[0]);
+  final minute = int.tryParse(parts[1]);
+  if (hour == null || minute == null || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null;
+  }
+  return hour * 60 + minute;
+}
+
+int? _weekdayDesdeDiaHorario(String? rawDia) {
+  if (rawDia == null) return null;
+  switch (_normalizarDia(rawDia)) {
+    case 'LUNES':
+    case 'MONDAY':
+      return DateTime.monday;
+    case 'MARTES':
+    case 'TUESDAY':
+      return DateTime.tuesday;
+    case 'MIERCOLES':
+    case 'WEDNESDAY':
+      return DateTime.wednesday;
+    case 'JUEVES':
+    case 'THURSDAY':
+      return DateTime.thursday;
+    case 'VIERNES':
+    case 'FRIDAY':
+      return DateTime.friday;
+    case 'SABADO':
+    case 'SATURDAY':
+      return DateTime.saturday;
+    case 'DOMINGO':
+    case 'SUNDAY':
+      return DateTime.sunday;
+    default:
+      return null;
+  }
+}
+
+String _normalizarDia(String raw) {
+  var out = raw.trim().toUpperCase();
+  const replacements = {
+    '_': '',
+    '-': '',
+    ' ': '',
+  };
+  replacements.forEach((from, to) => out = out.replaceAll(from, to));
+  return out;
 }

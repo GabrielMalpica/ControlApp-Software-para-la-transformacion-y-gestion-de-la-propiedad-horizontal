@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/api/supervisor_api.dart';
 import 'package:flutter_application_1/api/inventario_api.dart';
+import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
 import 'package:flutter_application_1/pdf/cronograma_pdf.dart';
@@ -21,12 +23,14 @@ class SupervisorTareasPage extends StatefulWidget {
 
 class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
   final _api = SupervisorApi();
+  final _conjuntoApi = ConjuntoApi();
   final _inventarioApi = InventarioApi();
 
   bool _loading = true;
   String? _error;
 
   List<TareaModel> _tareas = [];
+  List<HorarioConjunto> _horariosConjunto = [];
 
   // filtros
   String _filtroEstado = 'TODOS';
@@ -58,8 +62,15 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
     });
 
     try {
-      final data = await _api.listarTareas(conjuntoId: widget.nit);
-      _tareas = data;
+      final results = await Future.wait<dynamic>([
+        _api.listarTareas(conjuntoId: widget.nit),
+        _conjuntoApi
+            .obtenerHorariosConjunto(widget.nit)
+            .catchError((_) => <HorarioConjunto>[]),
+      ]);
+
+      _tareas = results[0] as List<TareaModel>;
+      _horariosConjunto = results[1] as List<HorarioConjunto>;
       _reconstruirOperarios();
     } catch (e) {
       _error = e.toString();
@@ -203,6 +214,17 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
       'semanaDelMes': _semanaImprimir,
       'weekStart': DateFormat('yyyy-MM-dd').format(weekStart),
       'weekEnd': DateFormat('yyyy-MM-dd').format(weekEnd),
+      'horariosConjunto': _horariosConjunto
+          .map(
+            (h) => {
+              'dia': h.dia,
+              'horaApertura': h.horaApertura,
+              'horaCierre': h.horaCierre,
+              'descansoInicio': h.descansoInicio,
+              'descansoFin': h.descansoFin,
+            },
+          )
+          .toList(),
       'tareas': tareasSemana
           .map(
             (t) => {

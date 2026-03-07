@@ -1,10 +1,13 @@
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../model/tarea_model.dart';
 import '../model/inventario_item_model.dart';
 import '../model/evidencia_adjunto_model.dart';
+import '../utils/pickers/camera_capture_bridge.dart';
+import '../utils/pickers/selected_upload_file.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -46,6 +49,12 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
   /// filas para consumo
   final List<_ConsumoRow> _rows = [];
   final List<EvidenciaAdjunto> _evidencias = [];
+
+  bool get _esMovil =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  bool get _puedeTomarFoto => _esMovil;
 
   @override
   void initState() {
@@ -98,12 +107,33 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
       }
     }
 
+    _agregarEvidencias(nuevos);
+  }
+
+  Future<void> _tomarFoto() async {
+    if (!_puedeTomarFoto) return;
+
+    try {
+      final captura = await CameraCapture.pickPhoto();
+      if (captura == null) return;
+
+      _agregarEvidencias(_evidenciasDesdeSeleccion([captura]));
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text('No se pudo abrir la camara: $e')),
+      );
+    }
+  }
+
+  void _agregarEvidencias(List<EvidenciaAdjunto> nuevos) {
     if (nuevos.isEmpty) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
         const SnackBar(
-          content: Text('No se pudieron leer archivos seleccionados.'),
+          content: Text('No se pudieron leer evidencias seleccionadas.'),
         ),
       );
       return;
@@ -111,7 +141,6 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
 
     setState(() {
       for (final e in nuevos) {
-        // Evitar duplicados: por path en mobile o por (nombre+len) en web
         final exists = _evidencias.any((x) {
           if (!kIsWeb) return (x.path ?? '') == (e.path ?? '');
           final xl = x.bytes?.length ?? 0;
@@ -121,6 +150,35 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
         if (!exists) _evidencias.add(e);
       }
     });
+  }
+
+  List<EvidenciaAdjunto> _evidenciasDesdeSeleccion(
+    List<SelectedUploadFile> archivos,
+  ) {
+    final nuevos = <EvidenciaAdjunto>[];
+
+    for (final archivo in archivos) {
+      final nombre = archivo.name.trim().isEmpty ? 'archivo' : archivo.name.trim();
+
+      if (kIsWeb) {
+        final bytes = archivo.bytes;
+        if (bytes != null && bytes.isNotEmpty) {
+          nuevos.add(
+            EvidenciaAdjunto(path: null, nombre: nombre, bytes: bytes),
+          );
+        }
+        continue;
+      }
+
+      final path = archivo.path;
+      if (path != null && path.trim().isNotEmpty) {
+        nuevos.add(
+          EvidenciaAdjunto(path: path.trim(), nombre: nombre, bytes: null),
+        );
+      }
+    }
+
+    return nuevos;
   }
 
   List<Map<String, num>> _buildInsumosUsados() {
@@ -193,20 +251,32 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      'Adjunta fotos o PDF de evidencias para enviar al cierre.',
-                      style: TextStyle(fontSize: 12),
+                    Text(
+                      _puedeTomarFoto
+                          ? 'Adjunta varias fotos o PDF. Si estas en celular o web, tambien puedes tomar la foto al momento.'
+                          : 'Adjunta varias fotos o PDF de evidencias para enviar al cierre.',
+                      style: const TextStyle(fontSize: 12),
                     ),
                     const SizedBox(height: 8),
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
+                        if (_puedeTomarFoto)
+                          OutlinedButton.icon(
+                            onPressed: _tomarFoto,
+                            icon: const Icon(Icons.photo_camera),
+                            label: const Text('Tomar foto'),
+                          ),
                         OutlinedButton.icon(
                           onPressed: _pickEvidencias,
                           icon: const Icon(Icons.attach_file),
                           label: const Text('Agregar archivos'),
                         ),
-                        const SizedBox(width: 8),
-                        Text('${_evidencias.length} archivo(s)'),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Text('${_evidencias.length} evidencia(s)'),
+                        ),
                       ],
                     ),
                     if (_evidencias.isNotEmpty) ...[
