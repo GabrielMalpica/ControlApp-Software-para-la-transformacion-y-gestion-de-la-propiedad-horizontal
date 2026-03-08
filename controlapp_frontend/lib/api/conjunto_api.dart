@@ -4,9 +4,11 @@ import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/maquinaria_model.dart';
 import 'package:flutter_application_1/service/api_client.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/service/session_service.dart';
 
 class ConjuntoApi {
   final ApiClient _client = ApiClient();
+  final SessionService _session = SessionService();
 
   /// GET /conjunto/:nit/maquinaria
   Future<List<MaquinariaResponse>> listarMaquinariaConjunto(
@@ -29,31 +31,52 @@ class ConjuntoApi {
         .toList();
   }
 
-  /// Intenta obtener los horarios del conjunto desde rutas compatibles.
+  /// Carga horarios solo desde rutas conocidas para el rol actual y evita
+  /// probes que generan 404 visibles en web.
   Future<List<HorarioConjunto>> obtenerHorariosConjunto(
     String conjuntoNit,
   ) async {
-    final rutas = <String>[
-      '/conjuntos/$conjuntoNit',
-      '/conjunto/$conjuntoNit',
-      '${AppConstants.conjuntosGerente}/$conjuntoNit',
-    ];
+    final rol = (await _session.getRol())?.trim().toLowerCase() ?? '';
+    final usuarioId = (await _session.getUserId())?.trim() ?? '';
 
-    for (final ruta in rutas) {
-      final resp = await _client.get(ruta);
+    switch (rol) {
+      case 'gerente':
+        return _obtenerHorariosDesdeRuta(
+          '${AppConstants.conjuntosGerente}/$conjuntoNit',
+        );
+      case 'administrador':
+        return _obtenerHorariosAdministrador(
+          usuarioId: usuarioId,
+          conjuntoNit: conjuntoNit,
+        );
+      default:
+        return const [];
+    }
+  }
 
-      if (resp.statusCode == 404 ||
-          resp.statusCode == 401 ||
-          resp.statusCode == 403) {
-        continue;
-      }
+  Future<List<HorarioConjunto>> _obtenerHorariosDesdeRuta(String ruta) async {
+    final resp = await _client.get(ruta);
+    if (resp.statusCode != 200) return const [];
+    return _extraerHorarios(resp.body);
+  }
 
-      if (resp.statusCode != 200) {
-        continue;
-      }
+  Future<List<HorarioConjunto>> _obtenerHorariosAdministrador({
+    required String usuarioId,
+    required String conjuntoNit,
+  }) async {
+    if (usuarioId.isEmpty) return const [];
 
-      final horarios = _extraerHorarios(resp.body);
-      if (horarios.isNotEmpty) return horarios;
+    final resp = await _client.get('/administrador/$usuarioId/conjuntos');
+    if (resp.statusCode != 200) return const [];
+
+    final decoded = jsonDecode(resp.body);
+    if (decoded is! List) return const [];
+
+    for (final item in decoded) {
+      if (item is! Map<String, dynamic>) continue;
+      final nit = (item['nit'] ?? '').toString().trim();
+      if (nit != conjuntoNit.trim()) continue;
+      return _extraerHorarios(jsonEncode(item));
     }
 
     return const [];

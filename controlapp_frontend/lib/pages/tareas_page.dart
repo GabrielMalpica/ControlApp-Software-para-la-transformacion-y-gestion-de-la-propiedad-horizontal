@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/inventario_api.dart';
-import 'package:flutter_application_1/api/operario_api.dart';
 import 'package:http/http.dart' as http;
 
 import '../service/app_constants.dart';
@@ -10,6 +9,7 @@ import '../api/tarea_api.dart';
 import '../model/inventario_item_model.dart';
 import '../model/tarea_model.dart';
 import '../service/session_service.dart';
+import '../service/tarea_cierre_service.dart';
 import '../service/theme.dart';
 import '../widgets/cerrar_tarea_sheet.dart';
 import 'editar_tarea_page.dart';
@@ -27,9 +27,9 @@ class TareasPage extends StatefulWidget {
 
 class _TareasPageState extends State<TareasPage> {
   final TareaApi _tareaApi = TareaApi();
-  final OperarioApi _operarioApi = OperarioApi();
   final InventarioApi _inventarioApi = InventarioApi();
   final SessionService _session = SessionService();
+  final TareaCierreService _tareaCierreService = TareaCierreService();
 
   bool _cargando = true;
   String? _error;
@@ -37,6 +37,7 @@ class _TareasPageState extends State<TareasPage> {
 
   // sesión
   String? _rol;
+  String? _usuarioId;
   int? _operarioId;
 
   // filtros para vista operario
@@ -60,7 +61,8 @@ class _TareasPageState extends State<TareasPage> {
     if (!mounted) return;
     setState(() {
       _rol = rol;
-      _operarioId = int.tryParse(userId ?? '');
+      _usuarioId = userId?.trim();
+      _operarioId = int.tryParse(_usuarioId ?? '');
     });
   }
 
@@ -214,16 +216,24 @@ class _TareasPageState extends State<TareasPage> {
   }
 
   bool _puedeCerrar(TareaModel t) {
-    final e = (t.estado ?? '').toUpperCase();
-    return e == 'ASIGNADA' || e == 'EN_PROCESO' || e == 'COMPLETADA';
+    return _tareaCierreService.puedeCerrar(
+      rol: _rol,
+      usuarioId: _usuarioId,
+      tarea: t,
+    );
   }
 
   Future<void> _cerrarComoOperario(TareaModel t) async {
-    if (_operarioId == null) {
+    final motivo = _tareaCierreService.motivoNoPuedeCerrar(
+      rol: _rol,
+      usuarioId: _usuarioId,
+      tarea: t,
+    );
+    if (motivo != null) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
-        const SnackBar(
+        SnackBar(
           content: Text('No se pudo resolver el operario de sesión.'),
         ),
       );
@@ -251,9 +261,10 @@ class _TareasPageState extends State<TareasPage> {
     if (result == null) return;
 
     try {
-      await _operarioApi.cerrarTareaConEvidencias(
-        operarioId: _operarioId!,
-        tareaId: t.id,
+      await _tareaCierreService.cerrarTarea(
+        rol: _rol,
+        usuarioId: _usuarioId,
+        tarea: t,
         observaciones: result.observaciones,
         insumosUsados: result.insumosUsados,
         evidencias: result.evidencias, // ✅ correcto

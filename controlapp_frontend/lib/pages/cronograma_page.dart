@@ -5,7 +5,6 @@ import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:intl/intl.dart';
 
 import 'package:flutter_application_1/api/conjunto_api.dart';
-import 'package:flutter_application_1/api/supervisor_api.dart';
 import 'package:flutter_application_1/api/inventario_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_item_model.dart';
@@ -14,6 +13,7 @@ import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
 import '../api/cronograma_api.dart';
 import '../model/tarea_model.dart';
 import '../service/session_service.dart';
+import '../service/tarea_cierre_service.dart';
 import '../service/theme.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -40,9 +40,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
   final _conjuntoApi = ConjuntoApi();
 
   // ✅ para cerrar desde cronograma
-  final _supervisorApi = SupervisorApi();
   final _inventarioApi = InventarioApi();
   final _session = SessionService();
+  final _tareaCierreService = TareaCierreService();
 
   bool _loading = true;
   String? _error;
@@ -83,6 +83,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   int? _horaDescansoFin;
   String _resumenHorario = 'Horario: 08:00 - 16:00';
   String? _rolActual;
+  String? _usuarioIdActual;
 
   @override
   void initState() {
@@ -94,14 +95,20 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     _initMes();
     _semanaBase = DateTime(_anioActual, _mesActual, 1);
-    _cargarRol();
+    _cargarSesion();
     _cargarDatos();
   }
 
-  Future<void> _cargarRol() async {
-    final rol = (await _session.getRol())?.trim().toLowerCase();
+  Future<void> _cargarSesion() async {
+    final results = await Future.wait<String?>([
+      _session.getRol(),
+      _session.getUserId(),
+    ]);
     if (!mounted) return;
-    setState(() => _rolActual = rol);
+    setState(() {
+      _rolActual = results[0]?.trim().toLowerCase();
+      _usuarioIdActual = results[1]?.trim();
+    });
   }
 
   void _initMes() {
@@ -478,15 +485,30 @@ class _CronogramaPageState extends State<CronogramaPage> {
   // =======================
 
   bool _puedeCerrar(TareaModel t) {
-    if (widget.soloLectura) return false;
-    final rol = (_rolActual ?? '').toLowerCase();
-    const rolesPermitidos = {'gerente', 'supervisor', 'jefe_operaciones'};
-    if (!rolesPermitidos.contains(rol)) return false;
-    final e = (t.estado ?? '').toUpperCase();
-    return e == 'ASIGNADA' || e == 'EN_PROCESO' || e == 'COMPLETADA';
+    return _tareaCierreService.puedeCerrar(
+      rol: _rolActual,
+      usuarioId: _usuarioIdActual,
+      tarea: t,
+      soloLectura: widget.soloLectura,
+    );
   }
 
   Future<void> _accionCerrarDesdeCronograma(TareaModel t) async {
+    final motivo = _tareaCierreService.motivoNoPuedeCerrar(
+      rol: _rolActual,
+      usuarioId: _usuarioIdActual,
+      tarea: t,
+      soloLectura: widget.soloLectura,
+    );
+    if (motivo != null) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(motivo)),
+      );
+      return;
+    }
+
     List<InventarioItemResponse> inventario = [];
 
     try {
@@ -509,8 +531,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
     if (res == null) return;
 
     try {
-      await _supervisorApi.cerrarTareaConEvidencias(
-        tareaId: t.id,
+      await _tareaCierreService.cerrarTarea(
+        rol: _rolActual,
+        usuarioId: _usuarioIdActual,
+        tarea: t,
         observaciones: res.observaciones,
         insumosUsados: res.insumosUsados,
         evidencias: res.evidencias, // ✅ aquí

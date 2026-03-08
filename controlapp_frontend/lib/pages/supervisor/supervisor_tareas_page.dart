@@ -5,6 +5,8 @@ import 'package:flutter_application_1/api/inventario_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
+import 'package:flutter_application_1/service/session_service.dart';
+import 'package:flutter_application_1/service/tarea_cierre_service.dart';
 import 'package:flutter_application_1/pdf/cronograma_pdf.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:intl/intl.dart';
@@ -25,6 +27,8 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
   final _api = SupervisorApi();
   final _conjuntoApi = ConjuntoApi();
   final _inventarioApi = InventarioApi();
+  final _session = SessionService();
+  final _tareaCierreService = TareaCierreService();
 
   bool _loading = true;
   String? _error;
@@ -38,6 +42,8 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
   List<String> _operariosDisponibles = [];
 
   int _semanaImprimir = 1;
+  String? _rolActual;
+  String? _usuarioIdActual;
 
   @override
   void initState() {
@@ -63,14 +69,18 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
 
     try {
       final results = await Future.wait<dynamic>([
+        _session.getRol(),
+        _session.getUserId(),
         _api.listarTareas(conjuntoId: widget.nit),
         _conjuntoApi
             .obtenerHorariosConjunto(widget.nit)
             .catchError((_) => <HorarioConjunto>[]),
       ]);
 
-      _tareas = results[0] as List<TareaModel>;
-      _horariosConjunto = results[1] as List<HorarioConjunto>;
+      _rolActual = (results[0] as String?)?.trim().toLowerCase();
+      _usuarioIdActual = (results[1] as String?)?.trim();
+      _tareas = results[2] as List<TareaModel>;
+      _horariosConjunto = results[3] as List<HorarioConjunto>;
       _reconstruirOperarios();
     } catch (e) {
       _error = e.toString();
@@ -123,11 +133,28 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
   }
 
   bool _puedeCerrar(TareaModel t) {
-    final e = (t.estado ?? '').toUpperCase();
-    return e == 'ASIGNADA' || e == 'EN_PROCESO' || e == 'COMPLETADA';
+    return _tareaCierreService.puedeCerrar(
+      rol: _rolActual,
+      usuarioId: _usuarioIdActual,
+      tarea: t,
+    );
   }
 
   Future<void> _accionCerrar(TareaModel t) async {
+    final motivo = _tareaCierreService.motivoNoPuedeCerrar(
+      rol: _rolActual,
+      usuarioId: _usuarioIdActual,
+      tarea: t,
+    );
+    if (motivo != null) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(motivo)),
+      );
+      return;
+    }
+
     List<InventarioItemResponse> inventario = [];
     try {
       inventario = await _inventarioApi.listarInventarioConjunto(widget.nit);
@@ -149,8 +176,10 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
     if (res == null) return;
 
     try {
-      await _api.cerrarTareaConEvidencias(
-        tareaId: t.id,
+      await _tareaCierreService.cerrarTarea(
+        rol: _rolActual,
+        usuarioId: _usuarioIdActual,
+        tarea: t,
         observaciones: res.observaciones,
         insumosUsados: res.insumosUsados,
         evidencias: res.evidencias,
