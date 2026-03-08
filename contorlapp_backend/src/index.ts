@@ -19,7 +19,14 @@ if (!process.env.JWT_SECRET) {
 }
 
 const app = express();
-app.use(cors());
+const corsOptions = {
+  origin: true,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-empresa-id"],
+};
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 app.use(express.json());
 
 app.set("json replacer", (_k: string, v: unknown) =>

@@ -1,17 +1,15 @@
 import { RequestHandler } from "express";
-import { prisma } from "../db/prisma";
 import { z } from "zod";
+import { prisma } from "../db/prisma";
 import { SupervisorService } from "../services/SupervisorServices";
 
-// Params
 const IdParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
-// Query filtros (ajústalo si tu service espera otros nombres)
 const ListarSchema = z.object({
   conjuntoId: z.string().optional(),
-  operarioId: z.coerce.string().optional(), // si viene string, tu service decide si lo parsea
+  operarioId: z.coerce.string().optional(),
   estado: z.string().optional(),
   desde: z.string().optional(),
   hasta: z.string().optional(),
@@ -21,25 +19,52 @@ const ListarSchema = z.object({
     .transform((v) => (v == null ? undefined : v === "true")),
 });
 
+type ActorRolCierre = "SUPERVISOR" | "GERENTE" | "JEFE_OPERACIONES";
+
+function forbiddenError(message = "No autorizado para este recurso") {
+  const err: any = new Error(message);
+  err.status = 403;
+  return err;
+}
+
+function getActorFromReq(req: any): { id: string; rol: ActorRolCierre } {
+  const id = req.user?.sub;
+  const rol = String(req.user?.rol ?? "").trim().toLowerCase();
+
+  if (!id) {
+    throw new Error("No se pudo identificar el usuario autenticado.");
+  }
+
+  switch (rol) {
+    case "supervisor":
+      return { id: String(id), rol: "SUPERVISOR" };
+    case "gerente":
+      return { id: String(id), rol: "GERENTE" };
+    case "jefe_operaciones":
+      return { id: String(id), rol: "JEFE_OPERACIONES" };
+    default:
+      throw forbiddenError();
+  }
+}
+
 function getSupervisorIdFromReq(req: any): string {
-  // ✅ TU AUTH GUARDA EL ID EN sub
-  const sid = req.user?.sub;
-  if (!sid) throw new Error("No se pudo identificar supervisorId en el token.");
-  return String(sid);
+  const actor = getActorFromReq(req);
+  if (actor.rol !== "SUPERVISOR") {
+    throw forbiddenError();
+  }
+  return actor.id;
 }
 
 export class SupervisorController {
-  // GET /supervisor/tareas
   listarTareas: RequestHandler = async (req, res, next) => {
     try {
       const supervisorId = getSupervisorIdFromReq(req);
       const svc = new SupervisorService(prisma, supervisorId);
 
       const q = ListarSchema.parse(req.query);
-
       const payload = {
         conjuntoId: q.conjuntoId,
-        operarioId: q.operarioId, // si quieres, conviértelo aquí
+        operarioId: q.operarioId,
         estado: q.estado,
         desde: q.desde,
         hasta: q.hasta,
@@ -55,10 +80,7 @@ export class SupervisorController {
 
   cronogramaImprimible: RequestHandler = async (req, res, next) => {
     try {
-      const supervisorId = String(
-        (req as any).user?.id ?? req.headers["x-user-id"] ?? "",
-      );
-      // ajusta a tu auth real
+      const supervisorId = getSupervisorIdFromReq(req);
 
       const conjuntoId = String(req.query.conjuntoId ?? "");
       const operarioId = String(req.query.operarioId ?? "");
@@ -87,16 +109,25 @@ export class SupervisorController {
     }
   };
 
-  // POST /supervisor/tareas/:id/cerrar
   cerrarTarea: RequestHandler = async (req, res, next) => {
     try {
-      const supervisorId = getSupervisorIdFromReq(req);
-      const svc = new SupervisorService(prisma, supervisorId);
+      const actor = getActorFromReq(req);
+      const svc = new SupervisorService(prisma, actor.id, actor.rol);
 
       const tareaId = Number(req.params.id);
       if (!Number.isFinite(tareaId) || tareaId <= 0) {
-        res.status(400).json({ error: "id inválido" });
+        res.status(400).json({ error: "id invalido" });
         return;
+      }
+
+      if (actor.rol === "SUPERVISOR") {
+        const tarea = await prisma.tarea.findUnique({
+          where: { id: tareaId },
+          select: { supervisorId: true },
+        });
+        if (!tarea?.supervisorId || tarea.supervisorId !== actor.id) {
+          throw forbiddenError("No tiene autorizacion para cerrar esta tarea.");
+        }
       }
 
       const files = (req.files as Express.Multer.File[]) ?? [];
@@ -104,7 +135,6 @@ export class SupervisorController {
       await svc.cerrarTareaConEvidencias(
         tareaId,
         {
-          // body viene como strings en multipart
           observaciones: req.body.observaciones,
           fechaFinalizarTarea: req.body.fechaFinalizarTarea,
           insumosUsados: req.body.insumosUsados,
@@ -118,7 +148,6 @@ export class SupervisorController {
     }
   };
 
-  // POST /supervisor/tareas/:id/veredicto
   veredicto: RequestHandler = async (req, res, next) => {
     try {
       const supervisorId = getSupervisorIdFromReq(req);

@@ -33,6 +33,8 @@ type InsumoPlan = {
   cantidad?: number;
 };
 
+type ActorRolCierre = "SUPERVISOR" | "GERENTE" | "JEFE_OPERACIONES";
+
 function parseInsumosPlanJson(raw: any): InsumoPlan[] {
   if (!raw) return [];
   try {
@@ -119,7 +121,37 @@ export class SupervisorService {
   constructor(
     private prisma: PrismaClient,
     private supervisorId: string,
+    private actorRol: ActorRolCierre = "SUPERVISOR",
   ) {}
+
+  private actorRolDb(): ActorRolCierre {
+    return this.actorRol;
+  }
+
+  private actorRolLabel(): string {
+    switch (this.actorRol) {
+      case "GERENTE":
+        return "gerente";
+      case "JEFE_OPERACIONES":
+        return "jefe de operaciones";
+      default:
+        return "supervisor";
+    }
+  }
+
+  private assertPuedeCerrarTarea(tarea: {
+    supervisorId?: string | null;
+    estado?: EstadoTarea;
+  }) {
+    if (this.actorRol !== "SUPERVISOR") return;
+    if (!tarea.supervisorId || tarea.supervisorId !== this.supervisorId) {
+      const err: any = new Error(
+        "No tiene autorizacion para cerrar esta tarea.",
+      );
+      err.status = 403;
+      throw err;
+    }
+  }
 
   /** Lista tareas para el supervisor (por conjunto/operario/estado y rango) */
   async listarTareas(payload: unknown) {
@@ -353,11 +385,14 @@ export class SupervisorService {
         estado: true,
         evidencias: true,
         conjuntoId: true,
+        supervisorId: true,
         operarios: { select: { id: true } },
       },
     });
 
     if (!tarea) throw new Error("❌ Tarea no encontrada.");
+
+    this.assertPuedeCerrarTarea(tarea);
 
     const permitidos = new Set<EstadoTarea>([
       EstadoTarea.ASIGNADA,
@@ -515,7 +550,10 @@ export class SupervisorService {
           observaciones: dto.observaciones ?? undefined,
           estado: EstadoTarea.PENDIENTE_APROBACION,
           fechaFinalizarTarea: ahora,
-          supervisorId: this.supervisorId,
+          supervisorId:
+            this.actorRol === "SUPERVISOR" ? this.supervisorId : undefined,
+          finalizadaPorId: this.supervisorId,
+          finalizadaPorRol: this.actorRolDb(),
         },
       });
     });
@@ -660,7 +698,7 @@ export class SupervisorService {
             tarea: { connect: { id: tareaId } },
             cantidad: usar,
             fecha: fechaCierre,
-            observacion: `Consumo en cierre de tarea #${tareaId} por supervisor ${this.supervisorId}`,
+            observacion: `Consumo en cierre de tarea #${tareaId} por ${this.actorRolLabel()} ${this.supervisorId}`,
             // operarioId NO se manda (undefined) para no chocar con tu modelo
           },
         });
@@ -700,9 +738,10 @@ export class SupervisorService {
           insumosUsados: insumosUsados as any,
           estado: EstadoTarea.PENDIENTE_APROBACION,
           fechaFinalizarTarea: fechaCierre,
-          supervisorId: this.supervisorId,
+          supervisorId:
+            this.actorRol === "SUPERVISOR" ? this.supervisorId : undefined,
           finalizadaPorId: this.supervisorId,
-          finalizadaPorRol: "SUPERVISOR",
+          finalizadaPorRol: this.actorRolDb(),
         },
       });
     });
@@ -714,7 +753,7 @@ export class SupervisorService {
         descripcionTarea: tarea.descripcion,
         conjuntoId: tarea.conjuntoId,
         actorId: this.supervisorId,
-        actorRol: "SUPERVISOR",
+        actorRol: this.actorRolDb(),
         supervisorId: tarea.supervisorId,
       });
     } catch (e) {
