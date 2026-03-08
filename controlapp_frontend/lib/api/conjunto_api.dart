@@ -14,9 +14,9 @@ class ConjuntoApi {
   ) async {
     // Compatibilidad entre despliegues:
     // algunos exponen /conjunto/:nit/..., otros /conjuntos/:nit/...
-    var resp = await _client.get('/conjunto/$conjuntoNit/maquinaria');
+    var resp = await _client.get('/conjuntos/$conjuntoNit/maquinaria');
     if (resp.statusCode == 404) {
-      resp = await _client.get('/conjuntos/$conjuntoNit/maquinaria');
+      resp = await _client.get('/conjunto/$conjuntoNit/maquinaria');
     }
 
     if (resp.statusCode != 200) {
@@ -34,8 +34,8 @@ class ConjuntoApi {
     String conjuntoNit,
   ) async {
     final rutas = <String>[
-      '/conjunto/$conjuntoNit',
       '/conjuntos/$conjuntoNit',
+      '/conjunto/$conjuntoNit',
       '${AppConstants.conjuntosGerente}/$conjuntoNit',
     ];
 
