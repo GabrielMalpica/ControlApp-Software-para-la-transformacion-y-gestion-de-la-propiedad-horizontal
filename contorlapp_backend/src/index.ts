@@ -59,28 +59,34 @@ type ClientErrorPayload = {
 };
 
 function fixMojibake(text: string) {
-  return text
-    .replaceAll("á", "a")
-    .replaceAll("é", "e")
-    .replaceAll("í", "i")
-    .replaceAll("ó", "o")
-    .replaceAll("ú", "u")
-    .replaceAll("ñ", "n")
-    .replaceAll("ü", "u")
-    .replaceAll("¿", "")
-    .replaceAll("¡", "")
-    .replaceAll("✅", "")
-    .replaceAll("❌", "")
-    .replaceAll("⚠", "")
-    .replaceAll("…", "...")
-    .replaceAll("–", "-")
-    .replaceAll("—", "-")
-    .replaceAll("“", '"')
-    .replaceAll("”", '"')
-    .replaceAll("‘", "'")
-    .replaceAll("’", "'")
-    .replace(/\s+/g, " ")
-    .trim();
+  const replacements: Array<[string, string]> = [
+    ["á", "a"],
+    ["é", "e"],
+    ["í", "i"],
+    ["ó", "o"],
+    ["ú", "u"],
+    ["ñ", "n"],
+    ["ü", "u"],
+    ["¿", ""],
+    ["¡", ""],
+    ["✅", ""],
+    ["❌", ""],
+    ["⚠", ""],
+    ["…", "..."],
+    ["–", "-"],
+    ["—", "-"],
+    ["“", '"'],
+    ["”", '"'],
+    ["‘", "'"],
+    ["’", "'"],
+  ];
+
+  let out = text;
+  for (const [from, to] of replacements) {
+    out = out.split(from).join(to);
+  }
+
+  return out.replace(/\s+/g, " ").trim();
 }
 
 function normalizeBusinessMessage(rawMessage: string) {
@@ -385,3 +391,4 @@ process.on("SIGTERM", async () => {
   await prisma.$disconnect();
   process.exit(0);
 });
+
