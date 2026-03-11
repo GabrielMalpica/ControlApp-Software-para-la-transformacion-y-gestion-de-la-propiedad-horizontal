@@ -215,7 +215,11 @@ class NotificacionService {
             ? actorNombreRaw
             : input.actorRol === "SUPERVISOR"
                 ? "Un supervisor"
-                : "Un operario";
+                : input.actorRol === "OPERARIO"
+                    ? "Un operario"
+                    : input.actorRol === "GERENTE"
+                        ? "Un gerente"
+                        : "Un jefe de operaciones";
         const nombreConjunto = conjunto.nombre ?? input.conjuntoId;
         const mensaje = `${actorNombre} cerro la tarea "${input.descripcionTarea}" del conjunto ${nombreConjunto}.`;
         await this.crearParaUsuarios({

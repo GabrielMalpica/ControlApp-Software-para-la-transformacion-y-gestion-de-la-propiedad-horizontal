@@ -83,9 +83,32 @@ const VeredictoDTO = zod_1.z.object({
     fechaVerificacion: zod_1.z.coerce.date().optional(),
 });
 class SupervisorService {
-    constructor(prisma, supervisorId) {
+    constructor(prisma, supervisorId, actorRol = "SUPERVISOR") {
         this.prisma = prisma;
         this.supervisorId = supervisorId;
+        this.actorRol = actorRol;
+    }
+    actorRolDb() {
+        return this.actorRol;
+    }
+    actorRolLabel() {
+        switch (this.actorRol) {
+            case "GERENTE":
+                return "gerente";
+            case "JEFE_OPERACIONES":
+                return "jefe de operaciones";
+            default:
+                return "supervisor";
+        }
+    }
+    assertPuedeCerrarTarea(tarea) {
+        if (this.actorRol !== "SUPERVISOR")
+            return;
+        if (!tarea.supervisorId || tarea.supervisorId !== this.supervisorId) {
+            const err = new Error("No tiene autorizacion para cerrar esta tarea.");
+            err.status = 403;
+            throw err;
+        }
     }
     /** Lista tareas para el supervisor (por conjunto/operario/estado y rango) */
     async listarTareas(payload) {
@@ -282,11 +305,13 @@ class SupervisorService {
                 estado: true,
                 evidencias: true,
                 conjuntoId: true,
+                supervisorId: true,
                 operarios: { select: { id: true } },
             },
         });
         if (!tarea)
             throw new Error("❌ Tarea no encontrada.");
+        this.assertPuedeCerrarTarea(tarea);
         const permitidos = new Set([
             client_1.EstadoTarea.ASIGNADA,
             client_1.EstadoTarea.EN_PROCESO,
@@ -421,7 +446,9 @@ class SupervisorService {
                     observaciones: dto.observaciones ?? undefined,
                     estado: client_1.EstadoTarea.PENDIENTE_APROBACION,
                     fechaFinalizarTarea: ahora,
-                    supervisorId: this.supervisorId,
+                    supervisorId: this.actorRol === "SUPERVISOR" ? this.supervisorId : undefined,
+                    finalizadaPorId: this.supervisorId,
+                    finalizadaPorRol: this.actorRolDb(),
                 },
             });
         });
@@ -541,7 +568,7 @@ class SupervisorService {
                         tarea: { connect: { id: tareaId } },
                         cantidad: usar,
                         fecha: fechaCierre,
-                        observacion: `Consumo en cierre de tarea #${tareaId} por supervisor ${this.supervisorId}`,
+                        observacion: `Consumo en cierre de tarea #${tareaId} por ${this.actorRolLabel()} ${this.supervisorId}`,
                         // operarioId NO se manda (undefined) para no chocar con tu modelo
                     },
                 });
@@ -577,9 +604,9 @@ class SupervisorService {
                     insumosUsados: insumosUsados,
                     estado: client_1.EstadoTarea.PENDIENTE_APROBACION,
                     fechaFinalizarTarea: fechaCierre,
-                    supervisorId: this.supervisorId,
+                    supervisorId: this.actorRol === "SUPERVISOR" ? this.supervisorId : undefined,
                     finalizadaPorId: this.supervisorId,
-                    finalizadaPorRol: "SUPERVISOR",
+                    finalizadaPorRol: this.actorRolDb(),
                 },
             });
         });
@@ -590,7 +617,7 @@ class SupervisorService {
                 descripcionTarea: tarea.descripcion,
                 conjuntoId: tarea.conjuntoId,
                 actorId: this.supervisorId,
-                actorRol: "SUPERVISOR",
+                actorRol: this.actorRolDb(),
                 supervisorId: tarea.supervisorId,
             });
         }

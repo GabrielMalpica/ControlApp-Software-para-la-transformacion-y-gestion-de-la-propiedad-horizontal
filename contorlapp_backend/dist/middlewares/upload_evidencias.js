@@ -16,10 +16,25 @@ const storage = multer_1.default.diskStorage({
         cb(null, name);
     },
 });
+const allowedExtensions = new Set([
+    ".jpg",
+    ".jpeg",
+    ".jfif",
+    ".png",
+    ".webp",
+    ".gif",
+    ".bmp",
+    ".heic",
+    ".heif",
+    ".pdf",
+]);
 function fileFilter(_req, file, cb) {
-    // solo imágenes por ahora
-    if (!file.mimetype.startsWith("image/")) {
-        return cb(new Error("Solo se permiten imágenes (image/*)"));
+    const mime = String(file.mimetype ?? "").toLowerCase();
+    const ext = path_1.default.extname(file.originalname || "").toLowerCase();
+    const mimeAllowed = mime.startsWith("image/") || mime === "application/pdf";
+    const extAllowed = allowedExtensions.has(ext);
+    if (!mimeAllowed && !extAllowed) {
+        return cb(new Error("Solo se permiten imagenes o PDF."));
     }
     cb(null, true);
 }
