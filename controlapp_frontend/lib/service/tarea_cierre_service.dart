@@ -1,15 +1,23 @@
+import 'package:flutter_application_1/api/jefe_operaciones_api.dart';
 import 'package:flutter_application_1/api/operario_api.dart';
 import 'package:flutter_application_1/api/supervisor_api.dart';
+import 'package:flutter_application_1/api/tarea_api.dart';
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
 
 class TareaCierreService {
   TareaCierreService({
+    TareaApi? tareaApi,
+    JefeOperacionesApi? jefeOperacionesApi,
     OperarioApi? operarioApi,
     SupervisorApi? supervisorApi,
-  }) : _operarioApi = operarioApi ?? OperarioApi(),
+  }) : _tareaApi = tareaApi ?? TareaApi(),
+       _jefeOperacionesApi = jefeOperacionesApi ?? JefeOperacionesApi(),
+       _operarioApi = operarioApi ?? OperarioApi(),
        _supervisorApi = supervisorApi ?? SupervisorApi();
 
+  final TareaApi _tareaApi;
+  final JefeOperacionesApi _jefeOperacionesApi;
   final OperarioApi _operarioApi;
   final SupervisorApi _supervisorApi;
 
@@ -21,6 +29,10 @@ class TareaCierreService {
 
   static String _rol(String? value) => value?.trim().toLowerCase() ?? '';
   static String _id(String? value) => value?.trim() ?? '';
+  static bool _esRutaNoDisponible(Object error) {
+    final raw = error.toString();
+    return raw.contains('404') || raw.contains('405');
+  }
 
   bool puedeCerrar({
     required String? rol,
@@ -115,7 +127,43 @@ class TareaCierreService {
         );
         return;
       case 'gerente':
+        try {
+          await _tareaApi.cerrarTareaConEvidencias(
+            tareaId: tarea.id,
+            observaciones: observaciones,
+            insumosUsados: insumosUsados,
+            evidencias: evidencias,
+          );
+          return;
+        } catch (e) {
+          if (!_esRutaNoDisponible(e)) rethrow;
+        }
+        await _supervisorApi.cerrarTareaConEvidencias(
+          tareaId: tarea.id,
+          observaciones: observaciones,
+          insumosUsados: insumosUsados,
+          evidencias: evidencias,
+        );
+        return;
       case 'jefe_operaciones':
+        try {
+          await _jefeOperacionesApi.cerrarTareaConEvidencias(
+            tareaId: tarea.id,
+            observaciones: observaciones,
+            insumosUsados: insumosUsados,
+            evidencias: evidencias,
+          );
+          return;
+        } catch (e) {
+          if (!_esRutaNoDisponible(e)) rethrow;
+        }
+        await _supervisorApi.cerrarTareaConEvidencias(
+          tareaId: tarea.id,
+          observaciones: observaciones,
+          insumosUsados: insumosUsados,
+          evidencias: evidencias,
+        );
+        return;
       case 'supervisor':
         await _supervisorApi.cerrarTareaConEvidencias(
           tareaId: tarea.id,

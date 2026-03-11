@@ -4,6 +4,7 @@ import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
@@ -59,7 +60,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
       });
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = AppError.messageOf(e);
         _loading = false;
       });
     }

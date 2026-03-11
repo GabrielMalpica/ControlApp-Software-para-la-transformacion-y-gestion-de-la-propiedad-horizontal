@@ -5,6 +5,7 @@ import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/model/agenda_model.dart';
 import 'package:flutter_application_1/model/agenda_maquinaria_model.dart';
 import 'package:flutter_application_1/model/maquinaria_model.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 
 class AgendaMaquinariaPage extends StatefulWidget {
@@ -203,7 +204,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
       });
     } catch (e) {
       setState(() {
-        _errorAgenda = e.toString();
+        _errorAgenda = AppError.messageOf(e);
         _agendaSeleccionada = null;
       });
     } finally {
@@ -332,7 +333,9 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snap.hasError) {
-            return Center(child: Text('Error catálogo: ${snap.error}'));
+            return Center(
+              child: Text('Error catalogo: ${AppError.messageOf(snap.error)}'),
+            );
           }
 
           final maquinas = snap.data ?? const <MaquinariaResponse>[];
@@ -425,7 +428,9 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                            fontWeight: selected
+                                ? FontWeight.w800
+                                : FontWeight.w600,
                           ),
                         ),
                         subtitle: Text(
@@ -434,7 +439,10 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         trailing: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.black12.withOpacity(.08),
                             borderRadius: BorderRadius.circular(999),
@@ -443,7 +451,10 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                             m.estado.label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
                         onTap: () {
@@ -463,7 +474,11 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
           );
 
           Widget detalle() => _seleccionada == null
-              ? const Center(child: Text('Selecciona una máquina para ver su programación'))
+              ? const Center(
+                  child: Text(
+                    'Selecciona una máquina para ver su programación',
+                  ),
+                )
               : _cargandoAgenda
               ? const Center(child: CircularProgressIndicator())
               : _errorAgenda != null
@@ -1362,9 +1377,7 @@ class _ExcelSemanaFiltrada extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             child: SizedBox(
               width: _tableWidth,
-              child: Column(
-                children: [_headerRow(), ...rows.map(_rowWidget)],
-              ),
+              child: Column(children: [_headerRow(), ...rows.map(_rowWidget)]),
             ),
           ),
         ],

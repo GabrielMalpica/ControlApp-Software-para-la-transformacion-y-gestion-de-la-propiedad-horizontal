@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/notificaciones_center.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/widgets/password_dialogs.dart';
@@ -31,18 +32,6 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  String _friendlyError(Object e) {
-    var out = e.toString().trim();
-    if (out.isEmpty) return 'No se pudo iniciar sesion.';
-
-    final rx = RegExp(r'^[A-Za-z]*Exception:\s*', caseSensitive: false);
-    while (rx.hasMatch(out)) {
-      out = out.replaceFirst(rx, '').trim();
-    }
-
-    return out.isEmpty ? 'No se pudo iniciar sesion.' : out;
-  }
-
   Future<void> _submit() async {
     setState(() {
       _loading = true;
@@ -66,7 +55,12 @@ class _LoginPageState extends State<LoginPage> {
 
       _goByRol(resp.user.rol);
     } catch (e) {
-      setState(() => _error = _friendlyError(e));
+      setState(
+        () => _error = AppError.messageOf(
+          e,
+          fallback: 'No se pudo iniciar sesion.',
+        ),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }

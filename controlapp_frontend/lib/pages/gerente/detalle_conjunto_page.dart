@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../api/gerente_api.dart';
 import '../../model/conjunto_model.dart';
 import '../../model/usuario_model.dart';
+import '../../service/app_error.dart';
 import '../../service/theme.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -307,7 +308,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      'No fue posible cargar el conjunto.\n${snapshot.error}',
+                      'No fue posible cargar el conjunto.\n${AppError.messageOf(snapshot.error)}',
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),

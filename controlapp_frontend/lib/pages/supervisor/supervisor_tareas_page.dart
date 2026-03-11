@@ -5,6 +5,7 @@ import 'package:flutter_application_1/api/inventario_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/service/tarea_cierre_service.dart';
 import 'package:flutter_application_1/pdf/cronograma_pdf.dart';
@@ -83,7 +84,7 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
       _horariosConjunto = results[3] as List<HorarioConjunto>;
       _reconstruirOperarios();
     } catch (e) {
-      _error = e.toString();
+      _error = AppError.messageOf(e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -148,10 +149,7 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
     );
     if (motivo != null) {
       if (!mounted) return;
-      AppFeedback.showFromSnackBar(
-        context,
-        SnackBar(content: Text(motivo)),
-      );
+      AppFeedback.showFromSnackBar(context, SnackBar(content: Text(motivo)));
       return;
     }
 

@@ -20,6 +20,7 @@ import 'package:flutter_application_1/pages/gerente/zonificacion_page.dart';
 import 'package:flutter_application_1/pages/lista_herramientas_page.dart';
 import 'package:flutter_application_1/pages/preventivas_page.dart';
 import 'package:flutter_application_1/pages/tareas_page.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
@@ -160,7 +161,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
     } catch (e) {
       setState(() {
         _cargandoConjuntos = false;
-        _errorConjuntos = e.toString();
+        _errorConjuntos = AppError.messageOf(e);
       });
     }
   }
@@ -675,10 +676,8 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => CompromisosPage(
-                nit: nit,
-                nombreConjunto: nombreConjunto,
-              ),
+              builder: (_) =>
+                  CompromisosPage(nit: nit, nombreConjunto: nombreConjunto),
             ),
           );
         }),

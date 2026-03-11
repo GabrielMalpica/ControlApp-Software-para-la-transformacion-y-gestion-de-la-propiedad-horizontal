@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_application_1/model/auth_models.dart';
 import 'package:flutter_application_1/service/api_client.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 
 class AuthApi {
@@ -9,22 +10,7 @@ class AuthApi {
   final SessionService _session = SessionService();
 
   String _serverMessage(String body, {required String fallback}) {
-    try {
-      final decoded = jsonDecode(body);
-      if (decoded is Map<String, dynamic>) {
-        final message = decoded['message'] ?? decoded['error'];
-        if (message is String && message.trim().isNotEmpty) {
-          return message.trim();
-        }
-        if (message is List && message.isNotEmpty) {
-          return message.first.toString();
-        }
-      }
-    } catch (_) {}
-
-    final trimmed = body.trim();
-    if (trimmed.isEmpty) return fallback;
-    return trimmed;
+    return AppError.fromResponseBody(body, fallback: fallback);
   }
 
   Future<LoginResponse> login({

@@ -11,6 +11,7 @@ import '../model/tarea_model.dart';
 import '../service/session_service.dart';
 import '../service/tarea_cierre_service.dart';
 import '../service/theme.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import '../widgets/cerrar_tarea_sheet.dart';
 import 'editar_tarea_page.dart';
 
@@ -92,7 +93,7 @@ class _TareasPageState extends State<TareasPage> {
       setState(() => _tareas = lista);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) {
         setState(() => _cargando = false);
@@ -233,9 +234,7 @@ class _TareasPageState extends State<TareasPage> {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
-        SnackBar(
-          content: Text('No se pudo resolver el operario de sesión.'),
-        ),
+        SnackBar(content: Text('No se pudo resolver el operario de sesión.')),
       );
       return;
     }

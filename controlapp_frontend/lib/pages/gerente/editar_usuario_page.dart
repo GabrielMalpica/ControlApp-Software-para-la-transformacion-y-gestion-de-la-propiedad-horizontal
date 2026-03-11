@@ -4,6 +4,7 @@ import 'package:flutter_application_1/repositories/usuario_repository.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/utils/enums/usuario_enums.dart';
 import 'package:flutter_application_1/utils/enums/usuario_enums_service.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -91,7 +92,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     } catch (e) {
       setState(() {
         _cargandoEnums = false;
-        _errorEnums = e.toString();
+        _errorEnums = AppError.messageOf(e);
       });
     }
   }

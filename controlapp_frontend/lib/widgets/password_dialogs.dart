@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:flutter_application_1/api/auth_api.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/theme.dart';
 
@@ -8,12 +9,7 @@ typedef RecoverPasswordSuccess =
     void Function({required String correo, required String nuevaContrasena});
 
 String _normalizeException(Object e, {required String fallback}) {
-  final raw = e.toString().trim();
-  if (raw.startsWith('Exception:')) {
-    final msg = raw.substring('Exception:'.length).trim();
-    if (msg.isNotEmpty) return msg;
-  }
-  return raw.isEmpty ? fallback : raw;
+  return AppError.messageOf(e, fallback: fallback);
 }
 
 Future<void> showChangePasswordDialog(BuildContext context) async {

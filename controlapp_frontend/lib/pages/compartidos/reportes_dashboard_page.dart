@@ -9,6 +9,7 @@ import 'package:flutter_application_1/api/reporte_api.dart';
 import 'package:flutter_application_1/model/reporte_model.dart';
 import 'package:flutter_application_1/pdf/pdf_download.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/chart_capture.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
@@ -280,7 +281,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         // si quieres que al cambiar rango se regenere, puedes poner un botón “Regenerar”
       }
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

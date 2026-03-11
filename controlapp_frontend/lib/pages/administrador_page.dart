@@ -6,6 +6,7 @@ import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.
 import 'package:flutter_application_1/pages/cronograma_page.dart';
 import 'package:flutter_application_1/pages/gerente/usuarios_conjunto_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
@@ -61,7 +62,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
       });
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = AppError.messageOf(e);
         _loading = false;
       });
     }

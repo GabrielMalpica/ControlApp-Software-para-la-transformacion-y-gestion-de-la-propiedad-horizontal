@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../service/theme.dart';
 import '../api/solicitud_insumo_api.dart';
 import '../service/app_constants.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -74,7 +75,7 @@ class _SolicitudesPageState extends State<SolicitudesPage> {
       setState(() => _items = filtered);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) setState(() => _cargando = false);
     }

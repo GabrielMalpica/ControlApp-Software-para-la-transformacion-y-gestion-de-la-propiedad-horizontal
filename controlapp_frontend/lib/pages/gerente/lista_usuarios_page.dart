@@ -6,6 +6,7 @@ import 'crear_usuario_page.dart';
 import 'editar_usuario_page.dart';
 import 'detalle_usuario_page.dart';
 
+import '../../service/app_error.dart';
 import '../../service/app_feedback.dart';
 
 class ListaUsuariosPage extends StatefulWidget {
@@ -56,7 +57,7 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
       });
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = AppError.messageOf(e);
       });
     } finally {
       setState(() {

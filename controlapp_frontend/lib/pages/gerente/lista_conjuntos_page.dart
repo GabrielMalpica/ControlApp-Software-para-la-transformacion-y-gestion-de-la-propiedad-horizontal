@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../api/gerente_api.dart';
 import '../../model/conjunto_model.dart';
+import '../../service/app_error.dart';
 import '../../service/theme.dart';
 import 'crear_conjunto_page.dart';
 import 'detalle_conjunto_page.dart';
@@ -556,7 +557,7 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
                 children: [
                   const Icon(Icons.error_outline, color: Colors.red, size: 42),
                   const SizedBox(height: 8),
-                  Text('Error: ${snapshot.error}'),
+                  Text('Error: ${AppError.messageOf(snapshot.error)}'),
                   const SizedBox(height: 12),
                   ElevatedButton(
                     onPressed: _loadConjuntos,

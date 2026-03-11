@@ -12,6 +12,7 @@ import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
 
 import '../api/cronograma_api.dart';
 import '../model/tarea_model.dart';
+import '../service/app_error.dart';
 import '../service/session_service.dart';
 import '../service/tarea_cierre_service.dart';
 import '../service/theme.dart';
@@ -448,7 +449,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
         _recalcularResumenDias();
       });
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -502,10 +503,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
     );
     if (motivo != null) {
       if (!mounted) return;
-      AppFeedback.showFromSnackBar(
-        context,
-        SnackBar(content: Text(motivo)),
-      );
+      AppFeedback.showFromSnackBar(context, SnackBar(content: Text(motivo)));
       return;
     }
 

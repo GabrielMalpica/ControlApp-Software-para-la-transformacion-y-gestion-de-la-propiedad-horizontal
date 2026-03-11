@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import '../../api/herramienta_api.dart';
 import '../../model/herramienta_model.dart';
+import '../../service/app_error.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -65,7 +66,7 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
       setState(() => _items = parsed);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) setState(() => _cargando = false);
     }

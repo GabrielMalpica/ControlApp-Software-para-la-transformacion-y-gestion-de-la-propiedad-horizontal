@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 
 import '../api/cronograma_api.dart';
 import '../model/tarea_model.dart';
+import '../service/app_error.dart';
 import '../service/theme.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -411,7 +412,7 @@ class _CronogramaPreventivasBorradorPageState
       }
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = AppError.messageOf(e);
         _loading = false;
       });
     }
@@ -1107,7 +1108,7 @@ class _CronogramaPreventivasBorradorPageState
         _recalcularResumenDias();
       });
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

@@ -3,6 +3,7 @@ import '../../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 
 import '../../service/theme.dart';
+import '../../service/app_error.dart';
 import '../../model/usuario_model.dart';
 import '../../repositories/usuario_repository.dart';
 import '../../utils/enums/usuario_enums.dart';
@@ -90,7 +91,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
     } catch (e) {
       setState(() {
         _cargandoConjuntos = false;
-        _errorConjuntos = e.toString();
+        _errorConjuntos = AppError.messageOf(e);
       });
     }
   }
@@ -106,7 +107,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
     } catch (e) {
       setState(() {
         _cargandoEnums = false;
-        _errorEnums = e.toString();
+        _errorEnums = AppError.messageOf(e);
       });
     }
   }

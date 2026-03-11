@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/reporte_api.dart';
 import 'package:flutter_application_1/model/reporte_model.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:intl/intl.dart';
 
@@ -77,7 +78,7 @@ class _ZonificacionPageState extends State<ZonificacionPage> {
         _topInsumosGlobal = resp.topInsumosGlobal;
       });
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 
 enum AppFeedbackType { info, error }
 
@@ -24,8 +25,12 @@ class AppFeedback {
   }
 
   static void showFromSnackBar(BuildContext context, SnackBar snackBar) {
-    final message = _extractMessage(snackBar.content);
-    final isError = _looksLikeError(message, snackBar.backgroundColor);
+    final rawMessage = _extractMessage(snackBar.content);
+    final message = AppError.messageOf(
+      rawMessage,
+      fallback: 'Ocurrio una novedad.',
+    );
+    final isError = _looksLikeError(rawMessage, snackBar.backgroundColor);
 
     if (isError) {
       showError(context, message: message);
@@ -45,7 +50,7 @@ class AppFeedback {
 
     final cleanMessage = message.trim().isEmpty
         ? 'Ocurrio una novedad.'
-        : message.trim();
+        : AppError.messageOf(message, fallback: 'Ocurrio una novedad.');
 
     final icon = type == AppFeedbackType.error
         ? Icons.error_outline

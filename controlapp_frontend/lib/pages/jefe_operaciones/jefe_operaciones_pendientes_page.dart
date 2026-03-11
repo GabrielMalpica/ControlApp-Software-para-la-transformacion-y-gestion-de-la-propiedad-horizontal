@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 
 class JefeOperacionesPendientesPage extends StatefulWidget {
@@ -58,7 +59,7 @@ class _JefeOperacionesPendientesPageState
       final list = await _api.listarPendientes(conjuntoId: widget.conjuntoId);
       setState(() => _pendientes = list);
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

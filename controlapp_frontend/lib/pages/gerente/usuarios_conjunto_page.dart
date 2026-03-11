@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../api/gerente_api.dart';
 import '../../model/conjunto_model.dart';
+import '../../service/app_error.dart';
 import '../../service/theme.dart';
 
 class UsuariosConjuntoPage extends StatefulWidget {
@@ -49,7 +50,9 @@ class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            return Center(
+              child: Text('Error: ${AppError.messageOf(snapshot.error)}'),
+            );
           }
 
           final conjunto = snapshot.data!;

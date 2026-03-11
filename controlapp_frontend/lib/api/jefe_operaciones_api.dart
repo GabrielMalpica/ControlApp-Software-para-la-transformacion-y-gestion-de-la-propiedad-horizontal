@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
@@ -8,10 +10,25 @@ import 'package:flutter_application_1/model/tarea_model.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 
 import '../service/api_client.dart';
+import '../service/app_error.dart';
 import '../service/app_constants.dart';
+import '../service/session_service.dart';
 
 class JefeOperacionesApi {
   final ApiClient _client = ApiClient();
+  final SessionService _session = SessionService();
+
+  Future<Map<String, String>> _authHeaders() async {
+    final token = await _session.getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('Token requerido (no hay sesiÃ³n guardada)');
+    }
+    return {
+      'Authorization': 'Bearer $token',
+      'x-empresa-id': AppConstants.empresaNit,
+      'Accept': 'application/json',
+    };
+  }
 
   Future<List<TareaModel>> listarPendientes({String? conjuntoId}) async {
     final qs = (conjuntoId != null && conjuntoId.trim().isNotEmpty)
@@ -23,7 +40,12 @@ class JefeOperacionesApi {
     );
 
     if (resp.statusCode != 200) {
-      throw Exception('Error listando pendientes: ${resp.body}');
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudieron listar las tareas pendientes.',
+        ),
+      );
     }
 
     final decoded = jsonDecode(resp.body);
@@ -42,6 +64,66 @@ class JefeOperacionesApi {
     }
 
     throw Exception('Respuesta inválida: ${resp.body}');
+  }
+
+  Future<void> cerrarTareaConEvidencias({
+    required int tareaId,
+    String? observaciones,
+    DateTime? fechaFinalizarTarea,
+    List<Map<String, num>> insumosUsados = const [],
+    List<EvidenciaAdjunto> evidencias = const [],
+  }) async {
+    final uri = Uri.parse(
+      '${AppConstants.jefeOperacionesBase}/tareas/$tareaId/cerrar',
+    );
+
+    final req = http.MultipartRequest('POST', uri);
+    req.headers.addAll(await _authHeaders());
+
+    if (observaciones != null && observaciones.trim().isNotEmpty) {
+      req.fields['observaciones'] = observaciones.trim();
+    }
+    if (fechaFinalizarTarea != null) {
+      req.fields['fechaFinalizarTarea'] = fechaFinalizarTarea.toIso8601String();
+    }
+    if (insumosUsados.isNotEmpty) {
+      req.fields['insumosUsados'] = jsonEncode(insumosUsados);
+    }
+
+    for (final evidencia in evidencias) {
+      final path = evidencia.path?.trim();
+      final bytes = evidencia.bytes;
+
+      if (path != null && path.isNotEmpty) {
+        final file = File(path);
+        if (await file.exists()) {
+          req.files.add(await http.MultipartFile.fromPath('files', path));
+          continue;
+        }
+      }
+
+      if (kIsWeb && bytes != null && bytes.isNotEmpty) {
+        req.files.add(
+          http.MultipartFile.fromBytes(
+            'files',
+            bytes,
+            filename: evidencia.nombre,
+          ),
+        );
+      }
+    }
+
+    final streamed = await req.send();
+    final body = await streamed.stream.bytesToString();
+
+    if (streamed.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          body,
+          fallback: 'No se pudo cerrar la tarea.',
+        ),
+      );
+    }
   }
 
   Future<Map<String, dynamic>> veredicto({
@@ -73,7 +155,12 @@ class JefeOperacionesApi {
     if (resp.statusCode == 200) return data;
     if (data.containsKey('ok')) return data;
 
-    throw Exception('Error veredicto: ${resp.statusCode} - ${resp.body}');
+    throw Exception(
+      AppError.fromResponseBody(
+        resp.body,
+        fallback: 'No se pudo registrar el veredicto.',
+      ),
+    );
   }
 
   /// ✅ Multipart que sirve en WEB + MOBILE + PC
@@ -156,7 +243,12 @@ class JefeOperacionesApi {
     if (resp.statusCode == 200) return data;
     if (data.containsKey('ok')) return data;
 
-    throw Exception('Error multipart: ${resp.statusCode} - ${resp.body}');
+    throw Exception(
+      AppError.fromResponseBody(
+        resp.body,
+        fallback: 'No se pudo registrar el veredicto.',
+      ),
+    );
   }
 
   MediaType? _contentTypeByName(String filename, {String? fallback}) {

@@ -1,9 +1,15 @@
 // lib/api/tarea_api.dart
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
+import 'package:http/http.dart' as http;
 
 import '../service/api_client.dart';
 import '../service/app_constants.dart';
+import '../service/session_service.dart';
 
 class TareaRequest {
   final String descripcion;
@@ -65,6 +71,19 @@ class TareaRequest {
 
 class TareaApi {
   final ApiClient _client = ApiClient();
+  final SessionService _session = SessionService();
+
+  Future<Map<String, String>> _authHeaders() async {
+    final token = await _session.getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('Token requerido (no hay sesiÃ³n guardada)');
+    }
+    return {
+      'Authorization': 'Bearer $token',
+      'x-empresa-id': AppConstants.empresaNit,
+      'Accept': 'application/json',
+    };
+  }
 
   Future<Map<String, dynamic>> crearTarea(TareaRequest req) async {
     final resp = await _client.post(
@@ -156,5 +175,58 @@ class TareaApi {
     throw Exception(
       'Error al crear con reemplazo: ${resp.statusCode} - ${resp.body}',
     );
+  }
+
+  Future<void> cerrarTareaConEvidencias({
+    required int tareaId,
+    String? observaciones,
+    DateTime? fechaFinalizarTarea,
+    List<Map<String, num>> insumosUsados = const [],
+    List<EvidenciaAdjunto> evidencias = const [],
+  }) async {
+    final uri = Uri.parse('${AppConstants.gerenteBase}/tareas/$tareaId/cerrar');
+
+    final req = http.MultipartRequest('POST', uri);
+    req.headers.addAll(await _authHeaders());
+
+    if (observaciones != null && observaciones.trim().isNotEmpty) {
+      req.fields['observaciones'] = observaciones.trim();
+    }
+    if (fechaFinalizarTarea != null) {
+      req.fields['fechaFinalizarTarea'] = fechaFinalizarTarea.toIso8601String();
+    }
+    if (insumosUsados.isNotEmpty) {
+      req.fields['insumosUsados'] = jsonEncode(insumosUsados);
+    }
+
+    for (final evidencia in evidencias) {
+      final path = evidencia.path?.trim();
+      final bytes = evidencia.bytes;
+
+      if (path != null && path.isNotEmpty) {
+        final file = File(path);
+        if (await file.exists()) {
+          req.files.add(await http.MultipartFile.fromPath('files', path));
+          continue;
+        }
+      }
+
+      if (kIsWeb && bytes != null && bytes.isNotEmpty) {
+        req.files.add(
+          http.MultipartFile.fromBytes(
+            'files',
+            bytes,
+            filename: evidencia.nombre,
+          ),
+        );
+      }
+    }
+
+    final streamed = await req.send();
+    final body = await streamed.stream.bytesToString();
+
+    if (streamed.statusCode != 200) {
+      throw Exception('Error cerrando tarea: ${streamed.statusCode} - $body');
+    }
   }
 }
