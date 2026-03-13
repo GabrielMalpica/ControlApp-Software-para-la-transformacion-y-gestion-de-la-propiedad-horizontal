@@ -77,7 +77,18 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
       allowMultiple: true,
       withData: kIsWeb, // ✅ en web necesitamos bytes
       type: FileType.custom,
-      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
+      allowedExtensions: const [
+        'jpg',
+        'jpeg',
+        'jfif',
+        'png',
+        'webp',
+        'gif',
+        'bmp',
+        'heic',
+        'heif',
+        'pdf',
+      ],
     );
 
     if (picked == null) return;
@@ -158,7 +169,9 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
     final nuevos = <EvidenciaAdjunto>[];
 
     for (final archivo in archivos) {
-      final nombre = archivo.name.trim().isEmpty ? 'archivo' : archivo.name.trim();
+      final nombre = archivo.name.trim().isEmpty
+          ? 'archivo'
+          : archivo.name.trim();
 
       if (kIsWeb) {
         final bytes = archivo.bytes;

@@ -3,6 +3,7 @@ import '../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
+import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/logout.dart';
@@ -351,6 +352,22 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
                           builder: (_) => InventarioPage(
                             nit: nit,
                             empresaId: AppConstants.empresaNit,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  _simpleCard(
+                    "Compromisos",
+                    Colors.indigo,
+                    Icons.checklist_rounded,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CompromisosPage(
+                            nit: nit,
+                            nombreConjunto: conjunto.nombre,
                           ),
                         ),
                       );

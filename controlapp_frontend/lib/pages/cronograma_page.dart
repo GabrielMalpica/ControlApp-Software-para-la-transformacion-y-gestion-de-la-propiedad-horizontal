@@ -266,6 +266,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
     return start.add(const Duration(days: 6));
   }
 
+  DateTime _ensureEndAfterStart(DateTime start, DateTime end) {
+    if (end.isAfter(start)) return end;
+    return start.add(const Duration(minutes: 1));
+  }
+
   List<TareaModel> _tareasSemana(DateTime semanaBase) {
     return _tareasFiltradas.where((t) {
       final start = _startOfWeekMonday(semanaBase);
@@ -313,6 +318,26 @@ class _CronogramaPageState extends State<CronogramaPage> {
     return true;
   }
 
+  bool _pasaFiltrosResumenOperarios(TareaModel t) {
+    if (_esCanceladaPorReemplazo(t)) return false;
+
+    if (_filtroTipo != 'TODAS') {
+      final tipo = (t.tipo ?? '').toUpperCase();
+      if (tipo != _filtroTipo) return false;
+    }
+
+    if (_filtroEstado != 'TODOS') {
+      if ((t.estado ?? '') != _filtroEstado) return false;
+    }
+
+    if (_filtroUbicacion != 'TODAS') {
+      final u = _nombreUbicacion(t) ?? '';
+      if (u != _filtroUbicacion) return false;
+    }
+
+    return true;
+  }
+
   String? _nombreUbicacion(TareaModel t) => t.ubicacionNombre;
   String? _nombreObjeto(TareaModel t) => t.elementoNombre;
 
@@ -320,6 +345,16 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   bool _tareaTieneOperario(TareaModel t, String nombreOperario) {
     return _nombresOperarios(t).contains(nombreOperario);
+  }
+
+  List<TareaModel> _tareasSemanaResumenOperarios(DateTime semanaBase) {
+    final start = _startOfWeekMonday(semanaBase);
+    final end = start.add(const Duration(days: 7));
+    return _tareasMes.where((t) {
+      if (!_pasaFiltrosResumenOperarios(t)) return false;
+      final dt = t.fechaInicio.toLocal();
+      return !dt.isBefore(start) && dt.isBefore(end);
+    }).toList();
   }
 
   void _reconstruirFiltrosDisponibles() {
@@ -780,6 +815,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final Map<String, _FilaCrono> rows = {};
 
     for (final t in _tareasFiltradas) {
+      final esCorrectiva = (t.tipo ?? '').trim().toUpperCase() == 'CORRECTIVA';
       final ubic = (t.ubicacionNombre ?? 'ID ${t.ubicacionId}').trim();
       final objeto = (_nombreObjeto(t) ?? 'ID ${t.elementoId}').trim();
       final freq = (t.frecuencia ?? '—').trim();
@@ -793,7 +829,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
                     ? 'ID ${t.supervisorId}'
                     : 'Sin asignar'));
 
-      final key = '$freq||$diag||$ubic||$objeto||$resp';
+      final key =
+          '${esCorrectiva ? 'CORRECTIVA' : 'PREVENTIVA'}||$freq||$diag||$ubic||$objeto||$resp';
 
       rows.putIfAbsent(
         key,
@@ -803,6 +840,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
           ubicacion: ubic,
           objeto: objeto,
           responsable: resp,
+          esCorrectiva: esCorrectiva,
           porDia: {},
         ),
       );
@@ -1057,11 +1095,18 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
                 // Body
                 ...filas.map((f) {
+                  final colorFila = f.esCorrectiva
+                      ? const Color(0xFFFFF7F7)
+                      : Colors.white;
+                  final colorCeldaCorrectiva = const Color(0xFFFDE2E1);
+                  final colorTextoCorrectiva = const Color(0xFFB23A33);
+
                   return Row(
                     children: [
                       cellBox(
                         w: wFrecuencia,
                         h: hFila,
+                        color: colorFila,
                         align: Alignment.topLeft,
                         child: Text(
                           f.frecuencia,
@@ -1073,6 +1118,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                       cellBox(
                         w: wDiagnostico,
                         h: hFila,
+                        color: colorFila,
                         align: Alignment.topLeft,
                         child: Text(
                           f.diagnostico,
@@ -1084,6 +1130,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                       cellBox(
                         w: wUbicacion,
                         h: hFila,
+                        color: colorFila,
                         align: Alignment.topLeft,
                         child: Text(
                           f.ubicacion,
@@ -1095,6 +1142,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                       cellBox(
                         w: wElemento,
                         h: hFila,
+                        color: colorFila,
                         align: Alignment.topLeft,
                         child: Text(
                           f.objeto,
@@ -1106,6 +1154,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                       cellBox(
                         w: wResponsable,
                         h: hFila,
+                        color: colorFila,
                         align: Alignment.topLeft,
                         child: Text(
                           f.responsable,
@@ -1125,7 +1174,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
                           child: cellBox(
                             w: wDia,
                             h: hFila,
-                            color: dom
+                            color: val.isNotEmpty && f.esCorrectiva
+                                ? colorCeldaCorrectiva
+                                : dom
                                 ? Colors.yellow.shade200
                                 : fest
                                 ? const Color(0xFFFFEBEE)
@@ -1136,7 +1187,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w800,
-                                color: _colorPorCodigo(val),
+                                color: val.isNotEmpty && f.esCorrectiva
+                                    ? colorTextoCorrectiva
+                                    : _colorPorCodigo(val),
                               ),
                             ),
                           ),
@@ -1578,9 +1631,18 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final supervisor =
         t.supervisorNombre ??
         (t.supervisorId != null ? 'ID ${t.supervisorId}' : 'Sin supervisor');
+    final esCorrectiva = (t.tipo ?? '').trim().toUpperCase() == 'CORRECTIVA';
+    final colorFondo = esCorrectiva ? const Color(0xFFFFF1F1) : Colors.white;
+    final colorBorde = esCorrectiva
+        ? const Color(0xFFF2B8B5)
+        : Colors.grey.shade200;
 
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      color: colorFondo,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: colorBorde),
+      ),
       elevation: 2,
       child: ListTile(
         title: Text(
@@ -1591,6 +1653,28 @@ class _CronogramaPageState extends State<CronogramaPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
+            if (esCorrectiva)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFDE2E1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    'Correctiva',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFB23A33),
+                    ),
+                  ),
+                ),
+              ),
             Text(
               '⏱ $durMin min (${durH.toStringAsFixed(1)} h)  •  $horaIni - $horaFin',
               style: const TextStyle(fontSize: 12),
@@ -2105,31 +2189,422 @@ class _CronogramaPageState extends State<CronogramaPage> {
     );
   }
 
+  List<_MinuteRange> _rangosDisponiblesDia(DateTime day) {
+    final jornadaMin = (_horaFinJornada - _horaInicioJornada) * 60;
+    if (jornadaMin <= 0) return const [];
+
+    final fecha = DateTime(day.year, day.month, day.day);
+    if (fecha.weekday == DateTime.sunday || _esFestivo(fecha)) {
+      return const [];
+    }
+
+    final inicio = _horaInicioJornada * 60;
+    final fin = _horaFinJornada * 60;
+
+    final tieneDescanso =
+        _horaDescansoInicio != null &&
+        _horaDescansoFin != null &&
+        _horaDescansoFin! > _horaDescansoInicio!;
+
+    if (!tieneDescanso) {
+      return [_MinuteRange(start: inicio, end: fin)];
+    }
+
+    final descansoInicio = _horaDescansoInicio! * 60;
+    final descansoFin = _horaDescansoFin! * 60;
+    final rangos = <_MinuteRange>[];
+
+    if (descansoInicio > inicio) {
+      rangos.add(_MinuteRange(start: inicio, end: descansoInicio));
+    }
+    if (descansoFin < fin) {
+      rangos.add(_MinuteRange(start: descansoFin, end: fin));
+    }
+
+    return rangos;
+  }
+
+  List<_MinuteRange> _mergeMinuteRanges(List<_MinuteRange> ranges) {
+    if (ranges.isEmpty) return const [];
+
+    final sorted = [...ranges]..sort((a, b) => a.start.compareTo(b.start));
+    final merged = <_MinuteRange>[sorted.first];
+
+    for (final range in sorted.skip(1)) {
+      final last = merged.last;
+      if (range.start <= last.end) {
+        merged[merged.length - 1] = _MinuteRange(
+          start: last.start,
+          end: range.end > last.end ? range.end : last.end,
+        );
+        continue;
+      }
+      merged.add(range);
+    }
+
+    return merged;
+  }
+
+  _SemanaHorasResumen _calcularResumenHorasSemana(
+    DateTime weekStart,
+    List<TareaModel> tareas,
+  ) {
+    var disponiblesMin = 0;
+    var ocupadasMin = 0;
+
+    for (int i = 0; i < 7; i++) {
+      final day = DateTime(
+        weekStart.year,
+        weekStart.month,
+        weekStart.day,
+      ).add(Duration(days: i));
+      final rangosDisponibles = _rangosDisponiblesDia(day);
+      if (rangosDisponibles.isEmpty) continue;
+
+      for (final rango in rangosDisponibles) {
+        disponiblesMin += rango.end - rango.start;
+      }
+
+      final dayStart = DateTime(day.year, day.month, day.day);
+      final dayEnd = dayStart.add(const Duration(days: 1));
+      final rangosOcupados = <_MinuteRange>[];
+
+      for (final t in tareas) {
+        final inicioOriginal = t.fechaInicio.toLocal();
+        final finOriginal = _ensureEndAfterStart(
+          inicioOriginal,
+          t.fechaFin.toLocal(),
+        );
+
+        if (!finOriginal.isAfter(dayStart) ||
+            !inicioOriginal.isBefore(dayEnd)) {
+          continue;
+        }
+
+        final inicioDia = inicioOriginal.isBefore(dayStart)
+            ? dayStart
+            : inicioOriginal;
+        final finDia = finOriginal.isAfter(dayEnd) ? dayEnd : finOriginal;
+        final inicioMin = inicioDia.hour * 60 + inicioDia.minute;
+        final finMin = finDia.hour * 60 + finDia.minute;
+
+        for (final rango in rangosDisponibles) {
+          final inicioClip = inicioMin > rango.start ? inicioMin : rango.start;
+          final finClip = finMin < rango.end ? finMin : rango.end;
+          if (finClip > inicioClip) {
+            rangosOcupados.add(_MinuteRange(start: inicioClip, end: finClip));
+          }
+        }
+      }
+
+      for (final rango in _mergeMinuteRanges(rangosOcupados)) {
+        ocupadasMin += rango.end - rango.start;
+      }
+    }
+
+    return _SemanaHorasResumen(
+      disponiblesMin: disponiblesMin,
+      ocupadasMin: ocupadasMin,
+    );
+  }
+
+  List<_OperarioSemanaResumen> _calcularResumenHorasSemanaPorOperario(
+    DateTime weekStart,
+    List<TareaModel> tareas,
+  ) {
+    var disponiblesMin = 0;
+    final ocupadasPorOperario = <String, int>{};
+
+    for (int i = 0; i < 7; i++) {
+      final day = DateTime(
+        weekStart.year,
+        weekStart.month,
+        weekStart.day,
+      ).add(Duration(days: i));
+      final rangosDisponibles = _rangosDisponiblesDia(day);
+      if (rangosDisponibles.isEmpty) continue;
+
+      for (final rango in rangosDisponibles) {
+        disponiblesMin += rango.end - rango.start;
+      }
+
+      final dayStart = DateTime(day.year, day.month, day.day);
+      final dayEnd = dayStart.add(const Duration(days: 1));
+      final rangosPorOperario = <String, List<_MinuteRange>>{};
+
+      for (final t in tareas) {
+        final operarios = t.operariosNombres
+            .map((name) => name.trim())
+            .where((name) => name.isNotEmpty)
+            .toSet();
+        if (operarios.isEmpty) continue;
+
+        final inicioOriginal = t.fechaInicio.toLocal();
+        final finOriginal = _ensureEndAfterStart(
+          inicioOriginal,
+          t.fechaFin.toLocal(),
+        );
+
+        if (!finOriginal.isAfter(dayStart) ||
+            !inicioOriginal.isBefore(dayEnd)) {
+          continue;
+        }
+
+        final inicioDia = inicioOriginal.isBefore(dayStart)
+            ? dayStart
+            : inicioOriginal;
+        final finDia = finOriginal.isAfter(dayEnd) ? dayEnd : finOriginal;
+        final inicioMin = inicioDia.hour * 60 + inicioDia.minute;
+        final finMin = finDia.hour * 60 + finDia.minute;
+
+        for (final rango in rangosDisponibles) {
+          final inicioClip = inicioMin > rango.start ? inicioMin : rango.start;
+          final finClip = finMin < rango.end ? finMin : rango.end;
+          if (finClip <= inicioClip) continue;
+
+          for (final operario in operarios) {
+            rangosPorOperario
+                .putIfAbsent(operario, () => <_MinuteRange>[])
+                .add(_MinuteRange(start: inicioClip, end: finClip));
+          }
+        }
+      }
+
+      for (final entry in rangosPorOperario.entries) {
+        final ocupadasDia = _mergeMinuteRanges(
+          entry.value,
+        ).fold<int>(0, (acc, rango) => acc + (rango.end - rango.start));
+        ocupadasPorOperario.update(
+          entry.key,
+          (actual) => actual + ocupadasDia,
+          ifAbsent: () => ocupadasDia,
+        );
+      }
+    }
+
+    final lista = ocupadasPorOperario.entries
+        .map(
+          (entry) => _OperarioSemanaResumen(
+            nombre: entry.key,
+            disponiblesMin: disponiblesMin,
+            ocupadasMin: entry.value,
+          ),
+        )
+        .toList();
+
+    lista.sort((a, b) {
+      final byBusy = b.ocupadasMin.compareTo(a.ocupadasMin);
+      if (byBusy != 0) return byBusy;
+      return a.nombre.compareTo(b.nombre);
+    });
+
+    return lista;
+  }
+
+  Widget _buildResumenHorasSemanaCard(
+    _SemanaHorasResumen resumen,
+    List<_OperarioSemanaResumen> operarios, {
+    bool compact = false,
+  }) {
+    final porcentaje = resumen.porcentajeOcupacion.clamp(0, 1).toDouble();
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 12 : 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Horas semanales por operario',
+            style: TextStyle(
+              fontSize: compact ? 13 : 14,
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${resumen.ocupadasHorasLabel} ocupadas de ${resumen.disponiblesHorasLabel} disponibles',
+            style: TextStyle(
+              fontSize: compact ? 12 : 13,
+              color: Colors.grey.shade800,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 9,
+              value: porcentaje,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                porcentaje >= 0.9 ? Colors.red.shade400 : AppTheme.primary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Libres: ${resumen.libresHorasLabel} • Ocupación: ${resumen.porcentajeTexto}',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 10),
+          const Divider(height: 1),
+          const SizedBox(height: 10),
+          Text(
+            'Operarios de la semana',
+            style: TextStyle(
+              fontSize: compact ? 12 : 13,
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (operarios.isEmpty)
+            Text(
+              'No hay operarios con horas asignadas en esta semana.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            )
+          else
+            Column(
+              children: [
+                for (int index = 0; index < operarios.length; index++) ...[
+                  if (index > 0) const SizedBox(height: 8),
+                  Builder(
+                    builder: (context) {
+                      final item = operarios[index];
+                      final highlight =
+                          _filtroOperario != 'TODOS' &&
+                          item.nombre == _filtroOperario;
+
+                      return Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: highlight
+                              ? AppTheme.primary.withOpacity(0.08)
+                              : Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: highlight
+                                ? AppTheme.primary.withOpacity(0.25)
+                                : Colors.grey.shade300,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    item.nombre,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  item.porcentajeTexto,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${item.ocupadasHorasLabel} / ${item.disponiblesHorasLabel}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: LinearProgressIndicator(
+                                minHeight: 7,
+                                value: item.porcentajeOcupacion
+                                    .clamp(0, 1)
+                                    .toDouble(),
+                                backgroundColor: Colors.grey.shade200,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  highlight
+                                      ? AppTheme.primary
+                                      : Colors.red.shade300,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAgendaSemanal() {
     final weekStart = _startOfWeekMonday(_semanaBase);
     final tareas = _tareasSemana(_semanaBase);
+    final tareasResumenOperarios = _tareasSemanaResumenOperarios(_semanaBase);
+    final resumenSemana = _calcularResumenHorasSemana(
+      weekStart,
+      tareasResumenOperarios,
+    );
+    final resumenOperarios = _calcularResumenHorasSemanaPorOperario(
+      weekStart,
+      tareasResumenOperarios,
+    );
 
     final w = MediaQuery.of(context).size.width;
     final showSidebar = w >= 1100;
 
     if (!showSidebar) {
-      return _WeekScheduleView(
-        weekStart: weekStart,
-        tareas: tareas,
-        horaInicio: _horaInicioJornada,
-        horaFin: _horaFinJornada,
-        horaDescansoInicio: _horaDescansoInicio,
-        horaDescansoFin: _horaDescansoFin,
-        esFestivo: _esFestivo,
-        nombreFestivo: _nombreFestivo,
-        onTapTarea: (t) => _mostrarDetalleTarea(t, context),
+      return Column(
+        children: [
+          _buildResumenHorasSemanaCard(
+            resumenSemana,
+            resumenOperarios,
+            compact: true,
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _WeekScheduleView(
+              weekStart: weekStart,
+              tareas: tareas,
+              horaInicio: _horaInicioJornada,
+              horaFin: _horaFinJornada,
+              horaDescansoInicio: _horaDescansoInicio,
+              horaDescansoFin: _horaDescansoFin,
+              esFestivo: _esFestivo,
+              nombreFestivo: _nombreFestivo,
+              onTapTarea: (t) => _mostrarDetalleTarea(t, context),
+            ),
+          ),
+        ],
       );
     }
 
     return Row(
       children: [
         Expanded(
-          flex: 3,
+          flex: 4,
           child: _SidebarSimple(
             title: 'Resumen',
             items: [
@@ -2137,15 +2612,26 @@ class _CronogramaPageState extends State<CronogramaPage> {
               'Tareas mes: ${_tareasFiltradas.length}',
               _resumenHorario,
             ],
-            child: Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: _buildFiltrosComoColumna(mostrarTitulo: false),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: _buildFiltrosComoColumna(mostrarTitulo: false),
+                ),
+                const SizedBox(height: 12),
+                _buildResumenHorasSemanaCard(
+                  resumenSemana,
+                  resumenOperarios,
+                  compact: true,
+                ),
+              ],
             ),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
-          flex: 8,
+          flex: 7,
           child: _WeekScheduleView(
             weekStart: weekStart,
             tareas: tareas,
@@ -2894,15 +3380,10 @@ class _SidebarSimple extends StatelessWidget {
             ...items.map(
               (s) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text("• $s", style: const TextStyle(fontSize: 12)),
+                child: Text("- $s", style: const TextStyle(fontSize: 12)),
               ),
             ),
             if (child != null) ...[const Divider(), child!],
-            const Spacer(),
-            Text(
-              "Tip: aquí metes filtros (supervisor, operario, ubicación) sin tocar la agenda.",
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-            ),
           ],
         ),
       ),
@@ -3048,6 +3529,60 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
   }
 }
 
+class _MinuteRange {
+  final int start;
+  final int end;
+
+  const _MinuteRange({required this.start, required this.end});
+}
+
+class _SemanaHorasResumen {
+  final int disponiblesMin;
+  final int ocupadasMin;
+
+  const _SemanaHorasResumen({
+    required this.disponiblesMin,
+    required this.ocupadasMin,
+  });
+
+  double get disponiblesHoras => disponiblesMin / 60.0;
+  double get ocupadasHoras => ocupadasMin / 60.0;
+  double get libresHoras =>
+      (disponiblesMin - ocupadasMin).clamp(0, 1 << 30) / 60.0;
+
+  double get porcentajeOcupacion =>
+      disponiblesMin <= 0 ? 0 : ocupadasMin / disponiblesMin;
+
+  String get disponiblesHorasLabel =>
+      '${disponiblesHoras.toStringAsFixed(1)} h';
+  String get ocupadasHorasLabel => '${ocupadasHoras.toStringAsFixed(1)} h';
+  String get libresHorasLabel => '${libresHoras.toStringAsFixed(1)} h';
+  String get porcentajeTexto =>
+      '${(porcentajeOcupacion * 100).clamp(0, 999).toStringAsFixed(0)}%';
+}
+
+class _OperarioSemanaResumen {
+  final String nombre;
+  final int disponiblesMin;
+  final int ocupadasMin;
+
+  const _OperarioSemanaResumen({
+    required this.nombre,
+    required this.disponiblesMin,
+    required this.ocupadasMin,
+  });
+
+  double get porcentajeOcupacion =>
+      disponiblesMin <= 0 ? 0 : ocupadasMin / disponiblesMin;
+
+  String get disponiblesHorasLabel =>
+      '${(disponiblesMin / 60.0).toStringAsFixed(1)} h';
+  String get ocupadasHorasLabel =>
+      '${(ocupadasMin / 60.0).toStringAsFixed(1)} h';
+  String get porcentajeTexto =>
+      '${(porcentajeOcupacion * 100).clamp(0, 999).toStringAsFixed(0)}%';
+}
+
 class _DiaResumen {
   final int dia;
   final int total;
@@ -3074,6 +3609,7 @@ class _FilaCrono {
   final String ubicacion;
   final String objeto;
   final String responsable;
+  final bool esCorrectiva;
   final Map<int, String> porDia;
 
   _FilaCrono({
@@ -3082,6 +3618,7 @@ class _FilaCrono {
     required this.ubicacion,
     required this.objeto,
     required this.responsable,
+    required this.esCorrectiva,
     required this.porDia,
   });
 }

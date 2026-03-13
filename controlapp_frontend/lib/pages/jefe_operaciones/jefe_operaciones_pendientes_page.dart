@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
+import 'package:flutter_application_1/utils/evidence_utils.dart';
 
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -424,12 +425,9 @@ class _JefeOperacionesPendientesPageState
                             Wrap(
                               spacing: 8,
                               runSpacing: 8,
-                              children: evidencias.map((url) {
-                                final isImg =
-                                    url.contains('drive.google.com') ||
-                                    url.toLowerCase().endsWith('.jpg') ||
-                                    url.toLowerCase().endsWith('.jpeg') ||
-                                    url.toLowerCase().endsWith('.png');
+                              children: evidencias.map((raw) {
+                                final candidates = evidenceUrlCandidates(raw);
+                                final isImg = isLikelyImageEvidence(raw);
 
                                 return Container(
                                   width: 110,
@@ -442,16 +440,30 @@ class _JefeOperacionesPendientesPageState
                                     color: Colors.grey.shade50,
                                   ),
                                   clipBehavior: Clip.antiAlias,
-                                  child: isImg
-                                      ? Image.network(url, fit: BoxFit.cover)
-                                      : Center(
-                                          child: Text(
-                                            'Archivo',
-                                            style: TextStyle(
-                                              color: Colors.grey.shade700,
+                                  child: InkWell(
+                                    onTap: isImg
+                                        ? () => _mostrarEvidencia(candidates)
+                                        : null,
+                                    child: isImg
+                                        ? _EvidenceImage(
+                                            urls: candidates,
+                                            fit: BoxFit.cover,
+                                            fallback: Center(
+                                              child: Icon(
+                                                Icons.image_not_supported,
+                                                color: Colors.grey.shade600,
+                                              ),
+                                            ),
+                                          )
+                                        : Center(
+                                            child: Text(
+                                              'Archivo',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade700,
+                                              ),
                                             ),
                                           ),
-                                        ),
+                                  ),
                                 );
                               }).toList(),
                             ),
@@ -727,6 +739,63 @@ class _JefeOperacionesPendientesPageState
     );
   }
 
+  void _mostrarEvidencia(List<String> urls) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 6, 8),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Evidencia',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: InteractiveViewer(
+                  child: Container(
+                    width: double.infinity,
+                    color: Colors.black,
+                    alignment: Alignment.center,
+                    child: _EvidenceImage(
+                      urls: urls,
+                      fit: BoxFit.contain,
+                      fallback: const Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white70,
+                          size: 48,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   String _archivoInfo(SelectedUploadFile f) {
     if (f.hasBytes) {
       final kb = f.bytes!.lengthInBytes / 1024;
@@ -754,6 +823,84 @@ class _JefeOperacionesPendientesPageState
           Expanded(child: Text(v, style: const TextStyle(fontSize: 13))),
         ],
       ),
+    );
+  }
+}
+
+class _EvidenceImage extends StatefulWidget {
+  final List<String> urls;
+  final BoxFit fit;
+  final Widget fallback;
+
+  const _EvidenceImage({
+    required this.urls,
+    required this.fit,
+    required this.fallback,
+  });
+
+  @override
+  State<_EvidenceImage> createState() => _EvidenceImageState();
+}
+
+class _EvidenceImageState extends State<_EvidenceImage> {
+  int _index = 0;
+  bool _advanceScheduled = false;
+
+  void _tryNext() {
+    if (_advanceScheduled) return;
+    _advanceScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _index++;
+        _advanceScheduled = false;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanUrls = widget.urls
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toList();
+
+    if (cleanUrls.isEmpty || _index >= cleanUrls.length) {
+      return widget.fallback;
+    }
+
+    final url = cleanUrls[_index];
+    final driveLike =
+        url.contains('drive.google.com') ||
+        url.contains('drive.usercontent.google.com') ||
+        url.contains('googleusercontent.com');
+
+    return Image.network(
+      url,
+      fit: widget.fit,
+      webHtmlElementStrategy: driveLike
+          ? WebHtmlElementStrategy.prefer
+          : WebHtmlElementStrategy.never,
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
+        return const Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      },
+      errorBuilder: (_, __, ___) {
+        _tryNext();
+        return const Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      },
     );
   }
 }

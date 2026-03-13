@@ -10,6 +10,7 @@ import 'package:flutter_application_1/service/session_service.dart';
 import 'package:http/http.dart' as http;
 
 import '../service/api_client.dart';
+import '../service/upload_media_type.dart';
 
 class SupervisorApi {
   final ApiClient _client = ApiClient();
@@ -50,7 +51,6 @@ class SupervisorApi {
     final uri = Uri.parse(
       '${AppConstants.supervisorBase}/tareas',
     ).replace(queryParameters: qp);
-
 
     final resp = await _client.get(uri.toString());
 
@@ -96,11 +96,22 @@ class SupervisorApi {
     for (final evidencia in evidencias) {
       final path = evidencia.path?.trim();
       final bytes = evidencia.bytes;
+      final fileName = evidencia.nombre.trim().isNotEmpty
+          ? evidencia.nombre.trim()
+          : (path?.split(RegExp(r'[\\/]')).last ?? 'evidencia.jpg');
+      final contentType = uploadMediaTypeFromName(fileName);
 
       if (path != null && path.isNotEmpty) {
         final file = File(path);
         if (await file.exists()) {
-          req.files.add(await http.MultipartFile.fromPath('files', path));
+          req.files.add(
+            await http.MultipartFile.fromPath(
+              'files',
+              path,
+              filename: fileName,
+              contentType: contentType,
+            ),
+          );
           continue;
         }
       }
@@ -110,7 +121,8 @@ class SupervisorApi {
           http.MultipartFile.fromBytes(
             'files',
             bytes,
-            filename: evidencia.nombre,
+            filename: fileName,
+            contentType: contentType,
           ),
         );
       }

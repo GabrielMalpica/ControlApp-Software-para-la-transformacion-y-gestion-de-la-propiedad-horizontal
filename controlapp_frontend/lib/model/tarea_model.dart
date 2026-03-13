@@ -1,5 +1,6 @@
 import 'package:flutter_application_1/model/insumo_usado_model.dart';
 import 'package:flutter_application_1/model/preventiva_model.dart';
+import 'package:flutter_application_1/utils/evidence_utils.dart';
 
 class InsumoProgramado {
   final int insumoId;
@@ -304,11 +305,7 @@ class TareaModel {
       fechaFin: fechaFin,
       duracionMinutos: durMin,
       estado: json['estado']?.toString(),
-      evidencias: json['evidencias'] != null
-          ? List<String>.from(
-              (json['evidencias'] as List).map((e) => e.toString()),
-            )
-          : const [],
+      evidencias: extractEvidenceUrls(json['evidencias']),
       insumosUsados: json['insumosUsados'] != null
           ? (json['insumosUsados'] as List)
                 .map((i) => InsumoUsadoItem.fromJson(i))

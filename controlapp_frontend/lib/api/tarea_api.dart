@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../service/api_client.dart';
 import '../service/app_constants.dart';
 import '../service/session_service.dart';
+import '../service/upload_media_type.dart';
 
 class TareaRequest {
   final String descripcion;
@@ -202,11 +203,22 @@ class TareaApi {
     for (final evidencia in evidencias) {
       final path = evidencia.path?.trim();
       final bytes = evidencia.bytes;
+      final fileName = evidencia.nombre.trim().isNotEmpty
+          ? evidencia.nombre.trim()
+          : (path?.split(RegExp(r'[\\/]')).last ?? 'evidencia.jpg');
+      final contentType = uploadMediaTypeFromName(fileName);
 
       if (path != null && path.isNotEmpty) {
         final file = File(path);
         if (await file.exists()) {
-          req.files.add(await http.MultipartFile.fromPath('files', path));
+          req.files.add(
+            await http.MultipartFile.fromPath(
+              'files',
+              path,
+              filename: fileName,
+              contentType: contentType,
+            ),
+          );
           continue;
         }
       }
@@ -216,7 +228,8 @@ class TareaApi {
           http.MultipartFile.fromBytes(
             'files',
             bytes,
-            filename: evidencia.nombre,
+            filename: fileName,
+            contentType: contentType,
           ),
         );
       }

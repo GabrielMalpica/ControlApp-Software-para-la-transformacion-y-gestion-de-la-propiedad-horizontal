@@ -22,13 +22,17 @@ class CompromisosPage extends StatefulWidget {
 }
 
 class _CompromisosPageState extends State<CompromisosPage> {
-  static const _storagePrefix = 'gerente_compromisos_';
+  static const _sharedStoragePrefix = 'compromisos_conjunto_';
+  static const _legacyGerenteStoragePrefix = 'gerente_compromisos_';
 
   final TextEditingController _controller = TextEditingController();
   List<_CompromisoItem> _items = [];
   bool _loading = true;
 
-  String get _storageKey => '$_storagePrefix${widget.nit}';
+  String get _storageKey => '$_sharedStoragePrefix${widget.nit}';
+
+  String get _legacyGerenteStorageKey =>
+      '$_legacyGerenteStoragePrefix${widget.nit}';
 
   @override
   void initState() {
@@ -45,7 +49,15 @@ class _CompromisosPageState extends State<CompromisosPage> {
   Future<void> _cargar() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_storageKey);
+      var raw = prefs.getString(_storageKey);
+
+      if ((raw == null || raw.trim().isEmpty) &&
+          prefs.containsKey(_legacyGerenteStorageKey)) {
+        raw = prefs.getString(_legacyGerenteStorageKey);
+        if (raw != null && raw.trim().isNotEmpty) {
+          await prefs.setString(_storageKey, raw);
+        }
+      }
 
       if (raw == null || raw.trim().isEmpty) {
         if (!mounted) return;

@@ -7,6 +7,7 @@ import 'package:flutter_application_1/model/tarea_model.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:http/http.dart' as http;
+import '../service/upload_media_type.dart';
 
 class OperarioApi {
   final SessionService _session = SessionService();
@@ -83,18 +84,34 @@ class OperarioApi {
     for (final e in evidencias) {
       final path = e.path?.trim();
       final bytes = e.bytes;
+      final fileName = e.nombre.trim().isNotEmpty
+          ? e.nombre.trim()
+          : (path?.split(RegExp(r'[\\/]')).last ?? 'evidencia.jpg');
+      final contentType = uploadMediaTypeFromName(fileName);
 
       if (path != null && path.isNotEmpty) {
         final file = File(path);
         if (await file.exists()) {
-          req.files.add(await http.MultipartFile.fromPath('files', path));
+          req.files.add(
+            await http.MultipartFile.fromPath(
+              'files',
+              path,
+              filename: fileName,
+              contentType: contentType,
+            ),
+          );
           continue;
         }
       }
 
       if (kIsWeb && bytes != null && bytes.isNotEmpty) {
         req.files.add(
-          http.MultipartFile.fromBytes('files', bytes, filename: e.nombre),
+          http.MultipartFile.fromBytes(
+            'files',
+            bytes,
+            filename: fileName,
+            contentType: contentType,
+          ),
         );
       }
     }

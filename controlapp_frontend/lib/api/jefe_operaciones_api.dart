@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 
 import 'package:flutter_application_1/model/tarea_model.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
@@ -13,6 +12,7 @@ import '../service/api_client.dart';
 import '../service/app_error.dart';
 import '../service/app_constants.dart';
 import '../service/session_service.dart';
+import '../service/upload_media_type.dart';
 
 class JefeOperacionesApi {
   final ApiClient _client = ApiClient();
@@ -93,11 +93,22 @@ class JefeOperacionesApi {
     for (final evidencia in evidencias) {
       final path = evidencia.path?.trim();
       final bytes = evidencia.bytes;
+      final fileName = evidencia.nombre.trim().isNotEmpty
+          ? evidencia.nombre.trim()
+          : (path?.split(RegExp(r'[\\/]')).last ?? 'evidencia.jpg');
+      final contentType = uploadMediaTypeFromName(fileName);
 
       if (path != null && path.isNotEmpty) {
         final file = File(path);
         if (await file.exists()) {
-          req.files.add(await http.MultipartFile.fromPath('files', path));
+          req.files.add(
+            await http.MultipartFile.fromPath(
+              'files',
+              path,
+              filename: fileName,
+              contentType: contentType,
+            ),
+          );
           continue;
         }
       }
@@ -107,7 +118,8 @@ class JefeOperacionesApi {
           http.MultipartFile.fromBytes(
             'files',
             bytes,
-            filename: evidencia.nombre,
+            filename: fileName,
+            contentType: contentType,
           ),
         );
       }
@@ -201,7 +213,10 @@ class JefeOperacionesApi {
             'files',
             f.bytes!,
             filename: f.name,
-            contentType: _contentTypeByName(f.name, fallback: f.mimeType),
+            contentType: uploadMediaTypeFromName(
+              f.name,
+              fallbackMimeType: f.mimeType,
+            ),
           ),
         );
         continue;
@@ -214,7 +229,10 @@ class JefeOperacionesApi {
             'files',
             f.path!,
             filename: f.name,
-            contentType: _contentTypeByName(f.name, fallback: f.mimeType),
+            contentType: uploadMediaTypeFromName(
+              f.name,
+              fallbackMimeType: f.mimeType,
+            ),
           ),
         );
       } else if (f.hasBytes) {
@@ -223,7 +241,10 @@ class JefeOperacionesApi {
             'files',
             f.bytes!,
             filename: f.name,
-            contentType: _contentTypeByName(f.name, fallback: f.mimeType),
+            contentType: uploadMediaTypeFromName(
+              f.name,
+              fallbackMimeType: f.mimeType,
+            ),
           ),
         );
       } else {
@@ -249,27 +270,5 @@ class JefeOperacionesApi {
         fallback: 'No se pudo registrar el veredicto.',
       ),
     );
-  }
-
-  MediaType? _contentTypeByName(String filename, {String? fallback}) {
-    final lower = filename.toLowerCase();
-
-    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-      return MediaType('image', 'jpeg');
-    }
-    if (lower.endsWith('.png')) {
-      return MediaType('image', 'png');
-    }
-    if (lower.endsWith('.pdf')) {
-      return MediaType('application', 'pdf');
-    }
-
-    // fallback: "image/webp", etc
-    if (fallback != null && fallback.contains('/')) {
-      final parts = fallback.split('/');
-      if (parts.length == 2) return MediaType(parts[0], parts[1]);
-    }
-
-    return null;
   }
 }
