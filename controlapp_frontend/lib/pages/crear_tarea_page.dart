@@ -961,6 +961,333 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     );
   }
 
+  int _intValue(dynamic value, {int fallback = 0}) {
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+
+  List<Map<String, dynamic>> _parseReemplazoTareas(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+  }
+
+  Color _reemplazoAccentColor({
+    required bool critical,
+    required bool noticeOnly,
+  }) {
+    if (noticeOnly) return const Color(0xFF1D4ED8);
+    if (critical) return const Color(0xFFB91C1C);
+    return const Color(0xFFD97706);
+  }
+
+  Color _reemplazoSoftColor({
+    required bool critical,
+    required bool noticeOnly,
+  }) {
+    if (noticeOnly) return const Color(0xFFDBEAFE);
+    if (critical) return const Color(0xFFFEE2E2);
+    return const Color(0xFFFFF7ED);
+  }
+
+  String _resumenReglaReemplazo({
+    required int prioridadCorrectiva,
+    required int prioridadObjetivo,
+    required bool noticeOnly,
+    required bool critical,
+    required int cantidad,
+  }) {
+    final plural = cantidad == 1 ? 'preventiva' : 'preventivas';
+    if (noticeOnly) {
+      return 'La correctiva P$prioridadCorrectiva reemplazara '
+          '$cantidad $plural P$prioridadObjetivo para liberar este horario.';
+    }
+    if (critical) {
+      return 'Alerta: la correctiva P$prioridadCorrectiva reemplazara '
+          '$cantidad $plural P$prioridadObjetivo. Esta confirmacion es critica.';
+    }
+    return 'La correctiva P$prioridadCorrectiva reemplazara '
+        '$cantidad $plural P$prioridadObjetivo. Confirma para continuar.';
+  }
+
+  String _tituloDialogoReemplazo({
+    required int prioridadCorrectiva,
+    required int prioridadObjetivo,
+    required bool noticeOnly,
+    required bool critical,
+    String? fallbackTitle,
+  }) {
+    final backendTitle = (fallbackTitle ?? '').trim();
+    if (backendTitle.isNotEmpty) return backendTitle;
+    if (noticeOnly) {
+      return 'Aviso de reemplazo automatico P$prioridadObjetivo';
+    }
+    if (critical) {
+      return 'Alerta: correctiva P$prioridadCorrectiva sobre preventiva P$prioridadObjetivo';
+    }
+    return 'Confirmar reemplazo P$prioridadCorrectiva sobre P$prioridadObjetivo';
+  }
+
+  String _etiquetaSeveridadReemplazo({
+    required bool critical,
+    required bool noticeOnly,
+    required int prioridadObjetivo,
+  }) {
+    if (noticeOnly) return 'Aviso P$prioridadObjetivo';
+    if (critical) return 'Critico P$prioridadObjetivo';
+    return 'Confirmar P$prioridadObjetivo';
+  }
+
+  String _detalleTareaReemplazo(Map<String, dynamic> tarea) {
+    final id = _intValue(tarea['id']);
+    final prioridad = _intValue(tarea['prioridad'], fallback: 3);
+    final desc = (tarea['descripcion'] ?? '').toString().trim();
+    final ini = _parseDt(tarea['fechaInicio']);
+    final fin = _parseDt(tarea['fechaFin']);
+    final horario = (ini != null && fin != null)
+        ? '${_fmtFecha(ini)} ${_fmtHora(ini)} -> ${_fmtHora(fin)}'
+        : 'Horario no disponible';
+    final ref = '#$id | P$prioridad';
+    return desc.isEmpty ? '$ref | $horario' : '$ref | $desc | $horario';
+  }
+
+  String _previewTareasReemplazo(List<Map<String, dynamic>> tareas) {
+    if (tareas.isEmpty) return 'Sin detalle adicional.';
+    final lineas = tareas.take(2).map(_detalleTareaReemplazo).toList();
+    if (tareas.length > 2) {
+      lineas.add('y ${tareas.length - 2} mas...');
+    }
+    return lineas.join('\n');
+  }
+
+  Future<Map<String, dynamic>?> _dialogElegirReemplazo(
+    List<Map<String, dynamic>> opciones, {
+    String? title,
+  }) async {
+    if (opciones.isEmpty) return null;
+    if (opciones.length == 1) return opciones.first;
+
+    var selectedIndex = 0;
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) {
+          return AlertDialog(
+            title: Text(title ?? 'Elegir reemplazo de preventiva'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: opciones.length,
+                itemBuilder: (_, i) {
+                  final o = opciones[i];
+                  final critical = o['critical'] == true;
+                  final noticeOnly = o['noticeOnly'] == true;
+                  final prioridadObjetivo = _intValue(
+                    o['prioridadObjetivo'],
+                    fallback: 3,
+                  );
+                  final accent = _reemplazoAccentColor(
+                    critical: critical,
+                    noticeOnly: noticeOnly,
+                  );
+                  final soft = _reemplazoSoftColor(
+                    critical: critical,
+                    noticeOnly: noticeOnly,
+                  );
+                  final tareas = _parseReemplazoTareas(o['tareas']);
+                  final resumen =
+                      (o['resumen'] ?? 'Opcion ${i + 1}').toString().trim();
+                  final selected = selectedIndex == i;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: soft,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color:
+                            selected ? accent : accent.withOpacity(0.35),
+                        width: selected ? 2 : 1,
+                      ),
+                    ),
+                    child: RadioListTile<int>(
+                      value: i,
+                      groupValue: selectedIndex,
+                      activeColor: accent,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      title: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            resumen,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.78),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              _etiquetaSeveridadReemplazo(
+                                critical: critical,
+                                noticeOnly: noticeOnly,
+                                prioridadObjetivo: prioridadObjetivo,
+                              ),
+                              style: TextStyle(
+                                color: accent,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text(_previewTareasReemplazo(tareas)),
+                      ),
+                      onChanged: (v) {
+                        if (v == null) return;
+                        setStateDialog(() => selectedIndex = v);
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, null),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, opciones[selectedIndex]),
+                child: const Text('Continuar'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<bool> _dialogConfirmarDetalleReemplazo(
+    Map<String, dynamic> opcion, {
+    required int prioridadCorrectiva,
+    String? fallbackTitle,
+  }) async {
+    final critical = opcion['critical'] == true;
+    final noticeOnly = opcion['noticeOnly'] == true;
+    final prioridadObjetivo = _intValue(opcion['prioridadObjetivo'], fallback: 3);
+    final tareas = _parseReemplazoTareas(opcion['tareas']);
+    final accent = _reemplazoAccentColor(
+      critical: critical,
+      noticeOnly: noticeOnly,
+    );
+    final soft = _reemplazoSoftColor(
+      critical: critical,
+      noticeOnly: noticeOnly,
+    );
+    final resumen = (opcion['resumen'] ?? '').toString().trim();
+    final textoRegla = _resumenReglaReemplazo(
+      prioridadCorrectiva: prioridadCorrectiva,
+      prioridadObjetivo: prioridadObjetivo,
+      noticeOnly: noticeOnly,
+      critical: critical,
+      cantidad: tareas.isEmpty ? 1 : tareas.length,
+    );
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(
+          _tituloDialogoReemplazo(
+            prioridadCorrectiva: prioridadCorrectiva,
+            prioridadObjetivo: prioridadObjetivo,
+            noticeOnly: noticeOnly,
+            critical: critical,
+            fallbackTitle: fallbackTitle,
+          ),
+          style: TextStyle(color: accent),
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: soft,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: accent.withOpacity(0.35)),
+                  ),
+                  child: Text(
+                    textoRegla,
+                    style: TextStyle(
+                      color: accent,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (resumen.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(resumen),
+                ],
+                if (tareas.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    noticeOnly
+                        ? 'Preventivas que se reemplazaran'
+                        : 'Preventivas afectadas',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 10),
+                  ...tareas.map(
+                    (t) => Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: soft.withOpacity(0.65),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(_detalleTareaReemplazo(t)),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(noticeOnly ? 'Volver' : 'Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: accent),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              noticeOnly ? 'Entendido, continuar' : 'Si, reemplazar',
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return ok == true;
+  }
+
   Future<String?> _dialogAccionReemplazo() {
     return showDialog<String>(
       context: context,
@@ -1253,16 +1580,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               .toList();
         }
 
-        bool sameIds(List<int> a, List<int> b) {
-          if (a.length != b.length) return false;
-          final aa = [...a]..sort();
-          final bb = [...b]..sort();
-          for (var i = 0; i < aa.length; i++) {
-            if (aa[i] != bb[i]) return false;
-          }
-          return true;
-        }
-
         String resumenFallback(Map<String, dynamic> t) {
           final id = t['id'];
           final prioridad = t['prioridad'];
@@ -1281,12 +1598,17 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           final o = raw.cast<String, dynamic>();
           final ids = toIds(o['reemplazarIds']);
           if (ids.isEmpty) continue;
+          final prioridadObjetivo = _intValue(o['prioridadObjetivo'], fallback: 3);
           opcionesDisponibles.add({
             ...o,
             'reemplazarIds': ids,
             'requiresConfirm': false,
+            'requiresAction': false,
             'requiresReason': false,
             'critical': false,
+            'noticeOnly': true,
+            'prioridadObjetivo': prioridadObjetivo,
+            'tareas': _parseReemplazoTareas(o['tareas']),
             'resumen': (o['resumen'] ?? 'Reemplazo automatico').toString(),
           });
         }
@@ -1306,8 +1628,12 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             ...o,
             'reemplazarIds': ids,
             'requiresConfirm': true,
+            'requiresAction': true,
             'requiresReason': prioridadObjetivo <= 2,
             'critical': critical,
+            'noticeOnly': false,
+            'prioridadObjetivo': prioridadObjetivo,
+            'tareas': _parseReemplazoTareas(o['tareas']),
             'resumen': (o['resumen'] ?? 'Requiere confirmacion de reemplazo')
                 .toString(),
           });
@@ -1324,6 +1650,8 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           final fallbackRequiresReason =
               respMap['confirmationRequiresReason'] == true ||
               replacementPriority <= 2;
+          final fallbackNoticeOnly =
+              replacementPriority == 3 && !fallbackCritical && !fallbackRequiresReason;
 
           for (final raw in reemplazables) {
             if (raw is! Map) continue;
@@ -1333,9 +1661,13 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             opcionesDisponibles.add({
               'reemplazarIds': [id],
               'resumen': resumenFallback(t),
-              'requiresConfirm': true,
+              'requiresConfirm': !fallbackNoticeOnly,
+              'requiresAction': !fallbackNoticeOnly,
               'requiresReason': fallbackRequiresReason,
               'critical': fallbackCritical,
+              'noticeOnly': fallbackNoticeOnly,
+              'prioridadObjetivo': replacementPriority,
+              'tareas': [t],
             });
           }
         }
@@ -1345,24 +1677,11 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           return;
         }
 
-        final hasCritical = opcionesDisponibles.any(
-          (o) => o['critical'] == true,
-        );
-        final titleBackend = (respMap['confirmationTitle'] ?? '')
-            .toString()
-            .trim();
-        final title = titleBackend.isNotEmpty
-            ? titleBackend
-            : (hasCritical
-                  ? 'Alerta critica de reemplazo prioridad 1'
-                  : 'Confirmar reemplazo de preventiva');
-
-        final idsSeleccionados = await _dialogSeleccionOpcionReemplazo(
+        final seleccion = await _dialogElegirReemplazo(
           opcionesDisponibles,
-          critical: hasCritical,
-          title: title,
+          title: 'Elegir preventiva a reemplazar',
         );
-        if (idsSeleccionados == null || idsSeleccionados.isEmpty) {
+        if (seleccion == null) {
           AppFeedback.showFromSnackBar(
             context,
             SnackBar(content: Text('Operacion cancelada.')),
@@ -1370,23 +1689,27 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           return;
         }
 
-        Map<String, dynamic>? seleccion;
-        for (final o in opcionesDisponibles) {
-          if (sameIds(toIds(o['reemplazarIds']), idsSeleccionados)) {
-            seleccion = o;
-            break;
-          }
+        final idsSeleccionados = toIds(seleccion['reemplazarIds']);
+        if (idsSeleccionados.isEmpty) {
+          await _mostrarErrorBackend(respMap);
+          return;
         }
 
-        final requiereConfirmacion = seleccion?['requiresConfirm'] == true;
-        final confirmacionCritica = seleccion?['critical'] == true;
-        final requiereAccion =
-            (respMap['requiresReplacementAction'] == true) ||
-            requiereConfirmacion;
-        final requiereMotivo =
-            (seleccion?['requiresReason'] == true) ||
-            (respMap['confirmationRequiresReason'] == true &&
-                requiereConfirmacion);
+        final confirmacionCritica = seleccion['critical'] == true;
+        final confirmado = await _dialogConfirmarDetalleReemplazo(
+          seleccion,
+          prioridadCorrectiva: req.prioridad,
+        );
+        if (!confirmado) {
+          AppFeedback.showFromSnackBar(
+            context,
+            const SnackBar(content: Text('Operacion cancelada.')),
+          );
+          return;
+        }
+
+        final requiereAccion = seleccion['requiresAction'] == true;
+        final requiereMotivo = seleccion['requiresReason'] == true;
 
         String? accionReemplazadas;
         String? motivoReemplazo;
