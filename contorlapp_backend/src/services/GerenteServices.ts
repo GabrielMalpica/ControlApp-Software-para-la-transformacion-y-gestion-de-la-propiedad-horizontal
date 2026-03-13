@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+﻿import type { PrismaClient } from "@prisma/client";
 import {
   Rol,
   TipoFuncion,
@@ -79,11 +79,11 @@ type ReemplazoPropuesta =
       createdP1Id: number;
       message: string;
 
-      // âœ… NUEVO: info UX (solo si se moviÃ³)
+      // Ã¢Å“â€¦ NUEVO: info UX (solo si se moviÃƒÂ³)
       ajustadaAutomaticamente?: boolean;
       motivoAjuste?: string;
 
-      // âœ… NUEVO: solicitado vs asignado
+      // Ã¢Å“â€¦ NUEVO: solicitado vs asignado
       solicitadaInicio?: Date;
       solicitadaFin?: Date;
       asignadaInicio?: Date;
@@ -249,7 +249,7 @@ export class GerenteService {
       this.prisma.usuario.findUnique({ where: { correo: dto.correo } }),
     ]);
 
-    if (existeId) throw new Error("Ya existe un usuario con esa cÃ©dula.");
+    if (existeId) throw new Error("Ya existe un usuario con esa cÃƒÂ©dula.");
     if (existeCorreo) throw new Error("Ya existe un usuario con ese correo.");
 
     const hash = await bcrypt.hash(dto.contrasena, 10);
@@ -327,8 +327,8 @@ export class GerenteService {
       this.prisma.empresa.findUnique({ where: { nit: dto.empresaId! } }),
       this.prisma.usuario.findUnique({ where: { id: dto.Id } }),
     ]);
-    if (!empresa) throw new Error("âŒ Empresa no encontrada con ese NIT.");
-    if (!usuario) throw new Error("âŒ Usuario no encontrado.");
+    if (!empresa) throw new Error("Ã¢ÂÅ’ Empresa no encontrada con ese NIT.");
+    if (!usuario) throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
     if (usuario.rol !== Rol.gerente)
       throw new Error("El usuario no tiene rol 'gerente'.");
 
@@ -343,7 +343,7 @@ export class GerenteService {
     const usuario = await this.prisma.usuario.findUnique({
       where: { id: dto.Id },
     });
-    if (!usuario) throw new Error("âŒ Usuario no encontrado.");
+    if (!usuario) throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
     if (usuario.rol !== Rol.administrador)
       throw new Error("El usuario no tiene rol 'administrador'.");
 
@@ -357,19 +357,19 @@ export class GerenteService {
     const dto = CrearJefeOperacionesDTO.parse(payload);
 
     const [empresa, usuario] = await Promise.all([
-      this.prisma.empresa.findFirst(), // ðŸ‘ˆ toma la primera empresa registrada
+      this.prisma.empresa.findFirst(), // Ã°Å¸â€˜Ë† toma la primera empresa registrada
       this.prisma.usuario.findUnique({ where: { id: dto.Id } }),
     ]);
 
-    if (!empresa) throw new Error("âŒ No hay empresa registrada.");
-    if (!usuario) throw new Error("âŒ Usuario no encontrado.");
+    if (!empresa) throw new Error("Ã¢ÂÅ’ No hay empresa registrada.");
+    if (!usuario) throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
     if (usuario.rol !== Rol.jefe_operaciones)
       throw new Error("El usuario no tiene rol 'jefe_operaciones'.");
 
     return this.prisma.jefeOperaciones.create({
       data: {
         id: dto.Id, // FK al Usuario
-        empresaId: empresa.nit, // ðŸ‘ˆ usamos el NIT de la empresa
+        empresaId: empresa.nit, // Ã°Å¸â€˜Ë† usamos el NIT de la empresa
       },
       include: { usuario: true, empresa: true },
     });
@@ -383,8 +383,8 @@ export class GerenteService {
       this.prisma.usuario.findUnique({ where: { id: dto.Id } }),
     ]);
 
-    if (!empresa) throw new Error("âŒ No hay empresa registrada.");
-    if (!usuario) throw new Error("âŒ Usuario no encontrado.");
+    if (!empresa) throw new Error("Ã¢ÂÅ’ No hay empresa registrada.");
+    if (!usuario) throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
     if (usuario.rol !== Rol.supervisor)
       throw new Error("El usuario no tiene rol 'supervisor'.");
 
@@ -405,8 +405,8 @@ export class GerenteService {
       this.prisma.usuario.findUnique({ where: { id: dto.Id } }),
     ]);
 
-    if (!empresa) throw new Error("âŒ No hay empresa registrada.");
-    if (!usuario) throw new Error("âŒ Usuario no encontrado.");
+    if (!empresa) throw new Error("Ã¢ÂÅ’ No hay empresa registrada.");
+    if (!usuario) throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
     if (usuario.rol !== Rol.operario)
       throw new Error("El usuario no tiene rol 'operario'.");
 
@@ -457,7 +457,7 @@ export class GerenteService {
         where: { id: dto.administradorId },
       });
       if (!admin) {
-        throw new Error("âŒ El administrador seleccionado no existe.");
+        throw new Error("Ã¢ÂÅ’ El administrador seleccionado no existe.");
       }
       administradorId = dto.administradorId;
     }
@@ -567,7 +567,7 @@ export class GerenteService {
     });
 
     if (!conjunto) {
-      throw new Error("âŒ Conjunto no encontrado.");
+      throw new Error("Ã¢ÂÅ’ Conjunto no encontrado.");
     }
 
     return conjunto;
@@ -607,7 +607,7 @@ export class GerenteService {
     }
 
     if (dto.fechaFinContrato !== undefined) {
-      // si el front manda fechaFin explÃ­cita, la usamos tal cua
+      // si el front manda fechaFin explÃƒÂ­cita, la usamos tal cua
       data.fechaFinContrato = dto.fechaFinContrato;
     }
 
@@ -747,10 +747,10 @@ export class GerenteService {
     ]);
 
     if (tareasPendientes.length > 0)
-      throw new Error("âŒ El conjunto tiene tareas pendientes.");
+      throw new Error("Ã¢ÂÅ’ El conjunto tiene tareas pendientes.");
     if (maquinariaActivaEnConjunto.length > 0)
       throw new Error(
-        "âŒ El conjunto tiene maquinaria activa asignada (propia o prestada).",
+        "Ã¢ÂÅ’ El conjunto tiene maquinaria activa asignada (propia o prestada).",
       );
 
     await this.prisma.$transaction(async (tx) => {
@@ -818,7 +818,7 @@ export class GerenteService {
     });
     if (!inventario)
       throw new Error(
-        `âŒ No se encontrÃ³ inventario para el conjunto ${dto.conjuntoId}`,
+        `Ã¢ÂÅ’ No se encontrÃƒÂ³ inventario para el conjunto ${dto.conjuntoId}`,
       );
 
     const existente = await this.prisma.inventarioInsumo.findUnique({
@@ -846,7 +846,7 @@ export class GerenteService {
     });
   }
 
-  /** CatÃ¡logo corporativo: empresaId = null (ajusta si usas catÃ¡logo por empresa) */
+  /** CatÃƒÂ¡logo corporativo: empresaId = null (ajusta si usas catÃƒÂ¡logo por empresa) */
   async agregarInsumoAlCatalogo(payload: unknown, empresaId: string) {
     const dto = CrearInsumoDTO.parse(payload);
 
@@ -856,14 +856,14 @@ export class GerenteService {
     });
     if (existe)
       throw new Error(
-        "ðŸš« Ya existe un insumo con ese nombre y unidad en el catÃ¡logo.",
+        "Ã°Å¸Å¡Â« Ya existe un insumo con ese nombre y unidad en el catÃƒÂ¡logo.",
       );
 
     return this.prisma.insumo.create({
       data: {
         nombre: dto.nombre,
         unidad: dto.unidad,
-        empresaId, // âœ… ya no null
+        empresaId, // Ã¢Å“â€¦ ya no null
         categoria: dto.categoria,
         umbralBajo: dto.umbralBajo ?? null,
       },
@@ -1399,7 +1399,7 @@ export class GerenteService {
       return {
         ok: false,
         reason: "FALTA_DURACION",
-        message: "Debe indicar duraciÃ³n.",
+        message: "Debe indicar duraciÃƒÂ³n.",
       };
     }
 
@@ -1419,9 +1419,9 @@ export class GerenteService {
       : [];
 
     // =========================
-    // Helpers de logÃ­stica (maquinaria)
+    // Helpers de logÃƒÂ­stica (maquinaria)
     // =========================
-    const LOGISTICA_DOW = new Set([1, 3, 6]); // lun, miÃ©, sÃ¡b
+    const LOGISTICA_DOW = new Set([1, 3, 6]); // lun, miÃƒÂ©, sÃƒÂ¡b
 
     const startDay = (d: Date) =>
       new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
@@ -1457,10 +1457,10 @@ export class GerenteService {
     };
 
     // =========================
-    // TRANSACCIÃ“N
+    // TRANSACCIÃƒâ€œN
     // =========================
     return this.prisma.$transaction(async (tx) => {
-      // âœ… 0) Validar solape de operarios (bloque duro)
+      // Ã¢Å“â€¦ 0) Validar solape de operarios (bloque duro)
       if (dto.conjuntoId && operariosIds.length) {
         const choqueOperario = await tx.tarea.findFirst({
           where: {
@@ -1478,7 +1478,7 @@ export class GerenteService {
         });
 
         if (choqueOperario) {
-          // âœ… 0.1) Intentar sugerir hueco en el dÃ­a (si hay conjunto y horario)
+          // Ã¢Å“â€¦ 0.1) Intentar sugerir hueco en el dÃƒÂ­a (si hay conjunto y horario)
           const ds = dateToDiaSemana(inicio);
           const horario = await tx.conjuntoHorario.findFirst({
             where: { conjuntoId: dto.conjuntoId, dia: ds as any },
@@ -1549,7 +1549,7 @@ export class GerenteService {
               return {
                 ok: false,
                 reason: "HAY_SOLAPE_CON_TAREAS_EXISTENTES",
-                message: "Ese horario ya estÃ¡ ocupado por otra tarea.",
+                message: "Ese horario ya estÃƒÂ¡ ocupado por otra tarea.",
                 suggestedInicio: sugIni,
                 suggestedFin: sugFin,
               };
@@ -1561,12 +1561,12 @@ export class GerenteService {
             ok: false,
             reason: "HAY_SOLAPE_CON_TAREAS_EXISTENTES",
             message:
-              "Ese horario ya estÃ¡ ocupado y no se encontrÃ³ hueco en el dÃ­a.",
+              "Ese horario ya estÃƒÂ¡ ocupado y no se encontrÃƒÂ³ hueco en el dÃƒÂ­a.",
           };
         }
       }
 
-      // 1ï¸âƒ£ Crear la tarea
+      // 1Ã¯Â¸ÂÃ¢Æ’Â£ Crear la tarea
       const tarea = await tx.tarea.create({
         data: {
           descripcion: dto.descripcion,
@@ -1591,7 +1591,7 @@ export class GerenteService {
         select: { id: true },
       });
 
-      // 2ï¸âƒ£ Resolver maquinaria por conjunto
+      // 2Ã¯Â¸ÂÃ¢Æ’Â£ Resolver maquinaria por conjunto
       if (dto.conjuntoId && maquinariaIds.length) {
         const registros = await tx.maquinariaConjunto.findMany({
           where: {
@@ -1622,7 +1622,7 @@ export class GerenteService {
             const recogida = recogidaLogistica(fin);
             reservaInicio = startDay(entrega);
             reservaFin = endDay(recogida);
-            obs = `Reserva logÃ­stica (${entrega.toDateString()} â†’ ${recogida.toDateString()})`;
+            obs = `Reserva logÃƒÂ­stica (${entrega.toDateString()} Ã¢â€ â€™ ${recogida.toDateString()})`;
           }
 
           // Validar solape REAL maquinaria
@@ -1636,7 +1636,7 @@ export class GerenteService {
 
           if (choque) {
             throw new Error(
-              `MAQUINARIA_OCUPADA: maquinaria ${maqId} ya estÃ¡ reservada`,
+              `MAQUINARIA_OCUPADA: maquinaria ${maqId} ya estÃƒÂ¡ reservada`,
             );
           }
 
@@ -1720,7 +1720,7 @@ export class GerenteService {
       return {
         ok: false,
         reason: "FALTA_DURACION",
-        message: "Debe indicar duraciÃ³n.",
+        message: "Debe indicar duraciÃƒÂ³n.",
       };
     }
     const fin = dto.fechaFin ?? new Date(inicio.getTime() + durMin * 60000);
@@ -1728,10 +1728,10 @@ export class GerenteService {
       dto.operariosIds?.map(String) ??
       (dto.operarioId ? [String(dto.operarioId)] : []);
 
-    // 1) Intentar creación normal exacta en el horario solicitado.
+    // 1) Intentar creaciÃ³n normal exacta en el horario solicitado.
     let intento: any = await this.asignarTarea(dto);
     if (intento?.ok === true) {
-      // Validación defensiva: no dejar superposiciones reales por operario.
+      // ValidaciÃ³n defensiva: no dejar superposiciones reales por operario.
       const createdId = Number(intento?.tareaId ?? 0);
       if (createdId > 0 && dto.conjuntoId && operariosIds.length) {
         const solapeInconsistente = await this.prisma.tarea.findFirst({
@@ -1779,7 +1779,7 @@ export class GerenteService {
       };
     }
 
-    // 2) Si no falló por solape, devolver error normal.
+    // 2) Si no fallÃ³ por solape, devolver error normal.
     if (intento?.reason !== "HAY_SOLAPE_CON_TAREAS_EXISTENTES") {
       return {
         ok: false,
@@ -1814,42 +1814,8 @@ export class GerenteService {
       };
     }
 
-    // 4) Auto reemplazo solo cuando no hay hueco sugerido alterno.
-    if (
-      !hasSuggested &&
-      opciones.autoOptions.length > 0 &&
-      opciones.confirmOptions.length === 0
-    ) {
-      const autoPick = opciones.autoOptions[0];
-      const autoResult = await this.asignarTareaConReemplazoV2({
-        tarea: dto,
-        reemplazarIds: autoPick.reemplazarIds,
-        accionReemplazadas: "CANCELAR",
-      });
-
-      if (autoResult?.ok) {
-        return {
-          ok: true,
-          mode: "AUTO_REEMPLAZO",
-          message:
-            "Se reemplazÃ³ automÃ¡ticamente una preventiva de menor prioridad.",
-          createdId: autoResult.createdCorrectivaId,
-          reemplazos: autoResult.reemplazos ?? [],
-          autoReplaced: autoResult.reemplazos ?? [],
-          reemplazadasIds: autoResult.reemplazadasIds ?? [],
-          reprogramadasIds: autoResult.reprogramadasIds ?? [],
-          canceladasIds: autoResult.canceladasIds ?? [],
-          canceladasSinCupoIds: autoResult.canceladasSinCupoIds ?? [],
-          noCompletadasIds: autoResult.noCompletadasIds ?? [],
-        };
-      }
-
-      return {
-        ok: false,
-        reason: autoResult?.reason ?? "SIN_HUECO",
-        message: autoResult?.message ?? "No fue posible aplicar el reemplazo.",
-      };
-    }
+    const soloAvisoAuto =
+      opciones.autoOptions.length > 0 && opciones.confirmOptions.length === 0;
 
     const esCritica = opciones.confirmOptions.some(
       (o) => o.tipoConfirmacion === "CONFIRM_DANGER",
@@ -1868,19 +1834,30 @@ export class GerenteService {
       ok: true,
       mode: "REQUIERE_DECISION_REEMPLAZO",
       message: hasSuggested
-        ? "No hay espacio a esa hora. Puedes mover la correctiva al siguiente hueco o reemplazar una preventiva."
-        : "No hay espacio a esa hora. Puedes reemplazar una preventiva segÃºn prioridad.",
+        ? soloAvisoAuto
+          ? "No hay espacio a esa hora. Puedes mover la correctiva al siguiente hueco o revisar el reemplazo automatico de preventivas P3."
+          : "No hay espacio a esa hora. Puedes mover la correctiva al siguiente hueco o reemplazar una preventiva."
+        : soloAvisoAuto
+          ? "No hay espacio a esa hora. Se requiere avisar el reemplazo automatico de preventivas prioridad 3 antes de crear la correctiva."
+          : "No hay espacio a esa hora. Puedes reemplazar una preventiva segÃƒÂºn prioridad.",
       decisionMode: hasSuggested ? "MOVER_O_REEMPLAZAR" : "REEMPLAZAR",
       prioridadCorrectiva: prioridad,
       prioridadObjetivo,
+      replacementNoticeOnly: soloAvisoAuto,
       criticalConfirmation: esCritica,
-      confirmationVariant: esCritica ? "danger" : "warning",
-      confirmationColor: esCritica ? "red" : "amber",
-      confirmationTitle: esCritica
-        ? "Alerta crÃ­tica: reemplazo sobre preventiva prioridad 1"
-        : "ConfirmaciÃ³n de reemplazo por prioridad",
-      confirmationRequiresReason: requiereMotivo,
-      requiresReplacementAction: true,
+      confirmationVariant: soloAvisoAuto
+        ? "info"
+        : esCritica
+          ? "danger"
+          : "warning",
+      confirmationColor: soloAvisoAuto ? "blue" : esCritica ? "red" : "amber",
+      confirmationTitle: soloAvisoAuto
+        ? "Aviso: reemplazo automatico sobre preventivas prioridad 3"
+        : esCritica
+          ? "Alerta crÃƒÂ­tica: reemplazo sobre preventiva prioridad 1"
+          : "ConfirmaciÃƒÂ³n de reemplazo por prioridad",
+      confirmationRequiresReason: soloAvisoAuto ? false : requiereMotivo,
+      requiresReplacementAction: soloAvisoAuto ? false : true,
       suggestedInicio,
       suggestedFin,
       opcionesAuto: opciones.autoOptions,
@@ -1896,7 +1873,7 @@ export class GerenteService {
       return {
         ok: false,
         reason: "PAYLOAD_INVALIDO",
-        message: parsed.error.issues[0]?.message ?? "Payload invÃ¡lido.",
+        message: parsed.error.issues[0]?.message ?? "Payload invÃƒÂ¡lido.",
       };
     }
 
@@ -1946,7 +1923,7 @@ export class GerenteService {
       return {
         ok: false,
         reason: "FALTA_DURACION",
-        message: "Debe indicar duraciÃ³n.",
+        message: "Debe indicar duraciÃƒÂ³n.",
       };
     }
     const fin = dto.fechaFin ?? new Date(inicio.getTime() + durMin * 60000);
@@ -1990,7 +1967,7 @@ export class GerenteService {
           ok: false,
           reason: "REEMPLAZOS_INVALIDOS",
           message:
-            "Una o mÃ¡s tareas a reemplazar no pertenecen al conjunto indicado.",
+            "Una o mÃƒÂ¡s tareas a reemplazar no pertenecen al conjunto indicado.",
         };
       }
 
@@ -2039,7 +2016,7 @@ export class GerenteService {
         return {
           ok: false,
           reason: "REEMPLAZO_NO_VALIDO",
-          message: "La selecciÃ³n contiene tareas no reemplazables para esa prioridad.",
+          message: "La selecciÃƒÂ³n contiene tareas no reemplazables para esa prioridad.",
         };
       }
 
@@ -2242,7 +2219,7 @@ export class GerenteService {
         });
       }
 
-      // reserva maquinaria (mismo comportamiento de asignaciÃ³n normal)
+      // reserva maquinaria (mismo comportamiento de asignaciÃƒÂ³n normal)
       const noCompletadasIds = Array.from(
         new Set([...canceladasIds, ...canceladasSinCupoIds]),
       );
@@ -2304,7 +2281,7 @@ export class GerenteService {
             const recogida = recogidaLogistica(fin);
             reservaInicio = startDay(entrega);
             reservaFin = endDay(recogida);
-            obs = `Reserva logÃ­stica correctiva P${prioridad} (${entrega.toDateString()} -> ${recogida.toDateString()})`;
+            obs = `Reserva logÃƒÂ­stica correctiva P${prioridad} (${entrega.toDateString()} -> ${recogida.toDateString()})`;
           }
 
           const choque = await tx.usoMaquinaria.findFirst({
@@ -2374,7 +2351,7 @@ export class GerenteService {
     startMin: number;
     endMin: number;
 
-    // bloqueos (descanso, patrÃ³n, etc)
+    // bloqueos (descanso, patrÃƒÂ³n, etc)
     bloqueos: Bloqueo[];
 
     // nueva tarea P1
@@ -2460,7 +2437,7 @@ export class GerenteService {
     });
     if (normal) return { huecoNormal: normal };
 
-    // 3) Candidatas del dÃ­a P2/P3 (NO cerradas, NO ya reprogramadas)
+    // 3) Candidatas del dÃƒÂ­a P2/P3 (NO cerradas, NO ya reprogramadas)
     const candidatas = await prisma.tarea.findMany({
       where: {
         conjuntoId,
@@ -2550,7 +2527,7 @@ export class GerenteService {
       });
 
       if (bloques) {
-        // capturamos info de tareas que se reemplazarÃ­an (para informar)
+        // capturamos info de tareas que se reemplazarÃƒÂ­an (para informar)
         const tareas = await prisma.tarea.findMany({
           where: { id: { in: Array.from(idsAExcluir) } },
           select: {
@@ -2706,7 +2683,7 @@ export class GerenteService {
     if (dto.observacionesRechazo !== undefined)
       data.observacionesRechazo = dto.observacionesRechazo;
 
-    // supervisorId ahora se guarda como String en la relaciÃ³n
+    // supervisorId ahora se guarda como String en la relaciÃƒÂ³n
     if (dto.supervisorId !== undefined) {
       data.supervisor =
         dto.supervisorId === null
@@ -2799,7 +2776,7 @@ export class GerenteService {
           ?.map((o) => o.usuario?.nombre)
           .filter((n): n is string => !!n) ?? [];
 
-      // NO convertir a Number (cÃ©dulas)
+      // NO convertir a Number (cÃƒÂ©dulas)
       const operariosIds = t.operarios?.map((o) => o.id) ?? [];
       const supervisorNombre = t.supervisor?.usuario?.nombre ?? null;
 
@@ -2848,11 +2825,11 @@ export class GerenteService {
         operariosIds,
         operariosNombres,
 
-        // USO/ASIGNACIÃ“N
+        // USO/ASIGNACIÃƒâ€œN
         herramientasAsignadas,
         maquinariasAsignadas,
 
-        // PLANIFICACIÃ“N (JSON)
+        // PLANIFICACIÃƒâ€œN (JSON)
         herramientasPlanJson: t.herramientasPlanJson ?? null,
         maquinariaPlanJson: t.maquinariaPlanJson ?? null,
         insumosPlanJson: t.insumosPlanJson ?? null,
@@ -2873,7 +2850,7 @@ export class GerenteService {
       where: { administradorId: adminId.toString() },
     });
     if (asignaciones.length > 0) {
-      throw new Error("âŒ El administrador tiene conjuntos asignados.");
+      throw new Error("Ã¢ÂÅ’ El administrador tiene conjuntos asignados.");
     }
     await this.prisma.usuario.delete({ where: { id: adminId.toString() } });
   }
@@ -2891,7 +2868,7 @@ export class GerenteService {
   }
 
   async eliminarOperario(operarioId: string) {
-    // 1) Verificar tareas pendientes donde el operario estÃ© asignado
+    // 1) Verificar tareas pendientes donde el operario estÃƒÂ© asignado
     const tareasPendientes = await this.prisma.tarea.findMany({
       where: {
         operarios: { some: { id: operarioId } }, // ya es string, no hace falta toString()
@@ -2903,17 +2880,17 @@ export class GerenteService {
     });
 
     if (tareasPendientes.length > 0) {
-      throw new Error("No se puede eliminar el operario porque aún tiene tareas activas (asignadas o en proceso).");
+      throw new Error("No se puede eliminar el operario porque aÃºn tiene tareas activas (asignadas o en proceso).");
     }
 
-    // 2) Borrar operario + usuario dentro de una misma transacciÃ³n
+    // 2) Borrar operario + usuario dentro de una misma transacciÃƒÂ³n
     await this.prisma.$transaction(async (tx) => {
-      // Borramos el operario (si existe). deleteMany evita P2025 si ya no estÃ¡.
+      // Borramos el operario (si existe). deleteMany evita P2025 si ya no estÃƒÂ¡.
       await tx.operario.deleteMany({
         where: { id: operarioId },
       });
 
-      // Borramos el usuario asociado (obligatorio que exista, si no â†’ error lÃ³gico)
+      // Borramos el usuario asociado (obligatorio que exista, si no Ã¢â€ â€™ error lÃƒÂ³gico)
       await tx.usuario.delete({
         where: { id: operarioId },
       });
@@ -2987,20 +2964,20 @@ export class GerenteService {
 
     if (!tarea) throw new Error("Tarea no encontrada.");
 
-    // ðŸ”’ Reglas de negocio (ajÃºstalas a tu gusto)
+    // Ã°Å¸â€â€™ Reglas de negocio (ajÃƒÂºstalas a tu gusto)
     if (
       tarea.estado === EstadoTarea.COMPLETADA ||
       tarea.estado === EstadoTarea.APROBADA ||
       tarea.estado === EstadoTarea.PENDIENTE_APROBACION
     ) {
       throw new Error(
-        "No se puede eliminar una tarea que ya fue ejecutada o estÃ¡ en aprobaciÃ³n.",
+        "No se puede eliminar una tarea que ya fue ejecutada o estÃƒÂ¡ en aprobaciÃƒÂ³n.",
       );
     }
 
     await prisma.$transaction(async (tx) => {
       // 1) Liberar maquinaria asignada al conjunto por esta tarea (si existiera)
-      // (tu relaciÃ³n tiene onDelete: SetNull, pero igual lo hacemos explÃ­cito)
+      // (tu relaciÃƒÂ³n tiene onDelete: SetNull, pero igual lo hacemos explÃƒÂ­cito)
       await tx.maquinariaConjunto.updateMany({
         where: { tareaId: id },
         data: { tareaId: null },
@@ -3020,21 +2997,21 @@ export class GerenteService {
         where: { tareaId: id },
       });
 
-      // 4) (Opcional) Desconectar relaciÃ³n M:N de operarios (normalmente Prisma lo limpia,
+      // 4) (Opcional) Desconectar relaciÃƒÂ³n M:N de operarios (normalmente Prisma lo limpia,
       // pero lo dejo por si tu DB tiene restricciones raras)
       await tx.tarea.update({
         where: { id },
         data: { operarios: { set: [] } },
       });
 
-      // 5) Ahora sÃ­, borrar la tarea
+      // 5) Ahora sÃƒÂ­, borrar la tarea
       await tx.tarea.delete({ where: { id } });
     });
 
     return { ok: true, message: "Tarea eliminada correctamente." };
   }
 
-  /* ===================== EDICIONES RÃPIDAS (compat) ===================== */
+  /* ===================== EDICIONES RÃƒÂPIDAS (compat) ===================== */
 
   async editarAdministrador(adminId: number, payload: unknown) {
     const dto = EditarUsuarioDTO.parse(payload);
