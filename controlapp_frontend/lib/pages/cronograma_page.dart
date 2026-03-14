@@ -77,6 +77,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   List<String> _operariosDisponibles = [];
   List<String> _ubicacionesDisponibles = [];
+  List<HorarioConjunto> _horariosConjunto = [];
 
   int _horaInicioJornada = 8;
   int _horaFinJornada = 16;
@@ -135,6 +136,102 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final h = (minutes ~/ 60).toString().padLeft(2, '0');
     final m = (minutes % 60).toString().padLeft(2, '0');
     return '$h:$m';
+  }
+
+  String _normalizarDiaHorario(String raw) {
+    var out = raw.trim().toUpperCase();
+    const repl = {
+      'Á': 'A',
+      'É': 'E',
+      'Í': 'I',
+      'Ó': 'O',
+      'Ú': 'U',
+      'Ü': 'U',
+      'Ñ': 'N',
+      '_': '',
+      '-': '',
+      ' ': '',
+    };
+    repl.forEach((k, v) => out = out.replaceAll(k, v));
+    return out;
+  }
+
+  int? _weekdayDesdeDiaHorario(String? rawDia) {
+    if (rawDia == null) return null;
+    switch (_normalizarDiaHorario(rawDia)) {
+      case 'LUNES':
+      case 'MONDAY':
+        return DateTime.monday;
+      case 'MARTES':
+      case 'TUESDAY':
+        return DateTime.tuesday;
+      case 'MIERCOLES':
+      case 'WEDNESDAY':
+        return DateTime.wednesday;
+      case 'JUEVES':
+      case 'THURSDAY':
+        return DateTime.thursday;
+      case 'VIERNES':
+      case 'FRIDAY':
+        return DateTime.friday;
+      case 'SABADO':
+      case 'SATURDAY':
+        return DateTime.saturday;
+      case 'DOMINGO':
+      case 'SUNDAY':
+        return DateTime.sunday;
+      default:
+        return null;
+    }
+  }
+
+  HorarioConjunto? _horarioConjuntoParaDia(DateTime day) {
+    for (final horario in _horariosConjunto) {
+      if (_weekdayDesdeDiaHorario(horario.dia) == day.weekday) {
+        return horario;
+      }
+    }
+    return null;
+  }
+
+  List<_MinuteRange> _rangosDesdeHorarioConjunto(HorarioConjunto horario) {
+    final apertura = _parseHora(horario.horaApertura);
+    final cierre = _parseHora(horario.horaCierre);
+    if (apertura == null || cierre == null) return const [];
+
+    final inicio = _toMinutes(apertura);
+    final fin = _toMinutes(cierre);
+    if (fin <= inicio) return const [];
+
+    final descansoInicio = horario.descansoInicio == null
+        ? null
+        : _parseHora(horario.descansoInicio);
+    final descansoFin = horario.descansoFin == null
+        ? null
+        : _parseHora(horario.descansoFin);
+
+    final tieneDescanso =
+        descansoInicio != null &&
+        descansoFin != null &&
+        _toMinutes(descansoFin) > _toMinutes(descansoInicio) &&
+        _toMinutes(descansoInicio) > inicio &&
+        _toMinutes(descansoFin) < fin;
+
+    if (!tieneDescanso) {
+      return [_MinuteRange(start: inicio, end: fin)];
+    }
+
+    final descansoIniMin = _toMinutes(descansoInicio);
+    final descansoFinMin = _toMinutes(descansoFin);
+    final rangos = <_MinuteRange>[];
+
+    if (descansoIniMin > inicio) {
+      rangos.add(_MinuteRange(start: inicio, end: descansoIniMin));
+    }
+    if (descansoFinMin < fin) {
+      rangos.add(_MinuteRange(start: descansoFinMin, end: fin));
+    }
+    return rangos;
   }
 
   void _aplicarHorarioConjunto({
@@ -220,6 +317,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final tieneDescanso =
         minDescanso != null && maxDescanso != null && maxDescanso > minDescanso;
 
+    _horariosConjunto = [...horarios];
     _horaInicioJornada = inicioHora;
     _horaFinJornada = finHora;
     _horaDescansoInicio = descansoInicioHora;
@@ -2190,13 +2288,19 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   List<_MinuteRange> _rangosDisponiblesDia(DateTime day) {
-    final jornadaMin = (_horaFinJornada - _horaInicioJornada) * 60;
-    if (jornadaMin <= 0) return const [];
-
     final fecha = DateTime(day.year, day.month, day.day);
-    if (fecha.weekday == DateTime.sunday || _esFestivo(fecha)) {
+    if (_esFestivo(fecha)) {
       return const [];
     }
+
+    final horarioDia = _horarioConjuntoParaDia(fecha);
+    if (horarioDia != null) {
+      return _rangosDesdeHorarioConjunto(horarioDia);
+    }
+
+    final jornadaMin = (_horaFinJornada - _horaInicioJornada) * 60;
+    if (jornadaMin <= 0) return const [];
+    if (fecha.weekday == DateTime.sunday) return const [];
 
     final inicio = _horaInicioJornada * 60;
     final fin = _horaFinJornada * 60;
