@@ -71,7 +71,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
 
     // ✅ supervisorId como String? (si viene int, lo convertimos)
     final sup = t.supervisorId;
-    _supervisorId = sup == null ? null : sup.toString();
+    _supervisorId = sup?.toString();
 
     // ✅ operariosIds como List<String> (si viene int, lo convertimos)
     _operariosSeleccionadosIds
@@ -369,7 +369,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
               const SizedBox(height: 16),
 
               DropdownButtonFormField<int>(
-                value: _ubicacionSeleccionada?.id,
+                initialValue: _ubicacionSeleccionada?.id,
                 decoration: const InputDecoration(
                   labelText: "Ubicación",
                   border: OutlineInputBorder(),
@@ -394,7 +394,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
               const SizedBox(height: 16),
 
               DropdownButtonFormField<int>(
-                value: _elementoSeleccionado?.id,
+                initialValue: _elementoSeleccionado?.id,
                 decoration: const InputDecoration(
                   labelText: "Elemento",
                   border: OutlineInputBorder(),
@@ -521,7 +521,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
               const SizedBox(height: 16),
 
               DropdownButtonFormField<String>(
-                value: _supervisorId,
+                initialValue: _supervisorId,
                 decoration: const InputDecoration(
                   labelText: "Supervisor (opcional)",
                   border: OutlineInputBorder(),

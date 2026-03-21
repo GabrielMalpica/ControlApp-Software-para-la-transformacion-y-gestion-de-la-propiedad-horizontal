@@ -215,7 +215,7 @@ class _FestivosPageState extends State<FestivosPage> {
                             children: [
                               Expanded(
                                 child: DropdownButtonFormField<String>(
-                                  value: _pais,
+                                  initialValue: _pais,
                                   decoration: const InputDecoration(
                                     labelText: 'País',
                                     border: OutlineInputBorder(),

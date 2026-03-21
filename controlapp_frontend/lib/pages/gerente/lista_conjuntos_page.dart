@@ -529,7 +529,7 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
                 if (changed == true) {
                   _hasChanges = true;
                   _loadConjuntos();
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   AppFeedback.showFromSnackBar(
                     context,
                     const SnackBar(

@@ -259,8 +259,8 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
         final bool isActivo = (u.activo);
 
         final Color avatarBg = isActivo
-            ? AppTheme.primary.withOpacity(0.1)
-            : Colors.grey.withOpacity(0.2);
+            ? AppTheme.primary.withValues(alpha: 0.1)
+            : Colors.grey.withValues(alpha: 0.2);
 
         final Color avatarTextColor = isActivo ? AppTheme.primary : Colors.grey;
 

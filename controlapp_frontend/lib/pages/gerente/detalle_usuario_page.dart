@@ -93,7 +93,7 @@ class DetalleUsuarioPage extends StatelessWidget {
                   children: [
                     CircleAvatar(
                       radius: 28,
-                      backgroundColor: AppTheme.primary.withOpacity(0.1),
+                      backgroundColor: AppTheme.primary.withValues(alpha: 0.1),
                       child: Icon(Icons.person, color: AppTheme.primary),
                     ),
                     const SizedBox(width: 12),
@@ -160,9 +160,7 @@ class DetalleUsuarioPage extends StatelessWidget {
                 _rowDato("Dirección", usuario.direccion ?? "-"),
                 _rowDato(
                   "Fecha nacimiento",
-                  usuario.fechaNacimiento == null
-                      ? "-"
-                      : "${usuario.fechaNacimiento!.day}/${usuario.fechaNacimiento!.month}/${usuario.fechaNacimiento!.year}",
+                  '${usuario.fechaNacimiento.day}/${usuario.fechaNacimiento.month}/${usuario.fechaNacimiento.year}',
                 ),
               ],
             ),

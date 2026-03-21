@@ -80,16 +80,24 @@ class _AgendaMaquinariaGlobalExcelPageState
                       if (!mobile) {
                         return Row(
                           children: [
-                            SizedBox(width: 340, child: _panelListaMaquinas(blocks)),
+                            SizedBox(
+                              width: 340,
+                              child: _panelListaMaquinas(blocks),
+                            ),
                             const VerticalDivider(width: 1),
-                            Expanded(child: _panelExcel(blocks[_selectedIndex])),
+                            Expanded(
+                              child: _panelExcel(blocks[_selectedIndex]),
+                            ),
                           ],
                         );
                       }
 
                       return Column(
                         children: [
-                          SizedBox(height: 240, child: _panelListaMaquinas(blocks)),
+                          SizedBox(
+                            height: 240,
+                            child: _panelListaMaquinas(blocks),
+                          ),
                           const Divider(height: 1),
                           Expanded(child: _panelExcel(blocks[_selectedIndex])),
                         ],
@@ -115,7 +123,7 @@ class _AgendaMaquinariaGlobalExcelPageState
           SizedBox(
             width: 160,
             child: DropdownButtonFormField<int>(
-              value: _mes,
+              initialValue: _mes,
               decoration: const InputDecoration(
                 labelText: 'Mes',
                 border: OutlineInputBorder(),
@@ -129,7 +137,7 @@ class _AgendaMaquinariaGlobalExcelPageState
           SizedBox(
             width: 160,
             child: DropdownButtonFormField<int>(
-              value: _anio,
+              initialValue: _anio,
               decoration: const InputDecoration(
                 labelText: 'Año',
                 border: OutlineInputBorder(),
@@ -164,7 +172,7 @@ class _AgendaMaquinariaGlobalExcelPageState
 
         return ListTile(
           selected: selected,
-          selectedTileColor: Colors.green.withOpacity(.08),
+          selectedTileColor: Colors.green.withValues(alpha: .08),
           title: Text(
             m.nombre,
             maxLines: 1,
@@ -529,19 +537,19 @@ class _ExcelSemana extends StatelessWidget {
 
     switch (code) {
       case 'E':
-        bg = Colors.blue.withOpacity(.15);
+        bg = Colors.blue.withValues(alpha: .15);
         fg = Colors.blue.shade800;
         break;
       case 'A':
-        bg = Colors.green.withOpacity(.18);
+        bg = Colors.green.withValues(alpha: .18);
         fg = Colors.green.shade800;
         break;
       case 'P':
-        bg = Colors.amber.withOpacity(.20);
+        bg = Colors.amber.withValues(alpha: .20);
         fg = Colors.brown.shade800;
         break;
       case 'R':
-        bg = Colors.red.withOpacity(.15);
+        bg = Colors.red.withValues(alpha: .15);
         fg = Colors.red.shade800;
         break;
       default:

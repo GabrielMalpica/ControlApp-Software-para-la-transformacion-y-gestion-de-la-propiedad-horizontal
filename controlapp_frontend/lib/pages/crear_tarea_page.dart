@@ -8,7 +8,10 @@ import '../api/cronograma_api.dart';
 
 import '../model/conjunto_model.dart';
 import '../model/maquinaria_model.dart';
+import '../service/app_router.dart';
 import '../service/theme.dart';
+import '../utils/schedule_utils.dart';
+import '../widgets/section_card.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -178,8 +181,9 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
       _maquinariaSeleccionadaIds.clear();
       _supervisorId = null;
-      _cargarLimiteSemana(conjunto.nit);
     });
+
+    _cargarLimiteSemana(conjunto.nit);
   }
 
   Future<void> _seleccionarFechaInicio() async {
@@ -352,72 +356,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
   int _minutosDelDia(DateTime d) => d.hour * 60 + d.minute;
 
-  int? _parseHoraMin(String? raw) {
-    if (raw == null || raw.trim().isEmpty) return null;
-    final parts = raw.trim().split(':');
-    if (parts.length < 2) return null;
-
-    final h = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
-      return null;
-    }
-    return (h * 60) + m;
-  }
-
-  String _fmtMin(int min) {
-    final h = (min ~/ 60).toString().padLeft(2, '0');
-    final m = (min % 60).toString().padLeft(2, '0');
-    return '$h:$m';
-  }
-
-  String _normalizarDia(String raw) {
-    var out = raw.trim().toUpperCase();
-    const repl = {
-      'Á': 'A',
-      'É': 'E',
-      'Í': 'I',
-      'Ó': 'O',
-      'Ú': 'U',
-      'Ü': 'U',
-      'Ñ': 'N',
-      '_': '',
-      '-': '',
-      ' ': '',
-    };
-    repl.forEach((k, v) => out = out.replaceAll(k, v));
-    return out;
-  }
-
-  int? _weekdayDesdeDiaHorario(String? rawDia) {
-    if (rawDia == null) return null;
-    switch (_normalizarDia(rawDia)) {
-      case 'LUNES':
-      case 'MONDAY':
-        return DateTime.monday;
-      case 'MARTES':
-      case 'TUESDAY':
-        return DateTime.tuesday;
-      case 'MIERCOLES':
-      case 'WEDNESDAY':
-        return DateTime.wednesday;
-      case 'JUEVES':
-      case 'THURSDAY':
-        return DateTime.thursday;
-      case 'VIERNES':
-      case 'FRIDAY':
-        return DateTime.friday;
-      case 'SABADO':
-      case 'SATURDAY':
-        return DateTime.saturday;
-      case 'DOMINGO':
-      case 'SUNDAY':
-        return DateTime.sunday;
-      default:
-        return null;
-    }
-  }
-
   String _nombreDiaEs(int weekday) {
     switch (weekday) {
       case DateTime.monday:
@@ -461,7 +399,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     }
 
     final horariosDelDia = horarios
-        .where((h) => _weekdayDesdeDiaHorario(h.dia) == inicio.weekday)
+        .where((h) => weekdayFromScheduleDay(h.dia) == inicio.weekday)
         .toList();
     if (horariosDelDia.isEmpty) {
       return 'El conjunto no tiene horario para ${_nombreDiaEs(inicio.weekday)}.';
@@ -474,14 +412,14 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     final rangosPermitidos = <String>[];
 
     for (final h in horariosDelDia) {
-      final apertura = _parseHoraMin(h.horaApertura);
-      final cierre = _parseHoraMin(h.horaCierre);
+      final apertura = parseHourToMinutes(h.horaApertura);
+      final cierre = parseHourToMinutes(h.horaCierre);
       if (apertura == null || cierre == null || cierre <= apertura) continue;
 
       hayHorarioValido = true;
 
-      final descansoInicio = _parseHoraMin(h.descansoInicio);
-      final descansoFin = _parseHoraMin(h.descansoFin);
+      final descansoInicio = parseHourToMinutes(h.descansoInicio);
+      final descansoFin = parseHourToMinutes(h.descansoFin);
       final tieneDescanso =
           descansoInicio != null &&
           descansoFin != null &&
@@ -490,13 +428,15 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           descansoFin > descansoInicio;
 
       if (!tieneDescanso) {
-        rangosPermitidos.add('${_fmtMin(apertura)}-${_fmtMin(cierre)}');
+        rangosPermitidos.add(
+          '${formatMinutesAsHour(apertura)}-${formatMinutesAsHour(cierre)}',
+        );
         if (iniMin >= apertura && finMin <= cierre) return null;
         continue;
       }
 
       rangosPermitidos.add(
-        '${_fmtMin(apertura)}-${_fmtMin(descansoInicio!)} y ${_fmtMin(descansoFin!)}-${_fmtMin(cierre)}',
+        '${formatMinutesAsHour(apertura)}-${formatMinutesAsHour(descansoInicio)} y ${formatMinutesAsHour(descansoFin)}-${formatMinutesAsHour(cierre)}',
       );
       final cabeAntesDescanso = iniMin >= apertura && finMin <= descansoInicio;
       final cabeDespuesDescanso = iniMin >= descansoFin && finMin <= cierre;
@@ -566,9 +506,10 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         final minutosConNueva = minutosSemana + duracionMinutos;
 
         if (minutosConNueva > limiteMinutosSemana) {
+          if (!mounted) return false;
           await showDialog(
             context: context,
-            builder: (_) => AlertDialog(
+            builder: (dialogContext) => AlertDialog(
               title: const Text('Límite semanal superado'),
               content: Text(
                 'El operario $opId supera el límite semanal.\n\n'
@@ -578,7 +519,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
                   child: const Text('Aceptar'),
                 ),
               ],
@@ -590,6 +531,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
       return true;
     } catch (e) {
+      if (!mounted) return false;
       AppFeedback.showFromSnackBar(
         context,
         SnackBar(
@@ -606,12 +548,12 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
     await showDialog<void>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Éxito'),
         content: const Text('Tarea correctiva creada correctamente.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Aceptar'),
           ),
         ],
@@ -626,7 +568,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
     Navigator.pushNamedAndRemoveUntil(
       context,
-      '/home-gerente',
+      AppRouter.homeGerente,
       (route) => false,
     );
   }
@@ -676,7 +618,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       '⚠️ No había disponibilidad en el horario que seleccionaste.',
       if ((motivo ?? '').trim().isNotEmpty) '\n$motivo',
       '\n${linea("Solicitado", solicitadaIni, solicitadaFin)}',
-      '${linea("Programado", asignadaIni, asignadaFin)}',
+      linea('Programado', asignadaIni, asignadaFin),
     ].join('\n');
 
     await showDialog(
@@ -774,6 +716,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         final nuevaDur = sugFin.difference(sugIni).inMinutes;
         if (nuevaDur > 0) _duracionCtrl.text = nuevaDur.toString();
 
+        if (!mounted) return;
         AppFeedback.showFromSnackBar(
           context,
           const SnackBar(content: Text('✅ Sugerencia aplicada al formulario.')),
@@ -783,6 +726,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       return;
     }
 
+    if (!mounted) return;
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -792,29 +736,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Aceptar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<bool?> _dialogSugerenciaHorario(DateTime ini, DateTime fin) {
-    return showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("No hay espacio en ese horario"),
-        content: Text(
-          "A esa hora no hay disponibilidad.\n\n"
-          "Sugerencia: ${_fmtDateTime(ini)} → ${_fmtDateTime(fin)}",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancelar"),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Usar sugerencia"),
           ),
         ],
       ),
@@ -845,118 +766,6 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             child: const Text("Reemplazar preventiva"),
           ),
         ],
-      ),
-    );
-  }
-
-  Future<List<int>?> _dialogSeleccionOpcionReemplazo(
-    List<dynamic> opciones, {
-    required bool critical,
-    String? title,
-  }) async {
-    if (opciones.isEmpty) return null;
-
-    if (opciones.length == 1) {
-      final o = (opciones.first as Map).cast<String, dynamic>();
-      final resumen = (o['resumen'] ?? 'Se reemplazará una preventiva')
-          .toString();
-      final idsRaw = (o['reemplazarIds'] as List?) ?? const [];
-      final ids = idsRaw
-          .map((e) => int.tryParse(e.toString()))
-          .whereType<int>()
-          .toList();
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (_) => AlertDialog(
-          backgroundColor: critical ? const Color(0xFFFEE2E2) : null,
-          title: Text(
-            title ??
-                (critical ? "Confirmación crítica" : "Confirmar reemplazo"),
-            style: TextStyle(color: critical ? const Color(0xFFB91C1C) : null),
-          ),
-          content: Text(resumen),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text("No"),
-            ),
-            ElevatedButton(
-              style: critical
-                  ? ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFDC2626),
-                    )
-                  : null,
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text("Sí, reemplazar"),
-            ),
-          ],
-        ),
-      );
-      if (ok == true && ids.isNotEmpty) return ids;
-      return null;
-    }
-
-    int selectedIndex = 0;
-    return showDialog<List<int>>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setStateDialog) {
-          return AlertDialog(
-            backgroundColor: critical ? const Color(0xFFFEE2E2) : null,
-            title: Text(
-              title ?? "Elegir opción de reemplazo",
-              style: TextStyle(
-                color: critical ? const Color(0xFFB91C1C) : null,
-              ),
-            ),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: opciones.length,
-                itemBuilder: (_, i) {
-                  final o = (opciones[i] as Map).cast<String, dynamic>();
-                  final resumen = (o['resumen'] ?? 'Opción ${i + 1}')
-                      .toString();
-                  return RadioListTile<int>(
-                    value: i,
-                    groupValue: selectedIndex,
-                    title: Text(resumen),
-                    onChanged: (v) {
-                      if (v == null) return;
-                      setStateDialog(() => selectedIndex = v);
-                    },
-                  );
-                },
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, null),
-                child: const Text("Cancelar"),
-              ),
-              ElevatedButton(
-                style: critical
-                    ? ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFDC2626),
-                      )
-                    : null,
-                onPressed: () {
-                  final selected = (opciones[selectedIndex] as Map)
-                      .cast<String, dynamic>();
-                  final idsRaw =
-                      (selected['reemplazarIds'] as List?) ?? const [];
-                  final ids = idsRaw
-                      .map((e) => int.tryParse(e.toString()))
-                      .whereType<int>()
-                      .toList();
-                  Navigator.pop(ctx, ids.isEmpty ? null : ids);
-                },
-                child: const Text("Continuar"),
-              ),
-            ],
-          );
-        },
       ),
     );
   }
@@ -1094,8 +903,9 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                     noticeOnly: noticeOnly,
                   );
                   final tareas = _parseReemplazoTareas(o['tareas']);
-                  final resumen =
-                      (o['resumen'] ?? 'Opcion ${i + 1}').toString().trim();
+                  final resumen = (o['resumen'] ?? 'Opcion ${i + 1}')
+                      .toString()
+                      .trim();
                   final selected = selectedIndex == i;
 
                   return Container(
@@ -1104,58 +914,75 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                       color: soft,
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color:
-                            selected ? accent : accent.withOpacity(0.35),
+                        color: selected
+                            ? accent
+                            : accent.withValues(alpha: 0.35),
                         width: selected ? 2 : 1,
                       ),
                     ),
-                    child: RadioListTile<int>(
-                      value: i,
-                      groupValue: selectedIndex,
-                      activeColor: accent,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      title: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            resumen,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.78),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              _etiquetaSeveridadReemplazo(
-                                critical: critical,
-                                noticeOnly: noticeOnly,
-                                prioridadObjetivo: prioridadObjetivo,
-                              ),
-                              style: TextStyle(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () => setStateDialog(() => selectedIndex = i),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Icon(
+                                selected
+                                    ? Icons.radio_button_checked_rounded
+                                    : Icons.radio_button_off_rounded,
                                 color: accent,
-                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    resumen,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.78,
+                                      ),
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Text(
+                                      _etiquetaSeveridadReemplazo(
+                                        critical: critical,
+                                        noticeOnly: noticeOnly,
+                                        prioridadObjetivo: prioridadObjetivo,
+                                      ),
+                                      style: TextStyle(
+                                        color: accent,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(_previewTareasReemplazo(tareas)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Text(_previewTareasReemplazo(tareas)),
-                      ),
-                      onChanged: (v) {
-                        if (v == null) return;
-                        setStateDialog(() => selectedIndex = v);
-                      },
                     ),
                   );
                 },
@@ -1184,7 +1011,10 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
   }) async {
     final critical = opcion['critical'] == true;
     final noticeOnly = opcion['noticeOnly'] == true;
-    final prioridadObjetivo = _intValue(opcion['prioridadObjetivo'], fallback: 3);
+    final prioridadObjetivo = _intValue(
+      opcion['prioridadObjetivo'],
+      fallback: 3,
+    );
     final tareas = _parseReemplazoTareas(opcion['tareas']);
     final accent = _reemplazoAccentColor(
       critical: critical,
@@ -1229,7 +1059,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                   decoration: BoxDecoration(
                     color: soft,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: accent.withOpacity(0.35)),
+                    border: Border.all(color: accent.withValues(alpha: 0.35)),
                   ),
                   child: Text(
                     textoRegla,
@@ -1258,7 +1088,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: soft.withOpacity(0.65),
+                        color: soft.withValues(alpha: 0.65),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(_detalleTareaReemplazo(t)),
@@ -1277,9 +1107,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: accent),
             onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              noticeOnly ? 'Entendido, continuar' : 'Si, reemplazar',
-            ),
+            child: Text(noticeOnly ? 'Entendido, continuar' : 'Si, reemplazar'),
           ),
         ],
       ),
@@ -1451,6 +1279,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     }
 
     final okSemana = await _validarLimiteSemanal(inicio, duracionMin);
+    if (!mounted) return;
     if (!okSemana) return;
 
     setState(() => _guardando = true);
@@ -1475,10 +1304,11 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       );
 
       final resp = await _tareaApi.crearTarea(req);
+      if (!mounted) return;
 
       // ✅ CAMBIO: si fue OK, mostrar AlertDialog si el backend ajustó horario
       if (_backendOk(resp)) {
-        if (resp is Map) {
+        if (resp is Map<String, dynamic>) {
           final autoOk = (resp['autoReplaced'] as List?) ?? const [];
           _informarAutoReemplazos(autoOk);
           _informarNoCompletadasPorReemplazo(resp['noCompletadasIds']);
@@ -1510,6 +1340,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               asignadaFin: asgFin,
               motivo: motivo,
             );
+            if (!mounted) return;
           }
         }
 
@@ -1533,6 +1364,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             sugIni != null &&
             sugFin != null) {
           final decision = await _dialogMoverOReemplazar(sugIni, sugFin);
+          if (!mounted) return;
           if (decision == 'MOVE') {
             final req2 = TareaRequest(
               descripcion: req.descripcion,
@@ -1551,6 +1383,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             );
 
             final resp2 = await _tareaApi.crearTarea(req2);
+            if (!mounted) return;
             if (_backendOk(resp2)) {
               final auto2 = (resp2['autoReplaced'] as List?) ?? const [];
               _informarAutoReemplazos(auto2);
@@ -1598,7 +1431,10 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           final o = raw.cast<String, dynamic>();
           final ids = toIds(o['reemplazarIds']);
           if (ids.isEmpty) continue;
-          final prioridadObjetivo = _intValue(o['prioridadObjetivo'], fallback: 3);
+          final prioridadObjetivo = _intValue(
+            o['prioridadObjetivo'],
+            fallback: 3,
+          );
           opcionesDisponibles.add({
             ...o,
             'reemplazarIds': ids,
@@ -1651,7 +1487,9 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               respMap['confirmationRequiresReason'] == true ||
               replacementPriority <= 2;
           final fallbackNoticeOnly =
-              replacementPriority == 3 && !fallbackCritical && !fallbackRequiresReason;
+              replacementPriority == 3 &&
+              !fallbackCritical &&
+              !fallbackRequiresReason;
 
           for (final raw in reemplazables) {
             if (raw is! Map) continue;
@@ -1681,6 +1519,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           opcionesDisponibles,
           title: 'Elegir preventiva a reemplazar',
         );
+        if (!mounted) return;
         if (seleccion == null) {
           AppFeedback.showFromSnackBar(
             context,
@@ -1700,6 +1539,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           seleccion,
           prioridadCorrectiva: req.prioridad,
         );
+        if (!mounted) return;
         if (!confirmado) {
           AppFeedback.showFromSnackBar(
             context,
@@ -1715,6 +1555,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         String? motivoReemplazo;
         if (requiereAccion) {
           accionReemplazadas = await _dialogAccionReemplazo();
+          if (!mounted) return;
           if (accionReemplazadas == null) {
             AppFeedback.showFromSnackBar(
               context,
@@ -1727,6 +1568,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             motivoReemplazo = await _dialogMotivoReemplazo(
               critical: confirmacionCritica,
             );
+            if (!mounted) return;
             if (motivoReemplazo == null || motivoReemplazo.trim().isEmpty) {
               AppFeedback.showFromSnackBar(
                 context,
@@ -1743,6 +1585,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           accionReemplazadas: accionReemplazadas,
           motivoReemplazo: motivoReemplazo,
         );
+        if (!mounted) return;
 
         if (_backendOk(resp3)) {
           final auto3 = (resp3['autoReplaced'] as List?) ?? const [];
@@ -1818,238 +1661,248 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                "1. Dónde se realizará",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                initialValue: _conjuntoSeleccionado?.nit,
-                decoration: const InputDecoration(
-                  labelText: "Conjunto",
-                  border: OutlineInputBorder(),
+              SectionCard(
+                title: '1. Dónde se realizará',
+                subtitle:
+                    'Selecciona el conjunto, la ubicación y el elemento antes de programar la correctiva.',
+                child: Column(
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: _conjuntoSeleccionado?.nit,
+                      decoration: const InputDecoration(labelText: 'Conjunto'),
+                      items: _conjuntos
+                          .map(
+                            (c) => DropdownMenuItem(
+                              value: c.nit,
+                              child: Text(c.nombre),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        final c = _conjuntos.firstWhere((x) => x.nit == value);
+                        _refrescarDatosConjunto(c);
+                      },
+                      validator: (v) =>
+                          v == null ? 'Seleccione un conjunto' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<int>(
+                      initialValue: _ubicacionSeleccionada?.id,
+                      decoration: const InputDecoration(labelText: 'Ubicación'),
+                      items: _ubicaciones
+                          .map(
+                            (u) => DropdownMenuItem(
+                              value: u.id,
+                              child: Text(u.nombre),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        final u = _ubicaciones.firstWhere((x) => x.id == value);
+                        setState(() {
+                          _ubicacionSeleccionada = u;
+                          _elementos = u.elementos;
+                          _elementoSeleccionado = null;
+                        });
+                      },
+                      validator: (v) =>
+                          v == null ? 'Seleccione una ubicación' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<int>(
+                      initialValue: _elementoSeleccionado?.id,
+                      decoration: const InputDecoration(labelText: 'Elemento'),
+                      items: _elementos
+                          .map(
+                            (e) => DropdownMenuItem(
+                              value: e.id,
+                              child: Text(e.nombre),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        final el = _elementos.firstWhere((x) => x.id == value);
+                        setState(() => _elementoSeleccionado = el);
+                      },
+                      validator: (v) =>
+                          v == null ? 'Seleccione un elemento' : null,
+                    ),
+                  ],
                 ),
-                items: _conjuntos
-                    .map(
-                      (c) =>
-                          DropdownMenuItem(value: c.nit, child: Text(c.nombre)),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value == null) return;
-                  final c = _conjuntos.firstWhere((x) => x.nit == value);
-                  _refrescarDatosConjunto(c);
-                },
-                validator: (v) => v == null ? 'Seleccione un conjunto' : null,
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<int>(
-                initialValue: _ubicacionSeleccionada?.id,
-                decoration: const InputDecoration(
-                  labelText: "Ubicación",
-                  border: OutlineInputBorder(),
-                ),
-                items: _ubicaciones
-                    .map(
-                      (u) =>
-                          DropdownMenuItem(value: u.id, child: Text(u.nombre)),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value == null) return;
-                  final u = _ubicaciones.firstWhere((x) => x.id == value);
-                  setState(() {
-                    _ubicacionSeleccionada = u;
-                    _elementos = u.elementos;
-                    _elementoSeleccionado = null;
-                  });
-                },
-                validator: (v) => v == null ? 'Seleccione una ubicación' : null,
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<int>(
-                initialValue: _elementoSeleccionado?.id,
-                decoration: const InputDecoration(
-                  labelText: "Elemento",
-                  border: OutlineInputBorder(),
-                ),
-                items: _elementos
-                    .map(
-                      (e) =>
-                          DropdownMenuItem(value: e.id, child: Text(e.nombre)),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value == null) return;
-                  final el = _elementos.firstWhere((x) => x.id == value);
-                  setState(() => _elementoSeleccionado = el);
-                },
-                validator: (v) => v == null ? 'Seleccione un elemento' : null,
               ),
               const SizedBox(height: 24),
-              const Text(
-                "2. Qué se va a hacer",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _descripcionCtrl,
-                decoration: const InputDecoration(
-                  labelText: "Descripción de la tarea",
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 2,
-                validator: (v) => v == null || v.trim().isEmpty
-                    ? 'Ingrese una descripción'
-                    : null,
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<int>(
-                value: _prioridad,
-                decoration: const InputDecoration(
-                  labelText: "Prioridad",
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 1, child: Text("1 - Alta")),
-                  DropdownMenuItem(value: 2, child: Text("2 - Media")),
-                  DropdownMenuItem(value: 3, child: Text("3 - Baja")),
-                ],
-                onChanged: (v) => setState(() => _prioridad = v ?? 2),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: _seleccionarFechaInicio,
+              SectionCard(
+                title: '2. Qué se va a hacer',
+                subtitle:
+                    'Define la descripcion, prioridad, horario y observaciones de la tarea.',
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _descripcionCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Descripción de la tarea',
+                      ),
+                      maxLines: 2,
+                      validator: (v) => v == null || v.trim().isEmpty
+                          ? 'Ingrese una descripción'
+                          : null,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<int>(
+                      initialValue: _prioridad,
+                      decoration: const InputDecoration(labelText: 'Prioridad'),
+                      items: const [
+                        DropdownMenuItem(value: 1, child: Text("1 - Alta")),
+                        DropdownMenuItem(value: 2, child: Text("2 - Media")),
+                        DropdownMenuItem(value: 3, child: Text("3 - Baja")),
+                      ],
+                      onChanged: (v) => setState(() => _prioridad = v ?? 2),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: _seleccionarFechaInicio,
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: "Fecha inicio",
+                                border: OutlineInputBorder(),
+                              ),
+                              child: Text(
+                                fechaInicio == null
+                                    ? "Seleccionar"
+                                    : "${fechaInicio!.day}/${fechaInicio!.month}/${fechaInicio!.year}",
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: InkWell(
+                            onTap: _seleccionarFechaFin,
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: "Fecha fin",
+                                border: OutlineInputBorder(),
+                              ),
+                              child: Text(
+                                fechaFin == null
+                                    ? "Seleccionar"
+                                    : "${fechaFin!.day}/${fechaFin!.month}/${fechaFin!.year}",
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    InkWell(
+                      onTap: _seleccionarHoraInicio,
                       child: InputDecorator(
                         decoration: const InputDecoration(
-                          labelText: "Fecha inicio",
+                          labelText: "Hora de inicio",
                           border: OutlineInputBorder(),
                         ),
                         child: Text(
-                          fechaInicio == null
+                          _horaInicio == null
                               ? "Seleccionar"
-                              : "${fechaInicio!.day}/${fechaInicio!.month}/${fechaInicio!.year}",
+                              : _horaInicio!.format(context),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: InkWell(
-                      onTap: _seleccionarFechaFin,
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _duracionCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: "Duración estimada (minutos)",
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) {
+                          return 'Ingrese duración en minutos';
+                        }
+                        final m = int.tryParse(v.trim());
+                        if (m == null || m <= 0) return 'Minutos inválidos';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _observacionesCtrl,
+                      decoration: const InputDecoration(
+                        labelText: "Observaciones (opcional)",
+                      ),
+                      maxLines: 3,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              SectionCard(
+                title: '3. Quiénes la ejecutan',
+                subtitle:
+                    'Asigna operarios y, si aplica, un supervisor responsable para el seguimiento.',
+                child: Column(
+                  children: [
+                    InkWell(
+                      onTap: _mostrarSelectorOperarios,
                       child: InputDecorator(
                         decoration: const InputDecoration(
-                          labelText: "Fecha fin",
+                          labelText: "Operarios",
                           border: OutlineInputBorder(),
                         ),
                         child: Text(
-                          fechaFin == null
-                              ? "Seleccionar"
-                              : "${fechaFin!.day}/${fechaFin!.month}/${fechaFin!.year}",
+                          _operariosSeleccionadosIds.isEmpty
+                              ? "Seleccionar operario(s)"
+                              : "${_operariosSeleccionadosIds.length} operario(s) seleccionado(s)",
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              InkWell(
-                onTap: _seleccionarHoraInicio,
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: "Hora de inicio",
-                    border: OutlineInputBorder(),
-                  ),
-                  child: Text(
-                    _horaInicio == null
-                        ? "Seleccionar"
-                        : _horaInicio!.format(context),
-                  ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      initialValue: _supervisorId,
+                      decoration: const InputDecoration(
+                        labelText: 'Supervisor (opcional)',
+                      ),
+                      items: _supervisores
+                          .map((s) {
+                            final id = s.cedula.trim();
+                            if (id.isEmpty) return null;
+                            return DropdownMenuItem(
+                              value: id,
+                              child: Text(s.nombre),
+                            );
+                          })
+                          .whereType<DropdownMenuItem<String>>()
+                          .toList(),
+                      onChanged: (value) =>
+                          setState(() => _supervisorId = value),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _duracionCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: "Duración estimada (minutos)",
-                  border: OutlineInputBorder(),
-                ),
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) {
-                    return 'Ingrese duración en minutos';
-                  }
-                  final m = int.tryParse(v.trim());
-                  if (m == null || m <= 0) return 'Minutos inválidos';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _observacionesCtrl,
-                decoration: const InputDecoration(
-                  labelText: "Observaciones (opcional)",
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 3,
               ),
               const SizedBox(height: 24),
-              const Text(
-                "3. Quiénes la ejecutan",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: _mostrarSelectorOperarios,
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: "Operarios",
-                    border: OutlineInputBorder(),
-                  ),
-                  child: Text(
-                    _operariosSeleccionadosIds.isEmpty
-                        ? "Seleccionar operario(s)"
-                        : "${_operariosSeleccionadosIds.length} operario(s) seleccionado(s)",
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: _supervisorId,
-                decoration: const InputDecoration(
-                  labelText: "Supervisor (opcional)",
-                  border: OutlineInputBorder(),
-                ),
-                items: _supervisores
-                    .map((s) {
-                      final id = s.cedula.trim();
-                      if (id.isEmpty) return null;
-                      return DropdownMenuItem(value: id, child: Text(s.nombre));
-                    })
-                    .whereType<DropdownMenuItem<String>>()
-                    .toList(),
-                onChanged: (value) => setState(() => _supervisorId = value),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                "4. Con qué maquinaria",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: _mostrarSelectorMaquinaria,
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: "Maquinaria a prestar (opcional)",
-                    border: OutlineInputBorder(),
-                  ),
-                  child: Text(
-                    _maquinariaSeleccionadaIds.isEmpty
-                        ? "Sin maquinaria asociada"
-                        : "${_maquinariaSeleccionadaIds.length} máquina(s) seleccionada(s)",
+              SectionCard(
+                title: '4. Con qué maquinaria',
+                subtitle:
+                    'Relaciona la maquinaria necesaria para evitar olvidos en la ejecucion.',
+                child: InkWell(
+                  onTap: _mostrarSelectorMaquinaria,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: "Maquinaria a prestar (opcional)",
+                      border: OutlineInputBorder(),
+                    ),
+                    child: Text(
+                      _maquinariaSeleccionadaIds.isEmpty
+                          ? "Sin maquinaria asociada"
+                          : "${_maquinariaSeleccionadaIds.length} máquina(s) seleccionada(s)",
+                    ),
                   ),
                 ),
               ),

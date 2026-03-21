@@ -20,9 +20,7 @@ class NotificacionesCenter {
   bool _cargando = false;
   String? _usuarioActivo;
 
-  Future<void> start({
-    Duration interval = const Duration(seconds: 20),
-  }) async {
+  Future<void> start({Duration interval = const Duration(seconds: 20)}) async {
     final usuario = (await _session.getUserId())?.trim();
     if (usuario == null || usuario.isEmpty) return;
 
@@ -34,7 +32,7 @@ class NotificacionesCenter {
 
     if (_timer != null) return;
 
-    await refresh();
+    unawaited(refresh());
     _timer = Timer.periodic(interval, (_) => refresh());
   }
 

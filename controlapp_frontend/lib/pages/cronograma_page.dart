@@ -16,6 +16,8 @@ import '../service/app_error.dart';
 import '../service/session_service.dart';
 import '../service/tarea_cierre_service.dart';
 import '../service/theme.dart';
+import '../utils/schedule_utils.dart';
+import '../widgets/section_card.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -60,6 +62,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   /// Todas las tareas PUBLICADAS (preventivas + correctivas) del mes
   List<TareaModel> _tareasMes = [];
+  List<TareaModel> _tareasFiltradasCache = [];
+  List<_FilaCrono> _filasCronoMensualCache = [];
 
   /// Resumen por día (mensual)
   List<_DiaResumen> _diasResumen = [];
@@ -118,76 +122,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
     _daysInMonth = DateUtils.getDaysInMonth(_anioActual, _mesActual);
   }
 
-  TimeOfDay? _parseHora(String? raw) {
-    if (raw == null || raw.trim().isEmpty) return null;
-    final parts = raw.trim().split(':');
-    if (parts.length < 2) return null;
-    final h = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
-      return null;
-    }
-    return TimeOfDay(hour: h, minute: m);
-  }
-
-  int _toMinutes(TimeOfDay t) => t.hour * 60 + t.minute;
-
-  String _fmtMinutes(int minutes) {
-    final h = (minutes ~/ 60).toString().padLeft(2, '0');
-    final m = (minutes % 60).toString().padLeft(2, '0');
-    return '$h:$m';
-  }
-
-  String _normalizarDiaHorario(String raw) {
-    var out = raw.trim().toUpperCase();
-    const repl = {
-      'Á': 'A',
-      'É': 'E',
-      'Í': 'I',
-      'Ó': 'O',
-      'Ú': 'U',
-      'Ü': 'U',
-      'Ñ': 'N',
-      '_': '',
-      '-': '',
-      ' ': '',
-    };
-    repl.forEach((k, v) => out = out.replaceAll(k, v));
-    return out;
-  }
-
-  int? _weekdayDesdeDiaHorario(String? rawDia) {
-    if (rawDia == null) return null;
-    switch (_normalizarDiaHorario(rawDia)) {
-      case 'LUNES':
-      case 'MONDAY':
-        return DateTime.monday;
-      case 'MARTES':
-      case 'TUESDAY':
-        return DateTime.tuesday;
-      case 'MIERCOLES':
-      case 'WEDNESDAY':
-        return DateTime.wednesday;
-      case 'JUEVES':
-      case 'THURSDAY':
-        return DateTime.thursday;
-      case 'VIERNES':
-      case 'FRIDAY':
-        return DateTime.friday;
-      case 'SABADO':
-      case 'SATURDAY':
-        return DateTime.saturday;
-      case 'DOMINGO':
-      case 'SUNDAY':
-        return DateTime.sunday;
-      default:
-        return null;
-    }
-  }
-
   HorarioConjunto? _horarioConjuntoParaDia(DateTime day) {
     for (final horario in _horariosConjunto) {
-      if (_weekdayDesdeDiaHorario(horario.dia) == day.weekday) {
+      if (weekdayFromScheduleDay(horario.dia) == day.weekday) {
         return horario;
       }
     }
@@ -195,34 +132,34 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   List<_MinuteRange> _rangosDesdeHorarioConjunto(HorarioConjunto horario) {
-    final apertura = _parseHora(horario.horaApertura);
-    final cierre = _parseHora(horario.horaCierre);
+    final apertura = parseHourToTimeOfDay(horario.horaApertura);
+    final cierre = parseHourToTimeOfDay(horario.horaCierre);
     if (apertura == null || cierre == null) return const [];
 
-    final inicio = _toMinutes(apertura);
-    final fin = _toMinutes(cierre);
+    final inicio = timeOfDayToMinutes(apertura);
+    final fin = timeOfDayToMinutes(cierre);
     if (fin <= inicio) return const [];
 
     final descansoInicio = horario.descansoInicio == null
         ? null
-        : _parseHora(horario.descansoInicio);
+        : parseHourToTimeOfDay(horario.descansoInicio);
     final descansoFin = horario.descansoFin == null
         ? null
-        : _parseHora(horario.descansoFin);
+        : parseHourToTimeOfDay(horario.descansoFin);
 
     final tieneDescanso =
         descansoInicio != null &&
         descansoFin != null &&
-        _toMinutes(descansoFin) > _toMinutes(descansoInicio) &&
-        _toMinutes(descansoInicio) > inicio &&
-        _toMinutes(descansoFin) < fin;
+        timeOfDayToMinutes(descansoFin) > timeOfDayToMinutes(descansoInicio) &&
+        timeOfDayToMinutes(descansoInicio) > inicio &&
+        timeOfDayToMinutes(descansoFin) < fin;
 
     if (!tieneDescanso) {
       return [_MinuteRange(start: inicio, end: fin)];
     }
 
-    final descansoIniMin = _toMinutes(descansoInicio);
-    final descansoFinMin = _toMinutes(descansoFin);
+    final descansoIniMin = timeOfDayToMinutes(descansoInicio);
+    final descansoFinMin = timeOfDayToMinutes(descansoFin);
     final rangos = <_MinuteRange>[];
 
     if (descansoIniMin > inicio) {
@@ -244,12 +181,12 @@ class _CronogramaPageState extends State<CronogramaPage> {
     int? maxDescanso;
 
     for (final h in horarios) {
-      final apertura = _parseHora(h.horaApertura);
-      final cierre = _parseHora(h.horaCierre);
+      final apertura = parseHourToTimeOfDay(h.horaApertura);
+      final cierre = parseHourToTimeOfDay(h.horaCierre);
       if (apertura == null || cierre == null) continue;
 
-      final aperMin = _toMinutes(apertura);
-      final cierMin = _toMinutes(cierre);
+      final aperMin = timeOfDayToMinutes(apertura);
+      final cierMin = timeOfDayToMinutes(cierre);
       if (cierMin <= aperMin) continue;
 
       minApertura = minApertura == null
@@ -259,12 +196,12 @@ class _CronogramaPageState extends State<CronogramaPage> {
           ? cierMin
           : (cierMin > maxCierre ? cierMin : maxCierre);
 
-      final descansoInicio = _parseHora(h.descansoInicio);
-      final descansoFin = _parseHora(h.descansoFin);
+      final descansoInicio = parseHourToTimeOfDay(h.descansoInicio);
+      final descansoFin = parseHourToTimeOfDay(h.descansoFin);
       if (descansoInicio == null || descansoFin == null) continue;
 
-      final dIniMin = _toMinutes(descansoInicio);
-      final dFinMin = _toMinutes(descansoFin);
+      final dIniMin = timeOfDayToMinutes(descansoInicio);
+      final dFinMin = timeOfDayToMinutes(descansoFin);
       if (dFinMin <= dIniMin) continue;
 
       minDescanso = minDescanso == null
@@ -323,8 +260,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
     _horaDescansoInicio = descansoInicioHora;
     _horaDescansoFin = descansoFinHora;
     _resumenHorario = tieneDescanso
-        ? 'Horario: ${_fmtMinutes(minApertura)} - ${_fmtMinutes(maxCierre)} (descanso ${_fmtMinutes(minDescanso)}-${_fmtMinutes(maxDescanso)})'
-        : 'Horario: ${_fmtMinutes(minApertura)} - ${_fmtMinutes(maxCierre)}';
+        ? 'Horario: ${formatMinutesAsHour(minApertura)} - ${formatMinutesAsHour(maxCierre)} (descanso ${formatMinutesAsHour(minDescanso)}-${formatMinutesAsHour(maxDescanso)})'
+        : 'Horario: ${formatMinutesAsHour(minApertura)} - ${formatMinutesAsHour(maxCierre)}';
   }
 
   String _toYmd(DateTime d) =>
@@ -378,8 +315,14 @@ class _CronogramaPageState extends State<CronogramaPage> {
     }).toList();
   }
 
-  List<TareaModel> get _tareasFiltradas =>
-      _tareasMes.where(_pasaFiltros).toList();
+  List<TareaModel> get _tareasFiltradas => _tareasFiltradasCache;
+
+  void _recalcularColeccionesDerivadas() {
+    _tareasFiltradasCache = _tareasMes.where(_pasaFiltros).toList();
+    _filasCronoMensualCache = _construirFilasCronoMensual(
+      _tareasFiltradasCache,
+    );
+  }
 
   bool _esCanceladaPorReemplazo(TareaModel t) {
     final estado = (t.estado ?? '').trim().toUpperCase();
@@ -476,6 +419,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   void _aplicarFiltrosYRefrescar() {
+    _recalcularColeccionesDerivadas();
     _recalcularResumenDias();
     setState(() {});
   }
@@ -573,15 +517,19 @@ class _CronogramaPageState extends State<CronogramaPage> {
         }
       }
 
+      if (!mounted) return;
+
       setState(() {
         _tareasMes = filtradas;
         _reconstruirFiltrosDisponibles();
+        _recalcularColeccionesDerivadas();
         _festivosYmd = setYmd;
         _festivoNombrePorYmd = nombrePorYmd;
         _aplicarHorarioConjunto(horarios: horarios, tareasMes: filtradas);
         _recalcularResumenDias();
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -653,6 +601,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       // seguimos con inventario vacío
     }
 
+    if (!mounted) return;
     final res = await showModalBottomSheet<CerrarTareaResult>(
       context: context,
       isScrollControlled: true,
@@ -725,38 +674,43 @@ class _CronogramaPageState extends State<CronogramaPage> {
     return letters[d.weekday - 1];
   }
 
-  Widget _ddTipo() {
+  Widget _buildFiltroDropdown({
+    required String label,
+    required String value,
+    required List<DropdownMenuItem<String>> items,
+    required ValueChanged<String> onChanged,
+  }) {
     return DropdownButtonFormField<String>(
       isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Tipo',
-        border: OutlineInputBorder(),
-        isDense: true,
-      ),
-      value: _filtroTipo,
-      items: const [
-        DropdownMenuItem(value: 'TODAS', child: Text('Todas')),
-        DropdownMenuItem(value: 'PREVENTIVA', child: Text('Preventivas')),
-        DropdownMenuItem(value: 'CORRECTIVA', child: Text('Correctivas')),
-      ],
+      initialValue: value,
+      decoration: InputDecoration(labelText: label, isDense: true),
+      items: items,
       onChanged: (v) {
         if (v == null) return;
-        setState(() => _filtroTipo = v);
+        onChanged(v);
         _aplicarFiltrosYRefrescar();
       },
     );
   }
 
+  Widget _ddTipo() {
+    return _buildFiltroDropdown(
+      label: 'Tipo',
+      value: _filtroTipo,
+      items: const <DropdownMenuItem<String>>[
+        DropdownMenuItem(value: 'TODAS', child: Text('Todas')),
+        DropdownMenuItem(value: 'PREVENTIVA', child: Text('Preventivas')),
+        DropdownMenuItem(value: 'CORRECTIVA', child: Text('Correctivas')),
+      ],
+      onChanged: (v) => setState(() => _filtroTipo = v),
+    );
+  }
+
   Widget _ddEstado() {
-    return DropdownButtonFormField<String>(
-      isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Estado',
-        border: OutlineInputBorder(),
-        isDense: true,
-      ),
+    return _buildFiltroDropdown(
+      label: 'Estado',
       value: _filtroEstado,
-      items: const [
+      items: const <DropdownMenuItem<String>>[
         DropdownMenuItem(value: 'TODOS', child: Text('Todos')),
         DropdownMenuItem(value: 'ASIGNADA', child: Text('Asignada')),
         DropdownMenuItem(value: 'EN_PROCESO', child: Text('En proceso')),
@@ -773,57 +727,35 @@ class _CronogramaPageState extends State<CronogramaPage> {
           child: Text('Pendiente reprogramación'),
         ),
       ],
-      onChanged: (v) {
-        if (v == null) return;
-        setState(() => _filtroEstado = v);
-        _aplicarFiltrosYRefrescar();
-      },
+      onChanged: (v) => setState(() => _filtroEstado = v),
     );
   }
 
   Widget _ddOperario() {
-    return DropdownButtonFormField<String>(
-      isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Operario',
-        border: OutlineInputBorder(),
-        isDense: true,
-      ),
+    return _buildFiltroDropdown(
+      label: 'Operario',
       value: _filtroOperario,
-      items: [
+      items: <DropdownMenuItem<String>>[
         const DropdownMenuItem(value: 'TODOS', child: Text('Todos')),
         ..._operariosDisponibles.map(
           (o) => DropdownMenuItem(value: o, child: Text(o)),
         ),
       ],
-      onChanged: (v) {
-        if (v == null) return;
-        setState(() => _filtroOperario = v);
-        _aplicarFiltrosYRefrescar();
-      },
+      onChanged: (v) => setState(() => _filtroOperario = v),
     );
   }
 
   Widget _ddUbicacion() {
-    return DropdownButtonFormField<String>(
-      isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Ubicación',
-        border: OutlineInputBorder(),
-        isDense: true,
-      ),
+    return _buildFiltroDropdown(
+      label: 'Ubicación',
       value: _filtroUbicacion,
-      items: [
+      items: <DropdownMenuItem<String>>[
         const DropdownMenuItem(value: 'TODAS', child: Text('Todas')),
         ..._ubicacionesDisponibles.map(
           (u) => DropdownMenuItem(value: u, child: Text(u)),
         ),
       ],
-      onChanged: (v) {
-        if (v == null) return;
-        setState(() => _filtroUbicacion = v);
-        _aplicarFiltrosYRefrescar();
-      },
+      onChanged: (v) => setState(() => _filtroUbicacion = v),
     );
   }
 
@@ -831,22 +763,17 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final w = MediaQuery.of(context).size.width;
     final isNarrow = w < 760;
 
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return SectionCard(
+      title: 'Filtros',
+      subtitle:
+          'Ajusta la vista mensual por tipo, estado, responsable y ubicación.',
+      padding: const EdgeInsets.all(12),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: EdgeInsets.zero,
         child: Column(
           children: [
             Row(
               children: [
-                Text(
-                  'Filtros',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade900,
-                  ),
-                ),
                 const Spacer(),
                 TextButton.icon(
                   onPressed: _limpiarFiltros,
@@ -888,31 +815,30 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   Widget _buildFiltrosComoColumna({bool mostrarTitulo = true}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (mostrarTitulo) ...[
-          const Text(
-            'Filtros',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-          ),
-          const SizedBox(height: 10),
+    return SectionCard(
+      title: mostrarTitulo ? 'Filtros' : null,
+      subtitle: mostrarTitulo
+          ? 'Filtra la planeacion para revisar solo lo que necesitas.'
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ddTipo(),
+          const SizedBox(height: 8),
+          _ddEstado(),
+          const SizedBox(height: 8),
+          _ddOperario(),
+          const SizedBox(height: 8),
+          _ddUbicacion(),
         ],
-        _ddTipo(),
-        const SizedBox(height: 8),
-        _ddEstado(),
-        const SizedBox(height: 8),
-        _ddOperario(),
-        const SizedBox(height: 8),
-        _ddUbicacion(),
-      ],
+      ),
     );
   }
 
-  List<_FilaCrono> _buildFilasCronoMensual() {
+  List<_FilaCrono> _construirFilasCronoMensual(List<TareaModel> tareas) {
     final Map<String, _FilaCrono> rows = {};
 
-    for (final t in _tareasFiltradas) {
+    for (final t in tareas) {
       final esCorrectiva = (t.tipo ?? '').trim().toUpperCase() == 'CORRECTIVA';
       final ubic = (t.ubicacionNombre ?? 'ID ${t.ubicacionId}').trim();
       final objeto = (_nombreObjeto(t) ?? 'ID ${t.elementoId}').trim();
@@ -1014,7 +940,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   Widget _buildCronogramaMensualTipoFoto() {
-    final filas = _buildFilasCronoMensual();
+    final filas = _filasCronoMensualCache;
 
     const wFrecuencia = 120.0;
     const wDiagnostico = 260.0;
@@ -1527,7 +1453,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                     leading: CircleAvatar(
                       radius: 20,
                       backgroundColor: tieneTareas
-                          ? AppTheme.primary.withOpacity(0.12)
+                          ? AppTheme.primary.withValues(alpha: 0.12)
                           : Colors.grey.shade200,
                       child: Text(
                         '$total',
@@ -1590,123 +1516,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
         final alto = MediaQuery.of(ctx).size.height * 0.8;
         final bloques = _generarBloquesDia(fechaBase);
         return _buildDiaSheet(ctx, alto, bloques, fechaBase);
-
-        _BloqueHora? bloqueSeleccionado;
-
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            void seleccionarBloque(_BloqueHora b) {
-              setModalState(() => bloqueSeleccionado = b);
-            }
-
-            return SizedBox(
-              height: alto,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          'Tareas del día - $dia ${DateFormat.MMMM('es').format(fechaBase)}',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final isNarrow = constraints.maxWidth < 820;
-
-                        Widget bloquesList() => ListView.separated(
-                          padding: const EdgeInsets.all(8),
-                          itemCount: bloques.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 4),
-                          itemBuilder: (context, index) {
-                            final b = bloques[index];
-                            final horaIni = TimeOfDay.fromDateTime(
-                              b.inicio,
-                            ).format(ctx);
-                            final horaFin = TimeOfDay.fromDateTime(
-                              b.fin,
-                            ).format(ctx);
-                            final count = b.tareas.length;
-                            final seleccionado = bloqueSeleccionado == b;
-
-                            return Card(
-                              color: seleccionado
-                                  ? AppTheme.primary.withOpacity(0.1)
-                                  : Colors.white,
-                              child: ListTile(
-                                title: Text('$horaIni - $horaFin'),
-                                subtitle: Text(
-                                  '$count ${count == 1 ? 'tarea' : 'tareas'}',
-                                ),
-                                onTap: () => seleccionarBloque(b),
-                              ),
-                            );
-                          },
-                        );
-
-                        Widget tareasList() => bloqueSeleccionado == null
-                            ? const Center(
-                                child: Text(
-                                  'Selecciona un bloque para ver las tareas.',
-                                ),
-                              )
-                            : ListView.separated(
-                                padding: const EdgeInsets.all(8),
-                                itemCount: bloqueSeleccionado!.tareas.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 8),
-                                itemBuilder: (context, index) {
-                                  final t = bloqueSeleccionado!.tareas[index];
-                                  return _buildTareaTile(t, ctx);
-                                },
-                              );
-
-                        if (isNarrow) {
-                          return Column(
-                            children: [
-                              SizedBox(height: 210, child: bloquesList()),
-                              const Divider(height: 1),
-                              Expanded(child: tareasList()),
-                            ],
-                          );
-                        }
-
-                        return Row(
-                          children: [
-                            Expanded(flex: 2, child: bloquesList()),
-                            Expanded(flex: 3, child: tareasList()),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
       },
     );
 
-    setState(() => _recalcularResumenDias());
+    if (!mounted) return;
+    setState(_recalcularResumenDias);
   }
 
   Widget _buildTareaTile(
@@ -1990,7 +1804,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   Widget _buildLeyendaMensual() {
     final usados = <String>{};
-    for (final f in _buildFilasCronoMensual()) {
+    for (final f in _filasCronoMensualCache) {
       usados.addAll(f.porDia.values.where((x) => x.trim().isNotEmpty));
     }
 
@@ -2013,9 +1827,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: AppTheme.primary.withOpacity(0.06),
+              color: AppTheme.primary.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: AppTheme.primary.withOpacity(0.18)),
+              border: Border.all(
+                color: AppTheme.primary.withValues(alpha: 0.18),
+              ),
             ),
             child: Text(
               '$code = $label',
@@ -2590,12 +2406,12 @@ class _CronogramaPageState extends State<CronogramaPage> {
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
                           color: highlight
-                              ? AppTheme.primary.withOpacity(0.08)
+                              ? AppTheme.primary.withValues(alpha: 0.08)
                               : Colors.grey.shade50,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: highlight
-                                ? AppTheme.primary.withOpacity(0.25)
+                                ? AppTheme.primary.withValues(alpha: 0.25)
                                 : Colors.grey.shade300,
                           ),
                         ),
@@ -3170,7 +2986,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 top: lunchStartMin * pxPorMin,
                                 height: lunchDurMin * pxPorMin,
                                 child: Container(
-                                  color: Colors.orange.withOpacity(0.12),
+                                  color: Colors.orange.withValues(alpha: 0.12),
                                 ),
                               ),
                             ...taskPlacements.map((placement) {
@@ -3190,8 +3006,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                               final fullWidth = colWidth - (dayPadding * 2);
 
                               final colorBase = AppTheme.primary;
-                              final fill = colorBase.withOpacity(0.12);
-                              final border = colorBase.withOpacity(0.55);
+                              final fill = colorBase.withValues(alpha: 0.12);
+                              final border = colorBase.withValues(alpha: 0.55);
 
                               final horaIni = DateFormat('HH:mm').format(ini);
                               final horaFinStr = DateFormat(
@@ -3219,7 +3035,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                     .take(2)
                                     .join(' / ');
                                 final extra = placement.groupSize - 2;
-                                const markerHeight = 68.0;
+                                const markerHeight = 72.0;
 
                                 return Positioned(
                                   left: left,
@@ -3236,7 +3052,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                         7,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.amber.withOpacity(0.14),
+                                        color: Colors.amber.withValues(
+                                          alpha: 0.14,
+                                        ),
                                         borderRadius: BorderRadius.circular(10),
                                         border: Border.all(
                                           color: Colors.amber.shade700,
@@ -3244,6 +3062,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                         ),
                                       ),
                                       child: Column(
+                                        mainAxisSize: MainAxisSize.min,
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
@@ -3593,10 +3412,10 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                       child: Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: AppTheme.primary.withOpacity(0.08),
+                          color: AppTheme.primary.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: AppTheme.primary.withOpacity(0.25),
+                            color: AppTheme.primary.withValues(alpha: 0.25),
                           ),
                         ),
                         child: Column(

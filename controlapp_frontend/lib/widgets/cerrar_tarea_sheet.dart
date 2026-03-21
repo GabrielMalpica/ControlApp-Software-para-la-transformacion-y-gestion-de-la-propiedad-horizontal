@@ -436,7 +436,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                         child: Column(
                           children: [
                             DropdownButtonFormField<int>(
-                              value: row.insumoId,
+                              initialValue: row.insumoId,
                               decoration: const InputDecoration(
                                 labelText: 'Insumo',
                                 border: OutlineInputBorder(),

@@ -54,7 +54,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   // ✅ Cache de dropdown items (evita freeze fuerte)
   List<DropdownMenuItem<int>> _insumoItems = [];
-  List<DropdownMenuItem<int>> _maquinariaItems = [];
   List<DropdownMenuItem<int>> _herramientaItems = [];
 
   // Controllers básicos
@@ -185,8 +184,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         fechaFinUso: finUso,
         excluirTareaId: widget.existente?.id,
       );
-      print(r);
-
       if (!mounted) return;
 
       for (final o in r.ocupadas) {
@@ -198,61 +195,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       if (!mounted) return;
       _snack('Error consultando disponibilidad: $e', type: SnackType.error);
     } finally {
-      if (!mounted) return;
-      setState(() => _cargandoDispMaq = false);
+      if (mounted) {
+        setState(() => _cargandoDispMaq = false);
+      }
     }
-  }
-
-  // ✅ Filtrado: si ya consultaste, muestra solo disponibles
-  List<_MaqOption> _maqOptionsDisponibles() {
-    if (_dispMaq == null) {
-      // fallback: si no consultaste, muestra catálogo general como "EMPRESA" por defecto
-      return _catalogoMaquinaria
-          .map(
-            (m) => _MaqOption(
-              id: m.id,
-              nombre: m.nombre,
-              origen: 'EMPRESA',
-              marca: m.marca,
-            ),
-          )
-          .toList();
-    }
-
-    final opts = <_MaqOption>[];
-
-    // disponibles del conjunto
-    for (final m in _dispMaq!.propiasDisponibles) {
-      opts.add(
-        _MaqOption(
-          id: m.id,
-          nombre: m.nombre,
-          origen: 'CONJUNTO',
-          marca: m.marca,
-        ),
-      );
-    }
-
-    // disponibles empresa
-    for (final m in _dispMaq!.empresaDisponibles) {
-      opts.add(
-        _MaqOption(
-          id: m.id,
-          nombre: m.nombre,
-          origen: 'EMPRESA',
-          marca: m.marca,
-        ),
-      );
-    }
-
-    // opcional: ordena alfabético, o primero conjunto y luego empresa
-    opts.sort((a, b) {
-      final o = a.origen.compareTo(b.origen);
-      if (o != 0) return o; // CONJUNTO primero si quieres, ajusta
-      return a.nombre.compareTo(b.nombre);
-    });
-
-    return opts;
   }
 
   // ===========================
@@ -301,9 +247,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       if (!mounted) return;
       setState(() {
         _catalogoMaquinaria = lista;
-        _maquinariaItems = _catalogoMaquinaria
-            .map((m) => DropdownMenuItem(value: m.id, child: Text(m.nombre)))
-            .toList(growable: false);
       });
     } catch (e) {
       if (!mounted) return;
@@ -905,7 +848,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         bg = Colors.green;
         break;
       case SnackType.info:
-      default:
         bg = Colors.blue; // o AppTheme.primary
     }
 
@@ -1189,7 +1131,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         labelText: 'Ubicación',
                         border: OutlineInputBorder(),
                       ),
-                      value: _ubicacionSeleccionada?.id,
+                      initialValue: _ubicacionSeleccionada?.id,
                       items: _ubicaciones
                           .map(
                             (u) => DropdownMenuItem(
@@ -1217,7 +1159,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         labelText: 'Elemento',
                         border: OutlineInputBorder(),
                       ),
-                      value: _elementoSeleccionado?.id,
+                      initialValue: _elementoSeleccionado?.id,
                       items: (_ubicacionSeleccionada?.elementos ?? [])
                           .map(
                             (e) => DropdownMenuItem(
@@ -1263,7 +1205,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         labelText: 'Frecuencia',
                         border: OutlineInputBorder(),
                       ),
-                      value: _frecuencia,
+                      initialValue: _frecuencia,
                       items: const ['DIARIA', 'SEMANAL', 'MENSUAL']
                           .map(
                             (f) => DropdownMenuItem(value: f, child: Text(f)),
@@ -1298,7 +1240,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           labelText: 'Día de la semana',
                           border: OutlineInputBorder(),
                         ),
-                        value: _diaSemanaProgramado,
+                        initialValue: _diaSemanaProgramado,
                         items:
                             const [
                                   'LUNES',
@@ -1328,7 +1270,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           labelText: 'Día del mes',
                           border: OutlineInputBorder(),
                         ),
-                        value: _diaMesProgramado,
+                        initialValue: _diaMesProgramado,
                         items: List.generate(31, (i) => i + 1)
                             .map(
                               (d) =>
@@ -1345,7 +1287,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         labelText: 'Prioridad',
                         border: OutlineInputBorder(),
                       ),
-                      value: prioridadValue,
+                      initialValue: prioridadValue,
                       items: const [
                         DropdownMenuItem(value: 1, child: Text('1 - Alta')),
                         DropdownMenuItem(value: 2, child: Text('2 - Media')),
@@ -1381,7 +1323,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           labelText: 'Unidad de cálculo',
                           border: OutlineInputBorder(),
                         ),
-                        value: _unidadCalculo,
+                        initialValue: _unidadCalculo,
                         items: const ['M', 'M2', 'M3', 'UNIDAD']
                             .map(
                               (u) => DropdownMenuItem(value: u, child: Text(u)),
@@ -1395,7 +1337,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           labelText: 'Base del rendimiento',
                           border: OutlineInputBorder(),
                         ),
-                        value: _rendimientoTiempoBase,
+                        initialValue: _rendimientoTiempoBase,
                         items: const [
                           DropdownMenuItem(
                             value: 'POR_MINUTO',
@@ -1551,7 +1493,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         labelText: 'Insumo principal (opcional)',
                         border: OutlineInputBorder(),
                       ),
-                      value: _insumoPrincipalId,
+                      initialValue: _insumoPrincipalId,
                       items: _insumoItems,
                       onChanged: (v) => setState(() => _insumoPrincipalId = v),
                     ),
@@ -1747,7 +1689,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         labelText: 'Supervisor responsable',
                         border: OutlineInputBorder(),
                       ),
-                      value: _supervisorResponsable?.cedula,
+                      initialValue: _supervisorResponsable?.cedula,
                       items: _supervisores
                           .map(
                             (s) => DropdownMenuItem(
@@ -1822,7 +1764,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                 labelText: 'Insumo',
                 border: OutlineInputBorder(),
               ),
-              value: row.insumoId,
+              initialValue: row.insumoId,
               items: _insumoItems,
               onChanged: (v) => setState(() => row.insumoId = v),
             ),
@@ -1907,7 +1849,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                               .trim()
                         : '⛔ Ocupada: ${ocupada.descripcion ?? ''}'.trim(),
                   ),
-                  value: row.maquinariaId,
+                  initialValue: row.maquinariaId,
                   items: items,
                   onChanged: (id) {
                     if (id == null) return;
@@ -1968,7 +1910,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                 labelText: 'Herramienta',
                 border: OutlineInputBorder(),
               ),
-              value: row.herramientaId,
+              initialValue: row.herramientaId,
               items: _herramientaItems,
               onChanged: (v) => setState(() => row.herramientaId = v),
             ),
@@ -1995,7 +1937,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                 labelText: 'Estado',
                 border: OutlineInputBorder(),
               ),
-              value: row.estado ?? 'OPERATIVA',
+              initialValue: row.estado ?? 'OPERATIVA',
               items: const [
                 DropdownMenuItem(value: 'OPERATIVA', child: Text('Operativa')),
                 DropdownMenuItem(value: 'DANADA', child: Text('Dañada')),
@@ -2035,7 +1977,7 @@ class _MaquinariaPlanRow {
   String? origen; // 'CONJUNTO' | 'EMPRESA'
   final TextEditingController tipoCtrl;
 
-  _MaquinariaPlanRow({this.maquinariaId, String? tipoInicial, this.origen})
+  _MaquinariaPlanRow({this.maquinariaId, String? tipoInicial})
     : tipoCtrl = TextEditingController(text: tipoInicial ?? '');
 }
 

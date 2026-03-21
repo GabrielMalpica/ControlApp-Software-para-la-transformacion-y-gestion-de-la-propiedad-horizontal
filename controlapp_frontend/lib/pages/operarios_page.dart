@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/widgets/dashboard_tile.dart';
+import 'package:flutter_application_1/widgets/dashboard_shell.dart';
+
 import '../service/theme.dart';
 import 'tareas_page.dart';
 import 'solicitudes_page.dart';
@@ -29,75 +32,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
     IconData icon, {
     VoidCallback? onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x14000000),
-              blurRadius: 18,
-              offset: Offset(0, 8),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Column(
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 14,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 78,
-                        height: 78,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: color.withOpacity(0.12),
-                        ),
-                        child: Icon(icon, size: 44, color: color),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ✅ franja con patrón
-              SizedBox(
-                height: 46,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Container(color: color.withOpacity(0.10)),
-                    CustomPaint(painter: _BubblePatternPainter(color)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return DashboardTile(title: title, color: color, icon: icon, onTap: onTap);
   }
 
   Future<void> _confirmLogout() async {
@@ -142,87 +77,103 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, c) {
-          final cols = _gridCountForWidth(c.maxWidth);
+      body: DashboardScaffold(
+        title: 'Panel del operario',
+        headline: '',
+        description: '',
+        leadingBadge: null,
+        trailing: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 420;
+            final cards = <Widget>[
+              Expanded(
+                child: DashboardStatusCard(
+                  label: 'Conjunto vinculado',
+                  value: widget.nit,
+                  icon: Icons.apartment_rounded,
+                  color: AppTheme.primary,
+                ),
+              ),
+              const Expanded(
+                child: DashboardStatusCard(
+                  label: 'Accesos principales',
+                  value: '2',
+                  icon: Icons.touch_app_rounded,
+                  color: AppTheme.green,
+                ),
+              ),
+            ];
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Panel general",
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                ),
-                const SizedBox(height: 12),
-                GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: cols, // ✅ ahora sí responsivo
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 1.05,
-                  children: [
-                    _simpleCard(
-                      "Tareas",
-                      AppTheme.green,
-                      Icons.assignment,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => TareasPage(nit: widget.nit),
-                          ),
-                        );
-                      },
-                    ),
-                    _simpleCard(
-                      "Solicitudes",
-                      AppTheme.primary,
-                      Icons.pending_actions,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => SolicitudesPage(nit: widget.nit),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
-        },
+            if (compact) {
+              return Column(
+                children: <Widget>[
+                  cards[0],
+                  const SizedBox(height: 12),
+                  cards[1],
+                ],
+              );
+            }
+
+            return Row(
+              children: <Widget>[cards[0], const SizedBox(width: 12), cards[1]],
+            );
+          },
+        ),
+        child: DashboardSurface(
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final cols = _gridCountForWidth(c.maxWidth);
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    'Panel general',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 18),
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: cols,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 1.05,
+                    children: [
+                      _simpleCard(
+                        'Tareas',
+                        AppTheme.green,
+                        Icons.assignment,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => TareasPage(nit: widget.nit),
+                            ),
+                          );
+                        },
+                      ),
+                      _simpleCard(
+                        'Solicitudes',
+                        AppTheme.primary,
+                        Icons.pending_actions,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => SolicitudesPage(nit: widget.nit),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }
-}
-
-class _BubblePatternPainter extends CustomPainter {
-  final Color color;
-  _BubblePatternPainter(this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color.withOpacity(0.18)
-      ..style = PaintingStyle.fill;
-
-    const xs = [0.04, 0.10, 0.22, 0.34, 0.48, 0.62, 0.74, 0.86, 0.92];
-    const ys = [0.64, 0.32, 0.78, 0.40, 0.70, 0.36, 0.78, 0.52, 0.30];
-    const rs = [3.5, 4.6, 2.8, 5.0, 3.8, 4.2, 3.0, 4.8, 3.2];
-
-    for (var i = 0; i < xs.length; i++) {
-      final c = Offset(size.width * xs[i], size.height * ys[i]);
-      canvas.drawCircle(c, rs[i], paint);
-      canvas.drawCircle(c.translate(18, -4), rs[i] * 0.55, paint);
-      canvas.drawCircle(c.translate(-14, 6), rs[i] * 0.45, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

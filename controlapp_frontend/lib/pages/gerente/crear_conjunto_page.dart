@@ -464,7 +464,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                       const SizedBox(height: 12),
                       // ADMIN
                       DropdownButtonFormField<String>(
-                        value: _adminSeleccionadoId,
+                        initialValue: _adminSeleccionadoId,
                         items: _administradores
                             .map(
                               (u) => DropdownMenuItem(

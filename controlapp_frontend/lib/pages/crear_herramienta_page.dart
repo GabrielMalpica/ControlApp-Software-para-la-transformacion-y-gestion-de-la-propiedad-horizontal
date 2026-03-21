@@ -162,7 +162,7 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
                 spacing,
 
                 DropdownButtonFormField<ModoControlHerramienta>(
-                  value: _modo,
+                  initialValue: _modo,
                   decoration: const InputDecoration(
                     labelText: "Modo de control",
                     border: OutlineInputBorder(),

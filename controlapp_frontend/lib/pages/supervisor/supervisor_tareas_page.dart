@@ -165,6 +165,7 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
       // seguimos con inventario vacío
     }
 
+    if (!mounted) return;
     final res = await showModalBottomSheet<CerrarTareaResult>(
       context: context,
       isScrollControlled: true,
@@ -298,7 +299,7 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _filtroEstado,
+                    initialValue: _filtroEstado,
                     decoration: const InputDecoration(
                       labelText: 'Estado',
                       border: OutlineInputBorder(),
@@ -342,7 +343,7 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _filtroOperario,
+                    initialValue: _filtroOperario,
                     decoration: const InputDecoration(
                       labelText: 'Operario',
                       border: OutlineInputBorder(),
@@ -364,7 +365,7 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: DropdownButtonFormField<int>(
-                    value: _semanaImprimir,
+                    initialValue: _semanaImprimir,
                     decoration: const InputDecoration(
                       labelText: 'Semana a imprimir',
                       border: OutlineInputBorder(),
@@ -426,10 +427,10 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: _colorEstado(t.estado).withOpacity(0.10),
+                    color: _colorEstado(t.estado).withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
-                      color: _colorEstado(t.estado).withOpacity(0.35),
+                      color: _colorEstado(t.estado).withValues(alpha: 0.35),
                     ),
                   ),
                   child: Text(

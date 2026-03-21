@@ -311,9 +311,9 @@ class _InventarioPageState extends State<InventarioPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Text(
         "$label: $n",
@@ -572,9 +572,9 @@ class _InventarioDataSource extends DataTableSource {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: statusColor.withOpacity(0.12),
+              color: statusColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: statusColor.withOpacity(0.25)),
+              border: Border.all(color: statusColor.withValues(alpha: 0.25)),
             ),
             child: Text(
               statusTxt,
@@ -628,9 +628,9 @@ class _HerramientaDataSource extends DataTableSource {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: estadoColor.withOpacity(0.12),
+              color: estadoColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: estadoColor.withOpacity(0.25)),
+              border: Border.all(color: estadoColor.withValues(alpha: 0.25)),
             ),
             child: Text(
               estadoTxt,
@@ -816,7 +816,7 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   DropdownButtonFormField<HerramientaResponse>(
-                    value: _selected,
+                    initialValue: _selected,
                     decoration: const InputDecoration(
                       labelText: "Herramienta (catálogo)",
                       border: OutlineInputBorder(),
@@ -845,7 +845,7 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: DropdownButtonFormField<EstadoHerramientaStock>(
-                          value: _estado,
+                          initialValue: _estado,
                           decoration: const InputDecoration(
                             labelText: "Estado",
                             border: OutlineInputBorder(),
@@ -895,3 +895,5 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
     );
   }
 }
+
+// ignore_for_file: constant_identifier_names

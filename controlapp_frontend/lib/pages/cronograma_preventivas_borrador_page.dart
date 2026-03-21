@@ -767,10 +767,10 @@ class _CronogramaPreventivasBorradorPageState
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppTheme.primary.withOpacity(0.06),
+                          color: AppTheme.primary.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: AppTheme.primary.withOpacity(0.18),
+                            color: AppTheme.primary.withValues(alpha: 0.18),
                           ),
                         ),
                         child: Text(
@@ -815,7 +815,9 @@ class _CronogramaPreventivasBorradorPageState
                                       ),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black.withOpacity(0.03),
+                                          color: Colors.black.withValues(
+                                            alpha: 0.03,
+                                          ),
                                           blurRadius: 10,
                                           offset: const Offset(0, 6),
                                         ),
@@ -829,7 +831,7 @@ class _CronogramaPreventivasBorradorPageState
                                           width: 38,
                                           height: 38,
                                           decoration: BoxDecoration(
-                                            color: c.withOpacity(0.10),
+                                            color: c.withValues(alpha: 0.10),
                                             borderRadius: BorderRadius.circular(
                                               12,
                                             ),
@@ -870,14 +872,16 @@ class _CronogramaPreventivasBorradorPageState
                                                     10,
                                                   ),
                                                   decoration: BoxDecoration(
-                                                    color: c.withOpacity(0.08),
+                                                    color: c.withValues(
+                                                      alpha: 0.08,
+                                                    ),
                                                     borderRadius:
                                                         BorderRadius.circular(
                                                           10,
                                                         ),
                                                     border: Border.all(
-                                                      color: c.withOpacity(
-                                                        0.24,
+                                                      color: c.withValues(
+                                                        alpha: 0.24,
                                                       ),
                                                     ),
                                                   ),
@@ -1229,13 +1233,6 @@ class _CronogramaPreventivasBorradorPageState
         _filtroUbicacion != 'TODAS';
   }
 
-  _DiaResumen _getResumenDia(int dia) {
-    return _diasResumen.firstWhere(
-      (d) => d.dia == dia,
-      orElse: () => _DiaResumen(dia: dia, total: 0, preventivas: 0),
-    );
-  }
-
   // ========= NUEVO: Mensual tipo matriz (como la foto) =========
 
   String _codigoEstado(String? estado) {
@@ -1282,7 +1279,7 @@ class _CronogramaPreventivasBorradorPageState
         border: OutlineInputBorder(),
         isDense: true,
       ),
-      value: _filtroTipo,
+      initialValue: _filtroTipo,
       items: const [
         DropdownMenuItem(value: 'TODAS', child: Text('Todas')),
         DropdownMenuItem(value: 'PREVENTIVA', child: Text('Preventivas')),
@@ -1304,7 +1301,7 @@ class _CronogramaPreventivasBorradorPageState
         border: OutlineInputBorder(),
         isDense: true,
       ),
-      value: _filtroEstado,
+      initialValue: _filtroEstado,
       items: const [
         DropdownMenuItem(value: 'TODOS', child: Text('Todos')),
         DropdownMenuItem(value: 'ASIGNADA', child: Text('Asignada')),
@@ -1338,7 +1335,7 @@ class _CronogramaPreventivasBorradorPageState
         border: OutlineInputBorder(),
         isDense: true,
       ),
-      value: _filtroOperario,
+      initialValue: _filtroOperario,
       items: [
         const DropdownMenuItem(value: 'TODOS', child: Text('Todos')),
         ..._operariosDisponibles.map(
@@ -1361,7 +1358,7 @@ class _CronogramaPreventivasBorradorPageState
         border: OutlineInputBorder(),
         isDense: true,
       ),
-      value: _filtroUbicacion,
+      initialValue: _filtroUbicacion,
       items: [
         const DropdownMenuItem(value: 'TODAS', child: Text('Todas')),
         ..._ubicacionesDisponibles.map(
@@ -2065,7 +2062,7 @@ class _CronogramaPreventivasBorradorPageState
                     leading: CircleAvatar(
                       radius: 20,
                       backgroundColor: tieneTareas
-                          ? AppTheme.primary.withOpacity(0.12)
+                          ? AppTheme.primary.withValues(alpha: 0.12)
                           : Colors.grey.shade200,
                       child: Text(
                         '$total',
@@ -2187,7 +2184,7 @@ class _CronogramaPreventivasBorradorPageState
 
                               return Card(
                                 color: seleccionado
-                                    ? AppTheme.primary.withOpacity(0.1)
+                                    ? AppTheme.primary.withValues(alpha: 0.1)
                                     : Colors.white,
                                 child: ListTile(
                                   title: Text('$horaIni - $horaFin'),
@@ -2482,9 +2479,11 @@ class _CronogramaPreventivasBorradorPageState
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: AppTheme.primary.withOpacity(0.06),
+              color: AppTheme.primary.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: AppTheme.primary.withOpacity(0.18)),
+              border: Border.all(
+                color: AppTheme.primary.withValues(alpha: 0.18),
+              ),
             ),
             child: Text(
               '$code = $label',
@@ -3311,7 +3310,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 top: lunchStartMin * pxPorMin,
                                 height: lunchDurMin * pxPorMin,
                                 child: Container(
-                                  color: Colors.orange.withOpacity(0.12),
+                                  color: Colors.orange.withValues(alpha: 0.12),
                                 ),
                               ),
 
@@ -3333,8 +3332,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                               final fullWidth = colWidth - (dayPadding * 2);
 
                               final colorBase = AppTheme.primary;
-                              final fill = colorBase.withOpacity(0.12);
-                              final border = colorBase.withOpacity(0.55);
+                              final fill = colorBase.withValues(alpha: 0.12);
+                              final border = colorBase.withValues(alpha: 0.55);
 
                               final horaIni = DateFormat('HH:mm').format(ini);
                               final horaFinStr = DateFormat(
@@ -3379,7 +3378,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                         7,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.amber.withOpacity(0.14),
+                                        color: Colors.amber.withValues(
+                                          alpha: 0.14,
+                                        ),
                                         borderRadius: BorderRadius.circular(10),
                                         border: Border.all(
                                           color: Colors.amber.shade700,
@@ -3724,10 +3725,10 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                       child: Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: AppTheme.primary.withOpacity(0.08),
+                          color: AppTheme.primary.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: AppTheme.primary.withOpacity(0.25),
+                            color: AppTheme.primary.withValues(alpha: 0.25),
                           ),
                         ),
                         child: Column(

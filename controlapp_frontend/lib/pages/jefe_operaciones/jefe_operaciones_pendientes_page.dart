@@ -193,9 +193,9 @@ class _JefeOperacionesPendientesPageState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.30)),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
       ),
       child: Text(
         text,
@@ -410,10 +410,10 @@ class _JefeOperacionesPendientesPageState
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: Colors.red.withOpacity(0.06),
+                                color: Colors.red.withValues(alpha: 0.06),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: Colors.red.withOpacity(0.20),
+                                  color: Colors.red.withValues(alpha: 0.20),
                                 ),
                               ),
                               child: const Text(
@@ -609,7 +609,7 @@ class _JefeOperacionesPendientesPageState
                           ),
                           const SizedBox(height: 10),
                           DropdownButtonFormField<String>(
-                            value: accion,
+                            initialValue: accion,
                             decoration: const InputDecoration(
                               border: OutlineInputBorder(),
                               isDense: true,
@@ -699,9 +699,11 @@ class _JefeOperacionesPendientesPageState
                                     return;
                                   }
 
-                                  if (!mounted) return;
+                                  if (!mounted || !ctx.mounted) return;
                                   Navigator.pop(ctx);
                                   await _cargar();
+
+                                  if (!mounted) return;
 
                                   AppFeedback.showFromSnackBar(
                                     context,

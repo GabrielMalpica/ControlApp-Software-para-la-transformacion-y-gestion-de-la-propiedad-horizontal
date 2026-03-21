@@ -201,7 +201,7 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
               const SizedBox(height: 12),
 
               DropdownButtonFormField<TipoMaquinariaFlutter>(
-                value: _tipo,
+                initialValue: _tipo,
                 decoration: const InputDecoration(
                   labelText: 'Tipo de maquinaria',
                   border: OutlineInputBorder(),
@@ -218,7 +218,7 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
               const SizedBox(height: 12),
 
               DropdownButtonFormField<EstadoMaquinaria>(
-                value: _estado,
+                initialValue: _estado,
                 decoration: const InputDecoration(
                   labelText: 'Estado',
                   border: OutlineInputBorder(),
@@ -235,7 +235,7 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
               const SizedBox(height: 12),
 
               DropdownButtonFormField<PropietarioMaquinaria>(
-                value: _prop,
+                initialValue: _prop,
                 decoration: const InputDecoration(
                   labelText: 'Propietario',
                   border: OutlineInputBorder(),
@@ -263,7 +263,7 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
                 _loadingConjuntos
                     ? const Center(child: CircularProgressIndicator())
                     : DropdownButtonFormField<String>(
-                        value: _conjuntoPropId,
+                        initialValue: _conjuntoPropId,
                         decoration: const InputDecoration(
                           labelText: 'Conjunto propietario',
                           border: OutlineInputBorder(),

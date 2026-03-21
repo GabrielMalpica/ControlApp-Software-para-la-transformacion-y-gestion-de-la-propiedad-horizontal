@@ -145,7 +145,7 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
                       child: _loadingConjuntos
                           ? const LinearProgressIndicator()
                           : DropdownButtonFormField<Conjunto?>(
-                              value: _conjuntoFiltro,
+                              initialValue: _conjuntoFiltro,
                               decoration: const InputDecoration(
                                 labelText: 'Filtrar por conjunto (prestada a)',
                                 border: OutlineInputBorder(),
@@ -183,7 +183,7 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<EstadoMaquinaria?>(
-                        value: _estadoFiltro,
+                        initialValue: _estadoFiltro,
                         decoration: const InputDecoration(
                           labelText: 'Estado',
                           border: OutlineInputBorder(),
@@ -210,7 +210,7 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: DropdownButtonFormField<TipoMaquinariaFlutter?>(
-                        value: _tipoFiltro,
+                        initialValue: _tipoFiltro,
                         decoration: const InputDecoration(
                           labelText: 'Tipo',
                           border: OutlineInputBorder(),
@@ -242,7 +242,7 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<PropietarioMaquinaria?>(
-                        value: _propFiltro,
+                        initialValue: _propFiltro,
                         decoration: const InputDecoration(
                           labelText: 'Propietario',
                           border: OutlineInputBorder(),
@@ -268,7 +268,7 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: DropdownButtonFormField<bool?>(
-                        value: _disponibleFiltro,
+                        initialValue: _disponibleFiltro,
                         decoration: const InputDecoration(
                           labelText: 'Disponible',
                           border: OutlineInputBorder(),

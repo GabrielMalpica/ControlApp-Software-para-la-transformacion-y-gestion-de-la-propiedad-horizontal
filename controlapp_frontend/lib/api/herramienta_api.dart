@@ -158,8 +158,9 @@ class HerramientaApi {
 
     // tu backend puede devolver List o {data:[]}
     if (decoded is List) return decoded;
-    if (decoded is Map && decoded['data'] is List)
+    if (decoded is Map && decoded['data'] is List) {
       return decoded['data'] as List;
+    }
 
     throw Exception('Respuesta inesperada del backend en listarStockConjunto');
   }
@@ -292,8 +293,9 @@ class HerramientaApi {
 
     final decoded = jsonDecode(resp.body);
     if (decoded is List) return decoded;
-    if (decoded is Map && decoded['data'] is List)
+    if (decoded is Map && decoded['data'] is List) {
       return decoded['data'] as List;
+    }
 
     throw Exception(
       'Respuesta inesperada del backend en listarSolicitudesHerramientas',

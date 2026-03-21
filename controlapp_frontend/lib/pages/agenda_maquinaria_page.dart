@@ -182,51 +182,6 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
     return salida;
   }
 
-  Future<void> _cargarAgendaMaquinaSeleccionada() async {
-    if (_seleccionada == null) return;
-
-    setState(() {
-      _cargandoAgenda = true;
-      _errorAgenda = null;
-      _agendaSeleccionada = null;
-    });
-
-    try {
-      final agenda = await _agendaApi.obtenerAgenda(
-        conjuntoId: widget.conjuntoId,
-        maquinariaId: _seleccionada!.id,
-        desde: _desdeMes,
-        hasta: _hastaMes,
-      );
-
-      setState(() {
-        _agendaSeleccionada = agenda;
-      });
-    } catch (e) {
-      setState(() {
-        _errorAgenda = AppError.messageOf(e);
-        _agendaSeleccionada = null;
-      });
-    } finally {
-      if (!mounted) return;
-      setState(() => _cargandoAgenda = false);
-    }
-  }
-
-  List<ReservaMaquinaria> _reservasDeSeleccionada() =>
-      _agendaSeleccionada?.reservas ?? const [];
-
-  List<String> _ubicaciones(List<ReservaMaquinaria> reservas) {
-    final set = <String>{};
-    for (final r in reservas) {
-      final u = (r.tarea?.ubicacion ?? 'SIN UBICACIÓN').trim();
-      if (u.isNotEmpty) set.add(u);
-    }
-    if (set.isEmpty) return const ['—'];
-    final list = set.toList()..sort();
-    return list;
-  }
-
   List<String> _observaciones(List<ReservaMaquinaria> reservas) {
     final set = <String>{};
     for (final r in reservas) {
@@ -386,7 +341,9 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(color: Colors.black12.withOpacity(.08)),
+                    side: BorderSide(
+                      color: Colors.black12.withValues(alpha: .08),
+                    ),
                   ),
                   child: ListView.separated(
                     itemCount: maquinas.length,
@@ -411,12 +368,12 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
 
                       return ListTile(
                         selected: selected,
-                        selectedTileColor: Colors.green.withOpacity(.08),
+                        selectedTileColor: Colors.green.withValues(alpha: .08),
                         leading: CircleAvatar(
                           radius: 18,
                           backgroundColor:
                               (selected ? Colors.green : Colors.black12)
-                                  .withOpacity(.12),
+                                  .withValues(alpha: .12),
                           child: Icon(
                             Icons.precision_manufacturing,
                             size: 18,
@@ -444,7 +401,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.black12.withOpacity(.08),
+                            color: Colors.black12.withValues(alpha: .08),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
@@ -584,7 +541,7 @@ class _PlanillaProgramacion extends StatelessWidget {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: Colors.black12.withOpacity(.08)),
+              side: BorderSide(color: Colors.black12.withValues(alpha: .08)),
             ),
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -594,7 +551,7 @@ class _PlanillaProgramacion extends StatelessWidget {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(.10),
+                      color: Colors.green.withValues(alpha: .10),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
@@ -723,7 +680,7 @@ class _PlanillaProgramacion extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.black12.withOpacity(.08)),
+        side: BorderSide(color: Colors.black12.withValues(alpha: .08)),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -741,7 +698,7 @@ class _PlanillaProgramacion extends StatelessWidget {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.black12.withOpacity(.08),
+                      color: Colors.black12.withValues(alpha: .08),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -857,9 +814,9 @@ class _PlanillaProgramacion extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.green.withOpacity(.12),
+          color: Colors.green.withValues(alpha: .12),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.green.withOpacity(.18)),
+          border: Border.all(color: Colors.green.withValues(alpha: .18)),
         ),
         child: Text(
           text,
@@ -880,7 +837,7 @@ class _PlanillaProgramacion extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black12.withOpacity(.10)),
+          border: Border.all(color: Colors.black12.withValues(alpha: .10)),
         ),
         child: Text(
           text,
@@ -898,22 +855,22 @@ class _PlanillaProgramacion extends StatelessWidget {
 
     switch (code) {
       case 'E':
-        bg = Colors.blue.withOpacity(.14);
+        bg = Colors.blue.withValues(alpha: .14);
         fg = Colors.blue.shade800;
         break;
 
       case 'A': // ✅ Actividad (verde)
-        bg = Colors.green.withOpacity(.16);
+        bg = Colors.green.withValues(alpha: .16);
         fg = Colors.green.shade800;
         break;
 
       case 'P': // ✅ Instancia (beige)
-        bg = Colors.amber.withOpacity(.18);
+        bg = Colors.amber.withValues(alpha: .18);
         fg = Colors.brown.shade800;
         break;
 
       case 'R':
-        bg = Colors.red.withOpacity(.14);
+        bg = Colors.red.withValues(alpha: .14);
         fg = Colors.red.shade800;
         break;
 
@@ -929,7 +886,7 @@ class _PlanillaProgramacion extends StatelessWidget {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black12.withOpacity(.10)),
+          border: Border.all(color: Colors.black12.withValues(alpha: .10)),
         ),
         child: Center(
           child: Text(
@@ -958,8 +915,8 @@ class _ChipLeyenda extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
-        color: Colors.black12.withOpacity(.08),
-        border: Border.all(color: Colors.black12.withOpacity(.10)),
+        color: Colors.black12.withValues(alpha: .08),
+        border: Border.all(color: Colors.black12.withValues(alpha: .10)),
       ),
       child: Text(
         texto,
@@ -1000,7 +957,7 @@ class _PlanillaProgramacionFiltrada extends StatelessWidget {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: Colors.black12.withOpacity(.08)),
+              side: BorderSide(color: Colors.black12.withValues(alpha: .08)),
             ),
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -1010,7 +967,7 @@ class _PlanillaProgramacionFiltrada extends StatelessWidget {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(.10),
+                      color: Colors.green.withValues(alpha: .10),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
@@ -1287,19 +1244,19 @@ class _ExcelSemanaFiltrada extends StatelessWidget {
 
     switch (code) {
       case 'E':
-        bg = Colors.blue.withOpacity(.15);
+        bg = Colors.blue.withValues(alpha: .15);
         fg = Colors.blue.shade800;
         break;
       case 'A':
-        bg = Colors.green.withOpacity(.18);
+        bg = Colors.green.withValues(alpha: .18);
         fg = Colors.green.shade800;
         break;
       case 'P':
-        bg = Colors.amber.withOpacity(.20);
+        bg = Colors.amber.withValues(alpha: .20);
         fg = Colors.brown.shade800;
         break;
       case 'R':
-        bg = Colors.red.withOpacity(.15);
+        bg = Colors.red.withValues(alpha: .15);
         fg = Colors.red.shade800;
         break;
     }

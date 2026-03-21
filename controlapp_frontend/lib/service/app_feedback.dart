@@ -45,12 +45,61 @@ class AppFeedback {
     required String title,
     required String message,
   }) {
-    if (_dialogOpen || !context.mounted) return;
-    _dialogOpen = true;
+    if (!context.mounted) return;
 
     final cleanMessage = message.trim().isEmpty
         ? 'Ocurrio una novedad.'
         : AppError.messageOf(message, fallback: 'Ocurrio una novedad.');
+
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) {
+      _showBlockingDialog(
+        context,
+        type: type,
+        title: title,
+        message: cleanMessage,
+      );
+      return;
+    }
+
+    final isError = type == AppFeedbackType.error;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: isError
+              ? const Color(0xFF8D2C21)
+              : const Color(0xFF114232),
+          content: Row(
+            children: <Widget>[
+              Icon(
+                isError
+                    ? Icons.error_outline_rounded
+                    : Icons.check_circle_outline_rounded,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '$title: $cleanMessage',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+  }
+
+  static void _showBlockingDialog(
+    BuildContext context, {
+    required AppFeedbackType type,
+    required String title,
+    required String message,
+  }) {
+    if (_dialogOpen || !context.mounted) return;
+    _dialogOpen = true;
 
     final icon = type == AppFeedbackType.error
         ? Icons.error_outline
@@ -64,32 +113,29 @@ class AppFeedback {
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) {
-          return PopScope(
-            canPop: false,
-            child: AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              title: Row(
-                children: [
-                  Icon(icon, color: iconColor),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      title,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Row(
+              children: <Widget>[
+                Icon(icon, color: iconColor),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
-                ],
-              ),
-              content: Text(cleanMessage),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Aceptar'),
                 ),
               ],
             ),
+            content: Text(message),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Aceptar'),
+              ),
+            ],
           );
         },
       ).whenComplete(() {

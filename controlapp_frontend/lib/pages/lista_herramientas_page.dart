@@ -358,7 +358,7 @@ class _ChipInfo extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.03),
+        color: Colors.black.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.black12),
       ),

@@ -81,7 +81,7 @@ class SerieDiariaLineChart extends StatelessWidget {
                   isCurved: true,
                   barWidth: 3,
                   dotData: const FlDotData(show: false),
-                  belowBarData: BarAreaData(show: true, color: const Color(0xFF60A5FA).withOpacity(0.15)),
+                  belowBarData: BarAreaData(show: true, color: const Color(0xFF60A5FA).withValues(alpha: 0.15)),
                   color: const Color(0xFF2563EB),
                 ),
               ],

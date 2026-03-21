@@ -167,7 +167,7 @@ class _CrearInsumoPageState extends State<CrearInsumoPage> {
 
                     // Categoría
                     DropdownButtonFormField<CategoriaInsumo>(
-                      value: _categoria,
+                      initialValue: _categoria,
                       decoration: const InputDecoration(
                         labelText: 'Categoría',
                         border: OutlineInputBorder(),

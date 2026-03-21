@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "flutter-ui-ux": {
+      "source": "ajianaz/skills-collection",
+      "sourceType": "github",
+      "computedHash": "9e74fa709465fa235164ce83b4407708f1fc5205feb0e889495d1e387f544d15"
+    }
+  }
+}

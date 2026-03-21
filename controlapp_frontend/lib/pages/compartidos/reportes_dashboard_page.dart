@@ -2747,9 +2747,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           ),
         ),
         const SizedBox(height: 14),
-        _sectionTitle('Tareas por día (tendencia)'),
+        _sectionTitle('Tareas asignadas por dia de la semana'),
         const SizedBox(height: 8),
-        _card(child: SizedBox(height: 260, child: _lineSerieDiaria())),
+        _card(child: SizedBox(height: 300, child: _weeklyAssignedLoadChart())),
         const SizedBox(height: 14),
         Row(
           children: [
@@ -3007,6 +3007,171 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   }
 
   // -------- Line serie diaria --------
+
+  Widget _weeklyAssignedLoadChart() {
+    final s = _serie;
+    if (s == null || s.days.isEmpty) {
+      return const Center(child: Text('Sin datos semanales.'));
+    }
+
+    final buckets = <DateTime, List<int>>{};
+    for (final day in s.days) {
+      final date = DateTime.tryParse(day)?.toLocal();
+      if (date == null) continue;
+      final monday = DateTime(
+        date.year,
+        date.month,
+        date.day,
+      ).subtract(Duration(days: date.weekday - 1));
+      final week = buckets.putIfAbsent(monday, () => List<int>.filled(7, 0));
+      final asignadas =
+          (s.series[day] ?? const <String, int>{})['ASIGNADA'] ?? 0;
+      week[date.weekday - 1] += asignadas;
+    }
+
+    final sortedWeeks = buckets.keys.toList()..sort();
+    final weeks = sortedWeeks.length <= 4
+        ? sortedWeeks
+        : sortedWeeks.sublist(sortedWeeks.length - 4);
+
+    if (weeks.isEmpty) {
+      return const Center(child: Text('Sin tareas asignadas en el rango.'));
+    }
+
+    const dayLabels = <String>['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+    final weekColors = <Color>[
+      AppTheme.primary,
+      Colors.teal.shade500,
+      Colors.orange.shade500,
+      Colors.indigo.shade400,
+    ];
+
+    double maxY = 0;
+    for (final week in weeks) {
+      for (final value in buckets[week]!) {
+        maxY = math.max(maxY, value.toDouble());
+      }
+    }
+
+    final labels = <String>[];
+    for (final week in weeks) {
+      final range = '${week.day}/${week.month}';
+      for (final day in dayLabels) {
+        labels.add('$day $range');
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Compara cuantas tareas quedaron asignadas en cada dia de las ultimas semanas para detectar picos, concentracion o desbalance semanal.',
+          style: TextStyle(fontSize: 12, color: Colors.black54),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: BarChart(
+            BarChartData(
+              maxY: maxY <= 0 ? 5 : maxY * 1.25,
+              gridData: const FlGridData(show: true),
+              borderData: FlBorderData(show: false),
+              barTouchData: _whiteBarTouchData(labels: labels),
+              titlesData: FlTitlesData(
+                rightTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                topTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 34,
+                    getTitlesWidget: (v, meta) => Text(
+                      v.toInt().toString(),
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    getTitlesWidget: (value, meta) {
+                      final idx = value.toInt();
+                      if (idx < 0 || idx >= dayLabels.length) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          dayLabels[idx],
+                          style: const TextStyle(fontSize: 10),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              barGroups: List.generate(dayLabels.length, (dayIndex) {
+                return BarChartGroupData(
+                  x: dayIndex,
+                  barsSpace: 4,
+                  barRods: List.generate(weeks.length, (weekIndex) {
+                    final value = buckets[weeks[weekIndex]]![dayIndex]
+                        .toDouble();
+                    return BarChartRodData(
+                      toY: value,
+                      width: 10,
+                      color: weekColors[weekIndex % weekColors.length],
+                      borderRadius: BorderRadius.circular(4),
+                    );
+                  }),
+                );
+              }),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          children: List.generate(weeks.length, (index) {
+            final week = weeks[index];
+            final end = week.add(const Duration(days: 6));
+            return _legendChip(
+              '${week.day}/${week.month} - ${end.day}/${end.month}',
+              weekColors[index % weekColors.length],
+            );
+          }),
+        ),
+      ],
+    );
+  }
+
+  Widget _legendChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _lineSerieDiaria() {
     final s = _serie;

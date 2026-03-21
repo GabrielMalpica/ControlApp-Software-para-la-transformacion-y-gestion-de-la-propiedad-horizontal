@@ -4,6 +4,8 @@ import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/supervisor/supervisor_tareas_page.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
+import 'package:flutter_application_1/widgets/dashboard_tile.dart';
+import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 
 import '../service/theme.dart';
@@ -81,7 +83,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
   }
 
   void _go(Widget page) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
   }
 
   bool _requiereConjuntoOrWarn() {
@@ -104,268 +106,213 @@ class _SupervisorPageState extends State<SupervisorPage> {
     Color color, {
     VoidCallback? onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x14000000),
-              blurRadius: 18,
-              offset: Offset(0, 8),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Column(
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 14,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 78,
-                        height: 78,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: color.withOpacity(0.12),
-                        ),
-                        child: Icon(icon, size: 44, color: color),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Container(height: 46, color: color.withOpacity(0.10)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSelectorConjuntoCard(Conjunto conjunto) {
-    final nit = conjunto.nit;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAF4EE),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black12.withOpacity(0.05)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.apartment, color: AppTheme.primary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Conjunto seleccionado",
-                  style: TextStyle(fontSize: 12, color: Colors.black54),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  conjunto.nombre,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text("NIT: $nit", style: const TextStyle(fontSize: 12)),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.black12.withOpacity(0.08)),
-            ),
-            child: DropdownButton<String>(
-              value: _conjuntoSeleccionadoNit,
-              underline: const SizedBox.shrink(),
-              items: _conjuntos
-                  .map(
-                    (c) => DropdownMenuItem<String>(
-                      value: c.nit,
-                      child: Text(c.nombre, overflow: TextOverflow.ellipsis),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) async {
-                if (v == null) return;
-                setState(() => _conjuntoSeleccionadoNit = v);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
+    return DashboardTile(title: title, color: color, icon: icon, onTap: onTap);
   }
 
   Widget _buildBody() {
     if (_cargandoConjuntos) {
-      return const Center(child: CircularProgressIndicator());
+      return const DashboardScaffold(
+        title: 'Panel del supervisor',
+        headline: 'Coordina el trabajo diario con una vista mas clara.',
+        description:
+            'Aqui puedes revisar tareas, solicitudes, cronogramas e inventario desde el conjunto activo.',
+        leadingBadge: 'Operacion en campo',
+        child: Center(child: CircularProgressIndicator()),
+      );
     }
 
     if (_errorConjuntos != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text("Error cargando conjuntos: $_errorConjuntos"),
+      return DashboardScaffold(
+        title: 'Panel del supervisor',
+        headline: 'No se pudieron cargar los conjuntos.',
+        description:
+            'Intenta recargar para continuar con las validaciones y la operacion diaria.',
+        leadingBadge: 'Operacion en campo',
+        child: DashboardEmptyStateCard(
+          title: 'Carga pendiente',
+          message: _errorConjuntos!,
+          icon: Icons.wifi_off_rounded,
         ),
       );
     }
 
     final conjunto = _conjuntoSeleccionado;
     if (conjunto == null) {
-      return const Center(
-        child: Text(
-          "No hay conjuntos disponibles.\nPide al gerente que registre/asigne conjuntos.",
-          textAlign: TextAlign.center,
+      return const DashboardScaffold(
+        title: 'Panel del supervisor',
+        headline: 'Aun no tienes conjuntos disponibles.',
+        description:
+            'Solicita al gerente que registre o asigne conjuntos para habilitar este panel.',
+        leadingBadge: 'Operacion en campo',
+        child: DashboardEmptyStateCard(
+          title: 'Sin conjuntos',
+          message:
+              'Cuando tengas conjuntos asignados, aqui veras los accesos rapidos principales.',
+          icon: Icons.apartment_rounded,
         ),
       );
     }
 
     final nit = conjunto.nit;
 
-    return LayoutBuilder(
-      builder: (context, c) {
-        final cols = _gridCountForWidth(c.maxWidth);
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildSelectorConjuntoCard(conjunto),
-              const SizedBox(height: 20),
-              const Text(
-                "Panel general",
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+    return DashboardScaffold(
+      title: 'Panel del supervisor',
+      headline: '',
+      description: '',
+      leadingBadge: null,
+      trailing: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 420;
+          final cards = <Widget>[
+            Expanded(
+              child: DashboardStatusCard(
+                label: 'Conjuntos disponibles',
+                value: _conjuntos.length.toString(),
+                icon: Icons.domain_rounded,
+                color: AppTheme.primary,
               ),
-              const SizedBox(height: 12),
+            ),
+            Expanded(
+              child: DashboardStatusCard(
+                label: 'Conjunto activo',
+                value: conjunto.nombre,
+                icon: Icons.fact_check_rounded,
+                color: AppTheme.green,
+              ),
+            ),
+          ];
 
-              GridView.count(
-                shrinkWrap: true,
-                crossAxisCount: cols,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 1.05,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  _smallCard(
-                    "Tareas",
-                    Icons.assignment,
-                    AppTheme.green,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(SupervisorTareasPage(nit: nit));
-                    },
-                  ),
-                  _smallCard(
-                    "Solicitudes",
-                    Icons.pending_actions,
-                    AppTheme.primary,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(SolicitudesPage(nit: nit));
-                    },
-                  ),
-                  _smallCard(
-                    "Cronograma",
-                    Icons.calendar_month,
-                    Colors.purple,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(CronogramaPage(nit: nit));
-                    },
-                  ),
-                  _smallCard(
-                    "Inventario",
-                    Icons.inventory_2_outlined,
-                    AppTheme.yellow,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(
-                        InventarioPage(
-                          nit: nit,
-                          empresaId: AppConstants.empresaNit,
-                        ),
-                      );
-                    },
-                  ),
-                  _smallCard(
-                    "Maquinaria",
-                    Icons.precision_manufacturing,
-                    AppTheme.red,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(AgendaMaquinariaPage(conjuntoId: nit));
-                    },
-                  ),
-                  _smallCard(
-                    "Reportes",
-                    Icons.bar_chart,
-                    Colors.teal,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(ReportesPage(nit: nit));
-                    },
-                  ),
-                  _smallCard(
-                    "Preventivas",
-                    Icons.build_circle_outlined,
-                    Colors.deepOrange,
-                    onTap: () {
-                      if (!_requiereConjuntoOrWarn()) return;
-                      _go(PreventivasPage(nit: nit));
-                    },
-                  ),
-                  _smallCard(
-                    "Recargar",
-                    Icons.refresh,
-                    Colors.blueGrey,
-                    onTap: _cargarConjuntos,
-                  ),
-                ],
-              ),
-            ],
+          if (compact) {
+            return Column(
+              children: <Widget>[
+                cards[0],
+                const SizedBox(height: 12),
+                cards[1],
+              ],
+            );
+          }
+
+          return Row(
+            children: <Widget>[cards[0], const SizedBox(width: 12), cards[1]],
+          );
+        },
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          ConjuntoSelectorCard(
+            conjuntoActual: conjunto,
+            conjuntos: _conjuntos,
+            selectedNit: _conjuntoSeleccionadoNit,
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _conjuntoSeleccionadoNit = v);
+            },
           ),
-        );
-      },
+          const SizedBox(height: 18),
+          DashboardSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Panel general',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 18),
+                LayoutBuilder(
+                  builder: (context, c) {
+                    final cols = _gridCountForWidth(c.maxWidth);
+                    return GridView.count(
+                      shrinkWrap: true,
+                      crossAxisCount: cols,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 1.05,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        _smallCard(
+                          'Tareas',
+                          Icons.assignment,
+                          AppTheme.green,
+                          onTap: () {
+                            if (!_requiereConjuntoOrWarn()) return;
+                            _go(SupervisorTareasPage(nit: nit));
+                          },
+                        ),
+                        _smallCard(
+                          'Solicitudes',
+                          Icons.pending_actions,
+                          AppTheme.primary,
+                          onTap: () {
+                            if (!_requiereConjuntoOrWarn()) return;
+                            _go(SolicitudesPage(nit: nit));
+                          },
+                        ),
+                        _smallCard(
+                          'Cronograma',
+                          Icons.calendar_month,
+                          Colors.purple,
+                          onTap: () {
+                            if (!_requiereConjuntoOrWarn()) return;
+                            _go(CronogramaPage(nit: nit));
+                          },
+                        ),
+                        _smallCard(
+                          'Inventario',
+                          Icons.inventory_2_outlined,
+                          AppTheme.yellow,
+                          onTap: () {
+                            if (!_requiereConjuntoOrWarn()) return;
+                            _go(
+                              InventarioPage(
+                                nit: nit,
+                                empresaId: AppConstants.empresaNit,
+                              ),
+                            );
+                          },
+                        ),
+                        _smallCard(
+                          'Maquinaria',
+                          Icons.precision_manufacturing,
+                          AppTheme.red,
+                          onTap: () {
+                            if (!_requiereConjuntoOrWarn()) return;
+                            _go(AgendaMaquinariaPage(conjuntoId: nit));
+                          },
+                        ),
+                        _smallCard(
+                          'Reportes',
+                          Icons.bar_chart,
+                          Colors.teal,
+                          onTap: () {
+                            if (!_requiereConjuntoOrWarn()) return;
+                            _go(ReportesPage(nit: nit));
+                          },
+                        ),
+                        _smallCard(
+                          'Preventivas',
+                          Icons.build_circle_outlined,
+                          Colors.deepOrange,
+                          onTap: () {
+                            if (!_requiereConjuntoOrWarn()) return;
+                            _go(PreventivasPage(nit: nit));
+                          },
+                        ),
+                        _smallCard(
+                          'Recargar',
+                          Icons.refresh,
+                          Colors.blueGrey,
+                          onTap: _cargarConjuntos,
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -394,22 +341,23 @@ class _SupervisorPageState extends State<SupervisorPage> {
             onPressed: () async {
               final ok = await showDialog<bool>(
                 context: context,
-                builder: (_) => AlertDialog(
+                builder: (dialogContext) => AlertDialog(
                   title: const Text('Cerrar sesión'),
                   content: const Text('¿Seguro que quieres salir?'),
                   actions: [
                     TextButton(
-                      onPressed: () => Navigator.pop(context, false),
+                      onPressed: () => Navigator.pop(dialogContext, false),
                       child: const Text('Cancelar'),
                     ),
                     ElevatedButton(
-                      onPressed: () => Navigator.pop(context, true),
+                      onPressed: () => Navigator.pop(dialogContext, true),
                       child: const Text('Salir'),
                     ),
                   ],
                 ),
               );
 
+              if (!context.mounted) return;
               if (ok == true) logout(context);
             },
           ),
@@ -418,30 +366,4 @@ class _SupervisorPageState extends State<SupervisorPage> {
       body: _buildBody(),
     );
   }
-}
-
-class _BubblePatternPainter extends CustomPainter {
-  final Color color;
-  _BubblePatternPainter(this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color.withOpacity(0.18)
-      ..style = PaintingStyle.fill;
-
-    const xs = [0.04, 0.10, 0.22, 0.34, 0.48, 0.62, 0.74, 0.86, 0.92];
-    const ys = [0.64, 0.32, 0.78, 0.40, 0.70, 0.36, 0.78, 0.52, 0.30];
-    const rs = [3.5, 4.6, 2.8, 5.0, 3.8, 4.2, 3.0, 4.8, 3.2];
-
-    for (var i = 0; i < xs.length; i++) {
-      final c = Offset(size.width * xs[i], size.height * ys[i]);
-      canvas.drawCircle(c, rs[i], paint);
-      canvas.drawCircle(c.translate(18, -4), rs[i] * 0.55, paint);
-      canvas.drawCircle(c.translate(-14, 6), rs[i] * 0.45, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

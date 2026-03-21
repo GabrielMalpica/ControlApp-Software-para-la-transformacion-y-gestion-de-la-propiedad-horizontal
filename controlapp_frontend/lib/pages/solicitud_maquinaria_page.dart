@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import '../service/theme.dart';
-import '../model/maquinaria_model.dart';
 
 class SolicitudMaquinariaPage extends StatefulWidget {
   final String nit;
   const SolicitudMaquinariaPage({super.key, required this.nit});
 
   @override
-  State<SolicitudMaquinariaPage> createState() => _SolicitudMaquinariaPageState();
+  State<SolicitudMaquinariaPage> createState() =>
+      _SolicitudMaquinariaPageState();
 }
 
 class _SolicitudMaquinariaPageState extends State<SolicitudMaquinariaPage> {
@@ -20,6 +20,15 @@ class _SolicitudMaquinariaPageState extends State<SolicitudMaquinariaPage> {
 
   DateTime? _fechaPrestamo;
   DateTime? _fechaDevolucion;
+
+  @override
+  void dispose() {
+    _nombreController.dispose();
+    _marcaController.dispose();
+    _tipoController.dispose();
+    _estadoController.dispose();
+    super.dispose();
+  }
 
   Future<void> _seleccionarFecha(bool esPrestamo) async {
     final DateTime? picked = await showDatePicker(
@@ -82,7 +91,9 @@ class _SolicitudMaquinariaPageState extends State<SolicitudMaquinariaPage> {
             children: [
               TextFormField(
                 controller: _nombreController,
-                decoration: const InputDecoration(labelText: "Nombre de la maquinaria"),
+                decoration: const InputDecoration(
+                  labelText: "Nombre de la maquinaria",
+                ),
                 validator: (v) => v!.isEmpty ? "Campo requerido" : null,
               ),
               TextFormField(
@@ -104,15 +115,23 @@ class _SolicitudMaquinariaPageState extends State<SolicitudMaquinariaPage> {
                 children: [
                   ElevatedButton(
                     onPressed: () => _seleccionarFecha(true),
-                    child: Text(_fechaPrestamo == null
-                        ? "Fecha préstamo"
-                        : "Prestamo: ${_fechaPrestamo!.toLocal()}".split(' ')[0]),
+                    child: Text(
+                      _fechaPrestamo == null
+                          ? "Fecha préstamo"
+                          : "Prestamo: ${_fechaPrestamo!.toLocal()}".split(
+                              ' ',
+                            )[0],
+                    ),
                   ),
                   ElevatedButton(
                     onPressed: () => _seleccionarFecha(false),
-                    child: Text(_fechaDevolucion == null
-                        ? "Fecha devolución"
-                        : "Devolución: ${_fechaDevolucion!.toLocal()}".split(' ')[0]),
+                    child: Text(
+                      _fechaDevolucion == null
+                          ? "Fecha devolución"
+                          : "Devolución: ${_fechaDevolucion!.toLocal()}".split(
+                              ' ',
+                            )[0],
+                    ),
                   ),
                 ],
               ),

@@ -129,7 +129,7 @@ class _ListaInsumosPageState extends State<ListaInsumosPage> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<CategoriaInsumo>(
-                  value: categoria,
+                  initialValue: categoria,
                   decoration: const InputDecoration(labelText: 'Categoría'),
                   items: CategoriaInsumo.values.map((cat) {
                     return DropdownMenuItem(value: cat, child: Text(cat.label));

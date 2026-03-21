@@ -1,3 +1,4 @@
+// ignore_for_file: constant_identifier_names
 // lib/pages/solicitudes_page.dart
 import 'package:flutter/material.dart';
 import '../service/theme.dart';
@@ -210,7 +211,7 @@ class _SolicitudesPageState extends State<SolicitudesPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: c.withOpacity(0.2),
+        color: c.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
@@ -248,7 +249,7 @@ class _SolicitudesPageState extends State<SolicitudesPage> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<EstadoSolicitudUi?>(
-                    value: _estadoFiltro,
+                    initialValue: _estadoFiltro,
                     decoration: const InputDecoration(
                       labelText: 'Estado',
                       border: OutlineInputBorder(),

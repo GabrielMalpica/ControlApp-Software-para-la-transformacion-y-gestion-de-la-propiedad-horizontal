@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../api/gerente_api.dart';
@@ -24,6 +23,8 @@ import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
+import 'package:flutter_application_1/widgets/dashboard_tile.dart';
+import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 
 import '../../service/theme.dart';
@@ -52,31 +53,6 @@ class _TileSection {
   final String title;
   final List<_Tile> tiles;
   const _TileSection(this.title, this.tiles);
-}
-
-class _BubblePatternPainter extends CustomPainter {
-  final Color color;
-  _BubblePatternPainter(this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paintA = Paint()..color = color.withOpacity(0.20);
-    final paintB = Paint()..color = color.withOpacity(0.12);
-
-    // Patrón determinístico (sin random real)
-    final seed = (size.width * 13.7 + size.height * 7.3).floor();
-    final r = math.Random(seed);
-
-    for (int i = 0; i < 28; i++) {
-      final x = r.nextDouble() * size.width;
-      final y = r.nextDouble() * size.height;
-      final rad = 2.0 + r.nextDouble() * 7.0;
-      canvas.drawCircle(Offset(x, y), rad, (i % 2 == 0) ? paintA : paintB);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Acciones del menú superior (AppBar)
@@ -193,149 +169,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
     required Color accent,
     VoidCallback? onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x14000000),
-              blurRadius: 18,
-              offset: Offset(0, 8),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Column(
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 14,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 78,
-                        height: 78,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: accent.withOpacity(0.12),
-                        ),
-                        child: Icon(icon, size: 44, color: accent),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              SizedBox(
-                height: 46,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Container(color: accent.withOpacity(0.10)),
-                    CustomPaint(painter: _BubblePatternPainter(accent)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _conjuntoHeader({required String nombre, required String nit}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAF4EE),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black12.withOpacity(0.05)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.apartment, color: AppTheme.primary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Conjunto seleccionado",
-                  style: TextStyle(fontSize: 12, color: Colors.black54),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  nombre,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  "NIT: $nit",
-                  style: const TextStyle(fontSize: 12, color: Colors.black87),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.black12.withOpacity(0.08)),
-            ),
-            child: DropdownButton<String>(
-              value: _conjuntoSeleccionadoNit,
-              underline: const SizedBox.shrink(),
-              isDense: true,
-              icon: const Icon(Icons.keyboard_arrow_down),
-              items: _conjuntos
-                  .map(
-                    (c) => DropdownMenuItem<String>(
-                      value: c.nit,
-                      child: SizedBox(
-                        width: 160,
-                        child: Text(c.nombre, overflow: TextOverflow.ellipsis),
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) => setState(() => _conjuntoSeleccionadoNit = v),
-            ),
-          ),
-        ],
-      ),
-    );
+    return DashboardTile(title: title, color: accent, icon: icon, onTap: onTap);
   }
 
   Widget _sectionHeader(String title) {
@@ -584,12 +418,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         return;
 
       case _QuickAction.crearMaquinaria:
-        await go(const CrearMaquinariaPage(nit: '901191875-4'));
+        await go(const CrearMaquinariaPage(nit: AppConstants.empresaNit));
         return;
 
       case _QuickAction.crearHerramienta:
         if (!_requiereConjuntoOrWarn()) return;
-        await go(CrearHerramientaPage(empresaId: '901191875-4'));
+        await go(CrearHerramientaPage(empresaId: AppConstants.empresaNit));
         return;
 
       case _QuickAction.catalogoInsumos:
@@ -597,12 +431,14 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         return;
 
       case _QuickAction.catalogoMaquinaria:
-        await go(ListaMaquinariaGlobalPage(empresaNit: '901191875-4'));
+        await go(
+          ListaMaquinariaGlobalPage(empresaNit: AppConstants.empresaNit),
+        );
         return;
 
       case _QuickAction.catalogoHerramientas:
         if (!_requiereConjuntoOrWarn()) return;
-        await go(ListaHerramientasPage(empresaId: '901191875-4'));
+        await go(ListaHerramientasPage(empresaId: AppConstants.empresaNit));
         return;
 
       case _QuickAction.tareaCrear:
@@ -617,7 +453,9 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
       case _QuickAction.agendaMaquinaria:
         if (!_requiereConjuntoOrWarn()) return;
-        await go(AgendaMaquinariaGlobalExcelPage(empresaNit: '901191875-4'));
+        await go(
+          AgendaMaquinariaGlobalExcelPage(empresaNit: AppConstants.empresaNit),
+        );
         return;
 
       case _QuickAction.cronogramaCrear:
@@ -633,18 +471,43 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
   Widget _buildBody() {
     if (_cargandoConjuntos) {
-      return const Center(child: CircularProgressIndicator());
+      return const DashboardScaffold(
+        title: 'Panel del gerente',
+        headline: 'Todo el control del servicio en un solo tablero.',
+        description:
+            'Accede mas rapido a la operacion diaria, la planeacion y el seguimiento del conjunto.',
+        leadingBadge: 'Vision ejecutiva y operativa',
+        child: Center(child: CircularProgressIndicator()),
+      );
     }
 
     if (_errorConjuntos != null) {
-      return Center(child: Text("Error cargando conjuntos: $_errorConjuntos"));
+      return DashboardScaffold(
+        title: 'Panel del gerente',
+        headline: 'No pudimos cargar los conjuntos.',
+        description:
+            'Revisa la conexion o intenta de nuevo para continuar con la gestion del servicio.',
+        leadingBadge: 'Vision ejecutiva y operativa',
+        child: DashboardEmptyStateCard(
+          title: 'Carga pendiente',
+          message: _errorConjuntos!,
+          icon: Icons.wifi_off_rounded,
+        ),
+      );
     }
 
     if (_conjuntoSeleccionado == null) {
-      return const Center(
-        child: Text(
-          "No hay conjuntos creados.\nUsa 'Atajos' arriba para crear el primero.",
-          textAlign: TextAlign.center,
+      return const DashboardScaffold(
+        title: 'Panel del gerente',
+        headline: 'Aun no hay conjuntos configurados.',
+        description:
+            'Crea el primer conjunto desde Atajos para habilitar tareas, inventario, cronogramas y reportes.',
+        leadingBadge: 'Vision ejecutiva y operativa',
+        child: DashboardEmptyStateCard(
+          title: 'Sin conjuntos',
+          message:
+              'Cuando registres el primer conjunto, aqui aparecera el panel principal.',
+          icon: Icons.apartment_rounded,
         ),
       );
     }
@@ -719,7 +582,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             context,
             MaterialPageRoute(
               builder: (_) =>
-                  InventarioPage(nit: nit, empresaId: '901191875-4'),
+                  InventarioPage(nit: nit, empresaId: AppConstants.empresaNit),
             ),
           );
         }),
@@ -765,39 +628,91 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
       ]),
     ];
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+    return DashboardScaffold(
+      title: 'Panel del gerente',
+      headline: '',
+      description: '',
+      leadingBadge: null,
+      trailing: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 420;
+          final cards = <Widget>[
+            Expanded(
+              child: DashboardStatusCard(
+                label: 'Conjuntos cargados',
+                value: _conjuntos.length.toString(),
+                icon: Icons.domain_rounded,
+                color: AppTheme.primary,
+              ),
+            ),
+            Expanded(
+              child: DashboardStatusCard(
+                label: 'Conjunto activo',
+                value: compact ? conjunto.nit : conjunto.nombre,
+                icon: Icons.apartment_rounded,
+                color: AppTheme.green,
+              ),
+            ),
+          ];
+
+          if (compact) {
+            return Column(
+              children: <Widget>[
+                cards[0],
+                const SizedBox(height: 12),
+                cards[1],
+              ],
+            );
+          }
+
+          return Row(
+            children: <Widget>[cards[0], const SizedBox(width: 12), cards[1]],
+          );
+        },
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _conjuntoHeader(nombre: conjunto.nombre, nit: conjunto.nit),
-          const SizedBox(height: 18),
-          const Text(
-            "Panel general",
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+        children: <Widget>[
+          ConjuntoSelectorCard(
+            conjuntoActual: conjunto,
+            conjuntos: _conjuntos,
+            selectedNit: _conjuntoSeleccionadoNit,
+            onChanged: (v) => setState(() => _conjuntoSeleccionadoNit = v),
           ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final count = _gridCountForWidth(constraints.maxWidth);
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: sections
-                    .map(
-                      (s) => Padding(
-                        padding: const EdgeInsets.only(bottom: 18),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _sectionHeader(s.title),
-                            _sectionGrid(s.tiles, count),
-                          ],
-                        ),
-                      ),
-                    )
-                    .toList(),
-              );
-            },
+          const SizedBox(height: 18),
+          DashboardSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Panel general',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 18),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final count = _gridCountForWidth(constraints.maxWidth);
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: sections
+                          .map(
+                            (s) => Padding(
+                              padding: const EdgeInsets.only(bottom: 18),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  _sectionHeader(s.title),
+                                  _sectionGrid(s.tiles, count),
+                                ],
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -838,22 +753,23 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             onPressed: () async {
               final ok = await showDialog<bool>(
                 context: context,
-                builder: (_) => AlertDialog(
+                builder: (dialogContext) => AlertDialog(
                   title: const Text('Cerrar sesión'),
                   content: const Text('¿Seguro que quieres salir?'),
                   actions: [
                     TextButton(
-                      onPressed: () => Navigator.pop(context, false),
+                      onPressed: () => Navigator.pop(dialogContext, false),
                       child: const Text('Cancelar'),
                     ),
                     ElevatedButton(
-                      onPressed: () => Navigator.pop(context, true),
+                      onPressed: () => Navigator.pop(dialogContext, true),
                       child: const Text('Salir'),
                     ),
                   ],
                 ),
               );
 
+              if (!context.mounted) return;
               if (ok == true) logout(context);
             },
           ),

@@ -270,9 +270,7 @@ class TareaModel {
     }
 
     // ✅ supervisorId como STRING (cédula)
-    final supervisorId = json['supervisorId'] != null
-        ? json['supervisorId'].toString()
-        : null;
+    final supervisorId = json['supervisorId']?.toString();
 
     final herramientasAsignadas = (json['herramientasAsignadas'] as List? ?? [])
         .map((e) => HerramientaAsignada.fromJson(e as Map<String, dynamic>))

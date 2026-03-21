@@ -596,7 +596,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                       ),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: estadoCivilSeleccionado,
+                        initialValue: estadoCivilSeleccionado,
                         items: enums.estadosCiviles
                             .map(
                               (e) => DropdownMenuItem(
@@ -614,7 +614,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                       ),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: tipoSangre,
+                        initialValue: tipoSangre,
                         items: enums.tiposSangre
                             .map(
                               (t) => DropdownMenuItem(
@@ -631,7 +631,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                       ),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: eps,
+                        initialValue: eps,
                         items: enums.eps
                             .map(
                               (e) => DropdownMenuItem(
@@ -648,7 +648,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                       ),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
-                        value: fondo,
+                        initialValue: fondo,
                         items: enums.fondosPensiones
                             .map(
                               (f) => DropdownMenuItem(
@@ -704,7 +704,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                       const SizedBox(height: 8),
 
                       DropdownButtonFormField<String>(
-                        value: rolSeleccionado,
+                        initialValue: rolSeleccionado,
                         items: enums.roles
                             .map(
                               (r) => DropdownMenuItem(
@@ -733,7 +733,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                       const SizedBox(height: 12),
 
                       DropdownButtonFormField<String>(
-                        value: tipoContrato,
+                        initialValue: tipoContrato,
                         items: enums.tiposContrato
                             .map(
                               (t) => DropdownMenuItem(
@@ -751,7 +751,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                       const SizedBox(height: 8),
 
                       DropdownButtonFormField<String>(
-                        value: jornada,
+                        initialValue: jornada,
                         items: enums.jornadasLaborales
                             .map(
                               (j) => DropdownMenuItem(
@@ -782,7 +782,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                           jornada == 'MEDIO_TIEMPO') ...[
                         const SizedBox(height: 8),
                         DropdownButtonFormField<String>(
-                          value: patronJornada,
+                          initialValue: patronJornada,
                           items: enums.patronesJornada
                               .where((p) => p.startsWith('MEDIO_'))
                               .map(
@@ -949,7 +949,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                   )
                 else if (_conjuntos.isNotEmpty)
                   DropdownButtonFormField<String>(
-                    value: _conjuntoSeleccionadoNit,
+                    initialValue: _conjuntoSeleccionadoNit,
                     decoration: const InputDecoration(
                       labelText: "Asignar al conjunto",
                       border: OutlineInputBorder(),

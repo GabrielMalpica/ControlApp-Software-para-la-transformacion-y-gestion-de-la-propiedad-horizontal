@@ -140,8 +140,9 @@ class EmpresaApi {
     }
     if (estado != null) params['estado'] = estado.name;
     if (tipo != null) params['tipo'] = tipo.backendValue;
-    if (propietario != null)
+    if (propietario != null) {
       params['propietarioTipo'] = propietario.backendValue;
+    }
     if (disponible != null) params['disponible'] = disponible.toString();
 
     final basePath = '/empresa/$_empresaNit/maquinaria';

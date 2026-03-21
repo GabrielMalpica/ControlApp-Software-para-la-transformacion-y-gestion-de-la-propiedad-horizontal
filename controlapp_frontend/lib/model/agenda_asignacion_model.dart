@@ -28,8 +28,9 @@ EstadoAsignacionMaquinaria estadoAsignacionFromString(String? v) {
 }
 
 DateTime _parseDate(dynamic v) {
-  if (v == null)
+  if (v == null) {
     throw ArgumentError('Fecha null en AgendaAsignacionMaquinaria');
+  }
   if (v is DateTime) return v;
   return DateTime.parse(v.toString());
 }
@@ -93,3 +94,5 @@ class AgendaAsignacionMaquinaria {
     );
   }
 }
+
+// ignore_for_file: constant_identifier_names
