@@ -1079,7 +1079,12 @@ export class GerenteService {
       const idsAExcluir = cand.grupoPlanId
         ? (
             await prisma.tarea.findMany({
-              where: { grupoPlanId: cand.grupoPlanId },
+              where: {
+                grupoPlanId: cand.grupoPlanId,
+                fechaInicio: { lt: fin },
+                fechaFin: { gt: inicio },
+                estado: { in: ESTADOS_REEMPLAZABLES as any },
+              },
               select: { id: true },
             })
           ).map((x) => x.id)
