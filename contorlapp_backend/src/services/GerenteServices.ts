@@ -989,6 +989,84 @@ export class GerenteService {
       : `A esta hora hay ${ref} prioridad ${prioridad}. La correctiva prioridad ${prioridadCorrectiva} no la puede reemplazar y no se encontro hueco en el mismo dia.`;
   }
 
+  private async buscarSugerenciaMismoDia(params: {
+    prisma: PrismaClient | Prisma.TransactionClient;
+    conjuntoId: string;
+    inicio: Date;
+    durMin: number;
+    operariosIds: string[];
+  }): Promise<{ suggestedInicio: Date; suggestedFin: Date } | null> {
+    const { prisma, conjuntoId, inicio, durMin, operariosIds } = params;
+    const ds = dateToDiaSemana(inicio);
+    const horario = await prisma.conjuntoHorario.findFirst({
+      where: { conjuntoId, dia: ds as any },
+    });
+
+    if (!horario) return null;
+
+    const startMin = toMin(horario.horaApertura);
+    const endMin = toMin(horario.horaCierre);
+
+    const bloqueosDescanso = buildBloqueosPorDescanso({
+      startMin,
+      endMin,
+      descansoStartMin: horario.descansoInicio
+        ? toMin(horario.descansoInicio)
+        : undefined,
+      descansoEndMin: horario.descansoFin
+        ? toMin(horario.descansoFin)
+        : undefined,
+    } as any);
+
+    const bloqueosPatron = await buildBloqueosPorPatronJornada({
+      prisma: prisma as any,
+      fechaDia: inicio,
+      horarioDia: { startMin, endMin } as any,
+      operariosIds,
+    });
+
+    const bloqueos = [...bloqueosDescanso, ...bloqueosPatron];
+
+    const agenda = await buildAgendaPorOperarioDia({
+      prisma: prisma as any,
+      conjuntoId,
+      fechaDia: inicio,
+      operariosIds,
+      incluirBorrador: false,
+      bloqueosGlobales: bloqueos,
+      excluirEstados: ESTADOS_NO_BLOQUEAN_AGENDA as any,
+    });
+
+    const all: Intervalo[] = [];
+    for (const opId of Object.keys(agenda)) all.push(...agenda[opId]);
+    const ocupadosGlobal = mergeIntervalos(all);
+
+    const bloques = buscarHuecoDiaConSplitEarliest({
+      startMin,
+      endMin,
+      durMin,
+      ocupados: ocupadosGlobal,
+      bloqueos,
+      desiredStartMin: toMinOfDaySafe(inicio),
+      maxBloques: 2,
+    });
+
+    if (!bloques) return null;
+
+    const sugStart = bloques[0].i;
+    const sugEnd = bloques[bloques.length - 1].f;
+
+    const suggestedInicio = new Date(inicio);
+    suggestedInicio.setHours(0, 0, 0, 0);
+    suggestedInicio.setMinutes(sugStart);
+
+    const suggestedFin = new Date(inicio);
+    suggestedFin.setHours(0, 0, 0, 0);
+    suggestedFin.setMinutes(sugEnd);
+
+    return { suggestedInicio, suggestedFin };
+  }
+
   private async buscarOpcionesReemplazoParaCorrectiva(params: {
     prisma: PrismaClient;
     conjuntoId: string;
@@ -1564,82 +1642,22 @@ export class GerenteService {
         });
 
         if (choqueOperario) {
-          // Ã¢Å“â€¦ 0.1) Intentar sugerir hueco en el dÃƒÂ­a (si hay conjunto y horario)
-          const ds = dateToDiaSemana(inicio);
-          const horario = await tx.conjuntoHorario.findFirst({
-            where: { conjuntoId: dto.conjuntoId, dia: ds as any },
+          const sugerencia = await this.buscarSugerenciaMismoDia({
+            prisma: tx,
+            conjuntoId: dto.conjuntoId,
+            inicio,
+            durMin,
+            operariosIds,
           });
 
-          if (horario) {
-            const startMin = toMin(horario.horaApertura);
-            const endMin = toMin(horario.horaCierre);
-
-            const bloqueosDescanso = buildBloqueosPorDescanso({
-              startMin,
-              endMin,
-              descansoStartMin: horario.descansoInicio
-                ? toMin(horario.descansoInicio)
-                : undefined,
-              descansoEndMin: horario.descansoFin
-                ? toMin(horario.descansoFin)
-                : undefined,
-            } as any);
-
-            const bloqueosPatron = await buildBloqueosPorPatronJornada({
-              prisma: tx as any,
-              fechaDia: inicio,
-              horarioDia: { startMin, endMin } as any,
-              operariosIds,
-            });
-
-            const bloqueos = [...bloqueosDescanso, ...bloqueosPatron];
-
-            const agenda = await buildAgendaPorOperarioDia({
-              prisma: tx as any,
-              conjuntoId: dto.conjuntoId,
-              fechaDia: inicio,
-              operariosIds,
-              incluirBorrador: false,
-              bloqueosGlobales: bloqueos,
-              excluirEstados: ESTADOS_NO_BLOQUEAN_AGENDA as any,
-            });
-
-            const all: Intervalo[] = [];
-            for (const opId of Object.keys(agenda)) all.push(...agenda[opId]);
-            const ocupadosGlobal = mergeIntervalos(all);
-
-            const desiredStartMin = toMinOfDaySafe(inicio);
-
-            const bloques = buscarHuecoDiaConSplitEarliest({
-              startMin,
-              endMin,
-              durMin,
-              ocupados: ocupadosGlobal,
-              bloqueos,
-              desiredStartMin,
-              maxBloques: 2,
-            });
-
-            if (bloques) {
-              const sugStart = bloques[0].i;
-              const sugEnd = bloques[bloques.length - 1].f;
-
-              const sugIni = new Date(inicio);
-              sugIni.setHours(0, 0, 0, 0);
-              sugIni.setMinutes(sugStart);
-
-              const sugFin = new Date(inicio);
-              sugFin.setHours(0, 0, 0, 0);
-              sugFin.setMinutes(sugEnd);
-
-              return {
-                ok: false,
-                reason: "HAY_SOLAPE_CON_TAREAS_EXISTENTES",
-                message: "Ese horario ya estÃƒÂ¡ ocupado por otra tarea.",
-                suggestedInicio: sugIni,
-                suggestedFin: sugFin,
-              };
-            }
+          if (sugerencia) {
+            return {
+              ok: false,
+              reason: "HAY_SOLAPE_CON_TAREAS_EXISTENTES",
+              message: "Ese horario ya esta ocupado por otra tarea.",
+              suggestedInicio: sugerencia.suggestedInicio,
+              suggestedFin: sugerencia.suggestedFin,
+            };
           }
 
           // sin hueco sugerible
@@ -1884,8 +1902,21 @@ export class GerenteService {
       operariosIds,
     });
 
-    const suggestedInicio = intento?.suggestedInicio ?? null;
-    const suggestedFin = intento?.suggestedFin ?? null;
+    let suggestedInicio = intento?.suggestedInicio ?? null;
+    let suggestedFin = intento?.suggestedFin ?? null;
+
+    if (!suggestedInicio || !suggestedFin) {
+      const sugerencia = await this.buscarSugerenciaMismoDia({
+        prisma: this.prisma,
+        conjuntoId: dto.conjuntoId,
+        inicio,
+        durMin,
+        operariosIds,
+      });
+      suggestedInicio = sugerencia?.suggestedInicio ?? suggestedInicio;
+      suggestedFin = sugerencia?.suggestedFin ?? suggestedFin;
+    }
+
     const hasSuggested = Boolean(suggestedInicio && suggestedFin);
 
     const conflictoNoReemplazable = await this.prisma.tarea.findFirst({
@@ -1924,7 +1955,11 @@ export class GerenteService {
               tarea: conflictoNoReemplazable,
               hasSuggested,
             })
-          : intento?.message ?? "No hay hueco y no hay reemplazos viables.",
+          : hasSuggested
+            ? "No hay reemplazos permitidos para esta correctiva, pero puedes moverla a un hueco disponible del mismo dia."
+            : prioridad === 3
+              ? "No hay hueco disponible en el mismo dia y esta correctiva prioridad 3 no tiene una preventiva prioridad 3 para reemplazar."
+              : "No hay hueco disponible en el mismo dia y no existe una opcion de reemplazo valida.",
         suggestedInicio,
         suggestedFin,
       };
