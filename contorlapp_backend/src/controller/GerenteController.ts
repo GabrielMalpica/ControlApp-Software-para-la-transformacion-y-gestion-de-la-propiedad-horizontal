@@ -362,6 +362,8 @@ export class GerenteController {
           ok: false,
           reason: "reason" in r ? r.reason : "SIN_HUECO",
           message: r.message,
+          suggestedInicio: r.suggestedInicio ?? null,
+          suggestedFin: r.suggestedFin ?? null,
         });
         return;
       }
