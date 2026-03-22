@@ -959,6 +959,36 @@ export class GerenteService {
     return parts.join("; ");
   }
 
+  private buildBloqueoNoReemplazableMessage(params: {
+    prioridadCorrectiva: number;
+    tarea: {
+      id: number;
+      tipo: string;
+      prioridad: number | null;
+      descripcion: string | null;
+    } | null;
+    hasSuggested: boolean;
+  }) {
+    const { prioridadCorrectiva, tarea, hasSuggested } = params;
+    if (!tarea) {
+      return hasSuggested
+        ? "A esa hora ya hay una tarea que no se puede reemplazar con esta prioridad. Puedes mover la correctiva al siguiente hueco disponible."
+        : "A esa hora ya hay una tarea que no se puede reemplazar con esta prioridad y no se encontro hueco en el mismo dia.";
+    }
+
+    const tipo = String(tarea.tipo ?? "TAREA").toUpperCase();
+    const tipoLabel = tipo === "PREVENTIVA" ? "preventiva" : "correctiva";
+    const prioridad = Number(tarea.prioridad ?? 0);
+    const descripcion = String(tarea.descripcion ?? "").trim();
+    const ref = descripcion.length > 0
+      ? `${tipoLabel} \"${descripcion}\"`
+      : `${tipoLabel} #${tarea.id}`;
+
+    return hasSuggested
+      ? `A esta hora hay ${ref} prioridad ${prioridad}. La correctiva prioridad ${prioridadCorrectiva} no la puede reemplazar. Puedes moverla al siguiente hueco disponible.`
+      : `A esta hora hay ${ref} prioridad ${prioridad}. La correctiva prioridad ${prioridadCorrectiva} no la puede reemplazar y no se encontro hueco en el mismo dia.`;
+  }
+
   private async buscarOpcionesReemplazoParaCorrectiva(params: {
     prisma: PrismaClient;
     conjuntoId: string;
@@ -1858,13 +1888,43 @@ export class GerenteService {
     const suggestedFin = intento?.suggestedFin ?? null;
     const hasSuggested = Boolean(suggestedInicio && suggestedFin);
 
+    const conflictoNoReemplazable = await this.prisma.tarea.findFirst({
+      where: {
+        conjuntoId: dto.conjuntoId,
+        fechaInicio: { lt: fin },
+        fechaFin: { gt: inicio },
+        estado: { notIn: ESTADOS_NO_BLOQUEAN_AGENDA as any },
+        ...(operariosIds.length
+          ? { operarios: { some: { id: { in: operariosIds } } } }
+          : {}),
+        OR: [
+          { tipo: { not: "PREVENTIVA" as any } },
+          { prioridad: { notIn: this.prioridadesPreventivaReemplazables(prioridad) } },
+        ],
+      },
+      select: {
+        id: true,
+        tipo: true,
+        prioridad: true,
+        descripcion: true,
+      },
+      orderBy: [
+        { prioridad: "asc" },
+        { fechaInicio: "asc" },
+      ],
+    });
+
     if (!opciones.autoOptions.length && !opciones.confirmOptions.length) {
       return {
         ok: false,
         reason: intento?.reason ?? "SIN_HUECO",
-        message:
-          intento?.message ??
-          "No hay hueco y no hay reemplazos viables.",
+        message: conflictoNoReemplazable
+          ? this.buildBloqueoNoReemplazableMessage({
+              prioridadCorrectiva: prioridad,
+              tarea: conflictoNoReemplazable,
+              hasSuggested,
+            })
+          : intento?.message ?? "No hay hueco y no hay reemplazos viables.",
         suggestedInicio,
         suggestedFin,
       };
