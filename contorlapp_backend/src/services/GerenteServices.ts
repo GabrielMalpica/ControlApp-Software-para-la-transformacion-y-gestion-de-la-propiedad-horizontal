@@ -64,6 +64,15 @@ const AsignarConReemplazoV2DTO = z.object({
   motivoReemplazo: z.string().trim().min(3).max(500).optional(),
   motivo: z.string().trim().min(3).max(500).optional(),
   accionReemplazadas: z.enum(["REPROGRAMAR", "CANCELAR"]).optional(),
+  reprogramaciones: z
+    .array(
+      z.object({
+        tareaId: z.number().int().positive(),
+        fechaInicio: z.coerce.date(),
+        fechaFin: z.coerce.date(),
+      }),
+    )
+    .optional(),
 });
 
 const AgregarInsumoAConjuntoDTO = z.object({
@@ -1372,6 +1381,48 @@ export class GerenteService {
     return null;
   }
 
+  private async listarHuecosReprogramacionEnMes(params: {
+    tx: Prisma.TransactionClient;
+    conjuntoId: string;
+    tarea: {
+      id: number;
+      fechaInicio: Date;
+      fechaFin: Date;
+      duracionMinutos: number | null;
+      operarios: Array<{ id: string }>;
+    };
+    fechaDesde: Date;
+    limit?: number;
+  }): Promise<Array<{ fechaInicio: Date; fechaFin: Date }>> {
+    const { tx, conjuntoId, tarea, fechaDesde, limit = 5 } = params;
+    const out: Array<{ fechaInicio: Date; fechaFin: Date }> = [];
+    let cursor = new Date(fechaDesde);
+
+    for (let guard = 0; guard < Math.max(1, limit) * 3; guard++) {
+      const slot = await this.buscarHuecoReprogramacionEnMes({
+        tx,
+        conjuntoId,
+        tarea,
+        fechaDesde: cursor,
+      });
+      if (!slot) break;
+
+      const duplicate = out.some(
+        (item) =>
+          item.fechaInicio.getTime() === slot.fechaInicio.getTime() &&
+          item.fechaFin.getTime() === slot.fechaFin.getTime(),
+      );
+      if (!duplicate) {
+        out.push(slot);
+        if (out.length >= limit) break;
+      }
+
+      cursor = new Date(slot.fechaFin.getTime() + 60000);
+    }
+
+    return out;
+  }
+
   async asignarTarea(payload: unknown) {
     const asignadorId = this.extraerAsignadorId(payload);
     const dto = CrearTareaDTO.parse(payload);
@@ -1883,8 +1934,12 @@ export class GerenteService {
       accionReemplazadas,
       motivoReemplazo,
       motivo,
+      reprogramaciones,
     } = parsed.data;
     const motivoUsuario = (motivoReemplazo ?? motivo ?? "").trim() || null;
+    const reprogramacionesMap = new Map(
+      (reprogramaciones ?? []).map((item) => [item.tareaId, item]),
+    );
 
     const tipo = String(dto.tipo ?? "CORRECTIVA").toUpperCase();
     const prioridad = Number(dto.prioridad ?? 2);
@@ -2038,8 +2093,73 @@ export class GerenteService {
           ok: false,
           reason: "ACCION_REEMPLAZO_REQUERIDA",
           message:
-            "Debe indicar si las preventivas reemplazadas se reprograman o se cancelan.",
-        };
+            "Debe indicar si las preventivas reemplazadas se reprograman o se marcan como no completadas.",
+          };
+        }
+
+      if (accionReemplazadas === "REPROGRAMAR") {
+        const opcionesReprogramacion = await Promise.all(
+          tareasReemplazar.map(async (t) => {
+            const slots = await this.listarHuecosReprogramacionEnMes({
+              tx,
+              conjuntoId: dto.conjuntoId!,
+              tarea: {
+                id: t.id,
+                fechaInicio: t.fechaInicio,
+                fechaFin: t.fechaFin,
+                duracionMinutos: t.duracionMinutos,
+                operarios: t.operarios,
+              },
+              fechaDesde: fin,
+              limit: 5,
+            });
+
+            return {
+              tareaId: t.id,
+              descripcion: t.descripcion,
+              prioridad: t.prioridad ?? 2,
+              tipo: t.tipo,
+              slots,
+            };
+          }),
+        );
+
+        const faltanSelecciones = tareasReemplazar.some(
+          (t) => !reprogramacionesMap.has(t.id),
+        );
+
+        if (faltanSelecciones) {
+          return {
+            ok: false,
+            needsReprogrammingSelection: true,
+            message:
+              "Selecciona una nueva franja horaria para cada preventiva reemplazada.",
+            opcionesReprogramacion,
+          };
+        }
+
+        for (const t of tareasReemplazar) {
+          const seleccion = reprogramacionesMap.get(t.id);
+          if (!seleccion) continue;
+
+          const coincide = opcionesReprogramacion
+            .find((item) => item.tareaId === t.id)
+            ?.slots.some(
+              (slot) =>
+                slot.fechaInicio.getTime() === seleccion.fechaInicio.getTime() &&
+                slot.fechaFin.getTime() === seleccion.fechaFin.getTime(),
+            );
+
+          if (!coincide) {
+            return {
+              ok: false,
+              needsReprogrammingSelection: true,
+              message:
+                "Una de las franjas elegidas ya no esta disponible. Selecciona nuevamente el horario de reprogramacion.",
+              opcionesReprogramacion,
+            };
+          }
+        }
       }
 
       const conflictoRestante = await tx.tarea.findFirst({
@@ -2107,62 +2227,15 @@ export class GerenteService {
         const accionFinal = accionReemplazadas ?? "CANCELAR";
 
         if (accionFinal === "REPROGRAMAR") {
-          const hueco = await this.buscarHuecoReprogramacionEnMes({
-            tx,
-            conjuntoId: dto.conjuntoId!,
-            tarea: {
-              id: t.id,
-              fechaInicio: t.fechaInicio,
-              fechaFin: t.fechaFin,
-              duracionMinutos: t.duracionMinutos,
-              operarios: t.operarios,
-            },
-            fechaDesde: fin,
-          });
-
-          if (hueco) {
-            const motivoRegistro = this.buildReemplazoMotivo({
-              prioridadCorrectiva: prioridad,
-              prioridadPreventiva: t.prioridad ?? 2,
-              resultado: "REPROGRAMADA",
-              motivoUsuario,
-              accion: "REPROGRAMAR",
-            });
-
-            await tx.tarea.update({
-              where: { id: t.id },
-              data: {
-                estado: EstadoTarea.ASIGNADA,
-                fechaInicio: hueco.fechaInicio,
-                fechaFin: hueco.fechaFin,
-                duracionMinutos: Math.max(
-                  1,
-                  Math.round(
-                    (hueco.fechaFin.getTime() - hueco.fechaInicio.getTime()) / 60000,
-                  ),
-                ),
-                reprogramada: true,
-                reprogramadaEn: new Date(),
-                reprogramadaMotivo: motivoRegistro,
-                reprogramadaPorTareaId: nuevaCorrectiva.id,
-                fechaInicioOriginal: t.fechaInicioOriginal ?? t.fechaInicio,
-                fechaFinOriginal: t.fechaFinOriginal ?? t.fechaFin,
-              } as any,
-            });
-            reprogramadasIds.push(t.id);
-            reemplazosDetalle.push({
-              id: t.id,
-              prioridad: t.prioridad ?? 2,
-              tipo: t.tipo,
-              resultado: "REPROGRAMADA",
-            });
-            continue;
+          const seleccion = reprogramacionesMap.get(t.id);
+          if (!seleccion) {
+            throw new Error(`REPROGRAMACION_FALTANTE_${t.id}`);
           }
 
-          const motivoSinCupo = this.buildReemplazoMotivo({
+          const motivoRegistro = this.buildReemplazoMotivo({
             prioridadCorrectiva: prioridad,
             prioridadPreventiva: t.prioridad ?? 2,
-            resultado: "CANCELADA_SIN_CUPO",
+            resultado: "REPROGRAMADA",
             motivoUsuario,
             accion: "REPROGRAMAR",
           });
@@ -2170,21 +2243,30 @@ export class GerenteService {
           await tx.tarea.update({
             where: { id: t.id },
             data: {
-              estado: EstadoTarea.NO_COMPLETADA,
+              estado: EstadoTarea.ASIGNADA,
+              fechaInicio: seleccion.fechaInicio,
+              fechaFin: seleccion.fechaFin,
+              duracionMinutos: Math.max(
+                1,
+                Math.round(
+                  (seleccion.fechaFin.getTime() - seleccion.fechaInicio.getTime()) /
+                    60000,
+                ),
+              ),
               reprogramada: true,
               reprogramadaEn: new Date(),
-              reprogramadaMotivo: motivoSinCupo,
+              reprogramadaMotivo: motivoRegistro,
               reprogramadaPorTareaId: nuevaCorrectiva.id,
               fechaInicioOriginal: t.fechaInicioOriginal ?? t.fechaInicio,
               fechaFinOriginal: t.fechaFinOriginal ?? t.fechaFin,
             } as any,
           });
-          canceladasSinCupoIds.push(t.id);
+          reprogramadasIds.push(t.id);
           reemplazosDetalle.push({
             id: t.id,
             prioridad: t.prioridad ?? 2,
             tipo: t.tipo,
-            resultado: "CANCELADA_SIN_CUPO",
+            resultado: "REPROGRAMADA",
           });
           continue;
         }

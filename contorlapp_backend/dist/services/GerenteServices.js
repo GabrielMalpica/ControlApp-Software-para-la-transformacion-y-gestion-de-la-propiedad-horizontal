@@ -31,6 +31,13 @@ const AsignarConReemplazoV2DTO = zod_1.z.object({
     motivoReemplazo: zod_1.z.string().trim().min(3).max(500).optional(),
     motivo: zod_1.z.string().trim().min(3).max(500).optional(),
     accionReemplazadas: zod_1.z.enum(["REPROGRAMAR", "CANCELAR"]).optional(),
+    reprogramaciones: zod_1.z
+        .array(zod_1.z.object({
+        tareaId: zod_1.z.number().int().positive(),
+        fechaInicio: zod_1.z.coerce.date(),
+        fechaFin: zod_1.z.coerce.date(),
+    }))
+        .optional(),
 });
 const AgregarInsumoAConjuntoDTO = zod_1.z.object({
     conjuntoId: zod_1.z.string().min(3),
@@ -135,7 +142,7 @@ class GerenteService {
             this.prisma.usuario.findUnique({ where: { correo: dto.correo } }),
         ]);
         if (existeId)
-            throw new Error("Ya existe un usuario con esa cÃ©dula.");
+            throw new Error("Ya existe un usuario con esa cÃƒÂ©dula.");
         if (existeCorreo)
             throw new Error("Ya existe un usuario con ese correo.");
         const hash = await bcrypt_1.default.hash(dto.contrasena, 10);
@@ -203,9 +210,9 @@ class GerenteService {
             this.prisma.usuario.findUnique({ where: { id: dto.Id } }),
         ]);
         if (!empresa)
-            throw new Error("âŒ Empresa no encontrada con ese NIT.");
+            throw new Error("Ã¢ÂÅ’ Empresa no encontrada con ese NIT.");
         if (!usuario)
-            throw new Error("âŒ Usuario no encontrado.");
+            throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
         if (usuario.rol !== client_1.Rol.gerente)
             throw new Error("El usuario no tiene rol 'gerente'.");
         return this.prisma.gerente.create({
@@ -219,7 +226,7 @@ class GerenteService {
             where: { id: dto.Id },
         });
         if (!usuario)
-            throw new Error("âŒ Usuario no encontrado.");
+            throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
         if (usuario.rol !== client_1.Rol.administrador)
             throw new Error("El usuario no tiene rol 'administrador'.");
         return this.prisma.administrador.create({
@@ -230,19 +237,19 @@ class GerenteService {
     async asignarJefeOperaciones(payload) {
         const dto = JefeOperaciones_1.CrearJefeOperacionesDTO.parse(payload);
         const [empresa, usuario] = await Promise.all([
-            this.prisma.empresa.findFirst(), // ðŸ‘ˆ toma la primera empresa registrada
+            this.prisma.empresa.findFirst(), // Ã°Å¸â€˜Ë† toma la primera empresa registrada
             this.prisma.usuario.findUnique({ where: { id: dto.Id } }),
         ]);
         if (!empresa)
-            throw new Error("âŒ No hay empresa registrada.");
+            throw new Error("Ã¢ÂÅ’ No hay empresa registrada.");
         if (!usuario)
-            throw new Error("âŒ Usuario no encontrado.");
+            throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
         if (usuario.rol !== client_1.Rol.jefe_operaciones)
             throw new Error("El usuario no tiene rol 'jefe_operaciones'.");
         return this.prisma.jefeOperaciones.create({
             data: {
                 id: dto.Id, // FK al Usuario
-                empresaId: empresa.nit, // ðŸ‘ˆ usamos el NIT de la empresa
+                empresaId: empresa.nit, // Ã°Å¸â€˜Ë† usamos el NIT de la empresa
             },
             include: { usuario: true, empresa: true },
         });
@@ -254,9 +261,9 @@ class GerenteService {
             this.prisma.usuario.findUnique({ where: { id: dto.Id } }),
         ]);
         if (!empresa)
-            throw new Error("âŒ No hay empresa registrada.");
+            throw new Error("Ã¢ÂÅ’ No hay empresa registrada.");
         if (!usuario)
-            throw new Error("âŒ Usuario no encontrado.");
+            throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
         if (usuario.rol !== client_1.Rol.supervisor)
             throw new Error("El usuario no tiene rol 'supervisor'.");
         return this.prisma.supervisor.create({
@@ -274,9 +281,9 @@ class GerenteService {
             this.prisma.usuario.findUnique({ where: { id: dto.Id } }),
         ]);
         if (!empresa)
-            throw new Error("âŒ No hay empresa registrada.");
+            throw new Error("Ã¢ÂÅ’ No hay empresa registrada.");
         if (!usuario)
-            throw new Error("âŒ Usuario no encontrado.");
+            throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
         if (usuario.rol !== client_1.Rol.operario)
             throw new Error("El usuario no tiene rol 'operario'.");
         return this.prisma.operario.create({
@@ -316,7 +323,7 @@ class GerenteService {
                 where: { id: dto.administradorId },
             });
             if (!admin) {
-                throw new Error("âŒ El administrador seleccionado no existe.");
+                throw new Error("Ã¢ÂÅ’ El administrador seleccionado no existe.");
             }
             administradorId = dto.administradorId;
         }
@@ -411,7 +418,7 @@ class GerenteService {
             },
         });
         if (!conjunto) {
-            throw new Error("âŒ Conjunto no encontrado.");
+            throw new Error("Ã¢ÂÅ’ Conjunto no encontrado.");
         }
         return conjunto;
     }
@@ -446,7 +453,7 @@ class GerenteService {
             data.fechaInicioContrato = dto.fechaInicioContrato;
         }
         if (dto.fechaFinContrato !== undefined) {
-            // si el front manda fechaFin explÃ­cita, la usamos tal cua
+            // si el front manda fechaFin explÃƒÂ­cita, la usamos tal cua
             data.fechaFinContrato = dto.fechaFinContrato;
         }
         if (dto.activo !== undefined) {
@@ -557,9 +564,9 @@ class GerenteService {
             }),
         ]);
         if (tareasPendientes.length > 0)
-            throw new Error("âŒ El conjunto tiene tareas pendientes.");
+            throw new Error("Ã¢ÂÅ’ El conjunto tiene tareas pendientes.");
         if (maquinariaActivaEnConjunto.length > 0)
-            throw new Error("âŒ El conjunto tiene maquinaria activa asignada (propia o prestada).");
+            throw new Error("Ã¢ÂÅ’ El conjunto tiene maquinaria activa asignada (propia o prestada).");
         await this.prisma.$transaction(async (tx) => {
             const inventario = await tx.inventario.findUnique({
                 where: { conjuntoId },
@@ -607,7 +614,7 @@ class GerenteService {
             where: { conjuntoId: dto.conjuntoId },
         });
         if (!inventario)
-            throw new Error(`âŒ No se encontrÃ³ inventario para el conjunto ${dto.conjuntoId}`);
+            throw new Error(`Ã¢ÂÅ’ No se encontrÃƒÂ³ inventario para el conjunto ${dto.conjuntoId}`);
         const existente = await this.prisma.inventarioInsumo.findUnique({
             where: {
                 inventarioId_insumoId: {
@@ -630,7 +637,7 @@ class GerenteService {
             },
         });
     }
-    /** CatÃ¡logo corporativo: empresaId = null (ajusta si usas catÃ¡logo por empresa) */
+    /** CatÃƒÂ¡logo corporativo: empresaId = null (ajusta si usas catÃƒÂ¡logo por empresa) */
     async agregarInsumoAlCatalogo(payload, empresaId) {
         const dto = Insumo_1.CrearInsumoDTO.parse(payload);
         const existe = await this.prisma.insumo.findFirst({
@@ -638,12 +645,12 @@ class GerenteService {
             select: { id: true },
         });
         if (existe)
-            throw new Error("ðŸš« Ya existe un insumo con ese nombre y unidad en el catÃ¡logo.");
+            throw new Error("Ã°Å¸Å¡Â« Ya existe un insumo con ese nombre y unidad en el catÃƒÂ¡logo.");
         return this.prisma.insumo.create({
             data: {
                 nombre: dto.nombre,
                 unidad: dto.unidad,
-                empresaId, // âœ… ya no null
+                empresaId, // Ã¢Å“â€¦ ya no null
                 categoria: dto.categoria,
                 umbralBajo: dto.umbralBajo ?? null,
             },
@@ -967,6 +974,30 @@ class GerenteService {
         }
         return null;
     }
+    async listarHuecosReprogramacionEnMes(params) {
+        const { tx, conjuntoId, tarea, fechaDesde, limit = 5 } = params;
+        const out = [];
+        let cursor = new Date(fechaDesde);
+        for (let guard = 0; guard < Math.max(1, limit) * 3; guard++) {
+            const slot = await this.buscarHuecoReprogramacionEnMes({
+                tx,
+                conjuntoId,
+                tarea,
+                fechaDesde: cursor,
+            });
+            if (!slot)
+                break;
+            const duplicate = out.some((item) => item.fechaInicio.getTime() === slot.fechaInicio.getTime() &&
+                item.fechaFin.getTime() === slot.fechaFin.getTime());
+            if (!duplicate) {
+                out.push(slot);
+                if (out.length >= limit)
+                    break;
+            }
+            cursor = new Date(slot.fechaFin.getTime() + 60000);
+        }
+        return out;
+    }
     async asignarTarea(payload) {
         const asignadorId = this.extraerAsignadorId(payload);
         const dto = Tarea_1.CrearTareaDTO.parse(payload);
@@ -987,7 +1018,7 @@ class GerenteService {
             return {
                 ok: false,
                 reason: "FALTA_DURACION",
-                message: "Debe indicar duraciÃ³n.",
+                message: "Debe indicar duraciÃƒÂ³n.",
             };
         }
         const fin = dto.fechaFin ?? new Date(inicio.getTime() + durMin * 60000);
@@ -1001,9 +1032,9 @@ class GerenteService {
                 .filter((n) => Number.isFinite(n) && n > 0)
             : [];
         // =========================
-        // Helpers de logÃ­stica (maquinaria)
+        // Helpers de logÃƒÂ­stica (maquinaria)
         // =========================
-        const LOGISTICA_DOW = new Set([1, 3, 6]); // lun, miÃ©, sÃ¡b
+        const LOGISTICA_DOW = new Set([1, 3, 6]); // lun, miÃƒÂ©, sÃƒÂ¡b
         const startDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
         const endDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
         const isLogistica = (d) => LOGISTICA_DOW.has(d.getDay());
@@ -1034,10 +1065,10 @@ class GerenteService {
             return v.includes("PROPIA") || v.includes("CONJUNTO");
         };
         // =========================
-        // TRANSACCIÃ“N
+        // TRANSACCIÃƒâ€œN
         // =========================
         return this.prisma.$transaction(async (tx) => {
-            // âœ… 0) Validar solape de operarios (bloque duro)
+            // Ã¢Å“â€¦ 0) Validar solape de operarios (bloque duro)
             if (dto.conjuntoId && operariosIds.length) {
                 const choqueOperario = await tx.tarea.findFirst({
                     where: {
@@ -1054,7 +1085,7 @@ class GerenteService {
                     select: { id: true, fechaInicio: true, fechaFin: true },
                 });
                 if (choqueOperario) {
-                    // âœ… 0.1) Intentar sugerir hueco en el dÃ­a (si hay conjunto y horario)
+                    // Ã¢Å“â€¦ 0.1) Intentar sugerir hueco en el dÃƒÂ­a (si hay conjunto y horario)
                     const ds = (0, schedulerUtils_1.dateToDiaSemana)(inicio);
                     const horario = await tx.conjuntoHorario.findFirst({
                         where: { conjuntoId: dto.conjuntoId, dia: ds },
@@ -1114,7 +1145,7 @@ class GerenteService {
                             return {
                                 ok: false,
                                 reason: "HAY_SOLAPE_CON_TAREAS_EXISTENTES",
-                                message: "Ese horario ya estÃ¡ ocupado por otra tarea.",
+                                message: "Ese horario ya estÃƒÂ¡ ocupado por otra tarea.",
                                 suggestedInicio: sugIni,
                                 suggestedFin: sugFin,
                             };
@@ -1124,11 +1155,11 @@ class GerenteService {
                     return {
                         ok: false,
                         reason: "HAY_SOLAPE_CON_TAREAS_EXISTENTES",
-                        message: "Ese horario ya estÃ¡ ocupado y no se encontrÃ³ hueco en el dÃ­a.",
+                        message: "Ese horario ya estÃƒÂ¡ ocupado y no se encontrÃƒÂ³ hueco en el dÃƒÂ­a.",
                     };
                 }
             }
-            // 1ï¸âƒ£ Crear la tarea
+            // 1Ã¯Â¸ÂÃ¢Æ’Â£ Crear la tarea
             const tarea = await tx.tarea.create({
                 data: {
                     descripcion: dto.descripcion,
@@ -1151,7 +1182,7 @@ class GerenteService {
                 },
                 select: { id: true },
             });
-            // 2ï¸âƒ£ Resolver maquinaria por conjunto
+            // 2Ã¯Â¸ÂÃ¢Æ’Â£ Resolver maquinaria por conjunto
             if (dto.conjuntoId && maquinariaIds.length) {
                 const registros = await tx.maquinariaConjunto.findMany({
                     where: {
@@ -1179,7 +1210,7 @@ class GerenteService {
                         const recogida = recogidaLogistica(fin);
                         reservaInicio = startDay(entrega);
                         reservaFin = endDay(recogida);
-                        obs = `Reserva logÃ­stica (${entrega.toDateString()} â†’ ${recogida.toDateString()})`;
+                        obs = `Reserva logÃƒÂ­stica (${entrega.toDateString()} Ã¢â€ â€™ ${recogida.toDateString()})`;
                     }
                     // Validar solape REAL maquinaria
                     const choque = await tx.usoMaquinaria.findFirst({
@@ -1190,7 +1221,7 @@ class GerenteService {
                         },
                     });
                     if (choque) {
-                        throw new Error(`MAQUINARIA_OCUPADA: maquinaria ${maqId} ya estÃ¡ reservada`);
+                        throw new Error(`MAQUINARIA_OCUPADA: maquinaria ${maqId} ya estÃƒÂ¡ reservada`);
                     }
                     // Crear uso
                     await tx.usoMaquinaria.create({
@@ -1262,16 +1293,16 @@ class GerenteService {
             return {
                 ok: false,
                 reason: "FALTA_DURACION",
-                message: "Debe indicar duraciÃ³n.",
+                message: "Debe indicar duraciÃƒÂ³n.",
             };
         }
         const fin = dto.fechaFin ?? new Date(inicio.getTime() + durMin * 60000);
         const operariosIds = dto.operariosIds?.map(String) ??
             (dto.operarioId ? [String(dto.operarioId)] : []);
-        // 1) Intentar creación normal exacta en el horario solicitado.
+        // 1) Intentar creaciÃ³n normal exacta en el horario solicitado.
         let intento = await this.asignarTarea(dto);
         if (intento?.ok === true) {
-            // Validación defensiva: no dejar superposiciones reales por operario.
+            // ValidaciÃ³n defensiva: no dejar superposiciones reales por operario.
             const createdId = Number(intento?.tareaId ?? 0);
             if (createdId > 0 && dto.conjuntoId && operariosIds.length) {
                 const solapeInconsistente = await this.prisma.tarea.findFirst({
@@ -1314,7 +1345,7 @@ class GerenteService {
                 message: intento.message ?? "Tarea creada correctamente.",
             };
         }
-        // 2) Si no falló por solape, devolver error normal.
+        // 2) Si no fallÃ³ por solape, devolver error normal.
         if (intento?.reason !== "HAY_SOLAPE_CON_TAREAS_EXISTENTES") {
             return {
                 ok: false,
@@ -1344,37 +1375,7 @@ class GerenteService {
                 suggestedFin,
             };
         }
-        // 4) Auto reemplazo solo cuando no hay hueco sugerido alterno.
-        if (!hasSuggested &&
-            opciones.autoOptions.length > 0 &&
-            opciones.confirmOptions.length === 0) {
-            const autoPick = opciones.autoOptions[0];
-            const autoResult = await this.asignarTareaConReemplazoV2({
-                tarea: dto,
-                reemplazarIds: autoPick.reemplazarIds,
-                accionReemplazadas: "CANCELAR",
-            });
-            if (autoResult?.ok) {
-                return {
-                    ok: true,
-                    mode: "AUTO_REEMPLAZO",
-                    message: "Se reemplazÃ³ automÃ¡ticamente una preventiva de menor prioridad.",
-                    createdId: autoResult.createdCorrectivaId,
-                    reemplazos: autoResult.reemplazos ?? [],
-                    autoReplaced: autoResult.reemplazos ?? [],
-                    reemplazadasIds: autoResult.reemplazadasIds ?? [],
-                    reprogramadasIds: autoResult.reprogramadasIds ?? [],
-                    canceladasIds: autoResult.canceladasIds ?? [],
-                    canceladasSinCupoIds: autoResult.canceladasSinCupoIds ?? [],
-                    noCompletadasIds: autoResult.noCompletadasIds ?? [],
-                };
-            }
-            return {
-                ok: false,
-                reason: autoResult?.reason ?? "SIN_HUECO",
-                message: autoResult?.message ?? "No fue posible aplicar el reemplazo.",
-            };
-        }
+        const soloAvisoAuto = opciones.autoOptions.length > 0 && opciones.confirmOptions.length === 0;
         const esCritica = opciones.confirmOptions.some((o) => o.tipoConfirmacion === "CONFIRM_DANGER");
         const prioridadObjetivo = opciones.confirmOptions
             .map((o) => o.prioridadObjetivo)
@@ -1386,19 +1387,30 @@ class GerenteService {
             ok: true,
             mode: "REQUIERE_DECISION_REEMPLAZO",
             message: hasSuggested
-                ? "No hay espacio a esa hora. Puedes mover la correctiva al siguiente hueco o reemplazar una preventiva."
-                : "No hay espacio a esa hora. Puedes reemplazar una preventiva segÃºn prioridad.",
+                ? soloAvisoAuto
+                    ? "No hay espacio a esa hora. Puedes mover la correctiva al siguiente hueco o revisar el reemplazo automatico de preventivas P3."
+                    : "No hay espacio a esa hora. Puedes mover la correctiva al siguiente hueco o reemplazar una preventiva."
+                : soloAvisoAuto
+                    ? "No hay espacio a esa hora. Se requiere avisar el reemplazo automatico de preventivas prioridad 3 antes de crear la correctiva."
+                    : "No hay espacio a esa hora. Puedes reemplazar una preventiva segÃƒÂºn prioridad.",
             decisionMode: hasSuggested ? "MOVER_O_REEMPLAZAR" : "REEMPLAZAR",
             prioridadCorrectiva: prioridad,
             prioridadObjetivo,
+            replacementNoticeOnly: soloAvisoAuto,
             criticalConfirmation: esCritica,
-            confirmationVariant: esCritica ? "danger" : "warning",
-            confirmationColor: esCritica ? "red" : "amber",
-            confirmationTitle: esCritica
-                ? "Alerta crÃ­tica: reemplazo sobre preventiva prioridad 1"
-                : "ConfirmaciÃ³n de reemplazo por prioridad",
-            confirmationRequiresReason: requiereMotivo,
-            requiresReplacementAction: true,
+            confirmationVariant: soloAvisoAuto
+                ? "info"
+                : esCritica
+                    ? "danger"
+                    : "warning",
+            confirmationColor: soloAvisoAuto ? "blue" : esCritica ? "red" : "amber",
+            confirmationTitle: soloAvisoAuto
+                ? "Aviso: reemplazo automatico sobre preventivas prioridad 3"
+                : esCritica
+                    ? "Alerta crÃƒÂ­tica: reemplazo sobre preventiva prioridad 1"
+                    : "ConfirmaciÃƒÂ³n de reemplazo por prioridad",
+            confirmationRequiresReason: soloAvisoAuto ? false : requiereMotivo,
+            requiresReplacementAction: soloAvisoAuto ? false : true,
             suggestedInicio,
             suggestedFin,
             opcionesAuto: opciones.autoOptions,
@@ -1413,11 +1425,12 @@ class GerenteService {
             return {
                 ok: false,
                 reason: "PAYLOAD_INVALIDO",
-                message: parsed.error.issues[0]?.message ?? "Payload invÃ¡lido.",
+                message: parsed.error.issues[0]?.message ?? "Payload invÃƒÂ¡lido.",
             };
         }
-        const { tarea: dto, reemplazarIds, accionReemplazadas, motivoReemplazo, motivo, } = parsed.data;
+        const { tarea: dto, reemplazarIds, accionReemplazadas, motivoReemplazo, motivo, reprogramaciones, } = parsed.data;
         const motivoUsuario = (motivoReemplazo ?? motivo ?? "").trim() || null;
+        const reprogramacionesMap = new Map((reprogramaciones ?? []).map((item) => [item.tareaId, item]));
         const tipo = String(dto.tipo ?? "CORRECTIVA").toUpperCase();
         const prioridad = Number(dto.prioridad ?? 2);
         if (tipo !== "CORRECTIVA") {
@@ -1449,7 +1462,7 @@ class GerenteService {
             return {
                 ok: false,
                 reason: "FALTA_DURACION",
-                message: "Debe indicar duraciÃ³n.",
+                message: "Debe indicar duraciÃƒÂ³n.",
             };
         }
         const fin = dto.fechaFin ?? new Date(inicio.getTime() + durMin * 60000);
@@ -1485,7 +1498,7 @@ class GerenteService {
                 return {
                     ok: false,
                     reason: "REEMPLAZOS_INVALIDOS",
-                    message: "Una o mÃ¡s tareas a reemplazar no pertenecen al conjunto indicado.",
+                    message: "Una o mÃƒÂ¡s tareas a reemplazar no pertenecen al conjunto indicado.",
                 };
             }
             for (const t of tareasReemplazar) {
@@ -1523,7 +1536,7 @@ class GerenteService {
                 return {
                     ok: false,
                     reason: "REEMPLAZO_NO_VALIDO",
-                    message: "La selecciÃ³n contiene tareas no reemplazables para esa prioridad.",
+                    message: "La selecciÃƒÂ³n contiene tareas no reemplazables para esa prioridad.",
                 };
             }
             const requiereConfirmacion = tiposDecision.some((x) => x !== "AUTO");
@@ -1540,8 +1553,58 @@ class GerenteService {
                 return {
                     ok: false,
                     reason: "ACCION_REEMPLAZO_REQUERIDA",
-                    message: "Debe indicar si las preventivas reemplazadas se reprograman o se cancelan.",
+                    message: "Debe indicar si las preventivas reemplazadas se reprograman o se marcan como no completadas.",
                 };
+            }
+            if (accionReemplazadas === "REPROGRAMAR") {
+                const opcionesReprogramacion = await Promise.all(tareasReemplazar.map(async (t) => {
+                    const slots = await this.listarHuecosReprogramacionEnMes({
+                        tx,
+                        conjuntoId: dto.conjuntoId,
+                        tarea: {
+                            id: t.id,
+                            fechaInicio: t.fechaInicio,
+                            fechaFin: t.fechaFin,
+                            duracionMinutos: t.duracionMinutos,
+                            operarios: t.operarios,
+                        },
+                        fechaDesde: fin,
+                        limit: 5,
+                    });
+                    return {
+                        tareaId: t.id,
+                        descripcion: t.descripcion,
+                        prioridad: t.prioridad ?? 2,
+                        tipo: t.tipo,
+                        slots,
+                    };
+                }));
+                const faltanSelecciones = tareasReemplazar.some((t) => !reprogramacionesMap.has(t.id));
+                if (faltanSelecciones) {
+                    return {
+                        ok: false,
+                        needsReprogrammingSelection: true,
+                        message: "Selecciona una nueva franja horaria para cada preventiva reemplazada.",
+                        opcionesReprogramacion,
+                    };
+                }
+                for (const t of tareasReemplazar) {
+                    const seleccion = reprogramacionesMap.get(t.id);
+                    if (!seleccion)
+                        continue;
+                    const coincide = opcionesReprogramacion
+                        .find((item) => item.tareaId === t.id)
+                        ?.slots.some((slot) => slot.fechaInicio.getTime() === seleccion.fechaInicio.getTime() &&
+                        slot.fechaFin.getTime() === seleccion.fechaFin.getTime());
+                    if (!coincide) {
+                        return {
+                            ok: false,
+                            needsReprogrammingSelection: true,
+                            message: "Una de las franjas elegidas ya no esta disponible. Selecciona nuevamente el horario de reprogramacion.",
+                            opcionesReprogramacion,
+                        };
+                    }
+                }
             }
             const conflictoRestante = await tx.tarea.findFirst({
                 where: {
@@ -1595,75 +1658,39 @@ class GerenteService {
                 const tipoDecision = this.tipoOpcionReemplazo(prioridad, t.prioridad ?? 2);
                 const accionFinal = accionReemplazadas ?? "CANCELAR";
                 if (accionFinal === "REPROGRAMAR") {
-                    const hueco = await this.buscarHuecoReprogramacionEnMes({
-                        tx,
-                        conjuntoId: dto.conjuntoId,
-                        tarea: {
-                            id: t.id,
-                            fechaInicio: t.fechaInicio,
-                            fechaFin: t.fechaFin,
-                            duracionMinutos: t.duracionMinutos,
-                            operarios: t.operarios,
-                        },
-                        fechaDesde: fin,
-                    });
-                    if (hueco) {
-                        const motivoRegistro = this.buildReemplazoMotivo({
-                            prioridadCorrectiva: prioridad,
-                            prioridadPreventiva: t.prioridad ?? 2,
-                            resultado: "REPROGRAMADA",
-                            motivoUsuario,
-                            accion: "REPROGRAMAR",
-                        });
-                        await tx.tarea.update({
-                            where: { id: t.id },
-                            data: {
-                                estado: client_1.EstadoTarea.ASIGNADA,
-                                fechaInicio: hueco.fechaInicio,
-                                fechaFin: hueco.fechaFin,
-                                duracionMinutos: Math.max(1, Math.round((hueco.fechaFin.getTime() - hueco.fechaInicio.getTime()) / 60000)),
-                                reprogramada: true,
-                                reprogramadaEn: new Date(),
-                                reprogramadaMotivo: motivoRegistro,
-                                reprogramadaPorTareaId: nuevaCorrectiva.id,
-                                fechaInicioOriginal: t.fechaInicioOriginal ?? t.fechaInicio,
-                                fechaFinOriginal: t.fechaFinOriginal ?? t.fechaFin,
-                            },
-                        });
-                        reprogramadasIds.push(t.id);
-                        reemplazosDetalle.push({
-                            id: t.id,
-                            prioridad: t.prioridad ?? 2,
-                            tipo: t.tipo,
-                            resultado: "REPROGRAMADA",
-                        });
-                        continue;
+                    const seleccion = reprogramacionesMap.get(t.id);
+                    if (!seleccion) {
+                        throw new Error(`REPROGRAMACION_FALTANTE_${t.id}`);
                     }
-                    const motivoSinCupo = this.buildReemplazoMotivo({
+                    const motivoRegistro = this.buildReemplazoMotivo({
                         prioridadCorrectiva: prioridad,
                         prioridadPreventiva: t.prioridad ?? 2,
-                        resultado: "CANCELADA_SIN_CUPO",
+                        resultado: "REPROGRAMADA",
                         motivoUsuario,
                         accion: "REPROGRAMAR",
                     });
                     await tx.tarea.update({
                         where: { id: t.id },
                         data: {
-                            estado: client_1.EstadoTarea.NO_COMPLETADA,
+                            estado: client_1.EstadoTarea.ASIGNADA,
+                            fechaInicio: seleccion.fechaInicio,
+                            fechaFin: seleccion.fechaFin,
+                            duracionMinutos: Math.max(1, Math.round((seleccion.fechaFin.getTime() - seleccion.fechaInicio.getTime()) /
+                                60000)),
                             reprogramada: true,
                             reprogramadaEn: new Date(),
-                            reprogramadaMotivo: motivoSinCupo,
+                            reprogramadaMotivo: motivoRegistro,
                             reprogramadaPorTareaId: nuevaCorrectiva.id,
                             fechaInicioOriginal: t.fechaInicioOriginal ?? t.fechaInicio,
                             fechaFinOriginal: t.fechaFinOriginal ?? t.fechaFin,
                         },
                     });
-                    canceladasSinCupoIds.push(t.id);
+                    reprogramadasIds.push(t.id);
                     reemplazosDetalle.push({
                         id: t.id,
                         prioridad: t.prioridad ?? 2,
                         tipo: t.tipo,
-                        resultado: "CANCELADA_SIN_CUPO",
+                        resultado: "REPROGRAMADA",
                     });
                     continue;
                 }
@@ -1694,7 +1721,7 @@ class GerenteService {
                     resultado: tipoDecision === "AUTO" ? "CANCELADA_AUTO" : "CANCELADA_MANUAL",
                 });
             }
-            // reserva maquinaria (mismo comportamiento de asignaciÃ³n normal)
+            // reserva maquinaria (mismo comportamiento de asignaciÃƒÂ³n normal)
             const noCompletadasIds = Array.from(new Set([...canceladasIds, ...canceladasSinCupoIds]));
             const LOGISTICA_DOW = new Set([1, 3, 6]);
             const startDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
@@ -1753,7 +1780,7 @@ class GerenteService {
                         const recogida = recogidaLogistica(fin);
                         reservaInicio = startDay(entrega);
                         reservaFin = endDay(recogida);
-                        obs = `Reserva logÃ­stica correctiva P${prioridad} (${entrega.toDateString()} -> ${recogida.toDateString()})`;
+                        obs = `Reserva logÃƒÂ­stica correctiva P${prioridad} (${entrega.toDateString()} -> ${recogida.toDateString()})`;
                     }
                     const choque = await tx.usoMaquinaria.findFirst({
                         where: {
@@ -1847,7 +1874,7 @@ class GerenteService {
         });
         if (normal)
             return { huecoNormal: normal };
-        // 3) Candidatas del dÃ­a P2/P3 (NO cerradas, NO ya reprogramadas)
+        // 3) Candidatas del dÃƒÂ­a P2/P3 (NO cerradas, NO ya reprogramadas)
         const candidatas = await prisma.tarea.findMany({
             where: {
                 conjuntoId,
@@ -1933,7 +1960,7 @@ class GerenteService {
                 maxBloques: 2,
             });
             if (bloques) {
-                // capturamos info de tareas que se reemplazarÃ­an (para informar)
+                // capturamos info de tareas que se reemplazarÃƒÂ­an (para informar)
                 const tareas = await prisma.tarea.findMany({
                     where: { id: { in: Array.from(idsAExcluir) } },
                     select: {
@@ -2061,7 +2088,7 @@ class GerenteService {
             data.insumosUsados = dto.insumosUsados;
         if (dto.observacionesRechazo !== undefined)
             data.observacionesRechazo = dto.observacionesRechazo;
-        // supervisorId ahora se guarda como String en la relaciÃ³n
+        // supervisorId ahora se guarda como String en la relaciÃƒÂ³n
         if (dto.supervisorId !== undefined) {
             data.supervisor =
                 dto.supervisorId === null
@@ -2134,7 +2161,7 @@ class GerenteService {
             const operariosNombres = t.operarios
                 ?.map((o) => o.usuario?.nombre)
                 .filter((n) => !!n) ?? [];
-            // NO convertir a Number (cÃ©dulas)
+            // NO convertir a Number (cÃƒÂ©dulas)
             const operariosIds = t.operarios?.map((o) => o.id) ?? [];
             const supervisorNombre = t.supervisor?.usuario?.nombre ?? null;
             const herramientasAsignadas = t.usoHerramientas?.map((u) => ({
@@ -2170,10 +2197,10 @@ class GerenteService {
                 elementoNombre: t.elemento?.nombre ?? null,
                 operariosIds,
                 operariosNombres,
-                // USO/ASIGNACIÃ“N
+                // USO/ASIGNACIÃƒâ€œN
                 herramientasAsignadas,
                 maquinariasAsignadas,
-                // PLANIFICACIÃ“N (JSON)
+                // PLANIFICACIÃƒâ€œN (JSON)
                 herramientasPlanJson: t.herramientasPlanJson ?? null,
                 maquinariaPlanJson: t.maquinariaPlanJson ?? null,
                 insumosPlanJson: t.insumosPlanJson ?? null,
@@ -2191,7 +2218,7 @@ class GerenteService {
             where: { administradorId: adminId.toString() },
         });
         if (asignaciones.length > 0) {
-            throw new Error("âŒ El administrador tiene conjuntos asignados.");
+            throw new Error("Ã¢ÂÅ’ El administrador tiene conjuntos asignados.");
         }
         await this.prisma.usuario.delete({ where: { id: adminId.toString() } });
     }
@@ -2206,7 +2233,7 @@ class GerenteService {
         }
     }
     async eliminarOperario(operarioId) {
-        // 1) Verificar tareas pendientes donde el operario estÃ© asignado
+        // 1) Verificar tareas pendientes donde el operario estÃƒÂ© asignado
         const tareasPendientes = await this.prisma.tarea.findMany({
             where: {
                 operarios: { some: { id: operarioId } }, // ya es string, no hace falta toString()
@@ -2217,15 +2244,15 @@ class GerenteService {
             select: { id: true },
         });
         if (tareasPendientes.length > 0) {
-            throw new Error("No se puede eliminar el operario porque aún tiene tareas activas (asignadas o en proceso).");
+            throw new Error("No se puede eliminar el operario porque aÃºn tiene tareas activas (asignadas o en proceso).");
         }
-        // 2) Borrar operario + usuario dentro de una misma transacciÃ³n
+        // 2) Borrar operario + usuario dentro de una misma transacciÃƒÂ³n
         await this.prisma.$transaction(async (tx) => {
-            // Borramos el operario (si existe). deleteMany evita P2025 si ya no estÃ¡.
+            // Borramos el operario (si existe). deleteMany evita P2025 si ya no estÃƒÂ¡.
             await tx.operario.deleteMany({
                 where: { id: operarioId },
             });
-            // Borramos el usuario asociado (obligatorio que exista, si no â†’ error lÃ³gico)
+            // Borramos el usuario asociado (obligatorio que exista, si no Ã¢â€ â€™ error lÃƒÂ³gico)
             await tx.usuario.delete({
                 where: { id: operarioId },
             });
@@ -2291,15 +2318,15 @@ class GerenteService {
         });
         if (!tarea)
             throw new Error("Tarea no encontrada.");
-        // ðŸ”’ Reglas de negocio (ajÃºstalas a tu gusto)
+        // Ã°Å¸â€â€™ Reglas de negocio (ajÃƒÂºstalas a tu gusto)
         if (tarea.estado === client_1.EstadoTarea.COMPLETADA ||
             tarea.estado === client_1.EstadoTarea.APROBADA ||
             tarea.estado === client_1.EstadoTarea.PENDIENTE_APROBACION) {
-            throw new Error("No se puede eliminar una tarea que ya fue ejecutada o estÃ¡ en aprobaciÃ³n.");
+            throw new Error("No se puede eliminar una tarea que ya fue ejecutada o estÃƒÂ¡ en aprobaciÃƒÂ³n.");
         }
         await prisma.$transaction(async (tx) => {
             // 1) Liberar maquinaria asignada al conjunto por esta tarea (si existiera)
-            // (tu relaciÃ³n tiene onDelete: SetNull, pero igual lo hacemos explÃ­cito)
+            // (tu relaciÃƒÂ³n tiene onDelete: SetNull, pero igual lo hacemos explÃƒÂ­cito)
             await tx.maquinariaConjunto.updateMany({
                 where: { tareaId: id },
                 data: { tareaId: null },
@@ -2315,18 +2342,18 @@ class GerenteService {
             await tx.consumoInsumo.deleteMany({
                 where: { tareaId: id },
             });
-            // 4) (Opcional) Desconectar relaciÃ³n M:N de operarios (normalmente Prisma lo limpia,
+            // 4) (Opcional) Desconectar relaciÃƒÂ³n M:N de operarios (normalmente Prisma lo limpia,
             // pero lo dejo por si tu DB tiene restricciones raras)
             await tx.tarea.update({
                 where: { id },
                 data: { operarios: { set: [] } },
             });
-            // 5) Ahora sÃ­, borrar la tarea
+            // 5) Ahora sÃƒÂ­, borrar la tarea
             await tx.tarea.delete({ where: { id } });
         });
         return { ok: true, message: "Tarea eliminada correctamente." };
     }
-    /* ===================== EDICIONES RÃPIDAS (compat) ===================== */
+    /* ===================== EDICIONES RÃƒÂPIDAS (compat) ===================== */
     async editarAdministrador(adminId, payload) {
         const dto = Usuario_1.EditarUsuarioDTO.parse(payload);
         const data = { ...dto };

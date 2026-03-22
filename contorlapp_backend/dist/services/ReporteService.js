@@ -909,8 +909,13 @@ class ReporteService {
                 ? `#${correctiva.id}${correctiva.descripcion ? ` (${correctiva.descripcion})` : ""}`
                 : `#${correctivaId}`;
             const motivoNoCompletada = noCompletadaPorReemplazo
-                ? `No fue completada porque fue reemplazada por la correctiva ${refCorrectiva}.`
+                ? `Tarea reemplazada por otra tarea (${refCorrectiva}).`
                 : null;
+            const detalleInforme = resultado === "REPROGRAMADA"
+                ? `Tarea reprogramada para ${t.fechaInicio.toLocaleString("sv-SE").replace("T", " ")}.`
+                : noCompletadaPorReemplazo
+                    ? "Tarea reemplazada por otra tarea."
+                    : null;
             return {
                 tareaPreventivaId: t.id,
                 descripcion: t.descripcion,
@@ -925,6 +930,7 @@ class ReporteService {
                 estadoActual: t.estado,
                 noCompletadaPorReemplazo,
                 motivoNoCompletada,
+                detalleInforme,
                 reemplazadaPor: correctiva
                     ? {
                         tareaId: correctiva.id,
@@ -1088,7 +1094,7 @@ class ReporteService {
                     ? `#${t.reprogramadaPorTareaId}`
                     : null;
             const motivoNoCompletada = noCompletadaPorReemplazo
-                ? `No fue completada porque fue reemplazada por la correctiva ${refCorrectiva}.`
+                ? `Tarea reemplazada por otra tarea${refCorrectiva != null ? ` (${refCorrectiva})` : ""}.`
                 : null;
             const resumenReemplazo = reemplazaPreventivas
                 .slice(0, 3)
@@ -1098,7 +1104,7 @@ class ReporteService {
             })
                 .join(", ");
             const motivoTareaReemplazo = esTareaReemplazo
-                ? `Esta fue la correctiva de reemplazo para ${resumenReemplazo}${reemplazaPreventivas.length > 3 ? ` y ${reemplazaPreventivas.length - 3} tarea(s) más` : ""}.`
+                ? `Esta correctiva reemplazo ${resumenReemplazo}${reemplazaPreventivas.length > 3 ? ` y ${reemplazaPreventivas.length - 3} tarea(s) mas` : ""}.`
                 : null;
             return {
                 id: t.id,

@@ -5,7 +5,7 @@ const zod_1 = require("zod");
 const prisma_1 = require("../db/prisma");
 const GerenteServices_1 = require("../services/GerenteServices");
 const Gerente_1 = require("../model/Gerente");
-// ── Schemas de params simples ────────────────────────────────────────────────
+// â”€â”€ Schemas de params simples â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const IdParam = zod_1.z.object({ id: zod_1.z.coerce.number().int().positive() });
 const AdminIdParam = zod_1.z.object({ adminId: zod_1.z.coerce.number().int().positive() });
 const OperarioIdParam = zod_1.z.object({
@@ -35,7 +35,7 @@ const ReemplazosBody = zod_1.z.object({
         nuevoAdminId: zod_1.z.number().int().positive(),
     })),
 });
-// Actualizar límite de horas semanales
+// Actualizar lÃ­mite de horas semanales
 const LimiteHorasBody = zod_1.z.object({
     limiteHorasSemana: zod_1.z.coerce.number().int().min(1).max(84),
 });
@@ -45,7 +45,7 @@ const QuitarOperarioBody = zod_1.z.object({
 const service = new GerenteServices_1.GerenteService(prisma_1.prisma);
 class GerenteController {
     constructor() {
-        // ── Empresa ────────────────────────────────────────────────────────────────
+        // â”€â”€ Empresa â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this.crearEmpresa = async (req, res, next) => {
             try {
                 const out = await service.crearEmpresa(req.body);
@@ -65,7 +65,7 @@ class GerenteController {
                 next(err);
             }
         };
-        // ── Usuarios ───────────────────────────────────────────────────────────────
+        // â”€â”€ Usuarios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this.crearUsuario = async (req, res, next) => {
             try {
                 const out = await service.crearUsuario(req.body);
@@ -95,7 +95,7 @@ class GerenteController {
                 next(err);
             }
         };
-        // ── Roles / Perfiles ──────────────────────────────────────────────────────
+        // â”€â”€ Roles / Perfiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this.asignarGerente = async (req, res, next) => {
             try {
                 const out = await service.asignarGerente(req.body);
@@ -161,7 +161,7 @@ class GerenteController {
                 next(err);
             }
         };
-        // ── Conjuntos ─────────────────────────────────────────────────────────────
+        // â”€â”€ Conjuntos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this.crearConjunto = async (req, res, next) => {
             try {
                 const out = await service.crearConjunto(req.body);
@@ -225,7 +225,7 @@ class GerenteController {
                 next(err);
             }
         };
-        // ── Inventario / Insumos ──────────────────────────────────────────────────
+        // â”€â”€ Inventario / Insumos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this.agregarInsumoAConjunto = async (req, res, next) => {
             try {
                 const { conjuntoId } = ConjuntoIdParam.parse(req.params);
@@ -241,13 +241,13 @@ class GerenteController {
                 next(err);
             }
         };
-        // ── Tareas ────────────────────────────────────────────────────────────────
+        // â”€â”€ Tareas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this.asignarTarea = async (req, res, next) => {
             try {
                 const body = req.body ?? {};
                 const tipo = String(body?.tipo ?? "CORRECTIVA").toUpperCase();
                 const prioridad = Number(body?.prioridad ?? 2);
-                // ✅ 1) Correctiva P1/P2/P3: entra por reglas de conflicto/reemplazo
+                // âœ… 1) Correctiva P1/P2/P3: entra por reglas de conflicto/reemplazo
                 if (tipo === "CORRECTIVA" && [1, 2, 3].includes(prioridad)) {
                     const r = await service.crearCorrectivaConReglas(body);
                     // A) Creada sin reemplazo
@@ -282,7 +282,7 @@ class GerenteController {
                         });
                         return;
                     }
-                    // C) Requiere decisión manual (mover/reemplazar o reemplazar directo)
+                    // C) Requiere decisiÃ³n manual (mover/reemplazar o reemplazar directo)
                     if (r.ok &&
                         (r.mode === "REQUIERE_DECISION_REEMPLAZO" ||
                             r.mode === "REQUIERE_CONFIRMACION_P2" ||
@@ -305,15 +305,21 @@ class GerenteController {
                             message: r.message,
                             decisionMode: r.decisionMode ?? "REEMPLAZAR",
                             replacementPriority,
+                            prioridadCorrectiva: Number(r.prioridadCorrectiva ?? prioridad),
+                            replacementNoticeOnly: r.replacementNoticeOnly ?? false,
                             criticalConfirmation: isCritical,
                             confirmationVariant: r.confirmationVariant ?? r.estiloConfirmacion,
                             confirmationColor: (r.confirmationColor ?? r.colorConfirmacion) === "red"
                                 ? "#DC2626"
-                                : "#D97706",
+                                : (r.confirmationColor ?? r.colorConfirmacion) === "blue"
+                                    ? "#2563EB"
+                                    : "#D97706",
                             confirmationTitle: r.confirmationTitle ?? r.tituloConfirmacion,
                             confirmationRequiresReason: r.confirmationRequiresReason ?? r.requiereMotivo ?? true,
                             requiresReplacementAction: r.requiresReplacementAction ?? true,
-                            reasonHint: "Debes indicar por que se autoriza este reemplazo antes de confirmar.",
+                            reasonHint: r.replacementNoticeOnly === true
+                                ? "Se mostrara el detalle de las preventivas P3 que se reemplazaran antes de continuar."
+                                : "Debes indicar por que se autoriza este reemplazo antes de confirmar.",
                             reemplazables,
                             reemplazablesP2: replacementPriority === 2 ? reemplazables : [],
                             reemplazablesP1: replacementPriority === 1 ? reemplazables : [],
@@ -332,7 +338,7 @@ class GerenteController {
                     });
                     return;
                 }
-                // ✅ 2) No es P1: asignación normal (incluye validación solapes/sugerencias)
+                // âœ… 2) No es P1: asignaciÃ³n normal (incluye validaciÃ³n solapes/sugerencias)
                 const out = await service.asignarTarea(body);
                 const status = out?.ok === true ? 201 : 200;
                 res.status(status).json(out);
@@ -365,7 +371,7 @@ class GerenteController {
                 next(err);
             }
         };
-        // ── Eliminaciones con reglas ──────────────────────────────────────────────
+        // â”€â”€ Eliminaciones con reglas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this.eliminarAdministrador = async (req, res, next) => {
             try {
                 const { adminId } = AdminIdParam.parse(req.params);
@@ -446,7 +452,7 @@ class GerenteController {
                 next(err);
             }
         };
-        // ── Ediciones rápidas ─────────────────────────────────────────────────────
+        // â”€â”€ Ediciones rÃ¡pidas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this.editarAdministrador = async (req, res, next) => {
             try {
                 const { adminId } = AdminIdParam.parse(req.params);
