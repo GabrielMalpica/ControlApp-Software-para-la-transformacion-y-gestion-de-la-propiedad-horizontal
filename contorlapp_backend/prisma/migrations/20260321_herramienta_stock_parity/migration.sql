@@ -1,4 +1,3 @@
-$sql = @'
 CREATE TYPE "public"."CategoriaHerramienta" AS ENUM ('LIMPIEZA', 'JARDINERIA', 'PISCINA', 'OTROS');
 CREATE TYPE "public"."OrigenHerramientaStock" AS ENUM ('EMPRESA', 'CONJUNTO');
 ALTER TABLE "public"."Herramienta"
@@ -29,9 +28,3 @@ INSERT INTO "public"."EmpresaHerramientaStock" ("empresaId", "herramientaId", "c
 SELECT h."empresaId", h."id", 0
 FROM "public"."Herramienta" h
 ON CONFLICT ("empresaId", "herramientaId") DO NOTHING;
-'@
-[System.IO.File]::WriteAllText(
-  "prisma/migrations/20260321_herramienta_stock_parity/migration.sql",
-  $sql,
-  (New-Object System.Text.UTF8Encoding($false))
-)
