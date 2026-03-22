@@ -12,6 +12,7 @@ import '../service/app_router.dart';
 import '../service/theme.dart';
 import '../utils/schedule_utils.dart';
 import '../widgets/section_card.dart';
+import '../widgets/searchable_select_field.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -297,32 +298,59 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
+        var query = '';
         return StatefulBuilder(
           builder: (context, setStateDialog) {
+            final filtered = _maquinariaDisponible.where((m) {
+              final q = query.trim().toLowerCase();
+              if (q.isEmpty) return true;
+              return [
+                m.nombre,
+                m.marca,
+                m.tipo.label,
+              ].join(' ').toLowerCase().contains(q);
+            }).toList();
+
             return AlertDialog(
               title: const Text('Maquinaria a prestar'),
               content: SizedBox(
                 width: double.maxFinite,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _maquinariaDisponible.length,
-                  itemBuilder: (_, index) {
-                    final m = _maquinariaDisponible[index];
-                    final checked = seleccionTemp.contains(m.id);
-                    return CheckboxListTile(
-                      value: checked,
-                      title: Text('${m.nombre} (${m.marca})'),
-                      subtitle: Text(m.tipo.label),
-                      onChanged: (v) {
-                        if (v == true) {
-                          seleccionTemp.add(m.id);
-                        } else {
-                          seleccionTemp.remove(m.id);
-                        }
-                        setStateDialog(() {});
-                      },
-                    );
-                  },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'Buscar maquinaria',
+                        hintText: 'Nombre, marca o tipo',
+                        prefixIcon: Icon(Icons.search_rounded),
+                      ),
+                      onChanged: (value) => setStateDialog(() => query = value),
+                    ),
+                    const SizedBox(height: 12),
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: filtered.length,
+                        itemBuilder: (_, index) {
+                          final m = filtered[index];
+                          final checked = seleccionTemp.contains(m.id);
+                          return CheckboxListTile(
+                            value: checked,
+                            title: Text('${m.nombre} (${m.marca})'),
+                            subtitle: Text(m.tipo.label),
+                            onChanged: (v) {
+                              if (v == true) {
+                                seleccionTemp.add(m.id);
+                              } else {
+                                seleccionTemp.remove(m.id);
+                              }
+                              setStateDialog(() {});
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
               actions: [
@@ -1122,7 +1150,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       builder: (_) => AlertDialog(
         title: const Text("¿Qué hacer con la preventiva reemplazada?"),
         content: const Text(
-          "Puedes reprogramarla dentro del mes o cancelarla definitivamente.",
+          "Puedes reprogramarla en otra franja o marcarla como no completada por reemplazo.",
         ),
         actions: [
           TextButton(
@@ -1131,7 +1159,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, "CANCELAR"),
-            child: const Text("Cancelar preventiva"),
+            child: const Text("Marcar no completada"),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, "REPROGRAMAR"),
@@ -1197,6 +1225,130 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     );
     ctrl.dispose();
     return out;
+  }
+
+  List<Map<String, dynamic>> _parseReprogramacionSlots(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+  }
+
+  Future<Map<String, dynamic>?> _dialogSeleccionarSlotReprogramacion({
+    required Map<String, dynamic> tarea,
+  }) {
+    final slots = _parseReprogramacionSlots(tarea['slots']);
+    final tareaId = _intValue(tarea['tareaId']);
+    final prioridad = _intValue(tarea['prioridad'], fallback: 3);
+    final descripcion = (tarea['descripcion'] ?? '').toString().trim();
+
+    if (slots.isEmpty) {
+      return showDialog<Map<String, dynamic>?>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Sin horarios disponibles'),
+          content: Text(
+            'No encontramos franjas disponibles para reprogramar la preventiva '
+            '#$tareaId${descripcion.isNotEmpty ? ' ($descripcion)' : ''}.\n\n'
+            'Puedes volver y elegir marcarla como no completada.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Aceptar'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    var selectedIndex = 0;
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          title: Text('Reprogramar preventiva #$tareaId'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    descripcion.isEmpty
+                        ? 'Selecciona una nueva franja para la preventiva P$prioridad.'
+                        : '$descripcion\n\nSelecciona una nueva franja para la preventiva P$prioridad.',
+                  ),
+                  const SizedBox(height: 14),
+                  ...List.generate(slots.length, (index) {
+                    final slot = slots[index];
+                    final ini = _parseDt(slot['fechaInicio']);
+                    final fin = _parseDt(slot['fechaFin']);
+                    final label = (ini != null && fin != null)
+                        ? '${_fmtFecha(ini)} | ${_fmtHora(ini)} -> ${_fmtHora(fin)}'
+                        : 'Horario no disponible';
+                    final selected = index == selectedIndex;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? const Color(0xFFDBEAFE)
+                            : Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selected
+                              ? const Color(0xFF2563EB)
+                              : Colors.grey.shade300,
+                          width: selected ? 2 : 1,
+                        ),
+                      ),
+                      child: RadioListTile<int>(
+                        value: index,
+                        groupValue: selectedIndex,
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setStateDialog(() => selectedIndex = value);
+                        },
+                        title: Text(label),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, {
+                'tareaId': tareaId,
+                'fechaInicio': slots[selectedIndex]['fechaInicio'],
+                'fechaFin': slots[selectedIndex]['fechaFin'],
+              }),
+              child: const Text('Usar horario'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>?> _dialogSeleccionarReprogramaciones(
+    List<Map<String, dynamic>> tareas,
+  ) async {
+    final seleccionadas = <Map<String, dynamic>>[];
+
+    for (final tarea in tareas) {
+      final slot = await _dialogSeleccionarSlotReprogramacion(tarea: tarea);
+      if (!mounted) return null;
+      if (slot == null) return null;
+      seleccionadas.add(slot);
+    }
+
+    return seleccionadas;
   }
 
   Future<void> _guardarTarea() async {
@@ -1308,40 +1460,38 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
       // ✅ CAMBIO: si fue OK, mostrar AlertDialog si el backend ajustó horario
       if (_backendOk(resp)) {
-        if (resp is Map<String, dynamic>) {
-          final autoOk = (resp['autoReplaced'] as List?) ?? const [];
-          _informarAutoReemplazos(autoOk);
-          _informarNoCompletadasPorReemplazo(resp['noCompletadasIds']);
+        final autoOk = (resp['autoReplaced'] as List?) ?? const [];
+        _informarAutoReemplazos(autoOk);
+        _informarNoCompletadasPorReemplazo(resp['noCompletadasIds']);
 
-          final solIni = _parseDt(resp['solicitadaInicio']);
-          final solFin = _parseDt(resp['solicitadaFin']);
-          final asgIni = _parseDt(resp['asignadaInicio']);
-          final asgFin = _parseDt(resp['asignadaFin']);
+        final solIni = _parseDt(resp['solicitadaInicio']);
+        final solFin = _parseDt(resp['solicitadaFin']);
+        final asgIni = _parseDt(resp['asignadaInicio']);
+        final asgFin = _parseDt(resp['asignadaFin']);
 
-          final motivo = (resp['motivoAjuste'] ?? '').toString();
+        final motivo = (resp['motivoAjuste'] ?? '').toString();
 
-          final flag = resp['ajustadaAutomaticamente'] == true;
+        final flag = resp['ajustadaAutomaticamente'] == true;
 
-          final cambio =
-              (solIni != null &&
-                  asgIni != null &&
-                  solFin != null &&
-                  asgFin != null)
-              ? (solIni != asgIni || solFin != asgFin)
-              : false;
+        final cambio =
+            (solIni != null &&
+                asgIni != null &&
+                solFin != null &&
+                asgFin != null)
+            ? (solIni != asgIni || solFin != asgFin)
+            : false;
 
-          final tieneMotivo = motivo.trim().isNotEmpty;
+        final tieneMotivo = motivo.trim().isNotEmpty;
 
-          if (flag || cambio || tieneMotivo) {
-            await _mostrarAjusteHorarioDialog(
-              solicitadaIni: solIni,
-              solicitadaFin: solFin,
-              asignadaIni: asgIni,
-              asignadaFin: asgFin,
-              motivo: motivo,
-            );
-            if (!mounted) return;
-          }
+        if (flag || cambio || tieneMotivo) {
+          await _mostrarAjusteHorarioDialog(
+            solicitadaIni: solIni,
+            solicitadaFin: solFin,
+            asignadaIni: asgIni,
+            asignadaFin: asgFin,
+            motivo: motivo,
+          );
+          if (!mounted) return;
         }
 
         await _onSuccess();
@@ -1439,7 +1589,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             ...o,
             'reemplazarIds': ids,
             'requiresConfirm': false,
-            'requiresAction': false,
+            'requiresAction': true,
             'requiresReason': false,
             'critical': false,
             'noticeOnly': true,
@@ -1579,13 +1729,67 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
           }
         }
 
-        final resp3 = await _tareaApi.crearTareaConReemplazo(
-          tarea: req,
-          reemplazarIds: idsSeleccionados,
-          accionReemplazadas: accionReemplazadas,
-          motivoReemplazo: motivoReemplazo,
-        );
+        Map<String, dynamic> resp3;
+        if (accionReemplazadas == 'REPROGRAMAR') {
+          final previewResp = await _tareaApi.crearTareaConReemplazo(
+            tarea: req,
+            reemplazarIds: idsSeleccionados,
+            accionReemplazadas: accionReemplazadas,
+            motivoReemplazo: motivoReemplazo,
+          );
+          if (!mounted) return;
+
+          if (previewResp['needsReprogrammingSelection'] == true) {
+            final opcionesReprogramacion = _parseReemplazoTareas(
+              previewResp['opcionesReprogramacion'],
+            );
+            final seleccionReprogramacion =
+                await _dialogSeleccionarReprogramaciones(
+                  opcionesReprogramacion,
+                );
+            if (!mounted) return;
+            if (seleccionReprogramacion == null ||
+                seleccionReprogramacion.isEmpty) {
+              AppFeedback.showFromSnackBar(
+                context,
+                const SnackBar(content: Text('Operacion cancelada.')),
+              );
+              return;
+            }
+
+            resp3 = await _tareaApi.crearTareaConReemplazo(
+              tarea: req,
+              reemplazarIds: idsSeleccionados,
+              accionReemplazadas: accionReemplazadas,
+              motivoReemplazo: motivoReemplazo,
+              reprogramaciones: seleccionReprogramacion,
+            );
+          } else {
+            resp3 = previewResp;
+          }
+        } else {
+          resp3 = await _tareaApi.crearTareaConReemplazo(
+            tarea: req,
+            reemplazarIds: idsSeleccionados,
+            accionReemplazadas: accionReemplazadas,
+            motivoReemplazo: motivoReemplazo,
+          );
+        }
         if (!mounted) return;
+
+        if (resp3['needsReprogrammingSelection'] == true) {
+          AppFeedback.showFromSnackBar(
+            context,
+            SnackBar(
+              content: Text(
+                (resp3['message'] ??
+                        'Debes seleccionar nuevamente la franja de reprogramacion.')
+                    .toString(),
+              ),
+            ),
+          );
+          return;
+        }
 
         if (_backendOk(resp3)) {
           final auto3 = (resp3['autoReplaced'] as List?) ?? const [];
@@ -1667,24 +1871,55 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                     'Selecciona el conjunto, la ubicación y el elemento antes de programar la correctiva.',
                 child: Column(
                   children: [
-                    DropdownButtonFormField<String>(
+                    FormField<String>(
                       initialValue: _conjuntoSeleccionado?.nit,
-                      decoration: const InputDecoration(labelText: 'Conjunto'),
-                      items: _conjuntos
-                          .map(
-                            (c) => DropdownMenuItem(
-                              value: c.nit,
-                              child: Text(c.nombre),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        final c = _conjuntos.firstWhere((x) => x.nit == value);
-                        _refrescarDatosConjunto(c);
-                      },
                       validator: (v) =>
                           v == null ? 'Seleccione un conjunto' : null,
+                      builder: (field) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SearchableSelectField<String>(
+                              label: 'Conjunto',
+                              value: field.value,
+                              prefixIcon: const Icon(Icons.apartment_rounded),
+                              searchHint: 'Buscar conjunto o NIT',
+                              options: _conjuntos
+                                  .map(
+                                    (c) => SearchableSelectOption<String>(
+                                      value: c.nit,
+                                      label: c.nombre,
+                                      subtitle: 'NIT: ${c.nit}',
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (value) {
+                                field.didChange(value);
+                                if (value == null) return;
+                                final c = _conjuntos.firstWhere(
+                                  (x) => x.nit == value,
+                                );
+                                _refrescarDatosConjunto(c);
+                              },
+                            ),
+                            if (field.hasError) ...[
+                              const SizedBox(height: 6),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                child: Text(
+                                  field.errorText!,
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.error,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<int>(

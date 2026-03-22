@@ -4,6 +4,7 @@ import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/animated_fade_slide.dart';
 import 'package:flutter_application_1/widgets/empty_state.dart';
+import 'package:flutter_application_1/widgets/searchable_select_field.dart';
 
 class DashboardScaffold extends StatelessWidget {
   const DashboardScaffold({
@@ -261,22 +262,17 @@ class ConjuntoSelectorCard extends StatelessWidget {
               minWidth: compact ? 0 : 220,
               maxWidth: compact ? constraints.maxWidth : 320,
             ),
-            child: DropdownButtonFormField<String>(
-              isExpanded: true,
-              initialValue: selectedNit,
-              decoration: const InputDecoration(
-                labelText: 'Cambiar conjunto',
-                prefixIcon: Icon(Icons.swap_horiz_rounded),
-              ),
-              items: conjuntos
+            child: SearchableSelectField<String>(
+              label: 'Cambiar conjunto',
+              value: selectedNit,
+              prefixIcon: const Icon(Icons.swap_horiz_rounded),
+              searchHint: 'Buscar conjunto o NIT',
+              options: conjuntos
                   .map(
-                    (conjunto) => DropdownMenuItem<String>(
+                    (conjunto) => SearchableSelectOption<String>(
                       value: conjunto.nit,
-                      child: Text(
-                        conjunto.nombre,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      label: conjunto.nombre,
+                      subtitle: 'NIT: ${conjunto.nit}',
                     ),
                   )
                   .toList(),

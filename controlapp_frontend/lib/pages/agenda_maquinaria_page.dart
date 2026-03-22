@@ -32,6 +32,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
 
   bool _cargandoAgenda = false;
   String? _errorAgenda;
+  String _maquinariaQuery = '';
 
   @override
   void initState() {
@@ -294,9 +295,20 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
           }
 
           final maquinas = snap.data ?? const <MaquinariaResponse>[];
+          final filteredMaquinas = maquinas.where((m) {
+            final query = _maquinariaQuery.trim().toLowerCase();
+            if (query.isEmpty) return true;
+            return [
+              m.nombre,
+              m.marca,
+              m.tipo.label,
+              m.conjuntoNombre ?? '',
+            ].join(' ').toLowerCase().contains(query);
+          }).toList();
           final selectedVisible = _seleccionada == null
               ? true
-              : maquinas.any((m) => m.id == _seleccionada!.id);
+              : filteredMaquinas.any((m) => m.id == _seleccionada!.id) ||
+                    maquinas.any((m) => m.id == _seleccionada!.id);
 
           if (!selectedVisible) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -335,6 +347,18 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                   ),
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Buscar maquinaria',
+                    hintText: 'Nombre, marca o tipo',
+                    prefixIcon: Icon(Icons.search_rounded),
+                  ),
+                  onChanged: (value) =>
+                      setState(() => _maquinariaQuery = value),
+                ),
+              ),
               Expanded(
                 child: Card(
                   margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
@@ -346,10 +370,10 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                     ),
                   ),
                   child: ListView.separated(
-                    itemCount: maquinas.length,
+                    itemCount: filteredMaquinas.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, i) {
-                      final m = maquinas[i];
+                      final m = filteredMaquinas[i];
                       final selected = _seleccionada?.id == m.id;
                       final esPropia = _esPropiaDelConjunto(m);
 

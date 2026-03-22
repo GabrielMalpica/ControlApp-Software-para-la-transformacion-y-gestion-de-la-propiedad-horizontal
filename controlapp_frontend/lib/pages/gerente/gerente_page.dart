@@ -8,6 +8,7 @@ import 'package:flutter_application_1/pages/crear_herramienta_page.dart';
 import 'package:flutter_application_1/pages/festivos_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
+import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_insumo_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_conjuntos_page.dart';
@@ -615,6 +616,19 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
               context,
               MaterialPageRoute(
                 builder: (_) => const ReportesGeneralDashboardPage(),
+              ),
+            );
+          },
+        ),
+        _Tile(
+          "Compromisos por conjunto",
+          Icons.rule_folder_outlined,
+          Colors.indigo,
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const CompromisosPorConjuntoPage(),
               ),
             );
           },

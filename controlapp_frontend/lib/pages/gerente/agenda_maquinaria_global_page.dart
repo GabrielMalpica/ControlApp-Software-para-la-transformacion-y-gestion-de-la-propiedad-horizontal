@@ -25,6 +25,7 @@ class _AgendaMaquinariaGlobalExcelPageState
   AgendaGlobalResponse? _data;
 
   int _selectedIndex = 0;
+  String _maquinariaQuery = '';
 
   @override
   void initState() {
@@ -61,7 +62,17 @@ class _AgendaMaquinariaGlobalExcelPageState
 
   @override
   Widget build(BuildContext context) {
-    final blocks = _data?.data ?? const <AgendaMaquinaBlock>[];
+    final allBlocks = _data?.data ?? const <AgendaMaquinaBlock>[];
+    final blocks = allBlocks.where((block) {
+      final query = _maquinariaQuery.trim().toLowerCase();
+      if (query.isEmpty) return true;
+      final m = block.maquinaria;
+      return [
+        m.nombre,
+        m.marca,
+        m.tipo.label,
+      ].join(' ').toLowerCase().contains(query);
+    }).toList();
 
     if (_selectedIndex >= blocks.length) _selectedIndex = 0;
 
@@ -116,42 +127,55 @@ class _AgendaMaquinariaGlobalExcelPageState
   Widget _filtros() {
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 10,
+      child: Column(
         children: [
-          SizedBox(
-            width: 160,
-            child: DropdownButtonFormField<int>(
-              initialValue: _mes,
-              decoration: const InputDecoration(
-                labelText: 'Mes',
-                border: OutlineInputBorder(),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              SizedBox(
+                width: 160,
+                child: DropdownButtonFormField<int>(
+                  initialValue: _mes,
+                  decoration: const InputDecoration(
+                    labelText: 'Mes',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: List.generate(12, (i) => i + 1)
+                      .map((m) => DropdownMenuItem(value: m, child: Text('$m')))
+                      .toList(),
+                  onChanged: (v) => setState(() => _mes = v ?? _mes),
+                ),
               ),
-              items: List.generate(12, (i) => i + 1)
-                  .map((m) => DropdownMenuItem(value: m, child: Text('$m')))
-                  .toList(),
-              onChanged: (v) => setState(() => _mes = v ?? _mes),
-            ),
-          ),
-          SizedBox(
-            width: 160,
-            child: DropdownButtonFormField<int>(
-              initialValue: _anio,
-              decoration: const InputDecoration(
-                labelText: 'Año',
-                border: OutlineInputBorder(),
+              SizedBox(
+                width: 160,
+                child: DropdownButtonFormField<int>(
+                  initialValue: _anio,
+                  decoration: const InputDecoration(
+                    labelText: 'Año',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: List.generate(5, (i) => DateTime.now().year - 1 + i)
+                      .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
+                      .toList(),
+                  onChanged: (v) => setState(() => _anio = v ?? _anio),
+                ),
               ),
-              items: List.generate(5, (i) => DateTime.now().year - 1 + i)
-                  .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
-                  .toList(),
-              onChanged: (v) => setState(() => _anio = v ?? _anio),
-            ),
+              IconButton(
+                tooltip: 'Actualizar',
+                icon: const Icon(Icons.refresh),
+                onPressed: _cargar,
+              ),
+            ],
           ),
-          IconButton(
-            tooltip: 'Actualizar',
-            icon: const Icon(Icons.refresh),
-            onPressed: _cargar,
+          const SizedBox(height: 10),
+          TextField(
+            decoration: const InputDecoration(
+              labelText: 'Buscar maquinaria',
+              hintText: 'Nombre, marca o tipo',
+              prefixIcon: Icon(Icons.search_rounded),
+            ),
+            onChanged: (value) => setState(() => _maquinariaQuery = value),
           ),
         ],
       ),

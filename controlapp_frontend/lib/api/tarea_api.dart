@@ -150,6 +150,7 @@ class TareaApi {
     required List<int> reemplazarIds,
     String? motivoReemplazo,
     String? accionReemplazadas, // REPROGRAMAR | CANCELAR
+    List<Map<String, dynamic>> reprogramaciones = const [],
   }) async {
     final resp = await _client.post(
       '${AppConstants.gerenteBase}/tareas/reemplazo',
@@ -160,6 +161,7 @@ class TareaApi {
           'accionReemplazadas': accionReemplazadas.trim(),
         if (motivoReemplazo != null && motivoReemplazo.trim().isNotEmpty)
           'motivoReemplazo': motivoReemplazo.trim(),
+        if (reprogramaciones.isNotEmpty) 'reprogramaciones': reprogramaciones,
       },
     );
 

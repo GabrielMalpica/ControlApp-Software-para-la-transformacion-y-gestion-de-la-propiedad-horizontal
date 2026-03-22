@@ -5,6 +5,7 @@ import '../../api/gerente_api.dart';
 import '../../model/conjunto_model.dart';
 import '../../model/maquinaria_model.dart';
 import '../../service/theme.dart';
+import '../../widgets/searchable_select_field.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -28,6 +29,8 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
   Conjunto? _conjuntoFiltro;
   List<Conjunto> _conjuntos = [];
   bool _loadingConjuntos = true;
+  final TextEditingController _busquedaCtrl = TextEditingController();
+  String _busqueda = '';
 
   EstadoMaquinaria? _estadoFiltro;
   TipoMaquinariaFlutter? _tipoFiltro;
@@ -119,8 +122,26 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
   }
 
   @override
+  void dispose() {
+    _busquedaCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final primary = AppTheme.primary;
+    final filteredItems = _items.where((m) {
+      final query = _busqueda.trim().toLowerCase();
+      if (query.isEmpty) return true;
+      return [
+        m.nombre,
+        m.marca,
+        m.tipo.label,
+        m.estado.label,
+        m.conjuntoNombre ?? '',
+        m.conjuntoPropietarioId ?? '',
+      ].join(' ').toLowerCase().contains(query);
+    }).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -144,25 +165,21 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
                     Expanded(
                       child: _loadingConjuntos
                           ? const LinearProgressIndicator()
-                          : DropdownButtonFormField<Conjunto?>(
-                              initialValue: _conjuntoFiltro,
-                              decoration: const InputDecoration(
-                                labelText: 'Filtrar por conjunto (prestada a)',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                              items: [
-                                const DropdownMenuItem<Conjunto?>(
-                                  value: null,
-                                  child: Text('Todos'),
-                                ),
-                                ..._conjuntos.map(
-                                  (c) => DropdownMenuItem<Conjunto?>(
-                                    value: c,
-                                    child: Text(c.nombre),
-                                  ),
-                                ),
-                              ],
+                          : SearchableSelectField<Conjunto>(
+                              label: 'Filtrar por conjunto (prestada a)',
+                              value: _conjuntoFiltro,
+                              prefixIcon: const Icon(Icons.apartment_rounded),
+                              searchHint: 'Buscar conjunto o NIT',
+                              clearLabel: 'Todos',
+                              options: _conjuntos
+                                  .map(
+                                    (c) => SearchableSelectOption<Conjunto>(
+                                      value: c,
+                                      label: c.nombre,
+                                      subtitle: 'NIT: ${c.nit}',
+                                    ),
+                                  )
+                                  .toList(),
                               onChanged: (v) {
                                 setState(() => _conjuntoFiltro = v);
                                 _cargar();
@@ -176,6 +193,16 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
                       icon: const Icon(Icons.filter_alt_off),
                     ),
                   ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _busquedaCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Buscar maquinaria',
+                    hintText: 'Nombre, marca, tipo o conjunto',
+                    prefixIcon: Icon(Icons.search_rounded),
+                  ),
+                  onChanged: (value) => setState(() => _busqueda = value),
                 ),
                 const SizedBox(height: 10),
 
@@ -295,15 +322,15 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
           Expanded(
             child: _cargando
                 ? const Center(child: CircularProgressIndicator())
-                : _items.isEmpty
+                : filteredItems.isEmpty
                 ? const Center(
                     child: Text('No hay maquinaria con esos filtros.'),
                   )
                 : ListView.separated(
-                    itemCount: _items.length,
+                    itemCount: filteredItems.length,
                     separatorBuilder: (_, __) => const Divider(height: 0),
                     itemBuilder: (context, index) {
-                      final m = _items[index];
+                      final m = filteredItems[index];
                       return ListTile(
                         title: Text('${m.nombre} (${m.marca})'),
                         subtitle: Text(_subtitulo(m)),
