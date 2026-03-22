@@ -78,8 +78,35 @@ class SolicitudHerramientaService {
             if (sol.estado === "APROBADA")
                 return sol;
             const estadoIngreso = (dto.estadoIngreso ?? "OPERATIVA");
-            // ✅ sumar stock al conjunto
+            const empresaId = dto.empresaId ?? sol.empresaId;
+            if (!empresaId) {
+                throw new Error("La solicitud debe indicar la empresa que entrega la herramienta.");
+            }
+            // ✅ mover stock empresa -> conjunto
             for (const it of sol.items) {
+                const stockEmpresa = await tx.empresaHerramientaStock.findUnique({
+                    where: {
+                        empresaId_herramientaId: {
+                            empresaId,
+                            herramientaId: it.herramientaId,
+                        },
+                    },
+                });
+                const disponibleEmpresa = Number(stockEmpresa?.cantidad ?? 0);
+                if (disponibleEmpresa < Number(it.cantidad)) {
+                    throw new Error(`Stock insuficiente en empresa para la herramienta ${it.herramientaId}. Disponible: ${disponibleEmpresa}.`);
+                }
+                await tx.empresaHerramientaStock.update({
+                    where: {
+                        empresaId_herramientaId: {
+                            empresaId,
+                            herramientaId: it.herramientaId,
+                        },
+                    },
+                    data: {
+                        cantidad: { decrement: it.cantidad },
+                    },
+                });
                 await tx.conjuntoHerramientaStock.upsert({
                     where: {
                         conjuntoId_herramientaId_estado: {
@@ -105,7 +132,7 @@ class SolicitudHerramientaService {
                 data: {
                     estado: "APROBADA",
                     fechaAprobacion: dto.fechaAprobacion ?? new Date(),
-                    empresaId: dto.empresaId ?? undefined,
+                    empresaId,
                 },
                 include: {
                     items: {

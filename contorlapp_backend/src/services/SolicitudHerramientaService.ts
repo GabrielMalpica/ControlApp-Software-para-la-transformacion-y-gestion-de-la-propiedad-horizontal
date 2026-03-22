@@ -90,9 +90,41 @@ export class SolicitudHerramientaService {
       if (sol.estado === "APROBADA") return sol;
 
       const estadoIngreso = (dto.estadoIngreso ?? "OPERATIVA") as EstadoStock;
+      const empresaId = dto.empresaId ?? sol.empresaId;
+      if (!empresaId) {
+        throw new Error("La solicitud debe indicar la empresa que entrega la herramienta.");
+      }
 
-      // ✅ sumar stock al conjunto
+      // ✅ mover stock empresa -> conjunto
       for (const it of sol.items) {
+        const stockEmpresa = await (tx as any).empresaHerramientaStock.findUnique({
+          where: {
+            empresaId_herramientaId: {
+              empresaId,
+              herramientaId: it.herramientaId,
+            },
+          },
+        });
+
+        const disponibleEmpresa = Number(stockEmpresa?.cantidad ?? 0);
+        if (disponibleEmpresa < Number(it.cantidad)) {
+          throw new Error(
+            `Stock insuficiente en empresa para la herramienta ${it.herramientaId}. Disponible: ${disponibleEmpresa}.`,
+          );
+        }
+
+        await (tx as any).empresaHerramientaStock.update({
+          where: {
+            empresaId_herramientaId: {
+              empresaId,
+              herramientaId: it.herramientaId,
+            },
+          },
+          data: {
+            cantidad: { decrement: it.cantidad as any },
+          },
+        });
+
         await tx.conjuntoHerramientaStock.upsert({
           where: {
             conjuntoId_herramientaId_estado: {
@@ -119,7 +151,7 @@ export class SolicitudHerramientaService {
         data: {
           estado: "APROBADA" as any,
           fechaAprobacion: dto.fechaAprobacion ?? new Date(),
-          empresaId: dto.empresaId ?? undefined,
+          empresaId,
         },
         include: {
           items: {

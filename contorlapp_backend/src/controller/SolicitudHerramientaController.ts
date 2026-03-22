@@ -4,6 +4,7 @@ import { z } from "zod";
 import { SolicitudHerramientaService } from "../services/SolicitudHerramientaService";
 import {
   CrearSolicitudHerramientaBody,
+  CambiarEstadoSolicitudBody,
 } from "../model/Herramienta";
 
 const SolicitudIdParam = z.object({
@@ -62,20 +63,22 @@ export class SolicitudHerramientaController {
   };
 
   // PATCH /solicitudes-herramientas/:solicitudId/estado
-  // cambiarEstado: RequestHandler = async (req, res, next) => {
-  //   try {
-  //     const { solicitudId } = SolicitudIdParam.parse(req.params);
-  //     const body = CambiarEstadoSolicitudBody.parse(req.body);
+  cambiarEstado: RequestHandler = async (req, res, next) => {
+    try {
+      const { solicitudId } = SolicitudIdParam.parse(req.params);
+      const body = CambiarEstadoSolicitudBody.parse(req.body);
 
-  //     const service = new SolicitudHerramientaService(prisma);
-  //     const out = await service.cambiarEstado(solicitudId, {
-  //       estado: body.estado,
-  //       observacionRespuesta: body.observacionRespuesta ?? null,
-  //     });
+      const service = new SolicitudHerramientaService(prisma);
+      const out =
+        body.estado === "APROBADA"
+          ? await service.aprobar(solicitudId, req.body)
+          : await service.rechazar(solicitudId, {
+              observacionRespuesta: body.observacionRespuesta ?? null,
+            });
 
-  //     res.json(out);
-  //   } catch (err) {
-  //     next(err);
-  //   }
-  // };
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
 }

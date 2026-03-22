@@ -459,6 +459,7 @@ export class GerenteService {
 
   async crearConjunto(payload: unknown) {
     const dto = CrearConjuntoDTO.parse(payload);
+    const empresaId = await this.resolverEmpresaNit();
 
     let administradorId: string | null = null;
     if (dto.administradorId) {
@@ -478,7 +479,7 @@ export class GerenteService {
         direccion: dto.direccion,
         correo: dto.correo,
 
-        empresaId: await this.resolverEmpresaNit(),
+        empresaId,
         administradorId,
 
         fechaInicioContrato: dto.fechaInicioContrato ?? null,
@@ -525,6 +526,23 @@ export class GerenteService {
       },
       select: conjuntoPublicSelect,
     });
+
+    const herramientasEmpresa = await this.prisma.herramienta.findMany({
+      where: { empresaId },
+      select: { id: true },
+    });
+
+    if (herramientasEmpresa.length > 0) {
+      await this.prisma.conjuntoHerramientaStock.createMany({
+        data: herramientasEmpresa.map((h) => ({
+          conjuntoId: dto.nit,
+          herramientaId: h.id,
+          cantidad: 0 as any,
+          estado: "OPERATIVA" as any,
+        })),
+        skipDuplicates: true,
+      });
+    }
 
     return toConjuntoPublico(creado);
   }
@@ -1067,6 +1085,124 @@ export class GerenteService {
     return { suggestedInicio, suggestedFin };
   }
 
+  private async resolverOrigenHerramienta(params: {
+    tx: Prisma.TransactionClient;
+    empresaId: string;
+    conjuntoId: string;
+    herramientaId: number;
+    cantidad: number;
+    inicio: Date;
+    fin: Date;
+    tareaExcluidaId?: number;
+  }): Promise<"CONJUNTO" | "EMPRESA"> {
+    const {
+      tx,
+      empresaId,
+      conjuntoId,
+      herramientaId,
+      cantidad,
+      inicio,
+      fin,
+      tareaExcluidaId,
+    } = params;
+
+    const [stockConjunto, stockEmpresa, reservas] = await Promise.all([
+      tx.conjuntoHerramientaStock.findMany({
+        where: {
+          conjuntoId,
+          herramientaId,
+          estado: "OPERATIVA" as any,
+        },
+        select: { cantidad: true },
+      }),
+      (tx as any).empresaHerramientaStock.findUnique({
+        where: {
+          empresaId_herramientaId: {
+            empresaId,
+            herramientaId,
+          },
+        },
+        select: { cantidad: true },
+      }),
+      (tx.usoHerramienta as any).findMany({
+        where: {
+          herramientaId,
+          fechaInicio: { lt: fin },
+          OR: [{ fechaFin: null }, { fechaFin: { gt: inicio } }],
+          estado: { in: ["RESERVADA", "EN_USO"] as any },
+          ...(tareaExcluidaId ? { tareaId: { not: tareaExcluidaId } } : {}),
+          tarea: {
+            estado: {
+              notIn: ["COMPLETADA", "NO_COMPLETADA", "CANCELADA"] as any,
+            },
+          },
+        },
+        select: { cantidad: true, origenStock: true },
+      }),
+    ]);
+
+    const totalConjunto = stockConjunto.reduce(
+      (acc, row) => acc + Number(row.cantidad),
+      0,
+    );
+    const totalEmpresa = Number(stockEmpresa?.cantidad ?? 0);
+    const reservadoConjunto = reservas
+      .filter((r) => String(r.origenStock) === "CONJUNTO")
+      .reduce((acc, row) => acc + Number(row.cantidad), 0);
+    const reservadoEmpresa = reservas
+      .filter((r) => String(r.origenStock) === "EMPRESA")
+      .reduce((acc, row) => acc + Number(row.cantidad), 0);
+
+    const disponibleConjunto = Math.max(0, totalConjunto - reservadoConjunto);
+    const disponibleEmpresa = Math.max(0, totalEmpresa - reservadoEmpresa);
+
+    if (disponibleConjunto >= cantidad) return "CONJUNTO";
+    if (disponibleEmpresa >= cantidad) return "EMPRESA";
+
+    throw new Error(
+      `HERRAMIENTA_SIN_STOCK_${herramientaId}_${disponibleConjunto}_${disponibleEmpresa}`,
+    );
+  }
+
+  private async reservarHerramientasTarea(params: {
+    tx: Prisma.TransactionClient;
+    empresaId: string;
+    conjuntoId: string;
+    tareaId: number;
+    herramientas: Array<{ herramientaId: number; cantidad: number }>;
+    inicio: Date;
+    fin: Date;
+    operarioId?: string | null;
+  }) {
+    const { tx, empresaId, conjuntoId, tareaId, herramientas, inicio, fin, operarioId } = params;
+
+    for (const item of herramientas) {
+      const origenStock = await this.resolverOrigenHerramienta({
+        tx,
+        empresaId,
+        conjuntoId,
+        herramientaId: item.herramientaId,
+        cantidad: Number(item.cantidad),
+        inicio,
+        fin,
+      });
+
+      await (tx.usoHerramienta as any).create({
+        data: {
+          tarea: { connect: { id: tareaId } },
+          herramienta: { connect: { id: item.herramientaId } },
+          cantidad: Number(item.cantidad) as any,
+          origenStock: origenStock as any,
+          estado: "RESERVADA" as any,
+          fechaInicio: inicio,
+          fechaFin: fin,
+          observacion: `Reserva herramienta ${origenStock.toLowerCase()} para tarea`,
+          ...(operarioId ? { operario: { connect: { id: operarioId } } } : {}),
+        },
+      });
+    }
+  }
+
   private async buscarOpcionesReemplazoParaCorrectiva(params: {
     prisma: PrismaClient;
     conjuntoId: string;
@@ -1581,6 +1717,20 @@ export class GerenteService {
           .map((x: any) => Number(x))
           .filter((n: number) => Number.isFinite(n) && n > 0)
       : [];
+    const herramientas = Array.isArray((dto as any).herramientas)
+      ? (dto as any).herramientas
+          .map((x: any) => ({
+            herramientaId: Number(x?.herramientaId),
+            cantidad: Number(x?.cantidad ?? 1),
+          }))
+          .filter(
+            (x: { herramientaId: number; cantidad: number }) =>
+              Number.isFinite(x.herramientaId) &&
+              x.herramientaId > 0 &&
+              Number.isFinite(x.cantidad) &&
+              x.cantidad > 0,
+          )
+      : [];
 
     // =========================
     // Helpers de logÃƒÂ­stica (maquinaria)
@@ -1764,6 +1914,19 @@ export class GerenteService {
             data: { tareaId: tarea.id },
           });
         }
+      }
+
+      if (dto.conjuntoId && herramientas.length) {
+        await this.reservarHerramientasTarea({
+          tx,
+          empresaId: EMPRESA_ID_FIJA,
+          conjuntoId: dto.conjuntoId,
+          tareaId: tarea.id,
+          herramientas,
+          inicio,
+          fin,
+          operarioId: operariosIds[0] ?? null,
+        });
       }
 
       if (operariosIds.length) {
@@ -2091,6 +2254,20 @@ export class GerenteService {
       ? (dto as any).maquinariaIds
           .map((x: any) => Number(x))
           .filter((n: number) => Number.isFinite(n) && n > 0)
+      : [];
+    const herramientas = Array.isArray((dto as any).herramientas)
+      ? (dto as any).herramientas
+          .map((x: any) => ({
+            herramientaId: Number(x?.herramientaId),
+            cantidad: Number(x?.cantidad ?? 1),
+          }))
+          .filter(
+            (x: { herramientaId: number; cantidad: number }) =>
+              Number.isFinite(x.herramientaId) &&
+              x.herramientaId > 0 &&
+              Number.isFinite(x.cantidad) &&
+              x.cantidad > 0,
+          )
       : [];
 
     const prioridadesPermitidas =
@@ -2493,6 +2670,19 @@ export class GerenteService {
             data: { tareaId: nuevaCorrectiva.id },
           });
         }
+      }
+
+      if (dto.conjuntoId && herramientas.length) {
+        await this.reservarHerramientasTarea({
+          tx,
+          empresaId: EMPRESA_ID_FIJA,
+          conjuntoId: dto.conjuntoId,
+          tareaId: nuevaCorrectiva.id,
+          herramientas,
+          inicio,
+          fin,
+          operarioId: operariosIds[0] ?? null,
+        });
       }
 
       if (operariosIds.length) {

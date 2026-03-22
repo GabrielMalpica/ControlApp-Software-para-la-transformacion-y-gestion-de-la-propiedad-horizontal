@@ -317,6 +317,7 @@ class GerenteService {
     /* ===================== CONJUNTOS ===================== */
     async crearConjunto(payload) {
         const dto = Conjunto_1.CrearConjuntoDTO.parse(payload);
+        const empresaId = await this.resolverEmpresaNit();
         let administradorId = null;
         if (dto.administradorId) {
             const admin = await this.prisma.administrador.findUnique({
@@ -333,7 +334,7 @@ class GerenteService {
                 nombre: dto.nombre,
                 direccion: dto.direccion,
                 correo: dto.correo,
-                empresaId: await this.resolverEmpresaNit(),
+                empresaId,
                 administradorId,
                 fechaInicioContrato: dto.fechaInicioContrato ?? null,
                 fechaFinContrato: dto.fechaFinContrato ?? null,
@@ -372,6 +373,21 @@ class GerenteService {
             },
             select: Conjunto_1.conjuntoPublicSelect,
         });
+        const herramientasEmpresa = await this.prisma.herramienta.findMany({
+            where: { empresaId },
+            select: { id: true },
+        });
+        if (herramientasEmpresa.length > 0) {
+            await this.prisma.conjuntoHerramientaStock.createMany({
+                data: herramientasEmpresa.map((h) => ({
+                    conjuntoId: dto.nit,
+                    herramientaId: h.id,
+                    cantidad: 0,
+                    estado: "OPERATIVA",
+                })),
+                skipDuplicates: true,
+            });
+        }
         return (0, Conjunto_1.toConjuntoPublico)(creado);
     }
     async listarConjuntos() {
@@ -796,6 +812,85 @@ class GerenteService {
         suggestedFin.setMinutes(sugEnd);
         return { suggestedInicio, suggestedFin };
     }
+    async resolverOrigenHerramienta(params) {
+        const { tx, empresaId, conjuntoId, herramientaId, cantidad, inicio, fin, tareaExcluidaId, } = params;
+        const [stockConjunto, stockEmpresa, reservas] = await Promise.all([
+            tx.conjuntoHerramientaStock.findMany({
+                where: {
+                    conjuntoId,
+                    herramientaId,
+                    estado: "OPERATIVA",
+                },
+                select: { cantidad: true },
+            }),
+            tx.empresaHerramientaStock.findUnique({
+                where: {
+                    empresaId_herramientaId: {
+                        empresaId,
+                        herramientaId,
+                    },
+                },
+                select: { cantidad: true },
+            }),
+            tx.usoHerramienta.findMany({
+                where: {
+                    herramientaId,
+                    fechaInicio: { lt: fin },
+                    OR: [{ fechaFin: null }, { fechaFin: { gt: inicio } }],
+                    estado: { in: ["RESERVADA", "EN_USO"] },
+                    ...(tareaExcluidaId ? { tareaId: { not: tareaExcluidaId } } : {}),
+                    tarea: {
+                        estado: {
+                            notIn: ["COMPLETADA", "NO_COMPLETADA", "CANCELADA"],
+                        },
+                    },
+                },
+                select: { cantidad: true, origenStock: true },
+            }),
+        ]);
+        const totalConjunto = stockConjunto.reduce((acc, row) => acc + Number(row.cantidad), 0);
+        const totalEmpresa = Number(stockEmpresa?.cantidad ?? 0);
+        const reservadoConjunto = reservas
+            .filter((r) => String(r.origenStock) === "CONJUNTO")
+            .reduce((acc, row) => acc + Number(row.cantidad), 0);
+        const reservadoEmpresa = reservas
+            .filter((r) => String(r.origenStock) === "EMPRESA")
+            .reduce((acc, row) => acc + Number(row.cantidad), 0);
+        const disponibleConjunto = Math.max(0, totalConjunto - reservadoConjunto);
+        const disponibleEmpresa = Math.max(0, totalEmpresa - reservadoEmpresa);
+        if (disponibleConjunto >= cantidad)
+            return "CONJUNTO";
+        if (disponibleEmpresa >= cantidad)
+            return "EMPRESA";
+        throw new Error(`HERRAMIENTA_SIN_STOCK_${herramientaId}_${disponibleConjunto}_${disponibleEmpresa}`);
+    }
+    async reservarHerramientasTarea(params) {
+        const { tx, empresaId, conjuntoId, tareaId, herramientas, inicio, fin, operarioId } = params;
+        for (const item of herramientas) {
+            const origenStock = await this.resolverOrigenHerramienta({
+                tx,
+                empresaId,
+                conjuntoId,
+                herramientaId: item.herramientaId,
+                cantidad: Number(item.cantidad),
+                inicio,
+                fin,
+            });
+            await tx.usoHerramienta.create({
+                data: {
+                    tarea: { connect: { id: tareaId } },
+                    herramienta: { connect: { id: item.herramientaId } },
+                    cantidad: Number(item.cantidad),
+                    origenStock: origenStock,
+                    estado: "RESERVADA",
+                    fechaInicio: inicio,
+                    fechaFin: fin,
+                    observacion: `Reserva herramienta ${origenStock.toLowerCase()} para tarea`,
+                    ...(operarioId ? { operario: { connect: { id: operarioId } } } : {}),
+                },
+            });
+        }
+    }
     async buscarOpcionesReemplazoParaCorrectiva(params) {
         const { prisma, conjuntoId, inicio, fin, prioridadCorrectiva, operariosIds, } = params;
         const prioridadesPermitidas = this.prioridadesPreventivaReemplazables(prioridadCorrectiva);
@@ -1115,6 +1210,17 @@ class GerenteService {
                 .map((x) => Number(x))
                 .filter((n) => Number.isFinite(n) && n > 0)
             : [];
+        const herramientas = Array.isArray(dto.herramientas)
+            ? dto.herramientas
+                .map((x) => ({
+                herramientaId: Number(x?.herramientaId),
+                cantidad: Number(x?.cantidad ?? 1),
+            }))
+                .filter((x) => Number.isFinite(x.herramientaId) &&
+                x.herramientaId > 0 &&
+                Number.isFinite(x.cantidad) &&
+                x.cantidad > 0)
+            : [];
         // =========================
         // Helpers de logÃƒÂ­stica (maquinaria)
         // =========================
@@ -1276,6 +1382,18 @@ class GerenteService {
                         data: { tareaId: tarea.id },
                     });
                 }
+            }
+            if (dto.conjuntoId && herramientas.length) {
+                await this.reservarHerramientasTarea({
+                    tx,
+                    empresaId: EMPRESA_ID_FIJA,
+                    conjuntoId: dto.conjuntoId,
+                    tareaId: tarea.id,
+                    herramientas,
+                    inicio,
+                    fin,
+                    operarioId: operariosIds[0] ?? null,
+                });
             }
             if (operariosIds.length) {
                 const notificaciones = new NotificacionService_1.NotificacionService(tx);
@@ -1551,6 +1669,17 @@ class GerenteService {
             ? dto.maquinariaIds
                 .map((x) => Number(x))
                 .filter((n) => Number.isFinite(n) && n > 0)
+            : [];
+        const herramientas = Array.isArray(dto.herramientas)
+            ? dto.herramientas
+                .map((x) => ({
+                herramientaId: Number(x?.herramientaId),
+                cantidad: Number(x?.cantidad ?? 1),
+            }))
+                .filter((x) => Number.isFinite(x.herramientaId) &&
+                x.herramientaId > 0 &&
+                Number.isFinite(x.cantidad) &&
+                x.cantidad > 0)
             : [];
         const prioridadesPermitidas = this.prioridadesPreventivaReemplazables(prioridad);
         return this.prisma.$transaction(async (tx) => {
@@ -1888,6 +2017,18 @@ class GerenteService {
                         data: { tareaId: nuevaCorrectiva.id },
                     });
                 }
+            }
+            if (dto.conjuntoId && herramientas.length) {
+                await this.reservarHerramientasTarea({
+                    tx,
+                    empresaId: EMPRESA_ID_FIJA,
+                    conjuntoId: dto.conjuntoId,
+                    tareaId: nuevaCorrectiva.id,
+                    herramientas,
+                    inicio,
+                    fin,
+                    operarioId: operariosIds[0] ?? null,
+                });
             }
             if (operariosIds.length) {
                 const notificaciones = new NotificacionService_1.NotificacionService(tx);

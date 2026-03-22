@@ -6,15 +6,48 @@ class HerramientaService {
         this.prisma = prisma;
     }
     async crear(data) {
-        return this.prisma.herramienta.create({
-            data: {
-                empresaId: data.empresaId,
-                nombre: data.nombre.trim(),
-                unidad: data.unidad.trim(),
-                modoControl: data.modoControl,
-                vidaUtilDias: data.vidaUtilDias ?? null,
-                umbralBajo: data.umbralBajo ?? null,
-            },
+        return this.prisma.$transaction(async (tx) => {
+            const creada = await tx.herramienta.create({
+                data: {
+                    empresaId: data.empresaId,
+                    nombre: data.nombre.trim(),
+                    unidad: data.unidad.trim(),
+                    categoria: data.categoria,
+                    modoControl: data.modoControl,
+                    vidaUtilDias: data.vidaUtilDias ?? null,
+                    umbralBajo: data.umbralBajo ?? null,
+                },
+            });
+            await tx.empresaHerramientaStock.upsert({
+                where: {
+                    empresaId_herramientaId: {
+                        empresaId: data.empresaId,
+                        herramientaId: creada.id,
+                    },
+                },
+                create: {
+                    empresaId: data.empresaId,
+                    herramientaId: creada.id,
+                    cantidad: 0,
+                },
+                update: {},
+            });
+            const conjuntos = await tx.conjunto.findMany({
+                where: { empresaId: data.empresaId },
+                select: { nit: true },
+            });
+            if (conjuntos.length) {
+                await tx.conjuntoHerramientaStock.createMany({
+                    data: conjuntos.map((c) => ({
+                        conjuntoId: c.nit,
+                        herramientaId: creada.id,
+                        cantidad: 0,
+                        estado: "OPERATIVA",
+                    })),
+                    skipDuplicates: true,
+                });
+            }
+            return creada;
         });
     }
     async listar(params) {
@@ -27,11 +60,24 @@ class HerramientaService {
             this.prisma.herramienta.findMany({
                 where,
                 orderBy: { nombre: "asc" },
+                include: {
+                    stocksEmpresa: {
+                        where: { empresaId: params.empresaId },
+                        select: { cantidad: true },
+                        take: 1,
+                    },
+                },
                 take: params.take,
                 skip: params.skip,
             }),
         ]);
-        return { total, data };
+        return {
+            total,
+            data: data.map((item) => ({
+                ...item,
+                stockEmpresa: item.stocksEmpresa.length > 0 ? Number(item.stocksEmpresa[0].cantidad) : 0,
+            })),
+        };
     }
     async obtenerPorId(herramientaId) {
         const h = await this.prisma.herramienta.findUnique({
@@ -51,6 +97,7 @@ class HerramientaService {
             data: {
                 ...(data.nombre !== undefined ? { nombre: data.nombre.trim() } : {}),
                 ...(data.unidad !== undefined ? { unidad: data.unidad.trim() } : {}),
+                ...(data.categoria !== undefined ? { categoria: data.categoria } : {}),
                 ...(data.modoControl !== undefined
                     ? { modoControl: data.modoControl }
                     : {}),

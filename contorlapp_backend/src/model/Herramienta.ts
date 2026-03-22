@@ -5,6 +5,12 @@ export const ModoControlHerramientaZ = z.enum([
   "CONSUMO",
   "VIDA_CORTA",
 ]);
+export const CategoriaHerramientaZ = z.enum([
+  "LIMPIEZA",
+  "JARDINERIA",
+  "PISCINA",
+  "OTROS",
+]);
 export const EstadoSolicitudZ = z.enum(["PENDIENTE", "APROBADA", "RECHAZADA"]);
 
 // ✅ si tu stock maneja estado
@@ -27,6 +33,7 @@ export const CrearHerramientaBody = z.object({
   empresaId: z.string().min(3),
   nombre: z.string().min(2).max(120),
   unidad: z.string().min(1).max(30).default("UNIDAD"),
+  categoria: CategoriaHerramientaZ.default("OTROS"),
   modoControl: ModoControlHerramientaZ.default("PRESTAMO"),
   vidaUtilDias: z.coerce.number().int().positive().optional().nullable(),
   umbralBajo: z.coerce.number().int().min(0).optional().nullable(),
@@ -35,6 +42,7 @@ export const CrearHerramientaBody = z.object({
 export const EditarHerramientaBody = z.object({
   nombre: z.string().min(2).max(120).optional(),
   unidad: z.string().min(1).max(30).optional(),
+  categoria: CategoriaHerramientaZ.optional(),
   modoControl: ModoControlHerramientaZ.optional(),
   vidaUtilDias: z.coerce.number().int().positive().optional().nullable(),
   umbralBajo: z.coerce.number().int().min(0).optional().nullable(),
@@ -59,6 +67,10 @@ export const UpsertStockBody = z.object({
 export const AjustarStockBody = z.object({
   delta: z.coerce.number(),
   estado: EstadoHerramientaStockZ.optional().default("OPERATIVA"),
+});
+
+export const EmpresaNitParam = z.object({
+  empresaId: z.string().min(3),
 });
 
 // -------- SOLICITUDES --------

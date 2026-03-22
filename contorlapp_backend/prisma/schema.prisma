@@ -211,6 +211,13 @@ enum CategoriaInsumo {
   PISCINA
 }
 
+enum CategoriaHerramienta {
+  LIMPIEZA
+  JARDINERIA
+  PISCINA
+  OTROS
+}
+
 enum UnidadCalculo {
   M
   UNIDAD
@@ -234,6 +241,11 @@ enum EstadoUsoHerramienta {
   DEVUELTA
   CONSUMIDA
   CANCELADA
+}
+
+enum OrigenHerramientaStock {
+  EMPRESA
+  CONJUNTO
 }
 
 /**
@@ -413,6 +425,7 @@ model Empresa {
   insumosConsumidos       InsumoConsumoEmpresa[]
   Rendimiento             Rendimiento[]
   catalogoHerramientas    Herramienta[]
+  stockHerramientas       EmpresaHerramientaStock[]
   solicitudesHerramientas SolicitudHerramienta[]
 
   @@map("Empresa")
@@ -622,6 +635,7 @@ model Herramienta {
   id     Int    @id @default(autoincrement())
   nombre String
   unidad String @default("UNIDAD")
+  categoria CategoriaHerramienta @default(OTROS)
 
   modoControl  ModoControlHerramienta @default(PRESTAMO)
   vidaUtilDias Int?
@@ -630,12 +644,31 @@ model Herramienta {
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
   empresaId String
 
+  stocksEmpresa  EmpresaHerramientaStock[]
   stocksConjunto ConjuntoHerramientaStock[]
   usosTarea      UsoHerramienta[]
   solicitudItems SolicitudHerramientaItem[]
 
   @@unique([empresaId, nombre, unidad])
   @@map("Herramienta")
+}
+
+model EmpresaHerramientaStock {
+  id Int @id @default(autoincrement())
+
+  empresa   Empresa @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
+  empresaId String
+
+  herramienta   Herramienta @relation(fields: [herramientaId], references: [id], onDelete: Cascade)
+  herramientaId Int
+
+  cantidad Decimal @db.Decimal(14, 4)
+
+  actualizadoEn DateTime @updatedAt
+
+  @@unique([empresaId, herramientaId])
+  @@index([empresaId])
+  @@map("EmpresaHerramientaStock")
 }
 
 model ConjuntoHerramientaStock {
@@ -667,6 +700,8 @@ model UsoHerramienta {
   herramientaId Int
 
   cantidad Decimal @default(1) @db.Decimal(14, 4)
+
+  origenStock OrigenHerramientaStock @default(CONJUNTO)
 
   estado EstadoUsoHerramienta @default(RESERVADA)
 

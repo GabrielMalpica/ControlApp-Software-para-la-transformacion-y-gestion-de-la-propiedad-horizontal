@@ -1,6 +1,11 @@
 import { RequestHandler } from "express";
 import { prisma } from "../db/prisma";
-import { ConjuntoNitParam, UpsertStockBody, AjustarStockBody } from "../model/Herramienta";
+import {
+  ConjuntoNitParam,
+  UpsertStockBody,
+  AjustarStockBody,
+  EmpresaNitParam,
+} from "../model/Herramienta";
 import { HerramientaStockService } from "../services/HerramientaStockService";
 import { z } from "zod";
 
@@ -8,7 +13,86 @@ const HerramientaIdParam = z.object({
   herramientaId: z.coerce.number().int().positive(),
 });
 
+const DisponibilidadQuery = z.object({
+  empresaId: z.string().min(3),
+  fechaInicio: z.coerce.date().optional(),
+  fechaFin: z.coerce.date().optional(),
+  excluirTareaId: z.coerce.number().int().positive().optional(),
+});
+
 export class HerramientaStockController {
+  listarStockEmpresa: RequestHandler = async (req, res, next) => {
+    try {
+      const { empresaId } = EmpresaNitParam.parse(req.params);
+      const service = new HerramientaStockService(prisma, "");
+      const out = await service.listarStockEmpresa(empresaId);
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  upsertStockEmpresa: RequestHandler = async (req, res, next) => {
+    try {
+      const { empresaId } = EmpresaNitParam.parse(req.params);
+      const body = UpsertStockBody.parse(req.body);
+      const service = new HerramientaStockService(prisma, "");
+      const out = await service.upsertStockEmpresa({
+        empresaId,
+        herramientaId: body.herramientaId,
+        cantidad: Number(body.cantidad),
+      });
+      res.status(201).json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  ajustarStockEmpresa: RequestHandler = async (req, res, next) => {
+    try {
+      const { empresaId } = EmpresaNitParam.parse(req.params);
+      const { herramientaId } = HerramientaIdParam.parse(req.params);
+      const body = AjustarStockBody.parse(req.body);
+      const service = new HerramientaStockService(prisma, "");
+      const out = await service.ajustarStockEmpresa({
+        empresaId,
+        herramientaId,
+        delta: Number(body.delta),
+      });
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  eliminarStockEmpresa: RequestHandler = async (req, res, next) => {
+    try {
+      const { empresaId } = EmpresaNitParam.parse(req.params);
+      const { herramientaId } = HerramientaIdParam.parse(req.params);
+      const service = new HerramientaStockService(prisma, "");
+      await service.eliminarStockEmpresa({ empresaId, herramientaId });
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  listarDisponibilidadConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const { nit } = ConjuntoNitParam.parse(req.params);
+      const q = DisponibilidadQuery.parse(req.query);
+      const service = new HerramientaStockService(prisma, nit);
+      const out = await service.listarDisponibilidad({
+        empresaId: q.empresaId,
+        fechaInicio: q.fechaInicio,
+        fechaFin: q.fechaFin,
+        excluirTareaId: q.excluirTareaId,
+      });
+      res.json({ ok: true, data: out });
+    } catch (err) {
+      next(err);
+    }
+  };
 
   // GET /herramientas/conjunto/:nit/stock?estado=
   listarStockConjunto: RequestHandler = async (req, res, next) => {

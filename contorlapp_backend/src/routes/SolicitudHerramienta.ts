@@ -7,6 +7,6 @@ const controller = new SolicitudHerramientaController();
 router.post("/", controller.crear);
 router.get("/", controller.listar);
 router.get("/:solicitudId", controller.obtener);
-// router.patch("/:solicitudId/estado", controller.cambiarEstado);
+router.patch("/:solicitudId/estado", controller.cambiarEstado);
 
 export default router;

@@ -59,20 +59,22 @@ class SolicitudHerramientaController {
             }
         };
         // PATCH /solicitudes-herramientas/:solicitudId/estado
-        // cambiarEstado: RequestHandler = async (req, res, next) => {
-        //   try {
-        //     const { solicitudId } = SolicitudIdParam.parse(req.params);
-        //     const body = CambiarEstadoSolicitudBody.parse(req.body);
-        //     const service = new SolicitudHerramientaService(prisma);
-        //     const out = await service.cambiarEstado(solicitudId, {
-        //       estado: body.estado,
-        //       observacionRespuesta: body.observacionRespuesta ?? null,
-        //     });
-        //     res.json(out);
-        //   } catch (err) {
-        //     next(err);
-        //   }
-        // };
+        this.cambiarEstado = async (req, res, next) => {
+            try {
+                const { solicitudId } = SolicitudIdParam.parse(req.params);
+                const body = Herramienta_1.CambiarEstadoSolicitudBody.parse(req.body);
+                const service = new SolicitudHerramientaService_1.SolicitudHerramientaService(prisma_1.prisma);
+                const out = body.estado === "APROBADA"
+                    ? await service.aprobar(solicitudId, req.body)
+                    : await service.rechazar(solicitudId, {
+                        observacionRespuesta: body.observacionRespuesta ?? null,
+                    });
+                res.json(out);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
     }
 }
 exports.SolicitudHerramientaController = SolicitudHerramientaController;
