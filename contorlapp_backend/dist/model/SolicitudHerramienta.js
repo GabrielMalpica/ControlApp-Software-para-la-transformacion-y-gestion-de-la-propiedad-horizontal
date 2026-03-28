@@ -20,6 +20,7 @@ exports.CrearSolicitudHerramientaDTO = zod_1.z.object({
 exports.AprobarSolicitudHerramientaDTO = zod_1.z.object({
     fechaAprobacion: zod_1.z.coerce.date().optional(),
     empresaId: zod_1.z.string().min(3).optional().nullable(),
+    fechaDevolucionEstimada: zod_1.z.coerce.date().optional().nullable(),
     // opcional: si quieres que el gerente decida a qué estado entra el stock aprobado
     estadoIngreso: zod_1.z
         .enum(["OPERATIVA", "DANADA", "PERDIDA", "BAJA"])

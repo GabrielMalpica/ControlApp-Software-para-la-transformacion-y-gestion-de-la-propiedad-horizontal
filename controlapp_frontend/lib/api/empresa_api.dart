@@ -14,7 +14,7 @@ class EmpresaApi {
   String get _empresaNit => AppConstants.empresaNit;
 
   Future<int> getLimiteMinSemanaPorConjunto() async {
-    final resp = await _client.get('/$_empresaNit/limite-min-semana');
+    final resp = await _client.get('/empresa/$_empresaNit/limite-min-semana');
 
     if (resp.statusCode != 200) {
       throw Exception('Error límite semanal: ${resp.statusCode} ${resp.body}');

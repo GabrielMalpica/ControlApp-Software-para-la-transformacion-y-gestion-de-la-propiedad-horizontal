@@ -25,6 +25,7 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
   final _umbralCtrl = TextEditingController();
 
   ModoControlHerramienta _modo = ModoControlHerramienta.PRESTAMO;
+  CategoriaHerramienta _categoria = CategoriaHerramienta.OTROS;
 
   bool _saving = false;
   final _api = HerramientaApi();
@@ -53,6 +54,7 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
       final req = HerramientaRequest(
         nombre: _nombreCtrl.text.trim(),
         unidad: _unidadCtrl.text.trim(),
+        categoria: _categoria,
         modoControl: _modo,
         vidaUtilDias: _parseIntNullable(_vidaUtilCtrl.text),
         umbralBajo: _parseIntNullable(_umbralCtrl.text),
@@ -63,6 +65,7 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
         empresaId: widget.empresaId,
         nombre: req.nombre,
         unidad: req.unidad,
+        categoria: req.categoria.backendValue,
         modoControl: req.modoControl.backendValue,
         vidaUtilDias: req.vidaUtilDias,
         umbralBajo: req.umbralBajo,
@@ -158,6 +161,20 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
                     if (s.isEmpty) return "La unidad es obligatoria";
                     return null;
                   },
+                ),
+                spacing,
+
+                DropdownButtonFormField<CategoriaHerramienta>(
+                  initialValue: _categoria,
+                  decoration: const InputDecoration(
+                    labelText: 'Categoria',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: CategoriaHerramienta.values.map((e) {
+                    return DropdownMenuItem(value: e, child: Text(e.label));
+                  }).toList(),
+                  onChanged: (v) =>
+                      setState(() => _categoria = v ?? CategoriaHerramienta.OTROS),
                 ),
                 spacing,
 

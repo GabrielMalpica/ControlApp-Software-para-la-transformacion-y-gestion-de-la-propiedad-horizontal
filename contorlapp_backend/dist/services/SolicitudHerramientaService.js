@@ -82,8 +82,14 @@ class SolicitudHerramientaService {
             if (!empresaId) {
                 throw new Error("La solicitud debe indicar la empresa que entrega la herramienta.");
             }
-            // ✅ mover stock empresa -> conjunto
             for (const it of sol.items) {
+                const herramienta = await tx.herramienta.findUnique({
+                    where: { id: it.herramientaId },
+                    select: { id: true, modoControl: true },
+                });
+                if (!herramienta) {
+                    throw new Error(`Herramienta ${it.herramientaId} no encontrada.`);
+                }
                 const stockEmpresa = await tx.empresaHerramientaStock.findUnique({
                     where: {
                         empresaId_herramientaId: {
@@ -107,6 +113,21 @@ class SolicitudHerramientaService {
                         cantidad: { decrement: it.cantidad },
                     },
                 });
+                if (herramienta.modoControl === "PRESTAMO") {
+                    await tx.prestamoHerramientaConjunto.create({
+                        data: {
+                            conjuntoId: sol.conjuntoId,
+                            empresaId,
+                            herramientaId: it.herramientaId,
+                            solicitudId: sol.id,
+                            cantidad: it.cantidad,
+                            estado: estadoIngreso,
+                            fechaInicio: dto.fechaAprobacion ?? new Date(),
+                            fechaDevolucionEstimada: dto.fechaDevolucionEstimada ?? null,
+                        },
+                    });
+                    continue;
+                }
                 await tx.conjuntoHerramientaStock.upsert({
                     where: {
                         conjuntoId_herramientaId_estado: {

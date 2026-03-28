@@ -5,6 +5,7 @@ import {
   UpsertStockBody,
   AjustarStockBody,
   EmpresaNitParam,
+  DevolverPrestamoHerramientaBody,
 } from "../model/Herramienta";
 import { HerramientaStockService } from "../services/HerramientaStockService";
 import { z } from "zod";
@@ -162,6 +163,25 @@ export class HerramientaStockController {
       await service.eliminarStock({ herramientaId, estado });
 
       res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  devolverPrestamoConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const { nit } = ConjuntoNitParam.parse(req.params);
+      const { herramientaId } = HerramientaIdParam.parse(req.params);
+      const body = DevolverPrestamoHerramientaBody.parse(req.body);
+
+      const service = new HerramientaStockService(prisma, nit);
+      const out = await service.devolverPrestamoConjunto({
+        herramientaId,
+        cantidad: Number(body.cantidad),
+        estado: body.estado as any,
+      });
+
+      res.json(out);
     } catch (err) {
       next(err);
     }

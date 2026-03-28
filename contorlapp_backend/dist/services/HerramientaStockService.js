@@ -6,6 +6,38 @@ class HerramientaStockService {
         this.prisma = prisma;
         this.conjuntoId = conjuntoId;
     }
+    normalizarPrestamos(prestamos) {
+        const grouped = new Map();
+        for (const prestamo of prestamos) {
+            const key = `${prestamo.herramientaId}:${prestamo.estado}:${prestamo.empresaId}`;
+            const actual = grouped.get(key);
+            const cantidad = Number(prestamo.cantidad);
+            if (actual) {
+                actual.cantidad += cantidad;
+                if (prestamo.fechaDevolucionEstimada &&
+                    (!actual.fechaDevolucionEstimada ||
+                        prestamo.fechaDevolucionEstimada < actual.fechaDevolucionEstimada)) {
+                    actual.fechaDevolucionEstimada = prestamo.fechaDevolucionEstimada;
+                }
+                continue;
+            }
+            grouped.set(key, {
+                herramientaId: prestamo.herramientaId,
+                cantidad,
+                estado: prestamo.estado,
+                nombre: prestamo.herramienta.nombre,
+                unidad: prestamo.herramienta.unidad,
+                categoria: prestamo.herramienta.categoria,
+                modoControl: prestamo.herramienta.modoControl,
+                umbralBajo: prestamo.herramienta.umbralBajo,
+                origen: "PRESTADA",
+                tipoTenencia: "PRESTADA",
+                empresaIdFuente: prestamo.empresaId,
+                fechaDevolucionEstimada: prestamo.fechaDevolucionEstimada,
+            });
+        }
+        return Array.from(grouped.values());
+    }
     async listarStockEmpresa(empresaId) {
         return this.prisma.empresaHerramientaStock.findMany({
             where: { empresaId },
@@ -76,13 +108,106 @@ class HerramientaStockService {
         });
     }
     async listarStock({ estado } = {}) {
-        return this.prisma.conjuntoHerramientaStock.findMany({
-            where: {
-                conjuntoId: this.conjuntoId,
-                ...(estado ? { estado } : {}),
-            },
-            include: { herramienta: true },
-            orderBy: { herramienta: { nombre: "asc" } },
+        const [propias, prestadas] = await Promise.all([
+            this.prisma.conjuntoHerramientaStock.findMany({
+                where: {
+                    conjuntoId: this.conjuntoId,
+                    ...(estado ? { estado } : {}),
+                },
+                include: { herramienta: true },
+                orderBy: { herramienta: { nombre: "asc" } },
+            }),
+            this.prisma.prestamoHerramientaConjunto.findMany({
+                where: {
+                    conjuntoId: this.conjuntoId,
+                    fechaFin: null,
+                    ...(estado ? { estado } : {}),
+                },
+                include: {
+                    herramienta: {
+                        select: {
+                            id: true,
+                            nombre: true,
+                            unidad: true,
+                            categoria: true,
+                            modoControl: true,
+                            umbralBajo: true,
+                        },
+                    },
+                },
+                orderBy: [{ herramienta: { nombre: "asc" } }, { fechaInicio: "asc" }],
+            }),
+        ]);
+        return [
+            ...propias.map((row) => ({
+                ...row,
+                origen: "PROPIA",
+                tipoTenencia: "PROPIA",
+                empresaIdFuente: null,
+                fechaDevolucionEstimada: null,
+            })),
+            ...this.normalizarPrestamos(prestadas),
+        ];
+    }
+    async devolverPrestamoConjunto(data) {
+        return this.prisma.$transaction(async (tx) => {
+            const activos = (await tx.prestamoHerramientaConjunto.findMany({
+                where: {
+                    conjuntoId: this.conjuntoId,
+                    herramientaId: data.herramientaId,
+                    estado: data.estado,
+                    fechaFin: null,
+                },
+                orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
+            }));
+            const totalPrestado = activos.reduce((acc, row) => acc + Number(row.cantidad), 0);
+            if (totalPrestado < data.cantidad) {
+                const e = new Error(`Cantidad a devolver supera el prestamo activo. Disponible: ${totalPrestado}.`);
+                e.status = 409;
+                throw e;
+            }
+            let restante = Number(data.cantidad);
+            for (const row of activos) {
+                if (restante <= 0)
+                    break;
+                const disponible = Number(row.cantidad);
+                const devolver = Math.min(disponible, restante);
+                await tx.empresaHerramientaStock.upsert({
+                    where: {
+                        empresaId_herramientaId: {
+                            empresaId: row.empresaId,
+                            herramientaId: data.herramientaId,
+                        },
+                    },
+                    create: {
+                        empresaId: row.empresaId,
+                        herramientaId: data.herramientaId,
+                        cantidad: devolver,
+                    },
+                    update: {
+                        cantidad: { increment: devolver },
+                    },
+                });
+                if (devolver >= disponible) {
+                    await tx.prestamoHerramientaConjunto.update({
+                        where: { id: row.id },
+                        data: { cantidad: 0, fechaFin: new Date() },
+                    });
+                }
+                else {
+                    await tx.prestamoHerramientaConjunto.update({
+                        where: { id: row.id },
+                        data: { cantidad: { decrement: devolver } },
+                    });
+                }
+                restante -= devolver;
+            }
+            return {
+                ok: true,
+                herramientaId: data.herramientaId,
+                cantidadDevuelta: Number(data.cantidad),
+                estado: data.estado,
+            };
         });
     }
     async upsertStock(data) {
@@ -154,13 +279,21 @@ class HerramientaStockService {
     }
     async listarDisponibilidad(params) {
         const { empresaId, fechaInicio, fechaFin, excluirTareaId } = params;
-        const [catalogo, stockConjunto, stockEmpresa, reservas] = await Promise.all([
+        const [catalogo, stockConjunto, prestamosConjunto, stockEmpresa, reservas] = await Promise.all([
             this.prisma.herramienta.findMany({
                 where: { empresaId },
                 orderBy: { nombre: "asc" },
             }),
             this.prisma.conjuntoHerramientaStock.findMany({
                 where: { conjuntoId: this.conjuntoId, estado: "OPERATIVA" },
+                select: { herramientaId: true, cantidad: true },
+            }),
+            this.prisma.prestamoHerramientaConjunto.findMany({
+                where: {
+                    conjuntoId: this.conjuntoId,
+                    fechaFin: null,
+                    estado: "OPERATIVA",
+                },
                 select: { herramientaId: true, cantidad: true },
             }),
             this.prisma.empresaHerramientaStock.findMany({
@@ -192,7 +325,13 @@ class HerramientaStockService {
                 })
                 : Promise.resolve([]),
         ]);
-        const conjuntoMap = new Map(stockConjunto.map((r) => [r.herramientaId, Number(r.cantidad)]));
+        const conjuntoMap = new Map();
+        for (const row of stockConjunto) {
+            conjuntoMap.set(row.herramientaId, Number(row.cantidad));
+        }
+        for (const row of prestamosConjunto) {
+            conjuntoMap.set(row.herramientaId, Number(conjuntoMap.get(row.herramientaId) ?? 0) + Number(row.cantidad));
+        }
         const empresaMap = new Map(stockEmpresa.map((r) => [r.herramientaId, Number(r.cantidad)]));
         const reservadas = new Map();
         for (const r of reservas) {

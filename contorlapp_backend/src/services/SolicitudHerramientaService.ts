@@ -7,6 +7,7 @@ import {
 
 type EstadoSolicitud = "PENDIENTE" | "APROBADA" | "RECHAZADA";
 type EstadoStock = "OPERATIVA" | "DANADA" | "PERDIDA" | "BAJA";
+type ModoControl = "PRESTAMO" | "CONSUMO" | "VIDA_CORTA";
 
 export class SolicitudHerramientaService {
   constructor(private prisma: PrismaClient) {}
@@ -95,8 +96,16 @@ export class SolicitudHerramientaService {
         throw new Error("La solicitud debe indicar la empresa que entrega la herramienta.");
       }
 
-      // ✅ mover stock empresa -> conjunto
       for (const it of sol.items) {
+        const herramienta = await tx.herramienta.findUnique({
+          where: { id: it.herramientaId },
+          select: { id: true, modoControl: true },
+        });
+
+        if (!herramienta) {
+          throw new Error(`Herramienta ${it.herramientaId} no encontrada.`);
+        }
+
         const stockEmpresa = await (tx as any).empresaHerramientaStock.findUnique({
           where: {
             empresaId_herramientaId: {
@@ -124,6 +133,22 @@ export class SolicitudHerramientaService {
             cantidad: { decrement: it.cantidad as any },
           },
         });
+
+        if ((herramienta.modoControl as ModoControl) === "PRESTAMO") {
+          await (tx as any).prestamoHerramientaConjunto.create({
+            data: {
+              conjuntoId: sol.conjuntoId,
+              empresaId,
+              herramientaId: it.herramientaId,
+              solicitudId: sol.id,
+              cantidad: it.cantidad as any,
+              estado: estadoIngreso as any,
+              fechaInicio: dto.fechaAprobacion ?? new Date(),
+              fechaDevolucionEstimada: dto.fechaDevolucionEstimada ?? null,
+            },
+          });
+          continue;
+        }
 
         await tx.conjuntoHerramientaStock.upsert({
           where: {

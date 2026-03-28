@@ -10,12 +10,13 @@ class HerramientaApi {
 
   static const String _herramientasBase = '/herramientas';
   static const String _solicitudesHerramientasBase =
-      '/solicitudes-herramientas';
+      '/solicitud-herramientas';
 
   Future<Map<String, dynamic>> crearHerramienta({
     required String empresaId,
     required String nombre,
     String unidad = "UNIDAD",
+    String categoria = "OTROS",
     String modoControl = "PRESTAMO",
     int? vidaUtilDias,
     int? umbralBajo,
@@ -24,6 +25,7 @@ class HerramientaApi {
       "empresaId": empresaId,
       "nombre": nombre,
       "unidad": unidad,
+      "categoria": categoria,
       "modoControl": modoControl,
       "vidaUtilDias": vidaUtilDias,
       "umbralBajo": umbralBajo,
@@ -93,6 +95,7 @@ class HerramientaApi {
     required int herramientaId,
     String? nombre,
     String? unidad,
+    String? categoria,
     String? modoControl, // PRESTAMO | CONSUMO | VIDA_CORTA
     int? vidaUtilDias,
     int? umbralBajo,
@@ -100,6 +103,7 @@ class HerramientaApi {
     final body = <String, dynamic>{
       if (nombre != null) "nombre": nombre,
       if (unidad != null) "unidad": unidad,
+      if (categoria != null) "categoria": categoria,
       if (modoControl != null) "modoControl": modoControl,
       if (vidaUtilDias != null) "vidaUtilDias": vidaUtilDias,
       if (umbralBajo != null) "umbralBajo": umbralBajo,
@@ -163,6 +167,97 @@ class HerramientaApi {
     }
 
     throw Exception('Respuesta inesperada del backend en listarStockConjunto');
+  }
+
+  Future<List<dynamic>> listarStockEmpresa({required String empresaId}) async {
+    final resp = await _client.get(
+      '$_herramientasBase/empresa/$empresaId/stock',
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error al listar stock empresa: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final decoded = jsonDecode(resp.body);
+    if (decoded is List) return decoded;
+    if (decoded is Map && decoded['data'] is List) {
+      return decoded['data'] as List;
+    }
+    throw Exception('Respuesta inesperada del backend en listarStockEmpresa');
+  }
+
+  Future<Map<String, dynamic>> upsertStockEmpresa({
+    required String empresaId,
+    required int herramientaId,
+    required num cantidad,
+  }) async {
+    final resp = await _client.post(
+      '$_herramientasBase/empresa/$empresaId/stock',
+      body: {'herramientaId': herramientaId, 'cantidad': cantidad},
+    );
+
+    if (resp.statusCode != 201 && resp.statusCode != 200) {
+      throw Exception(
+        'Error al upsert stock empresa: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    return jsonDecode(resp.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> ajustarStockEmpresa({
+    required String empresaId,
+    required int herramientaId,
+    required num delta,
+  }) async {
+    final resp = await _client.patch(
+      '$_herramientasBase/empresa/$empresaId/stock/$herramientaId/ajustar',
+      body: {'delta': delta},
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error al ajustar stock empresa: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    return jsonDecode(resp.body) as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> listarDisponibilidadConjunto({
+    required String nitConjunto,
+    required String empresaId,
+    DateTime? fechaInicio,
+    DateTime? fechaFin,
+    int? excluirTareaId,
+  }) async {
+    final qp = <String, String>{
+      'empresaId': empresaId,
+      if (fechaInicio != null) 'fechaInicio': fechaInicio.toUtc().toIso8601String(),
+      if (fechaFin != null) 'fechaFin': fechaFin.toUtc().toIso8601String(),
+      if (excluirTareaId != null) 'excluirTareaId': excluirTareaId.toString(),
+    };
+
+    final uri = Uri.parse(
+      '${AppConstants.baseUrl}$_herramientasBase/conjunto/$nitConjunto/disponibles',
+    ).replace(queryParameters: qp);
+
+    final resp = await _client.get(uri.toString());
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error al listar disponibilidad de herramientas: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final decoded = jsonDecode(resp.body);
+    if (decoded is Map && decoded['data'] is List) {
+      return decoded['data'] as List;
+    }
+    if (decoded is List) return decoded;
+    throw Exception('Respuesta inesperada del backend en listarDisponibilidadConjunto');
   }
 
   /// POST /herramientas/conjunto/:nit/stock
@@ -234,6 +329,26 @@ class HerramientaApi {
         'Error al eliminar stock: ${resp.statusCode} ${resp.body}',
       );
     }
+  }
+
+  Future<Map<String, dynamic>> devolverPrestamoConjunto({
+    required String nitConjunto,
+    required int herramientaId,
+    required num cantidad,
+    String estado = 'OPERATIVA',
+  }) async {
+    final resp = await _client.post(
+      '$_herramientasBase/conjunto/$nitConjunto/prestamos/$herramientaId/devolver',
+      body: {'cantidad': cantidad, 'estado': estado},
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error al devolver prestamo: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    return jsonDecode(resp.body) as Map<String, dynamic>;
   }
 
   // ==========================================================

@@ -147,8 +147,93 @@ class _InventarioPageState extends State<InventarioPage> {
       return x.nombre.toLowerCase().contains(t) ||
           x.unidad.toLowerCase().contains(t) ||
           x.estado.name.toLowerCase().contains(t) ||
-          x.modoControl.name.toLowerCase().contains(t);
+          x.modoControl.name.toLowerCase().contains(t) ||
+          x.tipoTenencia.name.toLowerCase().contains(t) ||
+          (x.empresaIdFuente ?? '').toLowerCase().contains(t);
     }).toList();
+  }
+
+  Future<void> _devolverHerramientaPrestada(HerramientaStockResponse item) async {
+    final controller = TextEditingController(text: item.cantidad.toString());
+
+    try {
+      final cantidad = await showDialog<num>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: Text('Devolver ${item.nombre}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Disponible prestado: ${item.cantidad} ${item.unidad}'),
+                if (item.empresaIdFuente != null &&
+                    item.empresaIdFuente!.trim().isNotEmpty)
+                  Text('Empresa origen: ${item.empresaIdFuente}'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Cantidad a devolver',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final parsed = num.tryParse(controller.text.trim());
+                  if (parsed == null || parsed <= 0 || parsed > item.cantidad) {
+                    AppFeedback.showFromSnackBar(
+                      context,
+                      const SnackBar(
+                        content: Text('Cantidad invalida para la devolucion'),
+                      ),
+                    );
+                    return;
+                  }
+                  Navigator.pop(dialogContext, parsed);
+                },
+                child: const Text('Devolver'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (cantidad == null) return;
+
+      await _herrApi.devolverPrestamoConjunto(
+        nitConjunto: widget.nit,
+        herramientaId: item.herramientaId,
+        cantidad: cantidad,
+        estado: item.estado.backendValue,
+      );
+
+      if (!mounted) return;
+
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text('Prestamo devuelto: ${item.nombre}')),
+      );
+      _cargar();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+    } finally {
+      controller.dispose();
+    }
   }
 
   // =============================
@@ -293,10 +378,15 @@ class _InventarioPageState extends State<InventarioPage> {
                 DataColumn(label: Text("NAME")),
                 DataColumn(label: Text("UNIT")),
                 DataColumn(label: Text("CONTROL")),
+                DataColumn(label: Text("OWNERSHIP")),
                 DataColumn(numeric: true, label: Text("AVAILABLE")),
                 DataColumn(label: Text("STATE")),
+                DataColumn(label: Text("ACTION")),
               ],
-              source: _HerramientaDataSource(data: filtrados),
+              source: _HerramientaDataSource(
+                data: filtrados,
+                onDevolver: _esGerente ? _devolverHerramientaPrestada : null,
+              ),
             ),
           ),
         ),
@@ -427,7 +517,7 @@ class _InventarioPageState extends State<InventarioPage> {
                     _esGerente)
                   _ghostButton(
                     icon: Icons.add,
-                    label: "Agregar herramienta",
+                    label: "Registrar herramienta propia",
                     onTap: () async {
                       final changed = await showDialog<bool>(
                         context: context,
@@ -489,9 +579,9 @@ class _InventarioPageState extends State<InventarioPage> {
                     child: TextField(
                       decoration: InputDecoration(
                         prefixIcon: const Icon(Icons.search),
-                        hintText: _tipoInventario == TipoInventario.INSUMOS
+              hintText: _tipoInventario == TipoInventario.INSUMOS
                             ? "Buscar (nombre, categoría, unidad)"
-                            : "Buscar (nombre, unidad, estado, modo)",
+                            : "Buscar (nombre, unidad, estado, modo, origen)",
                         filled: true,
                         fillColor: Colors.white,
                         contentPadding: const EdgeInsets.symmetric(
@@ -600,8 +690,9 @@ class _InventarioDataSource extends DataTableSource {
 
 class _HerramientaDataSource extends DataTableSource {
   final List<HerramientaStockResponse> data;
+  final Future<void> Function(HerramientaStockResponse item)? onDevolver;
 
-  _HerramientaDataSource({required this.data});
+  _HerramientaDataSource({required this.data, this.onDevolver});
 
   @override
   DataRow? getRow(int index) {
@@ -614,6 +705,12 @@ class _HerramientaDataSource extends DataTableSource {
         : (h.estado == EstadoHerramientaStock.DANADA)
         ? AppTheme.red
         : Colors.black54;
+    final tenenciaTxt = h.tipoTenencia == TipoTenenciaHerramienta.PRESTADA
+        ? 'Prestada'
+        : 'Propia';
+    final tenenciaColor = h.tipoTenencia == TipoTenenciaHerramienta.PRESTADA
+        ? Colors.orange.shade700
+        : Colors.blueGrey;
 
     return DataRow.byIndex(
       index: index,
@@ -623,6 +720,39 @@ class _HerramientaDataSource extends DataTableSource {
         ),
         DataCell(Text(h.unidad.isEmpty ? "-" : h.unidad)),
         DataCell(Text(h.modoControl.label)),
+        DataCell(
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: tenenciaColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: tenenciaColor.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Text(
+                  tenenciaTxt,
+                  style: TextStyle(
+                    color: tenenciaColor,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (h.empresaIdFuente != null && h.empresaIdFuente!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    h.empresaIdFuente!,
+                    style: const TextStyle(fontSize: 11, color: Colors.black54),
+                  ),
+                ),
+            ],
+          ),
+        ),
         DataCell(Text(h.cantidad.toString())),
         DataCell(
           Container(
@@ -637,6 +767,15 @@ class _HerramientaDataSource extends DataTableSource {
               style: TextStyle(color: estadoColor, fontWeight: FontWeight.w800),
             ),
           ),
+        ),
+        DataCell(
+          h.tipoTenencia == TipoTenenciaHerramienta.PRESTADA && onDevolver != null
+              ? IconButton(
+                  tooltip: 'Devolver a empresa',
+                  onPressed: () => onDevolver!(h),
+                  icon: const Icon(Icons.assignment_return_outlined),
+                )
+              : const SizedBox.shrink(),
         ),
       ],
     );
@@ -790,7 +929,7 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text("Agregar herramienta al inventario"),
+      title: const Text("Registrar herramienta propia del conjunto"),
       content: SizedBox(
         width: 520,
         child: _loading
@@ -818,7 +957,7 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
                   DropdownButtonFormField<HerramientaResponse>(
                     initialValue: _selected,
                     decoration: const InputDecoration(
-                      labelText: "Herramienta (catálogo)",
+                        labelText: "Herramienta propia (catálogo)",
                       border: OutlineInputBorder(),
                     ),
                     items: _catalogo.map((h) {
@@ -877,6 +1016,13 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
                         "Modo de control: ${_selected!.modoControl.label}",
                       ),
                     ),
+                  const SizedBox(height: 8),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Este registro crea stock propio del conjunto. Los prestamos desde empresa se devuelven aparte.',
+                    ),
+                  ),
                 ],
               ),
       ),

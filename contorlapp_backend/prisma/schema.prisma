@@ -427,6 +427,7 @@ model Empresa {
   catalogoHerramientas    Herramienta[]
   stockHerramientas       EmpresaHerramientaStock[]
   solicitudesHerramientas SolicitudHerramienta[]
+  prestamosHerramientas   PrestamoHerramientaConjunto[]
 
   @@map("Empresa")
 }
@@ -552,6 +553,7 @@ model Conjunto {
   maquinarias               Maquinaria[]
   herramientasStock         ConjuntoHerramientaStock[]
   solicitudHerramientas     SolicitudHerramienta[]
+   prestamosHerramientas     PrestamoHerramientaConjunto[]
 }
 
 model ConjuntoHorario {
@@ -646,6 +648,7 @@ model Herramienta {
 
   stocksEmpresa  EmpresaHerramientaStock[]
   stocksConjunto ConjuntoHerramientaStock[]
+  prestamos      PrestamoHerramientaConjunto[]
   usosTarea      UsoHerramienta[]
   solicitudItems SolicitudHerramientaItem[]
 
@@ -690,6 +693,36 @@ model ConjuntoHerramientaStock {
   @@map("ConjuntoHerramientaStock")
 }
 
+model PrestamoHerramientaConjunto {
+  id Int @id @default(autoincrement())
+
+  conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
+  conjuntoId String
+
+  empresa   Empresa @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
+  empresaId String
+
+  herramienta   Herramienta @relation(fields: [herramientaId], references: [id], onDelete: Cascade)
+  herramientaId Int
+
+  solicitud   SolicitudHerramienta? @relation(fields: [solicitudId], references: [id], onDelete: SetNull)
+  solicitudId Int?
+
+  cantidad Decimal           @db.Decimal(14, 4)
+  estado   EstadoHerramienta @default(OPERATIVA)
+
+  fechaInicio             DateTime @default(now())
+  fechaFin                DateTime?
+  fechaDevolucionEstimada DateTime?
+  actualizadoEn           DateTime @updatedAt
+
+  @@index([conjuntoId, estado])
+  @@index([conjuntoId, fechaFin])
+  @@index([herramientaId, fechaFin])
+  @@index([empresaId, fechaFin])
+  @@map("PrestamoHerramientaConjunto")
+}
+
 model UsoHerramienta {
   id Int @id @default(autoincrement())
 
@@ -731,7 +764,8 @@ model SolicitudHerramienta {
   empresa   Empresa? @relation(fields: [empresaId], references: [nit])
   empresaId String?
 
-  items SolicitudHerramientaItem[]
+  items     SolicitudHerramientaItem[]
+  prestamos PrestamoHerramientaConjunto[]
 
   @@index([conjuntoId, estado])
   @@map("SolicitudHerramienta")

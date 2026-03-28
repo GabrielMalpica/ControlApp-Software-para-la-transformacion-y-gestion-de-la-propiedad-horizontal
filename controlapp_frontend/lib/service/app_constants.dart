@@ -42,9 +42,10 @@ class AppConstants {
 
   // 🔹 Asignación de roles
   static String get operarios => "$gerenteBase/operarios";
-  static String get supervisores => "$baseUrl/supervisores";
+  static String get supervisores => "$gerenteBase/supervisores";
   static String get supervisorBase => "$baseUrl/supervisor";
   static String get administradores => "$gerenteBase/administradores";
+  static String get jefesOperaciones => "$gerenteBase/jefes-operaciones";
   static String get jefeOperacionesBase => "$baseUrl/jefe-operaciones";
   static String get reportesBase => "$baseUrl/reporte";
 

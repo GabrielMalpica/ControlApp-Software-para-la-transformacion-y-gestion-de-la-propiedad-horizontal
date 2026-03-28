@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CambiarEstadoSolicitudBody = exports.CrearSolicitudHerramientaBody = exports.EmpresaNitParam = exports.AjustarStockBody = exports.UpsertStockBody = exports.ListarHerramientasQuery = exports.EditarHerramientaBody = exports.CrearHerramientaBody = exports.ConjuntoNitParam = exports.HerramientaIdParam = exports.EstadoHerramientaStockZ = exports.EstadoSolicitudZ = exports.CategoriaHerramientaZ = exports.ModoControlHerramientaZ = void 0;
+exports.CambiarEstadoSolicitudBody = exports.CrearSolicitudHerramientaBody = exports.EmpresaNitParam = exports.DevolverPrestamoHerramientaBody = exports.AjustarStockBody = exports.UpsertStockBody = exports.ListarHerramientasQuery = exports.EditarHerramientaBody = exports.CrearHerramientaBody = exports.ConjuntoNitParam = exports.HerramientaIdParam = exports.EstadoHerramientaStockZ = exports.EstadoSolicitudZ = exports.CategoriaHerramientaZ = exports.ModoControlHerramientaZ = void 0;
 const zod_1 = require("zod");
 exports.ModoControlHerramientaZ = zod_1.z.enum([
     "PRESTAMO",
@@ -61,6 +61,10 @@ exports.AjustarStockBody = zod_1.z.object({
     delta: zod_1.z.coerce.number(),
     estado: exports.EstadoHerramientaStockZ.optional().default("OPERATIVA"),
 });
+exports.DevolverPrestamoHerramientaBody = zod_1.z.object({
+    cantidad: zod_1.z.coerce.number().positive(),
+    estado: exports.EstadoHerramientaStockZ.optional().default("OPERATIVA"),
+});
 exports.EmpresaNitParam = zod_1.z.object({
     empresaId: zod_1.z.string().min(3),
 });
@@ -78,4 +82,7 @@ exports.CrearSolicitudHerramientaBody = zod_1.z.object({
 exports.CambiarEstadoSolicitudBody = zod_1.z.object({
     estado: exports.EstadoSolicitudZ,
     observacionRespuesta: zod_1.z.string().max(500).optional().nullable(),
+    empresaId: zod_1.z.string().min(3).optional().nullable(),
+    fechaDevolucionEstimada: zod_1.z.coerce.date().optional().nullable(),
+    estadoIngreso: exports.EstadoHerramientaStockZ.optional(),
 });

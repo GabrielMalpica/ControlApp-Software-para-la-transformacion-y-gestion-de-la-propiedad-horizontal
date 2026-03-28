@@ -21,6 +21,7 @@ export const CrearSolicitudHerramientaDTO = z.object({
 export const AprobarSolicitudHerramientaDTO = z.object({
   fechaAprobacion: z.coerce.date().optional(),
   empresaId: z.string().min(3).optional().nullable(),
+  fechaDevolucionEstimada: z.coerce.date().optional().nullable(),
   // opcional: si quieres que el gerente decida a qué estado entra el stock aprobado
   estadoIngreso: z
     .enum(["OPERATIVA", "DANADA", "PERDIDA", "BAJA"])

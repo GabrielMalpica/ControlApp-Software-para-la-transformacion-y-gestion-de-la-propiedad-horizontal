@@ -14,4 +14,5 @@ router.get("/conjunto/:nit/disponibles", controller.listarDisponibilidadConjunto
 router.post("/conjunto/:nit/stock", controller.upsertStockConjunto);
 router.patch("/conjunto/:nit/stock/:herramientaId/ajustar", controller.ajustarStockConjunto);
 router.delete("/conjunto/:nit/stock/:herramientaId", controller.eliminarStockConjunto);
+router.post("/conjunto/:nit/prestamos/:herramientaId/devolver", controller.devolverPrestamoConjunto);
 exports.default = router;

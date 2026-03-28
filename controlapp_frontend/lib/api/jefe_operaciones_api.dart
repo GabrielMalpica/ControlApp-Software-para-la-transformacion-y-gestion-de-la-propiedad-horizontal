@@ -74,7 +74,7 @@ class JefeOperacionesApi {
     List<EvidenciaAdjunto> evidencias = const [],
   }) async {
     final uri = Uri.parse(
-      '${AppConstants.jefeOperacionesBase}/tareas/$tareaId/cerrar',
+      '${AppConstants.supervisorBase}/tareas/$tareaId/cerrar',
     );
 
     final req = http.MultipartRequest('POST', uri);

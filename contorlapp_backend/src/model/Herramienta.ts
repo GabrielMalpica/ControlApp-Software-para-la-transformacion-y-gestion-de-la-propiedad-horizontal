@@ -69,6 +69,11 @@ export const AjustarStockBody = z.object({
   estado: EstadoHerramientaStockZ.optional().default("OPERATIVA"),
 });
 
+export const DevolverPrestamoHerramientaBody = z.object({
+  cantidad: z.coerce.number().positive(),
+  estado: EstadoHerramientaStockZ.optional().default("OPERATIVA"),
+});
+
 export const EmpresaNitParam = z.object({
   empresaId: z.string().min(3),
 });
@@ -91,4 +96,7 @@ export const CrearSolicitudHerramientaBody = z.object({
 export const CambiarEstadoSolicitudBody = z.object({
   estado: EstadoSolicitudZ,
   observacionRespuesta: z.string().max(500).optional().nullable(),
+  empresaId: z.string().min(3).optional().nullable(),
+  fechaDevolucionEstimada: z.coerce.date().optional().nullable(),
+  estadoIngreso: EstadoHerramientaStockZ.optional(),
 });

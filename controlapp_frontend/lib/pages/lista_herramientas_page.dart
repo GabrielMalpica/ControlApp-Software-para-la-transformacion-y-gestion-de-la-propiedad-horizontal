@@ -231,9 +231,18 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
                                           text: "Unidad: ${h.unidad}",
                                         ),
                                         _ChipInfo(
+                                          icon: Icons.category_outlined,
+                                          text: 'Categoria: ${h.categoria.label}',
+                                        ),
+                                        _ChipInfo(
                                           icon: Icons.settings_suggest,
                                           text:
                                               "Control: ${_modoLabel(h.modoControl)}",
+                                        ),
+                                        _ChipInfo(
+                                          icon: Icons.warehouse_outlined,
+                                          text:
+                                              'Stock empresa: ${h.stockEmpresa ?? 0}',
                                         ),
                                         if (h.vidaUtilDias != null)
                                           _ChipInfo(

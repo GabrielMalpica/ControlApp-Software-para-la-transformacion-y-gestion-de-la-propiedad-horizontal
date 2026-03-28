@@ -5,9 +5,12 @@ import '../api/tarea_api.dart';
 import '../api/gerente_api.dart';
 import '../api/empresa_api.dart';
 import '../api/cronograma_api.dart';
+import '../api/herramienta_api.dart';
 
 import '../model/conjunto_model.dart';
+import '../model/herramienta_model.dart';
 import '../model/maquinaria_model.dart';
+import '../service/app_constants.dart';
 import '../service/app_router.dart';
 import '../service/theme.dart';
 import '../utils/schedule_utils.dart';
@@ -33,6 +36,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
   final GerenteApi _gerenteApi = GerenteApi();
   final EmpresaApi _empresaApi = EmpresaApi();
   final CronogramaApi _cronogramaApi = CronogramaApi();
+  final HerramientaApi _herramientaApi = HerramientaApi();
 
   // Controllers
   final _descripcionCtrl = TextEditingController();
@@ -69,6 +73,10 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
   // Maquinaria
   List<MaquinariaResponse> _maquinariaDisponible = [];
   final List<int> _maquinariaSeleccionadaIds = [];
+
+  // Herramientas
+  List<HerramientaDisponibilidadResponse> _herramientasDisponibles = [];
+  final Map<int, num> _herramientasSeleccionadas = {};
 
   int? _limiteMinSemana;
 
@@ -181,10 +189,36 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       _operariosSeleccionadosIds.clear();
 
       _maquinariaSeleccionadaIds.clear();
+      _herramientasSeleccionadas.clear();
       _supervisorId = null;
     });
 
     _cargarLimiteSemana(conjunto.nit);
+    _cargarHerramientasConjunto(conjunto.nit);
+  }
+
+  Future<void> _cargarHerramientasConjunto(String conjuntoNit) async {
+    try {
+      final raw = await _herramientaApi.listarDisponibilidadConjunto(
+        nitConjunto: conjuntoNit,
+        empresaId: AppConstants.empresaNit,
+      );
+      if (!mounted) return;
+      setState(() {
+        _herramientasDisponibles = raw
+            .whereType<Map>()
+            .map(
+              (e) => HerramientaDisponibilidadResponse.fromJson(
+                e.cast<String, dynamic>(),
+              ),
+            )
+            .where((h) => h.totalDisponible > 0)
+            .toList();
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _herramientasDisponibles = []);
+    }
   }
 
   Future<void> _seleccionarFechaInicio() async {
@@ -372,6 +406,116 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     if (ok == true) {
       setState(() {
         _maquinariaSeleccionadaIds
+          ..clear()
+          ..addAll(seleccionTemp);
+      });
+    }
+  }
+
+  Future<void> _mostrarSelectorHerramientas() async {
+    if (_herramientasDisponibles.isEmpty) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(content: Text('No hay herramientas disponibles')),
+      );
+      return;
+    }
+
+    final seleccionTemp = Map<int, num>.from(_herramientasSeleccionadas);
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        var query = '';
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            final filtered = _herramientasDisponibles.where((h) {
+              final q = query.trim().toLowerCase();
+              if (q.isEmpty) return true;
+              return [h.nombre, h.unidad, h.categoria.label]
+                  .join(' ')
+                  .toLowerCase()
+                  .contains(q);
+            }).toList();
+
+            return AlertDialog(
+              title: const Text('Herramientas para la tarea'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'Buscar herramienta',
+                        hintText: 'Nombre, unidad o categoria',
+                        prefixIcon: Icon(Icons.search_rounded),
+                      ),
+                      onChanged: (value) => setStateDialog(() => query = value),
+                    ),
+                    const SizedBox(height: 12),
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: filtered.length,
+                        itemBuilder: (_, index) {
+                          final h = filtered[index];
+                          final actual = seleccionTemp[h.herramientaId];
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(h.nombre),
+                            subtitle: Text(
+                              '${h.categoria.label} · C:${h.disponibleConjunto} E:${h.disponibleEmpresa}',
+                            ),
+                            trailing: SizedBox(
+                              width: 96,
+                              child: TextFormField(
+                                initialValue:
+                                    actual != null ? actual.toString() : '',
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: const InputDecoration(
+                                  labelText: 'Cant.',
+                                  border: OutlineInputBorder(),
+                                ),
+                                onChanged: (value) {
+                                  final parsed = num.tryParse(value.trim());
+                                  if (parsed == null || parsed <= 0) {
+                                    seleccionTemp.remove(h.herramientaId);
+                                  } else {
+                                    seleccionTemp[h.herramientaId] = parsed;
+                                  }
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Aceptar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (ok == true) {
+      setState(() {
+        _herramientasSeleccionadas
           ..clear()
           ..addAll(seleccionTemp);
       });
@@ -1437,7 +1581,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     setState(() => _guardando = true);
 
     try {
-      final req = TareaRequest(
+        final req = TareaRequest(
         descripcion: _descripcionCtrl.text.trim(),
         fechaInicio: inicio,
         fechaFin: fin,
@@ -1449,11 +1593,19 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         operariosIds: _operariosSeleccionadosIds,
         prioridad: _prioridad,
         tipo: "CORRECTIVA",
-        observaciones: _observacionesCtrl.text.trim().isEmpty
-            ? null
-            : _observacionesCtrl.text.trim(),
-        maquinariaIds: _maquinariaSeleccionadaIds,
-      );
+          observaciones: _observacionesCtrl.text.trim().isEmpty
+              ? null
+              : _observacionesCtrl.text.trim(),
+          maquinariaIds: _maquinariaSeleccionadaIds,
+          herramientas: _herramientasSeleccionadas.entries
+              .map(
+                (e) => {
+                  'herramientaId': e.key,
+                  'cantidad': e.value,
+                },
+              )
+              .toList(),
+        );
 
       final resp = await _tareaApi.crearTarea(req);
       if (!mounted) return;
@@ -1526,11 +1678,12 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               conjuntoId: req.conjuntoId,
               supervisorId: req.supervisorId,
               operariosIds: req.operariosIds,
-              prioridad: req.prioridad,
-              tipo: req.tipo,
-              observaciones: req.observaciones,
-              maquinariaIds: req.maquinariaIds,
-            );
+                prioridad: req.prioridad,
+                tipo: req.tipo,
+                observaciones: req.observaciones,
+                maquinariaIds: req.maquinariaIds,
+                herramientas: req.herramientas,
+              );
 
             final resp2 = await _tareaApi.crearTarea(req2);
             if (!mounted) return;
@@ -2137,6 +2290,26 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                       _maquinariaSeleccionadaIds.isEmpty
                           ? "Sin maquinaria asociada"
                           : "${_maquinariaSeleccionadaIds.length} máquina(s) seleccionada(s)",
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              SectionCard(
+                title: '5. Con qué herramientas',
+                subtitle:
+                    'Selecciona cantidades disponibles del conjunto o de la empresa para esta correctiva.',
+                child: InkWell(
+                  onTap: _mostrarSelectorHerramientas,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Herramientas (opcional)',
+                      border: OutlineInputBorder(),
+                    ),
+                    child: Text(
+                      _herramientasSeleccionadas.isEmpty
+                          ? 'Sin herramientas asociadas'
+                          : '${_herramientasSeleccionadas.length} herramienta(s) seleccionada(s)',
                     ),
                   ),
                 ),

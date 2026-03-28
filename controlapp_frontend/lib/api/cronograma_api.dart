@@ -108,7 +108,7 @@ class CronogramaApi {
 
   Future<int> getLimiteMinSemanaPorConjunto({required String nit}) async {
     final uri = Uri.parse(
-      '${AppConstants.cronogramaBase}/conjuntos/$nit/limite-min-semana',
+      '${AppConstants.empresaBase}/$nit/limite-min-semana',
     );
 
     final resp = await _client.get(uri.toString());

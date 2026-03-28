@@ -32,6 +32,7 @@ class TareaRequest {
   final List<String> operariosIds;
   final String? observaciones;
   final List<int> maquinariaIds;
+  final List<Map<String, dynamic>> herramientas;
 
   TareaRequest({
     required this.descripcion,
@@ -47,6 +48,7 @@ class TareaRequest {
     this.operariosIds = const [],
     this.observaciones,
     this.maquinariaIds = const [],
+    this.herramientas = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -67,6 +69,7 @@ class TareaRequest {
     if (observaciones != null && observaciones!.trim().isNotEmpty)
       'observaciones': observaciones,
     'maquinariaIds': maquinariaIds,
+    'herramientas': herramientas,
   };
 }
 
@@ -187,7 +190,7 @@ class TareaApi {
     List<Map<String, num>> insumosUsados = const [],
     List<EvidenciaAdjunto> evidencias = const [],
   }) async {
-    final uri = Uri.parse('${AppConstants.gerenteBase}/tareas/$tareaId/cerrar');
+    final uri = Uri.parse('${AppConstants.supervisorBase}/tareas/$tareaId/cerrar');
 
     final req = http.MultipartRequest('POST', uri);
     req.headers.addAll(await _authHeaders());

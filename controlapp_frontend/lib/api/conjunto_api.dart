@@ -14,12 +14,7 @@ class ConjuntoApi {
   Future<List<MaquinariaResponse>> listarMaquinariaConjunto(
     String conjuntoNit,
   ) async {
-    // Compatibilidad entre despliegues:
-    // algunos exponen /conjunto/:nit/..., otros /conjuntos/:nit/...
-    var resp = await _client.get('/conjuntos/$conjuntoNit/maquinaria');
-    if (resp.statusCode == 404) {
-      resp = await _client.get('/conjunto/$conjuntoNit/maquinaria');
-    }
+    final resp = await _client.get('/conjunto/$conjuntoNit/maquinaria');
 
     if (resp.statusCode != 200) {
       throw Exception('Error al listar maquinaria del conjunto: ${resp.body}');

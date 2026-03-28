@@ -49,7 +49,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   List<InsumoResponse> _catalogoInsumos = [];
   List<MaquinariaResponse> _catalogoMaquinaria = [];
-  List<HerramientaResponse> _catalogoHerramientas = [];
+  List<HerramientaDisponibilidadResponse> _catalogoHerramientas = [];
   List<Usuario> _supervisores = [];
 
   // ✅ Cache de dropdown items (evita freeze fuerte)
@@ -259,22 +259,18 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   Future<void> _cargarCatalogoHerramientas() async {
     try {
-      final empresaId = AppConstants.empresaNit;
-
-      final res = await _herramientaApi.listarHerramientas(
-        empresaId: empresaId,
-        take: 100,
-        skip: 0,
+      final raw = await _herramientaApi.listarDisponibilidadConjunto(
+        nitConjunto: widget.nit,
+        empresaId: AppConstants.empresaNit,
       );
-
-      final raw = (res['data'] as List?) ?? [];
 
       final lista = raw
           .map(
-            (e) => HerramientaResponse.fromJson(
+            (e) => HerramientaDisponibilidadResponse.fromJson(
               (e as Map).cast<String, dynamic>(),
             ),
           )
+          .where((h) => h.totalDisponible > 0)
           .toList();
 
       if (!mounted) return;
@@ -284,8 +280,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         _herramientaItems = _catalogoHerramientas
             .map(
               (h) => DropdownMenuItem(
-                value: h.id,
-                child: Text('${h.nombre} (${h.unidad})'),
+                value: h.herramientaId,
+                child: Text(
+                  '${h.nombre} (${h.unidad}) - C:${h.disponibleConjunto} E:${h.disponibleEmpresa}',
+                ),
               ),
             )
             .toList(growable: false);

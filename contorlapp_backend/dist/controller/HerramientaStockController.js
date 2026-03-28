@@ -155,6 +155,23 @@ class HerramientaStockController {
                 next(err);
             }
         };
+        this.devolverPrestamoConjunto = async (req, res, next) => {
+            try {
+                const { nit } = Herramienta_1.ConjuntoNitParam.parse(req.params);
+                const { herramientaId } = HerramientaIdParam.parse(req.params);
+                const body = Herramienta_1.DevolverPrestamoHerramientaBody.parse(req.body);
+                const service = new HerramientaStockService_1.HerramientaStockService(prisma_1.prisma, nit);
+                const out = await service.devolverPrestamoConjunto({
+                    herramientaId,
+                    cantidad: Number(body.cantidad),
+                    estado: body.estado,
+                });
+                res.json(out);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
     }
 }
 exports.HerramientaStockController = HerramientaStockController;
