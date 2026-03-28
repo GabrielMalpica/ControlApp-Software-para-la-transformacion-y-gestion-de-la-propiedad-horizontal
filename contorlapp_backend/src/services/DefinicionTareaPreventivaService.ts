@@ -36,6 +36,7 @@ import {
 } from "../utils/schedulerUtils";
 
 import { buildMaquinariaNoDisponibleError } from "../utils/errorFormat";
+import { elementoParentChainInclude } from "../utils/elementoHierarchy";
 
 /* =========================================================
  * Tipos auxiliares (patrones y jornada)
@@ -345,7 +346,7 @@ export class DefinicionTareaPreventivaService {
       },
       include: {
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
         operarios: { include: { usuario: true } },
         supervisor: { include: { usuario: true } },
       },
@@ -358,7 +359,7 @@ export class DefinicionTareaPreventivaService {
       where: { conjuntoId },
       include: {
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
         operarios: { include: { usuario: true } },
         supervisor: { include: { usuario: true } },
       },
@@ -2275,7 +2276,7 @@ export class DefinicionTareaPreventivaService {
       include: {
         operarios: { include: { usuario: true } },
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
         supervisor: { include: { usuario: true } },
       },
       orderBy: [{ grupoPlanId: "asc" }, { bloqueIndex: "asc" }, { id: "asc" }],

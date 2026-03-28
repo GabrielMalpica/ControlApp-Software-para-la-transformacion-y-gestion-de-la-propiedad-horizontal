@@ -118,8 +118,11 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
         .map<Map<String, dynamic>>(
           (u) => <String, dynamic>{
             'nombre': u.nombre,
-            'elementos': u.elementos
-                .map((e) => e.nombre)
+            'zonas': u.elementos
+                .map((e) => <String, dynamic>{
+                      'nombre': e.nombre,
+                      'areas': e.hijos.map((h) => h.nombre).toList(growable: true),
+                    })
                 .toList(growable: true),
           },
         )
@@ -198,13 +201,25 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
       final nombre = (item['nombre'] ?? '').toString().trim();
       if (nombre.isEmpty) continue;
 
-      final rawElementos = (item['elementos'] as List?) ?? const [];
-      final elementos = rawElementos
-          .map((e) => e.toString().trim())
-          .where((e) => e.isNotEmpty)
+      final rawZonas = (item['zonas'] as List?) ?? const [];
+      final zonas = rawZonas
+          .whereType<Map>()
+          .map((zona) {
+            final nombreZona = (zona['nombre'] ?? '').toString().trim();
+            final areas = ((zona['areas'] as List?) ?? const [])
+                .map((e) => e.toString().trim())
+                .where((e) => e.isNotEmpty)
+                .toList();
+            if (nombreZona.isEmpty) return null;
+            return <String, dynamic>{
+              'nombre': nombreZona,
+              'hijos': areas.map((area) => {'nombre': area, 'hijos': const []}).toList(),
+            };
+          })
+          .whereType<Map<String, dynamic>>()
           .toList();
 
-      payload.add(<String, dynamic>{'nombre': nombre, 'elementos': elementos});
+      payload.add(<String, dynamic>{'nombre': nombre, 'elementos': zonas});
     }
 
     return payload;
@@ -877,13 +892,13 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
               child: ExpansionTile(
                 tilePadding: const EdgeInsets.symmetric(horizontal: 12),
                 childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                title: Text(
-                  u.nombre,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: Text('${u.elementos.length} elementos'),
-                children: [
-                  if (u.elementos.isEmpty)
+                 title: Text(
+                   u.nombre,
+                   style: const TextStyle(fontWeight: FontWeight.w700),
+                 ),
+                 subtitle: Text('${u.elementosHoja.length} areas finales'),
+                 children: [
+                   if (u.elementos.isEmpty)
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
@@ -892,29 +907,9 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                       ),
                     )
                   else
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    Column(
                       children: u.elementos
-                          .map(
-                            (e) => Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEFF5F1),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                e.nombre,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          )
+                          .map((e) => _elementoTreeNode(e))
                           .toList(),
                     ),
                 ],
@@ -922,6 +917,38 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
             ),
           )
           .toList(),
+    );
+  }
+
+  Widget _elementoTreeNode(Elemento elemento, {int nivel = 0}) {
+    final hasChildren = elemento.hijos.isNotEmpty;
+
+    return Padding(
+      padding: EdgeInsets.only(left: nivel * 14, bottom: 8),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: hasChildren ? const Color(0xFFF4F8F5) : const Color(0xFFEFF5F1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              elemento.nombre,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: hasChildren ? FontWeight.w700 : FontWeight.w600,
+              ),
+            ),
+            if (hasChildren) ...[
+              const SizedBox(height: 8),
+              ...elemento.hijos.map((hijo) => _elementoTreeNode(hijo, nivel: nivel + 1)),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -940,7 +967,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
           final index = entry.key;
           final raw = entry.value;
           final nombre = (raw['nombre'] ?? '').toString();
-          final elementos = (raw['elementos'] as List).cast<String>();
+          final zonas = ((raw['zonas'] as List?) ?? const []).cast<Map>();
 
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
@@ -978,7 +1005,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Elementos',
+                    'Subzonas',
                     style: TextStyle(
                       color: Colors.grey.shade800,
                       fontWeight: FontWeight.w700,
@@ -986,48 +1013,110 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                if (elementos.isEmpty)
+                if (zonas.isEmpty)
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Sin elementos.',
+                      'Sin subzonas.',
                       style: TextStyle(color: Colors.grey.shade600),
                     ),
                   ),
-                ...elementos.asMap().entries.map((item) {
+                ...zonas.asMap().entries.map((item) {
                   final i = item.key;
-                  final text = item.value;
+                  final zona = item.value;
+                  final text = (zona['nombre'] ?? '').toString();
+                  final areas = ((zona['areas'] as List?) ?? const []).cast<String>();
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextFormField(
-                            initialValue: text,
-                            decoration: const InputDecoration(
-                              labelText: 'Elemento',
-                              border: OutlineInputBorder(),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFE3ECE7)),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  initialValue: text,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Nombre de subzona',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  onChanged: (value) {
+                                    ((_ubicacionesEditables[index]['zonas'] as List)[i]
+                                        as Map)['nombre'] = value;
+                                  },
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    (_ubicacionesEditables[index]['zonas'] as List)
+                                        .removeAt(i);
+                                  });
+                                },
+                                icon: const Icon(
+                                  Icons.close,
+                                  color: Colors.redAccent,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          ...areas.asMap().entries.map((areaItem) {
+                            final areaIndex = areaItem.key;
+                            final areaText = areaItem.value;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      initialValue: areaText,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Area final',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      onChanged: (value) {
+                                        (((_ubicacionesEditables[index]['zonas'] as List)[i]
+                                                as Map)['areas'] as List)[areaIndex] = value;
+                                      },
+                                    ),
+                                  ),
+                                  IconButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        (((( _ubicacionesEditables[index]['zonas'] as List)[i]
+                                                    as Map)['areas'] as List))
+                                            .removeAt(areaIndex);
+                                      });
+                                    },
+                                    icon: const Icon(Icons.remove_circle_outline),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  (((( _ubicacionesEditables[index]['zonas'] as List)[i]
+                                              as Map)['areas'] as List))
+                                      .add('');
+                                });
+                              },
+                              icon: const Icon(Icons.add),
+                              label: const Text('Agregar area final'),
                             ),
-                            onChanged: (value) {
-                              _ubicacionesEditables[index]['elementos'][i] =
-                                  value;
-                            },
                           ),
-                        ),
-                        IconButton(
-                          onPressed: () {
-                            setState(() {
-                              (_ubicacionesEditables[index]['elementos']
-                                      as List)
-                                  .removeAt(i);
-                            });
-                          },
-                          icon: const Icon(
-                            Icons.close,
-                            color: Colors.redAccent,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   );
                 }),
@@ -1036,13 +1125,13 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                   child: TextButton.icon(
                     onPressed: () {
                       setState(() {
-                        (_ubicacionesEditables[index]['elementos'] as List).add(
-                          '',
+                        (_ubicacionesEditables[index]['zonas'] as List).add(
+                          <String, dynamic>{'nombre': '', 'areas': <String>[]},
                         );
                       });
                     },
                     icon: const Icon(Icons.add),
-                    label: const Text('Agregar elemento'),
+                    label: const Text('Agregar subzona'),
                   ),
                 ),
               ],
@@ -1056,7 +1145,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
               setState(() {
                 _ubicacionesEditables.add(<String, dynamic>{
                   'nombre': '',
-                  'elementos': <String>[],
+                  'zonas': <Map<String, dynamic>>[],
                 });
               });
             },

@@ -236,7 +236,7 @@ class TareaModel {
     if (json['elementoNombre'] != null) {
       elementoNombre = json['elementoNombre'] as String?;
     } else if (json['elemento'] != null) {
-      elementoNombre = json['elemento']?['nombre']?.toString();
+      elementoNombre = _elementoRutaDesdeJson(json['elemento']);
     }
 
     final prioridad = int.tryParse(json['prioridad']?.toString() ?? '') ?? 2;
@@ -474,4 +474,20 @@ class TareaModel {
           reprogramadaPorTareaId ?? this.reprogramadaPorTareaId,
     );
   }
+}
+
+String? _elementoRutaDesdeJson(dynamic raw) {
+  if (raw is! Map) return null;
+  final names = <String>[];
+  Map? current = raw;
+  while (current != null) {
+    final nombre = current['nombre']?.toString();
+    if (nombre != null && nombre.trim().isNotEmpty) {
+      names.insert(0, nombre.trim());
+    }
+    final padre = current['padre'];
+    current = padre is Map ? padre : null;
+  }
+  if (names.isEmpty) return null;
+  return names.join(' > ');
 }

@@ -11,6 +11,10 @@ import { InventarioService } from "./InventarioServices";
 import { uploadEvidenciaToDrive } from "../utils/drive_evidencias";
 import fs from "fs";
 import { NotificacionService } from "./NotificacionService";
+import {
+  construirRutaElemento,
+  elementoParentChainInclude,
+} from "../utils/elementoHierarchy";
 
 /**
  * Supervisor Fase 1:
@@ -175,7 +179,7 @@ export class SupervisorService {
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
       include: {
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
         conjunto: true,
         operarios: { include: { usuario: true } },
         supervisor: { include: { usuario: true } },
@@ -277,7 +281,7 @@ export class SupervisorService {
         ubicacionNombre: t.ubicacion?.nombre ?? null,
 
         elementoId: t.elementoId,
-        elementoNombre: t.elemento?.nombre ?? null,
+        elementoNombre: construirRutaElemento(t.elemento) ?? null,
 
         operariosIds: t.operarios.map((o) => o.id),
         operariosNombres: t.operarios.map((o) => o.usuario?.nombre ?? ""),

@@ -111,7 +111,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
         elementos: const [],
       ),
     );
-    final el = u?.elementos.firstWhere(
+    final el = u?.elementosHoja.firstWhere(
       (e) => e.id == elementoId,
       orElse: () => Elemento(id: elementoId, nombre: 'Elemento #$elementoId'),
     );

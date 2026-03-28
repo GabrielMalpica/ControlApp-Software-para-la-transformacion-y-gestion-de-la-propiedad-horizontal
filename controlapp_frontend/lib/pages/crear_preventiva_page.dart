@@ -402,18 +402,20 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       );
 
       if (_ubicacionSeleccionada != null) {
-        _elementoSeleccionado = _ubicacionSeleccionada!.elementos.firstWhere(
+        final hojas = _ubicacionSeleccionada!.elementosHoja;
+        _elementoSeleccionado = hojas.firstWhere(
           (e) => e.id == existente.elementoId,
-          orElse: () => _ubicacionSeleccionada!.elementos.isNotEmpty
-              ? _ubicacionSeleccionada!.elementos.first
+          orElse: () => hojas.isNotEmpty
+              ? hojas.first
               : _dummyElemento(),
         );
       }
     } else {
       if (_ubicaciones.isNotEmpty) {
         _ubicacionSeleccionada = _ubicaciones.first;
-        if (_ubicacionSeleccionada!.elementos.isNotEmpty) {
-          _elementoSeleccionado = _ubicacionSeleccionada!.elementos.first;
+        final hojas = _ubicacionSeleccionada!.elementosHoja;
+        if (hojas.isNotEmpty) {
+          _elementoSeleccionado = hojas.first;
         }
       }
       _frecuencia = 'MENSUAL';
@@ -1123,10 +1125,11 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       onChanged: (v) {
                         if (v == null) return;
                         final u = _ubicaciones.firstWhere((x) => x.id == v);
+                        final hojas = u.elementosHoja;
                         setState(() {
                           _ubicacionSeleccionada = u;
-                          _elementoSeleccionado = u.elementos.isNotEmpty
-                              ? u.elementos.first
+                          _elementoSeleccionado = hojas.isNotEmpty
+                              ? hojas.first
                               : null;
                         });
                       },
@@ -1136,11 +1139,11 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     const SizedBox(height: 12),
                     DropdownButtonFormField<int>(
                       decoration: const InputDecoration(
-                        labelText: 'Elemento',
+                        labelText: 'Area final',
                         border: OutlineInputBorder(),
                       ),
                       initialValue: _elementoSeleccionado?.id,
-                      items: (_ubicacionSeleccionada?.elementos ?? [])
+                      items: (_ubicacionSeleccionada?.elementosHoja ?? [])
                           .map(
                             (e) => DropdownMenuItem(
                               value: e.id,

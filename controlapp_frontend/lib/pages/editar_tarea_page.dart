@@ -125,7 +125,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
     final ubic = _ubicaciones.where((u) => u.id == t.ubicacionId).toList();
     if (ubic.isNotEmpty) {
       _ubicacionSeleccionada = ubic.first;
-      _elementos = _ubicacionSeleccionada!.elementos;
+      _elementos = _ubicacionSeleccionada!.elementosHoja;
 
       final elems = _elementos.where((e) => e.id == t.elementoId).toList();
       if (elems.isNotEmpty) {
@@ -385,7 +385,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
                   final u = _ubicaciones.firstWhere((x) => x.id == value);
                   setState(() {
                     _ubicacionSeleccionada = u;
-                    _elementos = u.elementos;
+                    _elementos = u.elementosHoja;
                     _elementoSeleccionado = null;
                   });
                 },
@@ -396,7 +396,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
               DropdownButtonFormField<int>(
                 initialValue: _elementoSeleccionado?.id,
                 decoration: const InputDecoration(
-                  labelText: "Elemento",
+                  labelText: "Area final",
                   border: OutlineInputBorder(),
                 ),
                 items: _elementos

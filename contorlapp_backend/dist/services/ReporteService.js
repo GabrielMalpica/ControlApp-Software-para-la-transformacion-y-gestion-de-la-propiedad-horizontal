@@ -5,6 +5,7 @@ exports.ReporteService = void 0;
 const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
 const decimal_1 = require("../utils/decimal");
+const elementoHierarchy_1 = require("../utils/elementoHierarchy");
 /** ======================
  * DTOs
  * ====================== */
@@ -328,7 +329,11 @@ class ReporteService {
                 estado: client_1.EstadoTarea.APROBADA,
                 fechaVerificacion: { gte: desde, lte: hasta },
             }),
-            include: { ubicacion: true, elemento: true, operarios: true },
+            include: {
+                ubicacion: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
+                operarios: true,
+            },
         });
     }
     async tareasRechazadasPorFecha(payload) {
@@ -338,7 +343,11 @@ class ReporteService {
                 estado: client_1.EstadoTarea.RECHAZADA,
                 fechaVerificacion: { gte: desde, lte: hasta },
             }),
-            include: { ubicacion: true, elemento: true, operarios: true },
+            include: {
+                ubicacion: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
+                operarios: true,
+            },
         });
     }
     async tareasPorEstado(payload) {
@@ -350,7 +359,11 @@ class ReporteService {
                 fechaInicio: { gte: desde },
                 fechaFin: { lte: hasta },
             }),
-            include: { ubicacion: true, elemento: true, operarios: true },
+            include: {
+                ubicacion: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
+                operarios: true,
+            },
         });
     }
     async tareasConDetalle(payload) {
@@ -364,7 +377,7 @@ class ReporteService {
             }),
             include: {
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                 operarios: { include: { usuario: true } },
             },
         });
@@ -376,7 +389,7 @@ class ReporteService {
                 id: t.id,
                 descripcion: t.descripcion,
                 ubicacion: t.ubicacion?.nombre ?? "Sin ubicación",
-                elemento: t.elemento?.nombre ?? "Sin elemento",
+                elemento: (0, elementoHierarchy_1.construirRutaElemento)(t.elemento) ?? "Sin elemento",
                 responsable: nombresOperarios.length > 0
                     ? nombresOperarios.join(", ")
                     : "Sin asignar",
@@ -844,7 +857,7 @@ class ReporteService {
             include: {
                 conjunto: true,
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                 supervisor: { include: { usuario: true } },
                 operarios: { include: { usuario: true } },
             },
@@ -867,7 +880,7 @@ class ReporteService {
             include: {
                 conjunto: true,
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                 supervisor: { include: { usuario: true } },
                 operarios: { include: { usuario: true } },
             },
@@ -1123,7 +1136,7 @@ class ReporteService {
                     nit: t.conjunto?.nit ?? null,
                 },
                 ubicacion: { nombre: t.ubicacion?.nombre ?? null },
-                elemento: { nombre: t.elemento?.nombre ?? null },
+                elemento: { nombre: (0, elementoHierarchy_1.construirRutaElemento)(t.elemento) ?? null },
                 supervisor: t.supervisor?.usuario?.nombre ?? null,
                 operarios,
                 observaciones: t.observaciones ?? null,

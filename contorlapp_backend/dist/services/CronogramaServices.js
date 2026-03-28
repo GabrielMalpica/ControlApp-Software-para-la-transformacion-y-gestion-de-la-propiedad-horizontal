@@ -4,6 +4,7 @@ exports.CronogramaService = void 0;
 // src/services/CronogramaService.ts
 const zod_1 = require("zod");
 const schedulerUtils_1 = require("../utils/schedulerUtils");
+const elementoHierarchy_1 = require("../utils/elementoHierarchy");
 // DTOs locales de filtros para este servicio
 const OperarioIdDTO = zod_1.z.object({ operarioId: zod_1.z.number().int().positive() });
 const FechaDTO = zod_1.z.object({ fecha: zod_1.z.coerce.date() });
@@ -96,7 +97,7 @@ class CronogramaService {
             include: {
                 operarios: { include: { usuario: true } },
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
             },
             orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
         });
@@ -113,7 +114,7 @@ class CronogramaService {
             include: {
                 operarios: { include: { usuario: true } },
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
             },
             orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
         });
@@ -131,7 +132,7 @@ class CronogramaService {
             include: {
                 operarios: { include: { usuario: true } },
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
             },
             orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
         });
@@ -150,7 +151,7 @@ class CronogramaService {
             include: {
                 operarios: { include: { usuario: true } },
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
             },
             orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
         });
@@ -170,7 +171,7 @@ class CronogramaService {
             include: {
                 operarios: { include: { usuario: true } },
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
             },
             orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
         });
@@ -206,7 +207,7 @@ class CronogramaService {
             include: {
                 operarios: { include: { usuario: true } },
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
             },
             orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
         });
@@ -234,7 +235,7 @@ class CronogramaService {
             include: {
                 operarios: { include: { usuario: true } },
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
             },
             orderBy: { fechaInicio: "asc" },
         });
@@ -259,7 +260,7 @@ class CronogramaService {
                             nombre: o.usuario?.nombre ?? null,
                         })),
                         ubicacion: t.ubicacion?.nombre ?? null,
-                        elemento: t.elemento?.nombre ?? null,
+                        elemento: (0, elementoHierarchy_1.construirRutaElemento)(t.elemento) ?? null,
                         desde: t.fechaInicio,
                         hasta: t.fechaFin,
                     });
@@ -287,7 +288,7 @@ class CronogramaService {
             include: {
                 operarios: { include: { usuario: true } },
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
             },
             orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
         });
@@ -323,7 +324,7 @@ class CronogramaService {
                                 nombre: o.usuario?.nombre ?? null,
                             })),
                             ubicacion: t.ubicacion?.nombre ?? null,
-                            elemento: t.elemento?.nombre ?? null,
+                            elemento: (0, elementoHierarchy_1.construirRutaElemento)(t.elemento) ?? null,
                             desde: t.fechaInicio,
                             hasta: t.fechaFin,
                         });
@@ -505,7 +506,7 @@ class CronogramaService {
             },
             include: {
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                 operarios: { include: { usuario: true } },
             },
             orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
@@ -525,7 +526,7 @@ class CronogramaService {
                         nombre: o.usuario?.nombre ?? null,
                     })),
                     ubicacion: t.ubicacion?.nombre ?? null,
-                    elemento: t.elemento?.nombre ?? null,
+                    elemento: (0, elementoHierarchy_1.construirRutaElemento)(t.elemento) ?? null,
                 },
             };
         });

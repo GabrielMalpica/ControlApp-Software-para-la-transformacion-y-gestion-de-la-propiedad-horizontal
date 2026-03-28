@@ -20,6 +20,7 @@ const zod_1 = require("zod");
 const schedulerUtils_1 = require("../utils/schedulerUtils");
 const DefinicionTareaPreventivaService_1 = require("./DefinicionTareaPreventivaService");
 const NotificacionService_1 = require("./NotificacionService");
+const elementoHierarchy_1 = require("../utils/elementoHierarchy");
 exports.AsignarConReemplazoDTO = zod_1.z.object({
     tarea: Tarea_1.CrearTareaDTO,
     reemplazarIds: zod_1.z.array(zod_1.z.number().int().positive()).min(1),
@@ -93,6 +94,44 @@ class GerenteService {
             return null;
         const id = String(raw).trim();
         return id.length > 0 ? id : null;
+    }
+    async crearArbolElementos(ubicacionId, nodos, padreId = null) {
+        for (const nodo of nodos) {
+            const creado = await this.prisma.elemento.create({
+                data: {
+                    nombre: nodo.nombre,
+                    ubicacionId,
+                    padreId,
+                },
+            });
+            if (nodo.hijos?.length) {
+                await this.crearArbolElementos(ubicacionId, nodo.hijos, creado.id);
+            }
+        }
+    }
+    async upsertArbolElementosPorNombre(ubicacionId, nodos, padreId = null) {
+        const existentes = await this.prisma.elemento.findMany({
+            where: { ubicacionId, padreId },
+            select: { id: true, nombre: true },
+        });
+        const byNombre = new Map(existentes.map((e) => [e.nombre.trim().toLowerCase(), e]));
+        for (const nodo of nodos) {
+            const key = nodo.nombre.trim().toLowerCase();
+            const existente = byNombre.get(key);
+            const elementoId = existente
+                ? existente.id
+                : (await this.prisma.elemento.create({
+                    data: {
+                        nombre: nodo.nombre,
+                        ubicacionId,
+                        padreId,
+                    },
+                    select: { id: true },
+                })).id;
+            if (nodo.hijos?.length) {
+                await this.upsertArbolElementosPorNombre(ubicacionId, nodo.hijos, elementoId);
+            }
+        }
     }
     async validarFechaLaborable(fecha) {
         const esDomingo = fecha.getDay() === 0;
@@ -363,19 +402,23 @@ class GerenteService {
                     ? {
                         create: dto.ubicaciones.map((u) => ({
                             nombre: u.nombre,
-                            elementos: u.elementos && u.elementos.length
-                                ? {
-                                    create: u.elementos.map((nombreElem) => ({
-                                        nombre: nombreElem,
-                                    })),
-                                }
-                                : undefined,
                         })),
                     }
                     : undefined,
             },
             select: Conjunto_1.conjuntoPublicSelect,
         });
+        for (const ubicacion of dto.ubicaciones ?? []) {
+            if (!ubicacion.elementos.length)
+                continue;
+            const creada = await this.prisma.ubicacion.findFirst({
+                where: { conjuntoId: dto.nit, nombre: ubicacion.nombre },
+                select: { id: true },
+            });
+            if (creada) {
+                await this.crearArbolElementos(creada.id, ubicacion.elementos);
+            }
+        }
         const herramientasEmpresa = await this.prisma.herramienta.findMany({
             where: { empresaId },
             select: { id: true },
@@ -407,7 +450,13 @@ class GerenteService {
                 },
                 horarios: true,
                 ubicaciones: {
-                    include: { elementos: true },
+                    include: {
+                        elementos: {
+                            where: { padreId: null },
+                            include: elementoHierarchy_1.elementoTreeInclude,
+                            orderBy: { nombre: "asc" },
+                        },
+                    },
                 },
             },
             orderBy: { nombre: "asc" },
@@ -431,7 +480,11 @@ class GerenteService {
                 horarios: true,
                 ubicaciones: {
                     include: {
-                        elementos: true,
+                        elementos: {
+                            where: { padreId: null },
+                            include: elementoHierarchy_1.elementoTreeInclude,
+                            orderBy: { nombre: "asc" },
+                        },
                     },
                 },
             },
@@ -519,7 +572,10 @@ class GerenteService {
                 select: {
                     id: true,
                     nombre: true,
-                    elementos: { select: { id: true, nombre: true } },
+                    elementos: {
+                        where: { padreId: null },
+                        select: { id: true, nombre: true, padreId: true },
+                    },
                 },
             });
             const byNombre = new Map(ubicacionesActuales.map((u) => [u.nombre.trim().toLowerCase(), u]));
@@ -527,34 +583,20 @@ class GerenteService {
                 const key = u.nombre.trim().toLowerCase();
                 const existente = byNombre.get(key);
                 if (!existente) {
-                    await this.prisma.ubicacion.create({
+                    const creada = await this.prisma.ubicacion.create({
                         data: {
                             nombre: u.nombre,
                             conjunto: { connect: { nit: conjuntoId } },
-                            elementos: u.elementos && u.elementos.length
-                                ? {
-                                    create: u.elementos.map((nombreElem) => ({
-                                        nombre: nombreElem,
-                                    })),
-                                }
-                                : undefined,
                         },
+                        select: { id: true },
                     });
+                    if (u.elementos?.length) {
+                        await this.crearArbolElementos(creada.id, u.elementos);
+                    }
                     continue;
                 }
                 if (u.elementos && u.elementos.length > 0) {
-                    const existentesElem = new Set(existente.elementos.map((e) => e.nombre.trim().toLowerCase()));
-                    const nuevos = u.elementos
-                        .filter((nombreElem) => !existentesElem.has(nombreElem.trim().toLowerCase()))
-                        .map((nombreElem) => ({ nombre: nombreElem }));
-                    if (nuevos.length > 0) {
-                        await this.prisma.elemento.createMany({
-                            data: nuevos.map((n) => ({
-                                nombre: n.nombre,
-                                ubicacionId: existente.id,
-                            })),
-                        });
-                    }
+                    await this.upsertArbolElementosPorNombre(existente.id, u.elementos);
                 }
             }
         }
@@ -2369,7 +2411,7 @@ class GerenteService {
                 supervisor: { include: { usuario: true } },
                 operarios: { include: { usuario: true } },
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                 usoHerramientas: {
                     include: { herramienta: { select: { id: true, nombre: true } } },
                 },
@@ -2417,7 +2459,7 @@ class GerenteService {
                 ubicacionId: t.ubicacionId,
                 ubicacionNombre: t.ubicacion?.nombre ?? null,
                 elementoId: t.elementoId,
-                elementoNombre: t.elemento?.nombre ?? null,
+                elementoNombre: (0, elementoHierarchy_1.construirRutaElemento)(t.elemento) ?? null,
                 operariosIds,
                 operariosNombres,
                 // USO/ASIGNACIÃƒâ€œN

@@ -2,6 +2,10 @@
 import { z } from "zod";
 import type{ PrismaClient } from "@prisma/client";
 import { isFestivoDate } from "../utils/schedulerUtils";
+import {
+  construirRutaElemento,
+  elementoParentChainInclude,
+} from "../utils/elementoHierarchy";
 
 // DTOs locales de filtros para este servicio
 const OperarioIdDTO = z.object({ operarioId: z.number().int().positive() });
@@ -112,7 +116,7 @@ export class CronogramaService {
       include: {
         operarios: { include: { usuario: true } },
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
@@ -130,7 +134,7 @@ export class CronogramaService {
       include: {
         operarios: { include: { usuario: true } },
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
@@ -149,7 +153,7 @@ export class CronogramaService {
       include: {
         operarios: { include: { usuario: true } },
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
@@ -169,7 +173,7 @@ export class CronogramaService {
       include: {
         operarios: { include: { usuario: true } },
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
@@ -190,7 +194,7 @@ export class CronogramaService {
       include: {
         operarios: { include: { usuario: true } },
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
@@ -245,7 +249,7 @@ export class CronogramaService {
       include: {
         operarios: { include: { usuario: true } },
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
@@ -277,7 +281,7 @@ export class CronogramaService {
       include: {
         operarios: { include: { usuario: true } },
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
       },
       orderBy: { fechaInicio: "asc" },
     });
@@ -304,7 +308,7 @@ export class CronogramaService {
               nombre: o.usuario?.nombre ?? null,
             })),
             ubicacion: t.ubicacion?.nombre ?? null,
-            elemento: t.elemento?.nombre ?? null,
+            elemento: construirRutaElemento(t.elemento as any) ?? null,
             desde: t.fechaInicio,
             hasta: t.fechaFin,
           });
@@ -335,7 +339,7 @@ export class CronogramaService {
       include: {
         operarios: { include: { usuario: true } },
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
@@ -377,7 +381,7 @@ export class CronogramaService {
                 nombre: o.usuario?.nombre ?? null,
               })),
               ubicacion: t.ubicacion?.nombre ?? null,
-              elemento: t.elemento?.nombre ?? null,
+              elemento: construirRutaElemento(t.elemento as any) ?? null,
               desde: t.fechaInicio,
               hasta: t.fechaFin,
             });
@@ -604,7 +608,7 @@ export class CronogramaService {
       },
       include: {
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
         operarios: { include: { usuario: true } },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
@@ -627,7 +631,7 @@ export class CronogramaService {
             nombre: o.usuario?.nombre ?? null,
           })),
           ubicacion: t.ubicacion?.nombre ?? null,
-          elemento: t.elemento?.nombre ?? null,
+          elemento: construirRutaElemento(t.elemento as any) ?? null,
         },
       };
     });

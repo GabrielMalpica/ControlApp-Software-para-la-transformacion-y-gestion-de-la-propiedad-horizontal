@@ -2105,7 +2105,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                         final u = _ubicaciones.firstWhere((x) => x.id == value);
                         setState(() {
                           _ubicacionSeleccionada = u;
-                          _elementos = u.elementos;
+                          _elementos = u.elementosHoja;
                           _elementoSeleccionado = null;
                         });
                       },
@@ -2115,7 +2115,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                     const SizedBox(height: 16),
                     DropdownButtonFormField<int>(
                       initialValue: _elementoSeleccionado?.id,
-                      decoration: const InputDecoration(labelText: 'Elemento'),
+                      decoration: const InputDecoration(labelText: 'Area final'),
                       items: _elementos
                           .map(
                             (e) => DropdownMenuItem(

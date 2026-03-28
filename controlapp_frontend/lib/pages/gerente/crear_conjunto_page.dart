@@ -296,14 +296,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     final List<Map<String, dynamic>> ubicacionesPayload = _ubicaciones
         .where((u) => u.nombreCtrl.text.trim().isNotEmpty)
         .map(
-          (u) => {
-            'nombre': u.nombreCtrl.text.trim(),
-            'elementos': u.elementosCtrl.text
-                .split('\n')
-                .map((e) => e.trim())
-                .where((e) => e.isNotEmpty)
-                .toList(),
-          },
+          (u) => u.toPayload(),
         )
         .toList();
 
@@ -779,7 +772,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                           ),
                           const SizedBox(width: 8),
                           const Text(
-                            'Ubicaciones y elementos (opcional)',
+                            'Ubicaciones, subzonas y areas (opcional)',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
@@ -794,6 +787,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                             _UbicacionWidget(
                               ubicacion: _ubicaciones[i],
                               onEliminar: () => _eliminarUbicacion(i),
+                              onChanged: () => setState(() {}),
                             ),
                           Align(
                             alignment: Alignment.centerLeft,
@@ -838,21 +832,69 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
   }
 }
 
-class _UbicacionForm {
+class _ZonaForm {
   final TextEditingController nombreCtrl = TextEditingController();
-  final TextEditingController elementosCtrl = TextEditingController();
+  final TextEditingController areasCtrl = TextEditingController();
+
+  Map<String, dynamic>? toPayload() {
+    final nombre = nombreCtrl.text.trim();
+    final areas = areasCtrl.text
+        .split('\n')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (nombre.isEmpty) return null;
+    return {
+      'nombre': nombre,
+      'hijos': areas.map((area) => {'nombre': area, 'hijos': const []}).toList(),
+    };
+  }
 
   void dispose() {
     nombreCtrl.dispose();
-    elementosCtrl.dispose();
+    areasCtrl.dispose();
+  }
+}
+
+class _UbicacionForm {
+  final TextEditingController nombreCtrl = TextEditingController();
+  final List<_ZonaForm> zonas = [];
+
+  void agregarZona() => zonas.add(_ZonaForm());
+
+  void eliminarZona(int index) {
+    zonas[index].dispose();
+    zonas.removeAt(index);
+  }
+
+  Map<String, dynamic> toPayload() {
+    return {
+      'nombre': nombreCtrl.text.trim(),
+      'elementos': zonas
+          .map((zona) => zona.toPayload())
+          .whereType<Map<String, dynamic>>()
+          .toList(),
+    };
+  }
+
+  void dispose() {
+    nombreCtrl.dispose();
+    for (final zona in zonas) {
+      zona.dispose();
+    }
   }
 }
 
 class _UbicacionWidget extends StatelessWidget {
   final _UbicacionForm ubicacion;
   final VoidCallback onEliminar;
+  final VoidCallback onChanged;
 
-  const _UbicacionWidget({required this.ubicacion, required this.onEliminar});
+  const _UbicacionWidget({
+    required this.ubicacion,
+    required this.onEliminar,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -884,12 +926,72 @@ class _UbicacionWidget extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            TextField(
-              controller: ubicacion.elementosCtrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Elementos (uno por línea)',
-                border: OutlineInputBorder(),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Subzonas o categorias internas',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...ubicacion.zonas.asMap().entries.map((entry) {
+              final index = entry.key;
+              final zona = entry.value;
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                color: const Color(0xFFF7FAF8),
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            'Subzona',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () {
+                              ubicacion.eliminarZona(index);
+                              onChanged();
+                            },
+                          ),
+                        ],
+                      ),
+                      TextField(
+                        controller: zona.nombreCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre de la subzona',
+                          hintText: 'Ej: Zona verde, zona humeda, zona transitiva',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: zona.areasCtrl,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Areas finales (una por linea)',
+                          hintText: 'Ej: Parque, Piscina, Pasillo 1',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () {
+                  ubicacion.agregarZona();
+                  onChanged();
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Agregar subzona'),
               ),
             ),
           ],

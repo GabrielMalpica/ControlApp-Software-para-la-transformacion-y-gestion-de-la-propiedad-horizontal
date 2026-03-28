@@ -12,6 +12,7 @@ import { InventarioService } from "./InventarioServices";
 import { uploadEvidenciaToDrive } from "../utils/drive_evidencias";
 import fs from "fs";
 import { NotificacionService } from "./NotificacionService";
+import { elementoParentChainInclude } from "../utils/elementoHierarchy";
 
 const TareaIdDTO = z.object({ tareaId: z.number().int().positive() });
 
@@ -204,7 +205,7 @@ export class OperarioService {
       orderBy: { fechaInicio: "asc" },
       include: {
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
         conjunto: true,
       },
     });

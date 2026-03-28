@@ -10,6 +10,7 @@ const zod_1 = require("zod");
 const DefinicionTareaPreventiva_1 = require("../model/DefinicionTareaPreventiva");
 const schedulerUtils_1 = require("../utils/schedulerUtils");
 const errorFormat_1 = require("../utils/errorFormat");
+const elementoHierarchy_1 = require("../utils/elementoHierarchy");
 const dayKey = (d) => (0, schedulerUtils_1.ymdLocal)(d);
 /* =========================================================
  * DTOs internos (Zod)
@@ -196,7 +197,7 @@ class DefinicionTareaPreventivaService {
             },
             include: {
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                 operarios: { include: { usuario: true } },
                 supervisor: { include: { usuario: true } },
             },
@@ -208,7 +209,7 @@ class DefinicionTareaPreventivaService {
             where: { conjuntoId },
             include: {
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                 operarios: { include: { usuario: true } },
                 supervisor: { include: { usuario: true } },
             },
@@ -1656,7 +1657,7 @@ class DefinicionTareaPreventivaService {
             include: {
                 operarios: { include: { usuario: true } },
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                 supervisor: { include: { usuario: true } },
             },
             orderBy: [{ grupoPlanId: "asc" }, { bloqueIndex: "asc" }, { id: "asc" }],

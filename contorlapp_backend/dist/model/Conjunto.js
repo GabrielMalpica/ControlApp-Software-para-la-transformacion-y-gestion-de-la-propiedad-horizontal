@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.conjuntoPublicSelect = exports.EditarConjuntoDTO = exports.CrearConjuntoDTO = exports.UbicacionConElementosDTO = exports.HorarioDTO = void 0;
+exports.conjuntoPublicSelect = exports.EditarConjuntoDTO = exports.CrearConjuntoDTO = exports.UbicacionConElementosDTO = exports.NodoElementoDTO = exports.HorarioDTO = void 0;
 exports.toConjuntoPublico = toConjuntoPublico;
 // src/model/Conjunto.ts
 const zod_1 = require("zod");
@@ -51,9 +51,13 @@ exports.HorarioDTO = zod_1.z
     path: ["descansoInicio"],
 });
 /* ===================== DTOs ===================== */
+exports.NodoElementoDTO = zod_1.z.object({
+    nombre: zod_1.z.string().min(2, "El nombre es obligatorio"),
+    hijos: zod_1.z.lazy(() => zod_1.z.array(exports.NodoElementoDTO).default([])).optional().default([]),
+});
 exports.UbicacionConElementosDTO = zod_1.z.object({
     nombre: zod_1.z.string().min(2, "El nombre de la ubicación es obligatorio"),
-    elementos: zod_1.z.array(zod_1.z.string().min(2)).default([]), // nombres de los elementos
+    elementos: zod_1.z.array(exports.NodoElementoDTO).default([]),
 });
 exports.CrearConjuntoDTO = zod_1.z.object({
     nit: zod_1.z.string().min(3),
@@ -72,7 +76,7 @@ exports.CrearConjuntoDTO = zod_1.z.object({
     ubicaciones: zod_1.z
         .array(zod_1.z.object({
         nombre: zod_1.z.string().min(2),
-        elementos: zod_1.z.array(zod_1.z.string().min(1)).optional().default([]),
+        elementos: zod_1.z.array(exports.NodoElementoDTO).optional().default([]),
     }))
         .optional()
         .default([]),

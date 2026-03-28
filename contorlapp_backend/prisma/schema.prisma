@@ -621,10 +621,15 @@ model Elemento {
   ubicacion   Ubicacion @relation(fields: [ubicacionId], references: [id], onDelete: Cascade)
   ubicacionId Int
 
+  padre   Elemento?  @relation("ElementoJerarquia", fields: [padreId], references: [id], onDelete: Cascade)
+  padreId Int?
+  hijos   Elemento[] @relation("ElementoJerarquia")
+
   tareas                    Tarea[]
   solicitudesTareas         SolicitudTarea[]
   DefinicionTareaPreventiva DefinicionTareaPreventiva[]
 
+  @@index([ubicacionId, padreId])
   @@map("Elemento")
 }
 

@@ -8,6 +8,21 @@ DateTime _dt(dynamic v) {
       DateTime.fromMillisecondsSinceEpoch(0);
 }
 
+String? _elementoRuta(dynamic raw) {
+  if (raw is! Map) return null;
+  final names = <String>[];
+  Map? current = raw;
+  while (current != null) {
+    final nombre = current['nombre']?.toString();
+    if (nombre != null && nombre.trim().isNotEmpty) {
+      names.insert(0, nombre.trim());
+    }
+    final padre = current['padre'];
+    current = padre is Map ? padre : null;
+  }
+  return names.isEmpty ? null : names.join(' > ');
+}
+
 final RegExp _httpUrlRx = RegExp(r'https?:\/\/[^\s<>"\]\[)]+');
 
 String _cleanEvidence(String s) {
@@ -525,7 +540,7 @@ class PdfDatasetRow {
       ubicacionNombre:
           json['ubicacionNombre']?.toString() ?? ubic?['nombre']?.toString(),
       elementoNombre:
-          json['elementoNombre']?.toString() ?? elem?['nombre']?.toString(),
+          json['elementoNombre']?.toString() ?? _elementoRuta(elem),
 
       supervisor: json['supervisor']?.toString(),
       operarios: (json['operarios'] is List)

@@ -11,6 +11,7 @@ const InventarioServices_1 = require("./InventarioServices");
 const drive_evidencias_1 = require("../utils/drive_evidencias");
 const fs_1 = __importDefault(require("fs"));
 const NotificacionService_1 = require("./NotificacionService");
+const elementoHierarchy_1 = require("../utils/elementoHierarchy");
 function parseInsumosPlanJson(raw) {
     if (!raw)
         return [];
@@ -133,7 +134,7 @@ class SupervisorService {
             orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
             include: {
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                 conjunto: true,
                 operarios: { include: { usuario: true } },
                 supervisor: { include: { usuario: true } },
@@ -218,7 +219,7 @@ class SupervisorService {
                 ubicacionId: t.ubicacionId,
                 ubicacionNombre: t.ubicacion?.nombre ?? null,
                 elementoId: t.elementoId,
-                elementoNombre: t.elemento?.nombre ?? null,
+                elementoNombre: (0, elementoHierarchy_1.construirRutaElemento)(t.elemento) ?? null,
                 operariosIds: t.operarios.map((o) => o.id),
                 operariosNombres: t.operarios.map((o) => o.usuario?.nombre ?? ""),
                 herramientasAsignadas,

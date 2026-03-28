@@ -9,6 +9,7 @@ const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
 const drive_evidencias_1 = require("../utils/drive_evidencias");
 const fs_1 = __importDefault(require("fs"));
+const elementoHierarchy_1 = require("../utils/elementoHierarchy");
 const ConjuntoIdSchema = zod_1.z.string().trim().min(1).optional();
 const VeredictoDTO = zod_1.z.object({
     accion: zod_1.z.enum(["APROBAR", "RECHAZAR", "NO_COMPLETADA"]),
@@ -38,7 +39,7 @@ class JefeOperacionesService {
             include: {
                 conjunto: true,
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                 operarios: { include: { usuario: true } },
                 supervisor: { include: { usuario: true } },
             },

@@ -11,6 +11,7 @@ const TareaServices_1 = require("./TareaServices");
 const drive_evidencias_1 = require("../utils/drive_evidencias");
 const fs_1 = __importDefault(require("fs"));
 const NotificacionService_1 = require("./NotificacionService");
+const elementoHierarchy_1 = require("../utils/elementoHierarchy");
 const TareaIdDTO = zod_1.z.object({ tareaId: zod_1.z.number().int().positive() });
 const MarcarCompletadaDTO = zod_1.z.object({
     tareaId: zod_1.z.number().int().positive(),
@@ -174,7 +175,7 @@ class OperarioService {
             orderBy: { fechaInicio: "asc" },
             include: {
                 ubicacion: true,
-                elemento: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                 conjunto: true,
             },
         });

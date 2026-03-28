@@ -2,6 +2,10 @@
 import { PrismaClient, EstadoTarea } from "@prisma/client";
 import { z } from "zod";
 import { decToNumber } from "../utils/decimal";
+import {
+  construirRutaElemento,
+  elementoParentChainInclude,
+} from "../utils/elementoHierarchy";
 
 /** ======================
  * DTOs
@@ -465,7 +469,11 @@ export class ReporteService {
         estado: EstadoTarea.APROBADA,
         fechaVerificacion: { gte: desde, lte: hasta },
       }),
-      include: { ubicacion: true, elemento: true, operarios: true },
+      include: {
+        ubicacion: true,
+        elemento: { include: elementoParentChainInclude },
+        operarios: true,
+      },
     });
   }
 
@@ -476,7 +484,11 @@ export class ReporteService {
         estado: EstadoTarea.RECHAZADA,
         fechaVerificacion: { gte: desde, lte: hasta },
       }),
-      include: { ubicacion: true, elemento: true, operarios: true },
+      include: {
+        ubicacion: true,
+        elemento: { include: elementoParentChainInclude },
+        operarios: true,
+      },
     });
   }
 
@@ -490,7 +502,11 @@ export class ReporteService {
         fechaInicio: { gte: desde },
         fechaFin: { lte: hasta },
       }),
-      include: { ubicacion: true, elemento: true, operarios: true },
+      include: {
+        ubicacion: true,
+        elemento: { include: elementoParentChainInclude },
+        operarios: true,
+      },
     });
   }
 
@@ -507,7 +523,7 @@ export class ReporteService {
       }),
       include: {
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
         operarios: { include: { usuario: true } },
       },
     });
@@ -521,7 +537,7 @@ export class ReporteService {
         id: t.id,
         descripcion: t.descripcion,
         ubicacion: t.ubicacion?.nombre ?? "Sin ubicación",
-        elemento: t.elemento?.nombre ?? "Sin elemento",
+        elemento: construirRutaElemento(t.elemento as any) ?? "Sin elemento",
         responsable:
           nombresOperarios.length > 0
             ? nombresOperarios.join(", ")
@@ -1111,7 +1127,7 @@ export class ReporteService {
       include: {
         conjunto: true,
         ubicacion: true,
-        elemento: true,
+        elemento: { include: elementoParentChainInclude },
         supervisor: { include: { usuario: true } },
         operarios: { include: { usuario: true } },
       },
@@ -1141,7 +1157,7 @@ export class ReporteService {
         include: {
           conjunto: true,
           ubicacion: true,
-          elemento: true,
+          elemento: { include: elementoParentChainInclude },
           supervisor: { include: { usuario: true } },
           operarios: { include: { usuario: true } },
         },
@@ -1433,7 +1449,7 @@ export class ReporteService {
           nit: t.conjunto?.nit ?? null,
         },
         ubicacion: { nombre: t.ubicacion?.nombre ?? null },
-        elemento: { nombre: t.elemento?.nombre ?? null },
+        elemento: { nombre: construirRutaElemento(t.elemento as any) ?? null },
 
         supervisor: t.supervisor?.usuario?.nombre ?? null,
         operarios,

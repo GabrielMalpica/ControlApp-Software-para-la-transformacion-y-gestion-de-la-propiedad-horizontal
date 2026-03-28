@@ -29,11 +29,39 @@ class HorarioConjunto {
 class Elemento {
   final int id;
   final String nombre;
+  final int? padreId;
+  final List<Elemento> hijos;
 
-  Elemento({required this.id, required this.nombre});
+  Elemento({
+    required this.id,
+    required this.nombre,
+    this.padreId,
+    this.hijos = const [],
+  });
+
+  bool get esHoja => hijos.isEmpty;
+
+  List<Elemento> hojas({List<String> parentPath = const []}) {
+    final path = [...parentPath, nombre];
+    if (hijos.isEmpty) {
+      return [
+        Elemento(id: id, nombre: path.join(' > '), padreId: padreId, hijos: const []),
+      ];
+    }
+
+    return hijos.expand((child) => child.hojas(parentPath: path)).toList();
+  }
 
   factory Elemento.fromJson(Map<String, dynamic> json) {
-    return Elemento(id: json['id'] as int, nombre: json['nombre'] as String);
+    final hijosJson = (json['hijos'] as List?) ?? const [];
+    return Elemento(
+      id: json['id'] as int,
+      nombre: json['nombre'] as String,
+      padreId: json['padreId'] as int?,
+      hijos: hijosJson
+          .map((e) => Elemento.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
   }
 }
 
@@ -58,6 +86,9 @@ class UbicacionConElementos {
           .toList(),
     );
   }
+
+  List<Elemento> get elementosHoja =>
+      elementos.expand((elemento) => elemento.hojas()).toList();
 }
 
 class Conjunto {
