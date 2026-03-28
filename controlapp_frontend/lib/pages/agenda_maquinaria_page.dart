@@ -25,9 +25,6 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
 
   MaquinariaResponse? _seleccionada;
 
-  /// Agenda SOLO de la máquina seleccionada
-  AgendaMaquinaria? _agendaSeleccionada;
-
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month, 1);
 
   bool _cargandoAgenda = false;
@@ -40,14 +37,10 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
     _fMaquinas = _cargarCatalogoAgendaConjunto();
   }
 
-  DateTime get _desdeMes => DateTime(_month.year, _month.month, 1);
-  DateTime get _hastaMes => DateTime(_month.year, _month.month + 1, 1);
-
   Future<void> _changeMonth(int delta) async {
     setState(() {
       _month = DateTime(_month.year, _month.month + delta, 1);
       _fMaquinas = _cargarCatalogoAgendaConjunto();
-      _agendaSeleccionada = null;
       _errorAgenda = null;
       _cargandoAgenda = false;
     });
@@ -273,7 +266,6 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
             onPressed: () {
               setState(() {
                 _fMaquinas = _cargarCatalogoAgendaConjunto();
-                _agendaSeleccionada = null;
                 _errorAgenda = null;
                 _cargandoAgenda = false;
               });
@@ -315,7 +307,6 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
               if (!mounted) return;
               setState(() {
                 _seleccionada = null;
-                _agendaSeleccionada = null;
                 _errorAgenda = null;
               });
             });
@@ -441,7 +432,6 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                         onTap: () {
                           setState(() {
                             _seleccionada = m;
-                            _agendaSeleccionada = null;
                             _errorAgenda = null;
                             _cargandoAgenda = false;
                           });

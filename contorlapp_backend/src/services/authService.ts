@@ -119,4 +119,56 @@ export class AuthService {
       data: { contrasena: hash },
     });
   }
+
+  async cambiarContrasenaUsuarioPorGerente(
+    actorUserId: string,
+    targetUserId: string,
+    nuevaContrasena: string
+  ) {
+    if (actorUserId === targetUserId) {
+      throw makeHttpError(
+        400,
+        "Para tu propia cuenta usa la opcion de cambiar contrasena personal"
+      );
+    }
+
+    const [actor, usuario] = await Promise.all([
+      this.prisma.usuario.findUnique({
+        where: { id: actorUserId },
+        select: { id: true, rol: true, activo: true },
+      }),
+      this.prisma.usuario.findUnique({
+        where: { id: targetUserId },
+        select: { id: true, contrasena: true, activo: true, nombre: true },
+      }),
+    ]);
+
+    if (!actor) throw makeHttpError(404, "Usuario solicitante no encontrado");
+    if (!actor.activo) throw makeHttpError(403, "Usuario solicitante inactivo");
+    if (String(actor.rol).trim().toLowerCase() != "gerente") {
+      throw makeHttpError(403, "Solo el gerente puede cambiar contrasenas de otros usuarios");
+    }
+
+    if (!usuario) throw makeHttpError(404, "Usuario no encontrado");
+    if (!usuario.activo) throw makeHttpError(403, "El usuario objetivo esta inactivo");
+
+    const okNuevaIgual = await bcrypt.compare(
+      nuevaContrasena,
+      usuario.contrasena
+    );
+    if (okNuevaIgual) {
+      throw makeHttpError(
+        400,
+        "La nueva contrasena debe ser diferente a la actual del usuario"
+      );
+    }
+
+    const hash = await bcrypt.hash(nuevaContrasena, 10);
+    await this.prisma.usuario.update({
+      where: { id: targetUserId },
+      data: { contrasena: hash },
+    });
+
+    return { ok: true, nombre: usuario.nombre };
+  }
 }

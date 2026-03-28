@@ -16,8 +16,6 @@ class SessionService {
   static String? _memToken;
   static String? _memUserId;
   static String? _memRol;
-  static String? _memCorreo;
-  static String? _memNombre;
 
   Future<void> saveSession({
     required String token,
@@ -29,8 +27,6 @@ class SessionService {
     // ✅ cache inmediato
     _memToken = token;
     _memRol = rol;
-    _memCorreo = correo;
-    _memNombre = nombre;
     _memUserId = userId;
 
     if (kIsWeb) {
@@ -93,8 +89,6 @@ class SessionService {
   Future<void> clear() async {
     _memToken = null;
     _memRol = null;
-    _memCorreo = null;
-    _memNombre = null;
     _memUserId = null;
 
     if (kIsWeb) {

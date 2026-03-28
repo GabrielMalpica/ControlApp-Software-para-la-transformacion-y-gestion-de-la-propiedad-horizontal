@@ -12,6 +12,9 @@ const CambiarContrasenaSchema = zod_1.z.object({
     contrasenaActual: zod_1.z.string().min(1),
     nuevaContrasena: zod_1.z.string().min(8),
 });
+const CambiarContrasenaUsuarioSchema = zod_1.z.object({
+    nuevaContrasena: zod_1.z.string().min(8),
+});
 const RecuperarContrasenaSchema = zod_1.z.object({
     correo: zod_1.z.string().email(),
     id: zod_1.z.string().min(5),
@@ -75,6 +78,25 @@ class AuthController {
                 const { correo, id, nuevaContrasena } = RecuperarContrasenaSchema.parse(req.body);
                 await service.recuperarContrasena(correo.trim().toLowerCase(), id.trim(), nuevaContrasena);
                 res.json({ ok: true, message: "Contrasena restablecida correctamente" });
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        this.cambiarContrasenaUsuario = async (req, res, next) => {
+            try {
+                const actorUserId = req.user?.sub;
+                if (!actorUserId) {
+                    res.status(401).json({ message: "No autenticado" });
+                    return;
+                }
+                const targetUserId = String(req.params.userId ?? "").trim();
+                const { nuevaContrasena } = CambiarContrasenaUsuarioSchema.parse(req.body);
+                const result = await service.cambiarContrasenaUsuarioPorGerente(actorUserId, targetUserId, nuevaContrasena);
+                res.json({
+                    ok: true,
+                    message: `Contrasena actualizada para ${result.nombre}`,
+                });
             }
             catch (err) {
                 next(err);

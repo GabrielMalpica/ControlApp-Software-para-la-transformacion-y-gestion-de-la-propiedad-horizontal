@@ -7,6 +7,7 @@ import 'tareas_page.dart';
 import 'solicitudes_page.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
+import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 
 class OperarioDashboardPage extends StatefulWidget {
@@ -127,6 +128,8 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
+                  const CumpleanosBanner(),
+                  const SizedBox(height: 18),
                   Text(
                     'Panel general',
                     style: Theme.of(context).textTheme.titleLarge,

@@ -95,7 +95,6 @@ class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
-      fontFamily: 'Roboto',
       colorScheme: colorScheme,
       scaffoldBackgroundColor: background,
       canvasColor: background,
@@ -116,7 +115,6 @@ class AppTheme {
         centerTitle: false,
         elevation: 0,
         titleTextStyle: TextStyle(
-          fontFamily: 'Roboto',
           fontSize: 20,
           fontWeight: FontWeight.w800,
           color: Colors.white,

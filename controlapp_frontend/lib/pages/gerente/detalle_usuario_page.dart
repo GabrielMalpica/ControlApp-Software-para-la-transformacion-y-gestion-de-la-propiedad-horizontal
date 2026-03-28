@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
 import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/widgets/password_dialogs.dart';
 
 class DetalleUsuarioPage extends StatelessWidget {
   final Usuario usuario;
@@ -147,6 +148,19 @@ class DetalleUsuarioPage extends StatelessWidget {
                 _rowDato("Estado", usuario.activo ? "Activo" : "Inactivo"),
                 _rowDato("Cédula", usuario.cedula),
                 _rowDato("Correo", usuario.correo),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilledButton.icon(
+                    onPressed: () => showManagerResetPasswordDialog(
+                      context,
+                      userId: usuario.cedula,
+                      nombreUsuario: usuario.nombre,
+                    ),
+                    icon: const Icon(Icons.lock_reset),
+                    label: const Text('Actualizar contrasena'),
+                  ),
+                ),
               ],
             ),
 

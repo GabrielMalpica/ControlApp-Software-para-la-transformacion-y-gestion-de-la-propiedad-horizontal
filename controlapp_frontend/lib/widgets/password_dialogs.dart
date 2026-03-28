@@ -387,3 +387,167 @@ Future<void> showRecoverPasswordDialog(
     onSuccess?.call(correo: correo, nuevaContrasena: nueva);
   }
 }
+
+Future<void> showManagerResetPasswordDialog(
+  BuildContext context, {
+  required String userId,
+  required String nombreUsuario,
+}) async {
+  final authApi = AuthApi();
+  final newCtrl = TextEditingController();
+  final confirmCtrl = TextEditingController();
+
+  bool loading = false;
+  bool showNew = false;
+  bool showConfirm = false;
+  String? formError;
+
+  String? validate() {
+    final newPass = newCtrl.text;
+    final confirm = confirmCtrl.text;
+    if (newPass.length < 8) {
+      return 'La nueva contrasena debe tener minimo 8 caracteres.';
+    }
+    if (newPass != confirm) return 'La confirmacion no coincide.';
+    return null;
+  }
+
+  final ok = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (ctx, setModalState) {
+          Future<void> submit() async {
+            if (loading) return;
+
+            final err = validate();
+            if (err != null) {
+              setModalState(() => formError = err);
+              return;
+            }
+
+            setModalState(() {
+              loading = true;
+              formError = null;
+            });
+
+            try {
+              await authApi.cambiarContrasenaUsuario(
+                userId: userId,
+                nuevaContrasena: newCtrl.text,
+              );
+              if (!dialogContext.mounted) return;
+              Navigator.of(dialogContext).pop(true);
+            } catch (e) {
+              if (!dialogContext.mounted) return;
+              setModalState(
+                () => formError = _normalizeException(
+                  e,
+                  fallback: 'No se pudo actualizar la contrasena del usuario.',
+                ),
+              );
+            } finally {
+              if (dialogContext.mounted) {
+                setModalState(() => loading = false);
+              }
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Actualizar contrasena del usuario'),
+            content: SizedBox(
+              width: 380,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Define una nueva contrasena para $nombreUsuario.',
+                      style: const TextStyle(fontSize: 13, color: Colors.black54),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: newCtrl,
+                      obscureText: !showNew,
+                      decoration: InputDecoration(
+                        labelText: 'Nueva contrasena',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          onPressed: () =>
+                              setModalState(() => showNew = !showNew),
+                          icon: Icon(
+                            showNew ? Icons.visibility_off : Icons.visibility,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: confirmCtrl,
+                      obscureText: !showConfirm,
+                      onSubmitted: (_) => submit(),
+                      decoration: InputDecoration(
+                        labelText: 'Confirmar nueva contrasena',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          onPressed: () =>
+                              setModalState(() => showConfirm = !showConfirm),
+                          icon: Icon(
+                            showConfirm
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (formError != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        formError!,
+                        style: const TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: loading
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: loading ? null : submit,
+                style: AppTheme.saveButtonStyle,
+                child: loading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Guardar'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+
+  newCtrl.dispose();
+  confirmCtrl.dispose();
+
+  if (ok == true && context.mounted) {
+    AppFeedback.showInfo(
+      context,
+      message: 'Contrasena actualizada correctamente para $nombreUsuario.',
+    );
+  }
+}

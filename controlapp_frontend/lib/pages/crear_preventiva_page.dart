@@ -48,7 +48,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   final _herramientaApi = HerramientaApi();
 
   List<InsumoResponse> _catalogoInsumos = [];
-  List<MaquinariaResponse> _catalogoMaquinaria = [];
   List<HerramientaDisponibilidadResponse> _catalogoHerramientas = [];
   List<Usuario> _supervisores = [];
 
@@ -207,7 +206,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   Future<void> _initData() async {
     await Future.wait([
       _cargarCatalogoInsumos(),
-      _cargarCatalogoMaquinaria(),
       _cargarCatalogoHerramientas(),
       _cargarSupervisores(),
     ]);
@@ -238,22 +236,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     } catch (e) {
       if (!mounted) return;
       _snack('Error cargando catálogo de insumos: $e', type: SnackType.error);
-    }
-  }
-
-  Future<void> _cargarCatalogoMaquinaria() async {
-    try {
-      final lista = await _empresaApi.listarMaquinaria();
-      if (!mounted) return;
-      setState(() {
-        _catalogoMaquinaria = lista;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      _snack(
-        'Error cargando catálogo de maquinaria: $e',
-        type: SnackType.error,
-      );
     }
   }
 

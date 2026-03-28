@@ -11,7 +11,6 @@ import 'package:flutter_application_1/pdf/pdf_download.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/chart_capture.dart';
-import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -35,7 +34,6 @@ class ReportesDashboardPage extends StatefulWidget {
 
 class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   final _api = ReporteApi();
-  final _session = SessionService();
 
   late DateTime _desde;
   late DateTime _hasta;
@@ -46,7 +44,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   bool _loading = false;
   bool _generandoPdf = false;
   String? _error;
-  Map<String, String>? _evidenceHeaders;
 
   bool _captureMode = false;
 
@@ -99,19 +96,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         : (ref == null || ref.isEmpty)
         ? null
         : ref;
-    _preloadEvidenceHeaders();
     _cargarTodo();
-  }
-
-  Future<void> _preloadEvidenceHeaders() async {
-    final token = await _session.getToken();
-    if (!mounted) return;
-
-    final headers = <String, String>{'x-empresa-id': AppConstants.empresaNit};
-    if (token != null && token.trim().isNotEmpty) {
-      headers['Authorization'] = 'Bearer ${token.trim()}';
-    }
-    setState(() => _evidenceHeaders = headers);
   }
 
   @override

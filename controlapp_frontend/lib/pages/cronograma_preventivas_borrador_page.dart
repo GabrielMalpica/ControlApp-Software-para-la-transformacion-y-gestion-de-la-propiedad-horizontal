@@ -2499,40 +2499,6 @@ class _CronogramaPreventivasBorradorPageState
     );
   }
 
-  Future<void> _moverTareaADia(TareaModel t, int nuevoDia) async {
-    final iniLocal = t.fechaInicio.toLocal();
-    final finLocal = t.fechaFin.toLocal();
-
-    final durMin =
-        ((finLocal.millisecondsSinceEpoch - iniLocal.millisecondsSinceEpoch) /
-                60000)
-            .round();
-
-    final nuevaFechaInicio = DateTime(
-      _anioActual,
-      _mesActual,
-      nuevoDia,
-      iniLocal.hour,
-      iniLocal.minute,
-    );
-
-    final nuevaFechaFin = nuevaFechaInicio.add(Duration(minutes: durMin));
-
-    setState(() {
-      final idx = _tareasMes.indexWhere((x) => x.id == t.id);
-      if (idx != -1) {
-        _tareasMes[idx] = t.copyWith(
-          fechaInicio: nuevaFechaInicio,
-          fechaFin: nuevaFechaFin,
-          duracionMinutos: durMin,
-        );
-        _recalcularResumenDias();
-      }
-    });
-
-    // TODO: endpoint de reprogramación cuando lo tengas
-  }
-
   // ================= UI =================
 
   @override

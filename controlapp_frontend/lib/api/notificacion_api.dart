@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter_application_1/model/cumpleanos_model.dart';
 import 'package:flutter_application_1/model/notificacion_model.dart';
 import 'package:flutter_application_1/service/api_client.dart';
 
@@ -52,5 +53,29 @@ class NotificacionApi {
     if (resp.statusCode != 200) {
       throw Exception('Error marcando notificaciones: ${resp.body}');
     }
+  }
+
+  Future<List<CumpleaneroModel>> listarCumpleanosMesActual() async {
+    final resp = await _client.get('/notificaciones/cumpleanos/mes-actual');
+    if (resp.statusCode != 200) {
+      throw Exception('Error listando cumpleanos: ${resp.body}');
+    }
+
+    final decoded = jsonDecode(resp.body);
+    if (decoded is! List) return [];
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(CumpleaneroModel.fromJson)
+        .toList();
+  }
+
+  Future<CumpleanosHoyModel> obtenerCumpleanosHoy() async {
+    final resp = await _client.get('/notificaciones/cumpleanos/hoy');
+    if (resp.statusCode != 200) {
+      throw Exception('Error consultando cumpleanos de hoy: ${resp.body}');
+    }
+
+    final decoded = jsonDecode(resp.body) as Map<String, dynamic>;
+    return CumpleanosHoyModel.fromJson(decoded);
   }
 }

@@ -1,6 +1,7 @@
 import { RequestHandler } from "express";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
+import { CumpleanosService } from "../services/CumpleanosService";
 import { NotificacionService } from "../services/NotificacionService";
 
 const ListarQuery = z.object({
@@ -16,6 +17,7 @@ const IdParam = z.object({
 });
 
 const service = new NotificacionService(prisma);
+const cumpleanosService = new CumpleanosService(prisma);
 
 function getUsuarioAutenticado(req: any): string | null {
   const id = req.user?.sub;
@@ -31,6 +33,8 @@ export class NotificacionController {
         res.status(401).json({ message: "No autenticado" });
         return;
       }
+
+      await cumpleanosService.asegurarNotificacionesCumpleanosHoy(usuarioId);
 
       const q = ListarQuery.parse(req.query ?? {});
       const items = await service.listarUsuario(usuarioId, {
@@ -50,6 +54,8 @@ export class NotificacionController {
         res.status(401).json({ message: "No autenticado" });
         return;
       }
+
+      await cumpleanosService.asegurarNotificacionesCumpleanosHoy(usuarioId);
 
       const total = await service.contarNoLeidas(usuarioId);
       res.json({ total });
@@ -90,6 +96,37 @@ export class NotificacionController {
 
       const actualizadas = await service.marcarTodasLeidas(usuarioId);
       res.json({ ok: true, actualizadas, totalNoLeidas: 0 });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  cumpleanosMesActual: RequestHandler = async (req, res, next) => {
+    try {
+      const usuarioId = getUsuarioAutenticado(req);
+      if (!usuarioId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      const items = await cumpleanosService.listarCumpleanosMesActor(usuarioId);
+      res.json(items);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  cumpleanosHoy: RequestHandler = async (req, res, next) => {
+    try {
+      const usuarioId = getUsuarioAutenticado(req);
+      if (!usuarioId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      await cumpleanosService.asegurarNotificacionesCumpleanosHoy(usuarioId);
+      const info = await cumpleanosService.cumpleanosHoyActor(usuarioId);
+      res.json(info);
     } catch (err) {
       next(err);
     }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/agenda_herramientas_page.dart';
+import 'package:flutter_application_1/pages/cumpleanos_page.dart';
 import 'package:flutter_application_1/pages/agenda_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.dart';
 import 'package:flutter_application_1/pages/crear_herramienta_page.dart';
@@ -27,6 +28,7 @@ import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
+import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
@@ -87,6 +89,7 @@ enum _QuickAction {
   solicitudInsumo,
   agendaMaquinaria,
   agendaHerramientas,
+  cumpleanos,
 
   // Cronogramas
   cronogramaCrear,
@@ -375,6 +378,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         Icons.handyman,
         enabled: enabledNit,
       ),
+      item(
+        _QuickAction.cumpleanos,
+        "Cumpleanos del mes",
+        Icons.cake_outlined,
+        enabled: true,
+      ),
 
       const PopupMenuDivider(),
 
@@ -483,6 +492,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         await go(
           AgendaHerramientasGlobalPage(empresaNit: AppConstants.empresaNit),
         );
+        return;
+
+      case _QuickAction.cumpleanos:
+        await go(const CumpleanosPage());
         return;
 
       case _QuickAction.cronogramaCrear:
@@ -673,6 +686,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             MaterialPageRoute(builder: (_) => const ZonificacionPage()),
           );
         }),
+        _Tile("Cumpleanos", Icons.cake_outlined, AppTheme.accent, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CumpleanosPage()),
+          );
+        }),
       ]),
     ];
 
@@ -718,17 +737,19 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           );
         },
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          ConjuntoSelectorCard(
-            conjuntoActual: conjunto,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            ConjuntoSelectorCard(
+              conjuntoActual: conjunto,
             conjuntos: _conjuntos,
             selectedNit: _conjuntoSeleccionadoNit,
             onChanged: (v) => setState(() => _conjuntoSeleccionadoNit = v),
-          ),
-          const SizedBox(height: 18),
-          DashboardSurface(
+            ),
+            const SizedBox(height: 18),
+            const CumpleanosBanner(),
+            const SizedBox(height: 18),
+            DashboardSurface(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[

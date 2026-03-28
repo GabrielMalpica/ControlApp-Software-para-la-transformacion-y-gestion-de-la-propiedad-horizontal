@@ -79,6 +79,25 @@ class AuthApi {
     }
   }
 
+  Future<void> cambiarContrasenaUsuario({
+    required String userId,
+    required String nuevaContrasena,
+  }) async {
+    final resp = await _client.post(
+      '/auth/usuarios/$userId/cambiar-contrasena',
+      body: {'nuevaContrasena': nuevaContrasena},
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        _serverMessage(
+          resp.body,
+          fallback: 'No se pudo cambiar la contrasena del usuario.',
+        ),
+      );
+    }
+  }
+
   Future<void> recuperarContrasena({
     required String correo,
     required String cedula,

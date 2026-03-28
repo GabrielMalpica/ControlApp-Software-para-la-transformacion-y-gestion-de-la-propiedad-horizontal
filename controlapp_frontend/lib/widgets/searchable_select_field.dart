@@ -194,22 +194,50 @@ class SearchableSelectField<T> extends StatelessWidget {
               onChanged(picked);
             },
       borderRadius: BorderRadius.circular(12),
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: prefixIcon,
-          suffixIcon: const Icon(Icons.arrow_drop_down_rounded),
-          enabled: enabled,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: enabled ? null : Theme.of(context).disabledColor.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Theme.of(context).dividerColor),
         ),
-        child: Text(
-          selected?.label ?? placeholder,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: selected == null
-              ? Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Theme.of(context).hintColor,
-                )
-              : null,
+        child: Row(
+          children: [
+            if (prefixIcon != null) ...[
+              prefixIcon!,
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).hintColor,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    selected?.label ?? placeholder,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: selected == null
+                        ? Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: Theme.of(context).hintColor,
+                          )
+                        : Theme.of(context).textTheme.bodyLarge,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.arrow_drop_down_rounded,
+              color: enabled ? null : Theme.of(context).disabledColor,
+            ),
+          ],
         ),
       ),
     );

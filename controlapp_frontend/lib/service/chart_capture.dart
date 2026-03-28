@@ -31,9 +31,7 @@ Future<Uint8List> capturePngFromKey(
     final hasSize =
         boundary.hasSize && boundary.size.width > 0 && boundary.size.height > 0;
 
-    final hasLayer = boundary.layer != null;
-
-    if (!attached || !hasSize || !hasLayer) {
+    if (!attached || !hasSize) {
       await Future.delayed(retryDelay);
       continue;
     }
@@ -62,6 +60,6 @@ Future<Uint8List> capturePngFromKey(
 
   throw StateError(
     'capturePngFromKey: No se pudo capturar PNG. '
-    'boundary(attached=${boundary.attached}, size=${boundary.hasSize ? boundary.size : "no-size"}, layer=${boundary.layer != null})',
+    'boundary(attached=${boundary.attached}, size=${boundary.hasSize ? boundary.size : "no-size"})',
   );
 }

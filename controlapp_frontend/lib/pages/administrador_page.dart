@@ -6,6 +6,7 @@ import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
+import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import '../service/theme.dart';
@@ -136,6 +137,8 @@ class _AdministradorPageState extends State<AdministradorPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const CumpleanosBanner(),
+          const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(

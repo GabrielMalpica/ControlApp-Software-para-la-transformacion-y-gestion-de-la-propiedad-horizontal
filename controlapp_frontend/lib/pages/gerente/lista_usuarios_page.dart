@@ -20,6 +20,7 @@ class ListaUsuariosPage extends StatefulWidget {
 
 class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
   final UsuarioRepository _usuarioRepository = UsuarioRepository();
+  final TextEditingController _busquedaCtrl = TextEditingController();
 
   List<Usuario> _usuarios = [];
   bool _cargando = true;
@@ -27,6 +28,7 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
 
   // Filtro por rol
   String _filtroRol = 'todos';
+  String _busqueda = '';
 
   // Roles disponibles (los mismos del enum del back)
   final List<String> _rolesDisponibles = [
@@ -42,6 +44,12 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
   void initState() {
     super.initState();
     _cargarUsuarios();
+  }
+
+  @override
+  void dispose() {
+    _busquedaCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _cargarUsuarios() async {
@@ -68,8 +76,18 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
 
   // Filtra en memoria por rol
   List<Usuario> get _usuariosFiltrados {
-    if (_filtroRol == 'todos') return _usuarios;
-    return _usuarios.where((u) => u.rol == _filtroRol).toList();
+    return _usuarios.where((u) {
+      final coincideRol = _filtroRol == 'todos' || u.rol == _filtroRol;
+      if (!coincideRol) return false;
+
+      final q = _busqueda.trim().toLowerCase();
+      if (q.isEmpty) return true;
+
+      return [u.nombre, u.cedula, u.correo, _prettyRol(u.rol)]
+          .join(' ')
+          .toLowerCase()
+          .contains(q);
+    }).toList();
   }
 
   String _prettyRol(String rol) {
@@ -218,6 +236,26 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
                   ],
                 ),
               ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _busquedaCtrl,
+              decoration: InputDecoration(
+                labelText: 'Buscar usuario',
+                hintText: 'Nombre, cédula, correo o rol',
+                prefixIcon: const Icon(Icons.search),
+                border: const OutlineInputBorder(),
+                suffixIcon: _busqueda.trim().isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _busquedaCtrl.clear();
+                          setState(() => _busqueda = '');
+                        },
+                        icon: const Icon(Icons.clear),
+                      ),
+              ),
+              onChanged: (value) => setState(() => _busqueda = value),
             ),
             const SizedBox(height: 8),
 

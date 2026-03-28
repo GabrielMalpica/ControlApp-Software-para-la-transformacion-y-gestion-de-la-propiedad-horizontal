@@ -14,6 +14,10 @@ const CambiarContrasenaSchema = z.object({
   nuevaContrasena: z.string().min(8),
 });
 
+const CambiarContrasenaUsuarioSchema = z.object({
+  nuevaContrasena: z.string().min(8),
+});
+
 const RecuperarContrasenaSchema = z.object({
   correo: z.string().email(),
   id: z.string().min(5),
@@ -95,6 +99,32 @@ export class AuthController {
       );
 
       res.json({ ok: true, message: "Contrasena restablecida correctamente" });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  cambiarContrasenaUsuario: RequestHandler = async (req, res, next) => {
+    try {
+      const actorUserId = req.user?.sub;
+      if (!actorUserId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      const targetUserId = String(req.params.userId ?? "").trim();
+      const { nuevaContrasena } = CambiarContrasenaUsuarioSchema.parse(req.body);
+
+      const result = await service.cambiarContrasenaUsuarioPorGerente(
+        actorUserId,
+        targetUserId,
+        nuevaContrasena
+      );
+
+      res.json({
+        ok: true,
+        message: `Contrasena actualizada para ${result.nombre}`,
+      });
     } catch (err) {
       next(err);
     }

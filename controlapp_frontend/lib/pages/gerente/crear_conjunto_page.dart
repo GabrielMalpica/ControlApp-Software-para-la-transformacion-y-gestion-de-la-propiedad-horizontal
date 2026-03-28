@@ -100,6 +100,30 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     return '$h:$m';
   }
 
+  TimeOfDay? _horaReferenciaAnterior({
+    required String dia,
+    required bool esApertura,
+    required bool esDescansoInicio,
+    required bool esDescansoFin,
+  }) {
+    final indexDia = _diasSemana.indexOf(dia);
+    if (indexDia <= 0) return null;
+
+    for (var i = indexDia - 1; i >= 0; i--) {
+      final anterior = _horariosPorDia[_diasSemana[i]]!;
+      final candidata = esApertura
+          ? anterior.apertura
+          : esDescansoInicio
+          ? anterior.descansoInicio
+          : esDescansoFin
+          ? anterior.descansoFin
+          : anterior.cierre;
+      if (candidata != null) return candidata;
+    }
+
+    return null;
+  }
+
   List<String> _splitPorLineas(String raw) {
     return raw
         .split('\n')
@@ -131,13 +155,45 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
 
     TimeOfDay initial;
     if (esApertura) {
-      initial = horario.apertura ?? const TimeOfDay(hour: 8, minute: 0);
+      initial =
+          horario.apertura ??
+          _horaReferenciaAnterior(
+            dia: dia,
+            esApertura: true,
+            esDescansoInicio: false,
+            esDescansoFin: false,
+          ) ??
+          const TimeOfDay(hour: 8, minute: 0);
     } else if (esDescansoInicio) {
-      initial = horario.descansoInicio ?? const TimeOfDay(hour: 12, minute: 0);
+      initial =
+          horario.descansoInicio ??
+          _horaReferenciaAnterior(
+            dia: dia,
+            esApertura: false,
+            esDescansoInicio: true,
+            esDescansoFin: false,
+          ) ??
+          const TimeOfDay(hour: 12, minute: 0);
     } else if (esDescansoFin) {
-      initial = horario.descansoFin ?? const TimeOfDay(hour: 13, minute: 0);
+      initial =
+          horario.descansoFin ??
+          _horaReferenciaAnterior(
+            dia: dia,
+            esApertura: false,
+            esDescansoInicio: false,
+            esDescansoFin: true,
+          ) ??
+          const TimeOfDay(hour: 13, minute: 0);
     } else {
-      initial = horario.cierre ?? const TimeOfDay(hour: 17, minute: 0);
+      initial =
+          horario.cierre ??
+          _horaReferenciaAnterior(
+            dia: dia,
+            esApertura: false,
+            esDescansoInicio: false,
+            esDescansoFin: false,
+          ) ??
+          const TimeOfDay(hour: 17, minute: 0);
     }
 
     final picked = await showTimePicker(context: context, initialTime: initial);

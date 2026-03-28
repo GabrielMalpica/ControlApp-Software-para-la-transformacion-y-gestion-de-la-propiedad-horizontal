@@ -4,6 +4,7 @@ import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/supervisor/supervisor_tareas_page.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
+import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
@@ -210,6 +211,8 @@ class _SupervisorPageState extends State<SupervisorPage> {
               setState(() => _conjuntoSeleccionadoNit = v);
             },
           ),
+          const SizedBox(height: 18),
+          const CumpleanosBanner(),
           const SizedBox(height: 18),
           DashboardSurface(
             child: Column(
