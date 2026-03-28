@@ -1581,9 +1581,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '✅ Empresa: ${_dispMaq!.empresaDisponibles.length} | '
-                                  '✅ Conjunto: ${_dispMaq!.propiasDisponibles.length} | '
-                                  '⛔ Ocupadas: ${_dispMaq!.ocupadas.length}',
+                                  'Empresa: ${_dispMaq!.empresaDisponibles.length} | '
+                                  'Conjunto: ${_dispMaq!.propiasDisponibles.length} | '
+                                  'Ocupadas: ${_dispMaq!.ocupadas.length}',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w800,
                                   ),

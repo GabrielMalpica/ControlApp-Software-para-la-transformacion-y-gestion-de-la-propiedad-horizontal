@@ -86,7 +86,7 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
       builder: (_) => AlertDialog(
         title: const Text('Eliminar herramienta'),
         content: Text(
-          'Se eliminara ${item.nombre} del catalogo. Si ya tiene stock, prestamos o solicitudes relacionadas, el backend no la dejara borrar.',
+          'Se eliminara ${item.nombre} del catalogo. Si la herramienta tiene movimientos asociados, el sistema mostrara el motivo y no permitira eliminarla.',
         ),
         actions: [
           TextButton(

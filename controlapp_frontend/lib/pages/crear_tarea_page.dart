@@ -905,7 +905,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         if (!mounted) return;
         AppFeedback.showFromSnackBar(
           context,
-          const SnackBar(content: Text('✅ Sugerencia aplicada al formulario.')),
+          const SnackBar(content: Text('Sugerencia aplicada al formulario.')),
         );
       }
 

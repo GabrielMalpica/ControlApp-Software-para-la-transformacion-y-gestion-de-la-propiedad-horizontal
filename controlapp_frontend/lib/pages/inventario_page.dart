@@ -934,11 +934,11 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
 
       AppFeedback.showFromSnackBar(
         context,
-        SnackBar(content: Text("✅ Agregada: ${_selected!.nombre}")),
+        SnackBar(content: Text("Herramienta agregada: ${_selected!.nombre}")),
       );
     } catch (e) {
       if (!mounted) return;
-      AppFeedback.showFromSnackBar(context, SnackBar(content: Text("❌ $e")));
+      AppFeedback.showFromSnackBar(context, SnackBar(content: Text("$e")));
     }
   }
 

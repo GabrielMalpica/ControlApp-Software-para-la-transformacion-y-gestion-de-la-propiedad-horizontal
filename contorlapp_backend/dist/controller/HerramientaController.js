@@ -78,7 +78,7 @@ class HerramientaController {
                 if (err?.code === "P2003") {
                     err.status = 409;
                     err.message =
-                        "No se puede eliminar: está relacionada con stock/solicitudes/usos.";
+                        "No fue posible eliminar la herramienta porque tiene movimientos o registros asociados.";
                 }
                 next(err);
             }
