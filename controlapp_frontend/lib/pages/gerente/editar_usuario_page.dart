@@ -5,6 +5,7 @@ import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/utils/enums/usuario_enums.dart';
 import 'package:flutter_application_1/utils/enums/usuario_enums_service.dart';
 import 'package:flutter_application_1/service/app_error.dart';
+import 'package:intl/intl.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -46,6 +47,10 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
   String? patronJornada;
 
   bool _guardando = false;
+
+  String get _fechaNacimientoLabel => fechaNacimiento == null
+      ? 'Seleccionar fecha'
+      : DateFormat('dd/MM/yyyy').format(fechaNacimiento!);
 
   @override
   void initState() {
@@ -154,7 +159,9 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
         'direccion': _direccionCtrl.text.isEmpty
             ? null
             : _direccionCtrl.text.trim(),
-        'fechaNacimiento': fechaNacimiento?.toIso8601String(),
+        'fechaNacimiento': fechaNacimiento == null
+            ? null
+            : DateFormat('yyyy-MM-dd').format(fechaNacimiento!),
         'estadoCivil': estadoCivilSeleccionado,
         'numeroHijos': numeroHijos,
         'padresVivos': padresVivos,
@@ -312,15 +319,32 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                       const SizedBox(height: 12),
                       InkWell(
                         onTap: _seleccionarFechaNacimiento,
+                        borderRadius: BorderRadius.circular(12),
                         child: InputDecorator(
                           decoration: const InputDecoration(
                             labelText: "Fecha de nacimiento",
                             border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.cake_outlined),
+                            suffixIcon: Icon(Icons.edit_calendar_rounded),
                           ),
-                          child: Text(
-                            fechaNacimiento == null
-                                ? "Seleccionar fecha"
-                                : "${fechaNacimiento!.day}/${fechaNacimiento!.month}/${fechaNacimiento!.year}",
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _fechaNacimientoLabel,
+                                  style: TextStyle(
+                                    color: fechaNacimiento == null
+                                        ? Colors.black54
+                                        : Colors.black87,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _seleccionarFechaNacimiento,
+                                child: const Text('Cambiar'),
+                              ),
+                            ],
                           ),
                         ),
                       ),

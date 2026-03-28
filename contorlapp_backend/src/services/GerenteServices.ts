@@ -306,6 +306,10 @@ export class GerenteService {
 
     const data: any = { ...dto };
 
+    if (dto.fechaNacimiento !== undefined) {
+      data.fechaNacimiento = new Date(dto.fechaNacimiento);
+    }
+
     if (Object.prototype.hasOwnProperty.call(dto, "jornadaLaboral")) {
       data.patronJornada = normalizarPatronJornada(
         dto.jornadaLaboral ?? null,

@@ -184,6 +184,9 @@ class GerenteService {
                 throw new Error("EMAIL_YA_REGISTRADO");
         }
         const data = { ...dto };
+        if (dto.fechaNacimiento !== undefined) {
+            data.fechaNacimiento = new Date(dto.fechaNacimiento);
+        }
         if (Object.prototype.hasOwnProperty.call(dto, "jornadaLaboral")) {
             data.patronJornada = normalizarPatronJornada(dto.jornadaLaboral ?? null, dto.patronJornada ?? null);
         }
