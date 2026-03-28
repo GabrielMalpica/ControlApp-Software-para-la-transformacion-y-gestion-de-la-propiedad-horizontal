@@ -391,6 +391,7 @@ model Usuario {
   supervisor      Supervisor?
   operario        Operario?
   administrador   Administrador?
+  compromisosCreados CompromisoConjunto[] @relation("CompromisoCreadoPor")
 }
 
 model Empresa {
@@ -554,6 +555,27 @@ model Conjunto {
   herramientasStock         ConjuntoHerramientaStock[]
   solicitudHerramientas     SolicitudHerramienta[]
    prestamosHerramientas     PrestamoHerramientaConjunto[]
+  compromisos              CompromisoConjunto[]
+}
+
+model CompromisoConjunto {
+  id Int @id @default(autoincrement())
+
+  conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
+  conjuntoId String
+
+  titulo     String
+  completado Boolean  @default(false)
+
+  creadoPor   Usuario? @relation("CompromisoCreadoPor", fields: [creadoPorId], references: [id], onDelete: SetNull)
+  creadoPorId String?
+
+  creadaEn     DateTime @default(now())
+  actualizadaEn DateTime @updatedAt
+
+  @@index([conjuntoId, completado])
+  @@index([conjuntoId, creadaEn])
+  @@map("CompromisoConjunto")
 }
 
 model ConjuntoHorario {

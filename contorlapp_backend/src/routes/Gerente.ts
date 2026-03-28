@@ -1,9 +1,11 @@
 // src/routes/gerente.routes.ts
 import { Router } from "express";
+import { CompromisoConjuntoController } from "../controller/CompromisoConjuntoController";
 import { GerenteController } from "../controller/GerenteController";
 
 const router = Router();
 const ctrl = new GerenteController();
+const compromisosCtrl = new CompromisoConjuntoController();
 
 /* Empresa */
 router.post("/empresa", ctrl.crearEmpresa);
@@ -30,6 +32,13 @@ router.get("/conjuntos", ctrl.listarConjuntos);
 router.get("/conjuntos/:conjuntoId", ctrl.obtenerConjunto); 
 router.post("/conjuntos/:conjuntoId/operarios", ctrl.asignarOperarioAConjunto);
 router.post("/conjuntos/:conjuntoId/insumos", ctrl.agregarInsumoAConjunto);
+router.get("/conjuntos/:conjuntoId/compromisos", compromisosCtrl.listarPorConjunto);
+router.post("/conjuntos/:conjuntoId/compromisos", compromisosCtrl.crear);
+
+/* Compromisos */
+router.get("/compromisos", compromisosCtrl.listarGlobal);
+router.patch("/compromisos/:id", compromisosCtrl.actualizar);
+router.delete("/compromisos/:id", compromisosCtrl.eliminar);
 
 /* Tareas */
 router.post("/tareas", ctrl.asignarTarea);

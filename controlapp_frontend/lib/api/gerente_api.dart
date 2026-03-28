@@ -194,6 +194,80 @@ class GerenteApi {
         .toList();
   }
 
+  Future<List<Map<String, dynamic>>> listarCompromisosConjunto(
+    String conjuntoId,
+  ) async {
+    final resp = await _apiClient.get(
+      '${AppConstants.gerenteBase}/conjuntos/$conjuntoId/compromisos',
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception('Error listando compromisos: ${resp.body}');
+    }
+
+    final data = jsonDecode(resp.body) as List<dynamic>;
+    return data
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> listarCompromisosGlobales() async {
+    final resp = await _apiClient.get('${AppConstants.gerenteBase}/compromisos');
+
+    if (resp.statusCode != 200) {
+      throw Exception('Error listando compromisos globales: ${resp.body}');
+    }
+
+    final data = jsonDecode(resp.body) as List<dynamic>;
+    return data
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> crearCompromisoConjunto({
+    required String conjuntoId,
+    required String titulo,
+  }) async {
+    final resp = await _apiClient.post(
+      '${AppConstants.gerenteBase}/conjuntos/$conjuntoId/compromisos',
+      body: {'titulo': titulo},
+    );
+
+    if (resp.statusCode != 201 && resp.statusCode != 200) {
+      throw Exception('Error creando compromiso: ${resp.body}');
+    }
+
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  Future<Map<String, dynamic>> actualizarCompromiso({
+    required int id,
+    String? titulo,
+    bool? completado,
+  }) async {
+    final body = <String, dynamic>{
+      if (titulo != null) 'titulo': titulo,
+      if (completado != null) 'completado': completado,
+    };
+    final resp = await _apiClient.patch(
+      '${AppConstants.gerenteBase}/compromisos/$id',
+      body: body,
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception('Error actualizando compromiso: ${resp.body}');
+    }
+
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  Future<void> eliminarCompromiso(int id) async {
+    final resp = await _apiClient.delete('${AppConstants.gerenteBase}/compromisos/$id');
+    if (resp.statusCode != 200 && resp.statusCode != 204) {
+      throw Exception('Error eliminando compromiso: ${resp.body}');
+    }
+  }
+
   Future<Conjunto> obtenerConjunto(String nit) async {
     final resp = await _apiClient.get('${AppConstants.conjuntosGerente}/$nit');
 

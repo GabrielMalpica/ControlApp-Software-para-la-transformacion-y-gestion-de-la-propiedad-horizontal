@@ -1,10 +1,7 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_application_1/api/gerente_api.dart';
-import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/theme.dart';
 
 class CompromisosPorConjuntoPage extends StatefulWidget {
@@ -17,13 +14,11 @@ class CompromisosPorConjuntoPage extends StatefulWidget {
 
 class _CompromisosPorConjuntoPageState
     extends State<CompromisosPorConjuntoPage> {
-  static const _sharedStoragePrefix = 'compromisos_conjunto_';
-  static const _legacyGerenteStoragePrefix = 'gerente_compromisos_';
-
   final GerenteApi _gerenteApi = GerenteApi();
 
   bool _loading = true;
   String _query = '';
+  String? _error;
   List<_CompromisoConjuntoGroup> _groups = [];
 
   @override
@@ -33,64 +28,43 @@ class _CompromisosPorConjuntoPageState
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final conjuntos = await _gerenteApi.listarConjuntos();
-      final byNit = <String, Conjunto>{for (final c in conjuntos) c.nit: c};
-      final groups = <_CompromisoConjuntoGroup>[];
+      final raw = await _gerenteApi.listarCompromisosGlobales();
+      final byConjunto = <String, _CompromisoConjuntoGroup>{};
 
-      for (final key in prefs.getKeys()) {
-        if (!key.startsWith(_sharedStoragePrefix) &&
-            !key.startsWith(_legacyGerenteStoragePrefix)) {
-          continue;
-        }
-
-        final nit = key.startsWith(_sharedStoragePrefix)
-            ? key.substring(_sharedStoragePrefix.length)
-            : key.substring(_legacyGerenteStoragePrefix.length);
-        final raw = prefs.getString(key);
-        if (raw == null || raw.trim().isEmpty) continue;
-
-        final decoded = jsonDecode(raw);
-        if (decoded is! List) continue;
-
-        final items = <_CompromisoResumen>[];
-        for (final item in decoded) {
-          if (item is Map<String, dynamic>) {
-            items.add(_CompromisoResumen.fromJson(item));
-          } else if (item is Map) {
-            items.add(
-              _CompromisoResumen.fromJson(Map<String, dynamic>.from(item)),
-            );
-          }
-        }
-        if (items.isEmpty) continue;
-
-        final conjunto = byNit[nit];
-        groups.add(
-          _CompromisoConjuntoGroup(
-            nit: nit,
-            nombre: conjunto?.nombre ?? 'Conjunto $nit',
-            items: items,
-          ),
+      for (final item in raw) {
+        final compromiso = _CompromisoResumen.fromJson(item);
+        final nit = (item['conjuntoNit'] ?? item['conjuntoId'] ?? '').toString();
+        final nombre = (item['conjuntoNombre'] ?? 'Conjunto $nit').toString();
+        byConjunto.putIfAbsent(
+          nit,
+          () => _CompromisoConjuntoGroup(nit: nit, nombre: nombre, items: []),
         );
+        byConjunto[nit]!.items.add(compromiso);
       }
 
-      groups.sort((a, b) {
-        final pendingCompare = b.pendingCount.compareTo(a.pendingCount);
-        if (pendingCompare != 0) return pendingCompare;
-        return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
-      });
+      final groups = byConjunto.values.toList()
+        ..sort((a, b) {
+          final pendingCompare = b.pendingCount.compareTo(a.pendingCount);
+          if (pendingCompare != 0) return pendingCompare;
+          return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+        });
 
       if (!mounted) return;
       setState(() {
         _groups = groups;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _error = AppError.messageOf(e);
+        _loading = false;
+      });
     }
   }
 
@@ -113,9 +87,14 @@ class _CompromisosPorConjuntoPageState
         title: const Text('Compromisos por conjunto'),
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? Center(child: Text(_error!))
           : Column(
               children: [
                 Padding(
@@ -140,8 +119,7 @@ class _CompromisosPorConjuntoPageState
                       : ListView.separated(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                           itemCount: filtered.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 12),
+                          separatorBuilder: (_, __) => const SizedBox(height: 12),
                           itemBuilder: (context, index) {
                             final group = filtered[index];
                             return _ConjuntoCompromisoCard(group: group);
@@ -237,9 +215,7 @@ class _ConjuntoCompromisoCard extends StatelessWidget {
                     child: Text(
                       item.titulo,
                       style: TextStyle(
-                        color: item.completado
-                            ? Colors.black54
-                            : Colors.black87,
+                        color: item.completado ? Colors.black54 : Colors.black87,
                         decoration: item.completado
                             ? TextDecoration.lineThrough
                             : TextDecoration.none,
@@ -284,7 +260,7 @@ class _CountPill extends StatelessWidget {
 }
 
 class _CompromisoConjuntoGroup {
-  const _CompromisoConjuntoGroup({
+  _CompromisoConjuntoGroup({
     required this.nit,
     required this.nombre,
     required this.items,

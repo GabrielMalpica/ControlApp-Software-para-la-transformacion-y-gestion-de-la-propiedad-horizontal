@@ -1,11 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../api/gerente_api.dart';
+import '../../service/app_error.dart';
+import '../../service/app_feedback.dart';
 import '../../service/theme.dart';
-
-import 'package:flutter_application_1/service/app_feedback.dart';
 
 class CompromisosPage extends StatefulWidget {
   final String nit;
@@ -22,17 +20,11 @@ class CompromisosPage extends StatefulWidget {
 }
 
 class _CompromisosPageState extends State<CompromisosPage> {
-  static const _sharedStoragePrefix = 'compromisos_conjunto_';
-  static const _legacyGerenteStoragePrefix = 'gerente_compromisos_';
-
+  final GerenteApi _api = GerenteApi();
   final TextEditingController _controller = TextEditingController();
+
   List<_CompromisoItem> _items = [];
   bool _loading = true;
-
-  String get _storageKey => '$_sharedStoragePrefix${widget.nit}';
-
-  String get _legacyGerenteStorageKey =>
-      '$_legacyGerenteStoragePrefix${widget.nit}';
 
   @override
   void initState() {
@@ -47,106 +39,103 @@ class _CompromisosPageState extends State<CompromisosPage> {
   }
 
   Future<void> _cargar() async {
+    setState(() => _loading = true);
     try {
-      final prefs = await SharedPreferences.getInstance();
-      var raw = prefs.getString(_storageKey);
-
-      if ((raw == null || raw.trim().isEmpty) &&
-          prefs.containsKey(_legacyGerenteStorageKey)) {
-        raw = prefs.getString(_legacyGerenteStorageKey);
-        if (raw != null && raw.trim().isNotEmpty) {
-          await prefs.setString(_storageKey, raw);
-        }
-      }
-
-      if (raw == null || raw.trim().isEmpty) {
-        if (!mounted) return;
-        setState(() {
-          _items = [];
-          _loading = false;
-        });
-        return;
-      }
-
-      final decoded = jsonDecode(raw);
-      if (decoded is! List) {
-        if (!mounted) return;
-        setState(() => _loading = false);
-        return;
-      }
-
-      final parsed = <_CompromisoItem>[];
-      for (final e in decoded) {
-        if (e is Map<String, dynamic>) {
-          parsed.add(_CompromisoItem.fromJson(e));
-          continue;
-        }
-        if (e is Map) {
-          parsed.add(_CompromisoItem.fromJson(Map<String, dynamic>.from(e)));
-        }
-      }
-
+      final raw = await _api.listarCompromisosConjunto(widget.nit);
+      final items = raw.map(_CompromisoItem.fromJson).toList();
       if (!mounted) return;
       setState(() {
-        _items = parsed;
+        _items = items;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      _snack('No se pudieron cargar los compromisos.');
+      _snack(AppError.messageOf(e));
     }
-  }
-
-  Future<void> _guardar() async {
-    final prefs = await SharedPreferences.getInstance();
-    final payload = jsonEncode(_items.map((e) => e.toJson()).toList());
-    await prefs.setString(_storageKey, payload);
   }
 
   Future<void> _agregar() async {
     final texto = _controller.text.trim();
     if (texto.isEmpty) return;
 
+    try {
+      final raw = await _api.crearCompromisoConjunto(
+        conjuntoId: widget.nit,
+        titulo: texto,
+      );
+      if (!mounted) return;
+      setState(() {
+        _items = [_CompromisoItem.fromJson(raw), ..._items];
+        _controller.clear();
+      });
+    } catch (e) {
+      _snack(AppError.messageOf(e));
+    }
+  }
+
+  Future<void> _toggle(_CompromisoItem item, bool valor) async {
+    final old = item.completado;
     setState(() {
-      _items = [
-        _CompromisoItem(
-          id: DateTime.now().microsecondsSinceEpoch.toString(),
-          titulo: texto,
-          completado: false,
+      item.completado = valor;
+    });
+    try {
+      await _api.actualizarCompromiso(id: item.id, completado: valor);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => item.completado = old);
+      _snack(AppError.messageOf(e));
+    }
+  }
+
+  Future<void> _editarTitulo(_CompromisoItem item) async {
+    final ctrl = TextEditingController(text: item.titulo);
+    final nuevo = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Editar compromiso'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Compromiso',
+            border: OutlineInputBorder(),
+          ),
         ),
-        ..._items,
-      ];
-      _controller.clear();
-    });
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
 
+    if (nuevo == null || nuevo.isEmpty || nuevo == item.titulo) return;
+
+    final old = item.titulo;
+    setState(() => item.titulo = nuevo);
     try {
-      await _guardar();
-    } catch (_) {
-      _snack('No se pudo guardar el compromiso.');
+      await _api.actualizarCompromiso(id: item.id, titulo: nuevo);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => item.titulo = old);
+      _snack(AppError.messageOf(e));
     }
   }
 
-  Future<void> _toggle(String id, bool valor) async {
-    setState(() {
-      _items = _items
-          .map((e) => e.id == id ? e.copyWith(completado: valor) : e)
-          .toList();
-    });
-
+  Future<void> _eliminar(_CompromisoItem item) async {
     try {
-      await _guardar();
-    } catch (_) {
-      _snack('No se pudo actualizar el compromiso.');
-    }
-  }
-
-  Future<void> _eliminar(String id) async {
-    setState(() => _items = _items.where((e) => e.id != id).toList());
-    try {
-      await _guardar();
-    } catch (_) {
-      _snack('No se pudo eliminar el compromiso.');
+      await _api.eliminarCompromiso(item.id);
+      if (!mounted) return;
+      setState(() => _items.removeWhere((x) => x.id == item.id));
+    } catch (e) {
+      _snack(AppError.messageOf(e));
     }
   }
 
@@ -227,8 +216,7 @@ class _CompromisosPageState extends State<CompromisosPage> {
                           )
                         : ListView.separated(
                             itemCount: _items.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 8),
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
                             itemBuilder: (context, index) {
                               final item = _items[index];
                               return Container(
@@ -241,30 +229,37 @@ class _CompromisosPageState extends State<CompromisosPage> {
                                   children: [
                                     Checkbox(
                                       value: item.completado,
-                                      onChanged: (v) =>
-                                          _toggle(item.id, v ?? false),
+                                      onChanged: (v) => _toggle(item, v ?? false),
                                     ),
                                     Expanded(
-                                      child: Text(
-                                        item.titulo,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w500,
-                                          color: item.completado
-                                              ? Colors.black45
-                                              : Colors.black87,
-                                          decoration: item.completado
-                                              ? TextDecoration.lineThrough
-                                              : TextDecoration.none,
+                                      child: InkWell(
+                                        onTap: () => _editarTitulo(item),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 16),
+                                          child: Text(
+                                            item.titulo,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                              color: item.completado
+                                                  ? Colors.black45
+                                                  : Colors.black87,
+                                              decoration: item.completado
+                                                  ? TextDecoration.lineThrough
+                                                  : TextDecoration.none,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
                                     IconButton(
+                                      tooltip: 'Editar',
+                                      onPressed: () => _editarTitulo(item),
+                                      icon: const Icon(Icons.edit_outlined),
+                                    ),
+                                    IconButton(
                                       tooltip: 'Eliminar',
-                                      icon: const Icon(
-                                        Icons.delete_outline,
-                                        color: Colors.red,
-                                      ),
-                                      onPressed: () => _eliminar(item.id),
+                                      onPressed: () => _eliminar(item),
+                                      icon: const Icon(Icons.delete_outline),
                                     ),
                                   ],
                                 ),
@@ -280,33 +275,21 @@ class _CompromisosPageState extends State<CompromisosPage> {
 }
 
 class _CompromisoItem {
-  final String id;
-  final String titulo;
-  final bool completado;
-
-  const _CompromisoItem({
+  _CompromisoItem({
     required this.id,
     required this.titulo,
     required this.completado,
   });
 
-  _CompromisoItem copyWith({String? id, String? titulo, bool? completado}) {
-    return _CompromisoItem(
-      id: id ?? this.id,
-      titulo: titulo ?? this.titulo,
-      completado: completado ?? this.completado,
-    );
-  }
+  final int id;
+  String titulo;
+  bool completado;
 
   factory _CompromisoItem.fromJson(Map<String, dynamic> json) {
     return _CompromisoItem(
-      id: (json['id'] ?? '').toString(),
+      id: (json['id'] as num).toInt(),
       titulo: (json['titulo'] ?? '').toString(),
       completado: json['completado'] == true,
     );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {'id': id, 'titulo': titulo, 'completado': completado};
   }
 }

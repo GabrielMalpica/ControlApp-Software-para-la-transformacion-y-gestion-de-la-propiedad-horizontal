@@ -2,9 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 // src/routes/gerente.routes.ts
 const express_1 = require("express");
+const CompromisoConjuntoController_1 = require("../controller/CompromisoConjuntoController");
 const GerenteController_1 = require("../controller/GerenteController");
 const router = (0, express_1.Router)();
 const ctrl = new GerenteController_1.GerenteController();
+const compromisosCtrl = new CompromisoConjuntoController_1.CompromisoConjuntoController();
 /* Empresa */
 router.post("/empresa", ctrl.crearEmpresa);
 router.patch("/empresa/limite-horas", ctrl.actualizarLimiteHoras); // opcional
@@ -27,6 +29,12 @@ router.get("/conjuntos", ctrl.listarConjuntos);
 router.get("/conjuntos/:conjuntoId", ctrl.obtenerConjunto);
 router.post("/conjuntos/:conjuntoId/operarios", ctrl.asignarOperarioAConjunto);
 router.post("/conjuntos/:conjuntoId/insumos", ctrl.agregarInsumoAConjunto);
+router.get("/conjuntos/:conjuntoId/compromisos", compromisosCtrl.listarPorConjunto);
+router.post("/conjuntos/:conjuntoId/compromisos", compromisosCtrl.crear);
+/* Compromisos */
+router.get("/compromisos", compromisosCtrl.listarGlobal);
+router.patch("/compromisos/:id", compromisosCtrl.actualizar);
+router.delete("/compromisos/:id", compromisosCtrl.eliminar);
 /* Tareas */
 router.post("/tareas", ctrl.asignarTarea);
 router.post("/tareas/reemplazo", ctrl.asignarTareaConReemplazo);

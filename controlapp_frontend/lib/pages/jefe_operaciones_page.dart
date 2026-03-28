@@ -5,6 +5,7 @@ import 'package:flutter_application_1/pages/jefe_operaciones/jefe_operaciones_pe
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
+import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
 import 'package:flutter_application_1/pages/cumpleanos_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
@@ -314,6 +315,19 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
                             nit: nit,
                             nombreConjunto: conjunto.nombre,
                           ),
+                        ),
+                      );
+                    },
+                  ),
+                  _simpleCard(
+                    "Compromisos globales",
+                    Colors.indigo.shade300,
+                    Icons.rule_folder_outlined,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const CompromisosPorConjuntoPage(),
                         ),
                       );
                     },
