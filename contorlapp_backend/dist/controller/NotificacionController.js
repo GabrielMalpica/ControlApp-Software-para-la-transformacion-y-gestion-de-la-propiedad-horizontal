@@ -107,6 +107,20 @@ class NotificacionController {
                 next(err);
             }
         };
+        this.cumpleanosAnio = async (req, res, next) => {
+            try {
+                const usuarioId = getUsuarioAutenticado(req);
+                if (!usuarioId) {
+                    res.status(401).json({ message: 'No autenticado' });
+                    return;
+                }
+                const items = await cumpleanosService.listarCumpleanosAnioActor(usuarioId);
+                res.json(items);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
         this.cumpleanosHoy = async (req, res, next) => {
             try {
                 const usuarioId = getUsuarioAutenticado(req);

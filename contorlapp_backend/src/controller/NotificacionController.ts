@@ -116,6 +116,21 @@ export class NotificacionController {
     }
   };
 
+  cumpleanosAnio: RequestHandler = async (req, res, next) => {
+    try {
+      const usuarioId = getUsuarioAutenticado(req);
+      if (!usuarioId) {
+        res.status(401).json({ message: 'No autenticado' });
+        return;
+      }
+
+      const items = await cumpleanosService.listarCumpleanosAnioActor(usuarioId);
+      res.json(items);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   cumpleanosHoy: RequestHandler = async (req, res, next) => {
     try {
       const usuarioId = getUsuarioAutenticado(req);

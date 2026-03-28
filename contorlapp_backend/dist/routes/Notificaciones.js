@@ -7,6 +7,7 @@ const router = (0, express_1.Router)();
 const controller = new NotificacionController_1.NotificacionController();
 router.use(auth_middleware_1.authRequired);
 router.get("/cumpleanos/mes-actual", controller.cumpleanosMesActual);
+router.get("/cumpleanos/anio", controller.cumpleanosAnio);
 router.get("/cumpleanos/hoy", controller.cumpleanosHoy);
 router.get("/", controller.listar);
 router.get("/no-leidas/count", controller.contarNoLeidas);

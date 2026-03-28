@@ -145,6 +145,26 @@ class CumpleanosService {
         const empresaId = await this.obtenerEmpresaIdActor(actorUserId);
         return this.listarCumpleanosEmpresa(empresaId, this.hoyBogota().mes);
     }
+    async listarCumpleanosAnioActor(actorUserId) {
+        const actor = await this.obtenerUsuarioActor(actorUserId);
+        const rol = String(actor.rol).trim().toLowerCase();
+        if (!['gerente', 'jefe_operaciones'].includes(rol)) {
+            throw makeHttpError(403, 'No autorizado para consultar cumpleanos del equipo');
+        }
+        const empresaId = await this.obtenerEmpresaIdActor(actorUserId);
+        const items = await Promise.all(Array.from({ length: 12 }, (_, index) => this.listarCumpleanosEmpresa(empresaId, index + 1)));
+        const merged = items.flatMap((monthItems) => monthItems);
+        merged.sort((a, b) => {
+            const monthCompare = a.mes - b.mes;
+            if (monthCompare !== 0)
+                return monthCompare;
+            const dayCompare = a.dia - b.dia;
+            if (dayCompare !== 0)
+                return dayCompare;
+            return a.nombre.localeCompare(b.nombre);
+        });
+        return merged;
+    }
     async cumpleanosHoyActor(actorUserId) {
         const actor = await this.obtenerUsuarioActor(actorUserId);
         const hoy = this.hoyBogota();

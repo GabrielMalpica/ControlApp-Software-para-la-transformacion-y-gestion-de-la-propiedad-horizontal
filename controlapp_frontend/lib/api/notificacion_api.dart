@@ -69,6 +69,20 @@ class NotificacionApi {
         .toList();
   }
 
+  Future<List<CumpleaneroModel>> listarCumpleanosAnio() async {
+    final resp = await _client.get('/notificaciones/cumpleanos/anio');
+    if (resp.statusCode != 200) {
+      throw Exception('Error listando cumpleanos del anio: ${resp.body}');
+    }
+
+    final decoded = jsonDecode(resp.body);
+    if (decoded is! List) return [];
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(CumpleaneroModel.fromJson)
+        .toList();
+  }
+
   Future<CumpleanosHoyModel> obtenerCumpleanosHoy() async {
     final resp = await _client.get('/notificaciones/cumpleanos/hoy');
     if (resp.statusCode != 200) {
