@@ -1896,64 +1896,84 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   Widget _buildHerramientaPlanRow(int index) {
     final row = _herramientasPlanRows[index];
+    final seleccionada = row.herramientaId == null
+        ? null
+        : _catalogoHerramientas.where((h) => h.herramientaId == row.herramientaId).cast<HerramientaDisponibilidadResponse?>().firstWhere(
+              (h) => h != null,
+              orElse: () => null,
+            );
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            flex: 3,
-            child: DropdownButtonFormField<int>(
-              decoration: const InputDecoration(
-                labelText: 'Herramienta',
-                border: OutlineInputBorder(),
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: DropdownButtonFormField<int>(
+                  decoration: const InputDecoration(
+                    labelText: 'Herramienta',
+                    border: OutlineInputBorder(),
+                  ),
+                  initialValue: row.herramientaId,
+                  items: _herramientaItems,
+                  onChanged: (v) => setState(() => row.herramientaId = v),
+                ),
               ),
-              initialValue: row.herramientaId,
-              items: _herramientaItems,
-              onChanged: (v) => setState(() => row.herramientaId = v),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: row.cantidadCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Cantidad',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(
+                    labelText: 'Estado',
+                    border: OutlineInputBorder(),
+                  ),
+                  initialValue: row.estado ?? 'OPERATIVA',
+                  items: const [
+                    DropdownMenuItem(value: 'OPERATIVA', child: Text('Operativa')),
+                    DropdownMenuItem(value: 'DANADA', child: Text('Dañada')),
+                    DropdownMenuItem(value: 'PERDIDA', child: Text('Perdida')),
+                    DropdownMenuItem(value: 'BAJA', child: Text('Baja')),
+                  ],
+                  onChanged: (v) => setState(() => row.estado = v ?? 'OPERATIVA'),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () {
+                  setState(() {
+                    row.cantidadCtrl.dispose();
+                    _herramientasPlanRows.removeAt(index);
+                  });
+                },
+              ),
+            ],
+          ),
+          if (seleccionada != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Disponible ahora -> conjunto: ${seleccionada.disponibleConjunto} · empresa: ${seleccionada.disponibleEmpresa}. Al crear la tarea se reserva primero del conjunto y, si no alcanza, desde empresa.',
+                ),
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 2,
-            child: TextFormField(
-              controller: row.cantidadCtrl,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Cantidad',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 2,
-            child: DropdownButtonFormField<String>(
-              decoration: const InputDecoration(
-                labelText: 'Estado',
-                border: OutlineInputBorder(),
-              ),
-              initialValue: row.estado ?? 'OPERATIVA',
-              items: const [
-                DropdownMenuItem(value: 'OPERATIVA', child: Text('Operativa')),
-                DropdownMenuItem(value: 'DANADA', child: Text('Dañada')),
-                DropdownMenuItem(value: 'PERDIDA', child: Text('Perdida')),
-                DropdownMenuItem(value: 'BAJA', child: Text('Baja')),
-              ],
-              onChanged: (v) => setState(() => row.estado = v ?? 'OPERATIVA'),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () {
-              setState(() {
-                row.cantidadCtrl.dispose();
-                _herramientasPlanRows.removeAt(index);
-              });
-            },
-          ),
         ],
       ),
     );

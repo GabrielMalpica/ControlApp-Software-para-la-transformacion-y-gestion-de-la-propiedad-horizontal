@@ -112,6 +112,7 @@ class HerramientaStockService {
             this.prisma.conjuntoHerramientaStock.findMany({
                 where: {
                     conjuntoId: this.conjuntoId,
+                    cantidad: { gt: 0 },
                     ...(estado ? { estado } : {}),
                 },
                 include: { herramienta: true },

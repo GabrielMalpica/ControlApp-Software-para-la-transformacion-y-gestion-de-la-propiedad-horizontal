@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/pages/agenda_herramientas_page.dart';
 import 'package:flutter_application_1/pages/agenda_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.dart';
 import 'package:flutter_application_1/pages/crear_herramienta_page.dart';
 import 'package:flutter_application_1/pages/festivos_page.dart';
+import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
@@ -18,6 +20,7 @@ import 'package:flutter_application_1/pages/gerente/reportes_general_dashboard_p
 import 'package:flutter_application_1/pages/gerente/usuarios_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/zonificacion_page.dart';
 import 'package:flutter_application_1/pages/lista_herramientas_page.dart';
+import 'package:flutter_application_1/pages/stock_herramientas_empresa_page.dart';
 import 'package:flutter_application_1/pages/preventivas_page.dart';
 import 'package:flutter_application_1/pages/tareas_page.dart';
 import 'package:flutter_application_1/service/app_error.dart';
@@ -75,6 +78,7 @@ enum _QuickAction {
   catalogoInsumos,
   catalogoMaquinaria,
   catalogoHerramientas,
+  stockHerramientasEmpresa,
 
   // Tareas
   tareaCrear,
@@ -82,6 +86,7 @@ enum _QuickAction {
   // Solicitudes
   solicitudInsumo,
   agendaMaquinaria,
+  agendaHerramientas,
 
   // Cronogramas
   cronogramaCrear,
@@ -332,6 +337,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         Icons.handyman_outlined,
         enabled: true,
       ),
+      item(
+        _QuickAction.stockHerramientasEmpresa,
+        "Stock herramientas empresa",
+        Icons.inventory_2,
+        enabled: true,
+      ),
 
       const PopupMenuDivider(),
 
@@ -356,6 +367,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         _QuickAction.agendaMaquinaria,
         "Agenda maquinaria",
         Icons.precision_manufacturing,
+        enabled: enabledNit,
+      ),
+      item(
+        _QuickAction.agendaHerramientas,
+        "Agenda herramientas",
+        Icons.handyman,
         enabled: enabledNit,
       ),
 
@@ -423,8 +440,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         return;
 
       case _QuickAction.crearHerramienta:
-        if (!_requiereConjuntoOrWarn()) return;
-        await go(CrearHerramientaPage(empresaId: AppConstants.empresaNit));
+        await go(const CrearHerramientaPage());
         return;
 
       case _QuickAction.catalogoInsumos:
@@ -438,8 +454,11 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         return;
 
       case _QuickAction.catalogoHerramientas:
-        if (!_requiereConjuntoOrWarn()) return;
-        await go(ListaHerramientasPage(empresaId: AppConstants.empresaNit));
+        await go(const ListaHerramientasPage());
+        return;
+
+      case _QuickAction.stockHerramientasEmpresa:
+        await go(const StockHerramientasEmpresaPage());
         return;
 
       case _QuickAction.tareaCrear:
@@ -456,6 +475,13 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         if (!_requiereConjuntoOrWarn()) return;
         await go(
           AgendaMaquinariaGlobalExcelPage(empresaNit: AppConstants.empresaNit),
+        );
+        return;
+
+      case _QuickAction.agendaHerramientas:
+        if (!_requiereConjuntoOrWarn()) return;
+        await go(
+          AgendaHerramientasGlobalPage(empresaNit: AppConstants.empresaNit),
         );
         return;
 
@@ -575,6 +601,14 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             context,
             MaterialPageRoute(
               builder: (_) => AgendaMaquinariaPage(conjuntoId: nit),
+            ),
+          );
+        }),
+        _Tile("Herramientas", Icons.handyman, Colors.orange, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AgendaHerramientasPage(conjuntoId: nit),
             ),
           );
         }),

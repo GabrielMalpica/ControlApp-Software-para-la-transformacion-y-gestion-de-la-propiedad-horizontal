@@ -454,6 +454,13 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                       onChanged: (value) => setStateDialog(() => query = value),
                     ),
                     const SizedBox(height: 12),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Si hay stock propio del conjunto se usa primero. Si no alcanza, la reserva sale del stock de empresa.',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Flexible(
                       child: ListView.builder(
                         shrinkWrap: true,
@@ -465,7 +472,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                             contentPadding: EdgeInsets.zero,
                             title: Text(h.nombre),
                             subtitle: Text(
-                              '${h.categoria.label} · C:${h.disponibleConjunto} E:${h.disponibleEmpresa}',
+                              '${h.categoria.label} · conjunto: ${h.disponibleConjunto} · empresa: ${h.disponibleEmpresa} · total: ${h.totalDisponible}',
                             ),
                             trailing: SizedBox(
                               width: 96,
@@ -489,6 +496,13 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                                   }
                                 },
                               ),
+                            ),
+                            isThreeLine: true,
+                            dense: false,
+                            leading: Icon(
+                              h.disponibleConjunto > 0
+                                  ? Icons.home_repair_service_outlined
+                                  : Icons.inventory_2_outlined,
                             ),
                           );
                         },

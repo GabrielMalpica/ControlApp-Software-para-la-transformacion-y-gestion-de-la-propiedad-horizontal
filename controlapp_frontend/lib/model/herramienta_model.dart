@@ -41,6 +41,17 @@ extension ModoControlHerramientaExt on ModoControlHerramienta {
 
   /// Valor que espera el backend (Prisma enum)
   String get backendValue => name; // PRESTAMO | CONSUMO | VIDA_CORTA
+
+  String get descripcion {
+    switch (this) {
+      case ModoControlHerramienta.PRESTAMO:
+        return 'Se presta desde empresa o conjunto y luego se devuelve.';
+      case ModoControlHerramienta.CONSUMO:
+        return 'Se descuenta por cantidad cuando se entrega o se consume.';
+      case ModoControlHerramienta.VIDA_CORTA:
+        return 'Se controla como stock, pero normalmente se reemplaza por desgaste.';
+    }
+  }
 }
 
 /// Estado del stock por conjunto

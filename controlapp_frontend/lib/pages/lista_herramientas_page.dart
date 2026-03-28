@@ -1,19 +1,18 @@
-// lib/pages/gerente/lista_herramientas_page.dart
 import 'package:flutter/material.dart';
-import '../../api/herramienta_api.dart';
-import '../../model/herramienta_model.dart';
-import '../../service/app_error.dart';
 
+import '../api/herramienta_api.dart';
+import '../model/herramienta_model.dart';
+import '../service/app_constants.dart';
+import '../service/app_error.dart';
+import '../service/theme.dart';
+import 'crear_herramienta_page.dart';
+import 'stock_herramientas_empresa_page.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 
-/// ✅ Lista del CATÁLOGO de herramientas (empresa).
-/// Esto NO es el inventario del conjunto.
-/// - Se crea/edita/elimina "Martillo, Escoba, Alicate..."
-/// - Luego, en otra pantalla, se asignan cantidades al conjunto (stock).
 class ListaHerramientasPage extends StatefulWidget {
-  final String empresaId;
+  final String? empresaId;
 
-  const ListaHerramientasPage({super.key, required this.empresaId});
+  const ListaHerramientasPage({super.key, this.empresaId});
 
   @override
   State<ListaHerramientasPage> createState() => _ListaHerramientasPageState();
@@ -21,14 +20,14 @@ class ListaHerramientasPage extends StatefulWidget {
 
 class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
   final _api = HerramientaApi();
-
-  bool _cargando = false;
-  String? _error;
-
   final _searchCtrl = TextEditingController();
-  String _search = "";
 
+  bool _loading = false;
+  String? _error;
+  String _search = '';
   List<HerramientaResponse> _items = [];
+
+  String get _empresaId => widget.empresaId ?? AppConstants.empresaNit;
 
   @override
   void initState() {
@@ -44,22 +43,22 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
 
   Future<void> _load() async {
     setState(() {
-      _cargando = true;
+      _loading = true;
       _error = null;
     });
 
     try {
       final out = await _api.listarHerramientas(
-        empresaId: widget.empresaId,
+        empresaId: _empresaId,
         nombre: _search.trim().isEmpty ? null : _search.trim(),
         take: 100,
         skip: 0,
       );
 
-      final data = (out["data"] as List?) ?? [];
+      final data = (out['data'] as List?) ?? [];
       final parsed = data
           .whereType<Map>()
-          .map((e) => HerramientaResponse.fromJson(e.cast<String, dynamic>()))
+          .map((row) => HerramientaResponse.fromJson(row.cast<String, dynamic>()))
           .toList();
 
       if (!mounted) return;
@@ -68,28 +67,35 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
       if (!mounted) return;
       setState(() => _error = AppError.messageOf(e));
     } finally {
-      if (mounted) setState(() => _cargando = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _confirmDelete(HerramientaResponse h) async {
+  Future<void> _openCreate() async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => CrearHerramientaPage(empresaId: _empresaId)),
+    );
+    if (changed == true) {
+      await _load();
+    }
+  }
+
+  Future<void> _confirmDelete(HerramientaResponse item) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Eliminar herramienta"),
+        title: const Text('Eliminar herramienta'),
         content: Text(
-          "Vas a eliminar “${h.nombre}”.\n"
-          "Si está relacionada con stock/solicitudes/usos, el backend no la dejará.\n\n"
-          "¿Continuamos o le perdonamos la vida? 😄",
+          'Se eliminara ${item.nombre} del catalogo. Si ya tiene stock, prestamos o solicitudes relacionadas, el backend no la dejara borrar.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancelar"),
+            child: const Text('Cancelar'),
           ),
-          ElevatedButton(
+          FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text("Eliminar"),
+            child: const Text('Eliminar'),
           ),
         ],
       ),
@@ -98,329 +104,294 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
     if (ok != true) return;
 
     try {
-      await _api.eliminarHerramienta(herramientaId: h.id);
+      await _api.eliminarHerramienta(herramientaId: item.id);
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
-        const SnackBar(content: Text("🧹 Herramienta eliminada.")),
+        SnackBar(content: Text('${item.nombre} eliminada del catalogo.')),
       );
       await _load();
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
-        SnackBar(content: Text("❌ ${e.toString()}")),
+        SnackBar(content: Text(AppError.messageOf(e))),
       );
     }
   }
 
-  String _modoLabel(ModoControlHerramienta m) => m.label;
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text("Catálogo de herramientas"),
+        title: const Text('Herramientas de la empresa'),
+        backgroundColor: AppTheme.primary,
         actions: [
           IconButton(
-            tooltip: "Refrescar",
-            onPressed: _cargando ? null : _load,
-            icon: const Icon(Icons.refresh),
+            tooltip: 'Ver stock empresa',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => StockHerramientasEmpresaPage(empresaId: _empresaId),
+                ),
+              );
+            },
+            icon: const Icon(Icons.inventory_2_outlined),
           ),
+          IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openCreate,
+        icon: const Icon(Icons.add),
+        label: const Text('Nueva herramienta'),
       ),
       body: SafeArea(
         child: Column(
           children: [
-            // Header: Empresa + Buscador
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "Empresa: ${widget.empresaId}",
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 8),
+                  _HeaderCard(totalTipos: _items.length),
+                  const SizedBox(height: 12),
                   TextField(
                     controller: _searchCtrl,
                     decoration: InputDecoration(
-                      labelText: "Buscar",
-                      hintText: "Escribe: martillo, escoba, alicate...",
-                      border: const OutlineInputBorder(),
+                      labelText: 'Buscar herramienta',
+                      hintText: 'Nombre, categoria, unidad o modo',
                       prefixIcon: const Icon(Icons.search),
+                      border: const OutlineInputBorder(),
                       suffixIcon: _searchCtrl.text.trim().isEmpty
                           ? null
                           : IconButton(
-                              icon: const Icon(Icons.clear),
                               onPressed: () {
                                 _searchCtrl.clear();
-                                setState(() => _search = "");
+                                setState(() => _search = '');
                                 _load();
                               },
+                              icon: const Icon(Icons.clear),
                             ),
                     ),
-                    onChanged: (v) => setState(() => _search = v),
+                    onChanged: (value) => setState(() => _search = value),
                     onSubmitted: (_) => _load(),
                   ),
-                  const SizedBox(height: 8),
-                  _InfoBanner(),
                 ],
               ),
             ),
-
-            const SizedBox(height: 4),
-
-            // Contenido
             Expanded(
-              child: _cargando
+              child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
-                  ? _ErrorView(message: _error!, onRetry: _load)
+                  ? _StateCard(
+                      icon: Icons.error_outline,
+                      title: 'No se pudieron cargar las herramientas',
+                      message: _error!,
+                      actionLabel: 'Reintentar',
+                      onAction: _load,
+                    )
                   : _items.isEmpty
-                  ? _EmptyView(
-                      onCreatePressed: () {
-                        // Aquí navegas a tu CrearHerramientaPage
-                        // y al volver, refrescas:
-                        // final changed = await Navigator.push(...);
-                        // if (changed == true) _load();
-                        AppFeedback.showFromSnackBar(
-                          context,
-                          const SnackBar(
-                            content: Text(
-                              "Abre tu CrearHerramientaPage desde aquí 👍",
-                            ),
-                          ),
-                        );
-                      },
+                  ? _StateCard(
+                      icon: Icons.handyman_outlined,
+                      title: 'Aun no hay herramientas en la empresa',
+                      message:
+                          'Primero crea la herramienta en el catalogo. El stock de empresa se administra en la pantalla separada de stock empresa.',
+                      actionLabel: 'Crear herramienta',
+                      onAction: _openCreate,
                     )
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
+                        itemBuilder: (context, index) => _ToolCard(
+                          item: _items[index],
+                          onDelete: () => _confirmDelete(_items[index]),
+                        ),
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
                         itemCount: _items.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, index) {
-                          final h = _items[index];
-
-                          return Card(
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              side: const BorderSide(color: Colors.black12),
-                            ),
-                            child: ListTile(
-                              title: Text(
-                                h.nombre,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              subtitle: Padding(
-                                padding: const EdgeInsets.only(top: 6),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 6,
-                                      children: [
-                                        _ChipInfo(
-                                          icon: Icons.straighten,
-                                          text: "Unidad: ${h.unidad}",
-                                        ),
-                                        _ChipInfo(
-                                          icon: Icons.category_outlined,
-                                          text: 'Categoria: ${h.categoria.label}',
-                                        ),
-                                        _ChipInfo(
-                                          icon: Icons.settings_suggest,
-                                          text:
-                                              "Control: ${_modoLabel(h.modoControl)}",
-                                        ),
-                                        _ChipInfo(
-                                          icon: Icons.warehouse_outlined,
-                                          text:
-                                              'Stock empresa: ${h.stockEmpresa ?? 0}',
-                                        ),
-                                        if (h.vidaUtilDias != null)
-                                          _ChipInfo(
-                                            icon: Icons.timer_outlined,
-                                            text:
-                                                "Vida útil: ${h.vidaUtilDias} días",
-                                          ),
-                                        if (h.umbralBajo != null)
-                                          _ChipInfo(
-                                            icon: Icons.warning_amber_rounded,
-                                            text: "Umbral: ${h.umbralBajo}",
-                                          ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              trailing: PopupMenuButton<String>(
-                                onSelected: (v) async {
-                                  if (v == "delete") {
-                                    await _confirmDelete(h);
-                                  } else if (v == "edit") {
-                                    AppFeedback.showFromSnackBar(
-                                      context,
-                                      const SnackBar(
-                                        content: Text(
-                                          "Aquí conectas tu EditarHerramientaPage ✍️",
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(
-                                    value: "edit",
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.edit, size: 18),
-                                        SizedBox(width: 8),
-                                        Text("Editar"),
-                                      ],
-                                    ),
-                                  ),
-                                  PopupMenuItem(
-                                    value: "delete",
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.delete_outline, size: 18),
-                                        SizedBox(width: 8),
-                                        Text("Eliminar"),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              onTap: () {
-                                // Si quieres, al tocar podrías ir al detalle
-                              },
-                            ),
-                          );
-                        },
                       ),
                     ),
             ),
           ],
         ),
       ),
-
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          // Ejemplo:
-          // final changed = await Navigator.push(
-          //   context,
-          //   MaterialPageRoute(builder: (_) => CrearHerramientaPage(empresaId: widget.empresaId)),
-          // );
-          // if (changed == true) _load();
-
-          AppFeedback.showFromSnackBar(
-            context,
-            const SnackBar(
-              content: Text("Conecta aquí tu CrearHerramientaPage ✅"),
-            ),
-          );
-        },
-        icon: const Icon(Icons.add),
-        label: const Text("Nueva"),
-      ),
     );
   }
 }
 
-// =========================
-// Widgets auxiliares
-// =========================
+class _HeaderCard extends StatelessWidget {
+  final int totalTipos;
 
-class _InfoBanner extends StatelessWidget {
+  const _HeaderCard({required this.totalTipos});
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black12),
+        gradient: LinearGradient(
+          colors: [AppTheme.primary, AppTheme.primary.withValues(alpha: 0.78)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
       ),
-      child: const Text(
-        "Esto es el CATÁLOGO (tipo de herramienta).\n"
-        "Aquí defines “Martillo, Escoba…” con su modo de control.\n"
-        "El INVENTARIO del conjunto (cantidades) es otra pantalla aparte.",
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Aqui administras solo las herramientas de la empresa',
+            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Aqui solo defines el catalogo base. El stock de empresa se maneja en otra pantalla y el stock propio del conjunto se registra desde el inventario de cada conjunto.',
+            style: TextStyle(color: Colors.white70),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _MetricChip(label: 'Tipos en catalogo', value: '$totalTipos'),
+            ],
+          ),
+        ],
       ),
     );
   }
 }
 
-class _ChipInfo extends StatelessWidget {
-  final IconData icon;
+class _MetricChip extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _MetricChip({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          Text(label, style: const TextStyle(color: Colors.white70)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToolCard extends StatelessWidget {
+  final HerramientaResponse item;
+  final VoidCallback onDelete;
+
+  const _ToolCard({
+    required this.item,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.nombre, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${item.categoria.label} · ${item.modoControl.label}',
+                      style: TextStyle(color: Colors.grey.shade700),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Eliminar herramienta',
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _PlainChip(text: 'Unidad: ${item.unidad}'),
+              if (item.umbralBajo != null) _PlainChip(text: 'Alerta: ${item.umbralBajo}'),
+              if (item.vidaUtilDias != null) _PlainChip(text: 'Vida util: ${item.vidaUtilDias} dias'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Text(item.modoControl.descripcion),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlainChip extends StatelessWidget {
   final String text;
 
-  const _ChipInfo({required this.icon, required this.text});
+  const _PlainChip({required this.text});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.03),
+        color: Colors.grey.shade100,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black12),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [Icon(icon, size: 16), const SizedBox(width: 6), Text(text)],
-      ),
+      child: Text(text),
     );
   }
 }
 
-class _EmptyView extends StatelessWidget {
-  final VoidCallback onCreatePressed;
-
-  const _EmptyView({required this.onCreatePressed});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.build_circle_outlined, size: 54),
-            const SizedBox(height: 10),
-            const Text(
-              "No hay herramientas en el catálogo",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              "Crea la primera (ej: Martillo) y luego la asignas a los conjuntos con cantidades.",
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 14),
-            ElevatedButton.icon(
-              onPressed: onCreatePressed,
-              icon: const Icon(Icons.add),
-              label: const Text("Crear herramienta"),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorView extends StatelessWidget {
+class _StateCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
   final String message;
-  final VoidCallback onRetry;
+  final String actionLabel;
+  final VoidCallback onAction;
 
-  const _ErrorView({required this.message, required this.onRetry});
+  const _StateCard({
+    required this.icon,
+    required this.title,
+    required this.message,
+    required this.actionLabel,
+    required this.onAction,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -430,19 +401,16 @@ class _ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 54),
-            const SizedBox(height: 10),
-            const Text(
-              "Algo salió mal",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
+            Icon(icon, size: 56, color: Colors.grey.shade700),
+            const SizedBox(height: 12),
+            Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 14),
-            ElevatedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text("Reintentar"),
+            FilledButton.icon(
+              onPressed: onAction,
+              icon: const Icon(Icons.arrow_forward),
+              label: Text(actionLabel),
             ),
           ],
         ),

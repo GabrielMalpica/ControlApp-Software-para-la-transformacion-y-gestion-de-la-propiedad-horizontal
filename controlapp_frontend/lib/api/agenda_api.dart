@@ -1,5 +1,6 @@
 // agenda_api.dart
 import 'dart:convert';
+import 'package:flutter_application_1/model/agenda_herramienta_model.dart';
 import 'package:flutter_application_1/model/agenda_maquinaria_model.dart';
 import 'package:flutter_application_1/model/agenda_model.dart';
 import 'package:flutter_application_1/service/api_client.dart';
@@ -60,5 +61,29 @@ class AgendaApi {
       throw Exception('Error agenda global: ${resp.statusCode} ${resp.body}');
     }
     return AgendaGlobalResponse.fromJson(jsonDecode(resp.body));
+  }
+
+  Future<AgendaHerramientaResponse> agendaGlobalHerramientas({
+    required String empresaNit,
+    required int anio,
+    required int mes,
+    String? categoria,
+  }) async {
+    final uri =
+        Uri.parse(
+          '${AppConstants.baseUrl}/agenda/empresa/$empresaNit/herramientas',
+        ).replace(
+          queryParameters: {
+            'anio': anio.toString(),
+            'mes': mes.toString(),
+            if (categoria != null && categoria.isNotEmpty) 'categoria': categoria,
+          },
+        );
+
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      throw Exception('Error agenda herramientas: ${resp.statusCode} ${resp.body}');
+    }
+    return AgendaHerramientaResponse.fromJson(jsonDecode(resp.body));
   }
 }

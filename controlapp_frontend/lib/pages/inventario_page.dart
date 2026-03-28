@@ -570,6 +570,22 @@ class _InventarioPageState extends State<InventarioPage> {
 
             const SizedBox(height: 12),
 
+            if (_tipoInventario == TipoInventario.HERRAMIENTAS) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: const Text(
+                  'Aqui ves solo herramientas que este conjunto ya tiene: propias del conjunto o prestadas por la empresa. El stock general de empresa se maneja en Herramientas de la empresa.',
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
             // ===== Buscador + chips =====
             Row(
               children: [

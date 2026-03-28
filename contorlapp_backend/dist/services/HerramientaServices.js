@@ -32,21 +32,6 @@ class HerramientaService {
                 },
                 update: {},
             });
-            const conjuntos = await tx.conjunto.findMany({
-                where: { empresaId: data.empresaId },
-                select: { nit: true },
-            });
-            if (conjuntos.length) {
-                await tx.conjuntoHerramientaStock.createMany({
-                    data: conjuntos.map((c) => ({
-                        conjuntoId: c.nit,
-                        herramientaId: creada.id,
-                        cantidad: 0,
-                        estado: "OPERATIVA",
-                    })),
-                    skipDuplicates: true,
-                });
-            }
             return creada;
         });
     }

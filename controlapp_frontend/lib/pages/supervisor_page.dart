@@ -12,6 +12,7 @@ import '../service/theme.dart';
 
 import 'solicitudes_page.dart';
 import 'agenda_maquinaria_page.dart';
+import 'agenda_herramientas_page.dart';
 import 'inventario_page.dart';
 import 'cronograma_page.dart';
 import 'reportes_page.dart';
@@ -278,6 +279,15 @@ class _SupervisorPageState extends State<SupervisorPage> {
                           onTap: () {
                             if (!_requiereConjuntoOrWarn()) return;
                             _go(AgendaMaquinariaPage(conjuntoId: nit));
+                          },
+                        ),
+                        _smallCard(
+                          'Herramientas',
+                          Icons.handyman,
+                          Colors.orange,
+                          onTap: () {
+                            if (!_requiereConjuntoOrWarn()) return;
+                            _go(AgendaHerramientasPage(conjuntoId: nit));
                           },
                         ),
                         _smallCard(
