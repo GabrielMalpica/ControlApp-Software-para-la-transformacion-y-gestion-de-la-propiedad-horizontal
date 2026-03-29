@@ -24,6 +24,16 @@ exports.CrearUsuarioDTO = zod_1.z.object({
     fechaNacimiento: zod_1.z.coerce.date(),
     activo: zod_1.z.boolean().optional(),
     patronJornada: zod_1.z.nativeEnum(client_1.PatronJornada).optional().nullable(),
+    disponibilidadPeriodos: zod_1.z
+        .array(zod_1.z.object({
+        id: zod_1.z.number().int().positive().optional(),
+        fechaInicio: zod_1.z.coerce.date(),
+        fechaFin: zod_1.z.coerce.date().optional().nullable(),
+        trabajaDomingo: zod_1.z.boolean().default(false),
+        diaDescanso: zod_1.z.nativeEnum(client_1.DiaSemana).optional().nullable(),
+        observaciones: zod_1.z.string().optional().nullable(),
+    }))
+        .optional(),
     direccion: zod_1.z.string().optional().nullable(),
     estadoCivil: zod_1.z.nativeEnum(client_1.EstadoCivil).optional().nullable(),
     numeroHijos: zod_1.z.coerce.number().int().min(0).optional(),
@@ -68,6 +78,16 @@ exports.EditarUsuarioDTO = zod_1.z.object({
     jornadaLaboral: zod_1.z.nativeEnum(client_1.JornadaLaboral).optional(),
     activo: zod_1.z.boolean().optional(),
     patronJornada: zod_1.z.nativeEnum(client_1.PatronJornada).optional().nullable(),
+    disponibilidadPeriodos: zod_1.z
+        .array(zod_1.z.object({
+        id: zod_1.z.number().int().positive().optional(),
+        fechaInicio: zod_1.z.coerce.date(),
+        fechaFin: zod_1.z.coerce.date().optional().nullable(),
+        trabajaDomingo: zod_1.z.boolean().default(false),
+        diaDescanso: zod_1.z.nativeEnum(client_1.DiaSemana).optional().nullable(),
+        observaciones: zod_1.z.string().optional().nullable(),
+    }))
+        .optional(),
 });
 /** ---------- SELECT reutilizable para Prisma (oculta contrasena) ---------- */
 exports.usuarioPublicSelect = {
@@ -91,6 +111,21 @@ exports.usuarioPublicSelect = {
     tipoContrato: true,
     jornadaLaboral: true,
     patronJornada: true,
+    operario: {
+        select: {
+            disponibilidadPeriodos: {
+                select: {
+                    id: true,
+                    fechaInicio: true,
+                    fechaFin: true,
+                    trabajaDomingo: true,
+                    diaDescanso: true,
+                    observaciones: true,
+                },
+                orderBy: [{ fechaInicio: "desc" }],
+            },
+        },
+    },
 };
 /** Helper para castear el result de Prisma con ese select a UsuarioPublico */
 function toUsuarioPublico(row) {

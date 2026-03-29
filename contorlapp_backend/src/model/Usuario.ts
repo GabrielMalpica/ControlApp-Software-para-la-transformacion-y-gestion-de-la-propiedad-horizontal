@@ -5,6 +5,7 @@ import { z } from "zod";
  */
 import {
   EPS,
+  DiaSemana,
   EstadoCivil,
   FondoPension,
   JornadaLaboral,
@@ -49,6 +50,14 @@ export interface UsuarioDominio {
 
   jornadaLaboral?: JornadaLaboral | null;
   patronJornada?: PatronJornada | null;
+  disponibilidadPeriodos?: Array<{
+    id?: number;
+    fechaInicio: Date;
+    fechaFin?: Date | null;
+    trabajaDomingo: boolean;
+    diaDescanso?: DiaSemana | null;
+    observaciones?: string | null;
+  }>;
 }
 
 /** Lo que devolvemos públicamente (sin contraseña) */
@@ -71,6 +80,18 @@ export const CrearUsuarioDTO = z.object({
   fechaNacimiento: z.coerce.date(),
   activo: z.boolean().optional(),
   patronJornada: z.nativeEnum(PatronJornada).optional().nullable(),
+  disponibilidadPeriodos: z
+    .array(
+      z.object({
+        id: z.number().int().positive().optional(),
+        fechaInicio: z.coerce.date(),
+        fechaFin: z.coerce.date().optional().nullable(),
+        trabajaDomingo: z.boolean().default(false),
+        diaDescanso: z.nativeEnum(DiaSemana).optional().nullable(),
+        observaciones: z.string().optional().nullable(),
+      }),
+    )
+    .optional(),
 
   direccion: z.string().optional().nullable(),
   estadoCivil: z.nativeEnum(EstadoCivil).optional().nullable(),
@@ -120,6 +141,18 @@ export const EditarUsuarioDTO = z.object({
   jornadaLaboral: z.nativeEnum(JornadaLaboral).optional(),
   activo: z.boolean().optional(),
   patronJornada: z.nativeEnum(PatronJornada).optional().nullable(),
+  disponibilidadPeriodos: z
+    .array(
+      z.object({
+        id: z.number().int().positive().optional(),
+        fechaInicio: z.coerce.date(),
+        fechaFin: z.coerce.date().optional().nullable(),
+        trabajaDomingo: z.boolean().default(false),
+        diaDescanso: z.nativeEnum(DiaSemana).optional().nullable(),
+        observaciones: z.string().optional().nullable(),
+      }),
+    )
+    .optional(),
 });
 
 /** ---------- SELECT reutilizable para Prisma (oculta contrasena) ---------- */
@@ -144,13 +177,26 @@ export const usuarioPublicSelect = {
   tipoContrato: true,
   jornadaLaboral: true,
   patronJornada: true,
-} as const;
+  operario: {
+    select: {
+      disponibilidadPeriodos: {
+        select: {
+          id: true,
+          fechaInicio: true,
+          fechaFin: true,
+          trabajaDomingo: true,
+          diaDescanso: true,
+          observaciones: true,
+        },
+        orderBy: [{ fechaInicio: "desc" as const }],
+      },
+    },
+  },
+} as any;
 
 /** Helper para castear el result de Prisma con ese select a UsuarioPublico */
-export function toUsuarioPublico<
-  T extends Record<keyof typeof usuarioPublicSelect, any>,
->(row: T): UsuarioPublico {
-  return row;
+export function toUsuarioPublico(row: any): UsuarioPublico {
+  return row as UsuarioPublico;
 }
 
 export const ListarUsuariosDTO = z.object({

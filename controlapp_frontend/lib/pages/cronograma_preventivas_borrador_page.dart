@@ -598,9 +598,9 @@ class _CronogramaPreventivasBorradorPageState
     String titleForNovedad(NovedadCronogramaModel n) {
       switch (n.tipo) {
         case 'FESTIVO_MOVIDO':
-          return 'Movida por festivo/domingo';
+          return 'Movida por fecha no laborable';
         case 'FESTIVO_OMITIDO':
-          return 'Omitida por festivo/domingo';
+          return 'Omitida por fecha no laborable';
         case 'REEMPLAZO_PRIORIDAD':
           return 'Reemplazo aplicado';
         case 'REQUIERE_CONFIRMACION_REEMPLAZO':
@@ -637,19 +637,14 @@ class _CronogramaPreventivasBorradorPageState
         final fN = parseYmd(n.fechaNueva);
         final movidaSiguienteDia =
             fO != null && fN != null && fN.difference(fO).inDays == 1;
-        final fechaOriginalEsDomingo = fO?.weekday == DateTime.sunday;
-        final motivo = fechaOriginalEsDomingo
-            ? (movidaSiguienteDia
-                  ? 'Se movio al siguiente dia porque la fecha original era domingo.'
-                  : 'Se reprogramo porque la fecha original era domingo.')
-            : (movidaSiguienteDia
-                  ? 'Se movio al siguiente dia porque la fecha original era festiva.'
-                  : 'Se reprogramo porque la fecha original era festivo.');
+        final motivo = movidaSiguienteDia
+            ? 'Se movio al siguiente dia porque la fecha original no era laborable.'
+            : 'Se reprogramo porque la fecha original no era laborable.';
         return '$desc\n$pr\n$motivo\n${n.fechaOriginal ?? '-'} -> ${n.fechaNueva ?? '-'}';
       }
 
       if (n.tipo == 'FESTIVO_OMITIDO') {
-        return '$desc\n$pr\nNo se programo la tarea por festivo/domingo.\nFecha: $fecha';
+        return '$desc\n$pr\nNo se programo la tarea por fecha no laborable.\nFecha: $fecha';
       }
 
       if (n.tipo == 'REEMPLAZO_PRIORIDAD') {
@@ -775,8 +770,8 @@ class _CronogramaPreventivasBorradorPageState
                         ),
                         child: Text(
                           novedadesActuales.isEmpty
-                              ? 'No hubo novedades. El borrador se generó sin mover tareas por festivos/domingos y sin reemplazos por prioridad.'
-                              : 'Estas son las novedades detectadas al generar el borrador (movimientos por festivos/domingos, reemplazos por prioridad y/o casos sin hueco).',
+                              ? 'No hubo novedades. El borrador se generó sin mover tareas por fechas no laborables y sin reemplazos por prioridad.'
+                              : 'Estas son las novedades detectadas al generar el borrador (movimientos por fechas no laborables, reemplazos por prioridad y/o casos sin hueco).',
                           style: TextStyle(
                             fontSize: 13,
                             color: Colors.grey.shade900,
@@ -2125,105 +2120,6 @@ class _CronogramaPreventivasBorradorPageState
         final alto = MediaQuery.of(ctx).size.height * 0.8;
         final bloques = _generarBloquesDia(fechaBase);
         return _buildDiaSheet(ctx, alto, bloques, fechaBase);
-
-        _BloqueHora? bloqueSeleccionado;
-
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            void seleccionarBloque(_BloqueHora b) {
-              setModalState(() => bloqueSeleccionado = b);
-            }
-
-            return SizedBox(
-              height: alto,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          'Tareas borrador - $dia ${DateFormat.MMMM('es').format(fechaBase)}',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: ListView.separated(
-                            padding: const EdgeInsets.all(8),
-                            itemCount: bloques.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 4),
-                            itemBuilder: (context, index) {
-                              final b = bloques[index];
-                              final horaIni = TimeOfDay.fromDateTime(
-                                b.inicio,
-                              ).format(ctx);
-                              final horaFin = TimeOfDay.fromDateTime(
-                                b.fin,
-                              ).format(ctx);
-                              final count = b.tareas.length;
-                              final seleccionado = bloqueSeleccionado == b;
-
-                              return Card(
-                                color: seleccionado
-                                    ? AppTheme.primary.withValues(alpha: 0.1)
-                                    : Colors.white,
-                                child: ListTile(
-                                  title: Text('$horaIni - $horaFin'),
-                                  subtitle: Text(
-                                    '$count ${count == 1 ? 'tarea' : 'tareas'}',
-                                  ),
-                                  onTap: () => seleccionarBloque(b),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        Expanded(
-                          flex: 3,
-                          child: bloqueSeleccionado == null
-                              ? const Center(
-                                  child: Text(
-                                    'Selecciona un bloque para ver las tareas.',
-                                  ),
-                                )
-                              : ListView.separated(
-                                  padding: const EdgeInsets.all(8),
-                                  itemCount: bloqueSeleccionado!.tareas.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(height: 8),
-                                  itemBuilder: (context, index) {
-                                    final t = bloqueSeleccionado!.tareas[index];
-                                    return _buildTareaTile(t, ctx);
-                                  },
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
       },
     );
 

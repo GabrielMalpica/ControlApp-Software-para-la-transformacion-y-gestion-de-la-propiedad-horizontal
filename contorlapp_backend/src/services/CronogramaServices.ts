@@ -6,6 +6,10 @@ import {
   construirRutaElemento,
   elementoParentChainInclude,
 } from "../utils/elementoHierarchy";
+import {
+  validarLimiteSemanalOperarios,
+  validarOperariosDisponiblesEnFecha,
+} from "../utils/operarioAvailability";
 
 // DTOs locales de filtros para este servicio
 const OperarioIdDTO = z.object({ operarioId: z.number().int().positive() });
@@ -576,16 +580,48 @@ export class CronogramaService {
       })
       .parse(payload);
 
-    const esDomingo = fechaInicio.getDay() === 0;
     const esFestivo = await isFestivoDate({
       prisma: this.prisma,
       fecha: fechaInicio,
       pais: "CO",
     });
-    if (esDomingo || esFestivo) {
-      throw new Error(
-        "No se permite reprogramar tareas a domingos o festivos.",
+    if (esFestivo) {
+      throw new Error("No se permite reprogramar tareas a festivos.");
+    }
+
+    const tarea = await this.prisma.tarea.findUnique({
+      where: { id: tareaId },
+      select: { operarios: { select: { id: true } } },
+    });
+    const operariosIds = tarea?.operarios.map((o) => o.id) ?? [];
+    if (operariosIds.length) {
+      const disponibilidad = await validarOperariosDisponiblesEnFecha({
+        prisma: this.prisma,
+        fecha: fechaInicio,
+        operariosIds,
+      });
+      if (!disponibilidad.ok) {
+        throw new Error(
+          `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
+        );
+      }
+      const duracionMinutos = Math.max(
+        1,
+        Math.round((fechaFin.getTime() - fechaInicio.getTime()) / 60000),
       );
+      const limite = await validarLimiteSemanalOperarios({
+        prisma: this.prisma,
+        conjuntoId: this.conjuntoId,
+        operariosIds,
+        fechaInicio,
+        duracionMinutos,
+        excluirTareaId: tareaId,
+      });
+      if (!limite.ok) {
+        throw new Error(
+          `Los operarios ${limite.excedidos.join(", ")} superan su limite semanal con esta reprogramacion.`,
+        );
+      }
     }
 
     return this.prisma.tarea.update({

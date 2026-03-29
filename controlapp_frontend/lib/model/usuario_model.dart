@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 class Usuario {
   final String cedula;
   final String nombre;
@@ -20,6 +22,7 @@ class Usuario {
   final List<String>? tipoFunciones;
   final bool activo;
   final String? patronJornada;
+  final List<DisponibilidadOperarioPeriodo> disponibilidadPeriodos;
 
   Usuario({
     required this.cedula,
@@ -43,6 +46,7 @@ class Usuario {
     this.tipoFunciones,
     this.activo = true,
     this.patronJornada,
+    this.disponibilidadPeriodos = const [],
   });
 
   factory Usuario.fromJson(Map<String, dynamic> json) {
@@ -71,6 +75,17 @@ class Usuario {
           .toList(),
       activo: json['activo'] ?? true,
       patronJornada: json['patronJornada'],
+      disponibilidadPeriodos:
+          ((json['operario']?['disponibilidadPeriodos'] as List?) ??
+                  (json['disponibilidadPeriodos'] as List?) ??
+                  const [])
+              .whereType<Map>()
+              .map(
+                (e) => DisponibilidadOperarioPeriodo.fromJson(
+                  e.cast<String, dynamic>(),
+                ),
+              )
+              .toList(),
     );
   }
 
@@ -81,7 +96,7 @@ class Usuario {
       'correo': correo,
       'rol': rol,
       'telefono': telefono.toString(),
-      'fechaNacimiento': fechaNacimiento.toIso8601String(),
+      'fechaNacimiento': DateFormat('yyyy-MM-dd').format(fechaNacimiento),
       'direccion': direccion,
       'estadoCivil': estadoCivil,
       'numeroHijos': numeroHijos,
@@ -96,8 +111,55 @@ class Usuario {
       'jornadaLaboral': jornadaLaboral,
       'activo': activo,
       'patronJornada': patronJornada,
+      'disponibilidadPeriodos': disponibilidadPeriodos
+          .map((e) => e.toJson())
+          .toList(),
       if (tipoFunciones != null && tipoFunciones!.isNotEmpty)
         'tipoFunciones': tipoFunciones,
+    };
+  }
+}
+
+class DisponibilidadOperarioPeriodo {
+  final int? id;
+  final DateTime fechaInicio;
+  final DateTime? fechaFin;
+  final bool trabajaDomingo;
+  final String? diaDescanso;
+  final String? observaciones;
+
+  const DisponibilidadOperarioPeriodo({
+    this.id,
+    required this.fechaInicio,
+    this.fechaFin,
+    this.trabajaDomingo = false,
+    this.diaDescanso,
+    this.observaciones,
+  });
+
+  factory DisponibilidadOperarioPeriodo.fromJson(Map<String, dynamic> json) {
+    return DisponibilidadOperarioPeriodo(
+      id: json['id'] is num
+          ? (json['id'] as num).toInt()
+          : int.tryParse('${json['id']}'),
+      fechaInicio: DateTime.parse(json['fechaInicio'].toString()),
+      fechaFin: json['fechaFin'] == null
+          ? null
+          : DateTime.tryParse(json['fechaFin'].toString()),
+      trabajaDomingo: json['trabajaDomingo'] == true,
+      diaDescanso: json['diaDescanso']?.toString(),
+      observaciones: json['observaciones']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      if (id != null) 'id': id,
+      'fechaInicio': fechaInicio.toIso8601String(),
+      'fechaFin': fechaFin?.toIso8601String(),
+      'trabajaDomingo': trabajaDomingo,
+      'diaDescanso': diaDescanso,
+      'observaciones': observaciones,
     };
   }
 }

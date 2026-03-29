@@ -18,6 +18,7 @@ class GerenteApi {
     DateTime? fechaSalida,
     DateTime? fechaUltimasVacaciones,
     String? observaciones,
+    List<DisponibilidadOperarioPeriodo> disponibilidadPeriodos = const [],
   }) async {
     final url = '${AppConstants.baseUrl}/gerente/operarios';
 
@@ -33,6 +34,8 @@ class GerenteApi {
         'fechaUltimasVacaciones': fechaUltimasVacaciones.toIso8601String(),
       if (observaciones != null && observaciones.trim().isNotEmpty)
         'observaciones': observaciones.trim(),
+      'disponibilidadPeriodos':
+          disponibilidadPeriodos.map((e) => e.toJson()).toList(),
     };
 
     final resp = await _apiClient.post(url, body: body);

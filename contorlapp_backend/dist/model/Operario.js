@@ -24,6 +24,16 @@ exports.CrearOperarioDTO = zod_1.z.object({
     fechaSalida: zod_1.z.coerce.date().optional(),
     fechaUltimasVacaciones: zod_1.z.coerce.date().optional(),
     observaciones: zod_1.z.string().optional(),
+    disponibilidadPeriodos: zod_1.z
+        .array(zod_1.z.object({
+        fechaInicio: zod_1.z.coerce.date(),
+        fechaFin: zod_1.z.coerce.date().optional().nullable(),
+        trabajaDomingo: zod_1.z.boolean().default(false),
+        diaDescanso: zod_1.z.nativeEnum(client_1.DiaSemana).optional().nullable(),
+        observaciones: zod_1.z.string().optional().nullable(),
+    }))
+        .optional()
+        .default([]),
 });
 /** Edición parcial */
 exports.EditarOperarioDTO = zod_1.z.object({
@@ -39,6 +49,16 @@ exports.EditarOperarioDTO = zod_1.z.object({
     fechaUltimasVacaciones: zod_1.z.coerce.date().optional().nullable(),
     observaciones: zod_1.z.string().optional().nullable(),
     empresaId: zod_1.z.string().min(3).optional(),
+    disponibilidadPeriodos: zod_1.z
+        .array(zod_1.z.object({
+        id: zod_1.z.number().int().positive().optional(),
+        fechaInicio: zod_1.z.coerce.date(),
+        fechaFin: zod_1.z.coerce.date().optional().nullable(),
+        trabajaDomingo: zod_1.z.boolean().default(false),
+        diaDescanso: zod_1.z.nativeEnum(client_1.DiaSemana).optional().nullable(),
+        observaciones: zod_1.z.string().optional().nullable(),
+    }))
+        .optional(),
 });
 /* ============== Select estándar para Prisma ============== */
 /**
@@ -59,6 +79,17 @@ exports.operarioPublicSelect = {
     fechaUltimasVacaciones: true,
     observaciones: true,
     empresaId: true,
+    disponibilidadPeriodos: {
+        select: {
+            id: true,
+            fechaInicio: true,
+            fechaFin: true,
+            trabajaDomingo: true,
+            diaDescanso: true,
+            observaciones: true,
+        },
+        orderBy: [{ fechaInicio: "desc" }],
+    },
 };
 /** Helper para castear el resultado del select a tu tipo público */
 function toOperarioPublico(row) {

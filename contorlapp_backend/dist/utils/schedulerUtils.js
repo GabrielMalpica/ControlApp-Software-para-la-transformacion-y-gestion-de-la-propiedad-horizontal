@@ -190,8 +190,7 @@ function siguienteDiaHabil(params) {
         x.setDate(x.getDate() + 1);
         const key = ymdLocal(x);
         const ds = dateToDiaSemana(x);
-        const esDomingo = ds === "DOMINGO";
-        if (!esDomingo && !festivosSet.has(key) && horariosPorDia.has(ds)) {
+        if (!festivosSet.has(key) && horariosPorDia.has(ds)) {
             return new Date(x);
         }
     }
@@ -718,11 +717,10 @@ function findNextValidDay(params) {
         }
         const ds = dateToDiaSemana(cur);
         const esFestivo = festivosSet.has(ymdLocal(cur));
-        const esDomingo = ds === "DOMINGO";
         // ✅ REGLA:
-        // - prioridad 1 y 2: si cae en festivo o domingo, SE MUEVE al siguiente día hábil
-        // - prioridad 3: si cae en festivo o domingo, NO se crea (se omite)
-        if (esFestivo || esDomingo) {
+        // - si cae en festivo, se mueve/omite según prioridad
+        // - el domingo se permite si el conjunto tiene horario para ese día
+        if (esFestivo) {
             if (prioridad === 1 || prioridad === 2) {
                 cur.setDate(cur.getDate() + 1);
                 continue; // sigue buscando el próximo día hábil con horario

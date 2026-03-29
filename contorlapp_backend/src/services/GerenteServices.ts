@@ -21,7 +21,11 @@ import { CrearGerenteDTO } from "../model/Gerente";
 import { CrearAdministradorDTO } from "../model/Administrador";
 import { CrearJefeOperacionesDTO } from "../model/JefeOperaciones";
 import { CrearSupervisorDTO } from "../model/Supervisor";
-import { CrearOperarioDTO, EditarOperarioDTO } from "../model/Operario";
+import {
+  CrearOperarioDTO,
+  EditarOperarioDTO,
+  operarioPublicSelect,
+} from "../model/Operario";
 
 import {
   conjuntoPublicSelect,
@@ -56,6 +60,10 @@ import {
   elementoParentChainInclude,
   elementoTreeInclude,
 } from "../utils/elementoHierarchy";
+import {
+  validarLimiteSemanalOperarios,
+  validarOperariosDisponiblesEnFecha,
+} from "../utils/operarioAvailability";
 
 export const AsignarConReemplazoDTO = z.object({
   tarea: CrearTareaDTO,
@@ -263,19 +271,36 @@ export class GerenteService {
     }
   }
 
+  private validarDisponibilidadOperarioPeriodos(
+    periodos: Array<{
+      trabajaDomingo: boolean;
+      diaDescanso?: string | null;
+    }>,
+  ) {
+    const invalido = periodos.some(
+      (item) =>
+        item.trabajaDomingo &&
+        (!item.diaDescanso || String(item.diaDescanso).toUpperCase() === "DOMINGO"),
+    );
+    if (invalido) {
+      throw new Error(
+        "Si el operario trabaja domingo, debe tener un dia de descanso entre semana en ese periodo.",
+      );
+    }
+  }
+
   private async validarFechaLaborable(fecha: Date) {
-    const esDomingo = fecha.getDay() === 0;
     const esFestivo = await isFestivoDate({
       prisma: this.prisma,
       fecha,
       pais: "CO",
     });
 
-    if (esDomingo || esFestivo) {
+    if (esFestivo) {
       return {
         ok: false as const,
         reason: "FECHA_NO_LABORABLE" as const,
-        message: "No se pueden programar tareas en domingos o festivos.",
+        message: "No se pueden programar tareas en festivos.",
       };
     }
 
@@ -356,6 +381,9 @@ export class GerenteService {
 
   async editarUsuario(id: string, payload: unknown) {
     const dto = EditarUsuarioDTO.parse(payload);
+    if (dto.disponibilidadPeriodos !== undefined) {
+      this.validarDisponibilidadOperarioPeriodos(dto.disponibilidadPeriodos);
+    }
 
     if (dto.correo) {
       const otro = await this.prisma.usuario.findUnique({
@@ -391,7 +419,30 @@ export class GerenteService {
       select: usuarioPublicSelect,
     });
 
-    return actualizado;
+    if (dto.disponibilidadPeriodos !== undefined) {
+      const operario = await this.prisma.operario.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+
+      if (operario) {
+        await this.prisma.operarioDisponibilidadPeriodo.deleteMany({ where: { operarioId: id } });
+        if (dto.disponibilidadPeriodos.length) {
+          await this.prisma.operarioDisponibilidadPeriodo.createMany({
+            data: dto.disponibilidadPeriodos.map((item) => ({
+              operarioId: id,
+              fechaInicio: item.fechaInicio,
+              fechaFin: item.fechaFin ?? null,
+              trabajaDomingo: item.trabajaDomingo,
+              diaDescanso: item.diaDescanso ?? null,
+              observaciones: item.observaciones ?? null,
+            })),
+          });
+        }
+      }
+    }
+
+    return this.prisma.usuario.findUnique({ where: { id }, select: usuarioPublicSelect });
   }
 
   async asignarGerente(payload: unknown) {
@@ -473,6 +524,7 @@ export class GerenteService {
 
   async asignarOperario(payload: unknown) {
     const dto = CrearOperarioDTO.parse(payload);
+    this.validarDisponibilidadOperarioPeriodos(dto.disponibilidadPeriodos);
 
     const [empresa, usuario] = await Promise.all([
       this.prisma.empresa.findFirst(),
@@ -503,8 +555,19 @@ export class GerenteService {
         fechaSalida: dto.fechaSalida ?? null,
         fechaUltimasVacaciones: dto.fechaUltimasVacaciones ?? null,
         observaciones: dto.observaciones ?? null,
+        disponibilidadPeriodos: dto.disponibilidadPeriodos.length
+          ? {
+              create: dto.disponibilidadPeriodos.map((item) => ({
+                fechaInicio: item.fechaInicio,
+                fechaFin: item.fechaFin ?? null,
+                trabajaDomingo: item.trabajaDomingo,
+                diaDescanso: item.diaDescanso ?? null,
+                observaciones: item.observaciones ?? null,
+              })),
+            }
+          : undefined,
       },
-      include: { usuario: true, empresa: true },
+      select: operarioPublicSelect,
     });
   }
 
@@ -1095,12 +1158,21 @@ export class GerenteService {
         : undefined,
     } as any);
 
-    const bloqueosPatron = await buildBloqueosPorPatronJornada({
-      prisma: prisma as any,
-      fechaDia: inicio,
-      horarioDia: { startMin, endMin } as any,
-      operariosIds,
-    });
+      const bloqueosPatron = await buildBloqueosPorPatronJornada({
+        prisma: prisma as any,
+        fechaDia: inicio,
+        horarioDia: {
+          startMin,
+          endMin,
+          descansoStartMin: horario.descansoInicio
+            ? toMin(horario.descansoInicio)
+            : undefined,
+          descansoEndMin: horario.descansoFin
+            ? toMin(horario.descansoFin)
+            : undefined,
+        } as any,
+        operariosIds,
+      });
 
     const bloqueos = [...bloqueosDescanso, ...bloqueosPatron];
 
@@ -1618,7 +1690,16 @@ export class GerenteService {
           const bloqueosPatron = await buildBloqueosPorPatronJornada({
             prisma: tx as any,
             fechaDia: base,
-            horarioDia: { startMin, endMin } as any,
+            horarioDia: {
+              startMin,
+              endMin,
+              descansoStartMin: horario.descansoInicio
+                ? toMin(horario.descansoInicio)
+                : undefined,
+              descansoEndMin: horario.descansoFin
+                ? toMin(horario.descansoFin)
+                : undefined,
+            } as any,
             operariosIds,
           });
           const bloqueos = [...bloqueosDescanso, ...bloqueosPatron];
@@ -1767,6 +1848,37 @@ export class GerenteService {
     const operariosIds =
       dto.operariosIds?.map(String) ??
       (dto.operarioId ? [String(dto.operarioId)] : []);
+
+    if (operariosIds.length) {
+      const disponibilidad = await validarOperariosDisponiblesEnFecha({
+        prisma: this.prisma,
+        fecha: inicio,
+        operariosIds,
+      });
+      if (!disponibilidad.ok) {
+        return {
+          ok: false,
+          reason: "OPERARIO_NO_DISPONIBLE",
+          message: `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
+        };
+      }
+      if (dto.conjuntoId) {
+        const limite = await validarLimiteSemanalOperarios({
+          prisma: this.prisma,
+          conjuntoId: dto.conjuntoId,
+          operariosIds,
+          fechaInicio: inicio,
+          duracionMinutos: durMin,
+        });
+        if (!limite.ok) {
+          return {
+            ok: false,
+            reason: "LIMITE_SEMANAL_SUPERADO",
+            message: `Los operarios ${limite.excedidos.join(", ")} superan su limite semanal con esta tarea.`,
+          };
+        }
+      }
+    }
 
     const tipo = (dto.tipo ?? "CORRECTIVA") as any;
     const prioridad = dto.prioridad ?? 2;
@@ -2054,6 +2166,37 @@ export class GerenteService {
       dto.operariosIds?.map(String) ??
       (dto.operarioId ? [String(dto.operarioId)] : []);
 
+    if (operariosIds.length) {
+      const disponibilidad = await validarOperariosDisponiblesEnFecha({
+        prisma: this.prisma,
+        fecha: inicio,
+        operariosIds,
+      });
+      if (!disponibilidad.ok) {
+        return {
+          ok: false,
+          reason: "OPERARIO_NO_DISPONIBLE",
+          message: `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
+        };
+      }
+      if (dto.conjuntoId) {
+        const limite = await validarLimiteSemanalOperarios({
+          prisma: this.prisma,
+          conjuntoId: dto.conjuntoId,
+          operariosIds,
+          fechaInicio: inicio,
+          duracionMinutos: durMin,
+        });
+        if (!limite.ok) {
+          return {
+            ok: false,
+            reason: "LIMITE_SEMANAL_SUPERADO",
+            message: `Los operarios ${limite.excedidos.join(", ")} superan su limite semanal con esta tarea.`,
+          };
+        }
+      }
+    }
+
     // 1) Intentar creaciÃ³n normal exacta en el horario solicitado.
     let intento: any = await this.asignarTarea(dto);
     if (intento?.ok === true) {
@@ -2308,6 +2451,37 @@ export class GerenteService {
     const operariosIds =
       dto.operariosIds?.map(String) ??
       (dto.operarioId ? [String(dto.operarioId)] : []);
+
+    if (operariosIds.length) {
+      const disponibilidad = await validarOperariosDisponiblesEnFecha({
+        prisma: this.prisma,
+        fecha: inicio,
+        operariosIds,
+      });
+      if (!disponibilidad.ok) {
+        return {
+          ok: false,
+          reason: "OPERARIO_NO_DISPONIBLE",
+          message: `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
+        };
+      }
+      if (dto.conjuntoId) {
+        const limite = await validarLimiteSemanalOperarios({
+          prisma: this.prisma,
+          conjuntoId: dto.conjuntoId,
+          operariosIds,
+          fechaInicio: inicio,
+          duracionMinutos: durMin,
+        });
+        if (!limite.ok) {
+          return {
+            ok: false,
+            reason: "LIMITE_SEMANAL_SUPERADO",
+            message: `Los operarios ${limite.excedidos.join(", ")} superan su limite semanal con esta tarea.`,
+          };
+        }
+      }
+    }
 
     const maquinariaIds: number[] = Array.isArray((dto as any).maquinariaIds)
       ? (dto as any).maquinariaIds

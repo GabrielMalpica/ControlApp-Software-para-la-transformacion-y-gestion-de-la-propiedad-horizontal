@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/password_dialogs.dart';
+import 'package:intl/intl.dart';
 
 class DetalleUsuarioPage extends StatelessWidget {
   final Usuario usuario;
@@ -13,6 +14,8 @@ class DetalleUsuarioPage extends StatelessWidget {
     final withSpaces = raw.toLowerCase().replaceAll('_', ' ');
     return withSpaces[0].toUpperCase() + withSpaces.substring(1);
   }
+
+  String _formatDate(DateTime date) => DateFormat('dd/MM/yyyy').format(date);
 
   Widget _rowDato(String label, String value) {
     return Padding(
@@ -174,7 +177,7 @@ class DetalleUsuarioPage extends StatelessWidget {
                 _rowDato("Dirección", usuario.direccion ?? "-"),
                 _rowDato(
                   "Fecha nacimiento",
-                  '${usuario.fechaNacimiento.day}/${usuario.fechaNacimiento.month}/${usuario.fechaNacimiento.year}',
+                  _formatDate(usuario.fechaNacimiento),
                 ),
               ],
             ),
@@ -220,8 +223,27 @@ class DetalleUsuarioPage extends StatelessWidget {
                   _prettyEnum(usuario.jornadaLaboral),
                 ),
 
-                // ✅ NUEVO: patrón jornada
                 _rowDato("Patrón jornada", _prettyEnum(usuario.patronJornada)),
+                if (usuario.rol == 'operario') ...[
+                  const SizedBox(height: 12),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Disponibilidad por periodo',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (usuario.disponibilidadPeriodos.isEmpty)
+                    _rowDato('Periodos', 'Sin periodos configurados')
+                  else
+                    ...usuario.disponibilidadPeriodos.map(
+                      (item) => _rowDato(
+                        '${item.fechaInicio.day}/${item.fechaInicio.month}/${item.fechaInicio.year}${item.fechaFin != null ? ' - ${item.fechaFin!.day}/${item.fechaFin!.month}/${item.fechaFin!.year}' : ''}',
+                        'Descanso: ${_prettyEnum(item.diaDescanso)} · Domingo: ${item.trabajaDomingo ? 'Sí' : 'No'}',
+                      ),
+                    ),
+                ],
               ],
             ),
           ],

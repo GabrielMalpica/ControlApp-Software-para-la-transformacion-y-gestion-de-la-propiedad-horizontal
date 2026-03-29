@@ -9,6 +9,11 @@ import {
   toTareaPublica,
 } from "../model/Tarea";
 import { isFestivoDate } from "../utils/schedulerUtils";
+import {
+  validarOperariosDisponiblesEnFecha,
+  validarOperariosDisponiblesEnRango,
+  validarLimiteSemanalOperarios,
+} from "../utils/operarioAvailability";
 
 const EvidenciaDTO = z.object({ imagen: z.string().min(1) });
 
@@ -16,6 +21,84 @@ const ConsumoItemDTO = z.object({
   insumoId: z.number().int().positive(),
   cantidad: z.number().int().positive(),
 });
+
+async function validarOperariosEnHorarioTarea(params: {
+  prisma: PrismaClient;
+  conjuntoId?: string | null;
+  fechaInicio: Date;
+  fechaFin: Date;
+  operariosIds: string[];
+}) {
+  const { prisma, conjuntoId, fechaInicio, fechaFin, operariosIds } = params;
+  if (!conjuntoId || !operariosIds.length) return;
+
+  const toMin = (value: unknown) => {
+    const text = String(value ?? "").trim();
+    const match = text.match(/(\d{1,2}):(\d{2})/);
+    if (!match) return null;
+    return Number(match[1]) * 60 + Number(match[2]);
+  };
+
+  const dia = fechaInicio.getDay();
+  const horarios = await prisma.conjuntoHorario.findMany({ where: { conjuntoId } });
+  const horario = horarios.find((h) => {
+    const map: Record<string, number> = {
+      LUNES: 1,
+      MARTES: 2,
+      MIERCOLES: 3,
+      JUEVES: 4,
+      VIERNES: 5,
+      SABADO: 6,
+      DOMINGO: 0,
+    };
+    return map[String(h.dia)] === dia;
+  });
+  if (!horario) return;
+
+  const jornadas = await prisma.operario.findMany({
+    where: { id: { in: operariosIds } },
+    select: {
+      id: true,
+      usuario: { select: { jornadaLaboral: true, patronJornada: true } },
+    },
+  });
+  const jornadasByOperario = new Map(
+    jornadas.map((j) => [
+      j.id,
+      {
+        jornadaLaboral: j.usuario?.jornadaLaboral ?? null,
+        patronJornada: j.usuario?.patronJornada ?? null,
+      },
+    ]),
+  );
+
+  const startMin = toMin(horario.horaApertura);
+  const endMin = toMin(horario.horaCierre);
+  if (startMin == null || endMin == null) return;
+  const result = await validarOperariosDisponiblesEnRango({
+    prisma,
+    fechaInicio,
+    fechaFin,
+    operariosIds,
+    jornadasByOperario,
+    horarioDia: {
+      startMin,
+      endMin,
+      descansoStartMin: horario.descansoInicio
+        ? toMin(horario.descansoInicio) ?? undefined
+        : undefined,
+      descansoEndMin: horario.descansoFin
+        ? toMin(horario.descansoFin) ?? undefined
+        : undefined,
+    },
+  });
+
+  if (!result.ok) {
+    throw new Error(
+      `Los operarios ${result.noDisponibles.join(", ")} no tienen horario disponible para ese rango.`,
+    );
+  }
+}
 
 const CompletarConInsumosDTO = z.object({
   insumosUsados: z.array(ConsumoItemDTO).default([]),
@@ -96,16 +179,59 @@ export class TareaService {
   static async crearTareaCorrectiva(prisma: PrismaClient, payload: unknown) {
     const dto = CrearTareaDTO.parse(payload);
 
-    const esDomingo = dto.fechaInicio.getDay() === 0;
     const esFestivo = await isFestivoDate({
       prisma,
       fecha: dto.fechaInicio,
       pais: "CO",
     });
-    if (esDomingo || esFestivo) {
+    if (esFestivo) {
       throw new Error(
-        "No se permite programar tareas en domingos o festivos.",
+        "No se permite programar tareas en festivos.",
       );
+    }
+
+    const operarios = dto.operariosIds?.length
+      ? dto.operariosIds.map(String)
+      : dto.operarioId
+        ? [String(dto.operarioId)]
+        : [];
+    if (operarios.length) {
+      const disponibilidad = await validarOperariosDisponiblesEnFecha({
+        prisma,
+        fecha: dto.fechaInicio,
+        operariosIds: operarios,
+      });
+      if (!disponibilidad.ok) {
+        throw new Error(
+          `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
+        );
+      }
+      await validarOperariosEnHorarioTarea({
+        prisma,
+        conjuntoId: dto.conjuntoId ?? null,
+        fechaInicio: dto.fechaInicio,
+        fechaFin: dto.fechaFin ?? new Date(dto.fechaInicio.getTime() + (dto.duracionMinutos ?? Math.round((dto.duracionHoras ?? 1) * 60)) * 60000),
+        operariosIds: operarios,
+      });
+      if (dto.conjuntoId) {
+        const duracionMinutos =
+          dto.duracionMinutos ??
+          (dto.fechaFin
+            ? Math.max(1, Math.round((dto.fechaFin.getTime() - dto.fechaInicio.getTime()) / 60000))
+            : Math.max(1, Math.round((dto.duracionHoras ?? 1) * 60)));
+        const limite = await validarLimiteSemanalOperarios({
+          prisma,
+          conjuntoId: dto.conjuntoId,
+          operariosIds: operarios,
+          fechaInicio: dto.fechaInicio,
+          duracionMinutos,
+        });
+        if (!limite.ok) {
+          throw new Error(
+            `Los operarios ${limite.excedidos.join(", ")} superan su limite semanal con esta tarea.`,
+          );
+        }
+      }
     }
 
     // Operarios (M:N)
@@ -207,6 +333,60 @@ export class TareaService {
       data.operarios = {
         set: dto.operariosIds.map((id) => ({ id: id })),
       };
+    }
+
+    const actual = await prisma.tarea.findUnique({
+      where: { id },
+      select: {
+        conjuntoId: true,
+        fechaInicio: true,
+        fechaFin: true,
+        operarios: { select: { id: true } },
+      },
+    });
+
+    const fechaInicioFinal = dto.fechaInicio ?? actual?.fechaInicio;
+    const fechaFinFinal = dto.fechaFin ?? actual?.fechaFin;
+    const conjuntoIdFinal = dto.conjuntoId !== undefined ? dto.conjuntoId : actual?.conjuntoId;
+    const operariosFinal = dto.operariosIds?.map(String) ?? actual?.operarios.map((o) => o.id) ?? [];
+
+    if (fechaInicioFinal && fechaFinFinal && operariosFinal.length) {
+      const disponibilidad = await validarOperariosDisponiblesEnFecha({
+        prisma,
+        fecha: fechaInicioFinal,
+        operariosIds: operariosFinal,
+      });
+      if (!disponibilidad.ok) {
+        throw new Error(
+          `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
+        );
+      }
+      await validarOperariosEnHorarioTarea({
+        prisma,
+        conjuntoId: conjuntoIdFinal ?? null,
+        fechaInicio: fechaInicioFinal,
+        fechaFin: fechaFinFinal,
+        operariosIds: operariosFinal,
+      });
+      if (conjuntoIdFinal) {
+        const duracionMinutos = Math.max(
+          1,
+          Math.round((fechaFinFinal.getTime() - fechaInicioFinal.getTime()) / 60000),
+        );
+        const limite = await validarLimiteSemanalOperarios({
+          prisma,
+          conjuntoId: conjuntoIdFinal,
+          operariosIds: operariosFinal,
+          fechaInicio: fechaInicioFinal,
+          duracionMinutos,
+          excluirTareaId: id,
+        });
+        if (!limite.ok) {
+          throw new Error(
+            `Los operarios ${limite.excedidos.join(", ")} superan su limite semanal con esta tarea.`,
+          );
+        }
+      }
     }
 
     const actualizada = await prisma.tarea.update({

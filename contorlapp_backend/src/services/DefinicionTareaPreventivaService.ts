@@ -37,6 +37,12 @@ import {
 
 import { buildMaquinariaNoDisponibleError } from "../utils/errorFormat";
 import { elementoParentChainInclude } from "../utils/elementoHierarchy";
+import {
+  allowedIntervalsForUserWithAvailability,
+  diaSemanaFromDate,
+  obtenerDisponibilidadActivaOperarios,
+  validarOperariosDisponiblesEnFecha,
+} from "../utils/operarioAvailability";
 
 /* =========================================================
  * Tipos auxiliares (patrones y jornada)
@@ -1271,12 +1277,16 @@ export class DefinicionTareaPreventivaService {
             }
 
             const diaParteKey = dayKey(diaParte);
-            const ds = dateToDiaSemana(diaParte);
-            const esDomingo = ds === DiaSemana.DOMINGO;
             const esFestivo = festivosSet.has(diaParteKey);
+            const disponibilidadOperarios = operariosIds.length
+              ? await validarOperariosDisponiblesEnFecha({
+                  prisma: this.prisma,
+                  fecha: diaParte,
+                  operariosIds,
+                })
+              : { ok: true, noDisponibles: [] as string[] };
 
-            // Regla dura: no se agenda en domingo/festivo.
-            if (esDomingo || esFestivo) {
+            if (esFestivo || !disponibilidadOperarios.ok) {
               if (prioridad === 1 || prioridad === 2) {
                 diaParte = siguienteDiaHabil({
                   fecha: diaParte,
@@ -1288,7 +1298,7 @@ export class DefinicionTareaPreventivaService {
               break;
             }
 
-            const horario = horariosPorDia.get(ds);
+            const horario = horariosPorDia.get(dateToDiaSemana(diaParte));
             if (!horario) {
               diaParte = siguienteDiaHabil({
                 fecha: diaParte,
@@ -1805,17 +1815,25 @@ export class DefinicionTareaPreventivaService {
     if (dto.fechaFin < dto.fechaInicio)
       throw new Error("fechaFin >= fechaInicio");
 
-    const inicioEsDomingo = dto.fechaInicio.getDay() === 0;
-    const inicioEsFestivo = await isFestivoDate({
-      prisma: this.prisma,
-      fecha: dto.fechaInicio,
-      pais: "CO",
-    });
-    if (inicioEsDomingo || inicioEsFestivo) {
-      throw new Error(
-        "No se permite programar tareas preventivas en domingos o festivos.",
-      );
-    }
+      const inicioEsFestivo = await isFestivoDate({
+        prisma: this.prisma,
+        fecha: dto.fechaInicio,
+        pais: "CO",
+      });
+      if (inicioEsFestivo) {
+        throw new Error("No se permite programar tareas preventivas en festivos.");
+      }
+
+      const disponibilidad = await validarOperariosDisponiblesEnFecha({
+        prisma: this.prisma,
+        fecha: dto.fechaInicio,
+        operariosIds: (dto.operariosIds ?? []).map((id) => id.toString()),
+      });
+      if (!disponibilidad.ok) {
+        throw new Error(
+          `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
+        );
+      }
 
     if (dto.operariosIds?.length) {
       for (const opId of dto.operariosIds) {
@@ -1913,16 +1931,26 @@ export class DefinicionTareaPreventivaService {
     const fechaFin = dto.fechaFin ?? undefined;
 
     if (fechaInicio) {
-      const inicioEsDomingo = fechaInicio.getDay() === 0;
       const inicioEsFestivo = await isFestivoDate({
         prisma: this.prisma,
         fecha: fechaInicio,
         pais: "CO",
       });
-      if (inicioEsDomingo || inicioEsFestivo) {
-        throw new Error(
-          "No se permite programar tareas preventivas en domingos o festivos.",
-        );
+      if (inicioEsFestivo) {
+        throw new Error("No se permite programar tareas preventivas en festivos.");
+      }
+
+      if (operariosIdsFinal.length) {
+        const disponibilidad = await validarOperariosDisponiblesEnFecha({
+          prisma: this.prisma,
+          fecha: fechaInicio,
+          operariosIds: operariosIdsFinal.map(String),
+        });
+        if (!disponibilidad.ok) {
+          throw new Error(
+            `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
+          );
+        }
       }
     }
 
@@ -2910,87 +2938,6 @@ function clampInterval(i: number, f: number, start: number, end: number) {
   return ff > ii ? { i: ii, f: ff } : null;
 }
 
-function diaSemanaFromDate(d: Date): DiaSemana {
-  return dateToDiaSemana(d);
-}
-
-function allowedIntervalsForUser(params: {
-  dia: DiaSemana;
-  horario: HorarioDia;
-  jornadaLaboral: string | null;
-  patronJornada: string | null;
-}): Array<{ i: number; f: number }> {
-  const { dia, horario, jornadaLaboral, patronJornada } = params;
-
-  if (!jornadaLaboral) return [{ i: horario.startMin, f: horario.endMin }];
-
-  if (jornadaLaboral === "COMPLETA") {
-    return [{ i: horario.startMin, f: horario.endMin }];
-  }
-
-  if (jornadaLaboral !== "MEDIO_TIEMPO") {
-    return [{ i: horario.startMin, f: horario.endMin }];
-  }
-
-  const p = patronJornada as Patron | null;
-  if (!p) return [];
-
-  const apertura = horario.startMin;
-  const cierre = horario.endMin;
-
-  const m13 = 13 * 60;
-  const m16 = 16 * 60;
-
-  if (p === "MEDIO_DIAS_INTERCALADOS") {
-    if (dia === DiaSemana.LUNES || dia === DiaSemana.MIERCOLES) {
-      return [{ i: apertura, f: cierre }];
-    }
-    if (dia === DiaSemana.VIERNES) {
-      const x = clampInterval(apertura, apertura + 6 * 60, apertura, cierre);
-      return x ? [x] : [];
-    }
-    return [];
-  }
-
-  if (p === "MEDIO_SEMANA_SABADO") {
-    if (
-      dia === DiaSemana.LUNES ||
-      dia === DiaSemana.MARTES ||
-      dia === DiaSemana.MIERCOLES ||
-      dia === DiaSemana.JUEVES ||
-      dia === DiaSemana.VIERNES
-    ) {
-      const x = clampInterval(apertura, apertura + 4 * 60, apertura, cierre);
-      return x ? [x] : [];
-    }
-    if (dia === DiaSemana.SABADO) {
-      const x = clampInterval(apertura, apertura + 2 * 60, apertura, cierre);
-      return x ? [x] : [];
-    }
-    return [];
-  }
-
-  if (p === "MEDIO_SEMANA_SABADO_TARDE") {
-    if (
-      dia === DiaSemana.LUNES ||
-      dia === DiaSemana.MARTES ||
-      dia === DiaSemana.MIERCOLES ||
-      dia === DiaSemana.JUEVES ||
-      dia === DiaSemana.VIERNES
-    ) {
-      const x = clampInterval(m13, m16, apertura, cierre);
-      return x ? [x] : [];
-    }
-    if (dia === DiaSemana.SABADO) {
-      const x = clampInterval(apertura, apertura + 2 * 60, apertura, cierre);
-      return x ? [x] : [];
-    }
-    return [];
-  }
-
-  return [];
-}
-
 function bloqueosFromAllowed(params: {
   horario: HorarioDia;
   allowed: Array<{ i: number; f: number }>;
@@ -3039,6 +2986,11 @@ export async function buildBloqueosPorPatronJornada(params: {
       },
     },
   });
+  const disponibilidadByOp = await obtenerDisponibilidadActivaOperarios({
+    prisma,
+    operariosIds,
+    fecha: fechaDia,
+  });
 
   const bloqueos: Bloqueo[] = [];
 
@@ -3048,11 +3000,17 @@ export async function buildBloqueosPorPatronJornada(params: {
 
     if (jl === "COMPLETA") continue;
 
-    const allowed = allowedIntervalsForUser({
+    const allowed = allowedIntervalsForUserWithAvailability({
       dia,
       horario: horarioDia,
       jornadaLaboral: jl,
       patronJornada: pj,
+      disponibilidad: disponibilidadByOp.get(op.id)
+        ? {
+            trabajaDomingo: disponibilidadByOp.get(op.id)!.trabajaDomingo,
+            diaDescanso: disponibilidadByOp.get(op.id)!.diaDescanso,
+          }
+        : null,
     });
 
     bloqueos.push(
@@ -3072,8 +3030,9 @@ export async function getLimiteMinSemanaPorOperario(params: {
   conjuntoId: string;
   operarioId: string;
   horariosPorDia: Map<DiaSemana, HorarioDia>;
+  fechaReferencia?: Date;
 }): Promise<number> {
-  const { prisma, operarioId, horariosPorDia } = params;
+  const { prisma, operarioId, horariosPorDia, fechaReferencia } = params;
 
   const op = await prisma.operario.findUnique({
     where: { id: operarioId },
@@ -3084,32 +3043,93 @@ export async function getLimiteMinSemanaPorOperario(params: {
 
   const jornada = (op?.usuario?.jornadaLaboral ?? null) as string | null;
   const patron = (op?.usuario?.patronJornada ?? null) as string | null;
+  const ref = fechaReferencia ?? new Date();
+
+  const monday = new Date(ref);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
 
   // Si es COMPLETA => capacidad = total del conjunto
   if (jornada === "COMPLETA" || !jornada) {
     let total = 0;
-    for (const [, h] of horariosPorDia) total += h.endMin - h.startMin;
-    return total;
+    for (let offset = 0; offset < 7; offset++) {
+      const fecha = new Date(monday);
+      fecha.setDate(monday.getDate() + offset);
+      const ds = dateToDiaSemana(fecha);
+      const h = horariosPorDia.get(ds);
+      if (!h) continue;
+      const disponibilidad = await obtenerDisponibilidadActivaOperarios({
+        prisma,
+        operariosIds: [operarioId],
+        fecha,
+      });
+      const periodo = disponibilidad.get(operarioId);
+      const allowed = allowedIntervalsForUserWithAvailability({
+        dia: ds,
+        horario: h,
+        jornadaLaboral: jornada,
+        patronJornada: patron,
+        disponibilidad: periodo
+            ? {
+                trabajaDomingo: periodo.trabajaDomingo,
+                diaDescanso: periodo.diaDescanso,
+              }
+            : null,
+      });
+      if (allowed.length === 0) {
+        continue;
+      }
+      total += h.endMin - h.startMin;
+    }
+    const empresaLimite = await prisma.operario.findUnique({
+      where: { id: operarioId },
+      select: { empresa: { select: { limiteHorasSemana: true } } },
+    });
+    return Math.min(total, (empresaLimite?.empresa?.limiteHorasSemana ?? 42) * 60);
   }
 
   // MEDIO_TIEMPO => capacidad = lo que deja el patrón (exacto)
   if (jornada === "MEDIO_TIEMPO") {
     let total = 0;
-    for (const [dia, h] of horariosPorDia) {
-      const allowed = allowedIntervalsForUser({
+    for (let offset = 0; offset < 7; offset++) {
+      const fecha = new Date(monday);
+      fecha.setDate(monday.getDate() + offset);
+      const dia = dateToDiaSemana(fecha);
+      const h = horariosPorDia.get(dia);
+      if (!h) continue;
+      const disponibilidad = await obtenerDisponibilidadActivaOperarios({
+        prisma,
+        operariosIds: [operarioId],
+        fecha,
+      });
+      const allowed = allowedIntervalsForUserWithAvailability({
         dia,
         horario: h,
         jornadaLaboral: jornada,
         patronJornada: patron,
+        disponibilidad: disponibilidad.get(operarioId)
+            ? {
+                trabajaDomingo: disponibilidad.get(operarioId)!.trabajaDomingo,
+                diaDescanso: disponibilidad.get(operarioId)!.diaDescanso,
+              }
+            : null,
       });
 
       for (const a of allowed) total += a.f - a.i;
     }
-    return total;
+    const empresaLimite = await prisma.operario.findUnique({
+      where: { id: operarioId },
+      select: { empresa: { select: { limiteHorasSemana: true } } },
+    });
+    return Math.min(total, (empresaLimite?.empresa?.limiteHorasSemana ?? 42) * 60);
   }
 
   // Otros casos (por si creces luego)
   let fallback = 0;
   for (const [, h] of horariosPorDia) fallback += h.endMin - h.startMin;
-  return fallback;
+  const empresaLimite = await prisma.operario.findUnique({
+    where: { id: operarioId },
+    select: { empresa: { select: { limiteHorasSemana: true } } },
+  });
+  return Math.min(fallback, (empresaLimite?.empresa?.limiteHorasSemana ?? 42) * 60);
 }

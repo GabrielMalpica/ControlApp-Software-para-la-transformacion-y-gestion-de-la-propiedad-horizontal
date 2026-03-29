@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   TipoFuncion,
+  DiaSemana,
 } from "@prisma/client";
 
 
@@ -26,6 +27,16 @@ export interface OperarioDominio {
   observaciones?: string | null;
 
   empresaId: string;
+  disponibilidadPeriodos?: OperarioDisponibilidadPeriodoDominio[];
+}
+
+export interface OperarioDisponibilidadPeriodoDominio {
+  id?: number;
+  fechaInicio: Date;
+  fechaFin?: Date | null;
+  trabajaDomingo: boolean;
+  diaDescanso?: DiaSemana | null;
+  observaciones?: string | null;
 }
 
 /** Lo que puedes devolver públicamente */
@@ -50,6 +61,18 @@ export const CrearOperarioDTO = z.object({
   fechaSalida: z.coerce.date().optional(),
   fechaUltimasVacaciones: z.coerce.date().optional(),
   observaciones: z.string().optional(),
+  disponibilidadPeriodos: z
+    .array(
+      z.object({
+        fechaInicio: z.coerce.date(),
+        fechaFin: z.coerce.date().optional().nullable(),
+        trabajaDomingo: z.boolean().default(false),
+        diaDescanso: z.nativeEnum(DiaSemana).optional().nullable(),
+        observaciones: z.string().optional().nullable(),
+      }),
+    )
+    .optional()
+    .default([]),
 });
 
 /** Edición parcial */
@@ -66,6 +89,18 @@ export const EditarOperarioDTO = z.object({
   fechaUltimasVacaciones: z.coerce.date().optional().nullable(),
   observaciones: z.string().optional().nullable(),
   empresaId: z.string().min(3).optional(),
+  disponibilidadPeriodos: z
+    .array(
+      z.object({
+        id: z.number().int().positive().optional(),
+        fechaInicio: z.coerce.date(),
+        fechaFin: z.coerce.date().optional().nullable(),
+        trabajaDomingo: z.boolean().default(false),
+        diaDescanso: z.nativeEnum(DiaSemana).optional().nullable(),
+        observaciones: z.string().optional().nullable(),
+      }),
+    )
+    .optional(),
 });
 
 /* ============== Select estándar para Prisma ============== */
@@ -87,11 +122,20 @@ export const operarioPublicSelect = {
   fechaUltimasVacaciones: true,
   observaciones: true,
   empresaId: true,
-} as const;
+  disponibilidadPeriodos: {
+    select: {
+      id: true,
+      fechaInicio: true,
+      fechaFin: true,
+      trabajaDomingo: true,
+      diaDescanso: true,
+      observaciones: true,
+    },
+    orderBy: [{ fechaInicio: "desc" as const }],
+  },
+} as any;
 
 /** Helper para castear el resultado del select a tu tipo público */
-export function toOperarioPublico<T extends Record<keyof typeof operarioPublicSelect, any>>(
-  row: T
-): OperarioPublico {
-  return row;
+export function toOperarioPublico(row: any): OperarioPublico {
+  return row as OperarioPublico;
 }

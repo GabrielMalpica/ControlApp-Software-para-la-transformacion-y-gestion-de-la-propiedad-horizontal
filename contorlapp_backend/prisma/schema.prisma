@@ -503,8 +503,29 @@ model Operario {
   maquinariaConjuntos     MaquinariaConjunto[]
   usoMaquinarias          UsoMaquinaria[]
   usoHerramientas         UsoHerramienta[]
+  disponibilidadPeriodos OperarioDisponibilidadPeriodo[]
 
   @@map("Operario")
+}
+
+model OperarioDisponibilidadPeriodo {
+  id Int @id @default(autoincrement())
+
+  operario   Operario @relation(fields: [operarioId], references: [id], onDelete: Cascade)
+  operarioId String
+
+  fechaInicio DateTime
+  fechaFin    DateTime?
+
+  trabajaDomingo  Boolean   @default(false)
+  diaDescanso     DiaSemana?
+  observaciones   String?
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@index([operarioId, fechaInicio, fechaFin])
+  @@map("OperarioDisponibilidadPeriodo")
 }
 
 /**
