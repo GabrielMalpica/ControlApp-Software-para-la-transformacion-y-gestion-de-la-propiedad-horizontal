@@ -631,6 +631,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
   payload: CrearTareaPayload;
   prioridadesCandidatas?: Array<2 | 3>;
   candidatasIdsPreferidas?: number[];
+  marcarReemplazadasComoNoCompletadas?: boolean;
 
   // agenda
   incluirBorradorEnAgenda: boolean;
@@ -667,6 +668,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     payload,
     prioridadesCandidatas,
     candidatasIdsPreferidas,
+    marcarReemplazadasComoNoCompletadas = false,
     incluirBorradorEnAgenda,
     onEvent,
   } = params;
@@ -896,10 +898,14 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
         await tx.tarea.update({
           where: { id },
           data: {
-            estado: "PENDIENTE_REPROGRAMACION" as any,
+            estado: marcarReemplazadasComoNoCompletadas
+              ? (EstadoTarea.NO_COMPLETADA as any)
+              : ("PENDIENTE_REPROGRAMACION" as any),
             reprogramada: true,
             reprogramadaEn: now,
-            reprogramadaMotivo: motivo,
+            reprogramadaMotivo: marcarReemplazadasComoNoCompletadas
+              ? `${motivo}. No completada por reemplazo sin reprogramacion.`
+              : motivo,
             fechaInicioOriginal: t.fechaInicioOriginal ?? t.fechaInicio,
             fechaFinOriginal: t.fechaFinOriginal ?? t.fechaFin,
           },

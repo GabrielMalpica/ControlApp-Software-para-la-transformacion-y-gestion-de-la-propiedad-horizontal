@@ -407,7 +407,7 @@ function solapa(a, b) {
     return a.i < b.f && b.i < a.f;
 }
 async function intentarReemplazoPorPrioridadBaja(params) {
-    const { prisma, conjuntoId, fechaDia, startMin, endMin, bloqueos, durMin, payload, prioridadesCandidatas, candidatasIdsPreferidas, incluirBorradorEnAgenda, onEvent, } = params;
+    const { prisma, conjuntoId, fechaDia, startMin, endMin, bloqueos, durMin, payload, prioridadesCandidatas, candidatasIdsPreferidas, marcarReemplazadasComoNoCompletadas = false, incluirBorradorEnAgenda, onEvent, } = params;
     const operariosIds = payload.operariosIds ?? [];
     // 1) agenda actual del día
     const agenda = operariosIds.length
@@ -591,10 +591,14 @@ async function intentarReemplazoPorPrioridadBaja(params) {
                 await tx.tarea.update({
                     where: { id },
                     data: {
-                        estado: "PENDIENTE_REPROGRAMACION",
+                        estado: marcarReemplazadasComoNoCompletadas
+                            ? client_1.EstadoTarea.NO_COMPLETADA
+                            : "PENDIENTE_REPROGRAMACION",
                         reprogramada: true,
                         reprogramadaEn: now,
-                        reprogramadaMotivo: motivo,
+                        reprogramadaMotivo: marcarReemplazadasComoNoCompletadas
+                            ? `${motivo}. No completada por reemplazo sin reprogramacion.`
+                            : motivo,
                         fechaInicioOriginal: t.fechaInicioOriginal ?? t.fechaInicio,
                         fechaFinOriginal: t.fechaFinOriginal ?? t.fechaFin,
                     },

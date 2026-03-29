@@ -1168,7 +1168,7 @@ export class ReporteService {
     for (const t of tareasPreventivasReemplazadasPorEvento) byId.set(t.id, t);
     const tareasPreventivasReemplazadas = Array.from(byId.values());
 
-    const correctivaIdsReemplazo = Array.from(
+    const tareaIdsReemplazo = Array.from(
       new Set(
         tareasPreventivasReemplazadas
           .map((t) => t.reprogramadaPorTareaId)
@@ -1176,10 +1176,10 @@ export class ReporteService {
       ),
     );
 
-    const correctivasReemplazo =
-      correctivaIdsReemplazo.length > 0
+    const tareasReemplazo =
+      tareaIdsReemplazo.length > 0
         ? await this.prisma.tarea.findMany({
-            where: this.soloPublicadas({ id: { in: correctivaIdsReemplazo } }),
+            where: this.soloPublicadas({ id: { in: tareaIdsReemplazo } }),
             select: {
               id: true,
               tipo: true,
@@ -1190,12 +1190,12 @@ export class ReporteService {
             },
           })
         : [];
-    const correctivaById = new Map(correctivasReemplazo.map((t) => [t.id, t]));
+    const tareaById = new Map(tareasReemplazo.map((t) => [t.id, t]));
 
     const reemplazosPreventivaPorCorrectiva = tareasPreventivasReemplazadas.map(
       (t) => {
-        const correctivaId = t.reprogramadaPorTareaId as number;
-        const correctiva = correctivaById.get(correctivaId);
+        const tareaReemplazoId = t.reprogramadaPorTareaId as number;
+        const tareaReemplazo = tareaById.get(tareaReemplazoId);
         const motivo = t.reprogramadaMotivo ?? null;
         const motivoUsuario = extraerMotivoUsuarioReemplazo(motivo);
         const resultado = extraerTagReemplazo(motivo, "RESULTADO");
@@ -1204,9 +1204,9 @@ export class ReporteService {
           t.estado === EstadoTarea.NO_COMPLETADA &&
           t.reprogramada === true &&
           t.reprogramadaPorTareaId != null;
-        const refCorrectiva = correctiva
-          ? `#${correctiva.id}${correctiva.descripcion ? ` (${correctiva.descripcion})` : ""}`
-          : `#${correctivaId}`;
+        const refCorrectiva = tareaReemplazo
+          ? `#${tareaReemplazo.id}${tareaReemplazo.descripcion ? ` (${tareaReemplazo.descripcion})` : ""}`
+          : `#${tareaReemplazoId}`;
         const motivoNoCompletada = noCompletadaPorReemplazo
           ? `Tarea reemplazada por otra tarea (${refCorrectiva}).`
           : null;
@@ -1232,18 +1232,18 @@ export class ReporteService {
           noCompletadaPorReemplazo,
           motivoNoCompletada,
           detalleInforme,
-          reemplazadaPor: correctiva
+          reemplazadaPor: tareaReemplazo
             ? {
-                tareaId: correctiva.id,
-                tipo: correctiva.tipo,
-                prioridad: correctiva.prioridad,
-                descripcion: correctiva.descripcion,
-                fechaInicio: correctiva.fechaInicio,
-                fechaFin: correctiva.fechaFin,
+                tareaId: tareaReemplazo.id,
+                tipo: tareaReemplazo.tipo,
+                prioridad: tareaReemplazo.prioridad,
+                descripcion: tareaReemplazo.descripcion,
+                fechaInicio: tareaReemplazo.fechaInicio,
+                fechaFin: tareaReemplazo.fechaFin,
               }
             : {
-                tareaId: correctivaId,
-                tipo: "CORRECTIVA",
+                tareaId: tareaReemplazoId,
+                tipo: null,
                 prioridad: null,
                 descripcion: null,
                 fechaInicio: null,
@@ -1279,7 +1279,7 @@ export class ReporteService {
         .length,
       p3: reemplazosPreventivaPorCorrectiva.filter((r) => r.prioridad === 3)
         .length,
-      correctivasInvolucradas: correctivaIdsReemplazo.length,
+      correctivasInvolucradas: tareaIdsReemplazo.length,
       conMotivoUsuario: reemplazosPreventivaPorCorrectiva.filter(
         (r) => r.motivoUsuario != null,
       ).length,
@@ -1406,7 +1406,7 @@ export class ReporteService {
         t.tipo === "CORRECTIVA" && reemplazaPreventivas.length > 0;
       const correctivaReemplazo =
         t.reprogramadaPorTareaId != null
-          ? correctivaById.get(t.reprogramadaPorTareaId)
+          ? tareaById.get(t.reprogramadaPorTareaId)
           : undefined;
       const noCompletadaPorReemplazo =
         t.estado === EstadoTarea.NO_COMPLETADA &&
@@ -1469,7 +1469,7 @@ export class ReporteService {
           t.reprogramadaPorTareaId != null
             ? {
                 tareaId: correctivaReemplazo?.id ?? t.reprogramadaPorTareaId,
-                tipo: correctivaReemplazo?.tipo ?? "CORRECTIVA",
+                tipo: correctivaReemplazo?.tipo ?? null,
                 prioridad: correctivaReemplazo?.prioridad ?? null,
                 descripcion: correctivaReemplazo?.descripcion ?? null,
                 fechaInicio: correctivaReemplazo?.fechaInicio ?? null,

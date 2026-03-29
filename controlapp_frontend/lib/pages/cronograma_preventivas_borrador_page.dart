@@ -460,6 +460,7 @@ class _CronogramaPreventivasBorradorPageState
   Map<String, dynamic> _buildPayloadDecision(
     NovedadCronogramaModel n, {
     required bool aceptar,
+    bool? reprogramarReemplazada,
   }) {
     final candidataSugerida = n.candidatasIds.isNotEmpty
         ? n.candidatasIds.first
@@ -470,6 +471,8 @@ class _CronogramaPreventivasBorradorPageState
       'prioridadSolicitante': n.prioridad,
       'prioridadObjetivo': n.prioridadObjetivo,
       'aceptar': aceptar,
+      if (aceptar && reprogramarReemplazada != null)
+        'reprogramarReemplazada': reprogramarReemplazada,
       if (aceptar && candidataSugerida != null)
         'candidataId': candidataSugerida,
     };
@@ -478,6 +481,7 @@ class _CronogramaPreventivasBorradorPageState
   Future<List<NovedadCronogramaModel>> _resolverDecisionReemplazoNovedad({
     required NovedadCronogramaModel novedad,
     required bool aceptar,
+    bool? reprogramarReemplazada,
   }) async {
     if (novedad.tipo != 'REQUIERE_CONFIRMACION_REEMPLAZO') return const [];
     if (novedad.defId == null ||
@@ -493,6 +497,7 @@ class _CronogramaPreventivasBorradorPageState
     _confirmacionesReemplazoPorCaso[key] = _buildPayloadDecision(
       novedad,
       aceptar: aceptar,
+      reprogramarReemplazada: reprogramarReemplazada,
     );
 
     final gen = await _preventivaApi.generarCronogramaMensual(
@@ -652,7 +657,7 @@ class _CronogramaPreventivasBorradorPageState
         final extra = (n.mensaje ?? '').trim();
         return '$desc\n$pr\nFecha: $fecha\n$detalle'
             '${extra.isEmpty ? '' : '\n$extra'}\n'
-            'Este reemplazo queda reflejado en el informe.';
+            'Este reemplazo queda reflejado en el informe y en el estado final de la preventiva desplazada.';
       }
 
       if (n.tipo == 'REQUIERE_CONFIRMACION_REEMPLAZO') {
@@ -710,7 +715,32 @@ class _CronogramaPreventivasBorradorPageState
       final candidata = n.candidatasIds.isNotEmpty
           ? '#${n.candidatasIds.first}'
           : 'la candidata sugerida';
-      return '¿Desea reemplazar esta tarea por $candidata ($objetivo)?';
+      if (n.prioridadObjetivo == 1) {
+        return 'Advertencia: la candidata sugerida es $candidata (P1). ¿Desea reemplazar esta tarea?';
+      }
+      return '¿Desea reemplazar esta tarea por $candidata ($objetivo) en la fecha objetivo?';
+    }
+
+    Future<bool?> preguntarReprogramacionReemplazada(BuildContext ctx) {
+      return showDialog<bool>(
+        context: ctx,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Preventiva reemplazada'),
+          content: const Text(
+            'La preventiva reemplazada puede quedar pendiente de reprogramacion o marcarse como no completada por reemplazo. ¿Desea dejarla pendiente para reprogramarla despues?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('No, dejar no completada'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Si, reprogramar despues'),
+            ),
+          ],
+        ),
+      );
     }
 
     var novedadesActuales = List<NovedadCronogramaModel>.from(novedades);
@@ -964,6 +994,10 @@ class _CronogramaPreventivasBorradorPageState
                                                                 procesando
                                                                 ? null
                                                                 : () async {
+                                                                    final reprogramar = await preguntarReprogramacionReemplazada(ctx);
+                                                                    if (reprogramar == null) {
+                                                                      return;
+                                                                    }
                                                                     setModalState(
                                                                       () => enProceso
                                                                           .add(
@@ -976,6 +1010,8 @@ class _CronogramaPreventivasBorradorPageState
                                                                             n,
                                                                         aceptar:
                                                                             true,
+                                                                        reprogramarReemplazada:
+                                                                            reprogramar,
                                                                       );
                                                                       if (!ctx
                                                                           .mounted) {

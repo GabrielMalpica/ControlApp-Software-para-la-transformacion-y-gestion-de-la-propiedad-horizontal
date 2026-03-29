@@ -849,6 +849,43 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                         const SizedBox(height: 8),
                         const _PatronJornadaHelpCard(),
                       ],
+                      if (rolSeleccionado == 'operario') ...[
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Disponibilidad y descansos por periodo',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () => setState(() {
+                                _disponibilidadPeriodos.add(_DisponibilidadPeriodoForm());
+                              }),
+                              icon: const Icon(Icons.add),
+                              label: const Text('Agregar periodo'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const _DisponibilidadPeriodoHelpCard(),
+                        const SizedBox(height: 8),
+                        ..._disponibilidadPeriodos.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final item = entry.value;
+                          return _DisponibilidadPeriodoCard(
+                            item: item,
+                            onChanged: () => setState(() {}),
+                            onRemove: _disponibilidadPeriodos.length <= 1
+                                ? null
+                                : () => setState(() {
+                                    item.dispose();
+                                    _disponibilidadPeriodos.removeAt(index);
+                                  }),
+                          );
+                        }),
+                      ],
                     ],
                   ),
                 ),
@@ -970,39 +1007,6 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                             border: OutlineInputBorder(),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Disponibilidad y descansos por periodo',
-                                style: TextStyle(fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: () => setState(() {
-                                _disponibilidadPeriodos.add(_DisponibilidadPeriodoForm());
-                              }),
-                              icon: const Icon(Icons.add),
-                              label: const Text('Agregar periodo'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        ..._disponibilidadPeriodos.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final item = entry.value;
-                          return _DisponibilidadPeriodoCard(
-                            item: item,
-                            onChanged: () => setState(() {}),
-                            onRemove: _disponibilidadPeriodos.length <= 1
-                                ? null
-                                : () => setState(() {
-                                    item.dispose();
-                                    _disponibilidadPeriodos.removeAt(index);
-                                  }),
-                          );
-                        }),
                       ],
                     ),
                   ),
@@ -1261,6 +1265,37 @@ class _PatronJornadaHelpCard extends StatelessWidget {
           Text('MEDIO_SEMANA_SABADO_TARDE: lunes a viernes despues del almuerzo y sabado completo.'),
           SizedBox(height: 4),
           Text('MEDIO_DIAS_INTERCALADOS: lunes, miercoles, viernes y sabado completos.'),
+        ],
+      ),
+    );
+  }
+}
+
+class _DisponibilidadPeriodoHelpCard extends StatelessWidget {
+  const _DisponibilidadPeriodoHelpCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F8F6),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFDCE7E0)),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Como funciona este periodo', style: TextStyle(fontWeight: FontWeight.w700)),
+          SizedBox(height: 6),
+          Text('Fecha inicio: desde que dia empieza a aplicar este esquema de trabajo.'),
+          SizedBox(height: 4),
+          Text('Fecha fin: hasta que dia aplica. Si lo dejas vacio, sigue vigente hasta nuevo aviso.'),
+          SizedBox(height: 4),
+          Text('Trabaja domingos: actívalo solo si en ese periodo el operario sí labora domingo.'),
+          SizedBox(height: 4),
+          Text('Dia de descanso semanal: indica qué dia descansa durante ese mismo periodo.'),
         ],
       ),
     );

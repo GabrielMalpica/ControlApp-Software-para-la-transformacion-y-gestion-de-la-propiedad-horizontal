@@ -641,6 +641,9 @@ class DefinicionTareaPreventivaService {
                 candidataId: c.candidataId != null && Number.isFinite(Number(c.candidataId))
                     ? Number(c.candidataId)
                     : undefined,
+                reprogramarReemplazada: c.reprogramarReemplazada == null
+                    ? undefined
+                    : Boolean(c.reprogramarReemplazada),
             });
         }
         const obtenerConfirmacion = (args) => confirmacionesMap.get(keyConfirmacion(args.defId, args.fecha, args.prioridadSolicitante, args.prioridadObjetivo));
@@ -822,10 +825,9 @@ class DefinicionTareaPreventivaService {
                     let diasConCandidatasP3ParaP2 = 0;
                     let diasSinCandidatasP3ParaP2 = 0;
                     let intentosConfirmadosP2ConP3Fallidos = 0;
-                    // Regla: para P1 y P2, buscar hueco/reemplazo en ventana movil
-                    // de 7 dias (dia actual + 6), priorizando el dia mas cercano.
+                    // Regla: para P1 y P2, buscar hueco/reemplazo solo sobre la
+                    // fecha objetivo actual (normalmente el siguiente dia habil).
                     const finSemanaBusqueda = new Date(diaParte);
-                    finSemanaBusqueda.setDate(finSemanaBusqueda.getDate() + 6);
                     finSemanaBusqueda.setHours(23, 59, 59, 999);
                     for (let guardDia = 0; guardDia < 8; guardDia++) {
                         if (!diaParte)
@@ -849,23 +851,13 @@ class DefinicionTareaPreventivaService {
                             : { ok: true, noDisponibles: [] };
                         if (esFestivo || !disponibilidadOperarios.ok) {
                             if (prioridad === 1 || prioridad === 2) {
-                                diaParte = (0, schedulerUtils_1.siguienteDiaHabil)({
-                                    fecha: diaParte,
-                                    festivosSet,
-                                    horariosPorDia,
-                                });
-                                continue;
+                                break;
                             }
                             break;
                         }
                         const horario = horariosPorDia.get(dateToDiaSemana(diaParte));
                         if (!horario) {
-                            diaParte = (0, schedulerUtils_1.siguienteDiaHabil)({
-                                fecha: diaParte,
-                                festivosSet,
-                                horariosPorDia,
-                            });
-                            continue;
+                            break;
                         }
                         // ✅ 1) Descanso
                         const bloqueosDescanso = buildBloqueosPorDescanso(horario);
@@ -1080,6 +1072,7 @@ class DefinicionTareaPreventivaService {
                                         payload,
                                         prioridadesCandidatas: [2],
                                         candidatasIdsPreferidas: candidatasPreferidas,
+                                        marcarReemplazadasComoNoCompletadas: confirmP2.reprogramarReemplazada === false,
                                         incluirBorradorEnAgenda: true,
                                         incluirPublicadasEnAgenda,
                                         onEvent: (ev) => {
@@ -1113,12 +1106,7 @@ class DefinicionTareaPreventivaService {
                                         candidatasIds: candidatasP2,
                                     });
                                 }
-                                diaParte = (0, schedulerUtils_1.siguienteDiaHabil)({
-                                    fecha: diaParte,
-                                    festivosSet,
-                                    horariosPorDia,
-                                });
-                                continue;
+                                break;
                             }
                             // P2: no reemplaza automatico; sugiere reemplazo de P3 con confirmacion.
                             const candidatasP3 = await listarCandidatasPorPrioridadDia(diaParte, [3]);
@@ -1147,6 +1135,7 @@ class DefinicionTareaPreventivaService {
                                     payload,
                                     prioridadesCandidatas: [3],
                                     candidatasIdsPreferidas: candidatasPreferidas,
+                                    marcarReemplazadasComoNoCompletadas: confirmP3.reprogramarReemplazada === false,
                                     incluirBorradorEnAgenda: true,
                                     incluirPublicadasEnAgenda,
                                     onEvent: (ev) => {
@@ -1181,12 +1170,7 @@ class DefinicionTareaPreventivaService {
                                     candidatasIds: candidatasP3,
                                 });
                             }
-                            diaParte = (0, schedulerUtils_1.siguienteDiaHabil)({
-                                fecha: diaParte,
-                                festivosSet,
-                                horariosPorDia,
-                            });
-                            continue;
+                            break;
                         }
                         // prioridad 3: si no cabe, se omite
                         break;
@@ -1208,7 +1192,7 @@ class DefinicionTareaPreventivaService {
                                 fecha: pendienteConfirmacion.fecha,
                                 prioridadObjetivo: objetivo,
                                 candidatasIds: pendienteConfirmacion.candidatasIds,
-                                mensaje: `No se encontro hueco ni reemplazo automatico en la ventana de 7 dias.${p3Contexto} ${msgObjetivo}`,
+                                mensaje: `No se encontro hueco ni reemplazo automatico en la fecha objetivo.${p3Contexto} ${msgObjetivo}`,
                             });
                         }
                         else if (prioridad === 1 && diasConCandidatasP3SinHueco > 0) {
@@ -1222,7 +1206,7 @@ class DefinicionTareaPreventivaService {
                                 descripcion: def.descripcion,
                                 prioridad,
                                 fecha: dayKey(diaParte ?? cursorDia),
-                                mensaje: `Se encontraron candidatas P3 en ${diasConCandidatasP3SinHueco} dia(s), pero ninguna libero hueco para ubicar la tarea dentro de la ventana de 7 dias.${fechasTxt}`,
+                                mensaje: `Se encontraron candidatas P3 en la fecha objetivo, pero ninguna libero hueco para ubicar la tarea.${fechasTxt}`,
                             });
                         }
                         else if (prioridad === 1) {
@@ -1232,7 +1216,7 @@ class DefinicionTareaPreventivaService {
                                 descripcion: def.descripcion,
                                 prioridad,
                                 fecha: dayKey(diaParte ?? cursorDia),
-                                mensaje: `No se encontraron tareas candidatas P3 para reemplazo en la ventana de 7 dias (${diasSinCandidatasP3} dia(s) evaluados sin candidatas).`,
+                                mensaje: `No se encontraron tareas candidatas P3 para reemplazo en la fecha objetivo.`,
                             });
                         }
                         else if (diasConCandidatasP3ParaP2 > 0 ||
@@ -1243,7 +1227,7 @@ class DefinicionTareaPreventivaService {
                                 descripcion: def.descripcion,
                                 prioridad,
                                 fecha: dayKey(diaParte ?? cursorDia),
-                                mensaje: `Se encontraron candidatas P3 para reemplazo en ${diasConCandidatasP3ParaP2} dia(s), pero no se logro agendar la tarea en la ventana de 7 dias.`,
+                                mensaje: `Se encontraron candidatas P3 para reemplazo en la fecha objetivo, pero no se logro agendar la tarea.`,
                             });
                         }
                         else {
@@ -1253,7 +1237,7 @@ class DefinicionTareaPreventivaService {
                                 descripcion: def.descripcion,
                                 prioridad,
                                 fecha: dayKey(diaParte ?? cursorDia),
-                                mensaje: `No se encontraron candidatas P3 para reemplazo de esta tarea de prioridad 2 en la ventana de 7 dias (${diasSinCandidatasP3ParaP2} dia(s) evaluados).`,
+                                mensaje: `No se encontraron candidatas P3 para reemplazo de esta tarea de prioridad 2 en la fecha objetivo.`,
                             });
                         }
                     }
