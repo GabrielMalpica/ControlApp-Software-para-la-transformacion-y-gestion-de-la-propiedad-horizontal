@@ -5,6 +5,7 @@ exports.EmpresaService = void 0;
 const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
 const prisma_1 = require("../db/prisma");
+const elementoHierarchy_1 = require("../utils/elementoHierarchy");
 const Insumo_1 = require("../model/Insumo");
 const Empresa_1 = require("../model/Empresa");
 const Maquinaria_1 = require("../model/Maquinaria");
@@ -448,7 +449,11 @@ class EmpresaService {
     async solicitudesTareaPendientes() {
         return prisma_1.prisma.solicitudTarea.findMany({
             where: { empresaId: this.empresaNit, estado: client_1.EstadoSolicitud.PENDIENTE },
-            include: { conjunto: true, ubicacion: true, elemento: true },
+            include: {
+                conjunto: true,
+                ubicacion: true,
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
+            },
         });
     }
     /* ===================== CATÁLOGO DE INSUMOS ===================== */

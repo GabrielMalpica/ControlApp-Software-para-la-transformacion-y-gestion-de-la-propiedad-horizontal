@@ -1153,13 +1153,13 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           .toList(),
                       onChanged: (v) {
                         if (v == null) return;
-                        final el = _ubicacionSeleccionada!.elementos.firstWhere(
+                        final el = _ubicacionSeleccionada!.elementosHoja.firstWhere(
                           (x) => x.id == v,
                         );
                         setState(() => _elementoSeleccionado = el);
                       },
                       validator: (v) =>
-                          v == null ? 'Selecciona un elemento' : null,
+                          v == null ? 'Selecciona un area final' : null,
                     ),
                   ],
                 ),

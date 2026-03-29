@@ -1,5 +1,9 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
+import {
+  construirRutaElemento,
+  elementoParentChainInclude,
+} from "../utils/elementoHierarchy";
 
 const AsignarAConjuntoDTO = z.object({
   conjuntoId: z.string().min(3),
@@ -164,7 +168,7 @@ export class MaquinariaService {
             tipo: true,
             prioridad: true,
             ubicacion: { select: { nombre: true } },
-            elemento: { select: { nombre: true } },
+            elemento: { include: elementoParentChainInclude },
           },
         },
       },
@@ -188,7 +192,7 @@ export class MaquinariaService {
               tipo: u.tarea.tipo,
               prioridad: u.tarea.prioridad,
               ubicacion: u.tarea.ubicacion?.nombre ?? null,
-              elemento: u.tarea.elemento?.nombre ?? null,
+              elemento: construirRutaElemento(u.tarea.elemento as any) ?? null,
               fechaInicio: u.tarea.fechaInicio,
               fechaFin: u.tarea.fechaFin,
             }

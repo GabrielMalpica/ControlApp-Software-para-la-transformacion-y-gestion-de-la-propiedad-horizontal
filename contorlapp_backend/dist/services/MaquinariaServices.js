@@ -10,6 +10,7 @@ exports.calcularVentanaPrestamoLogistico = calcularVentanaPrestamoLogistico;
 exports.validarMaquinariaDisponibleEnVentana = validarMaquinariaDisponibleEnVentana;
 exports.crearReservasMaquinariaParaTarea = crearReservasMaquinariaParaTarea;
 const zod_1 = require("zod");
+const elementoHierarchy_1 = require("../utils/elementoHierarchy");
 const AsignarAConjuntoDTO = zod_1.z.object({
     conjuntoId: zod_1.z.string().min(3),
     responsableId: zod_1.z.string().optional(), // ✅ Operario.id es String en tu schema
@@ -138,7 +139,7 @@ class MaquinariaService {
                         tipo: true,
                         prioridad: true,
                         ubicacion: { select: { nombre: true } },
-                        elemento: { select: { nombre: true } },
+                        elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                     },
                 },
             },
@@ -161,7 +162,7 @@ class MaquinariaService {
                         tipo: u.tarea.tipo,
                         prioridad: u.tarea.prioridad,
                         ubicacion: u.tarea.ubicacion?.nombre ?? null,
-                        elemento: u.tarea.elemento?.nombre ?? null,
+                        elemento: (0, elementoHierarchy_1.construirRutaElemento)(u.tarea.elemento) ?? null,
                         fechaInicio: u.tarea.fechaInicio,
                         fechaFin: u.tarea.fechaFin,
                     }

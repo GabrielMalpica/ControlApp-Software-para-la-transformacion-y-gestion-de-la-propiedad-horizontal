@@ -410,7 +410,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
                   final el = _elementos.firstWhere((x) => x.id == value);
                   setState(() => _elementoSeleccionado = el);
                 },
-                validator: (v) => v == null ? 'Seleccione un elemento' : null,
+                validator: (v) => v == null ? 'Seleccione un area final' : null,
               ),
               const SizedBox(height: 24),
 

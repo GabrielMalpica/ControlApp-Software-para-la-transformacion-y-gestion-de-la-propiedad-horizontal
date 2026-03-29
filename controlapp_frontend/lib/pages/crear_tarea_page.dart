@@ -2130,7 +2130,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                         setState(() => _elementoSeleccionado = el);
                       },
                       validator: (v) =>
-                          v == null ? 'Seleccione un elemento' : null,
+                          v == null ? 'Seleccione un area final' : null,
                     ),
                   ],
                 ),

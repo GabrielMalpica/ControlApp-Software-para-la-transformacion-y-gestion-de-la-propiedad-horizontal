@@ -4,6 +4,7 @@ import {
 } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
+import { elementoParentChainInclude } from "../utils/elementoHierarchy";
 import {
   CrearInsumoDTO,
   EditarInsumoDTO,
@@ -557,7 +558,11 @@ export class EmpresaService {
   async solicitudesTareaPendientes() {
     return prisma.solicitudTarea.findMany({
       where: { empresaId: this.empresaNit, estado: EstadoSolicitud.PENDIENTE },
-      include: { conjunto: true, ubicacion: true, elemento: true },
+      include: {
+        conjunto: true,
+        ubicacion: true,
+        elemento: { include: elementoParentChainInclude },
+      },
     });
   }
 
