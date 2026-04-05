@@ -15,6 +15,7 @@ router.post("/conjuntos/:nit/preventivas/generar-cronograma", (0, DefinicionTare
 router.get("/conjuntos/:nit/preventivas/borrador", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.listarBorrador));
 router.post("/conjuntos/:nit/preventivas/borrador/tarea", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.crearBloqueBorrador));
 router.patch("/conjuntos/:nit/preventivas/borrador/tarea/:id", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.editarBloqueBorrador));
+router.get("/conjuntos/:nit/preventivas/borrador/tarea/:id/opciones-reprogramacion", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.listarOpcionesReprogramacionBorrador));
 router.delete("/conjuntos/:nit/preventivas/borrador/tarea/:id", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.eliminarBloqueBorrador));
 // 🔹 Publicar
 router.post("/conjuntos/:nit/preventivas/publicar", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.publicarCronograma));

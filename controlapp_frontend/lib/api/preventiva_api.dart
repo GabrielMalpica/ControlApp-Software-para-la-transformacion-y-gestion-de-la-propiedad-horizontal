@@ -153,6 +153,37 @@ class DefinicionPreventivaApi {
     return {'creadas': 0, 'novedades': []};
   }
 
+  Future<Map<String, dynamic>> listarOpcionesReprogramacionBorrador({
+    required String nit,
+    required int tareaId,
+  }) async {
+    final resp = await _client.get(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/tarea/$tareaId/opciones-reprogramacion',
+    );
+    if (resp.statusCode != 200) {
+      throw Exception('Error consultando huecos de reprogramacion: ${resp.statusCode} ${resp.body}');
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  Future<void> editarBloqueBorrador({
+    required String nit,
+    required int tareaId,
+    required DateTime fechaInicio,
+    required DateTime fechaFin,
+  }) async {
+    final resp = await _client.patch(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/tarea/$tareaId',
+      body: {
+        'fechaInicio': fechaInicio.toIso8601String(),
+        'fechaFin': fechaFin.toIso8601String(),
+      },
+    );
+    if (resp.statusCode != 200) {
+      throw Exception('Error reprogramando preventiva reemplazada: ${resp.statusCode} ${resp.body}');
+    }
+  }
+
   Future<void> publicarCronogramaMensual({
     required String nit,
     required int anio,

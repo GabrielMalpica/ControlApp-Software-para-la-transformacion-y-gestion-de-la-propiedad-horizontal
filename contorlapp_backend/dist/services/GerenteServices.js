@@ -52,6 +52,10 @@ function normalizarPatronJornada(jornadaLaboral, patronJornada) {
         ? (patronJornada ?? null)
         : null;
 }
+const ESTADOS_TAREA_ACTIVOS = [
+    client_1.EstadoTarea.ASIGNADA,
+    client_1.EstadoTarea.EN_PROCESO,
+];
 const ESTADOS_NO_BLOQUEAN_AGENDA = [
     client_1.EstadoTarea.PENDIENTE_REPROGRAMACION,
     client_1.EstadoTarea.COMPLETADA,
@@ -71,6 +75,110 @@ const ESTADOS_BLOQUEADOS_PARA_REEMPLAZO = [
 class GerenteService {
     constructor(prisma) {
         this.prisma = prisma;
+    }
+    async obtenerEmpresaIdParaCambioRol(tx, userId) {
+        const [gerente, jefe, supervisor, operario] = await Promise.all([
+            tx.gerente.findUnique({ where: { id: userId }, select: { empresaId: true } }),
+            tx.jefeOperaciones.findUnique({ where: { id: userId }, select: { empresaId: true } }),
+            tx.supervisor.findUnique({ where: { id: userId }, select: { empresaId: true } }),
+            tx.operario.findUnique({ where: { id: userId }, select: { empresaId: true } }),
+        ]);
+        return (gerente?.empresaId ??
+            jefe?.empresaId ??
+            supervisor?.empresaId ??
+            operario?.empresaId ??
+            (await this.resolverEmpresaNit()));
+    }
+    async validarCambioRolSeguro(tx, userId, currentRole, nextRole) {
+        if (currentRole === nextRole)
+            return;
+        if (currentRole === client_1.Rol.administrador) {
+            const total = await tx.conjunto.count({ where: { administradorId: userId } });
+            if (total > 0) {
+                throw new Error('No se puede cambiar el rol de este administrador porque tiene conjuntos asignados.');
+            }
+        }
+        if (currentRole === client_1.Rol.supervisor) {
+            const [tareasActivas, preventivasActivas] = await Promise.all([
+                tx.tarea.count({
+                    where: { supervisorId: userId, estado: { in: [...ESTADOS_TAREA_ACTIVOS] } },
+                }),
+                tx.definicionTareaPreventiva.count({ where: { supervisorId: userId, activo: true } }),
+            ]);
+            if (tareasActivas > 0 || preventivasActivas > 0) {
+                throw new Error('No se puede cambiar el rol de este supervisor porque tiene tareas o preventivas activas asignadas.');
+            }
+        }
+        if (currentRole === client_1.Rol.operario) {
+            const [tareasActivas, preventivasActivas, conjuntosAsignados, solicitudesMaquinaria, maquinariaAsignada,] = await Promise.all([
+                tx.tarea.count({
+                    where: { operarios: { some: { id: userId } }, estado: { in: [...ESTADOS_TAREA_ACTIVOS] } },
+                }),
+                tx.definicionTareaPreventiva.count({
+                    where: { operarios: { some: { id: userId } }, activo: true },
+                }),
+                tx.conjunto.count({ where: { operarios: { some: { id: userId } } } }),
+                tx.solicitudMaquinaria.count({ where: { operarioId: userId } }),
+                tx.maquinaria.count({ where: { operarioId: userId } }),
+            ]);
+            if (tareasActivas > 0 ||
+                preventivasActivas > 0 ||
+                conjuntosAsignados > 0 ||
+                solicitudesMaquinaria > 0 ||
+                maquinariaAsignada > 0) {
+                throw new Error('No se puede cambiar el rol de este operario porque tiene asignaciones activas, conjuntos, solicitudes o maquinaria asociada.');
+            }
+        }
+    }
+    async sincronizarPerfilRol(tx, userId, currentRole, nextRole) {
+        if (currentRole === nextRole)
+            return;
+        await this.validarCambioRolSeguro(tx, userId, currentRole, nextRole);
+        switch (currentRole) {
+            case client_1.Rol.gerente:
+                await tx.gerente.deleteMany({ where: { id: userId } });
+                break;
+            case client_1.Rol.administrador:
+                await tx.administrador.deleteMany({ where: { id: userId } });
+                break;
+            case client_1.Rol.jefe_operaciones:
+                await tx.jefeOperaciones.deleteMany({ where: { id: userId } });
+                break;
+            case client_1.Rol.supervisor:
+                await tx.supervisor.deleteMany({ where: { id: userId } });
+                break;
+            case client_1.Rol.operario:
+                await tx.operario.deleteMany({ where: { id: userId } });
+                break;
+        }
+        const empresaId = await this.obtenerEmpresaIdParaCambioRol(tx, userId);
+        switch (nextRole) {
+            case client_1.Rol.gerente:
+                await tx.gerente.create({ data: { id: userId, empresaId } });
+                break;
+            case client_1.Rol.administrador:
+                await tx.administrador.create({ data: { id: userId } });
+                break;
+            case client_1.Rol.jefe_operaciones:
+                await tx.jefeOperaciones.create({ data: { id: userId, empresaId } });
+                break;
+            case client_1.Rol.supervisor:
+                await tx.supervisor.create({ data: { id: userId, empresaId } });
+                break;
+            case client_1.Rol.operario:
+                await tx.operario.create({
+                    data: {
+                        id: userId,
+                        empresaId,
+                        funciones: [],
+                        cursoSalvamentoAcuatico: false,
+                        cursoAlturas: false,
+                        examenIngreso: false,
+                        fechaIngreso: new Date(),
+                    },
+                });
+                break;
+        }
     }
     async resolverEmpresaNit() {
         const empresaFija = await this.prisma.empresa.findUnique({
@@ -232,6 +340,15 @@ class GerenteService {
             if (otro && otro.id !== id)
                 throw new Error("EMAIL_YA_REGISTRADO");
         }
+        const actual = await this.prisma.usuario.findUnique({
+            where: { id },
+            select: { id: true, rol: true },
+        });
+        if (!actual) {
+            throw new Error("Usuario no encontrado");
+        }
+        const currentRole = String(actual.rol).trim().toLowerCase();
+        const nextRole = dto.rol ?? currentRole;
         const data = { ...dto };
         if (dto.fechaNacimiento !== undefined) {
             data.fechaNacimiento = new Date(dto.fechaNacimiento);
@@ -248,32 +365,37 @@ class GerenteService {
         else {
             delete data.contrasena;
         }
-        const actualizado = await this.prisma.usuario.update({
-            where: { id },
-            data,
-            select: Usuario_1.usuarioPublicSelect,
-        });
-        if (dto.disponibilidadPeriodos !== undefined) {
-            const operario = await this.prisma.operario.findUnique({
+        await this.prisma.$transaction(async (tx) => {
+            await this.sincronizarPerfilRol(tx, id, currentRole, nextRole);
+            await tx.usuario.update({
                 where: { id },
-                select: { id: true },
+                data,
+                select: Usuario_1.usuarioPublicSelect,
             });
-            if (operario) {
-                await this.prisma.operarioDisponibilidadPeriodo.deleteMany({ where: { operarioId: id } });
-                if (dto.disponibilidadPeriodos.length) {
-                    await this.prisma.operarioDisponibilidadPeriodo.createMany({
-                        data: dto.disponibilidadPeriodos.map((item) => ({
-                            operarioId: id,
-                            fechaInicio: item.fechaInicio,
-                            fechaFin: item.fechaFin ?? null,
-                            trabajaDomingo: item.trabajaDomingo,
-                            diaDescanso: item.diaDescanso ?? null,
-                            observaciones: item.observaciones ?? null,
-                        })),
+            if (dto.disponibilidadPeriodos !== undefined) {
+                const operario = await tx.operario.findUnique({
+                    where: { id },
+                    select: { id: true },
+                });
+                if (operario) {
+                    await tx.operarioDisponibilidadPeriodo.deleteMany({
+                        where: { operarioId: id },
                     });
+                    if (dto.disponibilidadPeriodos.length) {
+                        await tx.operarioDisponibilidadPeriodo.createMany({
+                            data: dto.disponibilidadPeriodos.map((item) => ({
+                                operarioId: id,
+                                fechaInicio: item.fechaInicio,
+                                fechaFin: item.fechaFin ?? null,
+                                trabajaDomingo: item.trabajaDomingo,
+                                diaDescanso: item.diaDescanso ?? null,
+                                observaciones: item.observaciones ?? null,
+                            })),
+                        });
+                    }
                 }
             }
-        }
+        });
         return this.prisma.usuario.findUnique({ where: { id }, select: Usuario_1.usuarioPublicSelect });
     }
     async asignarGerente(payload) {

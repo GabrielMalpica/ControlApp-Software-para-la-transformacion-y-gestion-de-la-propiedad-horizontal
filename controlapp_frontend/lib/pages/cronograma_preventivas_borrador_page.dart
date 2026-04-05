@@ -743,6 +743,56 @@ class _CronogramaPreventivasBorradorPageState
       );
     }
 
+    Future<Map<String, dynamic>?> elegirHuecoReprogramacion(
+      BuildContext ctx,
+      int tareaId,
+    ) async {
+      final data = await _preventivaApi.listarOpcionesReprogramacionBorrador(
+        nit: widget.nit,
+        tareaId: tareaId,
+      );
+      if (!ctx.mounted) return null;
+      final opciones = (data['opciones'] as List? ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      if (opciones.isEmpty) return null;
+
+      return showDialog<Map<String, dynamic>>(
+        context: ctx,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Elegir hueco para reprogramar'),
+          content: SizedBox(
+            width: 420,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: opciones.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, index) {
+                final item = opciones[index];
+                final inicio = DateTime.tryParse(item['fechaInicio'].toString());
+                final fin = DateTime.tryParse(item['fechaFin'].toString());
+                final label = inicio != null && fin != null
+                    ? '${DateFormat('dd/MM/yyyy HH:mm').format(inicio)} - ${DateFormat('HH:mm').format(fin)}'
+                    : item.toString();
+                return ListTile(
+                  title: Text(label),
+                  subtitle: Text('Duracion: ${item['duracionMinutos']} min'),
+                  onTap: () => Navigator.pop(dialogContext, item),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        ),
+      );
+    }
+
     var novedadesActuales = List<NovedadCronogramaModel>.from(novedades);
     final enProceso = <String>{};
 
@@ -1013,6 +1063,31 @@ class _CronogramaPreventivasBorradorPageState
                                                                         reprogramarReemplazada:
                                                                             reprogramar,
                                                                       );
+                                                                      if (reprogramar) {
+                                                                        final reemplazo = nuevas.firstWhere(
+                                                                          (x) =>
+                                                                              x.tipo == 'REEMPLAZO_PRIORIDAD' &&
+                                                                              x.reprogramadasIds.isNotEmpty,
+                                                                          orElse: () => NovedadCronogramaModel(tipo: 'OTRO'),
+                                                                        );
+                                                                        final tareaId = reemplazo.reprogramadasIds.isNotEmpty
+                                                                            ? reemplazo.reprogramadasIds.first
+                                                                            : null;
+                                                                        if (tareaId != null && ctx.mounted) {
+                                                                          final hueco = await elegirHuecoReprogramacion(ctx, tareaId);
+                                                                          if (hueco != null) {
+                                                                            final fi = DateTime.parse(hueco['fechaInicio'].toString());
+                                                                            final ff = DateTime.parse(hueco['fechaFin'].toString());
+                                                                            await _preventivaApi.editarBloqueBorrador(
+                                                                              nit: widget.nit,
+                                                                              tareaId: tareaId,
+                                                                              fechaInicio: fi,
+                                                                              fechaFin: ff,
+                                                                            );
+                                                                            await _cargarDatos();
+                                                                          }
+                                                                        }
+                                                                      }
                                                                       if (!ctx
                                                                           .mounted) {
                                                                         return;

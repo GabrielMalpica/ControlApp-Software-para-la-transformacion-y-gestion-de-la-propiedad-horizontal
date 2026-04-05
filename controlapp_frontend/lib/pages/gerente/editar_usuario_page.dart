@@ -41,6 +41,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
   int numeroHijos = 0;
   bool padresVivos = true;
   String? tipoSangre, eps, fondo, tipoContrato, jornada;
+  String? rolSeleccionado;
   final List<_DisponibilidadPeriodoForm> _disponibilidadPeriodos = [];
 
   // ✅ NUEVOS
@@ -66,6 +67,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     _direccionCtrl = TextEditingController(text: u.direccion ?? '');
 
     fechaNacimiento = u.fechaNacimiento;
+    rolSeleccionado = u.rol;
     estadoCivilSeleccionado = u.estadoCivil;
     numeroHijos = u.numeroHijos ?? 0;
     padresVivos = u.padresVivos ?? true;
@@ -168,20 +170,26 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
         AppFeedback.showFromSnackBar(
           context,
           const SnackBar(
-            content: Text('Registre al menos un periodo de disponibilidad para el operario'),
+            content: Text(
+              'Registre al menos un periodo de disponibilidad para el operario',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
         return;
       }
       final periodoInvalido = periodos.any(
-        (p) => p.trabajaDomingo && (p.diaDescanso == null || p.diaDescanso == 'DOMINGO'),
+        (p) =>
+            p.trabajaDomingo &&
+            (p.diaDescanso == null || p.diaDescanso == 'DOMINGO'),
       );
       if (periodoInvalido) {
         AppFeedback.showFromSnackBar(
           context,
           const SnackBar(
-            content: Text('Si el operario trabaja domingo, debe tener un dia de descanso entre semana en ese periodo.'),
+            content: Text(
+              'Si el operario trabaja domingo, debe tener un dia de descanso entre semana en ese periodo.',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
@@ -195,6 +203,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
       final cambios = <String, dynamic>{
         'nombre': _nombreCtrl.text,
         'correo': _correoCtrl.text,
+        'rol': rolSeleccionado,
         'telefono': _telefonoCtrl.text,
         'direccion': _direccionCtrl.text.isEmpty
             ? null
@@ -348,6 +357,27 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                         ),
                         validator: (v) => v == null || !v.contains('@')
                             ? 'Correo inválido'
+                            : null,
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: rolSeleccionado,
+                        items: enums.roles
+                            .map(
+                              (rol) => DropdownMenuItem(
+                                value: rol,
+                                child: Text(prettyEnum(rol)),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) =>
+                            setState(() => rolSeleccionado = value),
+                        decoration: const InputDecoration(
+                          labelText: 'Rol del usuario',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) => value == null || value.isEmpty
+                            ? 'Seleccione un rol'
                             : null,
                       ),
                       const SizedBox(height: 12),
@@ -654,7 +684,9 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                             ),
                             TextButton.icon(
                               onPressed: () => setState(() {
-                                _disponibilidadPeriodos.add(_DisponibilidadPeriodoForm());
+                                _disponibilidadPeriodos.add(
+                                  _DisponibilidadPeriodoForm(),
+                                );
                               }),
                               icon: const Icon(Icons.add),
                               label: const Text('Agregar periodo'),
@@ -715,7 +747,9 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
 class _DisponibilidadPeriodoForm {
   _DisponibilidadPeriodoForm();
 
-  factory _DisponibilidadPeriodoForm.fromModel(DisponibilidadOperarioPeriodo model) {
+  factory _DisponibilidadPeriodoForm.fromModel(
+    DisponibilidadOperarioPeriodo model,
+  ) {
     final item = _DisponibilidadPeriodoForm();
     item.id = model.id;
     item.fechaInicio = model.fechaInicio;
@@ -804,10 +838,16 @@ class _DisponibilidadPeriodoCard extends StatelessWidget {
             Row(
               children: [
                 const Expanded(
-                  child: Text('Periodo de disponibilidad', style: TextStyle(fontWeight: FontWeight.w700)),
+                  child: Text(
+                    'Periodo de disponibilidad',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ),
                 if (onRemove != null)
-                  IconButton(onPressed: onRemove, icon: const Icon(Icons.delete_outline)),
+                  IconButton(
+                    onPressed: onRemove,
+                    icon: const Icon(Icons.delete_outline),
+                  ),
               ],
             ),
             InkWell(
@@ -818,7 +858,10 @@ class _DisponibilidadPeriodoCard extends StatelessWidget {
                 helpText: 'Inicio del periodo',
               ),
               child: InputDecorator(
-                decoration: const InputDecoration(labelText: 'Fecha inicio', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Fecha inicio',
+                  border: OutlineInputBorder(),
+                ),
                 child: Text(fmt(item.fechaInicio)),
               ),
             ),
@@ -831,16 +874,25 @@ class _DisponibilidadPeriodoCard extends StatelessWidget {
                 helpText: 'Fin del periodo',
               ),
               child: InputDecorator(
-                decoration: const InputDecoration(labelText: 'Fecha fin (opcional)', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Fecha fin (opcional)',
+                  border: OutlineInputBorder(),
+                ),
                 child: Text(fmt(item.fechaFin)),
               ),
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String?>(
               initialValue: item.diaDescanso,
-              decoration: const InputDecoration(labelText: 'Dia de descanso semanal', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                labelText: 'Dia de descanso semanal',
+                border: OutlineInputBorder(),
+              ),
               items: [
-                const DropdownMenuItem<String?>(value: null, child: Text('Sin definir')),
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('Sin definir'),
+                ),
                 ...dias.map((d) => DropdownMenuItem(value: d, child: Text(d))),
               ],
               onChanged: (v) {
@@ -888,13 +940,22 @@ class _PatronJornadaHelpCard extends StatelessWidget {
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Referencia de patrones', style: TextStyle(fontWeight: FontWeight.w700)),
+          Text(
+            'Referencia de patrones',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
           SizedBox(height: 6),
-          Text('MEDIO_SEMANA_SABADO: lunes a viernes antes del almuerzo y sabado completo.'),
+          Text(
+            'MEDIO_SEMANA_SABADO: lunes a viernes antes del almuerzo y sabado completo.',
+          ),
           SizedBox(height: 4),
-          Text('MEDIO_SEMANA_SABADO_TARDE: lunes a viernes despues del almuerzo y sabado completo.'),
+          Text(
+            'MEDIO_SEMANA_SABADO_TARDE: lunes a viernes despues del almuerzo y sabado completo.',
+          ),
           SizedBox(height: 4),
-          Text('MEDIO_DIAS_INTERCALADOS: lunes, miercoles, viernes y sabado completos.'),
+          Text(
+            'MEDIO_DIAS_INTERCALADOS: lunes, miercoles, viernes y sabado completos.',
+          ),
         ],
       ),
     );
@@ -917,15 +978,26 @@ class _DisponibilidadPeriodoHelpCard extends StatelessWidget {
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Como funciona este periodo', style: TextStyle(fontWeight: FontWeight.w700)),
+          Text(
+            'Como funciona este periodo',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
           SizedBox(height: 6),
-          Text('Fecha inicio: desde que dia empieza a aplicar este esquema de trabajo.'),
+          Text(
+            'Fecha inicio: desde que dia empieza a aplicar este esquema de trabajo.',
+          ),
           SizedBox(height: 4),
-          Text('Fecha fin: hasta que dia aplica. Si lo dejas vacio, sigue vigente hasta nuevo aviso.'),
+          Text(
+            'Fecha fin: hasta que dia aplica. Si lo dejas vacio, sigue vigente hasta nuevo aviso.',
+          ),
           SizedBox(height: 4),
-          Text('Trabaja domingos: actívalo solo si en ese periodo el operario sí labora domingo.'),
+          Text(
+            'Trabaja domingos: actívalo solo si en ese periodo el operario sí labora domingo.',
+          ),
           SizedBox(height: 4),
-          Text('Dia de descanso semanal: indica qué dia descansa durante ese mismo periodo.'),
+          Text(
+            'Dia de descanso semanal: indica qué dia descansa durante ese mismo periodo.',
+          ),
         ],
       ),
     );

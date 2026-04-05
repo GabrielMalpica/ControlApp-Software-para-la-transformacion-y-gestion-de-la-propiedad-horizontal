@@ -31,6 +31,7 @@ import {
   siguienteDiaHabil,
   splitMinutes,
   toDateAtMin,
+  toMinOfDay,
   toMin,
   ymdLocal,
 } from "../utils/schedulerUtils";
@@ -1992,6 +1993,124 @@ export class DefinicionTareaPreventivaService {
             : { set: dto.operariosIds.map((id) => ({ id: id.toString() })) },
       },
     });
+  }
+
+  async listarOpcionesReprogramacionBorrador(conjuntoId: string, tareaId: number) {
+    const tarea = await this.prisma.tarea.findUnique({
+      where: { id: tareaId },
+      include: { operarios: { select: { id: true } } },
+    });
+
+    if (!tarea || !tarea.borrador || tarea.conjuntoId !== conjuntoId || tarea.tipo !== TipoTarea.PREVENTIVA) {
+      throw new Error("No es una preventiva en borrador valida para reprogramar.");
+    }
+
+    const horarios = await this.prisma.conjuntoHorario.findMany({ where: { conjuntoId } });
+    const horariosPorDia = new Map<DiaSemana, HorarioDia>();
+    for (const h of horarios) {
+      horariosPorDia.set(h.dia, {
+        startMin: toMin(h.horaApertura),
+        endMin: toMin(h.horaCierre),
+        descansoStartMin: h.descansoInicio ? toMin(h.descansoInicio) : undefined,
+        descansoEndMin: h.descansoFin ? toMin(h.descansoFin) : undefined,
+      });
+    }
+
+    const inicioBase = new Date(tarea.fechaInicioOriginal ?? tarea.fechaInicio);
+    const finBusqueda = new Date(inicioBase);
+    finBusqueda.setDate(finBusqueda.getDate() + 7);
+    const festivosSet = await getFestivosSet({
+      prisma: this.prisma,
+      pais: "CO",
+      inicio: inicioBase,
+      fin: finBusqueda,
+    });
+
+    const operariosIds = tarea.operarios.map((o) => o.id);
+    const opciones: Array<{ fecha: string; fechaInicio: string; fechaFin: string; duracionMinutos: number }> = [];
+
+    let dia = new Date(inicioBase);
+    dia.setDate(dia.getDate() + 1);
+
+    for (let guard = 0; guard < 10 && opciones.length < 5; guard++) {
+      const key = dayKey(dia);
+      if (festivosSet.has(key)) {
+        dia.setDate(dia.getDate() + 1);
+        continue;
+      }
+      const horario = horariosPorDia.get(dateToDiaSemana(dia));
+      if (!horario) {
+        dia.setDate(dia.getDate() + 1);
+        continue;
+      }
+      const disponibilidad = operariosIds.length
+        ? await validarOperariosDisponiblesEnFecha({ prisma: this.prisma, fecha: dia, operariosIds })
+        : { ok: true, noDisponibles: [] as string[] };
+      if (!disponibilidad.ok) {
+        dia.setDate(dia.getDate() + 1);
+        continue;
+      }
+
+      const bloqueos = [
+        ...buildBloqueosPorDescanso(horario),
+        ...(await buildBloqueosPorPatronJornada({
+          prisma: this.prisma,
+          fechaDia: dia,
+          horarioDia: horario,
+          operariosIds,
+        })),
+      ];
+
+      let ocupadosGlobal: Intervalo[] = [];
+      if (operariosIds.length) {
+        const ini = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 0, 0, 0, 0);
+        const fin = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 23, 59, 59, 999);
+        const tareasDia = await this.prisma.tarea.findMany({
+          where: {
+            conjuntoId,
+            id: { not: tareaId },
+            fechaInicio: { lte: fin },
+            fechaFin: { gte: ini },
+            estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
+            operarios: { some: { id: { in: operariosIds } } },
+          },
+          select: { fechaInicio: true, fechaFin: true },
+        });
+        const all: Intervalo[] = [];
+        for (const t of tareasDia) {
+          all.push({ i: toMinOfDay(t.fechaInicio), f: toMinOfDay(t.fechaFin) });
+        }
+        all.push(...bloqueos.map((b) => ({ i: b.startMin, f: b.endMin })));
+        ocupadosGlobal = mergeIntervalos(all);
+      } else {
+        ocupadosGlobal = mergeIntervalos(bloqueos.map((b) => ({ i: b.startMin, f: b.endMin })));
+      }
+
+      const bloques = buscarHuecoDiaConSplitEarliest({
+        startMin: horario.startMin,
+        endMin: horario.endMin,
+        durMin: tarea.duracionMinutos ?? 60,
+        ocupados: ocupadosGlobal,
+        bloqueos,
+        desiredStartMin: horario.startMin,
+        maxBloques: 1,
+      });
+
+      if (bloques && bloques.length === 1) {
+        const ini = toDateAtMin(dia, bloques[0].i);
+        const fin = toDateAtMin(dia, bloques[0].f);
+        opciones.push({
+          fecha: key,
+          fechaInicio: ini.toISOString(),
+          fechaFin: fin.toISOString(),
+          duracionMinutos: Math.max(1, Math.round((fin.getTime() - ini.getTime()) / 60000)),
+        });
+      }
+
+      dia.setDate(dia.getDate() + 1);
+    }
+
+    return { tareaId, descripcion: tarea.descripcion, opciones };
   }
 
   /* =========================

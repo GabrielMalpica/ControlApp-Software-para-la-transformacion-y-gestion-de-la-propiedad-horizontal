@@ -47,8 +47,16 @@ class ListaConjuntosPage extends StatefulWidget {
 
 class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
   final GerenteApi _api = GerenteApi();
+  final TextEditingController _busquedaCtrl = TextEditingController();
   late Future<List<Conjunto>> _futureConjuntos;
   bool _hasChanges = false;
+  String _busqueda = '';
+
+  @override
+  void dispose() {
+    _busquedaCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -123,6 +131,14 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
   String _valorMensual(double? valor) {
     if (valor == null) return 'Sin valor mensual';
     return '\$${valor.toStringAsFixed(0)} / mes';
+  }
+
+  List<Conjunto> _filtrarConjuntos(List<Conjunto> conjuntos) {
+    final q = _busqueda.trim().toLowerCase();
+    if (q.isEmpty) return conjuntos;
+    return conjuntos.where((c) {
+      return '${c.nombre} ${c.nit}'.toLowerCase().contains(q);
+    }).toList();
   }
 
   Future<void> _confirmarEliminar(Conjunto c) async {
@@ -568,11 +584,12 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
             );
           }
 
-          final conjuntos = [...(snapshot.data ?? [])]
+          final conjuntos = <Conjunto>[...(snapshot.data ?? const <Conjunto>[])]
             ..sort(
               (a, b) =>
                   a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()),
             );
+          final conjuntosFiltrados = _filtrarConjuntos(conjuntos);
 
           if (conjuntos.isEmpty) {
             return RefreshIndicator(
@@ -642,7 +659,35 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                ...conjuntos.map(
+                TextField(
+                  controller: _busquedaCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Buscar conjunto',
+                    hintText: 'Nombre o NIT',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: _busqueda.trim().isEmpty
+                        ? null
+                        : IconButton(
+                            onPressed: () {
+                              _busquedaCtrl.clear();
+                              setState(() => _busqueda = '');
+                            },
+                            icon: const Icon(Icons.clear_rounded),
+                          ),
+                  ),
+                  onChanged: (value) => setState(() => _busqueda = value),
+                ),
+                const SizedBox(height: 12),
+                if (conjuntosFiltrados.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 32),
+                    child: Center(
+                      child: Text(
+                        'No hay conjuntos que coincidan con la búsqueda.',
+                      ),
+                    ),
+                  ),
+                ...conjuntosFiltrados.map(
                   (c) => Card(
                     margin: const EdgeInsets.only(bottom: 10),
                     shape: RoundedRectangleBorder(

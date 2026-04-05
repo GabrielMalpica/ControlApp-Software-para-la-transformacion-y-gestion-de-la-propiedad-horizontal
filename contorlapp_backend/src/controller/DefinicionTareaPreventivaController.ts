@@ -222,4 +222,13 @@ export class DefinicionTareaPreventivaController {
     const out = await svc.listarBorrador({ conjuntoId, anio, mes }); // método simple en el service
     res.json(out);
   };
+
+  listarOpcionesReprogramacionBorrador = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) throw new Error("ID inválido");
+    const svc = new DefinicionTareaPreventivaService(prisma);
+    const out = await svc.listarOpcionesReprogramacionBorrador(conjuntoId, id);
+    res.json(out);
+  };
 }

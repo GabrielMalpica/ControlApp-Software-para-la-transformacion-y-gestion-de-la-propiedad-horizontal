@@ -1432,6 +1432,112 @@ class DefinicionTareaPreventivaService {
             },
         });
     }
+    async listarOpcionesReprogramacionBorrador(conjuntoId, tareaId) {
+        const tarea = await this.prisma.tarea.findUnique({
+            where: { id: tareaId },
+            include: { operarios: { select: { id: true } } },
+        });
+        if (!tarea || !tarea.borrador || tarea.conjuntoId !== conjuntoId || tarea.tipo !== client_1.TipoTarea.PREVENTIVA) {
+            throw new Error("No es una preventiva en borrador valida para reprogramar.");
+        }
+        const horarios = await this.prisma.conjuntoHorario.findMany({ where: { conjuntoId } });
+        const horariosPorDia = new Map();
+        for (const h of horarios) {
+            horariosPorDia.set(h.dia, {
+                startMin: (0, schedulerUtils_1.toMin)(h.horaApertura),
+                endMin: (0, schedulerUtils_1.toMin)(h.horaCierre),
+                descansoStartMin: h.descansoInicio ? (0, schedulerUtils_1.toMin)(h.descansoInicio) : undefined,
+                descansoEndMin: h.descansoFin ? (0, schedulerUtils_1.toMin)(h.descansoFin) : undefined,
+            });
+        }
+        const inicioBase = new Date(tarea.fechaInicioOriginal ?? tarea.fechaInicio);
+        const finBusqueda = new Date(inicioBase);
+        finBusqueda.setDate(finBusqueda.getDate() + 7);
+        const festivosSet = await (0, schedulerUtils_1.getFestivosSet)({
+            prisma: this.prisma,
+            pais: "CO",
+            inicio: inicioBase,
+            fin: finBusqueda,
+        });
+        const operariosIds = tarea.operarios.map((o) => o.id);
+        const opciones = [];
+        let dia = new Date(inicioBase);
+        dia.setDate(dia.getDate() + 1);
+        for (let guard = 0; guard < 10 && opciones.length < 5; guard++) {
+            const key = dayKey(dia);
+            if (festivosSet.has(key)) {
+                dia.setDate(dia.getDate() + 1);
+                continue;
+            }
+            const horario = horariosPorDia.get(dateToDiaSemana(dia));
+            if (!horario) {
+                dia.setDate(dia.getDate() + 1);
+                continue;
+            }
+            const disponibilidad = operariosIds.length
+                ? await (0, operarioAvailability_1.validarOperariosDisponiblesEnFecha)({ prisma: this.prisma, fecha: dia, operariosIds })
+                : { ok: true, noDisponibles: [] };
+            if (!disponibilidad.ok) {
+                dia.setDate(dia.getDate() + 1);
+                continue;
+            }
+            const bloqueos = [
+                ...buildBloqueosPorDescanso(horario),
+                ...(await buildBloqueosPorPatronJornada({
+                    prisma: this.prisma,
+                    fechaDia: dia,
+                    horarioDia: horario,
+                    operariosIds,
+                })),
+            ];
+            let ocupadosGlobal = [];
+            if (operariosIds.length) {
+                const ini = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 0, 0, 0, 0);
+                const fin = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 23, 59, 59, 999);
+                const tareasDia = await this.prisma.tarea.findMany({
+                    where: {
+                        conjuntoId,
+                        id: { not: tareaId },
+                        fechaInicio: { lte: fin },
+                        fechaFin: { gte: ini },
+                        estado: { notIn: ["PENDIENTE_REPROGRAMACION"] },
+                        operarios: { some: { id: { in: operariosIds } } },
+                    },
+                    select: { fechaInicio: true, fechaFin: true },
+                });
+                const all = [];
+                for (const t of tareasDia) {
+                    all.push({ i: (0, schedulerUtils_1.toMinOfDay)(t.fechaInicio), f: (0, schedulerUtils_1.toMinOfDay)(t.fechaFin) });
+                }
+                all.push(...bloqueos.map((b) => ({ i: b.startMin, f: b.endMin })));
+                ocupadosGlobal = (0, schedulerUtils_1.mergeIntervalos)(all);
+            }
+            else {
+                ocupadosGlobal = (0, schedulerUtils_1.mergeIntervalos)(bloqueos.map((b) => ({ i: b.startMin, f: b.endMin })));
+            }
+            const bloques = (0, schedulerUtils_1.buscarHuecoDiaConSplitEarliest)({
+                startMin: horario.startMin,
+                endMin: horario.endMin,
+                durMin: tarea.duracionMinutos ?? 60,
+                ocupados: ocupadosGlobal,
+                bloqueos,
+                desiredStartMin: horario.startMin,
+                maxBloques: 1,
+            });
+            if (bloques && bloques.length === 1) {
+                const ini = (0, schedulerUtils_1.toDateAtMin)(dia, bloques[0].i);
+                const fin = (0, schedulerUtils_1.toDateAtMin)(dia, bloques[0].f);
+                opciones.push({
+                    fecha: key,
+                    fechaInicio: ini.toISOString(),
+                    fechaFin: fin.toISOString(),
+                    duracionMinutos: Math.max(1, Math.round((fin.getTime() - ini.getTime()) / 60000)),
+                });
+            }
+            dia.setDate(dia.getDate() + 1);
+        }
+        return { tareaId, descripcion: tarea.descripcion, opciones };
+    }
     /* =========================
      * MAQUINARIA DISPONIBLE
      * ======================= */

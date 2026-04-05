@@ -58,7 +58,9 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
       final data = (out['data'] as List?) ?? [];
       final parsed = data
           .whereType<Map>()
-          .map((row) => HerramientaResponse.fromJson(row.cast<String, dynamic>()))
+          .map(
+            (row) => HerramientaResponse.fromJson(row.cast<String, dynamic>()),
+          )
           .toList();
 
       if (!mounted) return;
@@ -73,7 +75,9 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
 
   Future<void> _openCreate() async {
     final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => CrearHerramientaPage(empresaId: _empresaId)),
+      MaterialPageRoute(
+        builder: (_) => CrearHerramientaPage(empresaId: _empresaId),
+      ),
     );
     if (changed == true) {
       await _load();
@@ -133,13 +137,17 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
             onPressed: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => StockHerramientasEmpresaPage(empresaId: _empresaId),
+                  builder: (_) =>
+                      StockHerramientasEmpresaPage(empresaId: _empresaId),
                 ),
               );
             },
             icon: const Icon(Icons.inventory_2_outlined),
           ),
-          IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
+          IconButton(
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh),
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -243,7 +251,11 @@ class _HeaderCard extends StatelessWidget {
         children: [
           const Text(
             'Aqui administras solo las herramientas de la empresa',
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 6),
           const Text(
@@ -282,7 +294,14 @@ class _MetricChip extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(value, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
           const SizedBox(height: 2),
           Text(label, style: const TextStyle(color: Colors.white70)),
         ],
@@ -295,10 +314,7 @@ class _ToolCard extends StatelessWidget {
   final HerramientaResponse item;
   final VoidCallback onDelete;
 
-  const _ToolCard({
-    required this.item,
-    required this.onDelete,
-  });
+  const _ToolCard({required this.item, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -318,7 +334,13 @@ class _ToolCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(item.nombre, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                    Text(
+                      item.nombre,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       '${item.categoria.label} · ${item.modoControl.label}',
@@ -340,8 +362,10 @@ class _ToolCard extends StatelessWidget {
             runSpacing: 8,
             children: [
               _PlainChip(text: 'Unidad: ${item.unidad}'),
-              if (item.umbralBajo != null) _PlainChip(text: 'Alerta: ${item.umbralBajo}'),
-              if (item.vidaUtilDias != null) _PlainChip(text: 'Vida util: ${item.vidaUtilDias} dias'),
+              if (item.umbralBajo != null)
+                _PlainChip(text: 'Alerta: ${item.umbralBajo}'),
+              if (item.vidaUtilDias != null)
+                _PlainChip(text: 'Vida util: ${item.vidaUtilDias} dias'),
             ],
           ),
           const SizedBox(height: 12),
@@ -403,7 +427,10 @@ class _StateCard extends StatelessWidget {
           children: [
             Icon(icon, size: 56, color: Colors.grey.shade700),
             const SizedBox(height: 12),
-            Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+            ),
             const SizedBox(height: 8),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 14),

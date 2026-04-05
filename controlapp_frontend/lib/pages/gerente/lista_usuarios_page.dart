@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import '../../api/gerente_api.dart';
+import '../../model/conjunto_model.dart';
 import '../../model/usuario_model.dart';
 import '../../repositories/usuario_repository.dart';
 import '../../service/theme.dart';
+import '../../widgets/searchable_select_field.dart';
 import 'crear_usuario_page.dart';
 import 'editar_usuario_page.dart';
 import 'detalle_usuario_page.dart';
@@ -20,15 +23,18 @@ class ListaUsuariosPage extends StatefulWidget {
 
 class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
   final UsuarioRepository _usuarioRepository = UsuarioRepository();
+  final GerenteApi _gerenteApi = GerenteApi();
   final TextEditingController _busquedaCtrl = TextEditingController();
 
   List<Usuario> _usuarios = [];
+  List<Conjunto> _conjuntos = [];
   bool _cargando = true;
   String? _error;
 
   // Filtro por rol
   String _filtroRol = 'todos';
   String _busqueda = '';
+  Conjunto? _filtroConjunto;
 
   // Roles disponibles (los mismos del enum del back)
   final List<String> _rolesDisponibles = [
@@ -59,9 +65,15 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
     });
 
     try {
-      final lista = await _usuarioRepository.obtenerUsuarios();
+      final results = await Future.wait<dynamic>([
+        _usuarioRepository.obtenerUsuarios(),
+        _gerenteApi.listarConjuntos(),
+      ]);
+      final lista = results[0] as List<Usuario>;
+      final conjuntos = results[1] as List<Conjunto>;
       setState(() {
         _usuarios = lista;
+        _conjuntos = conjuntos;
       });
     } catch (e) {
       setState(() {
@@ -80,13 +92,23 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
       final coincideRol = _filtroRol == 'todos' || u.rol == _filtroRol;
       if (!coincideRol) return false;
 
+      if (_filtroConjunto != null) {
+        final conjunto = _filtroConjunto!;
+        final pertenece =
+            conjunto.administradorId == u.cedula ||
+            conjunto.operarios.any((operario) => operario.cedula == u.cedula);
+        if (!pertenece) return false;
+      }
+
       final q = _busqueda.trim().toLowerCase();
       if (q.isEmpty) return true;
 
-      return [u.nombre, u.cedula, u.correo, _prettyRol(u.rol)]
-          .join(' ')
-          .toLowerCase()
-          .contains(q);
+      return [
+        u.nombre,
+        u.cedula,
+        u.correo,
+        _prettyRol(u.rol),
+      ].join(' ').toLowerCase().contains(q);
     }).toList();
   }
 
@@ -236,6 +258,24 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
                   ],
                 ),
               ),
+            ),
+            const SizedBox(height: 8),
+            SearchableSelectField<Conjunto>(
+              label: 'Filtrar por conjunto',
+              value: _filtroConjunto,
+              prefixIcon: const Icon(Icons.apartment_rounded),
+              searchHint: 'Buscar conjunto o NIT',
+              clearLabel: 'Todos los conjuntos',
+              options: _conjuntos
+                  .map(
+                    (conjunto) => SearchableSelectOption<Conjunto>(
+                      value: conjunto,
+                      label: conjunto.nombre,
+                      subtitle: 'NIT: ${conjunto.nit}',
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) => setState(() => _filtroConjunto = value),
             ),
             const SizedBox(height: 8),
             TextField(

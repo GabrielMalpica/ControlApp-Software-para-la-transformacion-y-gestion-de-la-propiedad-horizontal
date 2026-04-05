@@ -37,6 +37,10 @@ router.patch(
   "/conjuntos/:nit/preventivas/borrador/tarea/:id",
   asyncHandler(ctrl.editarBloqueBorrador),
 );
+router.get(
+  "/conjuntos/:nit/preventivas/borrador/tarea/:id/opciones-reprogramacion",
+  asyncHandler(ctrl.listarOpcionesReprogramacionBorrador),
+);
 
 router.delete(
   "/conjuntos/:nit/preventivas/borrador/tarea/:id",
