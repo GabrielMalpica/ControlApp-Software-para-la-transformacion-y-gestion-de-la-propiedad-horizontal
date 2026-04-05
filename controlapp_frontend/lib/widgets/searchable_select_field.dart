@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+class _SearchableClearSelection {
+  const _SearchableClearSelection();
+}
+
 class SearchableSelectOption<T> {
   const SearchableSelectOption({
     required this.value,
@@ -130,6 +134,8 @@ Future<T?> showSearchableSelectionSheet<T>({
 }
 
 class SearchableSelectField<T> extends StatelessWidget {
+  static const _clearSelection = _SearchableClearSelection();
+
   const SearchableSelectField({
     super.key,
     required this.label,
@@ -169,14 +175,14 @@ class SearchableSelectField<T> extends StatelessWidget {
       onTap: !enabled
           ? null
           : () async {
-              final picked = await showSearchableSelectionSheet<T?>(
+              final picked = await showSearchableSelectionSheet<Object?>(
                 context: context,
                 title: label,
                 selectedValue: value,
                 searchHint: searchHint,
                 options: options
                     .map(
-                      (option) => SearchableSelectOption<T?>(
+                      (option) => SearchableSelectOption<Object?>(
                         value: option.value,
                         label: option.label,
                         subtitle: option.subtitle,
@@ -185,28 +191,32 @@ class SearchableSelectField<T> extends StatelessWidget {
                     .toList(),
                 clearOption: clearLabel == null
                     ? null
-                    : SearchableSelectOption<T?>(
-                        value: null,
+                    : SearchableSelectOption<Object?>(
+                        value: _clearSelection,
                         label: clearLabel!,
                         subtitle: clearSubtitle,
                       ),
               );
-              onChanged(picked);
+              if (picked == null) return;
+              if (picked == _clearSelection) {
+                onChanged(null);
+                return;
+              }
+              onChanged(picked as T);
             },
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         decoration: BoxDecoration(
-          color: enabled ? null : Theme.of(context).disabledColor.withValues(alpha: 0.06),
+          color: enabled
+              ? null
+              : Theme.of(context).disabledColor.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Theme.of(context).dividerColor),
         ),
         child: Row(
           children: [
-            if (prefixIcon != null) ...[
-              prefixIcon!,
-              const SizedBox(width: 10),
-            ],
+            if (prefixIcon != null) ...[prefixIcon!, const SizedBox(width: 10)],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

@@ -12,6 +12,7 @@ import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_p
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
+import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_insumo_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_conjuntos_page.dart';
@@ -644,6 +645,15 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             ),
           );
         }),
+        _Tile("Mapa de areas", Icons.account_tree_outlined, Colors.teal, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  MapaConjuntoPage(conjuntoNit: nit, conjuntoInicial: conjunto),
+            ),
+          );
+        }),
       ]),
       _TileSection("Analisis y control", [
         _Tile("Reporte conjunto", Icons.bar_chart, AppTheme.green, () {
@@ -737,19 +747,19 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           );
         },
       ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            ConjuntoSelectorCard(
-              conjuntoActual: conjunto,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          ConjuntoSelectorCard(
+            conjuntoActual: conjunto,
             conjuntos: _conjuntos,
             selectedNit: _conjuntoSeleccionadoNit,
             onChanged: (v) => setState(() => _conjuntoSeleccionadoNit = v),
-            ),
-            const SizedBox(height: 18),
-            const CumpleanosBanner(),
-            const SizedBox(height: 18),
-            DashboardSurface(
+          ),
+          const SizedBox(height: 18),
+          const CumpleanosBanner(),
+          const SizedBox(height: 18),
+          DashboardSurface(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
