@@ -242,6 +242,47 @@ class GerenteService {
             }
         }
     }
+    async sincronizarArbolElementos(ubicacionId, nodos, padreId = null) {
+        const existentes = await this.prisma.elemento.findMany({
+            where: { ubicacionId, padreId },
+            select: { id: true, nombre: true },
+        });
+        const existentesById = new Map(existentes.map((item) => [item.id, item]));
+        const retainedIds = new Set();
+        for (const nodo of nodos) {
+            const nombre = nodo.nombre.trim();
+            if (!nombre)
+                continue;
+            let elementoId;
+            if (nodo.id != null && existentesById.has(nodo.id)) {
+                elementoId = nodo.id;
+                retainedIds.add(elementoId);
+                await this.prisma.elemento.update({
+                    where: { id: elementoId },
+                    data: { nombre },
+                });
+            }
+            else {
+                const creado = await this.prisma.elemento.create({
+                    data: { nombre, ubicacionId, padreId },
+                    select: { id: true },
+                });
+                elementoId = creado.id;
+                retainedIds.add(elementoId);
+            }
+            await this.sincronizarArbolElementos(ubicacionId, nodo.hijos ?? [], elementoId);
+        }
+        for (const existente of existentes) {
+            if (!retainedIds.has(existente.id)) {
+                try {
+                    await this.prisma.elemento.delete({ where: { id: existente.id } });
+                }
+                catch {
+                    throw new Error(`No se puede eliminar la zona o area "${existente.nombre}" porque ya tiene informacion operativa asociada.`);
+                }
+            }
+        }
+    }
     validarDisponibilidadOperarioPeriodos(periodos) {
         const invalido = periodos.some((item) => item.trabajaDomingo &&
             (!item.diaDescanso || String(item.diaDescanso).toUpperCase() === "DOMINGO"));
@@ -743,10 +784,10 @@ class GerenteService {
                     },
                 },
             });
-            const byNombre = new Map(ubicacionesActuales.map((u) => [u.nombre.trim().toLowerCase(), u]));
+            const byId = new Map(ubicacionesActuales.map((u) => [u.id, u]));
+            const retainedUbicaciones = new Set();
             for (const u of dto.ubicaciones) {
-                const key = u.nombre.trim().toLowerCase();
-                const existente = byNombre.get(key);
+                const existente = u.id != null ? byId.get(u.id) : undefined;
                 if (!existente) {
                     const creada = await this.prisma.ubicacion.create({
                         data: {
@@ -755,22 +796,36 @@ class GerenteService {
                         },
                         select: { id: true },
                     });
+                    retainedUbicaciones.add(creada.id);
                     if (u.elementos?.length) {
-                        await this.crearArbolElementos(creada.id, u.elementos);
+                        await this.sincronizarArbolElementos(creada.id, u.elementos);
                     }
                     continue;
                 }
-                if (u.elementos && u.elementos.length > 0) {
-                    await this.upsertArbolElementosPorNombre(existente.id, u.elementos);
+                retainedUbicaciones.add(existente.id);
+                await this.prisma.ubicacion.update({
+                    where: { id: existente.id },
+                    data: { nombre: u.nombre },
+                });
+                await this.sincronizarArbolElementos(existente.id, u.elementos ?? []);
+            }
+            for (const ubicacion of ubicacionesActuales) {
+                if (!retainedUbicaciones.has(ubicacion.id)) {
+                    try {
+                        await this.prisma.ubicacion.delete({ where: { id: ubicacion.id } });
+                    }
+                    catch {
+                        throw new Error(`No se puede eliminar la ubicacion "${ubicacion.nombre}" porque ya tiene informacion operativa asociada.`);
+                    }
                 }
             }
         }
-        const actualizado = await this.prisma.conjunto.update({
+        await this.prisma.conjunto.update({
             where: { nit: conjuntoId },
             data,
-            select: Conjunto_1.conjuntoPublicSelect,
+            select: { nit: true },
         });
-        return (0, Conjunto_1.toConjuntoPublico)(actualizado);
+        return this.obtenerConjunto(conjuntoId);
     }
     async eliminarConjunto(conjuntoId) {
         const [tareasPendientes, maquinariaActivaEnConjunto] = await Promise.all([

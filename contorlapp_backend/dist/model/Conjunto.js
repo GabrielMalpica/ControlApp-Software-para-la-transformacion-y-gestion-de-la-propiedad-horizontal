@@ -52,10 +52,12 @@ exports.HorarioDTO = zod_1.z
 });
 /* ===================== DTOs ===================== */
 exports.NodoElementoDTO = zod_1.z.object({
+    id: zod_1.z.coerce.number().int().positive().optional(),
     nombre: zod_1.z.string().min(2, "El nombre es obligatorio"),
     hijos: zod_1.z.lazy(() => zod_1.z.array(exports.NodoElementoDTO).default([])).optional().default([]),
 });
 exports.UbicacionConElementosDTO = zod_1.z.object({
+    id: zod_1.z.coerce.number().int().positive().optional(),
     nombre: zod_1.z.string().min(2, "El nombre de la ubicación es obligatorio"),
     elementos: zod_1.z.array(exports.NodoElementoDTO).default([]),
 });

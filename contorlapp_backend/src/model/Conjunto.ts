@@ -94,14 +94,17 @@ export type ConjuntoPublico = ConjuntoDominio & {
 /* ===================== DTOs ===================== */
 
 export const NodoElementoDTO: z.ZodType<{
+  id?: number;
   nombre: string;
-  hijos?: Array<{ nombre: string; hijos?: any[] }>;
+  hijos?: Array<{ id?: number; nombre: string; hijos?: any[] }>;
 }> = z.object({
+  id: z.coerce.number().int().positive().optional(),
   nombre: z.string().min(2, "El nombre es obligatorio"),
   hijos: z.lazy(() => z.array(NodoElementoDTO).default([])).optional().default([]),
 });
 
 export const UbicacionConElementosDTO = z.object({
+  id: z.coerce.number().int().positive().optional(),
   nombre: z.string().min(2, "El nombre de la ubicación es obligatorio"),
   elementos: z.array(NodoElementoDTO).default([]),
 });

@@ -14,6 +14,8 @@ export class AuthService {
   constructor(private prisma: PrismaClient) {}
 
   async login(correo: string, contrasena: string) {
+    const credencialesInvalidas = "Credenciales inválidas";
+
     const usuario = await this.prisma.usuario.findFirst({
       where: {
         correo: {
@@ -23,10 +25,10 @@ export class AuthService {
       },
     });
 
-    if (!usuario) throw makeHttpError(404, "Usuario no encontrado");
+    if (!usuario) throw makeHttpError(401, credencialesInvalidas);
 
     const ok = await bcrypt.compare(contrasena, usuario.contrasena);
-    if (!ok) throw makeHttpError(401, "Contraseña incorrecta");
+    if (!ok) throw makeHttpError(401, credencialesInvalidas);
 
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) throw makeHttpError(500, "JWT_SECRET no está configurado");

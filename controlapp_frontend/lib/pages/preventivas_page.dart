@@ -177,7 +177,44 @@ class _PreventivasPageState extends State<PreventivasPage> {
     );
 
     if (result == true) {
+      await _regenerarBorradorActual();
       await _cargar();
+    }
+  }
+
+  Future<void> _regenerarBorradorActual() async {
+    final ahora = DateTime.now();
+
+    try {
+      final gen = await _preventivaApi.generarCronogramaMensual(
+        nit: widget.nit,
+        anio: ahora.year,
+        mes: ahora.month,
+        tamanoBloqueMinutos: 60,
+      );
+
+      if (!mounted) return;
+
+      final creadas = int.tryParse('${gen['creadas'] ?? 0}') ?? 0;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            creadas > 0
+                ? 'Borrador actualizado. Se programaron $creadas tarea(s).'
+                : 'Borrador actualizado con las reglas actuales de programación.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text('La preventiva se guardó, pero no se pudo regenerar el borrador: $e'),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
   }
 
@@ -204,6 +241,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
 
     try {
       await _preventivaApi.eliminar(widget.nit, def.id);
+      await _regenerarBorradorActual();
       await _cargar();
       if (!mounted) return;
       AppFeedback.showFromSnackBar(

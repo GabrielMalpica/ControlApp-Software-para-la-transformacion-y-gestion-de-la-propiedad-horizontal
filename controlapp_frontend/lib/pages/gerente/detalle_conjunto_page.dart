@@ -117,11 +117,20 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
     _ubicacionesEditables = c.ubicaciones
         .map<Map<String, dynamic>>(
           (u) => <String, dynamic>{
+            'id': u.id,
             'nombre': u.nombre,
             'zonas': u.elementos
                 .map((e) => <String, dynamic>{
+                      'id': e.id,
                       'nombre': e.nombre,
-                      'areas': e.hijos.map((h) => h.nombre).toList(growable: true),
+                      'areas': e.hijos
+                          .map(
+                            (h) => <String, dynamic>{
+                              'id': h.id,
+                              'nombre': h.nombre,
+                            },
+                          )
+                          .toList(growable: true),
                     })
                 .toList(growable: true),
           },
@@ -205,21 +214,38 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
       final zonas = rawZonas
           .whereType<Map>()
           .map((zona) {
+            final zonaId = zona['id'];
             final nombreZona = (zona['nombre'] ?? '').toString().trim();
             final areas = ((zona['areas'] as List?) ?? const [])
-                .map((e) => e.toString().trim())
-                .where((e) => e.isNotEmpty)
+                .whereType<Map>()
+                .map((area) {
+                  final areaNombre = (area['nombre'] ?? '').toString().trim();
+                  if (areaNombre.isEmpty) return null;
+                  final out = <String, dynamic>{
+                    'nombre': areaNombre,
+                    'hijos': const <Map<String, dynamic>>[],
+                  };
+                  final areaId = area['id'];
+                  if (areaId is int) out['id'] = areaId;
+                  return out;
+                })
+                .whereType<Map<String, dynamic>>()
                 .toList();
             if (nombreZona.isEmpty) return null;
-            return <String, dynamic>{
+            final out = <String, dynamic>{
               'nombre': nombreZona,
-              'hijos': areas.map((area) => {'nombre': area, 'hijos': const []}).toList(),
+              'hijos': areas,
             };
+            if (zonaId is int) out['id'] = zonaId;
+            return out;
           })
           .whereType<Map<String, dynamic>>()
           .toList();
 
-      payload.add(<String, dynamic>{'nombre': nombre, 'elementos': zonas});
+      final out = <String, dynamic>{'nombre': nombre, 'elementos': zonas};
+      final id = item['id'];
+      if (id is int) out['id'] = id;
+      payload.add(out);
     }
 
     return payload;
@@ -238,7 +264,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
 
     setState(() => _saving = true);
     try {
-      await _api.actualizarConjunto(
+      final actualizado = await _api.actualizarConjunto(
         c.nit,
         nombre: _nombreCtrl.text.trim(),
         direccion: _direccionCtrl.text.trim(),
@@ -257,7 +283,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
       setState(() {
         _editMode = false;
         _formInicializado = false;
-        _reloadConjunto();
+        _futureConjunto = Future<Conjunto>.value(actualizado);
       });
     } catch (e) {
       if (!mounted) return;
@@ -265,6 +291,30 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<bool> _confirmarEliminacion(String nombreElemento) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Confirmar eliminacion'),
+          content: Text('Seguro que quiere borrar $nombreElemento?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Borrar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return confirmado ?? false;
   }
 
   @override
@@ -967,7 +1017,9 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
           final index = entry.key;
           final raw = entry.value;
           final nombre = (raw['nombre'] ?? '').toString();
-          final zonas = ((raw['zonas'] as List?) ?? const []).cast<Map>();
+          final zonas = ((raw['zonas'] as List?) ?? const [])
+              .whereType<Map>()
+              .toList(growable: false);
 
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
@@ -994,7 +1046,11 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                       ),
                     ),
                     IconButton(
-                      onPressed: () {
+                      onPressed: () async {
+                        final confirmado = await _confirmarEliminacion(
+                          'la ubicacion "$nombre"',
+                        );
+                        if (!confirmado || !mounted) return;
                         setState(() => _ubicacionesEditables.removeAt(index));
                       },
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
@@ -1022,11 +1078,13 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                     ),
                   ),
                 ...zonas.asMap().entries.map((item) {
-                  final i = item.key;
-                  final zona = item.value;
-                  final text = (zona['nombre'] ?? '').toString();
-                  final areas = ((zona['areas'] as List?) ?? const []).cast<String>();
-                  return Padding(
+                   final i = item.key;
+                   final zona = item.value;
+                   final text = (zona['nombre'] ?? '').toString();
+                   final areas = ((zona['areas'] as List?) ?? const [])
+                       .whereType<Map>()
+                       .toList(growable: false);
+                   return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Container(
                       padding: const EdgeInsets.all(10),
@@ -1053,7 +1111,11 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                                 ),
                               ),
                               IconButton(
-                                onPressed: () {
+                                onPressed: () async {
+                                  final confirmado = await _confirmarEliminacion(
+                                    'la subzona "$text"',
+                                  );
+                                  if (!confirmado || !mounted) return;
                                   setState(() {
                                     (_ubicacionesEditables[index]['zonas'] as List)
                                         .removeAt(i);
@@ -1069,7 +1131,8 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                           const SizedBox(height: 8),
                           ...areas.asMap().entries.map((areaItem) {
                             final areaIndex = areaItem.key;
-                            final areaText = areaItem.value;
+                            final area = areaItem.value;
+                            final areaText = (area['nombre'] ?? '').toString();
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 6),
                               child: Row(
@@ -1078,17 +1141,22 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                                     child: TextFormField(
                                       initialValue: areaText,
                                       decoration: const InputDecoration(
-                                        labelText: 'Area final',
+                                       labelText: 'Area final',
                                         border: OutlineInputBorder(),
                                       ),
                                       onChanged: (value) {
-                                        (((_ubicacionesEditables[index]['zonas'] as List)[i]
-                                                as Map)['areas'] as List)[areaIndex] = value;
+                                        (((( _ubicacionesEditables[index]['zonas'] as List)[i]
+                                                    as Map)['areas'] as List)[areaIndex]
+                                                as Map)['nombre'] = value;
                                       },
                                     ),
                                   ),
                                   IconButton(
-                                    onPressed: () {
+                                    onPressed: () async {
+                                      final confirmado = await _confirmarEliminacion(
+                                        'el area final "$areaText"',
+                                      );
+                                      if (!confirmado || !mounted) return;
                                       setState(() {
                                         (((( _ubicacionesEditables[index]['zonas'] as List)[i]
                                                     as Map)['areas'] as List))
@@ -1108,7 +1176,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                                 setState(() {
                                   (((( _ubicacionesEditables[index]['zonas'] as List)[i]
                                               as Map)['areas'] as List))
-                                      .add('');
+                                      .add(<String, dynamic>{'nombre': ''});
                                 });
                               },
                               icon: const Icon(Icons.add),
@@ -1126,7 +1194,10 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                     onPressed: () {
                       setState(() {
                         (_ubicacionesEditables[index]['zonas'] as List).add(
-                          <String, dynamic>{'nombre': '', 'areas': <String>[]},
+                          <String, dynamic>{
+                            'nombre': '',
+                            'areas': <Map<String, dynamic>>[],
+                          },
                         );
                       });
                     },

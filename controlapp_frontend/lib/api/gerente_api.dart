@@ -296,7 +296,7 @@ class GerenteApi {
     }
   }
 
-  Future<void> actualizarConjunto(
+  Future<Conjunto> actualizarConjunto(
     String conjuntoNit, {
     String? nombre,
     String? direccion,
@@ -337,5 +337,8 @@ class GerenteApi {
         'Error actualizando conjunto: ${resp.statusCode} ${resp.body}',
       );
     }
+
+    final Map<String, dynamic> data = jsonDecode(resp.body);
+    return Conjunto.fromJson(data);
   }
 }

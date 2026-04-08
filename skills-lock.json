@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "manual-guide": {
+      "source": "peterbamuhigire/skills-web-dev",
+      "sourceType": "github",
+      "computedHash": "2988241e7cbf5e6db85868fdfd5253e229fc5d1d9d50f0fa3b0996c2fec3ab81"
+    }
+  }
+}
