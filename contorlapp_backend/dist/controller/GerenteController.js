@@ -77,8 +77,8 @@ class GerenteController {
         };
         this.editarUsuario = async (req, res, next) => {
             try {
-                const { id } = IdParam.parse(req.params);
-                const out = await service.editarUsuario(id.toString(), req.body);
+                const { id } = Gerente_1.UsuarioIdParam.parse(req.params);
+                const out = await service.editarUsuario(id, req.body);
                 res.json(out);
             }
             catch (err) {

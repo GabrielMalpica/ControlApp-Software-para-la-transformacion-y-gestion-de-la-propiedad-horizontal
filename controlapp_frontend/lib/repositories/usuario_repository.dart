@@ -37,8 +37,7 @@ class UsuarioRepository {
   }
 
   Future<Usuario> editarUsuario(String cedula, Map<String, dynamic> cambios) async {
-    final payload = Map<String, dynamic>.from(cambios)
-      ..removeWhere((key, value) => value == null);
+    final payload = Map<String, dynamic>.from(cambios);
 
     final response = await _apiClient.put(
       '${AppConstants.usuarios}/$cedula',

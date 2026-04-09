@@ -41,6 +41,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
   int numeroHijos = 0;
   bool padresVivos = true;
   String? tipoSangre, eps, fondo, tipoContrato, jornada;
+  String? tallaCamisa, tallaPantalon, tallaCalzado;
   String? rolSeleccionado;
   final List<_DisponibilidadPeriodoForm> _disponibilidadPeriodos = [];
 
@@ -74,6 +75,9 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     tipoSangre = u.tipoSangre;
     eps = u.eps;
     fondo = u.fondoPensiones;
+    tallaCamisa = u.tallaCamisa;
+    tallaPantalon = u.tallaPantalon;
+    tallaCalzado = u.tallaCalzado;
     tipoContrato = u.tipoContrato;
     jornada = u.jornadaLaboral;
 
@@ -205,25 +209,27 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
         'correo': _correoCtrl.text,
         'rol': rolSeleccionado,
         'telefono': _telefonoCtrl.text,
-        'direccion': _direccionCtrl.text.isEmpty
+        'direccion': _direccionCtrl.text.trim().isEmpty
             ? null
             : _direccionCtrl.text.trim(),
-        'fechaNacimiento': fechaNacimiento == null
-            ? null
-            : DateFormat('yyyy-MM-dd').format(fechaNacimiento!),
+        if (fechaNacimiento != null)
+          'fechaNacimiento': DateFormat('yyyy-MM-dd').format(fechaNacimiento!),
         'estadoCivil': estadoCivilSeleccionado,
         'numeroHijos': numeroHijos,
         'padresVivos': padresVivos,
         'tipoSangre': tipoSangre,
         'eps': eps,
         'fondoPensiones': fondo,
+        'tallaCamisa': tallaCamisa,
+        'tallaPantalon': tallaPantalon,
+        'tallaCalzado': tallaCalzado,
         'tipoContrato': tipoContrato,
         'jornadaLaboral': jornada,
 
         // ✅ NUEVOS
         'activo': activo,
         'patronJornada': jornada == 'MEDIO_TIEMPO' ? patronJornada : null,
-        if (widget.usuario.rol == 'operario')
+        if (rolSeleccionado == 'operario')
           'disponibilidadPeriodos': _disponibilidadPeriodos
               .map((e) => e.toModel())
               .whereType<DisponibilidadOperarioPeriodo>()
@@ -556,6 +562,57 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                           border: OutlineInputBorder(),
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: tallaCamisa,
+                        items: enums.tallasCamisa
+                            .map(
+                              (t) => DropdownMenuItem(
+                                value: t,
+                                child: Text(prettyEnum(t)),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => tallaCamisa = v),
+                        decoration: const InputDecoration(
+                          labelText: 'Talla camisa (opcional)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: tallaPantalon,
+                        items: enums.tallasPantalon
+                            .map(
+                              (t) => DropdownMenuItem(
+                                value: t,
+                                child: Text(prettyEnum(t)),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => tallaPantalon = v),
+                        decoration: const InputDecoration(
+                          labelText: 'Talla pantalon (opcional)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: tallaCalzado,
+                        items: enums.tallasCalzado
+                            .map(
+                              (t) => DropdownMenuItem(
+                                value: t,
+                                child: Text(prettyEnum(t)),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => tallaCalzado = v),
+                        decoration: const InputDecoration(
+                          labelText: 'Talla calzado (opcional)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -672,7 +729,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                         const SizedBox(height: 8),
                         const _PatronJornadaHelpCard(),
                       ],
-                      if (widget.usuario.rol == 'operario') ...[
+                      if (rolSeleccionado == 'operario') ...[
                         const SizedBox(height: 16),
                         Row(
                           children: [

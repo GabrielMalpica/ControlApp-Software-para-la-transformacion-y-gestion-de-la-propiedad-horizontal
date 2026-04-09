@@ -85,8 +85,8 @@ export class GerenteController {
 
   editarUsuario: RequestHandler = async (req, res, next) => {
     try {
-      const { id } = IdParam.parse(req.params);
-      const out = await service.editarUsuario(id.toString(), req.body);
+      const { id } = UsuarioIdParam.parse(req.params);
+      const out = await service.editarUsuario(id, req.body);
       res.json(out);
     } catch (err) {
       next(err);

@@ -173,6 +173,8 @@ class DetalleUsuarioPage extends StatelessWidget {
             _cardSeccion(
               titulo: "Información personal",
               children: [
+                _rowDato("Nombre completo", usuario.nombre),
+                _rowDato("Correo", usuario.correo),
                 _rowDato("Teléfono", usuario.telefono.toString()),
                 _rowDato("Dirección", usuario.direccion ?? "-"),
                 _rowDato(
@@ -205,6 +207,9 @@ class DetalleUsuarioPage extends StatelessWidget {
                   "Fondo pensiones",
                   _prettyEnum(usuario.fondoPensiones),
                 ),
+                _rowDato("Talla camisa", _prettyEnum(usuario.tallaCamisa)),
+                _rowDato("Talla pantalón", _prettyEnum(usuario.tallaPantalon)),
+                _rowDato("Talla calzado", _prettyEnum(usuario.tallaCalzado)),
               ],
             ),
 
@@ -240,7 +245,7 @@ class DetalleUsuarioPage extends StatelessWidget {
                     ...usuario.disponibilidadPeriodos.map(
                       (item) => _rowDato(
                         '${item.fechaInicio.day}/${item.fechaInicio.month}/${item.fechaInicio.year}${item.fechaFin != null ? ' - ${item.fechaFin!.day}/${item.fechaFin!.month}/${item.fechaFin!.year}' : ''}',
-                        'Descanso: ${_prettyEnum(item.diaDescanso)} · Domingo: ${item.trabajaDomingo ? 'Sí' : 'No'}',
+                        'Descanso: ${_prettyEnum(item.diaDescanso)} · Domingo: ${item.trabajaDomingo ? 'Sí' : 'No'}${item.observaciones != null && item.observaciones!.trim().isNotEmpty ? ' · Obs: ${item.observaciones!.trim()}' : ''}',
                       ),
                     ),
                 ],
