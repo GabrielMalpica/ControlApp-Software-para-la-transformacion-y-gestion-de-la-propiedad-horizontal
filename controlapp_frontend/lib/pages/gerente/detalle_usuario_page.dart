@@ -117,6 +117,13 @@ class DetalleUsuarioPage extends StatelessWidget {
                             "Rol: ${_prettyEnum(usuario.rol)}",
                             style: const TextStyle(fontSize: 13),
                           ),
+                          if ((usuario.conjuntoNombre ?? '').trim().isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Conjunto: ${usuario.conjuntoNombre!.trim()}',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ],
                           const SizedBox(height: 4),
                           Text(
                             "Cédula: ${usuario.cedula}",

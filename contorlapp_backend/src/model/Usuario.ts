@@ -179,6 +179,12 @@ export const usuarioPublicSelect = {
   patronJornada: true,
   operario: {
     select: {
+      conjuntos: {
+        select: {
+          nombre: true,
+        },
+        orderBy: [{ nombre: "asc" as const }],
+      },
       disponibilidadPeriodos: {
         select: {
           id: true,

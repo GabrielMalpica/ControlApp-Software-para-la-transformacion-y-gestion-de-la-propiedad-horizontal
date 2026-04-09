@@ -22,6 +22,7 @@ class Usuario {
   final List<String>? tipoFunciones;
   final bool activo;
   final String? patronJornada;
+  final String? conjuntoNombre;
   final List<DisponibilidadOperarioPeriodo> disponibilidadPeriodos;
 
   Usuario({
@@ -46,6 +47,7 @@ class Usuario {
     this.tipoFunciones,
     this.activo = true,
     this.patronJornada,
+    this.conjuntoNombre,
     this.disponibilidadPeriodos = const [],
   });
 
@@ -75,6 +77,10 @@ class Usuario {
           .toList(),
       activo: json['activo'] ?? true,
       patronJornada: json['patronJornada'],
+      conjuntoNombre: ((json['operario']?['conjuntos'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => e['nombre']?.toString() ?? '')
+          .firstWhere((e) => e.trim().isNotEmpty, orElse: () => ''),
       disponibilidadPeriodos:
           ((json['operario']?['disponibilidadPeriodos'] as List?) ??
                   (json['disponibilidadPeriodos'] as List?) ??

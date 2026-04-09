@@ -113,6 +113,12 @@ exports.usuarioPublicSelect = {
     patronJornada: true,
     operario: {
         select: {
+            conjuntos: {
+                select: {
+                    nombre: true,
+                },
+                orderBy: [{ nombre: "asc" }],
+            },
             disponibilidadPeriodos: {
                 select: {
                     id: true,
