@@ -391,6 +391,7 @@ class GerenteService {
         const currentRole = String(actual.rol).trim().toLowerCase();
         const nextRole = dto.rol ?? currentRole;
         const data = { ...dto };
+        delete data.disponibilidadPeriodos;
         if (dto.fechaNacimiento !== undefined) {
             data.fechaNacimiento = new Date(dto.fechaNacimiento);
         }
@@ -2826,18 +2827,33 @@ class GerenteService {
         }
     }
     async eliminarOperario(operarioId) {
-        // 1) Verificar tareas pendientes donde el operario estÃƒÂ© asignado
-        const tareasPendientes = await this.prisma.tarea.findMany({
+        const tareasActivas = await this.prisma.tarea.findMany({
             where: {
-                operarios: { some: { id: operarioId } }, // ya es string, no hace falta toString()
+                operarios: { some: { id: operarioId } },
                 estado: {
                     in: ["ASIGNADA", "EN_PROCESO"],
                 },
             },
-            select: { id: true },
+            select: {
+                id: true,
+                conjuntoId: true,
+                conjunto: {
+                    select: {
+                        nombre: true,
+                    },
+                },
+            },
         });
-        if (tareasPendientes.length > 0) {
-            throw new Error("No se puede eliminar el operario porque aÃºn tiene tareas activas (asignadas o en proceso).");
+        if (tareasActivas.length > 0) {
+            const resumenPorConjunto = new Map();
+            for (const tarea of tareasActivas) {
+                const nombreConjunto = (tarea.conjunto?.nombre ?? "").trim() || String(tarea.conjuntoId);
+                resumenPorConjunto.set(nombreConjunto, (resumenPorConjunto.get(nombreConjunto) ?? 0) + 1);
+            }
+            const detalleConjuntos = Array.from(resumenPorConjunto.entries())
+                .map(([nombre, cantidad]) => `${nombre} (${cantidad})`)
+                .join(", ");
+            throw new Error(`No se puede eliminar el operario porque tiene ${tareasActivas.length} tarea(s) activa(s) en los conjunto(s): ${detalleConjuntos}.`);
         }
         // 2) Borrar operario + usuario dentro de una misma transacciÃƒÂ³n
         await this.prisma.$transaction(async (tx) => {
