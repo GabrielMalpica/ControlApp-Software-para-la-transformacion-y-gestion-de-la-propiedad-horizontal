@@ -3712,12 +3712,18 @@ export class GerenteService {
     const tareasActivas = await this.prisma.tarea.findMany({
       where: {
         operarios: { some: { id: operarioId } },
+        borrador: false,
         estado: {
           in: ["ASIGNADA", "EN_PROCESO"],
         },
       },
       select: {
         id: true,
+        descripcion: true,
+        estado: true,
+        borrador: true,
+        fechaInicio: true,
+        fechaFin: true,
         conjuntoId: true,
         conjunto: {
           select: {
@@ -3729,6 +3735,15 @@ export class GerenteService {
 
     if (tareasActivas.length > 0) {
       const resumenPorConjunto = new Map<string, number>();
+      const formatoFecha = (fecha: Date | null) => {
+        if (!fecha) return "sin fecha";
+        const day = String(fecha.getDate()).padStart(2, "0");
+        const month = String(fecha.getMonth() + 1).padStart(2, "0");
+        const year = String(fecha.getFullYear());
+        const hour = String(fecha.getHours()).padStart(2, "0");
+        const minute = String(fecha.getMinutes()).padStart(2, "0");
+        return `${day}/${month}/${year} ${hour}:${minute}`;
+      };
 
       for (const tarea of tareasActivas) {
         const nombreConjunto =
@@ -3742,9 +3757,22 @@ export class GerenteService {
       const detalleConjuntos = Array.from(resumenPorConjunto.entries())
         .map(([nombre, cantidad]) => `${nombre} (${cantidad})`)
         .join(", ");
+      const detalleTareas = tareasActivas
+        .slice(0, 5)
+        .map((tarea) => {
+          const nombreConjunto =
+            (tarea.conjunto?.nombre ?? "").trim() || String(tarea.conjuntoId);
+          const origen = tarea.borrador ? "borrador" : "publicada";
+          return `#${tarea.id} ${tarea.descripcion} - ${nombreConjunto} - ${origen} - ${tarea.estado} - ${formatoFecha(tarea.fechaInicio)}`;
+        })
+        .join("; ");
+      const sufijoTareas =
+        tareasActivas.length > 5
+          ? ` Se muestran 5 de ${tareasActivas.length} tareas: ${detalleTareas}.`
+          : ` Tareas: ${detalleTareas}.`;
 
       throw new Error(
-        `No se puede eliminar el operario porque tiene ${tareasActivas.length} tarea(s) activa(s) en los conjunto(s): ${detalleConjuntos}.`,
+        `No se puede eliminar el operario porque tiene ${tareasActivas.length} tarea(s) activa(s) en los conjunto(s): ${detalleConjuntos}.${sufijoTareas}`,
       );
     }
 
