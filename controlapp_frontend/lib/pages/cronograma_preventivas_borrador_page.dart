@@ -40,6 +40,7 @@ class _CronogramaPreventivasBorradorPageState
   final _conjuntoApi = ConjuntoApi();
   final _festivoApi = FestivoApi();
   final _preventivaApi = DefinicionPreventivaApi();
+  final ScrollController _mensualHCtrl = ScrollController();
 
   bool _loading = true;
   bool _publicando = false;
@@ -59,6 +60,12 @@ class _CronogramaPreventivasBorradorPageState
 
   /// Resumen por día (mensual)
   List<_DiaResumen> _diasResumen = [];
+
+  @override
+  void dispose() {
+    _mensualHCtrl.dispose();
+    super.dispose();
+  }
 
   // Vista y semana seleccionada
   _VistaCronograma _vista = _VistaCronograma.mensual;
@@ -1713,10 +1720,15 @@ class _CronogramaPreventivasBorradorPageState
         ),
         child: SingleChildScrollView(
           child: SingleChildScrollView(
+            controller: _mensualHCtrl,
             scrollDirection: Axis.horizontal,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+            child: Scrollbar(
+              controller: _mensualHCtrl,
+              thumbVisibility: true,
+              scrollbarOrientation: ScrollbarOrientation.bottom,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                 // ===== Header 1: títulos fijos + letras de semana =====
                 Row(
                   children: [
@@ -1937,7 +1949,8 @@ class _CronogramaPreventivasBorradorPageState
                     ],
                   );
                 }),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -3225,16 +3238,20 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
               ),
               Container(height: 1, color: line),
               Expanded(
-                child: SingleChildScrollView(
+                child: Scrollbar(
                   controller: _hCtrl,
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: totalWidth,
-                    child: SingleChildScrollView(
-                      controller: _vCtrl,
-                      child: SizedBox(
-                        height: heightGrid,
-                        child: Stack(
+                  thumbVisibility: true,
+                  scrollbarOrientation: ScrollbarOrientation.bottom,
+                  child: SingleChildScrollView(
+                    controller: _hCtrl,
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: totalWidth,
+                      child: SingleChildScrollView(
+                        controller: _vCtrl,
+                        child: SizedBox(
+                          height: heightGrid,
+                          child: Stack(
                           children: [
                             Positioned.fill(
                               child: Row(
@@ -3454,45 +3471,71 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 height: height,
                                 child: GestureDetector(
                                   onTap: () => widget.onTapTarea(t),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: fill,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: border,
-                                        width: 1,
+                                    child: Container(
+                                      clipBehavior: Clip.hardEdge,
+                                      padding: EdgeInsets.fromLTRB(
+                                        6,
+                                        height < 30 ? 1 : (height < 42 ? 3 : 8),
+                                        6,
+                                        height < 30 ? 1 : (height < 42 ? 3 : 8),
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: fill,
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: border,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: LayoutBuilder(
+                                        builder: (context, box) {
+                                          final h = box.maxHeight;
+                                          final tiny = h < 26;
+                                          final compact = h < 42;
+
+                                          return Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Tooltip(
+                                                message: t.descripcion,
+                                                waitDuration: const Duration(
+                                                  milliseconds: 250,
+                                                ),
+                                                child: Text(
+                                                  t.descripcion,
+                                                  maxLines: compact ? 1 : 2,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: text,
+                                                    fontSize: tiny
+                                                        ? 9
+                                                        : (compact ? 10 : 12),
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ),
+                                              if (!compact) ...[
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  '$horaIni - $horaFinStr',
+                                                  style: TextStyle(
+                                                    color: subtext,
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          );
+                                        },
                                       ),
                                     ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          t.descripcion,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: text,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          '$horaIni - $horaFinStr',
-                                          style: TextStyle(
-                                            color: subtext,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
                                 ),
                               );
                             }),
                           ],
+                          ),
                         ),
                       ),
                     ),

@@ -28,9 +28,7 @@ class _MapaConjuntoPageState extends State<MapaConjuntoPage> {
   @override
   void initState() {
     super.initState();
-    _futureConjunto = widget.conjuntoInicial != null
-        ? Future<Conjunto>.value(widget.conjuntoInicial!)
-        : _api.obtenerConjunto(widget.conjuntoNit);
+    _futureConjunto = _api.obtenerConjunto(widget.conjuntoNit);
   }
 
   @override

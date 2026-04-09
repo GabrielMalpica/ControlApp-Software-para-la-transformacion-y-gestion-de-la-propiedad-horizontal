@@ -41,6 +41,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   final _cronogramaApi = CronogramaApi();
   final _festivoApi = FestivoApi();
   final _conjuntoApi = ConjuntoApi();
+  final ScrollController _mensualHCtrl = ScrollController();
 
   // ✅ para cerrar desde cronograma
   final _inventarioApi = InventarioApi();
@@ -67,6 +68,12 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   /// Resumen por día (mensual)
   List<_DiaResumen> _diasResumen = [];
+
+  @override
+  void dispose() {
+    _mensualHCtrl.dispose();
+    super.dispose();
+  }
 
   // Vista y semana seleccionada
   _VistaCronograma _vista = _VistaCronograma.mensual;
@@ -992,10 +999,15 @@ class _CronogramaPageState extends State<CronogramaPage> {
         ),
         child: SingleChildScrollView(
           child: SingleChildScrollView(
+            controller: _mensualHCtrl,
             scrollDirection: Axis.horizontal,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+            child: Scrollbar(
+              controller: _mensualHCtrl,
+              thumbVisibility: true,
+              scrollbarOrientation: ScrollbarOrientation.bottom,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                 // Header 1
                 Row(
                   children: [
@@ -1222,7 +1234,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
                     ],
                   );
                 }),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -2931,16 +2944,20 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
               ),
               Container(height: 1, color: line),
               Expanded(
-                child: SingleChildScrollView(
+                child: Scrollbar(
                   controller: _hCtrl,
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: totalWidth,
-                    child: SingleChildScrollView(
-                      controller: _vCtrl,
-                      child: SizedBox(
-                        height: heightGrid,
-                        child: Stack(
+                  thumbVisibility: true,
+                  scrollbarOrientation: ScrollbarOrientation.bottom,
+                  child: SingleChildScrollView(
+                    controller: _hCtrl,
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: totalWidth,
+                      child: SingleChildScrollView(
+                        controller: _vCtrl,
+                        child: SizedBox(
+                          height: heightGrid,
+                          child: Stack(
                           children: [
                             Positioned.fill(
                               child: Row(
@@ -3183,16 +3200,22 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
-                                            Text(
-                                              t.descripcion,
-                                              maxLines: compact ? 1 : 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                color: text,
-                                                fontSize: tiny
-                                                    ? 9
-                                                    : (compact ? 10 : 12),
-                                                fontWeight: FontWeight.w700,
+                                            Tooltip(
+                                              message: t.descripcion,
+                                              waitDuration: const Duration(
+                                                milliseconds: 250,
+                                              ),
+                                              child: Text(
+                                                t.descripcion,
+                                                maxLines: compact ? 1 : 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: text,
+                                                  fontSize: tiny
+                                                      ? 9
+                                                      : (compact ? 10 : 12),
+                                                  fontWeight: FontWeight.w700,
+                                                ),
                                               ),
                                             ),
                                             if (!compact) ...[
@@ -3214,6 +3237,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                               );
                             }),
                           ],
+                          ),
                         ),
                       ),
                     ),

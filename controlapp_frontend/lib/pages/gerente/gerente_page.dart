@@ -152,6 +152,15 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
     }
   }
 
+  Future<void> _abrirYRecargar(Widget page) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => page),
+    );
+    if (!mounted) return;
+    await _cargarConjuntos();
+  }
+
   void _snack(String msg) {
     AppFeedback.showFromSnackBar(context, SnackBar(content: Text(msg)));
   }
@@ -563,18 +572,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           "Crear tarea correctiva",
           Icons.emergency_rounded,
           Colors.red,
-          () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => CrearTareaPage(nit: nit)),
-            );
-          },
+          () => _abrirYRecargar(CrearTareaPage(nit: nit)),
         ),
         _Tile("Tareas", Icons.assignment, AppTheme.green, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => TareasPage(nit: nit)),
-          );
+          _abrirYRecargar(TareasPage(nit: nit));
         }),
         _Tile("Compromisos", Icons.checklist_rounded, Colors.indigo, () {
           Navigator.push(
@@ -597,18 +598,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           "Definir tarea preventiva",
           Icons.build_circle_outlined,
           Colors.deepOrange,
-          () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => PreventivasPage(nit: nit)),
-            );
-          },
+          () => _abrirYRecargar(PreventivasPage(nit: nit)),
         ),
         _Tile("Cronograma", Icons.calendar_month, Colors.purple, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => CronogramaPage(nit: nit)),
-          );
+          _abrirYRecargar(CronogramaPage(nit: nit));
         }),
         _Tile("Maquinaria", Icons.precision_manufacturing, AppTheme.yellow, () {
           Navigator.push(
@@ -638,21 +631,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
       ]),
       _TileSection("Gestion de conjunto", [
         _Tile("Usuarios", Icons.people_outline, AppTheme.green, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => UsuariosConjuntoPage(conjuntoNit: nit),
-            ),
-          );
+          _abrirYRecargar(UsuariosConjuntoPage(conjuntoNit: nit));
         }),
         _Tile("Mapa de areas", Icons.account_tree_outlined, Colors.teal, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  MapaConjuntoPage(conjuntoNit: nit, conjuntoInicial: conjunto),
-            ),
-          );
+          _abrirYRecargar(MapaConjuntoPage(conjuntoNit: nit));
         }),
       ]),
       _TileSection("Analisis y control", [
