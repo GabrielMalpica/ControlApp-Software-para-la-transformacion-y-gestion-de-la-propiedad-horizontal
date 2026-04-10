@@ -4,10 +4,41 @@ exports.AdministradorService = void 0;
 const SolicitudTarea_1 = require("../model/SolicitudTarea");
 const SolicitudInsumo_1 = require("../model/SolicitudInsumo");
 const SolicitudMaquinaria_1 = require("../model/SolicitudMaquinaria");
+const CompromisoConjuntoService_1 = require("./CompromisoConjuntoService");
+const NotificacionService_1 = require("./NotificacionService");
 class AdministradorService {
     constructor(prisma, administradorId) {
         this.prisma = prisma;
         this.administradorId = administradorId;
+    }
+    get adminIdAsString() {
+        return this.administradorId.toString();
+    }
+    async validarConjuntoAsignado(conjuntoId) {
+        const conjunto = await this.prisma.conjunto.findFirst({
+            where: {
+                nit: conjuntoId,
+                administradorId: this.adminIdAsString,
+            },
+            select: { nit: true, nombre: true },
+        });
+        if (!conjunto) {
+            throw new Error("No tienes acceso a ese conjunto.");
+        }
+        return conjunto;
+    }
+    async validarCompromisoAsignado(id) {
+        const compromiso = await this.prisma.compromisoConjunto.findFirst({
+            where: {
+                id,
+                conjunto: { administradorId: this.adminIdAsString },
+            },
+            select: { id: true, conjuntoId: true },
+        });
+        if (!compromiso) {
+            throw new Error("No tienes acceso a esa PQRS.");
+        }
+        return compromiso;
     }
     async verConjuntos() {
         try {
@@ -21,6 +52,39 @@ class AdministradorService {
             console.error("Error al obtener conjuntos:", error);
             throw new Error("No se pudieron obtener los conjuntos.");
         }
+    }
+    async listarCompromisosConjunto(conjuntoId) {
+        await this.validarConjuntoAsignado(conjuntoId);
+        const service = new CompromisoConjuntoService_1.CompromisoConjuntoService(this.prisma);
+        return service.listarPorConjunto(conjuntoId);
+    }
+    async crearCompromisoConjunto(input) {
+        await this.validarConjuntoAsignado(input.conjuntoId);
+        const service = new CompromisoConjuntoService_1.CompromisoConjuntoService(this.prisma);
+        const creado = await service.crear(input);
+        try {
+            const notificaciones = new NotificacionService_1.NotificacionService(this.prisma);
+            await notificaciones.notificarPqrsCreadaPorAdministrador({
+                compromisoId: creado.id,
+                conjuntoId: input.conjuntoId,
+                titulo: creado.titulo,
+                actorId: input.creadoPorId ?? this.adminIdAsString,
+            });
+        }
+        catch (error) {
+            console.error("No se pudo notificar la PQRS creada por administrador:", error);
+        }
+        return creado;
+    }
+    async actualizarCompromiso(id, data) {
+        await this.validarCompromisoAsignado(id);
+        const service = new CompromisoConjuntoService_1.CompromisoConjuntoService(this.prisma);
+        return service.actualizar(id, data);
+    }
+    async eliminarCompromiso(id) {
+        await this.validarCompromisoAsignado(id);
+        const service = new CompromisoConjuntoService_1.CompromisoConjuntoService(this.prisma);
+        return service.eliminar(id);
     }
     /**
      * Solicitar una tarea (SolicitudTarea) para un conjunto/ubicación/elemento.

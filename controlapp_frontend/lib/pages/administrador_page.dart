@@ -11,6 +11,7 @@ import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import '../service/theme.dart';
 import 'inventario_page.dart';
+import 'gerente/compromisos_page.dart';
 
 class AdministradorPage extends StatefulWidget {
   const AdministradorPage({super.key});
@@ -102,12 +103,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
     IconData icon, {
     VoidCallback? onTap,
   }) {
-    return DashboardTile(
-      title: title,
-      color: color,
-      icon: icon,
-      onTap: onTap,
-    );
+    return DashboardTile(title: title, color: color, icon: icon, onTap: onTap);
   }
 
   void _go(Widget page) {
@@ -187,7 +183,9 @@ class _AdministradorPageState extends State<AdministradorPage> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.black12.withValues(alpha: 0.08)),
+                    border: Border.all(
+                      color: Colors.black12.withValues(alpha: 0.08),
+                    ),
                   ),
                   child: DropdownButton<String>(
                     value: _conjuntoSeleccionadoNit,
@@ -235,6 +233,26 @@ class _AdministradorPageState extends State<AdministradorPage> {
                         InventarioPage(
                           nit: conjunto.nit,
                           empresaId: AppConstants.empresaNit,
+                        ),
+                      );
+                    },
+                  ),
+                  _simpleCard(
+                    "PQRS",
+                    Colors.indigo,
+                    Icons.support_agent,
+                    onTap: () {
+                      _go(
+                        CompromisosPage(
+                          nit: conjunto.nit,
+                          nombreConjunto: conjunto.nombre,
+                          pageTitle: 'PQRS',
+                          inputLabel: 'Nueva PQRS',
+                          inputHint: 'Ej: Reporte de novedad o requerimiento',
+                          emptyMessage:
+                              'Aun no hay PQRS.\nRegistra la primera.',
+                          addButtonLabel: 'Registrar',
+                          usarFlujoAdministrador: true,
                         ),
                       );
                     },

@@ -5,9 +5,47 @@ import {
   SolicitudInsumoItemDTO,
 } from "../model/SolicitudInsumo";
 import { CrearSolicitudMaquinariaDTO } from "../model/SolicitudMaquinaria";
+import { CompromisoConjuntoService } from "./CompromisoConjuntoService";
+import { NotificacionService } from "./NotificacionService";
 
 export class AdministradorService {
   constructor(private prisma: PrismaClient, private administradorId: number) {}
+
+  private get adminIdAsString() {
+    return this.administradorId.toString();
+  }
+
+  private async validarConjuntoAsignado(conjuntoId: string) {
+    const conjunto = await this.prisma.conjunto.findFirst({
+      where: {
+        nit: conjuntoId,
+        administradorId: this.adminIdAsString,
+      },
+      select: { nit: true, nombre: true },
+    });
+
+    if (!conjunto) {
+      throw new Error("No tienes acceso a ese conjunto.");
+    }
+
+    return conjunto;
+  }
+
+  private async validarCompromisoAsignado(id: number) {
+    const compromiso = await this.prisma.compromisoConjunto.findFirst({
+      where: {
+        id,
+        conjunto: { administradorId: this.adminIdAsString },
+      },
+      select: { id: true, conjuntoId: true },
+    });
+
+    if (!compromiso) {
+      throw new Error("No tienes acceso a esa PQRS.");
+    }
+
+    return compromiso;
+  }
 
   async verConjuntos() {
     try {
@@ -20,6 +58,49 @@ export class AdministradorService {
       console.error("Error al obtener conjuntos:", error);
       throw new Error("No se pudieron obtener los conjuntos.");
     }
+  }
+
+  async listarCompromisosConjunto(conjuntoId: string) {
+    await this.validarConjuntoAsignado(conjuntoId);
+    const service = new CompromisoConjuntoService(this.prisma);
+    return service.listarPorConjunto(conjuntoId);
+  }
+
+  async crearCompromisoConjunto(input: {
+    conjuntoId: string;
+    titulo: string;
+    creadoPorId?: string | null;
+  }) {
+    await this.validarConjuntoAsignado(input.conjuntoId);
+
+    const service = new CompromisoConjuntoService(this.prisma);
+    const creado = await service.crear(input);
+
+    try {
+      const notificaciones = new NotificacionService(this.prisma);
+      await notificaciones.notificarPqrsCreadaPorAdministrador({
+        compromisoId: creado.id,
+        conjuntoId: input.conjuntoId,
+        titulo: creado.titulo,
+        actorId: input.creadoPorId ?? this.adminIdAsString,
+      });
+    } catch (error) {
+      console.error("No se pudo notificar la PQRS creada por administrador:", error);
+    }
+
+    return creado;
+  }
+
+  async actualizarCompromiso(id: number, data: { titulo?: string; completado?: boolean }) {
+    await this.validarCompromisoAsignado(id);
+    const service = new CompromisoConjuntoService(this.prisma);
+    return service.actualizar(id, data);
+  }
+
+  async eliminarCompromiso(id: number) {
+    await this.validarCompromisoAsignado(id);
+    const service = new CompromisoConjuntoService(this.prisma);
+    return service.eliminar(id);
   }
 
   /**

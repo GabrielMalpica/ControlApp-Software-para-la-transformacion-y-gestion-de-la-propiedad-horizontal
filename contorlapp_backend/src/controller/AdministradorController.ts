@@ -6,6 +6,13 @@ import { AdministradorService } from "../services/AdministradorServices";
 
 // Validaciones mínimas para params / headers / query
 const AdminIdParam = z.object({ adminId: z.coerce.number().int().positive() });
+const ConjuntoParam = z.object({ conjuntoId: z.string().min(1) });
+const CompromisoParam = z.object({ id: z.coerce.number().int().positive() });
+const CrearCompromisoBody = z.object({ titulo: z.string().min(1) });
+const ActualizarCompromisoBody = z.object({
+  titulo: z.string().min(1).optional(),
+  completado: z.boolean().optional(),
+});
 
 // Puedes aceptar adminId también por header o query si te conviene multi-uso
 function resolveAdminId(req: any): number {
@@ -61,6 +68,52 @@ export class AdministradorController {
       const service = new AdministradorService(prisma, administradorId);
       const creada = await service.solicitarMaquinaria(req.body);
       res.status(201).json(creada);
+    } catch (err) { next(err); }
+  };
+
+  listarCompromisosConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const administradorId = resolveAdminId(req);
+      const { conjuntoId } = ConjuntoParam.parse(req.params);
+      const service = new AdministradorService(prisma, administradorId);
+      const items = await service.listarCompromisosConjunto(conjuntoId);
+      res.json(items);
+    } catch (err) { next(err); }
+  };
+
+  crearCompromisoConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const administradorId = resolveAdminId(req);
+      const { conjuntoId } = ConjuntoParam.parse(req.params);
+      const { titulo } = CrearCompromisoBody.parse(req.body);
+      const service = new AdministradorService(prisma, administradorId);
+      const creado = await service.crearCompromisoConjunto({
+        conjuntoId,
+        titulo,
+        creadoPorId: req.user?.sub ? String(req.user.sub) : administradorId.toString(),
+      });
+      res.status(201).json(creado);
+    } catch (err) { next(err); }
+  };
+
+  actualizarCompromiso: RequestHandler = async (req, res, next) => {
+    try {
+      const administradorId = resolveAdminId(req);
+      const { id } = CompromisoParam.parse(req.params);
+      const body = ActualizarCompromisoBody.parse(req.body);
+      const service = new AdministradorService(prisma, administradorId);
+      const updated = await service.actualizarCompromiso(id, body);
+      res.json(updated);
+    } catch (err) { next(err); }
+  };
+
+  eliminarCompromiso: RequestHandler = async (req, res, next) => {
+    try {
+      const administradorId = resolveAdminId(req);
+      const { id } = CompromisoParam.parse(req.params);
+      const service = new AdministradorService(prisma, administradorId);
+      const out = await service.eliminarCompromiso(id);
+      res.json(out);
     } catch (err) { next(err); }
   };
 }

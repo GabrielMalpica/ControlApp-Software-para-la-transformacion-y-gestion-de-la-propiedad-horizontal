@@ -302,6 +302,59 @@ class NotificacionService {
             },
         });
     }
+    async notificarPqrsCreadaPorAdministrador(input) {
+        const [actor, conjunto] = await Promise.all([
+            input.actorId
+                ? this.db.usuario.findUnique({
+                    where: { id: input.actorId },
+                    select: { nombre: true },
+                })
+                : Promise.resolve(null),
+            this.db.conjunto.findUnique({
+                where: { nit: input.conjuntoId },
+                select: { nombre: true, empresaId: true },
+            }),
+        ]);
+        if (!conjunto?.empresaId)
+            return;
+        const [gerentes, jefes] = await Promise.all([
+            this.db.gerente.findMany({
+                where: { empresaId: conjunto.empresaId },
+                select: { id: true },
+            }),
+            this.db.jefeOperaciones.findMany({
+                where: { empresaId: conjunto.empresaId },
+                select: { id: true },
+            }),
+        ]);
+        const destinatarios = new Set();
+        for (const g of gerentes)
+            destinatarios.add(g.id);
+        for (const j of jefes)
+            destinatarios.add(j.id);
+        if (input.actorId)
+            destinatarios.delete(input.actorId);
+        if (destinatarios.size === 0)
+            return;
+        const actorNombreRaw = actor?.nombre?.trim() ?? "";
+        const actorNombre = actorNombreRaw.length > 0 ? actorNombreRaw : "Un administrador";
+        const nombreConjunto = conjunto.nombre?.trim() ?? input.conjuntoId;
+        const mensaje = `${actorNombre} creo una PQRS en ${nombreConjunto}: "${input.titulo}".`;
+        await this.crearParaUsuarios({
+            usuarioIds: Array.from(destinatarios),
+            tipo: "PQRS_ADMIN_CREADA",
+            titulo: "Nueva PQRS registrada",
+            mensaje,
+            referenciaTipo: "COMPROMISO_CONJUNTO",
+            referenciaId: input.compromisoId,
+            data: {
+                compromisoId: input.compromisoId,
+                conjuntoId: input.conjuntoId,
+                titulo: input.titulo,
+                actorId: input.actorId ?? null,
+            },
+        });
+    }
     parseData(value) {
         if (value == null)
             return null;

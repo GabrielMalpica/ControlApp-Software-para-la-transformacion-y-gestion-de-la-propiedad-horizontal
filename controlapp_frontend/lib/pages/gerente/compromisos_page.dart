@@ -1,18 +1,32 @@
 import 'package:flutter/material.dart';
 
+import '../../api/administrador_api.dart';
 import '../../api/gerente_api.dart';
 import '../../service/app_error.dart';
 import '../../service/app_feedback.dart';
+import '../../service/session_service.dart';
 import '../../service/theme.dart';
 
 class CompromisosPage extends StatefulWidget {
   final String nit;
   final String nombreConjunto;
+  final String pageTitle;
+  final String inputLabel;
+  final String inputHint;
+  final String emptyMessage;
+  final String addButtonLabel;
+  final bool usarFlujoAdministrador;
 
   const CompromisosPage({
     super.key,
     required this.nit,
     required this.nombreConjunto,
+    this.pageTitle = 'Compromisos',
+    this.inputLabel = 'Nuevo compromiso',
+    this.inputHint = 'Ej: Llamar al administrador',
+    this.emptyMessage = 'Aun no hay compromisos.\nAgrega el primero.',
+    this.addButtonLabel = 'Agregar',
+    this.usarFlujoAdministrador = false,
   });
 
   @override
@@ -21,10 +35,13 @@ class CompromisosPage extends StatefulWidget {
 
 class _CompromisosPageState extends State<CompromisosPage> {
   final GerenteApi _api = GerenteApi();
+  final AdministradorApi _adminApi = AdministradorApi();
+  final SessionService _sessionService = SessionService();
   final TextEditingController _controller = TextEditingController();
 
   List<_CompromisoItem> _items = [];
   bool _loading = true;
+  String? _adminId;
 
   @override
   void initState() {
@@ -41,7 +58,16 @@ class _CompromisosPageState extends State<CompromisosPage> {
   Future<void> _cargar() async {
     setState(() => _loading = true);
     try {
-      final raw = await _api.listarCompromisosConjunto(widget.nit);
+      if (widget.usarFlujoAdministrador) {
+        _adminId ??= await _sessionService.getUserId();
+      }
+
+      final raw = widget.usarFlujoAdministrador
+          ? await _adminApi.listarPqrsConjunto(
+              adminId: _adminId!,
+              conjuntoId: widget.nit,
+            )
+          : await _api.listarCompromisosConjunto(widget.nit);
       final items = raw.map(_CompromisoItem.fromJson).toList();
       if (!mounted) return;
       setState(() {
@@ -60,10 +86,20 @@ class _CompromisosPageState extends State<CompromisosPage> {
     if (texto.isEmpty) return;
 
     try {
-      final raw = await _api.crearCompromisoConjunto(
-        conjuntoId: widget.nit,
-        titulo: texto,
-      );
+      if (widget.usarFlujoAdministrador) {
+        _adminId ??= await _sessionService.getUserId();
+      }
+
+      final raw = widget.usarFlujoAdministrador
+          ? await _adminApi.crearPqrsConjunto(
+              adminId: _adminId!,
+              conjuntoId: widget.nit,
+              titulo: texto,
+            )
+          : await _api.crearCompromisoConjunto(
+              conjuntoId: widget.nit,
+              titulo: texto,
+            );
       if (!mounted) return;
       setState(() {
         _items = [_CompromisoItem.fromJson(raw), ..._items];
@@ -80,7 +116,16 @@ class _CompromisosPageState extends State<CompromisosPage> {
       item.completado = valor;
     });
     try {
-      await _api.actualizarCompromiso(id: item.id, completado: valor);
+      if (widget.usarFlujoAdministrador) {
+        _adminId ??= await _sessionService.getUserId();
+        await _adminApi.actualizarPqrs(
+          adminId: _adminId!,
+          id: item.id,
+          completado: valor,
+        );
+      } else {
+        await _api.actualizarCompromiso(id: item.id, completado: valor);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => item.completado = old);
@@ -121,7 +166,16 @@ class _CompromisosPageState extends State<CompromisosPage> {
     final old = item.titulo;
     setState(() => item.titulo = nuevo);
     try {
-      await _api.actualizarCompromiso(id: item.id, titulo: nuevo);
+      if (widget.usarFlujoAdministrador) {
+        _adminId ??= await _sessionService.getUserId();
+        await _adminApi.actualizarPqrs(
+          adminId: _adminId!,
+          id: item.id,
+          titulo: nuevo,
+        );
+      } else {
+        await _api.actualizarCompromiso(id: item.id, titulo: nuevo);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => item.titulo = old);
@@ -131,7 +185,12 @@ class _CompromisosPageState extends State<CompromisosPage> {
 
   Future<void> _eliminar(_CompromisoItem item) async {
     try {
-      await _api.eliminarCompromiso(item.id);
+      if (widget.usarFlujoAdministrador) {
+        _adminId ??= await _sessionService.getUserId();
+        await _adminApi.eliminarPqrs(adminId: _adminId!, id: item.id);
+      } else {
+        await _api.eliminarCompromiso(item.id);
+      }
       if (!mounted) return;
       setState(() => _items.removeWhere((x) => x.id == item.id));
     } catch (e) {
@@ -151,7 +210,7 @@ class _CompromisosPageState extends State<CompromisosPage> {
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('Compromisos'),
+        title: Text(widget.pageTitle),
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
       ),
@@ -186,9 +245,9 @@ class _CompromisosPageState extends State<CompromisosPage> {
                           controller: _controller,
                           textInputAction: TextInputAction.done,
                           onSubmitted: (_) => _agregar(),
-                          decoration: const InputDecoration(
-                            labelText: 'Nuevo compromiso',
-                            hintText: 'Ej: Llamar al administrador',
+                          decoration: InputDecoration(
+                            labelText: widget.inputLabel,
+                            hintText: widget.inputHint,
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -199,7 +258,7 @@ class _CompromisosPageState extends State<CompromisosPage> {
                         child: ElevatedButton.icon(
                           onPressed: _agregar,
                           icon: const Icon(Icons.add_task),
-                          label: const Text('Agregar'),
+                          label: Text(widget.addButtonLabel),
                         ),
                       ),
                     ],
@@ -207,16 +266,17 @@ class _CompromisosPageState extends State<CompromisosPage> {
                   const SizedBox(height: 14),
                   Expanded(
                     child: _items.isEmpty
-                        ? const Center(
+                        ? Center(
                             child: Text(
-                              'Aun no hay compromisos.\nAgrega el primero.',
+                              widget.emptyMessage,
                               textAlign: TextAlign.center,
                               style: TextStyle(color: Colors.black54),
                             ),
                           )
                         : ListView.separated(
                             itemCount: _items.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 8),
                             itemBuilder: (context, index) {
                               final item = _items[index];
                               return Container(
@@ -229,13 +289,16 @@ class _CompromisosPageState extends State<CompromisosPage> {
                                   children: [
                                     Checkbox(
                                       value: item.completado,
-                                      onChanged: (v) => _toggle(item, v ?? false),
+                                      onChanged: (v) =>
+                                          _toggle(item, v ?? false),
                                     ),
                                     Expanded(
                                       child: InkWell(
                                         onTap: () => _editarTitulo(item),
                                         child: Padding(
-                                          padding: const EdgeInsets.symmetric(vertical: 16),
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 16,
+                                          ),
                                           child: Text(
                                             item.titulo,
                                             style: TextStyle(
