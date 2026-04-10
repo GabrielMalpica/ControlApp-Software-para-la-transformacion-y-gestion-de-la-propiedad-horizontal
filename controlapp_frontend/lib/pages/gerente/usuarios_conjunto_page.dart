@@ -25,11 +25,7 @@ class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
   @override
   void initState() {
     super.initState();
-    if (widget.conjuntoInicial != null) {
-      _futureConjunto = Future.value(widget.conjuntoInicial!);
-    } else {
-      _futureConjunto = _api.obtenerConjunto(widget.conjuntoNit);
-    }
+    _futureConjunto = _api.obtenerConjunto(widget.conjuntoNit);
   }
 
   @override

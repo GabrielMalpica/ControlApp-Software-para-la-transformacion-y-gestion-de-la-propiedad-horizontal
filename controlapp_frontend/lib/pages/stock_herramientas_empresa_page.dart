@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/herramienta_api.dart';
+import '../model/herramienta_model.dart';
 import '../service/app_constants.dart';
 import '../service/app_error.dart';
 import '../service/theme.dart';
@@ -19,12 +20,12 @@ class StockHerramientasEmpresaPage extends StatefulWidget {
 class _StockHerramientasEmpresaPageState
     extends State<StockHerramientasEmpresaPage> {
   final _api = HerramientaApi();
-  final _searchCtrl = TextEditingController();
 
   bool _loading = false;
   String? _error;
   String _search = '';
-  List<_StockEmpresaItem> _items = [];
+  int _rowsPerPage = 8;
+  List<HerramientaStockResponse> _items = [];
 
   String get _empresaId => widget.empresaId ?? AppConstants.empresaNit;
 
@@ -32,12 +33,6 @@ class _StockHerramientasEmpresaPageState
   void initState() {
     super.initState();
     _load();
-  }
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -50,7 +45,9 @@ class _StockHerramientasEmpresaPageState
       final raw = await _api.listarStockEmpresa(empresaId: _empresaId);
       final parsed = raw
           .whereType<Map>()
-          .map((e) => _StockEmpresaItem.fromJson(e.cast<String, dynamic>()))
+          .map(
+            (e) => HerramientaStockResponse.fromJson(e.cast<String, dynamic>()),
+          )
           .toList();
 
       if (!mounted) return;
@@ -63,27 +60,53 @@ class _StockHerramientasEmpresaPageState
     }
   }
 
-  Future<void> _ajustar(_StockEmpresaItem item, {required bool sumar}) async {
+  List<HerramientaStockResponse> get _filtrados {
+    final q = _search.trim().toLowerCase();
+    if (q.isEmpty) return List.of(_items);
+
+    return _items.where((item) {
+      return [
+        item.nombre,
+        item.unidad,
+        item.categoria.label,
+        item.modoControl.label,
+        item.estado.label,
+      ].join(' ').toLowerCase().contains(q);
+    }).toList();
+  }
+
+  Future<void> _ajustar(
+    HerramientaStockResponse item, {
+    required bool sumar,
+  }) async {
     final ctrl = TextEditingController();
 
     try {
       final cantidad = await showDialog<num>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: Text(sumar ? 'Agregar stock a empresa' : 'Descontar stock a empresa'),
+          title: Text(sumar ? 'Agregar stock' : 'Descontar stock'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(item.nombre, style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text(
+                item.nombre,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
               const SizedBox(height: 6),
+              Text('Estado actual: ${item.estado.label}'),
               Text('Disponible: ${item.cantidad} ${item.unidad}'),
               const SizedBox(height: 12),
               TextField(
                 controller: ctrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
-                  labelText: sumar ? 'Cantidad a agregar' : 'Cantidad a descontar',
+                  labelText: sumar
+                      ? 'Cantidad a agregar'
+                      : 'Cantidad a descontar',
                   border: const OutlineInputBorder(),
                 ),
               ),
@@ -112,6 +135,7 @@ class _StockHerramientasEmpresaPageState
         empresaId: _empresaId,
         herramientaId: item.herramientaId,
         delta: sumar ? cantidad : -cantidad,
+        estado: item.estado.backendValue,
       );
 
       if (!mounted) return;
@@ -131,18 +155,137 @@ class _StockHerramientasEmpresaPageState
     }
   }
 
+  Future<void> _cambiarEstado(HerramientaStockResponse item) async {
+    final cantidadCtrl = TextEditingController(text: item.cantidad.toString());
+    final estadosDisponibles = EstadoHerramientaStock.values
+        .where((estado) => estado != item.estado)
+        .toList();
+    var estadoNuevo = estadosDisponibles.first;
+
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) => AlertDialog(
+              title: Text('Cambiar estado de ${item.nombre}'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Disponible en ${item.estado.label}: ${item.cantidad} ${item.unidad}',
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: cantidadCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Cantidad a mover',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<EstadoHerramientaStock>(
+                    initialValue: estadoNuevo,
+                    decoration: const InputDecoration(
+                      labelText: 'Nuevo estado',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: estadosDisponibles
+                        .map(
+                          (estado) => DropdownMenuItem(
+                            value: estado,
+                            child: Text(estado.label),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setDialogState(() => estadoNuevo = value);
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Guardar'),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (confirmed != true) return;
+
+      final cantidad = num.tryParse(cantidadCtrl.text.trim());
+      if (cantidad == null || cantidad <= 0 || cantidad > item.cantidad) {
+        throw Exception('Ingresa una cantidad valida para mover de estado.');
+      }
+
+      await _api.cambiarEstadoStockEmpresa(
+        empresaId: _empresaId,
+        herramientaId: item.herramientaId,
+        estadoActual: item.estado.backendValue,
+        estadoNuevo: estadoNuevo.backendValue,
+        cantidad: cantidad,
+      );
+
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text('Estado actualizado para ${item.nombre}.')),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+    } finally {
+      cantidadCtrl.dispose();
+    }
+  }
+
+  Widget _chipCount(String label, int n, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        '$label: $n',
+        style: TextStyle(color: color, fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final items = _items.where((item) {
-      final q = _search.trim().toLowerCase();
-      if (q.isEmpty) return true;
-      return [item.nombre, item.unidad, item.categoria, item.modoControl]
-          .join(' ')
-          .toLowerCase()
-          .contains(q);
-    }).toList();
-
-    final total = _items.fold<num>(0, (sum, item) => sum + item.cantidad);
+    final filtrados = _filtrados;
+    final operativas = _items
+        .where((e) => e.estado == EstadoHerramientaStock.OPERATIVA)
+        .length;
+    final danadas = _items
+        .where((e) => e.estado == EstadoHerramientaStock.DANADA)
+        .length;
+    final perdidas = _items
+        .where((e) => e.estado == EstadoHerramientaStock.PERDIDA)
+        .length;
+    final bajas = _items
+        .where((e) => e.estado == EstadoHerramientaStock.BAJA)
+        .length;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -150,124 +293,123 @@ class _StockHerramientasEmpresaPageState
         title: const Text('Stock de herramientas empresa'),
         backgroundColor: AppTheme.primary,
         actions: [
-          IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
+          IconButton(
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh),
+          ),
         ],
       ),
-      body: SafeArea(
+      body: Padding(
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Este stock pertenece a la empresa',
-                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Desde aqui sumas o descuentas existencias de empresa. Si un conjunto necesita herramientas, se registran como propias desde su inventario o se prestan mediante solicitud.',
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Total en empresa: $total',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _searchCtrl,
-                    decoration: InputDecoration(
-                      labelText: 'Buscar en stock empresa',
-                      hintText: 'Nombre, unidad, categoria o modo',
-                      prefixIcon: const Icon(Icons.search),
-                      border: const OutlineInputBorder(),
-                      suffixIcon: _searchCtrl.text.trim().isEmpty
-                          ? null
-                          : IconButton(
-                              onPressed: () {
-                                _searchCtrl.clear();
-                                setState(() => _search = '');
-                              },
-                              icon: const Icon(Icons.clear),
-                            ),
-                    ),
-                    onChanged: (value) => setState(() => _search = value),
-                  ),
-                ],
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: const Text(
+                'Aqui ves el stock de herramientas de la empresa con el mismo enfoque del inventario por conjunto. Puedes sumar, descontar y mover cantidades entre estados.',
               ),
             ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 44,
+                    child: TextField(
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.search),
+                        hintText:
+                            'Buscar (nombre, unidad, categoria, control o estado)',
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                      ),
+                      onChanged: (value) => setState(() => _search = value),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _chipCount('Operativas', operativas, AppTheme.green),
+                const SizedBox(width: 8),
+                _chipCount('Dañadas', danadas, AppTheme.red),
+                const SizedBox(width: 8),
+                _chipCount('Perdidas', perdidas, Colors.black54),
+                const SizedBox(width: 8),
+                _chipCount('Bajas', bajas, Colors.black45),
+              ],
+            ),
+            const SizedBox(height: 12),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _error != null
                   ? _StateView(message: _error!, onRetry: _load)
-                  : items.isEmpty
+                  : filtrados.isEmpty
                   ? const _EmptyView()
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                      itemCount: items.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (_, index) {
-                        final item = items[index];
-                        return Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: Colors.grey.shade300),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(item.nombre, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  _Chip(text: 'Stock: ${item.cantidad} ${item.unidad}'),
-                                  _Chip(text: item.categoria),
-                                  _Chip(text: item.modoControl),
-                                ],
+                  : Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        side: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: SingleChildScrollView(
+                          child: Theme(
+                            data: Theme.of(
+                              context,
+                            ).copyWith(dividerColor: Colors.grey.shade200),
+                            child: PaginatedDataTable(
+                              header: const Text(
+                                'Herramientas empresa',
+                                style: TextStyle(fontWeight: FontWeight.w800),
                               ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => _ajustar(item, sumar: false),
-                                      icon: const Icon(Icons.remove_circle_outline),
-                                      label: const Text('Descontar'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: FilledButton.icon(
-                                      onPressed: () => _ajustar(item, sumar: true),
-                                      icon: const Icon(Icons.add_circle_outline),
-                                      label: const Text('Agregar'),
-                                    ),
-                                  ),
-                                ],
+                              showCheckboxColumn: false,
+                              availableRowsPerPage: const [8, 10, 20, 50],
+                              rowsPerPage: _rowsPerPage,
+                              onRowsPerPageChanged: (value) {
+                                if (value == null) return;
+                                setState(() => _rowsPerPage = value);
+                              },
+                              columns: const [
+                                DataColumn(label: Text('NAME')),
+                                DataColumn(label: Text('UNIT')),
+                                DataColumn(label: Text('CONTROL')),
+                                DataColumn(
+                                  numeric: true,
+                                  label: Text('AVAILABLE'),
+                                ),
+                                DataColumn(label: Text('STATE')),
+                                DataColumn(label: Text('ACTION')),
+                              ],
+                              source: _EmpresaHerramientaDataSource(
+                                data: filtrados,
+                                onAgregar: (item) =>
+                                    _ajustar(item, sumar: true),
+                                onDescontar: (item) =>
+                                    _ajustar(item, sumar: false),
+                                onCambiarEstado: _cambiarEstado,
                               ),
-                            ],
+                            ),
                           ),
-                        );
-                      },
+                        ),
+                      ),
                     ),
             ),
           ],
@@ -277,61 +419,91 @@ class _StockHerramientasEmpresaPageState
   }
 }
 
-class _StockEmpresaItem {
-  final int herramientaId;
-  final String nombre;
-  final String unidad;
-  final String categoria;
-  final String modoControl;
-  final num cantidad;
+class _EmpresaHerramientaDataSource extends DataTableSource {
+  final List<HerramientaStockResponse> data;
+  final Future<void> Function(HerramientaStockResponse item) onAgregar;
+  final Future<void> Function(HerramientaStockResponse item) onDescontar;
+  final Future<void> Function(HerramientaStockResponse item) onCambiarEstado;
 
-  _StockEmpresaItem({
-    required this.herramientaId,
-    required this.nombre,
-    required this.unidad,
-    required this.categoria,
-    required this.modoControl,
-    required this.cantidad,
+  _EmpresaHerramientaDataSource({
+    required this.data,
+    required this.onAgregar,
+    required this.onDescontar,
+    required this.onCambiarEstado,
   });
 
-  static num _asNum(dynamic value, {num fallback = 0}) {
-    if (value == null) return fallback;
-    if (value is num) return value;
-    return num.tryParse(value.toString()) ?? fallback;
-  }
+  @override
+  DataRow? getRow(int index) {
+    if (index >= data.length) return null;
+    final item = data[index];
 
-  factory _StockEmpresaItem.fromJson(Map<String, dynamic> json) {
-    final herramienta = (json['herramienta'] is Map)
-        ? (json['herramienta'] as Map).cast<String, dynamic>()
-        : <String, dynamic>{};
+    final estadoColor = switch (item.estado) {
+      EstadoHerramientaStock.OPERATIVA => AppTheme.green,
+      EstadoHerramientaStock.DANADA => AppTheme.red,
+      EstadoHerramientaStock.PERDIDA => Colors.black54,
+      EstadoHerramientaStock.BAJA => Colors.black45,
+    };
 
-    return _StockEmpresaItem(
-      herramientaId: (json['herramientaId'] as num?)?.toInt() ?? 0,
-      nombre: (herramienta['nombre'] ?? '-').toString(),
-      unidad: (herramienta['unidad'] ?? 'unidad').toString(),
-      categoria: (herramienta['categoria'] ?? 'OTROS').toString(),
-      modoControl: (herramienta['modoControl'] ?? 'PRESTAMO').toString(),
-      cantidad: _asNum(json['cantidad']),
+    return DataRow.byIndex(
+      index: index,
+      cells: [
+        DataCell(
+          Text(
+            item.nombre,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+        DataCell(Text(item.unidad.isEmpty ? '-' : item.unidad)),
+        DataCell(Text(item.modoControl.label)),
+        DataCell(Text(item.cantidad.toString())),
+        DataCell(
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: estadoColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: estadoColor.withValues(alpha: 0.25)),
+            ),
+            child: Text(
+              item.estado.label,
+              style: TextStyle(color: estadoColor, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ),
+        DataCell(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Descontar',
+                onPressed: () => onDescontar(item),
+                icon: const Icon(Icons.remove_circle_outline),
+              ),
+              IconButton(
+                tooltip: 'Agregar',
+                onPressed: () => onAgregar(item),
+                icon: const Icon(Icons.add_circle_outline),
+              ),
+              IconButton(
+                tooltip: 'Cambiar estado',
+                onPressed: () => onCambiarEstado(item),
+                icon: const Icon(Icons.sync_alt_outlined),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
-}
-
-class _Chip extends StatelessWidget {
-  final String text;
-
-  const _Chip({required this.text});
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(text),
-    );
-  }
+  bool get isRowCountApproximate => false;
+
+  @override
+  int get rowCount => data.length;
+
+  @override
+  int get selectedRowCount => 0;
 }
 
 class _EmptyView extends StatelessWidget {

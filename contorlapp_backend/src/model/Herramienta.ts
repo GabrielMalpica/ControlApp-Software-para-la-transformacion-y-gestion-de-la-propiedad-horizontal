@@ -69,6 +69,12 @@ export const AjustarStockBody = z.object({
   estado: EstadoHerramientaStockZ.optional().default("OPERATIVA"),
 });
 
+export const CambiarEstadoStockBody = z.object({
+  estadoActual: EstadoHerramientaStockZ,
+  estadoNuevo: EstadoHerramientaStockZ,
+  cantidad: z.coerce.number().positive(),
+});
+
 export const DevolverPrestamoHerramientaBody = z.object({
   cantidad: z.coerce.number().positive(),
   estado: EstadoHerramientaStockZ.optional().default("OPERATIVA"),

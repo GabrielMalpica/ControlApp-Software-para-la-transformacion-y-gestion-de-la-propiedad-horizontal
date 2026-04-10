@@ -39,24 +39,41 @@ class HerramientaStockService {
         return Array.from(grouped.values());
     }
     async listarStockEmpresa(empresaId) {
-        return this.prisma.empresaHerramientaStock.findMany({
+        const rows = await this.prisma.empresaHerramientaStock.findMany({
             where: { empresaId },
             include: { herramienta: true },
-            orderBy: { herramienta: { nombre: "asc" } },
+            orderBy: [{ herramienta: { nombre: "asc" } }, { estado: "asc" }],
         });
+        return rows.map((row) => ({
+            herramientaId: row.herramientaId,
+            cantidad: Number(row.cantidad),
+            estado: row.estado,
+            nombre: row.herramienta?.nombre,
+            unidad: row.herramienta?.unidad,
+            categoria: row.herramienta?.categoria,
+            modoControl: row.herramienta?.modoControl,
+            umbralBajo: row.herramienta?.umbralBajo,
+            herramienta: row.herramienta,
+            origen: "EMPRESA",
+            tipoTenencia: "PROPIA",
+            empresaIdFuente: empresaId,
+            fechaDevolucionEstimada: null,
+        }));
     }
     async upsertStockEmpresa(data) {
         return this.prisma.empresaHerramientaStock.upsert({
             where: {
-                empresaId_herramientaId: {
+                empresaId_herramientaId_estado: {
                     empresaId: data.empresaId,
                     herramientaId: data.herramientaId,
+                    estado: data.estado,
                 },
             },
             create: {
                 empresaId: data.empresaId,
                 herramientaId: data.herramientaId,
                 cantidad: data.cantidad,
+                estado: data.estado,
             },
             update: {
                 cantidad: data.cantidad,
@@ -68,9 +85,10 @@ class HerramientaStockService {
         return this.prisma.$transaction(async (tx) => {
             const row = await tx.empresaHerramientaStock.findUnique({
                 where: {
-                    empresaId_herramientaId: {
+                    empresaId_herramientaId_estado: {
                         empresaId: data.empresaId,
                         herramientaId: data.herramientaId,
+                        estado: data.estado,
                     },
                 },
             });
@@ -87,9 +105,10 @@ class HerramientaStockService {
             }
             return tx.empresaHerramientaStock.update({
                 where: {
-                    empresaId_herramientaId: {
+                    empresaId_herramientaId_estado: {
                         empresaId: data.empresaId,
                         herramientaId: data.herramientaId,
+                        estado: data.estado,
                     },
                 },
                 data: { cantidad: nuevaCantidad },
@@ -97,14 +116,102 @@ class HerramientaStockService {
             });
         });
     }
+    async cambiarEstadoStockEmpresa(data) {
+        return this.cambiarEstadoStockBase({
+            findActual: async (tx) => tx.empresaHerramientaStock.findUnique({
+                where: {
+                    empresaId_herramientaId_estado: {
+                        empresaId: data.empresaId,
+                        herramientaId: data.herramientaId,
+                        estado: data.estadoActual,
+                    },
+                },
+            }),
+            upsertNuevo: async (tx) => tx.empresaHerramientaStock.upsert({
+                where: {
+                    empresaId_herramientaId_estado: {
+                        empresaId: data.empresaId,
+                        herramientaId: data.herramientaId,
+                        estado: data.estadoNuevo,
+                    },
+                },
+                create: {
+                    empresaId: data.empresaId,
+                    herramientaId: data.herramientaId,
+                    estado: data.estadoNuevo,
+                    cantidad: data.cantidad,
+                },
+                update: {
+                    cantidad: { increment: data.cantidad },
+                },
+            }),
+            descontarActual: async (tx, removeRow) => {
+                if (removeRow) {
+                    await tx.empresaHerramientaStock.delete({
+                        where: {
+                            empresaId_herramientaId_estado: {
+                                empresaId: data.empresaId,
+                                herramientaId: data.herramientaId,
+                                estado: data.estadoActual,
+                            },
+                        },
+                    });
+                    return;
+                }
+                await tx.empresaHerramientaStock.update({
+                    where: {
+                        empresaId_herramientaId_estado: {
+                            empresaId: data.empresaId,
+                            herramientaId: data.herramientaId,
+                            estado: data.estadoActual,
+                        },
+                    },
+                    data: { cantidad: { decrement: data.cantidad } },
+                });
+            },
+            data,
+        });
+    }
     async eliminarStockEmpresa(data) {
         return this.prisma.empresaHerramientaStock.delete({
             where: {
-                empresaId_herramientaId: {
+                empresaId_herramientaId_estado: {
                     empresaId: data.empresaId,
                     herramientaId: data.herramientaId,
+                    estado: "OPERATIVA",
                 },
             },
+        });
+    }
+    async cambiarEstadoStockBase(params) {
+        const { data, findActual, upsertNuevo, descontarActual } = params;
+        if (data.estadoActual === data.estadoNuevo) {
+            const e = new Error("Debes seleccionar un estado diferente.");
+            e.status = 400;
+            throw e;
+        }
+        return this.prisma.$transaction(async (tx) => {
+            const actual = await findActual(tx);
+            if (!actual) {
+                const e = new Error("No existe stock para esa herramienta/estado.");
+                e.status = 404;
+                throw e;
+            }
+            const disponible = Number(actual.cantidad);
+            if (disponible < data.cantidad) {
+                const e = new Error(`Cantidad insuficiente. Disponible: ${disponible}.`);
+                e.status = 409;
+                throw e;
+            }
+            await upsertNuevo(tx);
+            await descontarActual(tx, disponible === data.cantidad);
+            return {
+                ok: true,
+                herramientaId: data.herramientaId,
+                estadoAnterior: data.estadoActual,
+                estadoNuevo: data.estadoNuevo,
+                cantidad: data.cantidad,
+            };
         });
     }
     async listarStock({ estado } = {}) {
@@ -276,6 +383,62 @@ class HerramientaStockService {
                     estado: data.estado,
                 },
             },
+        });
+    }
+    async cambiarEstadoStockConjunto(data) {
+        return this.cambiarEstadoStockBase({
+            findActual: async (tx) => tx.conjuntoHerramientaStock.findUnique({
+                where: {
+                    conjuntoId_herramientaId_estado: {
+                        conjuntoId: this.conjuntoId,
+                        herramientaId: data.herramientaId,
+                        estado: data.estadoActual,
+                    },
+                },
+            }),
+            upsertNuevo: async (tx) => tx.conjuntoHerramientaStock.upsert({
+                where: {
+                    conjuntoId_herramientaId_estado: {
+                        conjuntoId: this.conjuntoId,
+                        herramientaId: data.herramientaId,
+                        estado: data.estadoNuevo,
+                    },
+                },
+                create: {
+                    conjuntoId: this.conjuntoId,
+                    herramientaId: data.herramientaId,
+                    estado: data.estadoNuevo,
+                    cantidad: data.cantidad,
+                },
+                update: {
+                    cantidad: { increment: data.cantidad },
+                },
+            }),
+            descontarActual: async (tx, removeRow) => {
+                if (removeRow) {
+                    await tx.conjuntoHerramientaStock.delete({
+                        where: {
+                            conjuntoId_herramientaId_estado: {
+                                conjuntoId: this.conjuntoId,
+                                herramientaId: data.herramientaId,
+                                estado: data.estadoActual,
+                            },
+                        },
+                    });
+                    return;
+                }
+                await tx.conjuntoHerramientaStock.update({
+                    where: {
+                        conjuntoId_herramientaId_estado: {
+                            conjuntoId: this.conjuntoId,
+                            herramientaId: data.herramientaId,
+                            estado: data.estadoActual,
+                        },
+                    },
+                    data: { cantidad: { decrement: data.cantidad } },
+                });
+            },
+            data,
         });
     }
     async listarDisponibilidad(params) {

@@ -153,7 +153,9 @@ class _InventarioPageState extends State<InventarioPage> {
     }).toList();
   }
 
-  Future<void> _devolverHerramientaPrestada(HerramientaStockResponse item) async {
+  Future<void> _devolverHerramientaPrestada(
+    HerramientaStockResponse item,
+  ) async {
     final controller = TextEditingController(text: item.cantidad.toString());
 
     try {
@@ -233,6 +235,109 @@ class _InventarioPageState extends State<InventarioPage> {
       );
     } finally {
       controller.dispose();
+    }
+  }
+
+  Future<void> _cambiarEstadoHerramientaPropia(
+    HerramientaStockResponse item,
+  ) async {
+    final cantidadCtrl = TextEditingController(text: item.cantidad.toString());
+    final estadosDisponibles = EstadoHerramientaStock.values
+        .where((estado) => estado != item.estado)
+        .toList();
+    var estadoNuevo = estadosDisponibles.first;
+
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) => AlertDialog(
+              title: Text('Cambiar estado de ${item.nombre}'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Disponible en ${item.estado.label}: ${item.cantidad} ${item.unidad}',
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: cantidadCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Cantidad a mover',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<EstadoHerramientaStock>(
+                    initialValue: estadoNuevo,
+                    decoration: const InputDecoration(
+                      labelText: 'Nuevo estado',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: estadosDisponibles
+                        .map(
+                          (estado) => DropdownMenuItem(
+                            value: estado,
+                            child: Text(estado.label),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setDialogState(() => estadoNuevo = value);
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Guardar'),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (confirmed != true) return;
+
+      final cantidad = num.tryParse(cantidadCtrl.text.trim());
+      if (cantidad == null || cantidad <= 0 || cantidad > item.cantidad) {
+        throw Exception('Ingresa una cantidad valida para mover de estado.');
+      }
+
+      await _herrApi.cambiarEstadoStockConjunto(
+        nitConjunto: widget.nit,
+        herramientaId: item.herramientaId,
+        estadoActual: item.estado.backendValue,
+        estadoNuevo: estadoNuevo.backendValue,
+        cantidad: cantidad,
+      );
+
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text('Estado actualizado para ${item.nombre}.')),
+      );
+      await _cargar();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+    } finally {
+      cantidadCtrl.dispose();
     }
   }
 
@@ -386,6 +491,9 @@ class _InventarioPageState extends State<InventarioPage> {
               source: _HerramientaDataSource(
                 data: filtrados,
                 onDevolver: _esGerente ? _devolverHerramientaPrestada : null,
+                onCambiarEstado: _esGerente
+                    ? _cambiarEstadoHerramientaPropia
+                    : null,
               ),
             ),
           ),
@@ -595,7 +703,7 @@ class _InventarioPageState extends State<InventarioPage> {
                     child: TextField(
                       decoration: InputDecoration(
                         prefixIcon: const Icon(Icons.search),
-              hintText: _tipoInventario == TipoInventario.INSUMOS
+                        hintText: _tipoInventario == TipoInventario.INSUMOS
                             ? "Buscar (nombre, categoría, unidad)"
                             : "Buscar (nombre, unidad, estado, modo, origen)",
                         filled: true,
@@ -707,8 +815,13 @@ class _InventarioDataSource extends DataTableSource {
 class _HerramientaDataSource extends DataTableSource {
   final List<HerramientaStockResponse> data;
   final Future<void> Function(HerramientaStockResponse item)? onDevolver;
+  final Future<void> Function(HerramientaStockResponse item)? onCambiarEstado;
 
-  _HerramientaDataSource({required this.data, this.onDevolver});
+  _HerramientaDataSource({
+    required this.data,
+    this.onDevolver,
+    this.onCambiarEstado,
+  });
 
   @override
   DataRow? getRow(int index) {
@@ -742,7 +855,10 @@ class _HerramientaDataSource extends DataTableSource {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: tenenciaColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(999),
@@ -785,13 +901,25 @@ class _HerramientaDataSource extends DataTableSource {
           ),
         ),
         DataCell(
-          h.tipoTenencia == TipoTenenciaHerramienta.PRESTADA && onDevolver != null
-              ? IconButton(
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (h.tipoTenencia == TipoTenenciaHerramienta.PROPIA &&
+                  onCambiarEstado != null)
+                IconButton(
+                  tooltip: 'Cambiar estado',
+                  onPressed: () => onCambiarEstado!(h),
+                  icon: const Icon(Icons.sync_alt_outlined),
+                ),
+              if (h.tipoTenencia == TipoTenenciaHerramienta.PRESTADA &&
+                  onDevolver != null)
+                IconButton(
                   tooltip: 'Devolver a empresa',
                   onPressed: () => onDevolver!(h),
                   icon: const Icon(Icons.assignment_return_outlined),
-                )
-              : const SizedBox.shrink(),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -973,7 +1101,7 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
                   DropdownButtonFormField<HerramientaResponse>(
                     initialValue: _selected,
                     decoration: const InputDecoration(
-                        labelText: "Herramienta propia (catálogo)",
+                      labelText: "Herramienta propia (catálogo)",
                       border: OutlineInputBorder(),
                     ),
                     items: _catalogo.map((h) {

@@ -134,12 +134,17 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
   Future<void> _cargarConjuntos() async {
     try {
       final lista = await _gerenteApi.listarConjuntos();
+      final seleccionadoActual = _conjuntoSeleccionadoNit;
       setState(() {
         _conjuntos = lista;
         _cargandoConjuntos = false;
         _errorConjuntos = null;
         if (_conjuntos.isNotEmpty) {
-          _conjuntoSeleccionadoNit = _conjuntos.first.nit;
+          final existeSeleccionado = seleccionadoActual != null &&
+              _conjuntos.any((c) => c.nit == seleccionadoActual);
+          _conjuntoSeleccionadoNit = existeSeleccionado
+              ? seleccionadoActual
+              : _conjuntos.first.nit;
         } else {
           _conjuntoSeleccionadoNit = null;
         }

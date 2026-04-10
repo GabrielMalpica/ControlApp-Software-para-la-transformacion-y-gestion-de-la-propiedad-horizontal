@@ -8,7 +8,6 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_application_1/api/reporte_api.dart';
 import 'package:flutter_application_1/model/reporte_model.dart';
 import 'package:flutter_application_1/pdf/pdf_download.dart';
-import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/chart_capture.dart';
 import 'package:flutter_application_1/service/theme.dart';
@@ -16,6 +15,7 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -2732,10 +2732,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           ),
         ),
         const SizedBox(height: 14),
-        _sectionTitle('Tareas asignadas por dia de la semana'),
-        const SizedBox(height: 8),
-        _card(child: SizedBox(height: 300, child: _weeklyAssignedLoadChart())),
-        const SizedBox(height: 14),
         Row(
           children: [
             Expanded(
@@ -2914,33 +2910,52 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     final total = entries.fold<int>(0, (a, b) => a + b.value);
     if (total <= 0) return const Center(child: Text('Sin datos'));
 
-    final sections = <PieChartSectionData>[];
-    for (int i = 0; i < entries.length; i++) {
-      final e = entries[i];
-      final pct = (e.value / total) * 100;
-      final c = _estadoColor(e.key);
-      final onC = _estadoOnColor(e.key);
-
-      sections.add(
-        PieChartSectionData(
-          value: e.value.toDouble(),
-          title: pct >= 8 ? '${pct.toStringAsFixed(0)}%' : '',
-          radius: 70,
-          titleStyle: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: onC,
+    final data = entries
+        .map(
+          (e) => _ChartSliceDatum(
+            label: e.key,
+            value: e.value.toDouble(),
+            color: _estadoColor(e.key),
           ),
-          color: c,
-        ),
-      );
-    }
+        )
+        .toList();
 
-    return PieChart(
-      PieChartData(sectionsSpace: 2, centerSpaceRadius: 44, sections: sections),
-      swapAnimationDuration: _captureMode
-          ? Duration.zero
-          : const Duration(milliseconds: 250),
+    return SfCircularChart(
+      margin: EdgeInsets.zero,
+      tooltipBehavior: TooltipBehavior(enable: true),
+      series: <CircularSeries<_ChartSliceDatum, String>>[
+        DoughnutSeries<_ChartSliceDatum, String>(
+          dataSource: data,
+          xValueMapper: (d, _) => d.label,
+          yValueMapper: (d, _) => d.value,
+          pointColorMapper: (d, _) => d.color,
+          innerRadius: '58%',
+          radius: '88%',
+          dataLabelSettings: const DataLabelSettings(
+            isVisible: true,
+            labelPosition: ChartDataLabelPosition.outside,
+            textStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+          ),
+          dataLabelMapper: (d, _) {
+            final pct = (d.value / total) * 100;
+            return pct >= 7 ? '${pct.toStringAsFixed(0)}%' : '';
+          },
+        ),
+      ],
+      annotations: <CircularChartAnnotation>[
+        CircularChartAnnotation(
+          widget: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$total',
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              ),
+              const Text('tareas', style: TextStyle(fontSize: 11, color: Colors.black54)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -2993,141 +3008,133 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
 
   // -------- Line serie diaria --------
 
-  Widget _weeklyAssignedLoadChart() {
+  Widget _dailyOperationalFlowChart() {
     final s = _serie;
     if (s == null || s.days.isEmpty) {
-      return const Center(child: Text('Sin datos semanales.'));
+      return const Center(child: Text('Sin historico operativo para mostrar.'));
     }
 
-    final buckets = <DateTime, List<int>>{};
-    for (final day in s.days) {
-      final date = DateTime.tryParse(day)?.toLocal();
-      if (date == null) continue;
-      final monday = DateTime(
-        date.year,
-        date.month,
-        date.day,
-      ).subtract(Duration(days: date.weekday - 1));
-      final week = buckets.putIfAbsent(monday, () => List<int>.filled(7, 0));
-      final asignadas =
-          (s.series[day] ?? const <String, int>{})['ASIGNADA'] ?? 0;
-      week[date.weekday - 1] += asignadas;
+    final days = s.days.length <= 21
+        ? s.days
+        : s.days.sublist(s.days.length - 21);
+    if (days.isEmpty) {
+      return const Center(child: Text('Sin historico operativo para mostrar.'));
     }
 
-    final sortedWeeks = buckets.keys.toList()..sort();
-    final weeks = sortedWeeks.length <= 4
-        ? sortedWeeks
-        : sortedWeeks.sublist(sortedWeeks.length - 4);
+    final data = <_OperationalTrendDatum>[];
 
-    if (weeks.isEmpty) {
-      return const Center(child: Text('Sin tareas asignadas en el rango.'));
-    }
-
-    const dayLabels = <String>['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-    final weekColors = <Color>[
-      AppTheme.primary,
-      Colors.teal.shade500,
-      Colors.orange.shade500,
-      Colors.indigo.shade400,
-    ];
-
+    var acumuladoAsignadas = 0;
+    var acumuladoResueltas = 0;
+    var backlog = 0;
     double maxY = 0;
-    for (final week in weeks) {
-      for (final value in buckets[week]!) {
-        maxY = math.max(maxY, value.toDouble());
-      }
+
+    for (int i = 0; i < days.length; i++) {
+      final day = days[i];
+      final values = s.series[day] ?? const <String, int>{};
+      final assigned = values['ASIGNADA'] ?? 0;
+      final resolved = (values['APROBADA'] ?? 0) + (values['COMPLETADA'] ?? 0);
+      final pending = values['PENDIENTE_APROBACION'] ?? 0;
+      final failed = values['NO_COMPLETADA'] ?? 0;
+      final dt = DateTime.tryParse(day)?.toLocal();
+      final label = dt == null ? day : '${dt.day}/${dt.month}';
+
+      acumuladoAsignadas += assigned;
+      acumuladoResueltas += resolved;
+      backlog += assigned - resolved;
+
+      final asignadasY = acumuladoAsignadas.toDouble();
+      final resueltasY = acumuladoResueltas.toDouble();
+      final backlogY = backlog.toDouble();
+
+      data.add(
+        _OperationalTrendDatum(
+          label: label,
+          assignedAccum: asignadasY,
+          resolvedAccum: resueltasY,
+          backlog: backlogY,
+          incidents: math.max(backlogY, 0) + pending + failed.toDouble(),
+          hasIncident: pending > 0 || failed > 0,
+        ),
+      );
+
+      maxY = math.max(maxY, math.max(asignadasY, math.max(resueltasY, backlogY)));
+      maxY = math.max(maxY, math.max(backlogY, 0) + pending + failed.toDouble());
     }
 
-    final labels = <String>[];
-    for (final week in weeks) {
-      final range = '${week.day}/${week.month}';
-      for (final day in dayLabels) {
-        labels.add('$day $range');
-      }
-    }
+    final yTop = maxY <= 0 ? 5.0 : maxY * 1.15;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Compara cuantas tareas quedaron asignadas en cada dia de las ultimas semanas para detectar picos, concentracion o desbalance semanal.',
+          'Curva tipo trading/equity: compara como ha crecido el trabajo asignado frente al realmente resuelto. Si la brecha y el backlog suben, la operacion se esta quedando atras.',
           style: TextStyle(fontSize: 12, color: Colors.black54),
         ),
         const SizedBox(height: 12),
         Expanded(
-          child: BarChart(
-            BarChartData(
-              maxY: maxY <= 0 ? 5 : maxY * 1.25,
-              gridData: const FlGridData(show: true),
-              borderData: FlBorderData(show: false),
-              barTouchData: _whiteBarTouchData(labels: labels),
-              titlesData: FlTitlesData(
-                rightTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                topTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 34,
-                    getTitlesWidget: (v, meta) => Text(
-                      v.toInt().toString(),
-                      style: const TextStyle(fontSize: 10),
-                    ),
-                  ),
-                ),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    getTitlesWidget: (value, meta) {
-                      final idx = value.toInt();
-                      if (idx < 0 || idx >= dayLabels.length) {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          dayLabels[idx],
-                          style: const TextStyle(fontSize: 10),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              barGroups: List.generate(dayLabels.length, (dayIndex) {
-                return BarChartGroupData(
-                  x: dayIndex,
-                  barsSpace: 4,
-                  barRods: List.generate(weeks.length, (weekIndex) {
-                    final value = buckets[weeks[weekIndex]]![dayIndex]
-                        .toDouble();
-                    return BarChartRodData(
-                      toY: value,
-                      width: 10,
-                      color: weekColors[weekIndex % weekColors.length],
-                      borderRadius: BorderRadius.circular(4),
-                    );
-                  }),
-                );
-              }),
+          child: SfCartesianChart(
+            plotAreaBorderWidth: 0,
+            margin: EdgeInsets.zero,
+            tooltipBehavior: TooltipBehavior(enable: true, shared: true),
+            legend: const Legend(isVisible: false),
+            primaryXAxis: CategoryAxis(
+              majorGridLines: const MajorGridLines(width: 0),
+              labelRotation: days.length > 14 ? -35 : 0,
+              interval: math.max(1, (days.length / 7).floor()).toDouble(),
             ),
+            primaryYAxis: NumericAxis(
+              minimum: 0,
+              maximum: yTop,
+              axisLine: const AxisLine(width: 0),
+              majorTickLines: const MajorTickLines(size: 0),
+            ),
+            series: <CartesianSeries<_OperationalTrendDatum, String>>[
+              AreaSeries<_OperationalTrendDatum, String>(
+                dataSource: data,
+                xValueMapper: (d, _) => d.label,
+                yValueMapper: (d, _) => d.backlog,
+                color: Colors.orange.shade500.withValues(alpha: 0.14),
+                borderWidth: 2.2,
+                borderColor: Colors.orange.shade500,
+                name: 'Backlog',
+              ),
+              SplineSeries<_OperationalTrendDatum, String>(
+                dataSource: data,
+                xValueMapper: (d, _) => d.label,
+                yValueMapper: (d, _) => d.assignedAccum,
+                color: AppTheme.primary,
+                width: 3,
+                name: 'Asignadas acum.',
+              ),
+              SplineSeries<_OperationalTrendDatum, String>(
+                dataSource: data,
+                xValueMapper: (d, _) => d.label,
+                yValueMapper: (d, _) => d.resolvedAccum,
+                color: Colors.teal.shade600,
+                width: 3,
+                name: 'Resueltas acum.',
+              ),
+              ScatterSeries<_OperationalTrendDatum, String>(
+                dataSource: data.where((d) => d.hasIncident).toList(),
+                xValueMapper: (d, _) => d.label,
+                yValueMapper: (d, _) => d.incidents,
+                color: Colors.red.shade400,
+                markerSettings: const MarkerSettings(isVisible: true, width: 10, height: 10),
+                name: 'Incidencias',
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 10),
         Wrap(
           spacing: 10,
           runSpacing: 8,
-          children: List.generate(weeks.length, (index) {
-            final week = weeks[index];
-            final end = week.add(const Duration(days: 6));
-            return _legendChip(
-              '${week.day}/${week.month} - ${end.day}/${end.month}',
-              weekColors[index % weekColors.length],
-            );
-          }),
+          children: [
+            _legendChip('Asignadas acumuladas', AppTheme.primary),
+            _legendChip('Resueltas acumuladas', Colors.teal.shade600),
+            _legendChip('Backlog operativo', Colors.orange.shade500),
+            _legendChip('Picos de incidencia', Colors.red.shade400),
+          ],
         ),
       ],
     );
@@ -3170,77 +3177,52 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       final parts = d.split('-');
       return parts.length == 3 ? '${parts[2]}/${parts[1]}' : d;
     }).toList();
-    final spots = <FlSpot>[];
+    final data = <_TrendDatum>[];
 
     for (int i = 0; i < days.length; i++) {
       final d = days[i];
       final m = s.series[d] ?? {};
       final total = m.values.fold<int>(0, (a, b) => a + b);
-      spots.add(FlSpot(i.toDouble(), total.toDouble()));
+      data.add(_TrendDatum(label: dayLabels[i], value: total.toDouble()));
     }
 
-    final maxY = spots
-        .map((e) => e.y)
+    final maxY = data
+        .map((e) => e.value)
         .fold<double>(0, (a, b) => math.max(a, b));
     final yTop = (maxY <= 0) ? 5 : (maxY * 1.2);
 
-    return LineChart(
-      LineChartData(
-        minY: 0,
-        maxY: yTop.toDouble(),
-        lineTouchData: _whiteLineTouchData(dayLabels),
-        gridData: const FlGridData(show: true),
-        borderData: FlBorderData(show: false),
-        titlesData: FlTitlesData(
-          rightTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          topTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 36,
-              getTitlesWidget: (v, meta) => Text(
-                v.toInt().toString(),
-                style: const TextStyle(fontSize: 10, color: Colors.black87),
-              ),
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: math.max(1, (days.length / 6).floor()).toDouble(),
-              getTitlesWidget: (value, meta) {
-                final idx = value.toInt();
-                if (idx < 0 || idx >= days.length)
-                  return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    dayLabels[idx],
-                    style: const TextStyle(fontSize: 10, color: Colors.black87),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            barWidth: 3,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              color: AppTheme.primary.withOpacity(.12),
-            ),
-            color: AppTheme.primary,
-          ),
-        ],
+    return SfCartesianChart(
+      margin: EdgeInsets.zero,
+      plotAreaBorderWidth: 0,
+      tooltipBehavior: TooltipBehavior(enable: true),
+      primaryXAxis: CategoryAxis(
+        majorGridLines: const MajorGridLines(width: 0),
+        interval: math.max(1, (days.length / 6).floor()).toDouble(),
       ),
+      primaryYAxis: NumericAxis(
+        minimum: 0,
+        maximum: yTop.toDouble(),
+        axisLine: const AxisLine(width: 0),
+        majorTickLines: const MajorTickLines(size: 0),
+      ),
+      series: <CartesianSeries<_TrendDatum, String>>[
+        SplineAreaSeries<_TrendDatum, String>(
+          dataSource: data,
+          xValueMapper: (d, _) => d.label,
+          yValueMapper: (d, _) => d.value,
+          gradient: LinearGradient(
+            colors: [
+              AppTheme.primary.withValues(alpha: 0.28),
+              AppTheme.primary.withValues(alpha: 0.04),
+            ],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+          borderColor: AppTheme.primary,
+          borderWidth: 3,
+          splineType: SplineType.monotonic,
+        ),
+      ],
     );
   }
 
@@ -3920,10 +3902,16 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     final prev = conteo['preventivas'] ?? 0;
     final corr = conteo['correctivas'] ?? 0;
     final total = math.max(1, prev + corr);
+    final preventivas = _cumplimientoPreventivasPorDefinicion();
+    final correctivas = _cumplimientoCorrectivas();
 
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
+        _sectionTitle('Ritmo historico de cierre'),
+        const SizedBox(height: 8),
+        _card(child: SizedBox(height: 320, child: _dailyOperationalFlowChart())),
+        const SizedBox(height: 14),
         _sectionTitle('Preventivas vs Correctivas'),
         const SizedBox(height: 8),
         _card(
@@ -3965,6 +3953,280 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             ),
           ),
         ),
+        const SizedBox(height: 14),
+        _sectionTitle('Cumplimiento de correctivas'),
+        const SizedBox(height: 8),
+        _cumplimientoCard(correctivas, mostrarFrecuencia: false),
+        const SizedBox(height: 14),
+        _sectionTitle('Cumplimiento por definición preventiva'),
+        const SizedBox(height: 8),
+        if (preventivas.isEmpty)
+          const _EmptyCard(text: 'No hay tareas preventivas en el rango.')
+        else
+          ...preventivas.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _cumplimientoCard(item),
+            ),
+          ),
+      ],
+    );
+  }
+
+  List<_CumplimientoSerieDatum> _cumplimientoPreventivasPorDefinicion() {
+    final grupos = <String, List<TareaDetalleRow>>{};
+
+    for (final tarea in _tareasDetalle) {
+      if (tarea.tipo.toUpperCase().trim() != 'PREVENTIVA') continue;
+      final base = tarea.descripcion.trim().isEmpty
+          ? 'Preventiva sin nombre'
+          : tarea.descripcion.trim();
+      final frecuencia = (tarea.frecuencia ?? '').trim();
+      final key = frecuencia.isEmpty ? base : '$base||$frecuencia';
+      grupos.putIfAbsent(key, () => <TareaDetalleRow>[]).add(tarea);
+    }
+
+    final out = grupos.entries.map((entry) {
+      final partes = entry.key.split('||');
+      final lista = [...entry.value]..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+      return _buildCumplimientoSerie(
+        titulo: partes.first,
+        frecuencia: partes.length > 1 ? partes.last : null,
+        tareas: lista,
+      );
+    }).toList();
+
+    out.sort((a, b) => b.total.compareTo(a.total));
+    return out;
+  }
+
+  _CumplimientoSerieDatum _cumplimientoCorrectivas() {
+    final lista = _tareasDetalle
+        .where((t) => t.tipo.toUpperCase().trim() == 'CORRECTIVA')
+        .toList()
+      ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+    return _buildCumplimientoSerie(
+      titulo: 'Correctivas del rango',
+      frecuencia: null,
+      tareas: lista,
+    );
+  }
+
+  _CumplimientoSerieDatum _buildCumplimientoSerie({
+    required String titulo,
+    required String? frecuencia,
+    required List<TareaDetalleRow> tareas,
+  }) {
+    var cumplidas = 0;
+    var noCumplidas = 0;
+    var pendientes = 0;
+    final cumplidasSpots = <FlSpot>[];
+    final noCumplidasSpots = <FlSpot>[];
+
+    for (int i = 0; i < tareas.length; i++) {
+      final estado = tareas[i].estado.toUpperCase().trim();
+      if (_estadoCumplido(estado)) {
+        cumplidas++;
+      } else if (_estadoNoCumplido(estado)) {
+        noCumplidas++;
+      } else {
+        pendientes++;
+      }
+
+      cumplidasSpots.add(FlSpot(i.toDouble(), cumplidas.toDouble()));
+      noCumplidasSpots.add(FlSpot(i.toDouble(), noCumplidas.toDouble()));
+    }
+
+    return _CumplimientoSerieDatum(
+      titulo: titulo,
+      frecuencia: frecuencia,
+      total: tareas.length,
+      cumplidas: cumplidas,
+      noCumplidas: noCumplidas,
+      pendientes: pendientes,
+      cumplidasSpots: cumplidasSpots,
+      noCumplidasSpots: noCumplidasSpots,
+    );
+  }
+
+  bool _estadoCumplido(String estado) {
+    return estado == 'APROBADA' || estado == 'COMPLETADA';
+  }
+
+  bool _estadoNoCumplido(String estado) {
+    return estado == 'NO_COMPLETADA' || estado == 'RECHAZADA';
+  }
+
+  Widget _cumplimientoCard(
+    _CumplimientoSerieDatum data, {
+    bool mostrarFrecuencia = true,
+  }) {
+    final totalCerradas = data.cumplidas + data.noCumplidas;
+    final ratio = totalCerradas == 0 ? 0.0 : data.cumplidas / totalCerradas;
+
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      data.titulo,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if (mostrarFrecuencia && (data.frecuencia ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      _miniTextPill('Frecuencia', data.frecuencia!.trim()),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 132,
+                height: 132,
+                child: _donutCumplimiento(
+                  cumplidas: data.cumplidas,
+                  noCumplidas: data.noCumplidas,
+                  pendientes: data.pendientes,
+                  center: '${(ratio * 100).toStringAsFixed(0)}%',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _miniPill('Total', data.total),
+              _miniPill('Cumplidas', data.cumplidas),
+              _miniPill('No cumplidas', data.noCumplidas),
+              _miniPill('Pendientes', data.pendientes),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Evolución acumulada del resultado',
+            style: TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(height: 140, child: _cumplimientoSparkline(data)),
+        ],
+      ),
+    );
+  }
+
+  Widget _donutCumplimiento({
+    required int cumplidas,
+    required int noCumplidas,
+    required int pendientes,
+    required String center,
+  }) {
+    final total = cumplidas + noCumplidas + pendientes;
+    if (total <= 0) {
+      return const Center(child: Text('Sin datos'));
+    }
+
+    final data = <_ChartSliceDatum>[
+      _ChartSliceDatum(label: 'Cumplidas', value: cumplidas.toDouble(), color: Colors.teal.shade600),
+      _ChartSliceDatum(label: 'No cumplidas', value: noCumplidas.toDouble(), color: Colors.red.shade500),
+      _ChartSliceDatum(label: 'Pendientes', value: pendientes.toDouble(), color: Colors.orange.shade400),
+    ];
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        SfCircularChart(
+          margin: EdgeInsets.zero,
+          tooltipBehavior: TooltipBehavior(enable: true),
+          series: <CircularSeries<_ChartSliceDatum, String>>[
+            DoughnutSeries<_ChartSliceDatum, String>(
+              dataSource: data,
+              xValueMapper: (_ChartSliceDatum d, _) => d.label,
+              yValueMapper: (_ChartSliceDatum d, _) => d.value,
+              pointColorMapper: (_ChartSliceDatum d, _) => d.color,
+              innerRadius: '62%',
+              radius: '88%',
+            ),
+          ],
+        ),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              center,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            ),
+            const Text('cumpl.', style: TextStyle(fontSize: 11, color: Colors.black54)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _cumplimientoSparkline(_CumplimientoSerieDatum data) {
+    final maxY = math.max(
+      1.0,
+      math.max(
+        data.cumplidasSpots.isEmpty ? 0 : data.cumplidasSpots.last.y,
+        data.noCumplidasSpots.isEmpty ? 0 : data.noCumplidasSpots.last.y,
+      ),
+    );
+
+    final trend = <_CumplimientoTrendDatum>[];
+    for (int i = 0; i < math.max(data.cumplidasSpots.length, data.noCumplidasSpots.length); i++) {
+      trend.add(
+        _CumplimientoTrendDatum(
+          paso: '${i + 1}',
+          cumplidas: i < data.cumplidasSpots.length ? data.cumplidasSpots[i].y : 0,
+          noCumplidas: i < data.noCumplidasSpots.length ? data.noCumplidasSpots[i].y : 0,
+        ),
+      );
+    }
+
+    return SfCartesianChart(
+      margin: EdgeInsets.zero,
+      plotAreaBorderWidth: 0,
+      tooltipBehavior: TooltipBehavior(enable: true, shared: true),
+      primaryXAxis: CategoryAxis(
+        isVisible: false,
+        majorGridLines: const MajorGridLines(width: 0),
+      ),
+      primaryYAxis: NumericAxis(
+        minimum: 0,
+        maximum: maxY * 1.2,
+        axisLine: const AxisLine(width: 0),
+        majorTickLines: const MajorTickLines(size: 0),
+      ),
+      series: <CartesianSeries<_CumplimientoTrendDatum, String>>[
+        SplineAreaSeries<_CumplimientoTrendDatum, String>(
+          dataSource: trend,
+          xValueMapper: (d, _) => d.paso,
+          yValueMapper: (d, _) => d.cumplidas,
+          color: Colors.teal.shade600.withValues(alpha: 0.10),
+          borderColor: Colors.teal.shade600,
+          borderWidth: 3,
+          splineType: SplineType.monotonic,
+          name: 'Cumplidas',
+        ),
+        SplineSeries<_CumplimientoTrendDatum, String>(
+          dataSource: trend,
+          xValueMapper: (d, _) => d.paso,
+          yValueMapper: (d, _) => d.noCumplidas,
+          color: Colors.red.shade500,
+          width: 3,
+          splineType: SplineType.monotonic,
+          name: 'No cumplidas',
+        ),
       ],
     );
   }
@@ -3973,42 +4235,45 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     final total = prev + corr;
     if (total <= 0) return const Center(child: Text('Sin datos'));
 
-    return PieChart(
-      PieChartData(
-        sectionsSpace: 2,
-        centerSpaceRadius: 44,
-        sections: [
-          PieChartSectionData(
-            value: prev.toDouble(),
-            title: (prev / total) >= 0.08
-                ? '${(prev / total * 100).toStringAsFixed(0)}%'
-                : '',
-            radius: 70,
-            titleStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-            ),
-            color: AppTheme.primary,
-          ),
-          PieChartSectionData(
-            value: corr.toDouble(),
-            title: (corr / total) >= 0.08
-                ? '${(corr / total * 100).toStringAsFixed(0)}%'
-                : '',
-            radius: 70,
-            titleStyle: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-            ),
-            color: AppTheme.primary.withOpacity(.55),
-          ),
-        ],
+    final data = <_ChartSliceDatum>[
+      _ChartSliceDatum(label: 'Preventivas', value: prev.toDouble(), color: AppTheme.primary),
+      _ChartSliceDatum(
+        label: 'Correctivas',
+        value: corr.toDouble(),
+        color: AppTheme.primary.withValues(alpha: 0.55),
       ),
-      swapAnimationDuration: _captureMode
-          ? Duration.zero
-          : const Duration(milliseconds: 250),
+    ];
+
+    return SfCircularChart(
+      margin: EdgeInsets.zero,
+      tooltipBehavior: TooltipBehavior(enable: true),
+      series: <CircularSeries<_ChartSliceDatum, String>>[
+        DoughnutSeries<_ChartSliceDatum, String>(
+          dataSource: data,
+          xValueMapper: (d, _) => d.label,
+          yValueMapper: (d, _) => d.value,
+          pointColorMapper: (d, _) => d.color,
+          innerRadius: '60%',
+          radius: '88%',
+          dataLabelMapper: (d, _) => '${(d.value / total * 100).toStringAsFixed(0)}%',
+          dataLabelSettings: const DataLabelSettings(
+            isVisible: true,
+            labelPosition: ChartDataLabelPosition.outside,
+            textStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+      annotations: <CircularChartAnnotation>[
+        CircularChartAnnotation(
+          widget: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('$total', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              const Text('tareas', style: TextStyle(fontSize: 11, color: Colors.black54)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -4688,6 +4953,7 @@ class _EvidenceImage extends StatefulWidget {
   State<_EvidenceImage> createState() => _EvidenceImageState();
 }
 
+
 class _EvidenceImageState extends State<_EvidenceImage> {
   int _index = 0;
   bool _advanceScheduled = false;
@@ -4738,6 +5004,77 @@ class _EvidenceImageState extends State<_EvidenceImage> {
       },
     );
   }
+}
+
+class _CumplimientoSerieDatum {
+  final String titulo;
+  final String? frecuencia;
+  final int total;
+  final int cumplidas;
+  final int noCumplidas;
+  final int pendientes;
+  final List<FlSpot> cumplidasSpots;
+  final List<FlSpot> noCumplidasSpots;
+
+  const _CumplimientoSerieDatum({
+    required this.titulo,
+    required this.frecuencia,
+    required this.total,
+    required this.cumplidas,
+    required this.noCumplidas,
+    required this.pendientes,
+    required this.cumplidasSpots,
+    required this.noCumplidasSpots,
+  });
+}
+
+class _ChartSliceDatum {
+  final String label;
+  final double value;
+  final Color color;
+
+  const _ChartSliceDatum({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+}
+
+class _TrendDatum {
+  final String label;
+  final double value;
+
+  const _TrendDatum({required this.label, required this.value});
+}
+
+class _OperationalTrendDatum {
+  final String label;
+  final double assignedAccum;
+  final double resolvedAccum;
+  final double backlog;
+  final double incidents;
+  final bool hasIncident;
+
+  const _OperationalTrendDatum({
+    required this.label,
+    required this.assignedAccum,
+    required this.resolvedAccum,
+    required this.backlog,
+    required this.incidents,
+    required this.hasIncident,
+  });
+}
+
+class _CumplimientoTrendDatum {
+  final String paso;
+  final double cumplidas;
+  final double noCumplidas;
+
+  const _CumplimientoTrendDatum({
+    required this.paso,
+    required this.cumplidas,
+    required this.noCumplidas,
+  });
 }
 
 class _EmptyCard extends StatelessWidget {

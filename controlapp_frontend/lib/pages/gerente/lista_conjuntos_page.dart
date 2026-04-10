@@ -523,7 +523,13 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop || result == true || !_hasChanges) return;
+        Navigator.of(context).pop(true);
+      },
+      child: Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
@@ -784,7 +790,7 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
                               Expanded(
                                 child: OutlinedButton.icon(
                                   onPressed: () {
-                                    Navigator.push(
+                                    Navigator.push<bool>(
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) => DetalleConjuntoPage(
@@ -792,7 +798,12 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
                                           modoEdicionBasico: true,
                                         ),
                                       ),
-                                    ).then((_) => _loadConjuntos());
+                                    ).then((changed) {
+                                      if (changed == true) {
+                                        _hasChanges = true;
+                                      }
+                                      _loadConjuntos();
+                                    });
                                   },
                                   icon: const Icon(
                                     Icons.edit_outlined,
@@ -825,14 +836,19 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
                               IconButton(
                                 tooltip: 'Detalle',
                                 onPressed: () {
-                                  Navigator.push(
+                                  Navigator.push<bool>(
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => DetalleConjuntoPage(
                                         conjuntoNit: c.nit,
                                       ),
                                     ),
-                                  ).then((_) => _loadConjuntos());
+                                  ).then((changed) {
+                                    if (changed == true) {
+                                      _hasChanges = true;
+                                    }
+                                    _loadConjuntos();
+                                  });
                                 },
                                 icon: const Icon(
                                   Icons.arrow_forward_ios,
@@ -850,6 +866,7 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
             ),
           );
         },
+      ),
       ),
     );
   }

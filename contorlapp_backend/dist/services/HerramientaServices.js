@@ -20,15 +20,17 @@ class HerramientaService {
             });
             await tx.empresaHerramientaStock.upsert({
                 where: {
-                    empresaId_herramientaId: {
+                    empresaId_herramientaId_estado: {
                         empresaId: data.empresaId,
                         herramientaId: creada.id,
+                        estado: "OPERATIVA",
                     },
                 },
                 create: {
                     empresaId: data.empresaId,
                     herramientaId: creada.id,
                     cantidad: 0,
+                    estado: "OPERATIVA",
                 },
                 update: {},
             });
@@ -49,7 +51,6 @@ class HerramientaService {
                     stocksEmpresa: {
                         where: { empresaId: params.empresaId },
                         select: { cantidad: true },
-                        take: 1,
                     },
                 },
                 take: params.take,
@@ -60,7 +61,7 @@ class HerramientaService {
             total,
             data: data.map((item) => ({
                 ...item,
-                stockEmpresa: item.stocksEmpresa.length > 0 ? Number(item.stocksEmpresa[0].cantidad) : 0,
+                stockEmpresa: item.stocksEmpresa.reduce((total, stock) => total + Number(stock.cantidad), 0),
             })),
         };
     }

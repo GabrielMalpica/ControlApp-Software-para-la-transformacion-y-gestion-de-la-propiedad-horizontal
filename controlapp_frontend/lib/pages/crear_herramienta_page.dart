@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/herramienta_api.dart';
 import '../model/herramienta_model.dart';
 import '../service/app_constants.dart';
+import '../service/app_error.dart';
 import '../service/theme.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -32,11 +33,8 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
   final _api = HerramientaApi();
 
   final _nombreCtrl = TextEditingController();
-  final _vidaUtilCtrl = TextEditingController();
-  final _umbralCtrl = TextEditingController();
   final _stockInicialCtrl = TextEditingController(text: '0');
 
-  ModoControlHerramienta _modo = ModoControlHerramienta.PRESTAMO;
   CategoriaHerramienta _categoria = CategoriaHerramienta.OTROS;
   String _unidad = 'unidad';
   bool _saving = false;
@@ -46,16 +44,8 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
   @override
   void dispose() {
     _nombreCtrl.dispose();
-    _vidaUtilCtrl.dispose();
-    _umbralCtrl.dispose();
     _stockInicialCtrl.dispose();
     super.dispose();
-  }
-
-  int? _parseIntNullable(String value) {
-    final text = value.trim();
-    if (text.isEmpty) return null;
-    return int.tryParse(text);
   }
 
   num _parseNum(String value) => num.tryParse(value.trim()) ?? 0;
@@ -71,9 +61,6 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
         nombre: _nombreCtrl.text.trim(),
         unidad: _unidad,
         categoria: _categoria.backendValue,
-        modoControl: _modo.backendValue,
-        vidaUtilDias: _parseIntNullable(_vidaUtilCtrl.text),
-        umbralBajo: _parseIntNullable(_umbralCtrl.text),
       );
 
       final stockInicial = _parseNum(_stockInicialCtrl.text);
@@ -97,7 +84,11 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
-        SnackBar(content: Text('No se pudo crear la herramienta: $e')),
+        SnackBar(
+          content: Text(
+            'No se pudo crear la herramienta: ${AppError.messageOf(e)}',
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -186,36 +177,6 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
                 ),
                 gap,
                 _SectionCard(
-                  title: 'Comportamiento',
-                  subtitle:
-                      'Define si la herramienta se presta y vuelve, o si solo se controla por cantidad.',
-                  child: Column(
-                    children: [
-                      DropdownButtonFormField<ModoControlHerramienta>(
-                        initialValue: _modo,
-                        decoration: const InputDecoration(
-                          labelText: 'Como se controla',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: ModoControlHerramienta.values
-                            .map(
-                              (item) => DropdownMenuItem(
-                                value: item,
-                                child: Text(item.label),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) => setState(
-                          () => _modo = value ?? ModoControlHerramienta.PRESTAMO,
-                        ),
-                      ),
-                      gap,
-                      _ModeSummary(mode: _modo),
-                    ],
-                  ),
-                ),
-                gap,
-                _SectionCard(
                   title: 'Stock inicial de empresa',
                   subtitle:
                       'Este stock queda en la empresa. Los conjuntos reciben herramientas despues, como propias o prestadas.',
@@ -236,50 +197,6 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
                           if (parsed < 0) return 'No puede ser negativo';
                           return null;
                         },
-                      ),
-                      gap,
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: _vidaUtilCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'Vida util en dias',
-                                border: OutlineInputBorder(),
-                              ),
-                              validator: (value) {
-                                final text = (value ?? '').trim();
-                                if (text.isEmpty) return null;
-                                final parsed = int.tryParse(text);
-                                if (parsed == null || parsed <= 0) {
-                                  return 'Numero invalido';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextFormField(
-                              controller: _umbralCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'Alerta de stock bajo',
-                                border: OutlineInputBorder(),
-                              ),
-                              validator: (value) {
-                                final text = (value ?? '').trim();
-                                if (text.isEmpty) return null;
-                                final parsed = int.tryParse(text);
-                                if (parsed == null || parsed < 0) {
-                                  return 'Numero invalido';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-                        ],
                       ),
                     ],
                   ),
@@ -342,47 +259,6 @@ class _SectionCard extends StatelessWidget {
           Text(subtitle, style: TextStyle(color: Colors.grey.shade700)),
           const SizedBox(height: 14),
           child,
-        ],
-      ),
-    );
-  }
-}
-
-class _ModeSummary extends StatelessWidget {
-  final ModoControlHerramienta mode;
-
-  const _ModeSummary({required this.mode});
-
-  @override
-  Widget build(BuildContext context) {
-    final examples = switch (mode) {
-      ModoControlHerramienta.PRESTAMO =>
-        'Ejemplos: taladro, pulidora, guadana manual.',
-      ModoControlHerramienta.CONSUMO =>
-        'Ejemplos: bolsas, guantes desechables, repuestos por cantidad.',
-      ModoControlHerramienta.VIDA_CORTA =>
-        'Ejemplos: escoba, trapeador, cepillos o elementos que se reemplazan por desgaste.',
-    };
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.18)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            mode.label,
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 6),
-          Text(mode.descripcion),
-          const SizedBox(height: 6),
-          Text(examples, style: TextStyle(color: Colors.grey.shade700)),
         ],
       ),
     );

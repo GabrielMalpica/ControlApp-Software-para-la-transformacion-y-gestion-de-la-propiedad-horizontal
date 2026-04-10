@@ -9,8 +9,7 @@ class HerramientaApi {
   final ApiClient _client = ApiClient();
 
   static const String _herramientasBase = '/herramientas';
-  static const String _solicitudesHerramientasBase =
-      '/solicitud-herramientas';
+  static const String _solicitudesHerramientasBase = '/solicitud-herramientas';
 
   Future<Map<String, dynamic>> crearHerramienta({
     required String empresaId,
@@ -192,10 +191,15 @@ class HerramientaApi {
     required String empresaId,
     required int herramientaId,
     required num cantidad,
+    String estado = 'OPERATIVA',
   }) async {
     final resp = await _client.post(
       '$_herramientasBase/empresa/$empresaId/stock',
-      body: {'herramientaId': herramientaId, 'cantidad': cantidad},
+      body: {
+        'herramientaId': herramientaId,
+        'cantidad': cantidad,
+        'estado': estado,
+      },
     );
 
     if (resp.statusCode != 201 && resp.statusCode != 200) {
@@ -211,15 +215,41 @@ class HerramientaApi {
     required String empresaId,
     required int herramientaId,
     required num delta,
+    String estado = 'OPERATIVA',
   }) async {
     final resp = await _client.patch(
       '$_herramientasBase/empresa/$empresaId/stock/$herramientaId/ajustar',
-      body: {'delta': delta},
+      body: {'delta': delta, 'estado': estado},
     );
 
     if (resp.statusCode != 200) {
       throw Exception(
         'Error al ajustar stock empresa: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    return jsonDecode(resp.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> cambiarEstadoStockEmpresa({
+    required String empresaId,
+    required int herramientaId,
+    required String estadoActual,
+    required String estadoNuevo,
+    required num cantidad,
+  }) async {
+    final resp = await _client.patch(
+      '$_herramientasBase/empresa/$empresaId/stock/$herramientaId/estado',
+      body: {
+        'estadoActual': estadoActual,
+        'estadoNuevo': estadoNuevo,
+        'cantidad': cantidad,
+      },
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error al cambiar estado de stock empresa: ${resp.statusCode} ${resp.body}',
       );
     }
 
@@ -235,7 +265,8 @@ class HerramientaApi {
   }) async {
     final qp = <String, String>{
       'empresaId': empresaId,
-      if (fechaInicio != null) 'fechaInicio': fechaInicio.toUtc().toIso8601String(),
+      if (fechaInicio != null)
+        'fechaInicio': fechaInicio.toUtc().toIso8601String(),
       if (fechaFin != null) 'fechaFin': fechaFin.toUtc().toIso8601String(),
       if (excluirTareaId != null) 'excluirTareaId': excluirTareaId.toString(),
     };
@@ -257,7 +288,9 @@ class HerramientaApi {
       return decoded['data'] as List;
     }
     if (decoded is List) return decoded;
-    throw Exception('Respuesta inesperada del backend en listarDisponibilidadConjunto');
+    throw Exception(
+      'Respuesta inesperada del backend en listarDisponibilidadConjunto',
+    );
   }
 
   /// POST /herramientas/conjunto/:nit/stock
@@ -310,6 +343,31 @@ class HerramientaApi {
 
     final Map<String, dynamic> data = jsonDecode(resp.body);
     return data;
+  }
+
+  Future<Map<String, dynamic>> cambiarEstadoStockConjunto({
+    required String nitConjunto,
+    required int herramientaId,
+    required String estadoActual,
+    required String estadoNuevo,
+    required num cantidad,
+  }) async {
+    final resp = await _client.patch(
+      '$_herramientasBase/conjunto/$nitConjunto/stock/$herramientaId/estado',
+      body: {
+        'estadoActual': estadoActual,
+        'estadoNuevo': estadoNuevo,
+        'cantidad': cantidad,
+      },
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error al cambiar estado de stock conjunto: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    return jsonDecode(resp.body) as Map<String, dynamic>;
   }
 
   /// DELETE /herramientas/conjunto/:nit/stock/:herramientaId?estado=

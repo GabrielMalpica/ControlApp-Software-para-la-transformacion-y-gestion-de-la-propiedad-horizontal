@@ -35,6 +35,7 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
   String _filtroRol = 'todos';
   String _busqueda = '';
   Conjunto? _filtroConjunto;
+  bool _hasChanges = false;
 
   // Roles disponibles (los mismos del enum del back)
   final List<String> _rolesDisponibles = [
@@ -124,6 +125,7 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
     );
 
     if (resultado == true) {
+      _hasChanges = true;
       _cargarUsuarios();
     }
   }
@@ -134,6 +136,7 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
     );
 
     if (resultado == true) {
+      _hasChanges = true;
       _cargarUsuarios();
     }
   }
@@ -171,6 +174,7 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
           backgroundColor: Colors.green,
         ),
       );
+      _hasChanges = true;
       _cargarUsuarios();
     } catch (e) {
       if (!mounted) return;
@@ -186,122 +190,126 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.primary,
-        title: const Text(
-          "Gestión de usuarios",
-          style: TextStyle(color: Colors.white),
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop || result == true || !_hasChanges) return;
+        Navigator.of(context).pop(true);
+      },
+      child: Scaffold(
+        backgroundColor: AppTheme.background,
+        appBar: AppBar(
+          backgroundColor: AppTheme.primary,
+          title: const Text(
+            "Gestión de usuarios",
+            style: TextStyle(color: Colors.white),
+          ),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.of(context).pop(_hasChanges),
+          ),
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
+        floatingActionButton: FloatingActionButton.extended(
+          backgroundColor: AppTheme.primary,
+          icon: const Icon(Icons.person_add),
+          label: const Text("Nuevo usuario"),
+          onPressed: _irACrearUsuario,
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: AppTheme.primary,
-        icon: const Icon(Icons.person_add),
-        label: const Text("Nuevo usuario"),
-        onPressed: _irACrearUsuario,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            // ───────── Filtro por rol ─────────
-            Card(
-              elevation: 1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
+        body: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              Card(
+                elevation: 1,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.filter_list),
-                    const SizedBox(width: 8),
-                    const Text(
-                      "Filtrar por rol:",
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: _rolesDisponibles.map((rol) {
-                            final seleccionado = _filtroRol == rol;
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                              ),
-                              child: ChoiceChip(
-                                label: Text(
-                                  rol == 'todos' ? "Todos" : _prettyRol(rol),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.filter_list),
+                      const SizedBox(width: 8),
+                      const Text(
+                        "Filtrar por rol:",
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: _rolesDisponibles.map((rol) {
+                              final seleccionado = _filtroRol == rol;
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
                                 ),
-                                selected: seleccionado,
-                                onSelected: (_) {
-                                  setState(() {
-                                    _filtroRol = rol;
-                                  });
-                                },
-                              ),
-                            );
-                          }).toList(),
+                                child: ChoiceChip(
+                                  label: Text(
+                                    rol == 'todos' ? "Todos" : _prettyRol(rol),
+                                  ),
+                                  selected: seleccionado,
+                                  onSelected: (_) {
+                                    setState(() {
+                                      _filtroRol = rol;
+                                    });
+                                  },
+                                ),
+                              );
+                            }).toList(),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            SearchableSelectField<Conjunto>(
-              label: 'Filtrar por conjunto',
-              value: _filtroConjunto,
-              prefixIcon: const Icon(Icons.apartment_rounded),
-              searchHint: 'Buscar conjunto o NIT',
-              clearLabel: 'Todos los conjuntos',
-              options: _conjuntos
-                  .map(
-                    (conjunto) => SearchableSelectOption<Conjunto>(
-                      value: conjunto,
-                      label: conjunto.nombre,
-                      subtitle: 'NIT: ${conjunto.nit}',
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) => setState(() => _filtroConjunto = value),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _busquedaCtrl,
-              decoration: InputDecoration(
-                labelText: 'Buscar usuario',
-                hintText: 'Nombre, cédula, correo o rol',
-                prefixIcon: const Icon(Icons.search),
-                border: const OutlineInputBorder(),
-                suffixIcon: _busqueda.trim().isEmpty
-                    ? null
-                    : IconButton(
-                        onPressed: () {
-                          _busquedaCtrl.clear();
-                          setState(() => _busqueda = '');
-                        },
-                        icon: const Icon(Icons.clear),
+              const SizedBox(height: 8),
+              SearchableSelectField<Conjunto>(
+                label: 'Filtrar por conjunto',
+                value: _filtroConjunto,
+                prefixIcon: const Icon(Icons.apartment_rounded),
+                searchHint: 'Buscar conjunto o NIT',
+                clearLabel: 'Todos los conjuntos',
+                options: _conjuntos
+                    .map(
+                      (conjunto) => SearchableSelectOption<Conjunto>(
+                        value: conjunto,
+                        label: conjunto.nombre,
+                        subtitle: 'NIT: ${conjunto.nit}',
                       ),
+                    )
+                    .toList(),
+                onChanged: (value) => setState(() => _filtroConjunto = value),
               ),
-              onChanged: (value) => setState(() => _busqueda = value),
-            ),
-            const SizedBox(height: 8),
-
-            // ───────── Contenido ─────────
-            Expanded(child: _cuerpo()),
-          ],
+              const SizedBox(height: 8),
+              TextField(
+                controller: _busquedaCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Buscar usuario',
+                  hintText: 'Nombre, cédula, correo o rol',
+                  prefixIcon: const Icon(Icons.search),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _busqueda.trim().isEmpty
+                      ? null
+                      : IconButton(
+                          onPressed: () {
+                            _busquedaCtrl.clear();
+                            setState(() => _busqueda = '');
+                          },
+                          icon: const Icon(Icons.clear),
+                        ),
+                ),
+                onChanged: (value) => setState(() => _busqueda = value),
+              ),
+              const SizedBox(height: 8),
+              Expanded(child: _cuerpo()),
+            ],
+          ),
         ),
       ),
     );
@@ -349,12 +357,17 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
           opacity: isActivo ? 1.0 : 0.55, // ✅ efecto apagado
           child: GestureDetector(
             onTap: () {
-              Navigator.push(
+              Navigator.push<bool>(
                 context,
                 MaterialPageRoute(
                   builder: (_) => DetalleUsuarioPage(usuario: u),
                 ),
-              );
+              ).then((changed) {
+                if (changed == true) {
+                  _hasChanges = true;
+                  _cargarUsuarios();
+                }
+              });
             },
             child: Card(
               shape: RoundedRectangleBorder(

@@ -59,6 +59,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
   bool _editMode = false;
   bool _saving = false;
   bool _formInicializado = false;
+  bool _hasChanges = false;
 
   bool _activo = true;
   DateTime? _fechaInicioContrato;
@@ -284,6 +285,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
         _editMode = false;
         _formInicializado = false;
         _futureConjunto = Future<Conjunto>.value(actualizado);
+        _hasChanges = true;
       });
     } catch (e) {
       if (!mounted) return;
@@ -328,33 +330,39 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.primary,
-        title: const Text(
-          'Detalle del conjunto',
-          style: TextStyle(color: Colors.white),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Recargar',
-            onPressed: _refreshConjunto,
-            icon: const Icon(Icons.refresh, color: Colors.white),
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop || result == true || !_hasChanges) return;
+        Navigator.of(context).pop(true);
+      },
+      child: Scaffold(
+        backgroundColor: AppTheme.background,
+        appBar: AppBar(
+          backgroundColor: AppTheme.primary,
+          title: const Text(
+            'Detalle del conjunto',
+            style: TextStyle(color: Colors.white),
           ),
-          IconButton(
-            tooltip: _editMode ? 'Cancelar edicion' : 'Editar',
-            onPressed: _toggleEditMode,
-            icon: Icon(
-              _editMode ? Icons.close : Icons.edit_outlined,
-              color: Colors.white,
+          actions: [
+            IconButton(
+              tooltip: 'Recargar',
+              onPressed: _refreshConjunto,
+              icon: const Icon(Icons.refresh, color: Colors.white),
             ),
-          ),
-        ],
-      ),
-      body: FutureBuilder<Conjunto>(
-        future: _futureConjunto,
-        builder: (context, snapshot) {
+            IconButton(
+              tooltip: _editMode ? 'Cancelar edicion' : 'Editar',
+              onPressed: _toggleEditMode,
+              icon: Icon(
+                _editMode ? Icons.close : Icons.edit_outlined,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+        body: FutureBuilder<Conjunto>(
+          future: _futureConjunto,
+          builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -420,7 +428,8 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
               ],
             ),
           );
-        },
+          },
+        ),
       ),
     );
   }

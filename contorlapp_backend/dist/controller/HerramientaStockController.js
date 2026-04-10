@@ -36,6 +36,7 @@ class HerramientaStockController {
                     empresaId,
                     herramientaId: body.herramientaId,
                     cantidad: Number(body.cantidad),
+                    estado: body.estado,
                 });
                 res.status(201).json(out);
             }
@@ -53,6 +54,7 @@ class HerramientaStockController {
                     empresaId,
                     herramientaId,
                     delta: Number(body.delta),
+                    estado: body.estado,
                 });
                 res.json(out);
             }
@@ -67,6 +69,25 @@ class HerramientaStockController {
                 const service = new HerramientaStockService_1.HerramientaStockService(prisma_1.prisma, "");
                 await service.eliminarStockEmpresa({ empresaId, herramientaId });
                 res.status(204).send();
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        this.cambiarEstadoStockEmpresa = async (req, res, next) => {
+            try {
+                const { empresaId } = Herramienta_1.EmpresaNitParam.parse(req.params);
+                const { herramientaId } = HerramientaIdParam.parse(req.params);
+                const body = Herramienta_1.CambiarEstadoStockBody.parse(req.body);
+                const service = new HerramientaStockService_1.HerramientaStockService(prisma_1.prisma, "");
+                const out = await service.cambiarEstadoStockEmpresa({
+                    empresaId,
+                    herramientaId,
+                    estadoActual: body.estadoActual,
+                    estadoNuevo: body.estadoNuevo,
+                    cantidad: Number(body.cantidad),
+                });
+                res.json(out);
             }
             catch (err) {
                 next(err);
@@ -150,6 +171,24 @@ class HerramientaStockController {
                 const service = new HerramientaStockService_1.HerramientaStockService(prisma_1.prisma, nit);
                 await service.eliminarStock({ herramientaId, estado });
                 res.status(204).send();
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        this.cambiarEstadoStockConjunto = async (req, res, next) => {
+            try {
+                const { nit } = Herramienta_1.ConjuntoNitParam.parse(req.params);
+                const { herramientaId } = HerramientaIdParam.parse(req.params);
+                const body = Herramienta_1.CambiarEstadoStockBody.parse(req.body);
+                const service = new HerramientaStockService_1.HerramientaStockService(prisma_1.prisma, nit);
+                const out = await service.cambiarEstadoStockConjunto({
+                    herramientaId,
+                    estadoActual: body.estadoActual,
+                    estadoNuevo: body.estadoNuevo,
+                    cantidad: Number(body.cantidad),
+                });
+                res.json(out);
             }
             catch (err) {
                 next(err);

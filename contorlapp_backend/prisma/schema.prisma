@@ -714,11 +714,13 @@ model EmpresaHerramientaStock {
   herramientaId Int
 
   cantidad Decimal @db.Decimal(14, 4)
+  estado   EstadoHerramienta @default(OPERATIVA)
 
   actualizadoEn DateTime @updatedAt
 
-  @@unique([empresaId, herramientaId])
+  @@unique([empresaId, herramientaId, estado])
   @@index([empresaId])
+  @@index([empresaId, estado])
   @@map("EmpresaHerramientaStock")
 }
 

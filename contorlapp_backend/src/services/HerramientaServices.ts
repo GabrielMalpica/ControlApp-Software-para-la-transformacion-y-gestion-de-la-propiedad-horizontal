@@ -27,15 +27,17 @@ export class HerramientaService {
 
       await (tx as any).empresaHerramientaStock.upsert({
         where: {
-          empresaId_herramientaId: {
+          empresaId_herramientaId_estado: {
             empresaId: data.empresaId,
             herramientaId: creada.id,
+            estado: "OPERATIVA",
           },
         },
         create: {
           empresaId: data.empresaId,
           herramientaId: creada.id,
           cantidad: 0 as any,
+          estado: "OPERATIVA",
         },
         update: {},
       });
@@ -65,7 +67,6 @@ export class HerramientaService {
           stocksEmpresa: {
             where: { empresaId: params.empresaId },
             select: { cantidad: true },
-            take: 1,
           },
         } as any,
         take: params.take,
@@ -78,7 +79,11 @@ export class HerramientaService {
       data: (data as any[]).map((item) => ({
         ...item,
         stockEmpresa:
-          item.stocksEmpresa.length > 0 ? Number(item.stocksEmpresa[0].cantidad) : 0,
+          item.stocksEmpresa.reduce(
+            (total: number, stock: { cantidad: unknown }) =>
+              total + Number(stock.cantidad),
+            0,
+          ),
       })),
     };
   }
