@@ -58,7 +58,10 @@ class DefinicionTareaPreventivaController {
                 conjuntoId,
             });
             const svc = new DefinicionTareaPreventivaService_1.DefinicionTareaPreventivaService(prisma_1.prisma);
+            const inicio = Date.now();
             const resultado = await svc.generarCronograma(dto);
+            const duracionSeg = ((Date.now() - inicio) / 1000).toFixed(2);
+            console.log(`[perf] Generacion de cronograma borrador conjunto ${conjuntoId} (${dto.mes}/${dto.anio}): ${duracionSeg} s`);
             res.status(201).json(resultado);
         };
         /** POST /conjuntos/:nit/preventivas/publicar?anio=&mes=&consolidar=true|false */

@@ -1629,6 +1629,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       } else {
         await Printing.layoutPdf(name: filename, onLayout: (_) async => bytes);
       }
+
     } catch (e, st) {
       debugPrint('Error PDF Gestion V2: $e\n$st');
       if (mounted) {
@@ -2376,6 +2377,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       } else {
         await Printing.layoutPdf(name: filename, onLayout: (_) async => bytes);
       }
+
     } catch (e, st) {
       debugPrint('Error PDF Detallado V2: $e\n$st');
       if (mounted) {

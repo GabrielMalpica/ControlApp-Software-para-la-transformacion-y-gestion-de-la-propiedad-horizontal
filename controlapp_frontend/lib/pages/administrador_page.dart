@@ -12,6 +12,7 @@ import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import '../service/theme.dart';
 import 'compartidos/reportes_dashboard_page.dart';
+import 'cronograma_page.dart';
 import 'inventario_page.dart';
 import 'gerente/compromisos_page.dart';
 
@@ -249,6 +250,12 @@ class _AdministradorPageState extends State<AdministradorPage> {
               empresaId: AppConstants.empresaNit,
             ),
           ),
+        ),
+        _AdminTile(
+          'Cronograma',
+          Icons.calendar_month,
+          Colors.purple,
+          () => _go(CronogramaPage(nit: conjunto.nit)),
         ),
       ]),
       _AdminSection('Analisis y control', [

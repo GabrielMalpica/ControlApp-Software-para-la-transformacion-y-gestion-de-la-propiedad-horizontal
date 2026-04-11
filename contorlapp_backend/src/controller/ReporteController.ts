@@ -7,6 +7,13 @@ import { EstadoTarea } from "@prisma/client";
 
 const service = new ReporteService(prisma);
 
+function logPerf(nombre: string, inicio: number, detalle?: string) {
+  const duracionSeg = ((Date.now() - inicio) / 1000).toFixed(2);
+  console.log(
+    `[perf] ${nombre}${detalle ? ` ${detalle}` : ""}: ${duracionSeg} s`,
+  );
+}
+
 // ✅ Base
 const RangoQueryBase = z.object({
   desde: z.coerce.date(),
@@ -63,9 +70,11 @@ export class ReporteController {
 
   // GET /reporte/kpis?desde=&hasta=&conjuntoId?
   kpis: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await service.kpis(q);
+      logPerf("Reporte KPIs", inicio, q.conjuntoId ? `conjunto ${q.conjuntoId}` : "general");
       res.json(out);
     } catch (err) {
       next(err);
@@ -74,9 +83,15 @@ export class ReporteController {
 
   // GET /reporte/serie-diaria?desde=&hasta=&conjuntoId?
   serieDiariaPorEstado: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await service.serieDiariaPorEstado(q);
+      logPerf(
+        "Reporte serie diaria",
+        inicio,
+        q.conjuntoId ? `conjunto ${q.conjuntoId}` : "general",
+      );
       res.json(out);
     } catch (err) {
       next(err);
@@ -119,9 +134,15 @@ export class ReporteController {
   // GET /reporte/mensual-detalle?desde=&hasta=&conjuntoId?
   // (dataset para PDF)
   reporteMensualDetalle: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await service.reporteMensualDetalle(q);
+      logPerf(
+        "Reporte mensual detalle",
+        inicio,
+        q.conjuntoId ? `conjunto ${q.conjuntoId}` : "general",
+      );
       res.json(out);
     } catch (err) {
       next(err);

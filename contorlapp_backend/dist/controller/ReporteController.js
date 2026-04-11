@@ -6,6 +6,10 @@ const prisma_1 = require("../db/prisma");
 const ReporteService_1 = require("../services/ReporteService");
 const client_1 = require("@prisma/client");
 const service = new ReporteService_1.ReporteService(prisma_1.prisma);
+function logPerf(nombre, inicio, detalle) {
+    const duracionSeg = ((Date.now() - inicio) / 1000).toFixed(2);
+    console.log(`[perf] ${nombre}${detalle ? ` ${detalle}` : ""}: ${duracionSeg} s`);
+}
 // ✅ Base
 const RangoQueryBase = zod_1.z.object({
     desde: zod_1.z.coerce.date(),
@@ -48,9 +52,11 @@ class ReporteController {
         // =========================
         // GET /reporte/kpis?desde=&hasta=&conjuntoId?
         this.kpis = async (req, res, next) => {
+            const inicio = Date.now();
             try {
                 const q = RangoConConjuntoOpcionalQuery.parse(req.query);
                 const out = await service.kpis(q);
+                logPerf("Reporte KPIs", inicio, q.conjuntoId ? `conjunto ${q.conjuntoId}` : "general");
                 res.json(out);
             }
             catch (err) {
@@ -59,9 +65,11 @@ class ReporteController {
         };
         // GET /reporte/serie-diaria?desde=&hasta=&conjuntoId?
         this.serieDiariaPorEstado = async (req, res, next) => {
+            const inicio = Date.now();
             try {
                 const q = RangoConConjuntoOpcionalQuery.parse(req.query);
                 const out = await service.serieDiariaPorEstado(q);
+                logPerf("Reporte serie diaria", inicio, q.conjuntoId ? `conjunto ${q.conjuntoId}` : "general");
                 res.json(out);
             }
             catch (err) {
@@ -104,9 +112,11 @@ class ReporteController {
         // GET /reporte/mensual-detalle?desde=&hasta=&conjuntoId?
         // (dataset para PDF)
         this.reporteMensualDetalle = async (req, res, next) => {
+            const inicio = Date.now();
             try {
                 const q = RangoConConjuntoOpcionalQuery.parse(req.query);
                 const out = await service.reporteMensualDetalle(q);
+                logPerf("Reporte mensual detalle", inicio, q.conjuntoId ? `conjunto ${q.conjuntoId}` : "general");
                 res.json(out);
             }
             catch (err) {
