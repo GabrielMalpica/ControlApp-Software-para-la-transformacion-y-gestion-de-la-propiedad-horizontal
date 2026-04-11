@@ -3937,12 +3937,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        _sectionTitle('Ritmo historico de cierre'),
-        const SizedBox(height: 8),
-        _card(
-          child: SizedBox(height: 320, child: _dailyOperationalFlowChart()),
-        ),
-        const SizedBox(height: 14),
         _sectionTitle('Preventivas vs Correctivas'),
         const SizedBox(height: 8),
         _card(
@@ -4053,8 +4047,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     var cumplidas = 0;
     var noCumplidas = 0;
     var pendientes = 0;
-    final cumplidasSpots = <FlSpot>[];
-    final noCumplidasSpots = <FlSpot>[];
 
     for (int i = 0; i < tareas.length; i++) {
       final estado = tareas[i].estado.toUpperCase().trim();
@@ -4065,9 +4057,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       } else {
         pendientes++;
       }
-
-      cumplidasSpots.add(FlSpot(i.toDouble(), cumplidas.toDouble()));
-      noCumplidasSpots.add(FlSpot(i.toDouble(), noCumplidas.toDouble()));
     }
 
     return _CumplimientoSerieDatum(
@@ -4077,8 +4066,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       cumplidas: cumplidas,
       noCumplidas: noCumplidas,
       pendientes: pendientes,
-      cumplidasSpots: cumplidasSpots,
-      noCumplidasSpots: noCumplidasSpots,
     );
   }
 
@@ -4147,13 +4134,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               _miniPill('Pendientes', data.pendientes),
             ],
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'Evolución acumulada del resultado',
-            style: TextStyle(fontSize: 12, color: Colors.black54),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(height: 140, child: _cumplimientoSparkline(data)),
         ],
       ),
     );
@@ -4217,72 +4197,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               style: TextStyle(fontSize: 11, color: Colors.black54),
             ),
           ],
-        ),
-      ],
-    );
-  }
-
-  Widget _cumplimientoSparkline(_CumplimientoSerieDatum data) {
-    final maxY = math.max(
-      1.0,
-      math.max(
-        data.cumplidasSpots.isEmpty ? 0 : data.cumplidasSpots.last.y,
-        data.noCumplidasSpots.isEmpty ? 0 : data.noCumplidasSpots.last.y,
-      ),
-    );
-
-    final trend = <_CumplimientoTrendDatum>[];
-    for (
-      int i = 0;
-      i < math.max(data.cumplidasSpots.length, data.noCumplidasSpots.length);
-      i++
-    ) {
-      trend.add(
-        _CumplimientoTrendDatum(
-          paso: '${i + 1}',
-          cumplidas: i < data.cumplidasSpots.length
-              ? data.cumplidasSpots[i].y
-              : 0,
-          noCumplidas: i < data.noCumplidasSpots.length
-              ? data.noCumplidasSpots[i].y
-              : 0,
-        ),
-      );
-    }
-
-    return SfCartesianChart(
-      margin: EdgeInsets.zero,
-      plotAreaBorderWidth: 0,
-      tooltipBehavior: TooltipBehavior(enable: true, shared: true),
-      primaryXAxis: CategoryAxis(
-        isVisible: false,
-        majorGridLines: const MajorGridLines(width: 0),
-      ),
-      primaryYAxis: NumericAxis(
-        minimum: 0,
-        maximum: maxY * 1.2,
-        axisLine: const AxisLine(width: 0),
-        majorTickLines: const MajorTickLines(size: 0),
-      ),
-      series: <CartesianSeries<_CumplimientoTrendDatum, String>>[
-        SplineAreaSeries<_CumplimientoTrendDatum, String>(
-          dataSource: trend,
-          xValueMapper: (d, _) => d.paso,
-          yValueMapper: (d, _) => d.cumplidas,
-          color: Colors.teal.shade600.withValues(alpha: 0.10),
-          borderColor: Colors.teal.shade600,
-          borderWidth: 3,
-          splineType: SplineType.monotonic,
-          name: 'Cumplidas',
-        ),
-        SplineSeries<_CumplimientoTrendDatum, String>(
-          dataSource: trend,
-          xValueMapper: (d, _) => d.paso,
-          yValueMapper: (d, _) => d.noCumplidas,
-          color: Colors.red.shade500,
-          width: 3,
-          splineType: SplineType.monotonic,
-          name: 'No cumplidas',
         ),
       ],
     );
@@ -5052,8 +4966,6 @@ class _CumplimientoSerieDatum {
   final int cumplidas;
   final int noCumplidas;
   final int pendientes;
-  final List<FlSpot> cumplidasSpots;
-  final List<FlSpot> noCumplidasSpots;
 
   const _CumplimientoSerieDatum({
     required this.titulo,
@@ -5062,8 +4974,6 @@ class _CumplimientoSerieDatum {
     required this.cumplidas,
     required this.noCumplidas,
     required this.pendientes,
-    required this.cumplidasSpots,
-    required this.noCumplidasSpots,
   });
 }
 
@@ -5101,18 +5011,6 @@ class _OperationalTrendDatum {
     required this.backlog,
     required this.incidents,
     required this.hasIncident,
-  });
-}
-
-class _CumplimientoTrendDatum {
-  final String paso;
-  final double cumplidas;
-  final double noCumplidas;
-
-  const _CumplimientoTrendDatum({
-    required this.paso,
-    required this.cumplidas,
-    required this.noCumplidas,
   });
 }
 

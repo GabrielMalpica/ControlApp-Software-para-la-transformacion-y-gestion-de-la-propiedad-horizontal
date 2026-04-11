@@ -43,6 +43,7 @@ class _TareasPageState extends State<TareasPage> {
 
   // filtros para vista operario
   String _filtroOperario = 'HOY';
+  String _busqueda = '';
 
   @override
   void initState() {
@@ -152,6 +153,7 @@ class _TareasPageState extends State<TareasPage> {
     final hoy = _dayOnly(DateTime.now());
 
     final out = _tareas.where((t) {
+      if (!_coincideBusqueda(t)) return false;
       switch (_filtroOperario) {
         case 'HOY':
           return _dayOnly(t.fechaInicio) == hoy || _dayOnly(t.fechaFin) == hoy;
@@ -170,6 +172,16 @@ class _TareasPageState extends State<TareasPage> {
     }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
 
     return out;
+  }
+
+  bool _coincideBusqueda(TareaModel t) {
+    final q = _busqueda.trim().toLowerCase();
+    if (q.isEmpty) return true;
+
+    return t.id.toString().contains(q) ||
+        t.descripcion.toLowerCase().contains(q) ||
+        (t.ubicacionNombre ?? '').toLowerCase().contains(q) ||
+        (t.elementoNombre ?? '').toLowerCase().contains(q);
   }
 
   Map<DateTime, List<TareaModel>> _agruparPorDia(List<TareaModel> items) {
@@ -421,6 +433,28 @@ class _TareasPageState extends State<TareasPage> {
     );
   }
 
+  Widget _searchBox() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: TextField(
+          decoration: InputDecoration(
+            prefixIcon: const Icon(Icons.search),
+            labelText: 'Buscar por ID o nombre de tarea',
+            border: const OutlineInputBorder(),
+            suffixIcon: _busqueda.trim().isEmpty
+                ? null
+                : IconButton(
+                    onPressed: () => setState(() => _busqueda = ''),
+                    icon: const Icon(Icons.clear),
+                  ),
+          ),
+          onChanged: (value) => setState(() => _busqueda = value),
+        ),
+      ),
+    );
+  }
+
   Widget _buildOperarioBody() {
     final list = _tareasFiltradasOperario;
 
@@ -430,6 +464,8 @@ class _TareasPageState extends State<TareasPage> {
         padding: const EdgeInsets.all(16),
         children: [
           _filters(),
+          const SizedBox(height: 10),
+          _searchBox(),
           const SizedBox(height: 16),
           const Text('No hay actividades para este filtro.'),
         ],
@@ -443,6 +479,8 @@ class _TareasPageState extends State<TareasPage> {
       padding: const EdgeInsets.all(12),
       children: [
         _filters(),
+        const SizedBox(height: 10),
+        _searchBox(),
         const SizedBox(height: 10),
         const Text(
           'TODO por día',
@@ -472,18 +510,33 @@ class _TareasPageState extends State<TareasPage> {
   }
 
   Widget _buildGeneralBody() {
-    if (_tareas.isEmpty) {
-      return const Center(
-        child: Text('No hay tareas asignadas para este conjunto.'),
+    final tareas = _tareas.where(_coincideBusqueda).toList();
+
+    if (tareas.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          _searchBox(),
+          const SizedBox(height: 16),
+          Text(
+            _busqueda.trim().isEmpty
+                ? 'No hay tareas asignadas para este conjunto.'
+                : 'No hay coincidencias para la búsqueda actual.',
+          ),
+        ],
       );
     }
 
     return ListView.separated(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
-      itemCount: _tareas.length,
+      itemCount: tareas.length + 1,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (_, i) => _taskTile(_tareas[i]),
+      itemBuilder: (_, i) {
+        if (i == 0) return _searchBox();
+        return _taskTile(tareas[i - 1]);
+      },
     );
   }
 

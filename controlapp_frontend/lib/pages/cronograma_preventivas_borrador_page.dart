@@ -308,7 +308,92 @@ class _CronogramaPreventivasBorradorPageState
   String? _nombreUbicacion(TareaModel t) => t.ubicacionNombre;
   String? _nombreObjeto(TareaModel t) => t.elementoNombre;
 
+  final Set<String> _detalleCamposVisibles = {
+    'id',
+    'descripcion',
+    'estado',
+    'tipo',
+    'frecuencia',
+    'prioridad',
+    'fechaInicio',
+    'fechaFin',
+    'duracion',
+    'conjunto',
+    'ubicacion',
+    'elemento',
+    'supervisor',
+    'operarios',
+    'maquinaria',
+    'observaciones',
+    'evidencias',
+    'insumos',
+  };
+
+  static const Map<String, String> _detalleCamposLabels = {
+    'id': 'ID',
+    'descripcion': 'Descripcion',
+    'estado': 'Estado',
+    'tipo': 'Tipo',
+    'frecuencia': 'Frecuencia',
+    'prioridad': 'Prioridad',
+    'fechaInicio': 'Fecha inicio',
+    'fechaFin': 'Fecha fin',
+    'duracion': 'Duracion',
+    'conjunto': 'Conjunto',
+    'ubicacion': 'Ubicacion',
+    'elemento': 'Elemento',
+    'supervisor': 'Supervisor',
+    'operarios': 'Operarios',
+    'maquinaria': 'Maquinaria',
+    'observaciones': 'Observaciones',
+    'evidencias': 'Evidencias',
+    'insumos': 'Insumos usados',
+  };
+
   List<String> _nombresOperarios(TareaModel t) => t.operariosNombres;
+
+  Future<void> _configurarCamposDetalle(VoidCallback refreshSheet) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.all(12),
+                children: [
+                  const Text(
+                    'Selecciona la informacion a mostrar',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  ..._detalleCamposLabels.entries.map((entry) {
+                    final activo = _detalleCamposVisibles.contains(entry.key);
+                    return CheckboxListTile(
+                      value: activo,
+                      title: Text(entry.value),
+                      onChanged: (value) {
+                        setState(() {
+                          if (value == true) {
+                            _detalleCamposVisibles.add(entry.key);
+                          } else {
+                            _detalleCamposVisibles.remove(entry.key);
+                          }
+                        });
+                        setModalState(() {});
+                        refreshSheet();
+                      },
+                    );
+                  }),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   bool _tareaTieneOperario(TareaModel t, String nombreOperario) {
     return _nombresOperarios(t).contains(nombreOperario);
@@ -2355,86 +2440,85 @@ class _CronogramaPreventivasBorradorPageState
           minChildSize: 0.4,
           maxChildSize: 0.9,
           builder: (context, scrollController) {
-            return Material(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Detalle de la tarea',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+            return StatefulBuilder(
+              builder: (context, setSheetState) {
+                final rows = <Widget>[];
+                void addRow(String key, String label, String value) {
+                  if (!_detalleCamposVisibles.contains(key)) return;
+                  rows.add(_infoRow(label, value));
+                }
+
+                addRow('id', 'ID', t.id.toString());
+                addRow('descripcion', 'Descripción', t.descripcion);
+                addRow('estado', 'Estado', t.estado ?? '—');
+                addRow('tipo', 'Tipo', t.tipo ?? '—');
+                addRow('frecuencia', 'Frecuencia', t.frecuencia ?? '—');
+                addRow('prioridad', 'Prioridad', prioridadLabel);
+                rows.add(const SizedBox(height: 8));
+                addRow('fechaInicio', 'Fecha inicio', fechaIniStr);
+                addRow('fechaFin', 'Fecha fin', fechaFinStr);
+                addRow('duracion', 'Duración', '$durMin min (${durH.toStringAsFixed(1)} h)');
+                rows.add(const SizedBox(height: 8));
+                addRow('conjunto', 'Conjunto', conjuntoLabel);
+                addRow('ubicacion', 'Ubicación', ubicacionLabel);
+                addRow('elemento', 'Elemento', elementoLabel);
+                addRow('supervisor', 'Supervisor', supervisorLabel);
+                rows.add(const SizedBox(height: 8));
+                addRow('operarios', 'Operarios', operarios);
+                addRow('maquinaria', 'Maquinaria planificada', maquinariaTxt);
+                rows.add(const SizedBox(height: 8));
+                addRow('observaciones', 'Observaciones', t.observaciones ?? '—');
+                addRow('evidencias', 'Evidencias', evidenciasTxt);
+                addRow(
+                  'insumos',
+                  'Insumos usados',
+                  insumosCount == 0 ? 'Sin insumos registrados' : '$insumosCount ítem(s)',
+                );
+
+                return Material(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Detalle de la tarea',
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
                             ),
-                          ),
+                            IconButton(
+                              icon: const Icon(Icons.tune),
+                              tooltip: 'Elegir informacion visible',
+                              onPressed: () => _configurarCamposDetalle(() => setSheetState(() {})),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                          ],
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      controller: scrollController,
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _infoRow('ID', t.id.toString()),
-                          _infoRow('Descripción', t.descripcion),
-                          _infoRow('Estado', t.estado ?? '—'),
-                          _infoRow('Tipo', t.tipo ?? '—'),
-                          _infoRow('Frecuencia', t.frecuencia ?? '—'),
-                          _infoRow('Prioridad', prioridadLabel),
-                          const SizedBox(height: 8),
-                          _infoRow('Fecha inicio', fechaIniStr),
-                          _infoRow('Fecha fin', fechaFinStr),
-                          _infoRow(
-                            'Duración',
-                            '$durMin min (${durH.toStringAsFixed(1)} h)',
-                          ),
-                          const SizedBox(height: 8),
-                          _infoRow('Conjunto', conjuntoLabel),
-                          _infoRow('Ubicación', ubicacionLabel),
-                          _infoRow('Elemento', elementoLabel),
-                          _infoRow('Supervisor', supervisorLabel),
-                          const SizedBox(height: 8),
-                          _infoRow('Operarios', operarios),
-                          const SizedBox(height: 8),
-                          _infoRow('Maquinaria planificada', maquinariaTxt),
-                          const SizedBox(height: 8),
-                          _infoRow('Observaciones', t.observaciones ?? '—'),
-                          _infoRow(
-                            'Obs. rechazo',
-                            t.observacionesRechazo ?? '—',
-                          ),
-                          const SizedBox(height: 8),
-                          _infoRow('Evidencias', evidenciasTxt),
-                          _infoRow(
-                            'Insumos usados',
-                            insumosCount == 0
-                                ? 'Sin insumos registrados'
-                                : '$insumosCount ítem(s)',
-                          ),
-                          const SizedBox(height: 16),
-                        ],
                       ),
-                    ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ...rows,
+                              const SizedBox(height: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                );
+              },
             );
           },
         );
@@ -2888,6 +2972,27 @@ class _CronogramaPreventivasBorradorPageState
 //   ✅ FIX: Banda de almuerzo + pxPorMin + tema claro
 // ============================
 
+Color _cronogramaBorradorColorBaseTareaSemana(TareaModel t) {
+  final tipo = (t.tipo ?? '').toUpperCase().trim();
+  if (tipo == 'CORRECTIVA') return Colors.red.shade500;
+
+  final texto = '${t.ubicacionNombre ?? ''} ${t.elementoNombre ?? ''}'
+      .toLowerCase();
+  if (texto.contains('humed') || texto.contains('agua')) {
+    return Colors.blue.shade500;
+  }
+  if (texto.contains('verde') || texto.contains('jardin') || texto.contains('cesped')) {
+    return Colors.green.shade600;
+  }
+  if (texto.contains('transit') || texto.contains('circul')) {
+    return Colors.orange.shade600;
+  }
+  if (texto.contains('parque') || texto.contains('parqueadero')) {
+    return Colors.brown.shade500;
+  }
+  return AppTheme.primary;
+}
+
 class _WeekScheduleView extends StatefulWidget {
   final DateTime weekStart; // lunes 00:00
   final List<TareaModel> tareas;
@@ -2950,8 +3055,11 @@ class _WeekTaskPlacement {
 }
 
 class _WeekScheduleViewState extends State<_WeekScheduleView> {
+  final ScrollController _headerHCtrl = ScrollController();
   final ScrollController _hCtrl = ScrollController();
   final ScrollController _vCtrl = ScrollController();
+  bool _syncingHeader = false;
+  bool _syncingBody = false;
 
   // Mas respirable
   static const double pxPorMin = 1.6; // estaba 1.2
@@ -3116,9 +3224,27 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
   @override
   void dispose() {
+    _headerHCtrl.dispose();
     _hCtrl.dispose();
     _vCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _headerHCtrl.addListener(() {
+      if (_syncingBody || !_hCtrl.hasClients) return;
+      _syncingHeader = true;
+      _hCtrl.jumpTo(_headerHCtrl.offset);
+      _syncingHeader = false;
+    });
+    _hCtrl.addListener(() {
+      if (_syncingHeader || !_headerHCtrl.hasClients) return;
+      _syncingBody = true;
+      _headerHCtrl.jumpTo(_hCtrl.offset);
+      _syncingBody = false;
+    });
   }
 
   @override
@@ -3159,7 +3285,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
               SizedBox(
                 height: altoHeader,
                 child: SingleChildScrollView(
-                  controller: _hCtrl,
+                  controller: _headerHCtrl,
                   scrollDirection: Axis.horizontal,
                   child: SizedBox(
                     width: totalWidth,
@@ -3321,7 +3447,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                               final top = startMin * pxPorMin;
                               final fullWidth = colWidth - (dayPadding * 2);
 
-                              final colorBase = AppTheme.primary;
+                              final colorBase = _cronogramaBorradorColorBaseTareaSemana(t);
                               final fill = colorBase.withValues(alpha: 0.12);
                               final border = colorBase.withValues(alpha: 0.55);
 
@@ -3361,6 +3487,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   child: GestureDetector(
                                     onTap: () => widget.onTapTarea(t),
                                     child: Container(
+                                      clipBehavior: Clip.hardEdge,
                                       padding: const EdgeInsets.fromLTRB(
                                         8,
                                         7,
@@ -3409,7 +3536,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                 Text(
                                                   '+${placement.groupSize - dotCount}',
                                                   style: TextStyle(
-                                                    fontSize: 11,
+                                                    fontSize: 10,
                                                     color: text,
                                                     fontWeight: FontWeight.w700,
                                                   ),
@@ -3431,14 +3558,14 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                               ),
                                             ],
                                           ),
-                                          const SizedBox(height: 4),
+                                          const SizedBox(height: 2),
                                           Text(
                                             'Aqui hay ${placement.groupSize} tareas superpuestas. Filtra por operario para verlo mejor.',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
                                               color: subtext,
-                                              fontSize: 11,
+                                              fontSize: 10,
                                             ),
                                           ),
                                           const SizedBox(height: 2),
@@ -3491,7 +3618,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                         builder: (context, box) {
                                           final h = box.maxHeight;
                                           final tiny = h < 26;
-                                          final compact = h < 42;
+                                          final compact = h < 54;
 
                                           return Column(
                                             mainAxisSize: MainAxisSize.min,
@@ -3510,19 +3637,19 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                   style: TextStyle(
                                                     color: text,
                                                     fontSize: tiny
-                                                        ? 9
+                                                        ? 8
                                                         : (compact ? 10 : 12),
                                                     fontWeight: FontWeight.w700,
                                                   ),
                                                 ),
                                               ),
                                               if (!compact) ...[
-                                                const SizedBox(height: 4),
+                                                const SizedBox(height: 2),
                                                 Text(
                                                   '$horaIni - $horaFinStr',
                                                   style: TextStyle(
                                                     color: subtext,
-                                                    fontSize: 11,
+                                                    fontSize: 10,
                                                   ),
                                                 ),
                                               ],
