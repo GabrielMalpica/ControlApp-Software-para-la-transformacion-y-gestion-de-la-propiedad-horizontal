@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 
@@ -19,6 +20,17 @@ class OperarioDashboardPage extends StatefulWidget {
 }
 
 class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
+  Conjunto get _conjuntoActual => Conjunto(
+    nit: widget.nit,
+    nombre: 'Conjunto asignado',
+    direccion: '',
+    correo: '',
+    activo: true,
+    tipoServicio: const <String>[],
+    consignasEspeciales: const <String>[],
+    valorAgregado: const <String>[],
+  );
+
   int _gridCountForWidth(double w) {
     if (w >= 1100) return 4;
     if (w >= 800) return 4;
@@ -34,6 +46,29 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
     VoidCallback? onTap,
   }) {
     return DashboardTile(title: title, color: color, icon: icon, onTap: onTap);
+  }
+
+  Widget _sectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.primary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _confirmLogout() async {
@@ -121,59 +156,72 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
           },
         ),
         child: DashboardSurface(
-          child: LayoutBuilder(
-            builder: (context, c) {
-              final cols = _gridCountForWidth(c.maxWidth);
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  const CumpleanosBanner(),
-                  const SizedBox(height: 18),
-                  Text(
-                    'Panel general',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 18),
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: cols,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 1.05,
-                    children: [
-                      _simpleCard(
-                        'Tareas',
-                        AppTheme.green,
-                        Icons.assignment,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => TareasPage(nit: widget.nit),
-                            ),
-                          );
-                        },
-                      ),
-                      _simpleCard(
-                        'Solicitudes',
-                        AppTheme.primary,
-                        Icons.pending_actions,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => SolicitudesPage(nit: widget.nit),
-                            ),
-                          );
-                        },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              ConjuntoSelectorCard(
+                conjuntoActual: _conjuntoActual,
+                conjuntos: <Conjunto>[_conjuntoActual],
+                selectedNit: widget.nit,
+                onChanged: (_) {},
+              ),
+              const SizedBox(height: 18),
+              const CumpleanosBanner(),
+              const SizedBox(height: 18),
+              Text(
+                'Panel general',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 18),
+              LayoutBuilder(
+                builder: (context, c) {
+                  final cols = _gridCountForWidth(c.maxWidth);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _sectionHeader('Operacion diaria'),
+                      GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: cols,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 1.05,
+                        children: [
+                          _simpleCard(
+                            'Tareas',
+                            AppTheme.green,
+                            Icons.assignment,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => TareasPage(nit: widget.nit),
+                                ),
+                              );
+                            },
+                          ),
+                          _simpleCard(
+                            'Solicitudes',
+                            AppTheme.primary,
+                            Icons.pending_actions,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      SolicitudesPage(nit: widget.nit),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     ],
-                  ),
-                ],
-              );
-            },
+                  );
+                },
+              ),
+            ],
           ),
         ),
       ),

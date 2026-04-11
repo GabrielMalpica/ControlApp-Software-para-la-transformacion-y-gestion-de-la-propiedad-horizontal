@@ -209,6 +209,8 @@ enum CategoriaInsumo {
   LIMPIEZA
   JARDINERIA
   PISCINA
+  FERRETERIA
+  OTROS
 }
 
 enum CategoriaHerramienta {

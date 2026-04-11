@@ -18,9 +18,20 @@ class AdministradorApi {
     }
 
     final List<dynamic> data = jsonDecode(resp.body) as List<dynamic>;
-    return data
-        .map((e) => Conjunto.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return data.map((e) {
+      final raw = Map<String, dynamic>.from(e as Map);
+      return Conjunto.fromJson({
+        'nit': raw['nit'] ?? '',
+        'nombre': raw['nombre'] ?? 'Sin nombre',
+        'direccion': raw['direccion'] ?? '',
+        'correo': raw['correo'] ?? '',
+        'activo': raw['activo'] ?? true,
+        'tipoServicio': raw['tipoServicio'] ?? const <dynamic>[],
+        'consignasEspeciales': raw['consignasEspeciales'] ?? const <dynamic>[],
+        'valorAgregado': raw['valorAgregado'] ?? const <dynamic>[],
+        ...raw,
+      });
+    }).toList();
   }
 
   Future<List<Map<String, dynamic>>> listarPqrsConjunto({

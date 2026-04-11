@@ -1,5 +1,5 @@
 // lib/model/insumo_model.dart
-enum CategoriaInsumo { LIMPIEZA, JARDINERIA, PISCINA }
+enum CategoriaInsumo { LIMPIEZA, JARDINERIA, PISCINA, FERRETERIA, OTROS }
 
 extension CategoriaInsumoExt on CategoriaInsumo {
   String get label {
@@ -10,11 +10,15 @@ extension CategoriaInsumoExt on CategoriaInsumo {
         return 'Jardinería';
       case CategoriaInsumo.PISCINA:
         return 'Piscina';
+      case CategoriaInsumo.FERRETERIA:
+        return 'Ferreteria';
+      case CategoriaInsumo.OTROS:
+        return 'Otros';
     }
   }
 
   /// Valor que espera el backend (igual al enum de Prisma)
-  String get backendValue => name; // "LIMPIEZA", "JARDINERIA", "PISCINA"
+  String get backendValue => name;
 }
 
 class InsumoRequest {
@@ -71,4 +75,5 @@ class InsumoResponse {
     );
   }
 }
+
 // ignore_for_file: constant_identifier_names

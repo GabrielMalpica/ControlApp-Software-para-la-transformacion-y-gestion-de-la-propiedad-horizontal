@@ -23,6 +23,22 @@ import 'package:flutter_application_1/service/app_error.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
+class _SupervisorTile {
+  final String title;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  _SupervisorTile(this.title, this.icon, this.color, this.onTap);
+}
+
+class _SupervisorSection {
+  final String title;
+  final List<_SupervisorTile> tiles;
+
+  const _SupervisorSection(this.title, this.tiles);
+}
+
 class SupervisorPage extends StatefulWidget {
   const SupervisorPage({super.key});
 
@@ -111,6 +127,47 @@ class _SupervisorPageState extends State<SupervisorPage> {
     return DashboardTile(title: title, color: color, icon: icon, onTap: onTap);
   }
 
+  Widget _sectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.primary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionGrid(List<_SupervisorTile> tiles, int crossAxisCount) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        crossAxisSpacing: 14,
+        mainAxisSpacing: 14,
+        childAspectRatio: 1.05,
+      ),
+      itemCount: tiles.length,
+      itemBuilder: (_, i) {
+        final t = tiles[i];
+        return _smallCard(t.title, t.icon, t.color, onTap: t.onTap);
+      },
+    );
+  }
+
   Widget _buildBody() {
     if (_cargandoConjuntos) {
       return const DashboardScaffold(
@@ -156,6 +213,66 @@ class _SupervisorPageState extends State<SupervisorPage> {
     }
 
     final nit = conjunto.nit;
+    final sections = <_SupervisorSection>[
+      _SupervisorSection('Operacion diaria', [
+        _SupervisorTile('Tareas', Icons.assignment, AppTheme.green, () {
+          if (!_requiereConjuntoOrWarn()) return;
+          _go(SupervisorTareasPage(nit: nit));
+        }),
+        _SupervisorTile(
+          'Solicitudes',
+          Icons.pending_actions,
+          AppTheme.primary,
+          () {
+            if (!_requiereConjuntoOrWarn()) return;
+            _go(SolicitudesPage(nit: nit));
+          },
+        ),
+        _SupervisorTile('Cronograma', Icons.calendar_month, Colors.purple, () {
+          if (!_requiereConjuntoOrWarn()) return;
+          _go(CronogramaPage(nit: nit));
+        }),
+      ]),
+      _SupervisorSection('Planeacion y recursos', [
+        _SupervisorTile(
+          'Inventario',
+          Icons.inventory_2_outlined,
+          AppTheme.yellow,
+          () {
+            if (!_requiereConjuntoOrWarn()) return;
+            _go(InventarioPage(nit: nit, empresaId: AppConstants.empresaNit));
+          },
+        ),
+        _SupervisorTile(
+          'Maquinaria',
+          Icons.precision_manufacturing,
+          AppTheme.red,
+          () {
+            if (!_requiereConjuntoOrWarn()) return;
+            _go(AgendaMaquinariaPage(conjuntoId: nit));
+          },
+        ),
+        _SupervisorTile('Herramientas', Icons.handyman, Colors.orange, () {
+          if (!_requiereConjuntoOrWarn()) return;
+          _go(AgendaHerramientasPage(conjuntoId: nit));
+        }),
+        _SupervisorTile(
+          'Preventivas',
+          Icons.build_circle_outlined,
+          Colors.deepOrange,
+          () {
+            if (!_requiereConjuntoOrWarn()) return;
+            _go(PreventivasPage(nit: nit));
+          },
+        ),
+      ]),
+      _SupervisorSection('Analisis y control', [
+        _SupervisorTile('Reportes', Icons.bar_chart, Colors.teal, () {
+          if (!_requiereConjuntoOrWarn()) return;
+          _go(ReportesPage(nit: nit, soloResumenTipos: true));
+        }),
+      ]),
+    ];
 
     return DashboardScaffold(
       title: 'Panel del supervisor',
@@ -226,98 +343,22 @@ class _SupervisorPageState extends State<SupervisorPage> {
                 LayoutBuilder(
                   builder: (context, c) {
                     final cols = _gridCountForWidth(c.maxWidth);
-                    return GridView.count(
-                      shrinkWrap: true,
-                      crossAxisCount: cols,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 1.05,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: [
-                        _smallCard(
-                          'Tareas',
-                          Icons.assignment,
-                          AppTheme.green,
-                          onTap: () {
-                            if (!_requiereConjuntoOrWarn()) return;
-                            _go(SupervisorTareasPage(nit: nit));
-                          },
-                        ),
-                        _smallCard(
-                          'Solicitudes',
-                          Icons.pending_actions,
-                          AppTheme.primary,
-                          onTap: () {
-                            if (!_requiereConjuntoOrWarn()) return;
-                            _go(SolicitudesPage(nit: nit));
-                          },
-                        ),
-                        _smallCard(
-                          'Cronograma',
-                          Icons.calendar_month,
-                          Colors.purple,
-                          onTap: () {
-                            if (!_requiereConjuntoOrWarn()) return;
-                            _go(CronogramaPage(nit: nit));
-                          },
-                        ),
-                        _smallCard(
-                          'Inventario',
-                          Icons.inventory_2_outlined,
-                          AppTheme.yellow,
-                          onTap: () {
-                            if (!_requiereConjuntoOrWarn()) return;
-                            _go(
-                              InventarioPage(
-                                nit: nit,
-                                empresaId: AppConstants.empresaNit,
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: sections
+                          .map(
+                            (s) => Padding(
+                              padding: const EdgeInsets.only(bottom: 18),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  _sectionHeader(s.title),
+                                  _sectionGrid(s.tiles, cols),
+                                ],
                               ),
-                            );
-                          },
-                        ),
-                        _smallCard(
-                          'Maquinaria',
-                          Icons.precision_manufacturing,
-                          AppTheme.red,
-                          onTap: () {
-                            if (!_requiereConjuntoOrWarn()) return;
-                            _go(AgendaMaquinariaPage(conjuntoId: nit));
-                          },
-                        ),
-                        _smallCard(
-                          'Herramientas',
-                          Icons.handyman,
-                          Colors.orange,
-                          onTap: () {
-                            if (!_requiereConjuntoOrWarn()) return;
-                            _go(AgendaHerramientasPage(conjuntoId: nit));
-                          },
-                        ),
-                        _smallCard(
-                          'Reportes',
-                          Icons.bar_chart,
-                          Colors.teal,
-                          onTap: () {
-                            if (!_requiereConjuntoOrWarn()) return;
-                            _go(ReportesPage(nit: nit));
-                          },
-                        ),
-                        _smallCard(
-                          'Preventivas',
-                          Icons.build_circle_outlined,
-                          Colors.deepOrange,
-                          onTap: () {
-                            if (!_requiereConjuntoOrWarn()) return;
-                            _go(PreventivasPage(nit: nit));
-                          },
-                        ),
-                        _smallCard(
-                          'Recargar',
-                          Icons.refresh,
-                          Colors.blueGrey,
-                          onTap: _cargarConjuntos,
-                        ),
-                      ],
+                            ),
+                          )
+                          .toList(),
                     );
                   },
                 ),

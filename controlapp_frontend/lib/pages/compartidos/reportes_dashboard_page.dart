@@ -22,10 +22,14 @@ import 'package:flutter_application_1/service/app_feedback.dart';
 class ReportesDashboardPage extends StatefulWidget {
   final String? conjuntoIdInicial;
   final bool modoGeneral;
+  final bool permitirInformesPdf;
+  final bool soloResumenTipos;
   const ReportesDashboardPage({
     super.key,
     this.conjuntoIdInicial,
     this.modoGeneral = false,
+    this.permitirInformesPdf = true,
+    this.soloResumenTipos = false,
   });
 
   @override
@@ -40,6 +44,8 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
 
   late final String? _conjuntoIdFijo;
   bool get _esReporteGeneral => widget.modoGeneral;
+  bool get _permitirInformesPdf => widget.permitirInformesPdf;
+  bool get _soloResumenTipos => widget.soloResumenTipos;
 
   bool _loading = false;
   bool _generandoPdf = false;
@@ -247,6 +253,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         conjuntoId: _esReporteGeneral ? null : conjuntoId,
       );
 
+      if (!mounted) return;
       setState(() {
         _kpis = kpis;
         _serie = serie;
@@ -266,6 +273,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         // si quieres que al cambiar rango se regenere, puedes poner un botón “Regenerar”
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -2389,13 +2397,33 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   Widget build(BuildContext context) {
     final primary = AppTheme.primary;
     final df = DateFormat('dd/MM/yyyy', 'es');
+    final tabs = _soloResumenTipos
+        ? <Tab>[const Tab(text: 'Resumen'), const Tab(text: 'Tipos')]
+        : <Tab>[
+            const Tab(text: 'Resumen'),
+            const Tab(text: 'Operarios'),
+            const Tab(text: 'Insumos'),
+            const Tab(text: 'Maq/Herr'),
+            const Tab(text: 'Tipos'),
+            if (_permitirInformesPdf) const Tab(text: 'Informes'),
+          ];
+    final tabViews = _soloResumenTipos
+        ? <Widget>[_tabResumen(), _tabTipos()]
+        : <Widget>[
+            _tabResumen(),
+            _tabOperarios(),
+            _tabInsumos(),
+            _tabMaqHerr(),
+            _tabTipos(),
+            if (_permitirInformesPdf) _tabInformes(),
+          ];
 
     final conteoTipos = _contarTipos();
     final prev = conteoTipos['preventivas'] ?? 0;
     final corr = conteoTipos['correctivas'] ?? 0;
 
     return DefaultTabController(
-      length: 6,
+      length: tabs.length,
       child: Scaffold(
         backgroundColor: const Color(0xFFF6F7FB),
         appBar: AppBar(
@@ -2414,19 +2442,12 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               tooltip: 'Actualizar',
             ),
           ],
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             indicatorColor: Colors.white,
-            tabs: [
-              Tab(text: 'Resumen'),
-              Tab(text: 'Operarios'),
-              Tab(text: 'Insumos'),
-              Tab(text: 'Maq/Herr'),
-              Tab(text: 'Tipos'),
-              Tab(text: 'Informes'),
-            ],
+            tabs: tabs,
           ),
         ),
         body: Stack(
@@ -2488,68 +2509,58 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                       ? const Center(child: CircularProgressIndicator())
                       : _error != null
                       ? _buildError()
-                      : TabBarView(
-                          children: [
-                            _tabResumen(),
-                            _tabOperarios(),
-                            _tabInsumos(),
-                            _tabMaqHerr(),
-                            _tabTipos(),
-                            _tabInformes(),
-                          ],
-                        ),
+                      : TabBarView(children: tabViews),
                 ),
               ],
             ),
 
-            // ✅ Host real fuera de pantalla (para captura)
-            Positioned(
-              left: -5000,
-              top: 0,
-              child: IgnorePointer(
-                child: Material(
-                  color: Colors
-                      .white, // ✅ importante para que capture no quede transparente
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      RepaintBoundary(
-                        key: _kPieEstados,
-                        child: SizedBox(
-                          width: 900,
-                          height: 420,
-                          child: _pieEstados(_kpis?.byEstado ?? {}),
+            if (_permitirInformesPdf)
+              Positioned(
+                left: -5000,
+                top: 0,
+                child: IgnorePointer(
+                  child: Material(
+                    color: Colors.white,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        RepaintBoundary(
+                          key: _kPieEstados,
+                          child: SizedBox(
+                            width: 900,
+                            height: 420,
+                            child: _pieEstados(_kpis?.byEstado ?? {}),
+                          ),
                         ),
-                      ),
-                      RepaintBoundary(
-                        key: _kLineSerie,
-                        child: SizedBox(
-                          width: 900,
-                          height: 420,
-                          child: _lineSerieDiaria(),
+                        RepaintBoundary(
+                          key: _kLineSerie,
+                          child: SizedBox(
+                            width: 900,
+                            height: 420,
+                            child: _lineSerieDiaria(),
+                          ),
                         ),
-                      ),
-                      RepaintBoundary(
-                        key: _kPieTipos,
-                        child: SizedBox(
-                          width: 900,
-                          height: 420,
-                          child: _pieTipos(prev: prev, corr: corr),
+                        RepaintBoundary(
+                          key: _kPieTipos,
+                          child: SizedBox(
+                            width: 900,
+                            height: 420,
+                            child: _pieTipos(prev: prev, corr: corr),
+                          ),
                         ),
-                      ),
-                      RepaintBoundary(
-                        key: _kBarInsumos,
-                        child: SizedBox(
-                          width: 900,
-                          height: 420,
-                          child: _barInsumosForPdf(),
+                        RepaintBoundary(
+                          key: _kBarInsumos,
+                          child: SizedBox(
+                            width: 900,
+                            height: 420,
+                            child: _barInsumosForPdf(),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -2949,9 +2960,15 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             children: [
               Text(
                 '$total',
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
-              const Text('tareas', style: TextStyle(fontSize: 11, color: Colors.black54)),
+              const Text(
+                'tareas',
+                style: TextStyle(fontSize: 11, color: Colors.black54),
+              ),
             ],
           ),
         ),
@@ -3057,8 +3074,14 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         ),
       );
 
-      maxY = math.max(maxY, math.max(asignadasY, math.max(resueltasY, backlogY)));
-      maxY = math.max(maxY, math.max(backlogY, 0) + pending + failed.toDouble());
+      maxY = math.max(
+        maxY,
+        math.max(asignadasY, math.max(resueltasY, backlogY)),
+      );
+      maxY = math.max(
+        maxY,
+        math.max(backlogY, 0) + pending + failed.toDouble(),
+      );
     }
 
     final yTop = maxY <= 0 ? 5.0 : maxY * 1.15;
@@ -3119,7 +3142,11 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 xValueMapper: (d, _) => d.label,
                 yValueMapper: (d, _) => d.incidents,
                 color: Colors.red.shade400,
-                markerSettings: const MarkerSettings(isVisible: true, width: 10, height: 10),
+                markerSettings: const MarkerSettings(
+                  isVisible: true,
+                  width: 10,
+                  height: 10,
+                ),
                 name: 'Incidencias',
               ),
             ],
@@ -3910,7 +3937,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       children: [
         _sectionTitle('Ritmo historico de cierre'),
         const SizedBox(height: 8),
-        _card(child: SizedBox(height: 320, child: _dailyOperationalFlowChart())),
+        _card(
+          child: SizedBox(height: 320, child: _dailyOperationalFlowChart()),
+        ),
         const SizedBox(height: 14),
         _sectionTitle('Preventivas vs Correctivas'),
         const SizedBox(height: 8),
@@ -3988,7 +4017,8 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
 
     final out = grupos.entries.map((entry) {
       final partes = entry.key.split('||');
-      final lista = [...entry.value]..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+      final lista = [...entry.value]
+        ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
       return _buildCumplimientoSerie(
         titulo: partes.first,
         frecuencia: partes.length > 1 ? partes.last : null,
@@ -4001,10 +4031,11 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   }
 
   _CumplimientoSerieDatum _cumplimientoCorrectivas() {
-    final lista = _tareasDetalle
-        .where((t) => t.tipo.toUpperCase().trim() == 'CORRECTIVA')
-        .toList()
-      ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+    final lista =
+        _tareasDetalle
+            .where((t) => t.tipo.toUpperCase().trim() == 'CORRECTIVA')
+            .toList()
+          ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
     return _buildCumplimientoSerie(
       titulo: 'Correctivas del rango',
       frecuencia: null,
@@ -4082,7 +4113,8 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    if (mostrarFrecuencia && (data.frecuencia ?? '').trim().isNotEmpty) ...[
+                    if (mostrarFrecuencia &&
+                        (data.frecuencia ?? '').trim().isNotEmpty) ...[
                       const SizedBox(height: 4),
                       _miniTextPill('Frecuencia', data.frecuencia!.trim()),
                     ],
@@ -4137,9 +4169,21 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     }
 
     final data = <_ChartSliceDatum>[
-      _ChartSliceDatum(label: 'Cumplidas', value: cumplidas.toDouble(), color: Colors.teal.shade600),
-      _ChartSliceDatum(label: 'No cumplidas', value: noCumplidas.toDouble(), color: Colors.red.shade500),
-      _ChartSliceDatum(label: 'Pendientes', value: pendientes.toDouble(), color: Colors.orange.shade400),
+      _ChartSliceDatum(
+        label: 'Cumplidas',
+        value: cumplidas.toDouble(),
+        color: Colors.teal.shade600,
+      ),
+      _ChartSliceDatum(
+        label: 'No cumplidas',
+        value: noCumplidas.toDouble(),
+        color: Colors.red.shade500,
+      ),
+      _ChartSliceDatum(
+        label: 'Pendientes',
+        value: pendientes.toDouble(),
+        color: Colors.orange.shade400,
+      ),
     ];
 
     return Stack(
@@ -4166,7 +4210,10 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               center,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
             ),
-            const Text('cumpl.', style: TextStyle(fontSize: 11, color: Colors.black54)),
+            const Text(
+              'cumpl.',
+              style: TextStyle(fontSize: 11, color: Colors.black54),
+            ),
           ],
         ),
       ],
@@ -4183,12 +4230,20 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     );
 
     final trend = <_CumplimientoTrendDatum>[];
-    for (int i = 0; i < math.max(data.cumplidasSpots.length, data.noCumplidasSpots.length); i++) {
+    for (
+      int i = 0;
+      i < math.max(data.cumplidasSpots.length, data.noCumplidasSpots.length);
+      i++
+    ) {
       trend.add(
         _CumplimientoTrendDatum(
           paso: '${i + 1}',
-          cumplidas: i < data.cumplidasSpots.length ? data.cumplidasSpots[i].y : 0,
-          noCumplidas: i < data.noCumplidasSpots.length ? data.noCumplidasSpots[i].y : 0,
+          cumplidas: i < data.cumplidasSpots.length
+              ? data.cumplidasSpots[i].y
+              : 0,
+          noCumplidas: i < data.noCumplidasSpots.length
+              ? data.noCumplidasSpots[i].y
+              : 0,
         ),
       );
     }
@@ -4236,7 +4291,11 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     if (total <= 0) return const Center(child: Text('Sin datos'));
 
     final data = <_ChartSliceDatum>[
-      _ChartSliceDatum(label: 'Preventivas', value: prev.toDouble(), color: AppTheme.primary),
+      _ChartSliceDatum(
+        label: 'Preventivas',
+        value: prev.toDouble(),
+        color: AppTheme.primary,
+      ),
       _ChartSliceDatum(
         label: 'Correctivas',
         value: corr.toDouble(),
@@ -4255,7 +4314,8 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           pointColorMapper: (d, _) => d.color,
           innerRadius: '60%',
           radius: '88%',
-          dataLabelMapper: (d, _) => '${(d.value / total * 100).toStringAsFixed(0)}%',
+          dataLabelMapper: (d, _) =>
+              '${(d.value / total * 100).toStringAsFixed(0)}%',
           dataLabelSettings: const DataLabelSettings(
             isVisible: true,
             labelPosition: ChartDataLabelPosition.outside,
@@ -4268,8 +4328,17 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           widget: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('$total', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-              const Text('tareas', style: TextStyle(fontSize: 11, color: Colors.black54)),
+              Text(
+                '$total',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Text(
+                'tareas',
+                style: TextStyle(fontSize: 11, color: Colors.black54),
+              ),
             ],
           ),
         ),
@@ -4938,7 +5007,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   }
 }
 
-class _EvidenceImage extends StatefulWidget {
+class _EvidenceImage extends StatelessWidget {
   final List<String> urls;
   final BoxFit fit;
   final Widget fallback;
@@ -4950,58 +5019,26 @@ class _EvidenceImage extends StatefulWidget {
   });
 
   @override
-  State<_EvidenceImage> createState() => _EvidenceImageState();
-}
-
-
-class _EvidenceImageState extends State<_EvidenceImage> {
-  int _index = 0;
-  bool _advanceScheduled = false;
-
-  void _tryNext() {
-    if (_advanceScheduled) return;
-    _advanceScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() {
-        _index++;
-        _advanceScheduled = false;
-      });
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final cleanUrls = widget.urls
+    final cleanUrls = urls
         .map((u) => u.trim())
         .where((u) => u.isNotEmpty)
         .toList();
 
-    if (cleanUrls.isEmpty || _index >= cleanUrls.length) {
-      return widget.fallback;
+    return _buildFromIndex(cleanUrls, 0);
+  }
+
+  Widget _buildFromIndex(List<String> cleanUrls, int index) {
+    if (cleanUrls.isEmpty || index >= cleanUrls.length) {
+      return fallback;
     }
 
-    final url = cleanUrls[_index];
-    final driveLike =
-        url.contains('drive.google.com') ||
-        url.contains('drive.usercontent.google.com') ||
-        url.contains('googleusercontent.com');
+    final url = cleanUrls[index];
     return Image.network(
       url,
-      fit: widget.fit,
-      webHtmlElementStrategy: driveLike
-          ? WebHtmlElementStrategy.prefer
-          : WebHtmlElementStrategy.never,
-      errorBuilder: (_, __, ___) {
-        _tryNext();
-        return const Center(
-          child: SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        );
-      },
+      fit: fit,
+      webHtmlElementStrategy: WebHtmlElementStrategy.never,
+      errorBuilder: (_, __, ___) => _buildFromIndex(cleanUrls, index + 1),
     );
   }
 }
