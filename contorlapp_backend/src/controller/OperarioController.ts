@@ -94,6 +94,12 @@ export class OperarioController {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
       const { tareaId } = TareaIdParam.parse(req.params);
+      const inicio = Date.now();
+
+      const tarea = await prisma.tarea.findUnique({
+        where: { id: tareaId },
+        select: { descripcion: true, conjunto: { select: { nombre: true } } },
+      });
 
       const service = new OperarioService(prisma, operarioId);
       const files = (req.files as Express.Multer.File[]) ?? [];
@@ -106,6 +112,17 @@ export class OperarioController {
           insumosUsados: req.body.insumosUsados,
         },
         files,
+      );
+
+      const conjunto = (tarea?.conjunto?.nombre ?? '').trim();
+      const detalle = conjunto.length > 0
+          ? `${conjunto} - tarea #${tareaId}`
+          : `tarea #${tareaId}`;
+      console.log(
+        `[perf] Cierre tarea operario ${detalle} (${files.length} evidencia(s)): ${(
+          (Date.now() - inicio) /
+          1000
+        ).toFixed(2)} s`,
       );
 
       res.json({ ok: true });

@@ -72,9 +72,14 @@ export class DefinicionTareaPreventivaController {
     const svc = new DefinicionTareaPreventivaService(prisma);
     const inicio = Date.now();
     const resultado = await svc.generarCronograma(dto);
+    const conjunto = await prisma.conjunto.findUnique({
+      where: { nit: conjuntoId },
+      select: { nombre: true },
+    });
+    const conjuntoLabel = (conjunto?.nombre ?? "").trim() || conjuntoId;
     const duracionSeg = ((Date.now() - inicio) / 1000).toFixed(2);
     console.log(
-      `[perf] Generacion de cronograma borrador conjunto ${conjuntoId} (${dto.mes}/${dto.anio}): ${duracionSeg} s`,
+      `[perf] Generacion de cronograma borrador conjunto ${conjuntoLabel} (${conjuntoId}) ${dto.mes}/${dto.anio}: ${duracionSeg} s`,
     );
     res.status(201).json(resultado);
   };

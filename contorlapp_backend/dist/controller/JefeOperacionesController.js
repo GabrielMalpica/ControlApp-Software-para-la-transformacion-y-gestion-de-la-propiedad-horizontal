@@ -51,8 +51,11 @@ class JefeOperacionesController {
                 const { id: tareaId } = IdParamSchema.parse(req.params);
                 const body = VeredictoBodySchema.parse(req.body ?? {});
                 const empresaId = getEmpresaIdFromReq(req);
+                const inicio = Date.now();
                 const svc = new JefeOperacionesService_1.JefeOperacionesService(prisma_1.prisma, empresaId);
                 const out = await svc.veredicto(tareaId, body);
+                console.log(`[perf] Veredicto jefe operaciones tarea #${tareaId} (${body.accion}): ${((Date.now() - inicio) /
+                    1000).toFixed(2)} s`);
                 res.json(out ?? { ok: true });
             }
             catch (err) {
@@ -65,8 +68,12 @@ class JefeOperacionesController {
                 const { id: tareaId } = IdParamSchema.parse(req.params);
                 const files = (req.files ?? []);
                 const empresaId = getEmpresaIdFromReq(req);
+                const inicio = Date.now();
                 const svc = new JefeOperacionesService_1.JefeOperacionesService(prisma_1.prisma, empresaId);
                 const out = await svc.veredictoConEvidencias(tareaId, req.body, files);
+                const accion = typeof req.body?.accion === 'string' ? req.body.accion : 'SIN_ACCION';
+                console.log(`[perf] Veredicto jefe operaciones tarea #${tareaId} (${accion}, ${files.length} evidencia(s)): ${((Date.now() - inicio) /
+                    1000).toFixed(2)} s`);
                 res.json(out ?? { ok: true });
             }
             catch (err) {

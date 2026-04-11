@@ -101,6 +101,7 @@ class SupervisorController {
             try {
                 const actor = getActorFromReq(req);
                 const svc = new SupervisorServices_1.SupervisorService(prisma_1.prisma, actor.id, actor.rol);
+                const inicio = Date.now();
                 const tareaId = Number(req.params.id);
                 if (!Number.isFinite(tareaId) || tareaId <= 0) {
                     res.status(400).json({ error: "id invalido" });
@@ -109,11 +110,29 @@ class SupervisorController {
                 if (actor.rol === "SUPERVISOR") {
                     const tarea = await prisma_1.prisma.tarea.findUnique({
                         where: { id: tareaId },
-                        select: { supervisorId: true },
+                        select: {
+                            supervisorId: true,
+                            descripcion: true,
+                            conjunto: { select: { nombre: true } },
+                        },
                     });
                     if (!tarea?.supervisorId || tarea.supervisorId !== actor.id) {
                         throw forbiddenError("No tiene autorizacion para cerrar esta tarea.");
                     }
+                    const files = req.files ?? [];
+                    await svc.cerrarTareaConEvidencias(tareaId, {
+                        observaciones: req.body.observaciones,
+                        fechaFinalizarTarea: req.body.fechaFinalizarTarea,
+                        insumosUsados: req.body.insumosUsados,
+                    }, files);
+                    const conjunto = (tarea.conjunto?.nombre ?? '').trim();
+                    const detalle = conjunto.length > 0
+                        ? `${conjunto} - tarea #${tareaId}`
+                        : `tarea #${tareaId}`;
+                    console.log(`[perf] Cierre tarea supervisor ${detalle} (${files.length} evidencia(s)): ${((Date.now() - inicio) /
+                        1000).toFixed(2)} s`);
+                    res.json({ ok: true });
+                    return;
                 }
                 const files = req.files ?? [];
                 await svc.cerrarTareaConEvidencias(tareaId, {
@@ -121,6 +140,16 @@ class SupervisorController {
                     fechaFinalizarTarea: req.body.fechaFinalizarTarea,
                     insumosUsados: req.body.insumosUsados,
                 }, files);
+                const tarea = await prisma_1.prisma.tarea.findUnique({
+                    where: { id: tareaId },
+                    select: { conjunto: { select: { nombre: true } } },
+                });
+                const conjunto = (tarea?.conjunto?.nombre ?? '').trim();
+                const detalle = conjunto.length > 0
+                    ? `${conjunto} - tarea #${tareaId}`
+                    : `tarea #${tareaId}`;
+                console.log(`[perf] Cierre tarea ${actor.rol.toLowerCase()} ${detalle} (${files.length} evidencia(s)): ${((Date.now() - inicio) /
+                    1000).toFixed(2)} s`);
                 res.json({ ok: true });
             }
             catch (e) {

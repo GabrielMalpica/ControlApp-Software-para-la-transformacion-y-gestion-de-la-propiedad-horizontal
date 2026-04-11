@@ -14,6 +14,20 @@ function logPerf(nombre: string, inicio: number, detalle?: string) {
   );
 }
 
+async function detalleConjunto(conjuntoId?: string) {
+  if (!conjuntoId) {
+    return "general";
+  }
+
+  const conjunto = await prisma.conjunto.findUnique({
+    where: { nit: conjuntoId },
+    select: { nombre: true },
+  });
+
+  const nombre = (conjunto?.nombre ?? "").trim();
+  return nombre.length > 0 ? `${nombre} (${conjuntoId})` : conjuntoId;
+}
+
 // ✅ Base
 const RangoQueryBase = z.object({
   desde: z.coerce.date(),
@@ -74,7 +88,7 @@ export class ReporteController {
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await service.kpis(q);
-      logPerf("Reporte KPIs", inicio, q.conjuntoId ? `conjunto ${q.conjuntoId}` : "general");
+      logPerf("Reporte KPIs", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
       next(err);
@@ -87,11 +101,7 @@ export class ReporteController {
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await service.serieDiariaPorEstado(q);
-      logPerf(
-        "Reporte serie diaria",
-        inicio,
-        q.conjuntoId ? `conjunto ${q.conjuntoId}` : "general",
-      );
+      logPerf("Reporte serie diaria", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
       next(err);
@@ -100,9 +110,11 @@ export class ReporteController {
 
   // GET /reporte/por-conjunto?desde=&hasta=
   resumenPorConjunto: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const q = RangoQuery.parse(req.query);
       const out = await service.resumenPorConjunto(q);
+      logPerf("Reporte por conjunto", inicio, "general");
       res.json(out);
     } catch (err) {
       next(err);
@@ -111,9 +123,11 @@ export class ReporteController {
 
   // GET /reporte/por-operario?desde=&hasta=&conjuntoId?
   resumenPorOperario: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await service.resumenPorOperario(q);
+      logPerf("Reporte por operario", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
       next(err);
@@ -122,9 +136,15 @@ export class ReporteController {
 
   // GET /reporte/duracion-promedio?desde=&hasta=&conjuntoId?
   duracionPromedioPorEstado: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await service.duracionPromedioPorEstado(q);
+      logPerf(
+        "Reporte duracion promedio",
+        inicio,
+        await detalleConjunto(q.conjuntoId),
+      );
       res.json(out);
     } catch (err) {
       next(err);
@@ -138,11 +158,7 @@ export class ReporteController {
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await service.reporteMensualDetalle(q);
-      logPerf(
-        "Reporte mensual detalle",
-        inicio,
-        q.conjuntoId ? `conjunto ${q.conjuntoId}` : "general",
-      );
+      logPerf("Reporte mensual detalle", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
       next(err);
@@ -151,6 +167,7 @@ export class ReporteController {
 
   // GET /reporte/zonificacion/preventivas?desde=&hasta=&conjuntoId?&soloActivas=true|false
   zonificacionPreventivas: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const raw = ZonificacionPreventivasQuery.parse(req.query);
       const q = {
@@ -161,6 +178,11 @@ export class ReporteController {
             : raw.soloActivas === "true" || raw.soloActivas === "1",
       };
       const out = await service.zonificacionPreventivas(q);
+      logPerf(
+        "Reporte zonificacion preventivas",
+        inicio,
+        await detalleConjunto(q.conjuntoId),
+      );
       res.json(out);
     } catch (err) {
       next(err);
@@ -195,9 +217,11 @@ export class ReporteController {
 
   // GET /reporte/insumos/uso?conjuntoId=&desde=&hasta=
   usoDeInsumosPorFecha: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const q = UsoInsumosQuery.parse(req.query);
       const out = await service.usoDeInsumosPorFecha(q);
+      logPerf("Reporte insumos", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
       next(err);
@@ -206,9 +230,15 @@ export class ReporteController {
 
   // GET /reporte/tareas/estado?conjuntoId=&estado=&desde=&hasta=
   tareasPorEstado: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const q = EstadoQuery.parse(req.query);
       const out = await service.tareasPorEstado(q);
+      logPerf(
+        `Reporte tareas estado ${q.estado}`,
+        inicio,
+        await detalleConjunto(q.conjuntoId),
+      );
       res.json(out);
     } catch (err) {
       next(err);
@@ -217,9 +247,15 @@ export class ReporteController {
 
   // GET /reporte/tareas/detalle?conjuntoId=&estado=&desde=&hasta=
   tareasConDetalle: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const q = EstadoQuery.parse(req.query);
       const out = await service.tareasConDetalle(q);
+      logPerf(
+        `Reporte tareas detalle ${q.estado}`,
+        inicio,
+        await detalleConjunto(q.conjuntoId),
+      );
       res.json(out);
     } catch (err) {
       next(err);
@@ -228,9 +264,11 @@ export class ReporteController {
 
   // GET /reporte/maquinaria/top?desde=&hasta=&conjuntoId?
   usoMaquinariaTop: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await service.usoMaquinariaTop(q);
+      logPerf("Reporte top maquinaria", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
       next(err);
@@ -239,9 +277,15 @@ export class ReporteController {
 
   // GET /reporte/herramientas/top?desde=&hasta=&conjuntoId?
   usoHerramientaTop: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await service.usoHerramientaTop(q);
+      logPerf(
+        "Reporte top herramientas",
+        inicio,
+        await detalleConjunto(q.conjuntoId),
+      );
       res.json(out);
     } catch (err) {
       next(err);
@@ -250,9 +294,11 @@ export class ReporteController {
 
   // GET /reporte/tipos?desde=&hasta=&conjuntoId?
   conteoPorTipo: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await service.conteoPorTipo(q);
+      logPerf("Reporte tipos", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
       next(err);
