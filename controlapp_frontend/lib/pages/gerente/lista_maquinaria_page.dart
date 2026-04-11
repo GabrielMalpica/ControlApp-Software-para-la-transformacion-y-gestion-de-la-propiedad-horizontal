@@ -6,6 +6,7 @@ import '../../model/conjunto_model.dart';
 import '../../model/maquinaria_model.dart';
 import '../../service/theme.dart';
 import '../../widgets/searchable_select_field.dart';
+import 'crear_maquinaria_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -96,6 +97,58 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
     _cargar();
   }
 
+  Future<void> _editarMaquinaria(MaquinariaResponse item) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) =>
+            CrearMaquinariaPage(nit: widget.empresaNit, maquinaria: item),
+      ),
+    );
+    if (changed == true) {
+      await _cargar();
+    }
+  }
+
+  Future<void> _eliminarMaquinaria(MaquinariaResponse item) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Eliminar maquinaria'),
+        content: Text(
+          'Se eliminara ${item.nombre} del catalogo de maquinaria.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      await _empresaApi.eliminarMaquinaria(item.id);
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text('${item.nombre} eliminada del catalogo.')),
+      );
+      await _cargar();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text('Error al eliminar maquinaria: $e')),
+      );
+    }
+  }
+
   String _subtitulo(MaquinariaResponse m) {
     final base = '${m.tipo.label} · ${m.estado.label}';
 
@@ -144,6 +197,7 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
     }).toList();
 
     return Scaffold(
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: primary,
         title: const Text('Maquinaria', style: TextStyle(color: Colors.white)),
@@ -328,17 +382,117 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
                   )
                 : ListView.separated(
                     itemCount: filteredItems.length,
-                    separatorBuilder: (_, __) => const Divider(height: 0),
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
                     itemBuilder: (context, index) {
                       final m = filteredItems[index];
-                      return ListTile(
-                        title: Text('${m.nombre} (${m.marca})'),
-                        subtitle: Text(_subtitulo(m)),
+                      final descripcion = _subtitulo(m);
+                      return Tooltip(
+                        message: descripcion,
+                        waitDuration: const Duration(milliseconds: 250),
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 12),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF6FBF8),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: AppTheme.primary.withValues(alpha: 0.18),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${m.nombre} (${m.marca})',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      descripcion,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.grey.shade800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        _infoChip(
+                                          m.tipo.label,
+                                          color: AppTheme.primary,
+                                        ),
+                                        _infoChip(
+                                          m.estado.label,
+                                          color: Colors.teal,
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuButton<String>(
+                                tooltip: 'Acciones',
+                                onSelected: (value) {
+                                  if (value == 'edit') {
+                                    _editarMaquinaria(m);
+                                  } else if (value == 'delete') {
+                                    _eliminarMaquinaria(m);
+                                  }
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                    value: 'edit',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.edit_outlined),
+                                        SizedBox(width: 10),
+                                        Text('Editar'),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.delete_outline),
+                                        SizedBox(width: 10),
+                                        Text('Eliminar'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
                       );
                     },
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _infoChip(String text, {required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: color, fontWeight: FontWeight.w700),
       ),
     );
   }

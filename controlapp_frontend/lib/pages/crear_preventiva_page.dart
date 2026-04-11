@@ -15,6 +15,7 @@ import '../model/usuario_model.dart';
 import '../model/insumo_model.dart';
 import '../model/maquinaria_model.dart';
 import '../model/herramienta_model.dart';
+import '../widgets/searchable_select_field.dart';
 
 import '../service/theme.dart';
 
@@ -50,10 +51,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   List<InsumoResponse> _catalogoInsumos = [];
   List<HerramientaDisponibilidadResponse> _catalogoHerramientas = [];
   List<Usuario> _supervisores = [];
-
-  // ✅ Cache de dropdown items (evita freeze fuerte)
-  List<DropdownMenuItem<int>> _insumoItems = [];
-  List<DropdownMenuItem<int>> _herramientaItems = [];
 
   // Controllers básicos
   final _descripcionCtrl = TextEditingController();
@@ -224,14 +221,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       if (!mounted) return;
       setState(() {
         _catalogoInsumos = lista;
-        _insumoItems = _catalogoInsumos
-            .map(
-              (i) => DropdownMenuItem(
-                value: i.id,
-                child: Text('${i.nombre} (${i.unidad})'),
-              ),
-            )
-            .toList(growable: false);
       });
     } catch (e) {
       if (!mounted) return;
@@ -246,29 +235,26 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         empresaId: AppConstants.empresaNit,
       );
 
-      final lista = raw
-          .map(
-            (e) => HerramientaDisponibilidadResponse.fromJson(
-              (e as Map).cast<String, dynamic>(),
-            ),
-          )
-          .where((h) => h.totalDisponible > 0)
-          .toList();
+      final lista =
+          raw
+              .map(
+                (e) => HerramientaDisponibilidadResponse.fromJson(
+                  (e as Map).cast<String, dynamic>(),
+                ),
+              )
+              .where((h) => h.totalDisponible > 0)
+              .toList()
+            ..sort((a, b) {
+              final aConjunto = a.disponibleConjunto > 0 ? 1 : 0;
+              final bConjunto = b.disponibleConjunto > 0 ? 1 : 0;
+              if (aConjunto != bConjunto) return bConjunto.compareTo(aConjunto);
+              return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
+            });
 
       if (!mounted) return;
 
       setState(() {
         _catalogoHerramientas = lista;
-        _herramientaItems = _catalogoHerramientas
-            .map(
-              (h) => DropdownMenuItem(
-                value: h.herramientaId,
-                child: Text(
-                  '${h.nombre} (${h.unidad}) - C:${h.disponibleConjunto} E:${h.disponibleEmpresa}',
-                ),
-              ),
-            )
-            .toList(growable: false);
       });
     } catch (e) {
       if (!mounted) return;
@@ -353,10 +339,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         ..clear()
         ..addAll(
           existente.maquinariaPlan.map(
-            (m) => _MaquinariaPlanRow(
-              maquinariaId: m.maquinariaId,
-              tipoInicial: m.tipo,
-            ),
+            (m) => _MaquinariaPlanRow(maquinariaId: m.maquinariaId),
           ),
         );
 
@@ -366,7 +349,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
           _HerramientaPlanRow(
             herramientaId: h.herramientaId,
             cantidadInicial: h.cantidad,
-            estadoInicial: h.estado,
           ),
         );
       }
@@ -405,9 +387,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         final hojas = _ubicacionSeleccionada!.elementosHoja;
         _elementoSeleccionado = hojas.firstWhere(
           (e) => e.id == existente.elementoId,
-          orElse: () => hojas.isNotEmpty
-              ? hojas.first
-              : _dummyElemento(),
+          orElse: () => hojas.isNotEmpty ? hojas.first : _dummyElemento(),
         );
       }
     } else {
@@ -470,9 +450,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
     for (final r in _insumosPlanRows) {
       r.consumoCtrl.dispose();
-    }
-    for (final m in _maquinariaPlanRows) {
-      m.tipoCtrl.dispose();
     }
     for (final h in _herramientasPlanRows) {
       h.cantidadCtrl.dispose();
@@ -726,9 +703,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         .map(
           (r) => MaquinariaPlanItemRequest(
             maquinariaId: r.maquinariaId!,
-            tipo: r.tipoCtrl.text.trim().isNotEmpty
-                ? r.tipoCtrl.text.trim()
-                : null,
             origen: r.origen, // ✅ viene automático del dropdown
           ),
         )
@@ -743,7 +717,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
           (r) => HerramientaPlanItemRequest(
             herramientaId: r.herramientaId!,
             cantidad: _tryDouble(r.cantidadCtrl.text.trim()) ?? 0,
-            estado: r.estado ?? 'OPERATIVA',
+            estado: 'OPERATIVA',
           ),
         )
         .toList();
@@ -1082,6 +1056,36 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     return '[$tag] ${m.nombre}$marca';
   }
 
+  List<SearchableSelectOption<int>> _buildInsumoOptions() {
+    return _catalogoInsumos
+        .map(
+          (i) => SearchableSelectOption<int>(
+            value: i.id,
+            label: '${i.nombre} (${i.unidad})',
+            subtitle: i.categoria.label,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  List<SearchableSelectOption<int>> _buildHerramientaOptions() {
+    return _catalogoHerramientas
+        .map((h) {
+          final esConjunto = h.disponibleConjunto > 0;
+          final tag = esConjunto ? '[CONJUNTO]' : '[EMPRESA]';
+          final detalle = esConjunto
+              ? 'disponible conjunto: ${h.disponibleConjunto}'
+              : 'disponible empresa: ${h.disponibleEmpresa}';
+
+          return SearchableSelectOption<int>(
+            value: h.herramientaId,
+            label: '$tag ${h.nombre} (${h.unidad})',
+            subtitle: '${h.categoria.label} · $detalle',
+          );
+        })
+        .toList(growable: false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final prioridadValue = (int.tryParse(_prioridadCtrl.text) ?? 2).clamp(1, 3);
@@ -1153,9 +1157,8 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           .toList(),
                       onChanged: (v) {
                         if (v == null) return;
-                        final el = _ubicacionSeleccionada!.elementosHoja.firstWhere(
-                          (x) => x.id == v,
-                        );
+                        final el = _ubicacionSeleccionada!.elementosHoja
+                            .firstWhere((x) => x.id == v);
                         setState(() => _elementoSeleccionado = el);
                       },
                       validator: (v) =>
@@ -1471,13 +1474,14 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                 title: '4) Recursos – Insumos',
                 child: Column(
                   children: [
-                    DropdownButtonFormField<int>(
-                      decoration: const InputDecoration(
-                        labelText: 'Insumo principal (opcional)',
-                        border: OutlineInputBorder(),
-                      ),
-                      initialValue: _insumoPrincipalId,
-                      items: _insumoItems,
+                    SearchableSelectField<int>(
+                      label: 'Insumo principal (opcional)',
+                      value: _insumoPrincipalId,
+                      prefixIcon: const Icon(Icons.inventory_2_outlined),
+                      searchHint:
+                          'Buscar insumo por nombre, unidad o categoria',
+                      clearLabel: 'Sin insumo principal',
+                      options: _buildInsumoOptions(),
                       onChanged: (v) => setState(() => _insumoPrincipalId = v),
                     ),
                     const SizedBox(height: 10),
@@ -1735,6 +1739,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   // ===========================
   Widget _buildInsumoPlanRow(int index) {
     final row = _insumosPlanRows[index];
+    final insumoOptions = _buildInsumoOptions();
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
@@ -1742,13 +1747,13 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         children: [
           Expanded(
             flex: 3,
-            child: DropdownButtonFormField<int>(
-              decoration: const InputDecoration(
-                labelText: 'Insumo',
-                border: OutlineInputBorder(),
-              ),
-              initialValue: row.insumoId,
-              items: _insumoItems,
+            child: SearchableSelectField<int>(
+              label: 'Insumo',
+              value: row.insumoId,
+              prefixIcon: const Icon(Icons.inventory_2_outlined),
+              searchHint: 'Buscar insumo',
+              clearLabel: 'Sin insumo',
+              options: insumoOptions,
               onChanged: (v) => setState(() => row.insumoId = v),
             ),
           ),
@@ -1797,14 +1802,18 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         ? true
         : opciones.any((o) => o.id == row.maquinariaId);
 
-    final items = <DropdownMenuItem<int>>[
+    final options = <SearchableSelectOption<int>>[
       ...opciones.map(
-        (m) => DropdownMenuItem<int>(value: m.id, child: Text(_labelMaq(m))),
+        (m) => SearchableSelectOption<int>(
+          value: m.id,
+          label: _labelMaq(m),
+          subtitle: m.tipo,
+        ),
       ),
       if (!selectedExists && row.maquinariaId != null)
-        DropdownMenuItem<int>(
-          value: row.maquinariaId,
-          child: Text('[No disponible] #${row.maquinariaId}'),
+        SearchableSelectOption<int>(
+          value: row.maquinariaId!,
+          label: '[No disponible] #${row.maquinariaId}',
         ),
     ];
 
@@ -1820,22 +1829,18 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
           Row(
             children: [
               Expanded(
-                child: DropdownButtonFormField<int>(
-                  decoration: InputDecoration(
-                    labelText: 'Maquinaria',
-                    border: const OutlineInputBorder(),
-                    helperText: ocupada == null
-                        ? null
-                        : (ocupada.fuente ?? '').trim().toUpperCase() ==
-                              'BORRADOR_PREVENTIVA'
-                        ? '⛔ Ocupada por otra preventiva en borrador: ${ocupada.descripcion ?? ''}'
-                              .trim()
-                        : '⛔ Ocupada: ${ocupada.descripcion ?? ''}'.trim(),
-                  ),
-                  initialValue: row.maquinariaId,
-                  items: items,
+                child: SearchableSelectField<int>(
+                  label: 'Maquinaria',
+                  value: row.maquinariaId,
+                  prefixIcon: const Icon(Icons.precision_manufacturing),
+                  searchHint: 'Buscar maquinaria por nombre, marca o tipo',
+                  clearLabel: 'Sin maquinaria',
+                  options: options,
                   onChanged: (id) {
-                    if (id == null) return;
+                    if (id == null) {
+                      setState(() => row.maquinariaId = null);
+                      return;
+                    }
 
                     final sel = opciones.firstWhere(
                       (x) => x.id == id,
@@ -1850,7 +1855,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
                     setState(() {
                       row.maquinariaId = id;
-                      row.origen = sel.origen; // ✅ automático
+                      row.origen = sel.origen;
                     });
                   },
                 ),
@@ -1859,21 +1864,27 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                 icon: const Icon(Icons.delete_outline),
                 onPressed: () {
                   setState(() {
-                    row.tipoCtrl.dispose();
                     _maquinariaPlanRows.removeAt(index);
                   });
                 },
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: row.tipoCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Tipo / uso (opcional)',
-              border: OutlineInputBorder(),
+          if (ocupada != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  (ocupada.fuente ?? '').trim().toUpperCase() ==
+                          'BORRADOR_PREVENTIVA'
+                      ? '⛔ Ocupada por otra preventiva en borrador: ${ocupada.descripcion ?? ''}'
+                            .trim()
+                      : '⛔ Ocupada: ${ocupada.descripcion ?? ''}'.trim(),
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1881,12 +1892,13 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   Widget _buildHerramientaPlanRow(int index) {
     final row = _herramientasPlanRows[index];
+    final herramientaOptions = _buildHerramientaOptions();
     final seleccionada = row.herramientaId == null
         ? null
-        : _catalogoHerramientas.where((h) => h.herramientaId == row.herramientaId).cast<HerramientaDisponibilidadResponse?>().firstWhere(
-              (h) => h != null,
-              orElse: () => null,
-            );
+        : _catalogoHerramientas
+              .where((h) => h.herramientaId == row.herramientaId)
+              .cast<HerramientaDisponibilidadResponse?>()
+              .firstWhere((h) => h != null, orElse: () => null);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
@@ -1896,13 +1908,14 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
             children: [
               Expanded(
                 flex: 3,
-                child: DropdownButtonFormField<int>(
-                  decoration: const InputDecoration(
-                    labelText: 'Herramienta',
-                    border: OutlineInputBorder(),
-                  ),
-                  initialValue: row.herramientaId,
-                  items: _herramientaItems,
+                child: SearchableSelectField<int>(
+                  label: 'Herramienta',
+                  value: row.herramientaId,
+                  prefixIcon: const Icon(Icons.handyman_outlined),
+                  searchHint:
+                      'Buscar herramienta por nombre, unidad o categoria',
+                  clearLabel: 'Sin herramienta',
+                  options: herramientaOptions,
                   onChanged: (v) => setState(() => row.herramientaId = v),
                 ),
               ),
@@ -1921,23 +1934,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                 ),
               ),
               const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(
-                    labelText: 'Estado',
-                    border: OutlineInputBorder(),
-                  ),
-                  initialValue: row.estado ?? 'OPERATIVA',
-                  items: const [
-                    DropdownMenuItem(value: 'OPERATIVA', child: Text('Operativa')),
-                    DropdownMenuItem(value: 'DANADA', child: Text('Dañada')),
-                    DropdownMenuItem(value: 'PERDIDA', child: Text('Perdida')),
-                    DropdownMenuItem(value: 'BAJA', child: Text('Baja')),
-                  ],
-                  onChanged: (v) => setState(() => row.estado = v ?? 'OPERATIVA'),
-                ),
-              ),
               IconButton(
                 icon: const Icon(Icons.delete_outline),
                 onPressed: () {
@@ -1978,10 +1974,8 @@ class _InsumoPlanRow {
 class _MaquinariaPlanRow {
   int? maquinariaId;
   String? origen; // 'CONJUNTO' | 'EMPRESA'
-  final TextEditingController tipoCtrl;
 
-  _MaquinariaPlanRow({this.maquinariaId, String? tipoInicial})
-    : tipoCtrl = TextEditingController(text: tipoInicial ?? '');
+  _MaquinariaPlanRow({this.maquinariaId});
 }
 
 class _MaqOption {
@@ -2001,14 +1995,9 @@ class _MaqOption {
 class _HerramientaPlanRow {
   int? herramientaId;
   final TextEditingController cantidadCtrl;
-  String? estado;
 
-  _HerramientaPlanRow({
-    this.herramientaId,
-    num? cantidadInicial,
-    String? estadoInicial,
-  }) : cantidadCtrl = TextEditingController(
-         text: cantidadInicial != null ? cantidadInicial.toString() : '',
-       ),
-       estado = estadoInicial ?? 'OPERATIVA';
+  _HerramientaPlanRow({this.herramientaId, num? cantidadInicial})
+    : cantidadCtrl = TextEditingController(
+        text: cantidadInicial != null ? cantidadInicial.toString() : '',
+      );
 }

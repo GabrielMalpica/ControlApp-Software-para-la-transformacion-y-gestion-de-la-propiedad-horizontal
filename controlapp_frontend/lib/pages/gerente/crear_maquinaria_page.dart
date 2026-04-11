@@ -53,7 +53,11 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
       _tipo = m.tipo;
       _estado = m.estado;
 
-      _prop = m.propietarioTipo!;
+      _prop =
+          m.propietarioTipo ??
+          (m.conjuntoPropietarioId != null
+              ? PropietarioMaquinaria.CONJUNTO
+              : PropietarioMaquinaria.EMPRESA);
       _conjuntoPropId = m.conjuntoPropietarioId;
 
       if (_prop == PropietarioMaquinaria.CONJUNTO) {

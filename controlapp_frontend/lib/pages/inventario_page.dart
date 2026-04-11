@@ -406,12 +406,12 @@ class _InventarioPageState extends State<InventarioPage> {
               sortAscending: _sortAscending,
               columns: [
                 DataColumn(
-                  label: const Text("NAME"),
+                  label: const Text("Nombre"),
                   onSort: (i, asc) =>
                       _sort<String>(i, asc, (d) => d.nombre.toLowerCase()),
                 ),
                 DataColumn(
-                  label: const Text("CATEGORY"),
+                  label: const Text("Categoria"),
                   onSort: (i, asc) => _sort<String>(
                     i,
                     asc,
@@ -419,16 +419,16 @@ class _InventarioPageState extends State<InventarioPage> {
                   ),
                 ),
                 DataColumn(
-                  label: const Text("UNIT"),
+                  label: const Text("Unidad"),
                   onSort: (i, asc) =>
                       _sort<String>(i, asc, (d) => d.unidad.toLowerCase()),
                 ),
                 DataColumn(
                   numeric: true,
-                  label: const Text("AVAILABLE"),
+                  label: const Text("Disponible"),
                   onSort: (i, asc) => _sort<num>(i, asc, (d) => d.cantidad),
                 ),
-                const DataColumn(label: Text("STATUS")),
+                const DataColumn(label: Text("Estado")),
               ],
               source: _InventarioDataSource(data: filtrados),
             ),
@@ -480,13 +480,12 @@ class _InventarioPageState extends State<InventarioPage> {
                 setState(() => _rowsPerPage = v);
               },
               columns: const [
-                DataColumn(label: Text("NAME")),
-                DataColumn(label: Text("UNIT")),
-                DataColumn(label: Text("CONTROL")),
-                DataColumn(label: Text("OWNERSHIP")),
-                DataColumn(numeric: true, label: Text("AVAILABLE")),
-                DataColumn(label: Text("STATE")),
-                DataColumn(label: Text("ACTION")),
+                DataColumn(label: Text("Nombre")),
+                DataColumn(label: Text("Unidad")),
+                DataColumn(label: Text("Propiedad")),
+                DataColumn(numeric: true, label: Text("Disponible")),
+                DataColumn(label: Text("Estado")),
+                DataColumn(label: Text("Accion")),
               ],
               source: _HerramientaDataSource(
                 data: filtrados,
@@ -768,7 +767,9 @@ class _InventarioDataSource extends DataTableSource {
     if (index >= data.length) return null;
     final inv = data[index];
 
-    final statusTxt = inv.agotado ? "Out" : (inv.estaBajo ? "Low" : "Ok");
+    final statusTxt = inv.agotado
+        ? 'Agotado'
+        : (inv.estaBajo ? 'Stock bajo' : 'Disponible');
     final statusColor = inv.agotado
         ? Colors.black54
         : (inv.estaBajo ? AppTheme.red : AppTheme.green);
@@ -835,8 +836,8 @@ class _HerramientaDataSource extends DataTableSource {
         ? AppTheme.red
         : Colors.black54;
     final tenenciaTxt = h.tipoTenencia == TipoTenenciaHerramienta.PRESTADA
-        ? 'Prestada'
-        : 'Propia';
+        ? 'Prestada por empresa'
+        : 'Propia del conjunto';
     final tenenciaColor = h.tipoTenencia == TipoTenenciaHerramienta.PRESTADA
         ? Colors.orange.shade700
         : Colors.blueGrey;
@@ -848,7 +849,6 @@ class _HerramientaDataSource extends DataTableSource {
           Text(h.nombre, style: const TextStyle(fontWeight: FontWeight.w600)),
         ),
         DataCell(Text(h.unidad.isEmpty ? "-" : h.unidad)),
-        DataCell(Text(h.modoControl.label)),
         DataCell(
           Column(
             mainAxisAlignment: MainAxisAlignment.center,
