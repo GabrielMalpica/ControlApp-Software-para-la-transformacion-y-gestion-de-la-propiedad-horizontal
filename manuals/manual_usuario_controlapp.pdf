@@ -1,0 +1,1207 @@
+%PDF-1.4
+%
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 11 /Kids [4 0 R 6 0 R 8 0 R 10 0 R 12 0 R 14 0 R 16 0 R 18 0 R 20 0 R 22 0 R 24 0 R] >>
+endobj
+3 0 obj
+<< /Length 2153 >>
+stream
+BT
+/F1 11 Tf
+50 792 Td
+(MANUAL DE USUARIO INTEGRAL ? CONTROLAPP) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Versin del manual: 1.0) Tj
+0 -15 Td
+(Fecha: 12 de abril de 2026) Tj
+0 -15 Td
+(Producto: Control Limpieza S.A.S. \(ControlApp\)) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(TABLA DE CONTENIDO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(1. Introduccin y objetivo del manual) Tj
+0 -15 Td
+(2. Alcance funcional del sistema) Tj
+0 -15 Td
+(3. Requisitos de acceso y sesin) Tj
+0 -15 Td
+(4. Roles del sistema y permisos operativos) Tj
+0 -15 Td
+(5. Flujo general recomendado de implementacin) Tj
+0 -15 Td
+(6. Mdulo de autenticacin y seguridad) Tj
+0 -15 Td
+(7. Mdulo de usuarios y estructura organizacional) Tj
+0 -15 Td
+(8. Mdulo de conjuntos \(sedes/proyectos\)) Tj
+0 -15 Td
+(9. Mdulo de inventario \(insumos y herramientas\)) Tj
+0 -15 Td
+(10. Mdulo de solicitudes) Tj
+0 -15 Td
+(11. Mdulo de tareas correctivas) Tj
+0 -15 Td
+(12. Mdulo de tareas preventivas) Tj
+0 -15 Td
+(13. Mdulo de cronograma mensual/semanal) Tj
+0 -15 Td
+(14. Mdulo de agendas de maquinaria y herramientas) Tj
+0 -15 Td
+(15. Mdulo de compromisos / PQRS) Tj
+0 -15 Td
+(16. Mdulo de reportes y exportacin PDF) Tj
+0 -15 Td
+(17. Mdulo de notificaciones y cumpleaos) Tj
+0 -15 Td
+(18. Flujos por rol \(paso a paso\)) Tj
+0 -15 Td
+(19. Reglas operativas y buenas prcticas) Tj
+0 -15 Td
+(20. Errores frecuentes y recuperacin) Tj
+0 -15 Td
+(21. Checklist de operacin diaria y cierre mensual) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(1\) INTRODUCCIN Y OBJETIVO DEL MANUAL) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Este manual est diseado para uso operativo real y cubre el ciclo completo de trabajo de la) Tj
+0 -15 Td
+(aplicacin: configuracin inicial, creacin de usuarios, planificacin, ejecucin, aprobacin,) Tj
+0 -15 Td
+(control de recursos y explotacin de reportes.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Su propsito es que cada rol sepa:) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Qu puede hacer.) Tj
+0 -15 Td
+(- En qu orden debe hacerlo.) Tj
+0 -15 Td
+(- Qu validaciones aplica el sistema.) Tj
+0 -15 Td
+(- Cmo actuar ante incidencias.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 25 0 R >> >> /Contents 3 0 R >>
+endobj
+5 0 obj
+<< /Length 1985 >>
+stream
+BT
+/F1 11 Tf
+50 792 Td
+(2\) ALCANCE FUNCIONAL DEL SISTEMA) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(ControlApp gestiona operacin de mantenimiento/aseo por conjuntos y centraliza:) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Gestin de usuarios por rol.) Tj
+0 -15 Td
+(- Gestin de conjuntos, ubicaciones y elementos.) Tj
+0 -15 Td
+(- Inventario de insumos y herramientas.) Tj
+0 -15 Td
+(- Gestin de maquinaria y agenda de uso.) Tj
+0 -15 Td
+(- Solicitudes de recursos.) Tj
+0 -15 Td
+(- Tareas correctivas y preventivas.) Tj
+0 -15 Td
+(- Cronograma operativo mensual/semanal.) Tj
+0 -15 Td
+(- Veredictos de aprobacin/rechazo.) Tj
+0 -15 Td
+(- Reportera operativa, productividad y consumo.) Tj
+0 -15 Td
+(- Notificaciones y alertas.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(3\) REQUISITOS DE ACCESO Y SESIN) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(3.1 INICIO DE SESIN) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(1. Ingrese a la pantalla de login.) Tj
+0 -15 Td
+(2. Diligencie Correo y Contrasea.) Tj
+0 -15 Td
+(3. Haga clic en Ingresar.) Tj
+0 -15 Td
+(4. El sistema redirige automticamente segn su rol.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(3.2 RECUPERACIN DE ACCESO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Use Recuperar acceso en login cuando no recuerde credenciales.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(3.3 SEGURIDAD) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Toda llamada protegida usa token Bearer.) Tj
+0 -15 Td
+(- El token se valida en backend.) Tj
+0 -15 Td
+(- Si expira o es invlido, debe iniciar sesin de nuevo.) Tj
+0 -15 Td
+(- Existe cambio de contrasea para usuario autenticado y cambio administrado por gerente.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(4\) ROLES DEL SISTEMA Y PERMISOS OPERATIVOS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(4.1 GERENTE) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Control total corporativo:) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Crear/editar/eliminar usuarios.) Tj
+0 -15 Td
+(- Crear y administrar conjuntos.) Tj
+0 -15 Td
+(- Gestionar catlogo \(insumos, maquinaria, herramientas\).) Tj
+0 -15 Td
+(- Crear tareas correctivas.) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 25 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 1909 >>
+stream
+BT
+/F1 11 Tf
+50 792 Td
+(- Definir preventivas y generar cronogramas.) Tj
+0 -15 Td
+(- Ver reportes por conjunto y globales.) Tj
+0 -15 Td
+(- Gestionar compromisos globales y por conjunto.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(4.2 SUPERVISOR) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Control tctico de campo:) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Revisar y filtrar tareas.) Tj
+0 -15 Td
+(- Aprobar/rechazar tareas pendientes.) Tj
+0 -15 Td
+(- Gestionar solicitudes.) Tj
+0 -15 Td
+(- Consultar cronograma y recursos operativos.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(4.3 JEFE DE OPERACIONES) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Control operativo transversal:) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Revisar pendientes.) Tj
+0 -15 Td
+(- Emitir veredictos de tareas.) Tj
+0 -15 Td
+(- Supervisar solicitudes, agendas, inventario y compromisos.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(4.4 ADMINISTRADOR) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Operacin administrativa del conjunto:) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Consultar conjuntos asignados.) Tj
+0 -15 Td
+(- Gestionar PQRS/compromisos del conjunto.) Tj
+0 -15 Td
+(- Consultar inventario, cronograma y reportes del conjunto.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(4.5 OPERARIO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Ejecucin en campo:) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Ver tareas asignadas.) Tj
+0 -15 Td
+(- Iniciar/gestionar avance.) Tj
+0 -15 Td
+(- Cerrar tareas \(con observaciones e insumos usados\).) Tj
+0 -15 Td
+(- Consultar solicitudes.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(5\) FLUJO GENERAL RECOMENDADO DE IMPLEMENTACIN) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Orden sugerido para despliegue en un cliente nuevo:) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(1. Crear empresa y parmetros base.) Tj
+0 -15 Td
+(2. Crear usuarios clave \(gerente, supervisores, jefes, administradores, operarios\).) Tj
+0 -15 Td
+(3. Crear conjuntos.) Tj
+0 -15 Td
+(4. Definir ubicaciones/elementos por conjunto.) Tj
+0 -15 Td
+(5. Cargar catlogo de insumos, herramientas y maquinaria.) Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 25 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Length 1911 >>
+stream
+BT
+/F1 11 Tf
+50 792 Td
+(6. Configurar inventario inicial por conjunto.) Tj
+0 -15 Td
+(7. Definir preventivas por ubicacin/elemento.) Tj
+0 -15 Td
+(8. Generar borrador de cronograma y revisar solapes.) Tj
+0 -15 Td
+(9. Publicar ejecucin de tareas.) Tj
+0 -15 Td
+(10. Operar ciclo diario \(ejecucin ? cierre ? veredicto\).) Tj
+0 -15 Td
+(11. Revisar reportes semanales/mensuales.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(6\) MDULO DE AUTENTICACIN Y SEGURIDAD) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(FUNCIONALIDADES) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Login por correo + contrasea.) Tj
+0 -15 Td
+(- Autodeteccin de sesin al abrir la app.) Tj
+0 -15 Td
+(- Validacin de sesin con endpoint /auth/me.) Tj
+0 -15 Td
+(- Cambio de contrasea propio.) Tj
+0 -15 Td
+(- Recuperacin de contrasea.) Tj
+0 -15 Td
+(- Cambio de contrasea de terceros por gerente.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(CONSIDERACIONES) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Si aparece ?Token requerido? o ?Token invlido o expirado?, el usuario debe reingresar.) Tj
+0 -15 Td
+(- Los permisos de cada endpoint dependen del rol en token.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(7\) MDULO DE USUARIOS Y ESTRUCTURA ORGANIZACIONAL) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(OPERACIONES PRINCIPALES) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Crear usuario por rol.) Tj
+0 -15 Td
+(- Listar usuarios.) Tj
+0 -15 Td
+(- Editar usuario.) Tj
+0 -15 Td
+(- Eliminar usuario.) Tj
+0 -15 Td
+(- Asignar usuario a conjunto.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(BUENAS PRCTICAS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Definir primero supervisores y operarios antes de crear tareas.) Tj
+0 -15 Td
+(- Validar correo nico por usuario.) Tj
+0 -15 Td
+(- Mantener datos de contacto actualizados para notificaciones y soporte.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(8\) MDULO DE CONJUNTOS \(SEDES/PROYECTOS\)) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(OPERACIONES PRINCIPALES) Tj
+0 -15 Td
+() Tj
+ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 25 0 R >> >> /Contents 9 0 R >>
+endobj
+11 0 obj
+<< /Length 1734 >>
+stream
+BT
+/F1 11 Tf
+50 792 Td
+(- Crear conjunto con NIT.) Tj
+0 -15 Td
+(- Editar informacin del conjunto.) Tj
+0 -15 Td
+(- Asignar operarios al conjunto.) Tj
+0 -15 Td
+(- Consultar detalle del conjunto.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(DATOS CRTICOS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- NIT: identificador funcional usado en mltiples pantallas.) Tj
+0 -15 Td
+(- Ubicaciones y elementos: base para crear preventivas y correctivas precisas.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(9\) MDULO DE INVENTARIO \(INSUMOS Y HERRAMIENTAS\)) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(9.1 INSUMOS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Permite:) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Consultar stock del conjunto.) Tj
+0 -15 Td
+(- Ver insumos bajos.) Tj
+0 -15 Td
+(- Agregar y consumir stock.) Tj
+0 -15 Td
+(- Solicitar reposicin.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(9.2 HERRAMIENTAS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Permite:) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Ver stock por estado.) Tj
+0 -15 Td
+(- Ajustar estado \(disponible, reservado, en uso, etc.\).) Tj
+0 -15 Td
+(- Devolver prstamo de herramientas.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(RECOMENDACIONES) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Registrar consumos al cierre de tareas para mantener trazabilidad real.) Tj
+0 -15 Td
+(- Revisar insumos bajos a diario.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(10\) MDULO DE SOLICITUDES) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(El sistema maneja solicitudes de recursos, especialmente insumos, con estados.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(FLUJO ESTNDAR) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(1. Usuario operativo crea solicitud.) Tj
+0 -15 Td
+(2. Supervisor/Jefe/Gerente revisa detalle.) Tj
+0 -15 Td
+(3. Se aprueba o rechaza.) Tj
+0 -15 Td
+(4. Si se aprueba, impacta la operacin logstica.) Tj
+0 -15 Td
+() Tj
+ET
+endstream
+endobj
+12 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 25 0 R >> >> /Contents 11 0 R >>
+endobj
+13 0 obj
+<< /Length 1593 >>
+stream
+BT
+/F1 11 Tf
+50 792 Td
+(CAMPOS TPICOS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Conjunto.) Tj
+0 -15 Td
+(- Empresa.) Tj
+0 -15 Td
+(- tems solicitados.) Tj
+0 -15 Td
+(- Cantidades.) Tj
+0 -15 Td
+(- Fecha y estado.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(11\) MDULO DE TAREAS CORRECTIVAS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(CREACIN DE TAREA) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Al crear una tarea correctiva se recomienda definir:) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Conjunto.) Tj
+0 -15 Td
+(- Ubicacin y elemento.) Tj
+0 -15 Td
+(- Descripcin clara y accionable.) Tj
+0 -15 Td
+(- Prioridad.) Tj
+0 -15 Td
+(- Rango de fechas y hora de inicio.) Tj
+0 -15 Td
+(- Duracin en minutos.) Tj
+0 -15 Td
+(- Operarios asignados.) Tj
+0 -15 Td
+(- Supervisor responsable.) Tj
+0 -15 Td
+(- Recursos: maquinaria y herramientas \(si aplica\).) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(EJECUCIN Y CIERRE) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- El operario puede iniciar/avanzar/cerrar segn permisos.) Tj
+0 -15 Td
+(- En cierre se registran observaciones e insumos usados.) Tj
+0 -15 Td
+(- La tarea pasa a estados de validacin segn flujo.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(ESTADOS RELEVANTES) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- ASIGNADA) Tj
+0 -15 Td
+(- EN_PROCESO) Tj
+0 -15 Td
+(- PENDIENTE_APROBACION) Tj
+0 -15 Td
+(- APROBADA) Tj
+0 -15 Td
+(- RECHAZADA) Tj
+0 -15 Td
+(- NO_COMPLETADA) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(12\) MDULO DE TAREAS PREVENTIVAS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(QU RESUELVE?) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Automatiza rutinas recurrentes \(diarias, semanales, mensuales\), evitando omisiones.) Tj
+0 -15 Td
+() Tj
+ET
+endstream
+endobj
+14 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 25 0 R >> >> /Contents 13 0 R >>
+endobj
+15 0 obj
+<< /Length 1969 >>
+stream
+BT
+/F1 11 Tf
+50 792 Td
+(CONFIGURACIN DE UNA PREVENTIVA) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Ubicacin + elemento objetivo.) Tj
+0 -15 Td
+(- Frecuencia \(diaria/semanal/mensual\).) Tj
+0 -15 Td
+(- Responsable\(s\): operarios/supervisor.) Tj
+0 -15 Td
+(- Regla de duracin:) Tj
+0 -15 Td
+(  - Fija en minutos, o) Tj
+0 -15 Td
+(  - Por rendimiento \(unidad y tasa\).) Tj
+0 -15 Td
+(- Insumos, maquinaria y herramientas planificadas.) Tj
+0 -15 Td
+(- Opcin de dividir ejecucin en varios das.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(GENERACIN DE CRONOGRAMA) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Tras crear/editar/eliminar preventivas, el sistema puede regenerar el borrador mensual para) Tj
+0 -15 Td
+(reflejar reglas actuales.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(13\) MDULO DE CRONOGRAMA MENSUAL/SEMANAL) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(VISTAS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Mensual: panorama de carga por da.) Tj
+0 -15 Td
+(- Semanal: detalle operativo y secuencia de trabajo.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(FUNCIONALIDADES) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Filtros por tipo, estado, operario y ubicacin.) Tj
+0 -15 Td
+(- Consideracin de horarios del conjunto.) Tj
+0 -15 Td
+(- Gestin de festivos.) Tj
+0 -15 Td
+(- Cierre de tareas desde cronograma \(segn rol/permisos\).) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(OBJETIVO OPERATIVO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Detectar sobrecarga, huecos de asignacin y conflictos de agenda antes de afectar la ejecucin.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(14\) MDULO DE AGENDAS DE MAQUINARIA Y HERRAMIENTAS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(AGENDA DE MAQUINARIA) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Vista mensual por equipo.) Tj
+0 -15 Td
+(- Identificacin por estados en calendario \(entrega, actividad, reserva/devolucin segn) Tj
+0 -15 Td
+(codificacin de la pantalla\).) Tj
+0 -15 Td
+(- Diferencia visual entre equipos del conjunto y equipos con agenda compartida.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(AGENDA DE HERRAMIENTAS) Tj
+0 -15 Td
+() Tj
+ET
+endstream
+endobj
+16 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 25 0 R >> >> /Contents 15 0 R >>
+endobj
+17 0 obj
+<< /Length 1743 >>
+stream
+BT
+/F1 11 Tf
+50 792 Td
+(- Vista por herramienta y semana/grupo.) Tj
+0 -15 Td
+(- Conteo de reservas mensuales.) Tj
+0 -15 Td
+(- Filtro por conjunto para ver disponibilidad real local.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(BUENAS PRCTICAS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Revisar agenda antes de crear tareas de alta demanda.) Tj
+0 -15 Td
+(- Evitar asignar equipos en conflicto temporal.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(15\) MDULO DE COMPROMISOS / PQRS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Permite registrar compromisos y/o PQRS por conjunto y globalmente.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(USOS TPICOS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Registrar requerimientos del cliente.) Tj
+0 -15 Td
+(- Hacer seguimiento a acuerdos.) Tj
+0 -15 Td
+(- Medir cumplimiento del equipo.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(FLUJO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(1. Crear compromiso/PQRS.) Tj
+0 -15 Td
+(2. Actualizar estado/observacin.) Tj
+0 -15 Td
+(3. Cerrar o eliminar cuando corresponda.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(16\) MDULO DE REPORTES Y EXPORTACIN PDF) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(CAPACIDADES) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- KPIs del periodo.) Tj
+0 -15 Td
+(- Serie diaria por estado.) Tj
+0 -15 Td
+(- Resumen por conjunto.) Tj
+0 -15 Td
+(- Resumen por operario.) Tj
+0 -15 Td
+(- Uso de insumos.) Tj
+0 -15 Td
+(- Top de maquinaria y herramientas.) Tj
+0 -15 Td
+(- Detalle mensual de tareas.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(EXPORTABLES) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Informes en PDF desde dashboard de reportes.) Tj
+0 -15 Td
+(- Reportes de apoyo a comit operativo y cierre mensual.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(RECOMENDACIN) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(Definir un corte fijo \(semanal/mensual\) para comparar periodos homogneos.) Tj
+ET
+endstream
+endobj
+18 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 25 0 R >> >> /Contents 17 0 R >>
+endobj
+19 0 obj
+<< /Length 2018 >>
+stream
+BT
+/F1 11 Tf
+50 792 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(17\) MDULO DE NOTIFICACIONES Y CUMPLEAOS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(NOTIFICACIONES) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Conteo de no ledas.) Tj
+0 -15 Td
+(- Marcado individual o masivo como ledas.) Tj
+0 -15 Td
+(- Historial consultable por panel lateral/modal.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(CUMPLEAOS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Seccin dedicada para mes actual, anual y da.) Tj
+0 -15 Td
+(- til para clima laboral y recordatorios internos.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(18\) FLUJOS POR ROL \(PASO A PASO\)) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(18.1 GERENTE ? FLUJO RECOMENDADO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(1. Ingresar al panel de gerente.) Tj
+0 -15 Td
+(2. Seleccionar conjunto activo.) Tj
+0 -15 Td
+(3. Crear o actualizar usuarios faltantes.) Tj
+0 -15 Td
+(4. Verificar catlogo de recursos \(insumos/herramientas/maquinaria\).) Tj
+0 -15 Td
+(5. Configurar preventivas.) Tj
+0 -15 Td
+(6. Crear correctivas urgentes si existen novedades.) Tj
+0 -15 Td
+(7. Revisar solicitudes pendientes.) Tj
+0 -15 Td
+(8. Revisar cronograma del mes y semana.) Tj
+0 -15 Td
+(9. Analizar reportes y descargar PDF.) Tj
+0 -15 Td
+(10. Actualizar compromisos/PQRS de seguimiento.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(18.2 SUPERVISOR ? FLUJO RECOMENDADO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(1. Entrar a panel supervisor.) Tj
+0 -15 Td
+(2. Revisar tareas del da y pendientes.) Tj
+0 -15 Td
+(3. Aprobar/rechazar cierres o veredictos pendientes.) Tj
+0 -15 Td
+(4. Gestionar solicitudes entrantes.) Tj
+0 -15 Td
+(5. Confirmar disponibilidad de inventario y recursos.) Tj
+0 -15 Td
+(6. Ajustar planeacin con cronograma si hay cambios.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(18.3 JEFE DE OPERACIONES ? FLUJO RECOMENDADO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(1. Revisar pendientes crticos.) Tj
+0 -15 Td
+(2. Emitir veredictos.) Tj
+0 -15 Td
+(3. Priorizar atencin de solicitudes.) Tj
+0 -15 Td
+(4. Monitorear uso de maquinaria/herramientas.) Tj
+0 -15 Td
+(5. Revisar compromisos por conjunto.) Tj
+ET
+endstream
+endobj
+20 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 25 0 R >> >> /Contents 19 0 R >>
+endobj
+21 0 obj
+<< /Length 2170 >>
+stream
+BT
+/F1 11 Tf
+50 792 Td
+() Tj
+0 -15 Td
+(18.4 ADMINISTRADOR ? FLUJO RECOMENDADO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(1. Ingresar al conjunto asignado.) Tj
+0 -15 Td
+(2. Registrar y dar seguimiento a PQRS.) Tj
+0 -15 Td
+(3. Monitorear inventario.) Tj
+0 -15 Td
+(4. Revisar cronograma del conjunto.) Tj
+0 -15 Td
+(5. Consultar reportes para comit con gerente/supervisor.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(18.5 OPERARIO ? FLUJO RECOMENDADO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(1. Revisar tareas asignadas \(hoy/pendientes\).) Tj
+0 -15 Td
+(2. Iniciar y ejecutar actividad.) Tj
+0 -15 Td
+(3. Registrar novedades.) Tj
+0 -15 Td
+(4. Cerrar tarea incluyendo insumos usados y observaciones.) Tj
+0 -15 Td
+(5. Revisar tareas rechazadas/no completadas para reproceso.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(19\) REGLAS OPERATIVAS Y BUENAS PRCTICAS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Nunca crear tareas sin operario responsable.) Tj
+0 -15 Td
+(- Evitar descripciones ambiguas \(?hacer mantenimiento?\); usar accin + objeto + ubicacin.) Tj
+0 -15 Td
+(- Registrar consumo real de insumos para evitar desbalances de inventario.) Tj
+0 -15 Td
+(- Validar agenda de maquinaria/herramientas antes de asignar tareas crticas.) Tj
+0 -15 Td
+(- Revisar estados RECHAZADA/NO_COMPLETADA al cierre de jornada.) Tj
+0 -15 Td
+(- Mantener higiene de datos en usuarios, ubicaciones y elementos.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(20\) ERRORES FRECUENTES Y RECUPERACIN) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(20.1 NO AUTENTICADO / TOKEN INVLIDO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Causa: sesin expirada o token ausente.) Tj
+0 -15 Td
+(- Accin: cerrar sesin e ingresar nuevamente.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(20.2 NO AUTORIZADO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Causa: el rol no tiene permiso para ese recurso.) Tj
+0 -15 Td
+(- Accin: solicitar ejecucin al rol correspondiente o reasignacin.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(20.3 CONFLICTOS OPERATIVOS DE RECURSOS) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- Causa: maquinaria/herramienta ocupada en el rango.) Tj
+0 -15 Td
+(- Accin: cambiar recurso, ajustar horario o reprogramar.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(20.4 DATOS OBLIGATORIOS FALTANTES) Tj
+0 -15 Td
+() Tj
+ET
+endstream
+endobj
+22 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 25 0 R >> >> /Contents 21 0 R >>
+endobj
+23 0 obj
+<< /Length 1446 >>
+stream
+BT
+/F1 11 Tf
+50 792 Td
+(- Causa: validaciones de backend \(campos requeridos\).) Tj
+0 -15 Td
+(- Accin: completar formulario y reenviar.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(21\) CHECKLIST DE OPERACIN DIARIA Y CIERRE MENSUAL) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(21.1 CIERRE DIARIO) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- [ ] Revisar tareas pendientes del da.) Tj
+0 -15 Td
+(- [ ] Validar cierres pendientes de aprobacin.) Tj
+0 -15 Td
+(- [ ] Actualizar compromisos/PQRS crticos.) Tj
+0 -15 Td
+(- [ ] Revisar inventario bajo.) Tj
+0 -15 Td
+(- [ ] Confirmar agenda de recursos para maana.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(21.2 CIERRE MENSUAL) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(- [ ] Verificar cumplimiento preventivas vs ejecutadas.) Tj
+0 -15 Td
+(- [ ] Revisar tareas rechazadas/no completadas.) Tj
+0 -15 Td
+(- [ ] Consolidar consumo de insumos.) Tj
+0 -15 Td
+(- [ ] Revisar top uso maquinaria/herramientas.) Tj
+0 -15 Td
+(- [ ] Descargar reporte PDF y socializar con direccin.) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(---) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(CONCLUSIN) Tj
+0 -15 Td
+() Tj
+0 -15 Td
+(ControlApp es un sistema integral de operacin con enfoque en trazabilidad, disciplina de) Tj
+0 -15 Td
+(ejecucin y control de recursos. Cuando se sigue el orden recomendado \(configuracin ?) Tj
+0 -15 Td
+(planificacin ? ejecucin ? validacin ? anlisis\), el sistema entrega visibilidad completa) Tj
+0 -15 Td
+(para la toma de decisiones por rol y por conjunto.) Tj
+ET
+endstream
+endobj
+24 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 25 0 R >> >> /Contents 23 0 R >>
+endobj
+25 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 26
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000190 00000 n 
+0000002395 00000 n 
+0000002522 00000 n 
+0000004559 00000 n 
+0000004686 00000 n 
+0000006647 00000 n 
+0000006774 00000 n 
+0000008737 00000 n 
+0000008865 00000 n 
+0000010652 00000 n 
+0000010781 00000 n 
+0000012427 00000 n 
+0000012556 00000 n 
+0000014578 00000 n 
+0000014707 00000 n 
+0000016503 00000 n 
+0000016632 00000 n 
+0000018703 00000 n 
+0000018832 00000 n 
+0000021055 00000 n 
+0000021184 00000 n 
+0000022683 00000 n 
+0000022812 00000 n 
+trailer
+<< /Size 26 /Root 1 0 R >>
+startxref
+22883
+%%EOF
