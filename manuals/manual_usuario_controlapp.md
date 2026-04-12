@@ -1,514 +1,767 @@
-# Manual de Usuario Integral — ControlApp
+# Manual de Usuario Completo — ControlApp
 
-**Versión del manual:** 1.0  
-**Fecha:** 12 de abril de 2026  
 **Producto:** Control Limpieza S.A.S. (ControlApp)  
+**Versión del manual:** 2.0 (revisión integral)  
+**Fecha:** 12 de abril de 2026  
+**Audiencia:** Gerente, Supervisor, Jefe de Operaciones, Administrador y Operario
 
 ---
 
-## Tabla de contenido
+## Índice general
 
-1. Introducción y objetivo del manual  
-2. Alcance funcional del sistema  
-3. Requisitos de acceso y sesión  
-4. Roles del sistema y permisos operativos  
-5. Flujo general recomendado de implementación  
-6. Módulo de autenticación y seguridad  
-7. Módulo de usuarios y estructura organizacional  
-8. Módulo de conjuntos (sedes/proyectos)  
-9. Módulo de inventario (insumos y herramientas)  
-10. Módulo de solicitudes  
-11. Módulo de tareas correctivas  
-12. Módulo de tareas preventivas  
-13. Módulo de cronograma mensual/semanal  
-14. Módulo de agendas de maquinaria y herramientas  
-15. Módulo de compromisos / PQRS  
-16. Módulo de reportes y exportación PDF  
-17. Módulo de notificaciones y cumpleaños  
-18. Flujos por rol (paso a paso)  
-19. Reglas operativas y buenas prácticas  
-20. Errores frecuentes y recuperación  
-21. Checklist de operación diaria y cierre mensual  
-
----
-
-## 1) Introducción y objetivo del manual
-
-Este manual está diseñado para uso operativo real y cubre el ciclo completo de trabajo de la aplicación: configuración inicial, creación de usuarios, planificación, ejecución, aprobación, control de recursos y explotación de reportes.
-
-Su propósito es que cada rol sepa:
-
-- Qué puede hacer.
-- En qué orden debe hacerlo.
-- Qué validaciones aplica el sistema.
-- Cómo actuar ante incidencias.
+1. Propósito del manual
+2. ¿Qué es ControlApp y qué resuelve?
+3. Roles del sistema y alcance real
+4. Flujo recomendado de implementación (orden correcto)
+5. Acceso, inicio de sesión y seguridad
+6. Configuración inicial (solo Gerente)
+7. Gestión de usuarios (crear, editar, eliminar, reasignar)
+8. Gestión de conjuntos (crear y administrar)
+9. Gestión de ubicaciones y elementos
+10. Gestión de inventario de insumos
+11. Gestión de herramientas y stock por estado
+12. Gestión de maquinaria
+13. Solicitudes (insumos/maquinaria/tareas)
+14. Tareas correctivas (ciclo completo)
+15. Tareas preventivas (definición y automatización)
+16. Cronograma (mensual y semanal)
+17. Agenda de maquinaria
+18. Agenda de herramientas
+19. Compromisos / PQRS
+20. Reportes, tableros y exportables PDF
+21. Notificaciones y cumpleaños
+22. Flujos detallados por rol (paso a paso)
+23. Reglas operativas críticas
+24. Errores frecuentes y cómo resolverlos
+25. Checklist diario, semanal y mensual
+26. Glosario rápido
 
 ---
 
-## 2) Alcance funcional del sistema
+## 1) Propósito del manual
 
-ControlApp gestiona operación de mantenimiento/aseo por conjuntos y centraliza:
+Este documento explica **cómo usar la aplicación en su totalidad**, no solo qué módulos existen.  
+Aquí encontrará instrucciones completas para ejecutar los procesos principales:
 
-- Gestión de usuarios por rol.
-- Gestión de conjuntos, ubicaciones y elementos.
-- Inventario de insumos y herramientas.
-- Gestión de maquinaria y agenda de uso.
-- Solicitudes de recursos.
-- Tareas correctivas y preventivas.
-- Cronograma operativo mensual/semanal.
-- Veredictos de aprobación/rechazo.
-- Reportería operativa, productividad y consumo.
-- Notificaciones y alertas.
+- Crear usuarios.
+- Crear conjuntos.
+- Configurar inventarios y recursos.
+- Crear tareas correctivas y preventivas.
+- Programar, ejecutar, cerrar y aprobar tareas.
+- Gestionar solicitudes.
+- Controlar agendas de maquinaria y herramientas.
+- Generar reportes de gestión.
 
----
-
-## 3) Requisitos de acceso y sesión
-
-### 3.1 Inicio de sesión
-
-1. Ingrese a la pantalla de login.
-2. Diligencie **Correo** y **Contraseña**.
-3. Haga clic en **Ingresar**.
-4. El sistema redirige automáticamente según su rol.
-
-### 3.2 Recuperación de acceso
-
-Use **Recuperar acceso** en login cuando no recuerde credenciales.
-
-### 3.3 Seguridad
-
-- Toda llamada protegida usa token Bearer.
-- El token se valida en backend.
-- Si expira o es inválido, debe iniciar sesión de nuevo.
-- Existe cambio de contraseña para usuario autenticado y cambio administrado por gerente.
+> Objetivo: que cualquier equipo pueda operar ControlApp correctamente siguiendo un orden claro y sin improvisación.
 
 ---
 
-## 4) Roles del sistema y permisos operativos
+## 2) ¿Qué es ControlApp y qué resuelve?
 
-### 4.1 Gerente
+ControlApp es una plataforma de gestión operativa para servicios de aseo, mantenimiento, jardinería, piscina y tareas locativas en conjuntos.
 
-Control total corporativo:
+Centraliza:
 
-- Crear/editar/eliminar usuarios.
-- Crear y administrar conjuntos.
-- Gestionar catálogo (insumos, maquinaria, herramientas).
+- Planeación (preventivas y cronogramas).
+- Ejecución (tareas de campo por operarios).
+- Control (aprobaciones y veredictos).
+- Recursos (insumos, herramientas y maquinaria).
+- Seguimiento (compromisos, PQRS, notificaciones).
+- Medición (KPIs y reportes).
+
+---
+
+## 3) Roles del sistema y alcance real
+
+### 3.1 Gerente
+
+Rol con mayor alcance. Puede:
+
+- Crear empresa, conjuntos y usuarios.
+- Asignar usuarios por rol y por conjunto.
+- Gestionar catálogos de insumos, herramientas y maquinaria.
 - Crear tareas correctivas.
 - Definir preventivas y generar cronogramas.
-- Ver reportes por conjunto y globales.
+- Revisar reportes globales y por conjunto.
 - Gestionar compromisos globales y por conjunto.
 
-### 4.2 Supervisor
+### 3.2 Supervisor
 
-Control táctico de campo:
+Rol de control táctico diario. Puede:
 
-- Revisar y filtrar tareas.
-- Aprobar/rechazar tareas pendientes.
+- Ver tareas del conjunto.
+- Emitir veredictos de tareas (aprobación/rechazo).
 - Gestionar solicitudes.
-- Consultar cronograma y recursos operativos.
+- Revisar cronograma, inventario y agendas.
 
-### 4.3 Jefe de Operaciones
+### 3.3 Jefe de Operaciones
 
-Control operativo transversal:
+Rol de coordinación transversal. Puede:
 
-- Revisar pendientes.
+- Atender pendientes operativos.
 - Emitir veredictos de tareas.
-- Supervisar solicitudes, agendas, inventario y compromisos.
+- Gestionar solicitudes y compromisos.
+- Revisar inventario, cronograma y agendas globales.
 
-### 4.4 Administrador
+### 3.4 Administrador
 
-Operación administrativa del conjunto:
+Rol administrativo del conjunto asignado. Puede:
 
-- Consultar conjuntos asignados.
-- Gestionar PQRS/compromisos del conjunto.
+- Gestionar PQRS/compromisos de su conjunto.
 - Consultar inventario, cronograma y reportes del conjunto.
 
-### 4.5 Operario
+### 3.5 Operario
 
-Ejecución en campo:
+Rol ejecutor en campo. Puede:
 
-- Ver tareas asignadas.
-- Iniciar/gestionar avance.
-- Cerrar tareas (con observaciones e insumos usados).
-- Consultar solicitudes.
-
----
-
-## 5) Flujo general recomendado de implementación
-
-Orden sugerido para despliegue en un cliente nuevo:
-
-1. Crear empresa y parámetros base.
-2. Crear usuarios clave (gerente, supervisores, jefes, administradores, operarios).
-3. Crear conjuntos.
-4. Definir ubicaciones/elementos por conjunto.
-5. Cargar catálogo de insumos, herramientas y maquinaria.
-6. Configurar inventario inicial por conjunto.
-7. Definir preventivas por ubicación/elemento.
-8. Generar borrador de cronograma y revisar solapes.
-9. Publicar ejecución de tareas.
-10. Operar ciclo diario (ejecución → cierre → veredicto).
-11. Revisar reportes semanales/mensuales.
+- Consultar tareas asignadas.
+- Iniciar/ejecutar/cerrar tareas.
+- Registrar observaciones e insumos usados.
+- Consultar solicitudes asociadas a su operación.
 
 ---
 
-## 6) Módulo de autenticación y seguridad
+## 4) Flujo recomendado de implementación (orden correcto)
 
-### Funcionalidades
+Para usar el sistema sin bloqueos, siga este orden:
 
-- Login por correo + contraseña.
-- Autodetección de sesión al abrir la app.
-- Validación de sesión con endpoint **/auth/me**.
-- Cambio de contraseña propio.
-- Recuperación de contraseña.
-- Cambio de contraseña de terceros por gerente.
-
-### Consideraciones
-
-- Si aparece “Token requerido” o “Token inválido o expirado”, el usuario debe reingresar.
-- Los permisos de cada endpoint dependen del rol en token.
-
----
-
-## 7) Módulo de usuarios y estructura organizacional
-
-### Operaciones principales
-
-- Crear usuario por rol.
-- Listar usuarios.
-- Editar usuario.
-- Eliminar usuario.
-- Asignar usuario a conjunto.
-
-### Buenas prácticas
-
-- Definir primero supervisores y operarios antes de crear tareas.
-- Validar correo único por usuario.
-- Mantener datos de contacto actualizados para notificaciones y soporte.
+1. **Crear empresa** (si aplica en despliegue inicial).
+2. **Crear usuarios clave** (gerente/supervisor/jefe/administrador/operarios).
+3. **Crear conjuntos**.
+4. **Configurar ubicaciones y elementos** por conjunto.
+5. **Cargar catálogos** de insumos/herramientas/maquinaria.
+6. **Cargar inventario inicial** del conjunto.
+7. **Definir preventivas** por ubicación y elemento.
+8. **Generar borrador de cronograma** y validar disponibilidad.
+9. **Crear correctivas** cuando existan novedades.
+10. **Ejecutar ciclo diario:** asignación → ejecución → cierre → veredicto.
+11. **Revisar reportes** semanal y mensualmente.
 
 ---
 
-## 8) Módulo de conjuntos (sedes/proyectos)
+## 5) Acceso, inicio de sesión y seguridad
 
-### Operaciones principales
+## 5.1 Iniciar sesión
 
-- Crear conjunto con NIT.
-- Editar información del conjunto.
-- Asignar operarios al conjunto.
-- Consultar detalle del conjunto.
+1. Abra la pantalla de login.
+2. Ingrese **Correo** y **Contraseña**.
+3. Pulse **Ingresar**.
+4. El sistema redirige al panel correspondiente al rol.
 
-### Datos críticos
+## 5.2 Recuperar contraseña
 
-- NIT: identificador funcional usado en múltiples pantallas.
-- Ubicaciones y elementos: base para crear preventivas y correctivas precisas.
+1. En login, pulse **Recuperar acceso**.
+2. Ingrese correo e identificación solicitada.
+3. Defina nueva contraseña segura.
+4. Vuelva a iniciar sesión.
 
----
+## 5.3 Cambiar contraseña autenticado
 
-## 9) Módulo de inventario (insumos y herramientas)
+1. En cualquier panel, pulse ícono de candado (**Cambiar contraseña**).
+2. Ingrese contraseña actual.
+3. Ingrese nueva contraseña.
+4. Confirme y guarde.
 
-## 9.1 Insumos
+## 5.4 Reglas de seguridad
 
-Permite:
-
-- Consultar stock del conjunto.
-- Ver insumos bajos.
-- Agregar y consumir stock.
-- Solicitar reposición.
-
-## 9.2 Herramientas
-
-Permite:
-
-- Ver stock por estado.
-- Ajustar estado (disponible, reservado, en uso, etc.).
-- Devolver préstamo de herramientas.
-
-### Recomendaciones
-
-- Registrar consumos al cierre de tareas para mantener trazabilidad real.
-- Revisar insumos bajos a diario.
+- Si el token expira, el sistema solicitará autenticación nuevamente.
+- Si un rol no tiene permiso, mostrará “No autorizado”.
+- No comparta credenciales entre usuarios.
 
 ---
 
-## 10) Módulo de solicitudes
+## 6) Configuración inicial (solo Gerente)
 
-El sistema maneja solicitudes de recursos, especialmente insumos, con estados.
+Este bloque se ejecuta una sola vez por cliente o en aperturas de nuevos conjuntos.
 
-### Flujo estándar
+## 6.1 Crear empresa (cuando aplique)
 
-1. Usuario operativo crea solicitud.
-2. Supervisor/Jefe/Gerente revisa detalle.
-3. Se aprueba o rechaza.
-4. Si se aprueba, impacta la operación logística.
+1. Ingrese al panel de Gerente.
+2. Abra la opción de configuración de empresa.
+3. Registre datos principales (NIT, nombre, parámetros).
+4. Guarde y valide respuesta exitosa.
 
-### Campos típicos
+## 6.2 Ajustar límites de operación
 
-- Conjunto.
-- Empresa.
-- Ítems solicitados.
-- Cantidades.
-- Fecha y estado.
+1. Defina límites de tiempo semanales (si el cliente lo requiere).
+2. Ajuste horarios operativos y descansos por conjunto.
+3. Verifique que los parámetros queden consistentes con el cronograma.
 
 ---
 
-## 11) Módulo de tareas correctivas
+## 7) Gestión de usuarios (crear, editar, eliminar, reasignar)
 
-### Creación de tarea
+## 7.1 Crear un usuario
 
-Al crear una tarea correctiva se recomienda definir:
+1. En panel Gerente, ingrese a **Usuarios**.
+2. Pulse **Crear usuario**.
+3. Diligencie campos mínimos:
+   - Nombre completo.
+   - Correo (único).
+   - Documento/identificación.
+   - Rol.
+   - Datos de contacto.
+4. Guarde.
+5. Si aplica, asigne conjunto(s) al usuario.
 
-- Conjunto.
-- Ubicación y elemento.
-- Descripción clara y accionable.
-- Prioridad.
-- Rango de fechas y hora de inicio.
-- Duración en minutos.
-- Operarios asignados.
-- Supervisor responsable.
-- Recursos: maquinaria y herramientas (si aplica).
+### Recomendación
 
-### Ejecución y cierre
+Cree primero **supervisores y operarios** antes de crear tareas.
 
-- El operario puede iniciar/avanzar/cerrar según permisos.
-- En cierre se registran observaciones e insumos usados.
-- La tarea pasa a estados de validación según flujo.
+## 7.2 Editar usuario
 
-### Estados relevantes
+1. Busque usuario por nombre/correo.
+2. Pulse **Editar**.
+3. Ajuste datos necesarios (rol, contacto, estado, etc.).
+4. Guarde y confirme.
 
-- ASIGNADA
-- EN_PROCESO
-- PENDIENTE_APROBACION
-- APROBADA
-- RECHAZADA
-- NO_COMPLETADA
+## 7.3 Eliminar usuario
 
----
+1. Desde listado, pulse **Eliminar**.
+2. Confirme la acción.
+3. Revise impactos:
+   - tareas futuras,
+   - asignaciones vigentes,
+   - historial.
 
-## 12) Módulo de tareas preventivas
+## 7.4 Cambiar contraseña de otro usuario (Gerente)
 
-### ¿Qué resuelve?
+1. Ubique al usuario objetivo.
+2. Seleccione acción **Cambiar contraseña**.
+3. Defina nueva clave robusta.
+4. Informe al usuario para primer acceso.
 
-Automatiza rutinas recurrentes (diarias, semanales, mensuales), evitando omisiones.
+## 7.5 Reasignar en bloque (cuando haya rotación)
 
-### Configuración de una preventiva
-
-- Ubicación + elemento objetivo.
-- Frecuencia (diaria/semanal/mensual).
-- Responsable(s): operarios/supervisor.
-- Regla de duración:
-  - Fija en minutos, o
-  - Por rendimiento (unidad y tasa).
-- Insumos, maquinaria y herramientas planificadas.
-- Opción de dividir ejecución en varios días.
-
-### Generación de cronograma
-
-Tras crear/editar/eliminar preventivas, el sistema puede regenerar el borrador mensual para reflejar reglas actuales.
+1. Identifique conjuntos afectados.
+2. Use flujos de reemplazo para administrador/supervisor/operario.
+3. Valide que no queden conjuntos sin responsable.
 
 ---
 
-## 13) Módulo de cronograma mensual/semanal
+## 8) Gestión de conjuntos (crear y administrar)
 
-### Vistas
+## 8.1 Crear un conjunto
 
-- Mensual: panorama de carga por día.
-- Semanal: detalle operativo y secuencia de trabajo.
+1. En panel Gerente, vaya a **Conjuntos**.
+2. Pulse **Crear conjunto**.
+3. Registre:
+   - NIT del conjunto.
+   - Nombre.
+   - Dirección.
+   - Correo/medios de contacto.
+   - Tipo de servicio.
+4. Guarde.
 
-### Funcionalidades
+## 8.2 Editar conjunto
 
-- Filtros por tipo, estado, operario y ubicación.
-- Consideración de horarios del conjunto.
-- Gestión de festivos.
-- Cierre de tareas desde cronograma (según rol/permisos).
+1. Abra el detalle del conjunto.
+2. Pulse **Editar**.
+3. Actualice datos (servicios, consignas, valor agregado).
+4. Guarde.
 
-### Objetivo operativo
+## 8.3 Asignar operarios al conjunto
 
-Detectar sobrecarga, huecos de asignación y conflictos de agenda antes de afectar la ejecución.
+1. En detalle del conjunto, abra **Operarios**.
+2. Seleccione usuarios disponibles.
+3. Confirme asignación.
+4. Valide que aparezcan en filtros de creación de tareas.
 
----
+## 8.4 Eliminar conjunto
 
-## 14) Módulo de agendas de maquinaria y herramientas
+Solo cuando ya no se opere allí.
 
-### Agenda de maquinaria
-
-- Vista mensual por equipo.
-- Identificación por estados en calendario (entrega, actividad, reserva/devolución según codificación de la pantalla).
-- Diferencia visual entre equipos del conjunto y equipos con agenda compartida.
-
-### Agenda de herramientas
-
-- Vista por herramienta y semana/grupo.
-- Conteo de reservas mensuales.
-- Filtro por conjunto para ver disponibilidad real local.
-
-### Buenas prácticas
-
-- Revisar agenda antes de crear tareas de alta demanda.
-- Evitar asignar equipos en conflicto temporal.
+1. Verifique que no existan tareas activas pendientes.
+2. Exporte respaldos/reportes necesarios.
+3. Ejecute eliminación con confirmación.
 
 ---
 
-## 15) Módulo de compromisos / PQRS
+## 9) Gestión de ubicaciones y elementos
 
-Permite registrar compromisos y/o PQRS por conjunto y globalmente.
+> Sin ubicaciones/elementos bien definidos, las tareas pierden trazabilidad.
 
-### Usos típicos
+## 9.1 Crear ubicación
 
-- Registrar requerimientos del cliente.
-- Hacer seguimiento a acuerdos.
-- Medir cumplimiento del equipo.
+1. Ingrese al módulo del conjunto.
+2. Abra **Ubicaciones**.
+3. Pulse **Agregar ubicación**.
+4. Ingrese nombre descriptivo (ej. “Torre A - Lobby”).
+5. Guarde.
 
-### Flujo
+## 9.2 Crear elemento dentro de ubicación
 
-1. Crear compromiso/PQRS.
-2. Actualizar estado/observación.
-3. Cerrar o eliminar cuando corresponda.
+1. Entre a la ubicación.
+2. Pulse **Agregar elemento**.
+3. Ingrese nombre del elemento (ej. “Vidrio puerta principal”).
+4. Guarde.
+
+## 9.3 Estructura recomendada
+
+- Ubicación: zona física macro.
+- Elemento: punto puntual de intervención.
 
 ---
 
-## 16) Módulo de reportes y exportación PDF
+## 10) Gestión de inventario de insumos
 
-### Capacidades
+## 10.1 Ver inventario del conjunto
 
-- KPIs del periodo.
+1. Abra **Inventario**.
+2. Seleccione pestaña **Insumos**.
+3. Revise existencias, categoría y unidad.
+
+## 10.2 Registrar entrada de insumos
+
+1. Pulse **Agregar stock**.
+2. Seleccione insumo del catálogo.
+3. Ingrese cantidad.
+4. Confirme movimiento.
+
+## 10.3 Registrar consumo de insumos
+
+1. Pulse **Consumir stock**.
+2. Seleccione insumo y cantidad.
+3. Registre motivo (si lo pide el formulario).
+4. Guarde.
+
+## 10.4 Revisar insumos bajos
+
+1. Use filtro **Bajo stock / agotados**.
+2. Identifique prioridad de reposición.
+3. Genere solicitud de insumos desde el mismo flujo.
+
+---
+
+## 11) Gestión de herramientas y stock por estado
+
+## 11.1 Ver stock de herramientas
+
+1. En Inventario, cambie a pestaña **Herramientas**.
+2. Revise columnas:
+   - nombre,
+   - cantidad,
+   - estado,
+   - modo de control,
+   - tenencia/origen.
+
+## 11.2 Cambiar estado de herramienta
+
+1. Seleccione herramienta.
+2. Pulse **Cambiar estado**.
+3. Indique cantidad y nuevo estado.
+4. Confirme movimiento.
+
+## 11.3 Devolver préstamo al origen
+
+1. Seleccione herramienta prestada.
+2. Pulse **Devolver**.
+3. Ingrese cantidad a devolver.
+4. Confirme y verifique actualización de stock.
+
+---
+
+## 12) Gestión de maquinaria
+
+## 12.1 Registrar maquinaria en catálogo
+
+1. Abra opción **Crear maquinaria**.
+2. Diligencie:
+   - nombre,
+   - tipo,
+   - estado,
+   - propietario (empresa/conjunto),
+   - tenencia.
+3. Guarde.
+
+## 12.2 Editar maquinaria
+
+1. Vaya a listado de maquinaria.
+2. Pulse **Editar**.
+3. Actualice estado, observación o metadatos.
+4. Guarde.
+
+## 12.3 Disponibilidad
+
+Antes de asignar una tarea:
+
+1. Consulte disponibilidad en rango de fechas.
+2. Revise agenda de ese equipo.
+3. Si hay conflicto, cambie equipo o reprogramación.
+
+---
+
+## 13) Solicitudes (insumos/maquinaria/tareas)
+
+## 13.1 Solicitud de insumos (flujo completo)
+
+1. Ingrese a **Solicitud de insumos**.
+2. Revise recomendados por bajo stock.
+3. Agregue ítems al carrito (cantidad por insumo).
+4. Envíe solicitud.
+5. Supervisor/Jefe/Gerente revisa detalle y aprueba/rechaza.
+
+## 13.2 Gestión de solicitudes pendientes
+
+1. Abra módulo **Solicitudes**.
+2. Filtre por estado (**Pendiente**, **Aprobada**).
+3. Abra detalle de cada solicitud.
+4. Aplique acción:
+   - **Aprobar** (habilita reposición),
+   - **Rechazar** (dejar observación operativa).
+
+## 13.3 Solicitudes de maquinaria y tareas
+
+Aplican cuando el rol administrativo requiere escalamiento operativo.
+
+- Registrar necesidad.
+- Adjuntar contexto.
+- Dar seguimiento al estado.
+
+---
+
+## 14) Tareas correctivas (ciclo completo)
+
+## 14.1 Crear tarea correctiva
+
+1. Entre a **Crear tarea**.
+2. Seleccione conjunto.
+3. Seleccione ubicación y elemento.
+4. Ingrese descripción precisa (acción + objeto + ubicación).
+5. Defina prioridad.
+6. Defina fecha inicio, fecha fin y hora de inicio.
+7. Defina duración en minutos.
+8. Seleccione operario(s).
+9. Seleccione supervisor responsable.
+10. Seleccione maquinaria/herramientas requeridas.
+11. Guarde.
+
+## 14.2 Reemplazos automáticos y validaciones
+
+Algunas reglas pueden:
+
+- Reemplazar preventivas de baja prioridad.
+- Marcar tareas afectadas como no completadas.
+- Bloquear por conflicto de disponibilidad.
+
+## 14.3 Estados de una tarea
+
+- **ASIGNADA:** creada y programada.
+- **EN_PROCESO:** ejecución en curso.
+- **PENDIENTE_APROBACION:** operario cerró, falta veredicto.
+- **APROBADA:** cierre validado.
+- **RECHAZADA:** requiere ajuste/reproceso.
+- **NO_COMPLETADA:** no se logró finalizar según criterio operativo.
+
+## 14.4 Cerrar tarea (Operario)
+
+1. Abra tarea asignada.
+2. Pulse **Cerrar tarea**.
+3. Diligencie observaciones finales.
+4. Registre insumos usados.
+5. Envíe cierre.
+
+## 14.5 Veredicto (Supervisor/Jefe)
+
+1. Abra lista de pendientes de aprobación.
+2. Revise evidencia, tiempos, observaciones y consumos.
+3. Emita veredicto:
+   - Aprobar,
+   - Rechazar (con motivo claro).
+
+---
+
+## 15) Tareas preventivas (definición y automatización)
+
+## 15.1 Crear definición preventiva
+
+1. Entre a **Preventivas**.
+2. Pulse **Crear preventiva**.
+3. Defina:
+   - descripción,
+   - ubicación,
+   - elemento,
+   - frecuencia (diaria/semanal/mensual),
+   - operarios,
+   - supervisor,
+   - prioridad.
+4. Defina duración:
+   - fija en minutos, o
+   - por rendimiento (unidad + tasa).
+5. Configure recursos requeridos (insumos, maquinaria, herramientas).
+6. (Opcional) active división en varios días.
+7. Guarde.
+
+## 15.2 Editar o eliminar preventiva
+
+1. Desde listado, seleccione preventiva.
+2. Edite o elimine.
+3. Regenerar borrador de cronograma para que refleje cambios.
+
+## 15.3 Generar cronograma mensual desde preventivas
+
+1. Pulse **Generar cronograma mensual**.
+2. Defina mes/año objetivo.
+3. Revise cantidad de tareas creadas.
+4. Valide conflictos y ajuste.
+
+---
+
+## 16) Cronograma (mensual y semanal)
+
+## 16.1 Vista mensual
+
+Uso recomendado:
+
+- detectar sobrecarga por día,
+- validar distribución por operario,
+- revisar cumplimiento por estado.
+
+## 16.2 Vista semanal
+
+Uso recomendado:
+
+- seguimiento táctico,
+- reasignaciones,
+- control fino de secuencia diaria.
+
+## 16.3 Filtros clave
+
+- Tipo de tarea.
+- Estado.
+- Operario.
+- Ubicación.
+
+## 16.4 Cierre desde cronograma
+
+Cuando está habilitado por rol, se puede cerrar tarea directamente desde el calendario.
+
+---
+
+## 17) Agenda de maquinaria
+
+## 17.1 Qué muestra
+
+- Planilla mensual por máquina.
+- Reservas por semanas/grupos.
+- Actividades del conjunto y compartidas.
+
+## 17.2 Cómo usarla correctamente
+
+1. Seleccione mes.
+2. Busque máquina por nombre.
+3. Revise reservas y códigos de estado.
+4. Antes de crear tarea, confirme hueco disponible.
+
+## 17.3 Decisiones recomendadas
+
+- Si no hay disponibilidad, reprogramar tarea o usar equipo alterno.
+
+---
+
+## 18) Agenda de herramientas
+
+## 18.1 Qué muestra
+
+- Programación por herramienta, por semana y grupo.
+- Reservas totales del mes.
+- Filtro por conjunto para disponibilidad real local.
+
+## 18.2 Flujo de uso
+
+1. Seleccione mes.
+2. Busque herramienta.
+3. Revise detalle semanal.
+4. Ajuste asignaciones de tareas si hay conflicto.
+
+---
+
+## 19) Compromisos / PQRS
+
+## 19.1 Crear compromiso o PQRS
+
+1. Abra módulo **Compromisos** o **PQRS**.
+2. Ingrese descripción del requerimiento.
+3. Guarde con estado inicial.
+
+## 19.2 Seguimiento
+
+1. Actualice observación y estado.
+2. Mantenga trazabilidad de avances.
+3. Cierre cuando la gestión finalice.
+
+---
+
+## 20) Reportes, tableros y exportables PDF
+
+## 20.1 Qué se puede consultar
+
+- KPIs del rango de fechas.
 - Serie diaria por estado.
 - Resumen por conjunto.
 - Resumen por operario.
 - Uso de insumos.
-- Top de maquinaria y herramientas.
+- Top maquinaria/herramientas.
 - Detalle mensual de tareas.
 
-### Exportables
+## 20.2 Cómo generar un reporte útil
 
-- Informes en PDF desde dashboard de reportes.
-- Reportes de apoyo a comité operativo y cierre mensual.
+1. Defina rango de fechas (desde/hasta).
+2. Seleccione conjunto (o modo general).
+3. Revise indicadores y gráficos.
+4. Complete análisis y plan de acción.
+5. Exporte PDF para comité.
 
-### Recomendación
+## 20.3 Buenas prácticas
 
-Definir un corte fijo (semanal/mensual) para comparar periodos homogéneos.
-
----
-
-## 17) Módulo de notificaciones y cumpleaños
-
-### Notificaciones
-
-- Conteo de no leídas.
-- Marcado individual o masivo como leídas.
-- Historial consultable por panel lateral/modal.
-
-### Cumpleaños
-
-- Sección dedicada para mes actual, anual y día.
-- Útil para clima laboral y recordatorios internos.
+- Compare períodos homogéneos (mes contra mes, semana contra semana).
+- Analice causas de rechazo/no completadas.
+- Relacione consumo de insumos con productividad real.
 
 ---
 
-## 18) Flujos por rol (paso a paso)
+## 21) Notificaciones y cumpleaños
 
-## 18.1 Gerente — flujo recomendado
+## 21.1 Notificaciones
 
-1. Ingresar al panel de gerente.
-2. Seleccionar conjunto activo.
-3. Crear o actualizar usuarios faltantes.
-4. Verificar catálogo de recursos (insumos/herramientas/maquinaria).
-5. Configurar preventivas.
-6. Crear correctivas urgentes si existen novedades.
-7. Revisar solicitudes pendientes.
-8. Revisar cronograma del mes y semana.
-9. Analizar reportes y descargar PDF.
-10. Actualizar compromisos/PQRS de seguimiento.
+- Abra campana de notificaciones.
+- Revise no leídas.
+- Marque una o todas como leídas.
+- Use este panel como bandeja operativa diaria.
 
-## 18.2 Supervisor — flujo recomendado
+## 21.2 Cumpleaños
 
-1. Entrar a panel supervisor.
-2. Revisar tareas del día y pendientes.
-3. Aprobar/rechazar cierres o veredictos pendientes.
-4. Gestionar solicitudes entrantes.
-5. Confirmar disponibilidad de inventario y recursos.
-6. Ajustar planeación con cronograma si hay cambios.
-
-## 18.3 Jefe de Operaciones — flujo recomendado
-
-1. Revisar pendientes críticos.
-2. Emitir veredictos.
-3. Priorizar atención de solicitudes.
-4. Monitorear uso de maquinaria/herramientas.
-5. Revisar compromisos por conjunto.
-
-## 18.4 Administrador — flujo recomendado
-
-1. Ingresar al conjunto asignado.
-2. Registrar y dar seguimiento a PQRS.
-3. Monitorear inventario.
-4. Revisar cronograma del conjunto.
-5. Consultar reportes para comité con gerente/supervisor.
-
-## 18.5 Operario — flujo recomendado
-
-1. Revisar tareas asignadas (hoy/pendientes).
-2. Iniciar y ejecutar actividad.
-3. Registrar novedades.
-4. Cerrar tarea incluyendo insumos usados y observaciones.
-5. Revisar tareas rechazadas/no completadas para reproceso.
+- Revise cumpleaños del mes, del año y del día.
+- Úselo para comunicación interna y clima laboral.
 
 ---
 
-## 19) Reglas operativas y buenas prácticas
+## 22) Flujos detallados por rol (paso a paso)
 
-- Nunca crear tareas sin operario responsable.
-- Evitar descripciones ambiguas (“hacer mantenimiento”); usar acción + objeto + ubicación.
-- Registrar consumo real de insumos para evitar desbalances de inventario.
-- Validar agenda de maquinaria/herramientas antes de asignar tareas críticas.
-- Revisar estados RECHAZADA/NO_COMPLETADA al cierre de jornada.
-- Mantener higiene de datos en usuarios, ubicaciones y elementos.
+## 22.1 Flujo diario del Gerente
+
+1. Entrar y validar conjunto activo.
+2. Revisar notificaciones críticas.
+3. Verificar solicitudes pendientes.
+4. Revisar cronograma semanal.
+5. Ajustar recursos (inventario/herramientas/maquinaria).
+6. Revisar reportes de avance y riesgos.
+7. Actualizar compromisos estratégicos.
+
+## 22.2 Flujo diario del Supervisor
+
+1. Revisar tareas del día.
+2. Monitorear tareas en proceso.
+3. Revisar cierres pendientes.
+4. Aprobar/rechazar con criterio técnico.
+5. Atender solicitudes.
+6. Validar agenda de recursos para el siguiente turno.
+
+## 22.3 Flujo diario del Jefe de Operaciones
+
+1. Revisar tablero de pendientes críticos.
+2. Resolver cuellos de botella de recursos.
+3. Emitir veredictos pendientes.
+4. Coordinar con gerente prioridades del día.
+
+## 22.4 Flujo diario del Administrador
+
+1. Revisar PQRS/compromisos del conjunto.
+2. Revisar inventario y alertas de stock.
+3. Consultar cronograma y cumplimiento.
+4. Generar insumos para reporte interno.
+
+## 22.5 Flujo diario del Operario
+
+1. Revisar tareas asignadas.
+2. Iniciar tarea según prioridad.
+3. Reportar novedades en observaciones.
+4. Cerrar tarea con consumos reales.
+5. Atender tareas rechazadas para reproceso.
 
 ---
 
-## 20) Errores frecuentes y recuperación
+## 23) Reglas operativas críticas
 
-### 20.1 No autenticado / token inválido
-
-- Causa: sesión expirada o token ausente.
-- Acción: cerrar sesión e ingresar nuevamente.
-
-### 20.2 No autorizado
-
-- Causa: el rol no tiene permiso para ese recurso.
-- Acción: solicitar ejecución al rol correspondiente o reasignación.
-
-### 20.3 Conflictos operativos de recursos
-
-- Causa: maquinaria/herramienta ocupada en el rango.
-- Acción: cambiar recurso, ajustar horario o reprogramar.
-
-### 20.4 Datos obligatorios faltantes
-
-- Causa: validaciones de backend (campos requeridos).
-- Acción: completar formulario y reenviar.
+1. Nunca crear tareas sin responsable asignado.
+2. Nunca cerrar tarea sin observación mínima.
+3. Registrar consumos reales, no estimados.
+4. Revisar disponibilidad de maquinaria/herramientas antes de programar.
+5. Evitar descripciones ambiguas.
+6. Rechazos deben tener motivo accionable.
 
 ---
 
-## 21) Checklist de operación diaria y cierre mensual
+## 24) Errores frecuentes y cómo resolverlos
 
-## 21.1 Cierre diario
+## 24.1 “Token requerido” / “Token inválido o expirado”
 
+**Causa:** sesión vencida o ausente.  
+**Solución:** cerrar sesión e iniciar nuevamente.
+
+## 24.2 “No autorizado para este recurso”
+
+**Causa:** rol sin permisos para esa acción.  
+**Solución:** ejecutar con rol correcto o escalar al gerente.
+
+## 24.3 Conflicto de disponibilidad de maquinaria/herramienta
+
+**Causa:** recurso ya reservado en el mismo rango.  
+**Solución:** cambiar recurso, cambiar horario o dividir tarea.
+
+## 24.4 Validación de formulario rechazada
+
+**Causa:** faltan campos obligatorios o formato inválido.  
+**Solución:** completar campos y reenviar.
+
+## 24.5 Tarea rechazada por supervisor
+
+**Causa:** cierre incompleto, evidencia insuficiente o inconsistencias.  
+**Solución:** corregir observaciones/consumos y reprocesar.
+
+---
+
+## 25) Checklist diario, semanal y mensual
+
+## 25.1 Checklist diario
+
+- [ ] Revisar notificaciones no leídas.
 - [ ] Revisar tareas pendientes del día.
-- [ ] Validar cierres pendientes de aprobación.
-- [ ] Actualizar compromisos/PQRS críticos.
-- [ ] Revisar inventario bajo.
-- [ ] Confirmar agenda de recursos para mañana.
+- [ ] Gestionar cierres pendientes de aprobación.
+- [ ] Validar stock bajo de insumos.
+- [ ] Validar agenda de recursos para mañana.
 
-## 21.2 Cierre mensual
+## 25.2 Checklist semanal
 
-- [ ] Verificar cumplimiento preventivas vs ejecutadas.
+- [ ] Revisar cumplimiento por operario.
 - [ ] Revisar tareas rechazadas/no completadas.
-- [ ] Consolidar consumo de insumos.
-- [ ] Revisar top uso maquinaria/herramientas.
-- [ ] Descargar reporte PDF y socializar con dirección.
+- [ ] Ajustar preventivas según hallazgos.
+- [ ] Cerrar compromisos vencidos.
+
+## 25.3 Checklist mensual
+
+- [ ] Consolidar KPIs del mes.
+- [ ] Revisar consumo de insumos vs ejecución.
+- [ ] Evaluar top uso de maquinaria y herramientas.
+- [ ] Exportar informe PDF.
+- [ ] Definir plan de mejora del siguiente mes.
 
 ---
 
-## Conclusión
+## 26) Glosario rápido
 
-ControlApp es un sistema integral de operación con enfoque en trazabilidad, disciplina de ejecución y control de recursos. Cuando se sigue el orden recomendado (configuración → planificación → ejecución → validación → análisis), el sistema entrega visibilidad completa para la toma de decisiones por rol y por conjunto.
+- **Conjunto:** sede/proyecto donde se ejecutan servicios.
+- **Ubicación:** zona dentro del conjunto.
+- **Elemento:** objeto puntual intervenido dentro de una ubicación.
+- **Tarea correctiva:** intervención por novedad o daño.
+- **Tarea preventiva:** rutina periódica planificada.
+- **Veredicto:** aprobación/rechazo de cierre de tarea.
+- **PQRS/Compromiso:** requerimiento y seguimiento de gestión.
+
+---
+
+## Cierre
+
+Si su equipo aplica este manual en el orden indicado, tendrá control integral de operación, trazabilidad de tareas y mejor calidad en la toma de decisiones.  
+
+**Recomendación final:** convierta este manual en procedimiento interno oficial y úselo para inducción de personal nuevo.
