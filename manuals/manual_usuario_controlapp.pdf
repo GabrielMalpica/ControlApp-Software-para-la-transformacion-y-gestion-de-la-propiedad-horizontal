@@ -1,0 +1,1900 @@
+%PDF-1.4
+%
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 16 /Kids [4 0 R 6 0 R 8 0 R 10 0 R 12 0 R 14 0 R 16 0 R 18 0 R 20 0 R 22 0 R 24 0 R 26 0 R 28 0 R 30 0 R 32 0 R 34 0 R] >>
+endobj
+3 0 obj
+<< /Length 2682 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(MANUAL DE USUARIO COMPLETO ? CONTROLAPP) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Producto: Control Limpieza S.A.S. \(ControlApp\)) Tj
+0 -14 Td
+(Versin del manual: 2.0 \(revisin integral\)) Tj
+0 -14 Td
+(Fecha: 12 de abril de 2026) Tj
+0 -14 Td
+(Audiencia: Gerente, Supervisor, Jefe de Operaciones, Administrador y Operario) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(NDICE GENERAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Propsito del manual) Tj
+0 -14 Td
+(2. Qu es ControlApp y qu resuelve?) Tj
+0 -14 Td
+(3. Roles del sistema y alcance real) Tj
+0 -14 Td
+(4. Flujo recomendado de implementacin \(orden correcto\)) Tj
+0 -14 Td
+(5. Acceso, inicio de sesin y seguridad) Tj
+0 -14 Td
+(6. Configuracin inicial \(solo Gerente\)) Tj
+0 -14 Td
+(7. Gestin de usuarios \(crear, editar, eliminar, reasignar\)) Tj
+0 -14 Td
+(8. Gestin de conjuntos \(crear y administrar\)) Tj
+0 -14 Td
+(9. Gestin de ubicaciones y elementos) Tj
+0 -14 Td
+(10. Gestin de inventario de insumos) Tj
+0 -14 Td
+(11. Gestin de herramientas y stock por estado) Tj
+0 -14 Td
+(12. Gestin de maquinaria) Tj
+0 -14 Td
+(13. Solicitudes \(insumos/maquinaria/tareas\)) Tj
+0 -14 Td
+(14. Tareas correctivas \(ciclo completo\)) Tj
+0 -14 Td
+(15. Tareas preventivas \(definicin y automatizacin\)) Tj
+0 -14 Td
+(16. Cronograma \(mensual y semanal\)) Tj
+0 -14 Td
+(17. Agenda de maquinaria) Tj
+0 -14 Td
+(18. Agenda de herramientas) Tj
+0 -14 Td
+(19. Compromisos / PQRS) Tj
+0 -14 Td
+(20. Reportes, tableros y exportables PDF) Tj
+0 -14 Td
+(21. Notificaciones y cumpleaos) Tj
+0 -14 Td
+(22. Flujos detallados por rol \(paso a paso\)) Tj
+0 -14 Td
+(23. Reglas operativas crticas) Tj
+0 -14 Td
+(24. Errores frecuentes y cmo resolverlos) Tj
+0 -14 Td
+(25. Checklist diario, semanal y mensual) Tj
+0 -14 Td
+(26. Glosario rpido) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1\) PROPSITO DEL MANUAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Este documento explica cmo usar la aplicacin en su totalidad, no solo qu mdulos existen.) Tj
+0 -14 Td
+(Aqu encontrar instrucciones completas para ejecutar los procesos principales:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Crear usuarios.) Tj
+0 -14 Td
+(- Crear conjuntos.) Tj
+0 -14 Td
+(- Configurar inventarios y recursos.) Tj
+0 -14 Td
+(- Crear tareas correctivas y preventivas.) Tj
+0 -14 Td
+(- Programar, ejecutar, cerrar y aprobar tareas.) Tj
+0 -14 Td
+(- Gestionar solicitudes.) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 1 de 16) Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 3 0 R >>
+endobj
+5 0 obj
+<< /Length 2360 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(- Controlar agendas de maquinaria y herramientas.) Tj
+0 -14 Td
+(- Generar reportes de gestin.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(> Objetivo: que cualquier equipo pueda operar ControlApp correctamente siguiendo un orden claro) Tj
+0 -14 Td
+(y sin improvisacin.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(2\) QU ES CONTROLAPP Y QU RESUELVE?) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(ControlApp es una plataforma de gestin operativa para servicios de aseo, mantenimiento,) Tj
+0 -14 Td
+(jardinera, piscina y tareas locativas en conjuntos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Centraliza:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Planeacin \(preventivas y cronogramas\).) Tj
+0 -14 Td
+(- Ejecucin \(tareas de campo por operarios\).) Tj
+0 -14 Td
+(- Control \(aprobaciones y veredictos\).) Tj
+0 -14 Td
+(- Recursos \(insumos, herramientas y maquinaria\).) Tj
+0 -14 Td
+(- Seguimiento \(compromisos, PQRS, notificaciones\).) Tj
+0 -14 Td
+(- Medicin \(KPIs y reportes\).) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3\) ROLES DEL SISTEMA Y ALCANCE REAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3.1 Gerente) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Rol con mayor alcance. Puede:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Crear empresa, conjuntos y usuarios.) Tj
+0 -14 Td
+(- Asignar usuarios por rol y por conjunto.) Tj
+0 -14 Td
+(- Gestionar catlogos de insumos, herramientas y maquinaria.) Tj
+0 -14 Td
+(- Crear tareas correctivas.) Tj
+0 -14 Td
+(- Definir preventivas y generar cronogramas.) Tj
+0 -14 Td
+(- Revisar reportes globales y por conjunto.) Tj
+0 -14 Td
+(- Gestionar compromisos globales y por conjunto.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3.2 Supervisor) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Rol de control tctico diario. Puede:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Ver tareas del conjunto.) Tj
+0 -14 Td
+(- Emitir veredictos de tareas \(aprobacin/rechazo\).) Tj
+0 -14 Td
+(- Gestionar solicitudes.) Tj
+0 -14 Td
+(- Revisar cronograma, inventario y agendas.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3.3 Jefe de Operaciones) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Rol de coordinacin transversal. Puede:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 2 de 16) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 2481 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(- Atender pendientes operativos.) Tj
+0 -14 Td
+(- Emitir veredictos de tareas.) Tj
+0 -14 Td
+(- Gestionar solicitudes y compromisos.) Tj
+0 -14 Td
+(- Revisar inventario, cronograma y agendas globales.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3.4 Administrador) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Rol administrativo del conjunto asignado. Puede:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Gestionar PQRS/compromisos de su conjunto.) Tj
+0 -14 Td
+(- Consultar inventario, cronograma y reportes del conjunto.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3.5 Operario) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Rol ejecutor en campo. Puede:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Consultar tareas asignadas.) Tj
+0 -14 Td
+(- Iniciar/ejecutar/cerrar tareas.) Tj
+0 -14 Td
+(- Registrar observaciones e insumos usados.) Tj
+0 -14 Td
+(- Consultar solicitudes asociadas a su operacin.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(4\) FLUJO RECOMENDADO DE IMPLEMENTACIN \(ORDEN CORRECTO\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Para usar el sistema sin bloqueos, siga este orden:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Crear empresa \(si aplica en despliegue inicial\).) Tj
+0 -14 Td
+(2. Crear usuarios clave \(gerente/supervisor/jefe/administrador/operarios\).) Tj
+0 -14 Td
+(3. Crear conjuntos.) Tj
+0 -14 Td
+(4. Configurar ubicaciones y elementos por conjunto.) Tj
+0 -14 Td
+(5. Cargar catlogos de insumos/herramientas/maquinaria.) Tj
+0 -14 Td
+(6. Cargar inventario inicial del conjunto.) Tj
+0 -14 Td
+(7. Definir preventivas por ubicacin y elemento.) Tj
+0 -14 Td
+(8. Generar borrador de cronograma y validar disponibilidad.) Tj
+0 -14 Td
+(9. Crear correctivas cuando existan novedades.) Tj
+0 -14 Td
+(10. Ejecutar ciclo diario: asignacin ? ejecucin ? cierre ? veredicto.) Tj
+0 -14 Td
+(11. Revisar reportes semanal y mensualmente.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(5\) ACCESO, INICIO DE SESIN Y SEGURIDAD) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(5.1 INICIAR SESIN) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Abra la pantalla de login.) Tj
+0 -14 Td
+(2. Ingrese Correo y Contrasea.) Tj
+0 -14 Td
+(3. Pulse Ingresar.) Tj
+0 -14 Td
+(4. El sistema redirige al panel correspondiente al rol.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(5.2 RECUPERAR CONTRASEA) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 3 de 16) Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Length 2405 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. En login, pulse Recuperar acceso.) Tj
+0 -14 Td
+(2. Ingrese correo e identificacin solicitada.) Tj
+0 -14 Td
+(3. Defina nueva contrasea segura.) Tj
+0 -14 Td
+(4. Vuelva a iniciar sesin.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(5.3 CAMBIAR CONTRASEA AUTENTICADO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. En cualquier panel, pulse cono de candado \(Cambiar contrasea\).) Tj
+0 -14 Td
+(2. Ingrese contrasea actual.) Tj
+0 -14 Td
+(3. Ingrese nueva contrasea.) Tj
+0 -14 Td
+(4. Confirme y guarde.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(5.4 REGLAS DE SEGURIDAD) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Si el token expira, el sistema solicitar autenticacin nuevamente.) Tj
+0 -14 Td
+(- Si un rol no tiene permiso, mostrar ?No autorizado?.) Tj
+0 -14 Td
+(- No comparta credenciales entre usuarios.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(6\) CONFIGURACIN INICIAL \(SOLO GERENTE\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Este bloque se ejecuta una sola vez por cliente o en aperturas de nuevos conjuntos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(6.1 CREAR EMPRESA \(CUANDO APLIQUE\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Ingrese al panel de Gerente.) Tj
+0 -14 Td
+(2. Abra la opcin de configuracin de empresa.) Tj
+0 -14 Td
+(3. Registre datos principales \(NIT, nombre, parmetros\).) Tj
+0 -14 Td
+(4. Guarde y valide respuesta exitosa.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(6.2 AJUSTAR LMITES DE OPERACIN) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Defina lmites de tiempo semanales \(si el cliente lo requiere\).) Tj
+0 -14 Td
+(2. Ajuste horarios operativos y descansos por conjunto.) Tj
+0 -14 Td
+(3. Verifique que los parmetros queden consistentes con el cronograma.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(7\) GESTIN DE USUARIOS \(CREAR, EDITAR, ELIMINAR, REASIGNAR\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(7.1 CREAR UN USUARIO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. En panel Gerente, ingrese a Usuarios.) Tj
+0 -14 Td
+(2. Pulse Crear usuario.) Tj
+0 -14 Td
+(3. Diligencie campos mnimos:) Tj
+0 -14 Td
+(   - Nombre completo.) Tj
+0 -14 Td
+(   - Correo \(nico\).) Tj
+0 -14 Td
+(   - Documento/identificacin.) Tj
+0 -14 Td
+(   - Rol.) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 4 de 16) Tj
+ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 9 0 R >>
+endobj
+11 0 obj
+<< /Length 2168 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(   - Datos de contacto.) Tj
+0 -14 Td
+(4. Guarde.) Tj
+0 -14 Td
+(5. Si aplica, asigne conjunto\(s\) al usuario.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Recomendacin) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Cree primero supervisores y operarios antes de crear tareas.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(7.2 EDITAR USUARIO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Busque usuario por nombre/correo.) Tj
+0 -14 Td
+(2. Pulse Editar.) Tj
+0 -14 Td
+(3. Ajuste datos necesarios \(rol, contacto, estado, etc.\).) Tj
+0 -14 Td
+(4. Guarde y confirme.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(7.3 ELIMINAR USUARIO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Desde listado, pulse Eliminar.) Tj
+0 -14 Td
+(2. Confirme la accin.) Tj
+0 -14 Td
+(3. Revise impactos:) Tj
+0 -14 Td
+(   - tareas futuras,) Tj
+0 -14 Td
+(   - asignaciones vigentes,) Tj
+0 -14 Td
+(   - historial.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(7.4 CAMBIAR CONTRASEA DE OTRO USUARIO \(GERENTE\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Ubique al usuario objetivo.) Tj
+0 -14 Td
+(2. Seleccione accin Cambiar contrasea.) Tj
+0 -14 Td
+(3. Defina nueva clave robusta.) Tj
+0 -14 Td
+(4. Informe al usuario para primer acceso.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(7.5 REASIGNAR EN BLOQUE \(CUANDO HAYA ROTACIN\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Identifique conjuntos afectados.) Tj
+0 -14 Td
+(2. Use flujos de reemplazo para administrador/supervisor/operario.) Tj
+0 -14 Td
+(3. Valide que no queden conjuntos sin responsable.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(8\) GESTIN DE CONJUNTOS \(CREAR Y ADMINISTRAR\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(8.1 CREAR UN CONJUNTO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. En panel Gerente, vaya a Conjuntos.) Tj
+0 -14 Td
+(2. Pulse Crear conjunto.) Tj
+0 -14 Td
+(3. Registre:) Tj
+0 -14 Td
+(   - NIT del conjunto.) Tj
+0 -14 Td
+(   - Nombre.) Tj
+0 -14 Td
+(   - Direccin.) Tj
+0 -14 Td
+(   - Correo/medios de contacto.) Tj
+0 -14 Td
+(   - Tipo de servicio.) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 5 de 16) Tj
+ET
+endstream
+endobj
+12 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 11 0 R >>
+endobj
+13 0 obj
+<< /Length 2146 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(4. Guarde.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(8.2 EDITAR CONJUNTO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Abra el detalle del conjunto.) Tj
+0 -14 Td
+(2. Pulse Editar.) Tj
+0 -14 Td
+(3. Actualice datos \(servicios, consignas, valor agregado\).) Tj
+0 -14 Td
+(4. Guarde.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(8.3 ASIGNAR OPERARIOS AL CONJUNTO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. En detalle del conjunto, abra Operarios.) Tj
+0 -14 Td
+(2. Seleccione usuarios disponibles.) Tj
+0 -14 Td
+(3. Confirme asignacin.) Tj
+0 -14 Td
+(4. Valide que aparezcan en filtros de creacin de tareas.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(8.4 ELIMINAR CONJUNTO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Solo cuando ya no se opere all.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Verifique que no existan tareas activas pendientes.) Tj
+0 -14 Td
+(2. Exporte respaldos/reportes necesarios.) Tj
+0 -14 Td
+(3. Ejecute eliminacin con confirmacin.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(9\) GESTIN DE UBICACIONES Y ELEMENTOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(> Sin ubicaciones/elementos bien definidos, las tareas pierden trazabilidad.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(9.1 CREAR UBICACIN) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Ingrese al mdulo del conjunto.) Tj
+0 -14 Td
+(2. Abra Ubicaciones.) Tj
+0 -14 Td
+(3. Pulse Agregar ubicacin.) Tj
+0 -14 Td
+(4. Ingrese nombre descriptivo \(ej. ?Torre A - Lobby?\).) Tj
+0 -14 Td
+(5. Guarde.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(9.2 CREAR ELEMENTO DENTRO DE UBICACIN) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Entre a la ubicacin.) Tj
+0 -14 Td
+(2. Pulse Agregar elemento.) Tj
+0 -14 Td
+(3. Ingrese nombre del elemento \(ej. ?Vidrio puerta principal?\).) Tj
+0 -14 Td
+(4. Guarde.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(9.3 ESTRUCTURA RECOMENDADA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Ubicacin: zona fsica macro.) Tj
+0 -14 Td
+(- Elemento: punto puntual de intervencin.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 6 de 16) Tj
+ET
+endstream
+endobj
+14 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 13 0 R >>
+endobj
+15 0 obj
+<< /Length 2066 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(10\) GESTIN DE INVENTARIO DE INSUMOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(10.1 VER INVENTARIO DEL CONJUNTO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Abra Inventario.) Tj
+0 -14 Td
+(2. Seleccione pestaa Insumos.) Tj
+0 -14 Td
+(3. Revise existencias, categora y unidad.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(10.2 REGISTRAR ENTRADA DE INSUMOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Pulse Agregar stock.) Tj
+0 -14 Td
+(2. Seleccione insumo del catlogo.) Tj
+0 -14 Td
+(3. Ingrese cantidad.) Tj
+0 -14 Td
+(4. Confirme movimiento.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(10.3 REGISTRAR CONSUMO DE INSUMOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Pulse Consumir stock.) Tj
+0 -14 Td
+(2. Seleccione insumo y cantidad.) Tj
+0 -14 Td
+(3. Registre motivo \(si lo pide el formulario\).) Tj
+0 -14 Td
+(4. Guarde.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(10.4 REVISAR INSUMOS BAJOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Use filtro Bajo stock / agotados.) Tj
+0 -14 Td
+(2. Identifique prioridad de reposicin.) Tj
+0 -14 Td
+(3. Genere solicitud de insumos desde el mismo flujo.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(11\) GESTIN DE HERRAMIENTAS Y STOCK POR ESTADO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(11.1 VER STOCK DE HERRAMIENTAS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. En Inventario, cambie a pestaa Herramientas.) Tj
+0 -14 Td
+(2. Revise columnas:) Tj
+0 -14 Td
+(   - nombre,) Tj
+0 -14 Td
+(   - cantidad,) Tj
+0 -14 Td
+(   - estado,) Tj
+0 -14 Td
+(   - modo de control,) Tj
+0 -14 Td
+(   - tenencia/origen.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(11.2 CAMBIAR ESTADO DE HERRAMIENTA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Seleccione herramienta.) Tj
+0 -14 Td
+(2. Pulse Cambiar estado.) Tj
+0 -14 Td
+(3. Indique cantidad y nuevo estado.) Tj
+0 -14 Td
+(4. Confirme movimiento.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(11.3 DEVOLVER PRSTAMO AL ORIGEN) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 7 de 16) Tj
+ET
+endstream
+endobj
+16 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 15 0 R >>
+endobj
+17 0 obj
+<< /Length 2072 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Seleccione herramienta prestada.) Tj
+0 -14 Td
+(2. Pulse Devolver.) Tj
+0 -14 Td
+(3. Ingrese cantidad a devolver.) Tj
+0 -14 Td
+(4. Confirme y verifique actualizacin de stock.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(12\) GESTIN DE MAQUINARIA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(12.1 REGISTRAR MAQUINARIA EN CATLOGO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Abra opcin Crear maquinaria.) Tj
+0 -14 Td
+(2. Diligencie:) Tj
+0 -14 Td
+(   - nombre,) Tj
+0 -14 Td
+(   - tipo,) Tj
+0 -14 Td
+(   - estado,) Tj
+0 -14 Td
+(   - propietario \(empresa/conjunto\),) Tj
+0 -14 Td
+(   - tenencia.) Tj
+0 -14 Td
+(3. Guarde.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(12.2 EDITAR MAQUINARIA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Vaya a listado de maquinaria.) Tj
+0 -14 Td
+(2. Pulse Editar.) Tj
+0 -14 Td
+(3. Actualice estado, observacin o metadatos.) Tj
+0 -14 Td
+(4. Guarde.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(12.3 DISPONIBILIDAD) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Antes de asignar una tarea:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Consulte disponibilidad en rango de fechas.) Tj
+0 -14 Td
+(2. Revise agenda de ese equipo.) Tj
+0 -14 Td
+(3. Si hay conflicto, cambie equipo o reprogramacin.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(13\) SOLICITUDES \(INSUMOS/MAQUINARIA/TAREAS\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(13.1 SOLICITUD DE INSUMOS \(FLUJO COMPLETO\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Ingrese a Solicitud de insumos.) Tj
+0 -14 Td
+(2. Revise recomendados por bajo stock.) Tj
+0 -14 Td
+(3. Agregue tems al carrito \(cantidad por insumo\).) Tj
+0 -14 Td
+(4. Enve solicitud.) Tj
+0 -14 Td
+(5. Supervisor/Jefe/Gerente revisa detalle y aprueba/rechaza.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(13.2 GESTIN DE SOLICITUDES PENDIENTES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Abra mdulo Solicitudes.) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 8 de 16) Tj
+ET
+endstream
+endobj
+18 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 17 0 R >>
+endobj
+19 0 obj
+<< /Length 2376 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(2. Filtre por estado \(Pendiente, Aprobada\).) Tj
+0 -14 Td
+(3. Abra detalle de cada solicitud.) Tj
+0 -14 Td
+(4. Aplique accin:) Tj
+0 -14 Td
+(   - Aprobar \(habilita reposicin\),) Tj
+0 -14 Td
+(   - Rechazar \(dejar observacin operativa\).) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(13.3 SOLICITUDES DE MAQUINARIA Y TAREAS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Aplican cuando el rol administrativo requiere escalamiento operativo.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Registrar necesidad.) Tj
+0 -14 Td
+(- Adjuntar contexto.) Tj
+0 -14 Td
+(- Dar seguimiento al estado.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14\) TAREAS CORRECTIVAS \(CICLO COMPLETO\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14.1 CREAR TAREA CORRECTIVA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Entre a Crear tarea.) Tj
+0 -14 Td
+(2. Seleccione conjunto.) Tj
+0 -14 Td
+(3. Seleccione ubicacin y elemento.) Tj
+0 -14 Td
+(4. Ingrese descripcin precisa \(accin + objeto + ubicacin\).) Tj
+0 -14 Td
+(5. Defina prioridad.) Tj
+0 -14 Td
+(6. Defina fecha inicio, fecha fin y hora de inicio.) Tj
+0 -14 Td
+(7. Defina duracin en minutos.) Tj
+0 -14 Td
+(8. Seleccione operario\(s\).) Tj
+0 -14 Td
+(9. Seleccione supervisor responsable.) Tj
+0 -14 Td
+(10. Seleccione maquinaria/herramientas requeridas.) Tj
+0 -14 Td
+(11. Guarde.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14.2 REEMPLAZOS AUTOMTICOS Y VALIDACIONES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Algunas reglas pueden:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Reemplazar preventivas de baja prioridad.) Tj
+0 -14 Td
+(- Marcar tareas afectadas como no completadas.) Tj
+0 -14 Td
+(- Bloquear por conflicto de disponibilidad.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14.3 ESTADOS DE UNA TAREA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- ASIGNADA: creada y programada.) Tj
+0 -14 Td
+(- EN_PROCESO: ejecucin en curso.) Tj
+0 -14 Td
+(- PENDIENTE_APROBACION: operario cerr, falta veredicto.) Tj
+0 -14 Td
+(- APROBADA: cierre validado.) Tj
+0 -14 Td
+(- RECHAZADA: requiere ajuste/reproceso.) Tj
+0 -14 Td
+(- NO_COMPLETADA: no se logr finalizar segn criterio operativo.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14.4 CERRAR TAREA \(OPERARIO\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 9 de 16) Tj
+ET
+endstream
+endobj
+20 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 19 0 R >>
+endobj
+21 0 obj
+<< /Length 2223 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(1. Abra tarea asignada.) Tj
+0 -14 Td
+(2. Pulse Cerrar tarea.) Tj
+0 -14 Td
+(3. Diligencie observaciones finales.) Tj
+0 -14 Td
+(4. Registre insumos usados.) Tj
+0 -14 Td
+(5. Enve cierre.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14.5 VEREDICTO \(SUPERVISOR/JEFE\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Abra lista de pendientes de aprobacin.) Tj
+0 -14 Td
+(2. Revise evidencia, tiempos, observaciones y consumos.) Tj
+0 -14 Td
+(3. Emita veredicto:) Tj
+0 -14 Td
+(   - Aprobar,) Tj
+0 -14 Td
+(   - Rechazar \(con motivo claro\).) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(15\) TAREAS PREVENTIVAS \(DEFINICIN Y AUTOMATIZACIN\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(15.1 CREAR DEFINICIN PREVENTIVA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Entre a Preventivas.) Tj
+0 -14 Td
+(2. Pulse Crear preventiva.) Tj
+0 -14 Td
+(3. Defina:) Tj
+0 -14 Td
+(   - descripcin,) Tj
+0 -14 Td
+(   - ubicacin,) Tj
+0 -14 Td
+(   - elemento,) Tj
+0 -14 Td
+(   - frecuencia \(diaria/semanal/mensual\),) Tj
+0 -14 Td
+(   - operarios,) Tj
+0 -14 Td
+(   - supervisor,) Tj
+0 -14 Td
+(   - prioridad.) Tj
+0 -14 Td
+(4. Defina duracin:) Tj
+0 -14 Td
+(   - fija en minutos, o) Tj
+0 -14 Td
+(   - por rendimiento \(unidad + tasa\).) Tj
+0 -14 Td
+(5. Configure recursos requeridos \(insumos, maquinaria, herramientas\).) Tj
+0 -14 Td
+(6. \(Opcional\) active divisin en varios das.) Tj
+0 -14 Td
+(7. Guarde.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(15.2 EDITAR O ELIMINAR PREVENTIVA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Desde listado, seleccione preventiva.) Tj
+0 -14 Td
+(2. Edite o elimine.) Tj
+0 -14 Td
+(3. Regenerar borrador de cronograma para que refleje cambios.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(15.3 GENERAR CRONOGRAMA MENSUAL DESDE PREVENTIVAS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Pulse Generar cronograma mensual.) Tj
+0 -14 Td
+(2. Defina mes/ao objetivo.) Tj
+0 -14 Td
+(3. Revise cantidad de tareas creadas.) Tj
+0 -14 Td
+(4. Valide conflictos y ajuste.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 10 de 16) Tj
+ET
+endstream
+endobj
+22 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 21 0 R >>
+endobj
+23 0 obj
+<< /Length 1942 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(16\) CRONOGRAMA \(MENSUAL Y SEMANAL\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(16.1 VISTA MENSUAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Uso recomendado:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- detectar sobrecarga por da,) Tj
+0 -14 Td
+(- validar distribucin por operario,) Tj
+0 -14 Td
+(- revisar cumplimiento por estado.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(16.2 VISTA SEMANAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Uso recomendado:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- seguimiento tctico,) Tj
+0 -14 Td
+(- reasignaciones,) Tj
+0 -14 Td
+(- control fino de secuencia diaria.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(16.3 FILTROS CLAVE) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Tipo de tarea.) Tj
+0 -14 Td
+(- Estado.) Tj
+0 -14 Td
+(- Operario.) Tj
+0 -14 Td
+(- Ubicacin.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(16.4 CIERRE DESDE CRONOGRAMA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Cuando est habilitado por rol, se puede cerrar tarea directamente desde el calendario.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(17\) AGENDA DE MAQUINARIA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(17.1 QU MUESTRA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Planilla mensual por mquina.) Tj
+0 -14 Td
+(- Reservas por semanas/grupos.) Tj
+0 -14 Td
+(- Actividades del conjunto y compartidas.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(17.2 CMO USARLA CORRECTAMENTE) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Seleccione mes.) Tj
+0 -14 Td
+(2. Busque mquina por nombre.) Tj
+0 -14 Td
+(3. Revise reservas y cdigos de estado.) Tj
+0 -14 Td
+(4. Antes de crear tarea, confirme hueco disponible.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(17.3 DECISIONES RECOMENDADAS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Si no hay disponibilidad, reprogramar tarea o usar equipo alterno.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 11 de 16) Tj
+ET
+endstream
+endobj
+24 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 23 0 R >>
+endobj
+25 0 obj
+<< /Length 2026 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(18\) AGENDA DE HERRAMIENTAS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(18.1 QU MUESTRA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Programacin por herramienta, por semana y grupo.) Tj
+0 -14 Td
+(- Reservas totales del mes.) Tj
+0 -14 Td
+(- Filtro por conjunto para disponibilidad real local.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(18.2 FLUJO DE USO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Seleccione mes.) Tj
+0 -14 Td
+(2. Busque herramienta.) Tj
+0 -14 Td
+(3. Revise detalle semanal.) Tj
+0 -14 Td
+(4. Ajuste asignaciones de tareas si hay conflicto.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(19\) COMPROMISOS / PQRS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(19.1 CREAR COMPROMISO O PQRS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Abra mdulo Compromisos o PQRS.) Tj
+0 -14 Td
+(2. Ingrese descripcin del requerimiento.) Tj
+0 -14 Td
+(3. Guarde con estado inicial.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(19.2 SEGUIMIENTO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Actualice observacin y estado.) Tj
+0 -14 Td
+(2. Mantenga trazabilidad de avances.) Tj
+0 -14 Td
+(3. Cierre cuando la gestin finalice.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(20\) REPORTES, TABLEROS Y EXPORTABLES PDF) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(20.1 QU SE PUEDE CONSULTAR) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- KPIs del rango de fechas.) Tj
+0 -14 Td
+(- Serie diaria por estado.) Tj
+0 -14 Td
+(- Resumen por conjunto.) Tj
+0 -14 Td
+(- Resumen por operario.) Tj
+0 -14 Td
+(- Uso de insumos.) Tj
+0 -14 Td
+(- Top maquinaria/herramientas.) Tj
+0 -14 Td
+(- Detalle mensual de tareas.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(20.2 CMO GENERAR UN REPORTE TIL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Defina rango de fechas \(desde/hasta\).) Tj
+0 -14 Td
+(2. Seleccione conjunto \(o modo general\).) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 12 de 16) Tj
+ET
+endstream
+endobj
+26 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 25 0 R >>
+endobj
+27 0 obj
+<< /Length 2290 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(3. Revise indicadores y grficos.) Tj
+0 -14 Td
+(4. Complete anlisis y plan de accin.) Tj
+0 -14 Td
+(5. Exporte PDF para comit.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(20.3 BUENAS PRCTICAS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Compare perodos homogneos \(mes contra mes, semana contra semana\).) Tj
+0 -14 Td
+(- Analice causas de rechazo/no completadas.) Tj
+0 -14 Td
+(- Relacione consumo de insumos con productividad real.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(21\) NOTIFICACIONES Y CUMPLEAOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(21.1 NOTIFICACIONES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Abra campana de notificaciones.) Tj
+0 -14 Td
+(- Revise no ledas.) Tj
+0 -14 Td
+(- Marque una o todas como ledas.) Tj
+0 -14 Td
+(- Use este panel como bandeja operativa diaria.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(21.2 CUMPLEAOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Revise cumpleaos del mes, del ao y del da.) Tj
+0 -14 Td
+(- selo para comunicacin interna y clima laboral.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(22\) FLUJOS DETALLADOS POR ROL \(PASO A PASO\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(22.1 FLUJO DIARIO DEL GERENTE) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Entrar y validar conjunto activo.) Tj
+0 -14 Td
+(2. Revisar notificaciones crticas.) Tj
+0 -14 Td
+(3. Verificar solicitudes pendientes.) Tj
+0 -14 Td
+(4. Revisar cronograma semanal.) Tj
+0 -14 Td
+(5. Ajustar recursos \(inventario/herramientas/maquinaria\).) Tj
+0 -14 Td
+(6. Revisar reportes de avance y riesgos.) Tj
+0 -14 Td
+(7. Actualizar compromisos estratgicos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(22.2 FLUJO DIARIO DEL SUPERVISOR) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Revisar tareas del da.) Tj
+0 -14 Td
+(2. Monitorear tareas en proceso.) Tj
+0 -14 Td
+(3. Revisar cierres pendientes.) Tj
+0 -14 Td
+(4. Aprobar/rechazar con criterio tcnico.) Tj
+0 -14 Td
+(5. Atender solicitudes.) Tj
+0 -14 Td
+(6. Validar agenda de recursos para el siguiente turno.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(22.3 FLUJO DIARIO DEL JEFE DE OPERACIONES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 13 de 16) Tj
+ET
+endstream
+endobj
+28 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 27 0 R >>
+endobj
+29 0 obj
+<< /Length 2468 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(1. Revisar tablero de pendientes crticos.) Tj
+0 -14 Td
+(2. Resolver cuellos de botella de recursos.) Tj
+0 -14 Td
+(3. Emitir veredictos pendientes.) Tj
+0 -14 Td
+(4. Coordinar con gerente prioridades del da.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(22.4 FLUJO DIARIO DEL ADMINISTRADOR) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Revisar PQRS/compromisos del conjunto.) Tj
+0 -14 Td
+(2. Revisar inventario y alertas de stock.) Tj
+0 -14 Td
+(3. Consultar cronograma y cumplimiento.) Tj
+0 -14 Td
+(4. Generar insumos para reporte interno.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(22.5 FLUJO DIARIO DEL OPERARIO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Revisar tareas asignadas.) Tj
+0 -14 Td
+(2. Iniciar tarea segn prioridad.) Tj
+0 -14 Td
+(3. Reportar novedades en observaciones.) Tj
+0 -14 Td
+(4. Cerrar tarea con consumos reales.) Tj
+0 -14 Td
+(5. Atender tareas rechazadas para reproceso.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(23\) REGLAS OPERATIVAS CRTICAS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. Nunca crear tareas sin responsable asignado.) Tj
+0 -14 Td
+(2. Nunca cerrar tarea sin observacin mnima.) Tj
+0 -14 Td
+(3. Registrar consumos reales, no estimados.) Tj
+0 -14 Td
+(4. Revisar disponibilidad de maquinaria/herramientas antes de programar.) Tj
+0 -14 Td
+(5. Evitar descripciones ambiguas.) Tj
+0 -14 Td
+(6. Rechazos deben tener motivo accionable.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(24\) ERRORES FRECUENTES Y CMO RESOLVERLOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(24.1 ?TOKEN REQUERIDO? / ?TOKEN INVLIDO O EXPIRADO?) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Causa: sesin vencida o ausente.) Tj
+0 -14 Td
+(Solucin: cerrar sesin e iniciar nuevamente.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(24.2 ?NO AUTORIZADO PARA ESTE RECURSO?) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Causa: rol sin permisos para esa accin.) Tj
+0 -14 Td
+(Solucin: ejecutar con rol correcto o escalar al gerente.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(24.3 CONFLICTO DE DISPONIBILIDAD DE MAQUINARIA/HERRAMIENTA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Causa: recurso ya reservado en el mismo rango.) Tj
+0 -14 Td
+(Solucin: cambiar recurso, cambiar horario o dividir tarea.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(24.4 VALIDACIN DE FORMULARIO RECHAZADA) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 14 de 16) Tj
+ET
+endstream
+endobj
+30 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 29 0 R >>
+endobj
+31 0 obj
+<< /Length 2399 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Causa: faltan campos obligatorios o formato invlido.) Tj
+0 -14 Td
+(Solucin: completar campos y reenviar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(24.5 TAREA RECHAZADA POR SUPERVISOR) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Causa: cierre incompleto, evidencia insuficiente o inconsistencias.) Tj
+0 -14 Td
+(Solucin: corregir observaciones/consumos y reprocesar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(25\) CHECKLIST DIARIO, SEMANAL Y MENSUAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(25.1 CHECKLIST DIARIO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- [ ] Revisar notificaciones no ledas.) Tj
+0 -14 Td
+(- [ ] Revisar tareas pendientes del da.) Tj
+0 -14 Td
+(- [ ] Gestionar cierres pendientes de aprobacin.) Tj
+0 -14 Td
+(- [ ] Validar stock bajo de insumos.) Tj
+0 -14 Td
+(- [ ] Validar agenda de recursos para maana.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(25.2 CHECKLIST SEMANAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- [ ] Revisar cumplimiento por operario.) Tj
+0 -14 Td
+(- [ ] Revisar tareas rechazadas/no completadas.) Tj
+0 -14 Td
+(- [ ] Ajustar preventivas segn hallazgos.) Tj
+0 -14 Td
+(- [ ] Cerrar compromisos vencidos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(25.3 CHECKLIST MENSUAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- [ ] Consolidar KPIs del mes.) Tj
+0 -14 Td
+(- [ ] Revisar consumo de insumos vs ejecucin.) Tj
+0 -14 Td
+(- [ ] Evaluar top uso de maquinaria y herramientas.) Tj
+0 -14 Td
+(- [ ] Exportar informe PDF.) Tj
+0 -14 Td
+(- [ ] Definir plan de mejora del siguiente mes.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(26\) GLOSARIO RPIDO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- Conjunto: sede/proyecto donde se ejecutan servicios.) Tj
+0 -14 Td
+(- Ubicacin: zona dentro del conjunto.) Tj
+0 -14 Td
+(- Elemento: objeto puntual intervenido dentro de una ubicacin.) Tj
+0 -14 Td
+(- Tarea correctiva: intervencin por novedad o dao.) Tj
+0 -14 Td
+(- Tarea preventiva: rutina peridica planificada.) Tj
+0 -14 Td
+(- Veredicto: aprobacin/rechazo de cierre de tarea.) Tj
+0 -14 Td
+(- PQRS/Compromiso: requerimiento y seguimiento de gestin.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(CIERRE) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 15 de 16) Tj
+ET
+endstream
+endobj
+32 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 31 0 R >>
+endobj
+33 0 obj
+<< /Length 669 >>
+stream
+BT
+/F1 10.5 Tf
+46 770 Td
+(ControlApp ? Manual de Usuario Completo) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Si su equipo aplica este manual en el orden indicado, tendr control integral de operacin,) Tj
+0 -14 Td
+(trazabilidad de tareas y mejor calidad en la toma de decisiones.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Recomendacin final: convierta este manual en procedimiento interno oficial y selo para) Tj
+0 -14 Td
+(induccin de personal nuevo.) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 16 de 16) Tj
+ET
+endstream
+endobj
+34 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 35 0 R >> >> /Contents 33 0 R >>
+endobj
+35 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 36
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000225 00000 n 
+0000002959 00000 n 
+0000003086 00000 n 
+0000005498 00000 n 
+0000005625 00000 n 
+0000008158 00000 n 
+0000008285 00000 n 
+0000010742 00000 n 
+0000010870 00000 n 
+0000013091 00000 n 
+0000013220 00000 n 
+0000015419 00000 n 
+0000015548 00000 n 
+0000017667 00000 n 
+0000017796 00000 n 
+0000019921 00000 n 
+0000020050 00000 n 
+0000022479 00000 n 
+0000022608 00000 n 
+0000024884 00000 n 
+0000025013 00000 n 
+0000027008 00000 n 
+0000027137 00000 n 
+0000029216 00000 n 
+0000029345 00000 n 
+0000031688 00000 n 
+0000031817 00000 n 
+0000034338 00000 n 
+0000034467 00000 n 
+0000036919 00000 n 
+0000037048 00000 n 
+0000037769 00000 n 
+0000037898 00000 n 
+trailer
+<< /Size 36 /Root 1 0 R >>
+startxref
+37969
+%%EOF

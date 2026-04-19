@@ -1,0 +1,2497 @@
+%PDF-1.4
+%
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 21 /Kids [4 0 R 6 0 R 8 0 R 10 0 R 12 0 R 14 0 R 16 0 R 18 0 R 20 0 R 22 0 R 24 0 R 26 0 R 28 0 R 30 0 R 32 0 R 34 0 R 36 0 R 38 0 R 40 0 R 42 0 R 44 0 R] >>
+endobj
+3 0 obj
+<< /Length 2156 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(MANUAL DE USUARIO ULTRA DETALLADO - CONTROLAPP) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Version manual: 2.0) Tj
+0 -14 Td
+(Fecha: 2026-04-12) Tj
+0 -14 Td
+(Formato principal: Guia operativa completa) Tj
+0 -14 Td
+(Formato de descarga: PDF \(en carpeta manuals\)) Tj
+0 -14 Td
+(Idioma: Espanol sin tildes) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(0. COMO USAR ESTE MANUAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Este manual esta pensado para:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- induccion de personal nuevo,) Tj
+0 -14 Td
+(- operacion diaria,) Tj
+0 -14 Td
+(- auditoria interna,) Tj
+0 -14 Td
+(- estandarizacion de procesos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Se recomienda leer en este orden:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. secciones 1 a 6 para entender arquitectura funcional,) Tj
+0 -14 Td
+(2. secciones 7 a 20 para ejecucion por modulo,) Tj
+0 -14 Td
+(3. secciones 21 a 26 para operacion por rol,) Tj
+0 -14 Td
+(4. secciones 27 a 32 para control, calidad y cierre.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Espacios de captura globales) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 00-1: Pantalla de login completa]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 00-2: Dashboard principal por rol]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 00-3: Menu de navegacion y acciones rapidas]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. OBJETIVO GENERAL DE CONTROLAPP) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(ControlApp centraliza la gestion operativa de servicios en conjuntos:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- planeacion de tareas,) Tj
+0 -14 Td
+(- ejecucion de campo,) Tj
+0 -14 Td
+(- validacion de cumplimiento,) Tj
+0 -14 Td
+(- control de recursos,) Tj
+0 -14 Td
+(- reporteria de resultados.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Resultados esperados al usar bien la plataforma:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- menos reprocesos,) Tj
+0 -14 Td
+(- mas trazabilidad,) Tj
+0 -14 Td
+(- mejor uso de insumos y equipos,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 1 de 21) Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 3 0 R >>
+endobj
+5 0 obj
+<< /Length 1920 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(- mayor capacidad de decision por datos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(2. ALCANCE FUNCIONAL TOTAL DEL SISTEMA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(El sistema cubre de punta a punta:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. autenticacion y seguridad,) Tj
+0 -14 Td
+(2. usuarios y roles,) Tj
+0 -14 Td
+(3. conjuntos,) Tj
+0 -14 Td
+(4. ubicaciones y elementos,) Tj
+0 -14 Td
+(5. inventario de insumos,) Tj
+0 -14 Td
+(6. herramientas y stock por estado,) Tj
+0 -14 Td
+(7. maquinaria,) Tj
+0 -14 Td
+(8. solicitudes,) Tj
+0 -14 Td
+(9. tareas correctivas,) Tj
+0 -14 Td
+(10. tareas preventivas,) Tj
+0 -14 Td
+(11. cronograma mensual y semanal,) Tj
+0 -14 Td
+(12. agenda de maquinaria,) Tj
+0 -14 Td
+(13. agenda de herramientas,) Tj
+0 -14 Td
+(14. compromisos y pqrs,) Tj
+0 -14 Td
+(15. reportes y exportables,) Tj
+0 -14 Td
+(16. notificaciones y cumpleanos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3. ROLES Y PERMISOS OPERATIVOS REALES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3.1 GERENTE) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Puede ejecutar practicamente toda la operacion:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- crear usuarios,) Tj
+0 -14 Td
+(- editar usuarios,) Tj
+0 -14 Td
+(- eliminar usuarios,) Tj
+0 -14 Td
+(- crear conjuntos,) Tj
+0 -14 Td
+(- editar conjuntos,) Tj
+0 -14 Td
+(- crear catalogos,) Tj
+0 -14 Td
+(- crear tareas,) Tj
+0 -14 Td
+(- definir preventivas,) Tj
+0 -14 Td
+(- aprobar decisiones clave,) Tj
+0 -14 Td
+(- revisar tableros e informes globales.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3.2 SUPERVISOR) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Gestion tactica del dia a dia:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- seguimiento de tareas,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 2 de 21) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 1869 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(- veredicto de cierre,) Tj
+0 -14 Td
+(- gestion de solicitudes,) Tj
+0 -14 Td
+(- control del cronograma,) Tj
+0 -14 Td
+(- monitoreo de recursos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3.3 JEFE DE OPERACIONES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Orquestacion transversal:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- pendientes criticos,) Tj
+0 -14 Td
+(- veredictos,) Tj
+0 -14 Td
+(- solicitudes,) Tj
+0 -14 Td
+(- compromisos,) Tj
+0 -14 Td
+(- revision de agendas globales.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3.4 ADMINISTRADOR) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Operacion administrativa por conjunto:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- pqrs,) Tj
+0 -14 Td
+(- compromisos,) Tj
+0 -14 Td
+(- consulta de inventario,) Tj
+0 -14 Td
+(- consulta de cronograma,) Tj
+0 -14 Td
+(- consulta de reportes.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(3.5 OPERARIO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Ejecucion en campo:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- visualizar tareas,) Tj
+0 -14 Td
+(- ejecutar tareas,) Tj
+0 -14 Td
+(- cerrar tareas,) Tj
+0 -14 Td
+(- registrar observaciones y consumos,) Tj
+0 -14 Td
+(- consultar solicitudes.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 03-1: Comparativo visual de dashboards por rol]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(4. ORDEN RECOMENDADO DE PUESTA EN MARCHA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Nunca inicie por tareas sin antes crear estructura base.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Orden obligatorio recomendado:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. crear empresa y parametros,) Tj
+0 -14 Td
+(2. crear usuarios base,) Tj
+0 -14 Td
+(3. crear conjuntos,) Tj
+0 -14 Td
+(4. definir ubicaciones y elementos,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 3 de 21) Tj
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Length 1971 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(5. cargar catalogo de insumos,) Tj
+0 -14 Td
+(6. cargar catalogo de herramientas,) Tj
+0 -14 Td
+(7. cargar catalogo de maquinaria,) Tj
+0 -14 Td
+(8. configurar inventario inicial,) Tj
+0 -14 Td
+(9. crear preventivas,) Tj
+0 -14 Td
+(10. generar borrador de cronograma,) Tj
+0 -14 Td
+(11. crear correctivas urgentes,) Tj
+0 -14 Td
+(12. operar ciclo diario,) Tj
+0 -14 Td
+(13. medir con reportes.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 04-1: Diagrama de flujo de implementacion inicial]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(5. ACCESO Y AUTENTICACION) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(5.1 INICIAR SESION) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Paso a paso:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir app,) Tj
+0 -14 Td
+(2. ingresar correo,) Tj
+0 -14 Td
+(3. ingresar contrasena,) Tj
+0 -14 Td
+(4. pulsar ingresar,) Tj
+0 -14 Td
+(5. verificar redireccion por rol.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(5.2 RECUPERAR ACCESO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. pulsar recuperar acceso,) Tj
+0 -14 Td
+(2. ingresar datos de validacion,) Tj
+0 -14 Td
+(3. definir nueva contrasena,) Tj
+0 -14 Td
+(4. reintentar login.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(5.3 CAMBIO DE CONTRASENA AUTENTICADO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. icono de candado,) Tj
+0 -14 Td
+(2. contrasena actual,) Tj
+0 -14 Td
+(3. contrasena nueva,) Tj
+0 -14 Td
+(4. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(5.4 CIERRE DE SESION) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. icono salir,) Tj
+0 -14 Td
+(2. confirmar,) Tj
+0 -14 Td
+(3. validar retorno al login.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 05-1: Login]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 05-2: Dialogo recuperar acceso]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 05-3: Dialogo cambiar contrasena]) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 4 de 21) Tj
+ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 9 0 R >>
+endobj
+11 0 obj
+<< /Length 1746 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(6. CONFIGURACION INICIAL DE EMPRESA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(6.1 CREAR EMPRESA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Campos recomendados:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- nit,) Tj
+0 -14 Td
+(- nombre,) Tj
+0 -14 Td
+(- correo,) Tj
+0 -14 Td
+(- reglas generales de operacion.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(6.2 PARAMETROS DE TIEMPO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- limite de minutos por semana,) Tj
+0 -14 Td
+(- horario apertura/cierre,) Tj
+0 -14 Td
+(- descanso.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(6.3 FESTIVOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- definir rango,) Tj
+0 -14 Td
+(- cargar festivos,) Tj
+0 -14 Td
+(- validar impacto en cronograma.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 06-1: Pantalla festivos]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 06-2: Parametros operativos empresa]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(7. GESTION COMPLETA DE USUARIOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(7.1 CREAR USUARIO \(FLUJO COMPLETO\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. entrar a crear usuario,) Tj
+0 -14 Td
+(2. completar datos personales,) Tj
+0 -14 Td
+(3. elegir rol,) Tj
+0 -14 Td
+(4. completar contacto,) Tj
+0 -14 Td
+(5. guardar,) Tj
+0 -14 Td
+(6. validar que aparezca en lista.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Checklist al crear usuario:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- correo unico,) Tj
+0 -14 Td
+(- rol correcto,) Tj
+0 -14 Td
+(- identificacion correcta,) Tj
+0 -14 Td
+(- datos minimos completos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 5 de 21) Tj
+ET
+endstream
+endobj
+12 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 11 0 R >>
+endobj
+13 0 obj
+<< /Length 1886 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(7.2 EDITAR USUARIO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir detalle usuario,) Tj
+0 -14 Td
+(2. editar campos,) Tj
+0 -14 Td
+(3. guardar,) Tj
+0 -14 Td
+(4. validar reflejo en lista.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(7.3 ELIMINAR USUARIO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. validar que no deje proceso huercano,) Tj
+0 -14 Td
+(2. eliminar,) Tj
+0 -14 Td
+(3. confirmar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(7.4 REASIGNAR USUARIO ENTRE CONJUNTOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. identificar conjunto origen,) Tj
+0 -14 Td
+(2. retirar asignacion,) Tj
+0 -14 Td
+(3. asignar en destino,) Tj
+0 -14 Td
+(4. validar permisos visibles.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(7.5 CAMBIAR CONTRASENA DE USUARIO POR GERENTE) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. seleccionar usuario,) Tj
+0 -14 Td
+(2. ingresar nueva contrasena,) Tj
+0 -14 Td
+(3. guardar,) Tj
+0 -14 Td
+(4. notificar al usuario.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 07-1: Formulario crear usuario]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 07-2: Lista usuarios con acciones]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 07-3: Edicion usuario]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(8. GESTION COMPLETA DE CONJUNTOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(8.1 CREAR CONJUNTO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir crear conjunto,) Tj
+0 -14 Td
+(2. ingresar nit,) Tj
+0 -14 Td
+(3. ingresar nombre,) Tj
+0 -14 Td
+(4. ingresar direccion,) Tj
+0 -14 Td
+(5. ingresar contacto,) Tj
+0 -14 Td
+(6. definir tipo de servicio,) Tj
+0 -14 Td
+(7. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(8.2 EDITAR CONJUNTO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir detalle conjunto,) Tj
+0 -14 Td
+(2. editar datos,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 6 de 21) Tj
+ET
+endstream
+endobj
+14 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 13 0 R >>
+endobj
+15 0 obj
+<< /Length 1770 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(3. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(8.3 ELIMINAR CONJUNTO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Solo si no hay operacion activa:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- sin tareas pendientes criticas,) Tj
+0 -14 Td
+(- sin solicitudes pendientes criticas,) Tj
+0 -14 Td
+(- con respaldo de reportes.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(8.4 USUARIOS POR CONJUNTO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir usuarios del conjunto,) Tj
+0 -14 Td
+(2. asignar administrador,) Tj
+0 -14 Td
+(3. asignar supervisor,) Tj
+0 -14 Td
+(4. asignar operarios,) Tj
+0 -14 Td
+(5. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 08-1: Crear conjunto]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 08-2: Detalle conjunto]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 08-3: Usuarios por conjunto]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(9. UBICACIONES Y ELEMENTOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(9.1 CREAR UBICACION) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. entrar a ubicaciones,) Tj
+0 -14 Td
+(2. agregar ubicacion,) Tj
+0 -14 Td
+(3. nombre descriptivo,) Tj
+0 -14 Td
+(4. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(9.2 CREAR ELEMENTO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir ubicacion,) Tj
+0 -14 Td
+(2. agregar elemento,) Tj
+0 -14 Td
+(3. nombrar elemento,) Tj
+0 -14 Td
+(4. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(9.3 BUSQUEDA Y ORDEN) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Mantener convencion:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- ubicacion: zona general,) Tj
+0 -14 Td
+(- elemento: punto puntual.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Ejemplo:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 7 de 21) Tj
+ET
+endstream
+endobj
+16 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 15 0 R >>
+endobj
+17 0 obj
+<< /Length 1846 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(- ubicacion: Torre B - Piscina,) Tj
+0 -14 Td
+(- elemento: Borde piscina norte.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 09-1: Lista ubicaciones]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 09-2: Elementos por ubicacion]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(10. INVENTARIO DE INSUMOS \(TODO EL FLUJO\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(10.1 CARGAR CATALOGO DE INSUMOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. entrar a crear insumo,) Tj
+0 -14 Td
+(2. definir nombre,) Tj
+0 -14 Td
+(3. categoria,) Tj
+0 -14 Td
+(4. unidad,) Tj
+0 -14 Td
+(5. umbral,) Tj
+0 -14 Td
+(6. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(10.2 VER INVENTARIO POR CONJUNTO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir inventario,) Tj
+0 -14 Td
+(2. pestana insumos,) Tj
+0 -14 Td
+(3. aplicar busqueda/filtros.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(10.3 AGREGAR STOCK) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. seleccionar insumo,) Tj
+0 -14 Td
+(2. agregar cantidad,) Tj
+0 -14 Td
+(3. registrar movimiento.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(10.4 CONSUMIR STOCK) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. seleccionar insumo,) Tj
+0 -14 Td
+(2. cantidad consumida,) Tj
+0 -14 Td
+(3. confirmar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(10.5 IDENTIFICAR STOCK BAJO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. filtrar bajos,) Tj
+0 -14 Td
+(2. priorizar por criticidad,) Tj
+0 -14 Td
+(3. disparar solicitud.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 10-1: Inventario insumos tabla]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 10-2: Dialogo agregar stock]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 10-3: Vista de insumos bajos]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 8 de 21) Tj
+ET
+endstream
+endobj
+18 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 17 0 R >>
+endobj
+19 0 obj
+<< /Length 1773 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(11. HERRAMIENTAS \(CATALOGO Y STOCK POR ESTADO\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(11.1 CREAR HERRAMIENTA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir crear herramienta,) Tj
+0 -14 Td
+(2. nombre,) Tj
+0 -14 Td
+(3. categoria,) Tj
+0 -14 Td
+(4. unidad,) Tj
+0 -14 Td
+(5. modo de control,) Tj
+0 -14 Td
+(6. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(11.2 VER STOCK HERRAMIENTAS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Columnas clave:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- herramienta,) Tj
+0 -14 Td
+(- cantidad,) Tj
+0 -14 Td
+(- estado,) Tj
+0 -14 Td
+(- modo control,) Tj
+0 -14 Td
+(- origen.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(11.3 AJUSTAR CANTIDAD) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. seleccionar herramienta,) Tj
+0 -14 Td
+(2. ajustar stock,) Tj
+0 -14 Td
+(3. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(11.4 CAMBIAR ESTADO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. seleccionar herramienta,) Tj
+0 -14 Td
+(2. mover cantidad a estado nuevo,) Tj
+0 -14 Td
+(3. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(11.5 DEVOLVER PRESTAMO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. seleccionar item prestado,) Tj
+0 -14 Td
+(2. definir cantidad a devolver,) Tj
+0 -14 Td
+(3. confirmar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 11-1: Lista herramientas]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 11-2: Cambio de estado herramienta]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 11-3: Devolucion de prestamo]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(12. MAQUINARIA \(CATALOGO, DISPONIBILIDAD Y AGENDA\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(12.1 CREAR MAQUINARIA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 9 de 21) Tj
+ET
+endstream
+endobj
+20 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 19 0 R >>
+endobj
+21 0 obj
+<< /Length 1747 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Campos:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- nombre,) Tj
+0 -14 Td
+(- tipo,) Tj
+0 -14 Td
+(- estado,) Tj
+0 -14 Td
+(- propietario,) Tj
+0 -14 Td
+(- tenencia,) Tj
+0 -14 Td
+(- observaciones.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(12.2 EDITAR MAQUINARIA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir listado,) Tj
+0 -14 Td
+(2. editar,) Tj
+0 -14 Td
+(3. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(12.3 REVISAR DISPONIBILIDAD) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. elegir rango de fechas,) Tj
+0 -14 Td
+(2. consultar disponibilidad,) Tj
+0 -14 Td
+(3. validar conflictos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(12.4 GESTION DE CONFLICTOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Si equipo ocupado:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- cambiar equipo,) Tj
+0 -14 Td
+(- mover horario,) Tj
+0 -14 Td
+(- dividir actividad.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 12-1: Crear maquinaria]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 12-2: Lista maquinaria]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 12-3: Agenda maquinaria por mes]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(13. SOLICITUDES \(INSUMOS, MAQUINARIA, TAREA\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(13.1 SOLICITUD DE INSUMOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir solicitud insumos,) Tj
+0 -14 Td
+(2. revisar recomendados,) Tj
+0 -14 Td
+(3. agregar carrito,) Tj
+0 -14 Td
+(4. enviar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(13.2 REVISION DE SOLICITUDES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir lista solicitudes,) Tj
+0 -14 Td
+(2. filtrar por estado,) Tj
+0 -14 Td
+(3. abrir detalle,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 10 de 21) Tj
+ET
+endstream
+endobj
+22 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 21 0 R >>
+endobj
+23 0 obj
+<< /Length 2051 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(4. aprobar o rechazar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(13.3 SOLICITUD DE MAQUINARIA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. registrar necesidad,) Tj
+0 -14 Td
+(2. definir rango esperado,) Tj
+0 -14 Td
+(3. enviar,) Tj
+0 -14 Td
+(4. hacer seguimiento.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(13.4 SOLICITUD DE TAREA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. registrar requerimiento,) Tj
+0 -14 Td
+(2. adjuntar descripcion clara,) Tj
+0 -14 Td
+(3. enviar a aprobacion.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 13-1: Formulario solicitud insumos]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 13-2: Lista solicitudes y filtros]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 13-3: Detalle solicitud con aprobar/rechazar]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14. TAREAS CORRECTIVAS \(CREACION, EJECUCION, CIERRE, VEREDICTO\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14.1 CREAR TAREA CORRECTIVA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Paso a paso completo:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir crear tarea,) Tj
+0 -14 Td
+(2. seleccionar conjunto,) Tj
+0 -14 Td
+(3. seleccionar ubicacion,) Tj
+0 -14 Td
+(4. seleccionar elemento,) Tj
+0 -14 Td
+(5. escribir descripcion accionable,) Tj
+0 -14 Td
+(6. definir prioridad,) Tj
+0 -14 Td
+(7. definir fecha inicio,) Tj
+0 -14 Td
+(8. definir fecha fin,) Tj
+0 -14 Td
+(9. definir hora inicio,) Tj
+0 -14 Td
+(10. definir duracion minutos,) Tj
+0 -14 Td
+(11. asignar operarios,) Tj
+0 -14 Td
+(12. asignar supervisor,) Tj
+0 -14 Td
+(13. asignar maquinaria \(si aplica\),) Tj
+0 -14 Td
+(14. asignar herramientas \(si aplica\),) Tj
+0 -14 Td
+(15. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14.2 REGLAS DURANTE CREACION) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(El sistema puede:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- bloquear por conflicto de recurso,) Tj
+0 -14 Td
+(- aplicar reemplazos de baja prioridad,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 11 de 21) Tj
+ET
+endstream
+endobj
+24 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 23 0 R >>
+endobj
+25 0 obj
+<< /Length 1881 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(- marcar preventivas impactadas.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14.3 EJECUCION POR OPERARIO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir tareas,) Tj
+0 -14 Td
+(2. filtrar hoy/pendientes,) Tj
+0 -14 Td
+(3. abrir detalle,) Tj
+0 -14 Td
+(4. iniciar,) Tj
+0 -14 Td
+(5. ejecutar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14.4 CIERRE POR OPERARIO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. pulsar cerrar,) Tj
+0 -14 Td
+(2. registrar observaciones,) Tj
+0 -14 Td
+(3. registrar insumos usados,) Tj
+0 -14 Td
+(4. enviar a validacion.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14.5 VEREDICTO SUPERVISOR O JEFE) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir pendientes de aprobacion,) Tj
+0 -14 Td
+(2. revisar cierre,) Tj
+0 -14 Td
+(3. aprobar o rechazar,) Tj
+0 -14 Td
+(4. dejar motivo si rechaza.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(14.6 REPROCESO DE RECHAZO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. operario revisa causa,) Tj
+0 -14 Td
+(2. corrige,) Tj
+0 -14 Td
+(3. vuelve a cerrar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 14-1: Formulario crear tarea]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 14-2: Cerrar tarea con insumos]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 14-3: Veredicto aprobacion/rechazo]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(15. TAREAS PREVENTIVAS \(DEFINICION, REGLAS, REGENERACION\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(15.1 CREAR PREVENTIVA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir modulo preventivas,) Tj
+0 -14 Td
+(2. crear preventiva,) Tj
+0 -14 Td
+(3. descripcion,) Tj
+0 -14 Td
+(4. frecuencia,) Tj
+0 -14 Td
+(5. ubicacion,) Tj
+0 -14 Td
+(6. elemento,) Tj
+0 -14 Td
+(7. operarios,) Tj
+0 -14 Td
+(8. supervisor,) Tj
+0 -14 Td
+(9. prioridad,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 12 de 21) Tj
+ET
+endstream
+endobj
+26 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 25 0 R >>
+endobj
+27 0 obj
+<< /Length 1742 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(10. definir modelo de duracion,) Tj
+0 -14 Td
+(11. asociar recursos,) Tj
+0 -14 Td
+(12. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(15.2 MODELOS DE DURACION) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- fija en minutos,) Tj
+0 -14 Td
+(- por rendimiento y unidad.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(15.3 DIVISION EN DIAS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Si tarea larga:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- activar dividir en dias,) Tj
+0 -14 Td
+(- definir numero de dias,) Tj
+0 -14 Td
+(- guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(15.4 EDITAR PREVENTIVA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir item,) Tj
+0 -14 Td
+(2. editar,) Tj
+0 -14 Td
+(3. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(15.5 ELIMINAR PREVENTIVA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. eliminar,) Tj
+0 -14 Td
+(2. confirmar,) Tj
+0 -14 Td
+(3. regenerar borrador.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(15.6 GENERAR CRONOGRAMA MENSUAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. seleccionar mes y anio,) Tj
+0 -14 Td
+(2. ejecutar generacion,) Tj
+0 -14 Td
+(3. revisar tareas creadas,) Tj
+0 -14 Td
+(4. validar colisiones.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 15-1: Lista preventivas]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 15-2: Crear preventiva]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 15-3: Regenerar borrador]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(16. CRONOGRAMA \(VISTA MENSUAL Y SEMANAL\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(16.1 VISTA MENSUAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Permite:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- lectura macro de carga,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 13 de 21) Tj
+ET
+endstream
+endobj
+28 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 27 0 R >>
+endobj
+29 0 obj
+<< /Length 1699 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(- revison de dias criticos,) Tj
+0 -14 Td
+(- revision por estado.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(16.2 VISTA SEMANAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Permite:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- seguimiento fino,) Tj
+0 -14 Td
+(- control tactico diario,) Tj
+0 -14 Td
+(- ajustes rapidos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(16.3 FILTROS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- tipo,) Tj
+0 -14 Td
+(- estado,) Tj
+0 -14 Td
+(- operario,) Tj
+0 -14 Td
+(- ubicacion.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(16.4 HORARIO Y DESCANSO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(El cronograma considera:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- apertura,) Tj
+0 -14 Td
+(- cierre,) Tj
+0 -14 Td
+(- descanso,) Tj
+0 -14 Td
+(- festivos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 16-1: Cronograma mensual]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 16-2: Cronograma semanal]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 16-3: Panel de filtros]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(17. AGENDA DE MAQUINARIA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(17.1 CONSULTA POR MES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir agenda maquinaria,) Tj
+0 -14 Td
+(2. cambiar mes anterior/siguiente,) Tj
+0 -14 Td
+(3. elegir maquina,) Tj
+0 -14 Td
+(4. revisar planilla semanal.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(17.2 INTERPRETACION CODIGOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Use la leyenda de la pantalla para interpretar:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- entrada,) Tj
+0 -14 Td
+(- actividad,) Tj
+0 -14 Td
+(- reserva,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 14 de 21) Tj
+ET
+endstream
+endobj
+30 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 29 0 R >>
+endobj
+31 0 obj
+<< /Length 1858 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(- retorno.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(17.3 DECISION OPERATIVA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(No crear tarea con equipo si no existe hueco real.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 17-1: Agenda maquinaria panel izquierdo]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 17-2: Agenda maquinaria planilla]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(18. AGENDA DE HERRAMIENTAS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(18.1 CONSULTA POR MES Y HERRAMIENTA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir agenda herramientas,) Tj
+0 -14 Td
+(2. seleccionar mes,) Tj
+0 -14 Td
+(3. buscar herramienta,) Tj
+0 -14 Td
+(4. abrir detalle semanal.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(18.2 USO PARA PLANIFICACION) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- confirmar disponibilidad,) Tj
+0 -14 Td
+(- evitar doble reserva,) Tj
+0 -14 Td
+(- replanificar cuando haya colision.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 18-1: Agenda herramientas listado]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 18-2: Agenda herramientas detalle]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(19. COMPROMISOS Y PQRS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(19.1 CREAR COMPROMISO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir compromisos,) Tj
+0 -14 Td
+(2. escribir descripcion,) Tj
+0 -14 Td
+(3. guardar.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(19.2 CREAR PQRS \(ADMINISTRADOR\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir pqrs,) Tj
+0 -14 Td
+(2. registrar novedad/requerimiento,) Tj
+0 -14 Td
+(3. guardar,) Tj
+0 -14 Td
+(4. hacer seguimiento.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(19.3 ACTUALIZAR Y CERRAR) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. editar estado,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 15 de 21) Tj
+ET
+endstream
+endobj
+32 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 31 0 R >>
+endobj
+33 0 obj
+<< /Length 1814 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(2. actualizar observacion,) Tj
+0 -14 Td
+(3. cerrar cuando termina.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 19-1: Formulario compromiso/pqrs]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 19-2: Lista con estados]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(20. REPORTES Y EXPORTABLES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(20.1 TIPOS DE REPORTE) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- kpis,) Tj
+0 -14 Td
+(- serie diaria por estado,) Tj
+0 -14 Td
+(- resumen por conjunto,) Tj
+0 -14 Td
+(- resumen por operario,) Tj
+0 -14 Td
+(- uso insumos,) Tj
+0 -14 Td
+(- top maquinaria,) Tj
+0 -14 Td
+(- top herramientas,) Tj
+0 -14 Td
+(- detalle mensual tareas.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(20.2 FLUJO PARA GENERAR INFORME) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. elegir rango fechas,) Tj
+0 -14 Td
+(2. elegir conjunto o general,) Tj
+0 -14 Td
+(3. cargar tablero,) Tj
+0 -14 Td
+(4. analizar,) Tj
+0 -14 Td
+(5. exportar pdf.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(20.3 USO RECOMENDADO DE REPORTES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- comite semanal,) Tj
+0 -14 Td
+(- cierre mensual,) Tj
+0 -14 Td
+(- plan de mejora.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 20-1: Dashboard reportes]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 20-2: Exportacion informe]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(21. NOTIFICACIONES Y CUMPLEANOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(21.1 NOTIFICACIONES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir campana,) Tj
+0 -14 Td
+(2. revisar no leidas,) Tj
+0 -14 Td
+(3. marcar leida individual,) Tj
+0 -14 Td
+(4. marcar todas.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 16 de 21) Tj
+ET
+endstream
+endobj
+34 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 33 0 R >>
+endobj
+35 0 obj
+<< /Length 1904 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(21.2 CUMPLEANOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir modulo cumpleanos,) Tj
+0 -14 Td
+(2. revisar hoy,) Tj
+0 -14 Td
+(3. revisar mes,) Tj
+0 -14 Td
+(4. revisar anio.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 21-1: Panel notificaciones]) Tj
+0 -14 Td
+([ESPACIO CAPTURA 21-2: Pantalla cumpleanos]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(22. CATALOGO DE PANTALLAS Y QUE HACER EN CADA UNA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Esta seccion sirve como mapa total de la app.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Pantallas principales identificadas:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- login,) Tj
+0 -14 Td
+(- splash decision,) Tj
+0 -14 Td
+(- dashboard gerente,) Tj
+0 -14 Td
+(- dashboard supervisor,) Tj
+0 -14 Td
+(- dashboard administrador,) Tj
+0 -14 Td
+(- dashboard operario,) Tj
+0 -14 Td
+(- dashboard jefe operaciones,) Tj
+0 -14 Td
+(- crear usuario,) Tj
+0 -14 Td
+(- lista usuarios,) Tj
+0 -14 Td
+(- editar usuario,) Tj
+0 -14 Td
+(- crear conjunto,) Tj
+0 -14 Td
+(- lista conjuntos,) Tj
+0 -14 Td
+(- detalle conjunto,) Tj
+0 -14 Td
+(- mapa conjunto,) Tj
+0 -14 Td
+(- zonificacion,) Tj
+0 -14 Td
+(- crear insumo,) Tj
+0 -14 Td
+(- lista insumos,) Tj
+0 -14 Td
+(- crear maquinaria,) Tj
+0 -14 Td
+(- lista maquinaria,) Tj
+0 -14 Td
+(- crear herramienta,) Tj
+0 -14 Td
+(- lista herramientas,) Tj
+0 -14 Td
+(- stock herramientas empresa,) Tj
+0 -14 Td
+(- inventario,) Tj
+0 -14 Td
+(- solicitud insumo,) Tj
+0 -14 Td
+(- solicitud maquinaria,) Tj
+0 -14 Td
+(- solicitudes,) Tj
+0 -14 Td
+(- crear tarea,) Tj
+0 -14 Td
+(- tareas,) Tj
+0 -14 Td
+(- editar tarea,) Tj
+0 -14 Td
+(- preventivas,) Tj
+0 -14 Td
+(- crear preventiva,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 17 de 21) Tj
+ET
+endstream
+endobj
+36 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 35 0 R >>
+endobj
+37 0 obj
+<< /Length 1880 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(- cronograma,) Tj
+0 -14 Td
+(- crear cronograma,) Tj
+0 -14 Td
+(- borrador preventivas,) Tj
+0 -14 Td
+(- agenda maquinaria,) Tj
+0 -14 Td
+(- agenda herramientas,) Tj
+0 -14 Td
+(- compromisos,) Tj
+0 -14 Td
+(- compromisos por conjunto,) Tj
+0 -14 Td
+(- reportes,) Tj
+0 -14 Td
+(- reportes general,) Tj
+0 -14 Td
+(- notificaciones,) Tj
+0 -14 Td
+(- festivos,) Tj
+0 -14 Td
+(- cumpleanos,) Tj
+0 -14 Td
+(- pendientes jefe operaciones.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Para cada pantalla:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. abrir,) Tj
+0 -14 Td
+(2. identificar accion principal,) Tj
+0 -14 Td
+(3. ejecutar,) Tj
+0 -14 Td
+(4. validar resultado,) Tj
+0 -14 Td
+(5. registrar novedad si falla.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 22-1: Collage de pantallas criticas]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(23. FLUJOS OPERATIVOS DIARIOS POR ROL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(23.1 FLUJO GERENTE) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. revisar notificaciones,) Tj
+0 -14 Td
+(2. revisar solicitudes,) Tj
+0 -14 Td
+(3. revisar cronograma,) Tj
+0 -14 Td
+(4. ajustar recursos,) Tj
+0 -14 Td
+(5. revisar reportes,) Tj
+0 -14 Td
+(6. cerrar compromisos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(23.2 FLUJO SUPERVISOR) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. revisar tareas del dia,) Tj
+0 -14 Td
+(2. monitorear en proceso,) Tj
+0 -14 Td
+(3. aprobar/rechazar cierres,) Tj
+0 -14 Td
+(4. atender solicitudes,) Tj
+0 -14 Td
+(5. confirmar agenda siguiente dia.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(23.3 FLUJO JEFE OPERACIONES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. tablero pendientes,) Tj
+0 -14 Td
+(2. resolver cuellos de botella,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 18 de 21) Tj
+ET
+endstream
+endobj
+38 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 37 0 R >>
+endobj
+39 0 obj
+<< /Length 1723 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(3. veredictos,) Tj
+0 -14 Td
+(4. seguimiento compromisos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(23.4 FLUJO ADMINISTRADOR) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. pqrs,) Tj
+0 -14 Td
+(2. inventario,) Tj
+0 -14 Td
+(3. cronograma,) Tj
+0 -14 Td
+(4. reporte.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(23.5 FLUJO OPERARIO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. tomar tarea,) Tj
+0 -14 Td
+(2. ejecutar,) Tj
+0 -14 Td
+(3. cerrar con evidencia,) Tj
+0 -14 Td
+(4. atender rechazo si aplica.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(24. FLUJOS SEMANALES Y MENSUALES) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(24.1 SEMANAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- corte de cumplimiento,) Tj
+0 -14 Td
+(- revision rechazos,) Tj
+0 -14 Td
+(- revision stock,) Tj
+0 -14 Td
+(- revision compromisos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(24.2 MENSUAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- cierre kpis,) Tj
+0 -14 Td
+(- analisis eficiencia,) Tj
+0 -14 Td
+(- comparativo periodos,) Tj
+0 -14 Td
+(- plan mejora siguiente mes.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(25. REGLAS DE CALIDAD DE DATOS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Reglas:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(1. no usar descripciones genericas,) Tj
+0 -14 Td
+(2. no duplicar usuarios,) Tj
+0 -14 Td
+(3. no dejar tareas sin responsable,) Tj
+0 -14 Td
+(4. no cerrar tareas sin observacion,) Tj
+0 -14 Td
+(5. no consumir insumos sin registro,) Tj
+0 -14 Td
+(6. no aprobar sin revisar evidencia.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 19 de 21) Tj
+ET
+endstream
+endobj
+40 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 39 0 R >>
+endobj
+41 0 obj
+<< /Length 1874 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(26. MATRIZ DE ERRORES Y ACCIONES CORRECTIVAS) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Error: token requerido) Tj
+0 -14 Td
+(Accion: reingresar) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Error: no autorizado) Tj
+0 -14 Td
+(Accion: usar rol correcto) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Error: recurso ocupado) Tj
+0 -14 Td
+(Accion: reprogramar o cambiar recurso) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Error: validacion de formulario) Tj
+0 -14 Td
+(Accion: completar datos obligatorios) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Error: tarea rechazada) Tj
+0 -14 Td
+(Accion: corregir y reenviar cierre) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(27. CHECKLIST DIARIO OPERATIVO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- revisar no leidas,) Tj
+0 -14 Td
+(- revisar pendientes hoy,) Tj
+0 -14 Td
+(- revisar cierres pendientes,) Tj
+0 -14 Td
+(- revisar stock bajo,) Tj
+0 -14 Td
+(- revisar agenda manana.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(28. CHECKLIST SEMANAL OPERATIVO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- revisar cumplimiento por operario,) Tj
+0 -14 Td
+(- revisar tareas rechazadas,) Tj
+0 -14 Td
+(- revisar preventivas criticas,) Tj
+0 -14 Td
+(- revisar compromisos vencidos.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(29. CHECKLIST MENSUAL OPERATIVO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- consolidar kpis,) Tj
+0 -14 Td
+(- validar consumo vs ejecucion,) Tj
+0 -14 Td
+(- generar informe,) Tj
+0 -14 Td
+(- socializar plan mejora.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(30. PLANTILLA PARA EVIDENCIAS DE CAPTURA) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Use esta plantilla en cada proceso:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- captura antes,) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 20 de 21) Tj
+ET
+endstream
+endobj
+42 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 41 0 R >>
+endobj
+43 0 obj
+<< /Length 1664 >>
+stream
+BT
+/F1 10.5 Tf
+48 776 Td
+(ControlApp - Manual de Usuario v2) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(- captura durante,) Tj
+0 -14 Td
+(- captura resultado.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Formato sugerido:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA XX-A: Antes]) Tj
+0 -14 Td
+([ESPACIO CAPTURA XX-B: Durante]) Tj
+0 -14 Td
+([ESPACIO CAPTURA XX-C: Resultado]) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(31. GLOSARIO COMPLETO) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(conjunto: unidad operativa) Tj
+0 -14 Td
+(ubicacion: zona de trabajo) Tj
+0 -14 Td
+(elemento: punto de intervencion) Tj
+0 -14 Td
+(correctiva: tarea por novedad) Tj
+0 -14 Td
+(preventiva: tarea periodica) Tj
+0 -14 Td
+(veredicto: aprobacion o rechazo) Tj
+0 -14 Td
+(pqrs: requerimiento administrativo) Tj
+0 -14 Td
+(cronograma: plan de ejecucion en tiempo) Tj
+0 -14 Td
+(agenda: plan de uso de recurso) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(32. CIERRE DEL MANUAL) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Este manual esta disenado para cubrir TODO lo que se puede hacer en la app a nivel funcional y) Tj
+0 -14 Td
+(operativo.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Recomendacion final:) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- usarlo como base oficial de entrenamiento,) Tj
+0 -14 Td
+(- actualizarlo cada vez que se agregue una pantalla,) Tj
+0 -14 Td
+(- mantener biblioteca de capturas en cada seccion.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+([ESPACIO CAPTURA 32-1: Portada final del manual con version y fecha]) Tj
+0 -14 Td
+(----------------------------------------------------------------------------------------) Tj
+0 -14 Td
+(Pagina 21 de 21) Tj
+ET
+endstream
+endobj
+44 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 45 0 R >> >> /Contents 43 0 R >>
+endobj
+45 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 46
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000260 00000 n 
+0000002468 00000 n 
+0000002595 00000 n 
+0000004567 00000 n 
+0000004694 00000 n 
+0000006615 00000 n 
+0000006742 00000 n 
+0000008765 00000 n 
+0000008893 00000 n 
+0000010692 00000 n 
+0000010821 00000 n 
+0000012760 00000 n 
+0000012889 00000 n 
+0000014712 00000 n 
+0000014841 00000 n 
+0000016740 00000 n 
+0000016869 00000 n 
+0000018695 00000 n 
+0000018824 00000 n 
+0000020624 00000 n 
+0000020753 00000 n 
+0000022857 00000 n 
+0000022986 00000 n 
+0000024920 00000 n 
+0000025049 00000 n 
+0000026844 00000 n 
+0000026973 00000 n 
+0000028725 00000 n 
+0000028854 00000 n 
+0000030765 00000 n 
+0000030894 00000 n 
+0000032761 00000 n 
+0000032890 00000 n 
+0000034847 00000 n 
+0000034976 00000 n 
+0000036909 00000 n 
+0000037038 00000 n 
+0000038814 00000 n 
+0000038943 00000 n 
+0000040870 00000 n 
+0000040999 00000 n 
+0000042716 00000 n 
+0000042845 00000 n 
+trailer
+<< /Size 46 /Root 1 0 R >>
+startxref
+42916
+%%EOF
