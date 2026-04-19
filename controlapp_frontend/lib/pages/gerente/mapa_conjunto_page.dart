@@ -1,9 +1,14 @@
-import 'package:flutter/material.dart';
+import 'dart:typed_data';
 
-import 'package:flutter_application_1/api/gerente_api.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/service/app_error.dart';
+import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
+import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
+import 'package:intl/intl.dart';
 
 class MapaConjuntoPage extends StatefulWidget {
   const MapaConjuntoPage({
@@ -20,15 +25,26 @@ class MapaConjuntoPage extends StatefulWidget {
 }
 
 class _MapaConjuntoPageState extends State<MapaConjuntoPage> {
-  final GerenteApi _api = GerenteApi();
-  late Future<Conjunto> _futureConjunto;
+  final ConjuntoApi _api = ConjuntoApi();
+  final SessionService _session = SessionService();
   final TextEditingController _busquedaCtrl = TextEditingController();
+
+  late Future<Conjunto> _futureConjunto;
   String _busqueda = '';
+  String _rolActual = '';
+  bool _subiendoMapa = false;
+  bool _cargandoMapa = false;
+  Uint8List? _mapaBytes;
+  String? _errorMapa;
+
+  bool get _puedeEditarMapa =>
+      _rolActual == 'gerente' || _rolActual == 'jefe_operaciones';
 
   @override
   void initState() {
     super.initState();
-    _futureConjunto = _api.obtenerConjunto(widget.conjuntoNit);
+    _futureConjunto = _api.obtenerDetalleMapaConjunto(widget.conjuntoNit);
+    _cargarRolActual();
   }
 
   @override
@@ -37,11 +53,106 @@ class _MapaConjuntoPageState extends State<MapaConjuntoPage> {
     super.dispose();
   }
 
+  Future<void> _cargarRolActual() async {
+    final rol = (await _session.getRol())?.trim().toLowerCase() ?? '';
+    if (!mounted) return;
+    setState(() => _rolActual = rol);
+  }
+
   Future<void> _refresh() async {
     setState(() {
-      _futureConjunto = _api.obtenerConjunto(widget.conjuntoNit);
+      _mapaBytes = null;
+      _errorMapa = null;
+      _cargandoMapa = false;
+      _futureConjunto = _api.obtenerDetalleMapaConjunto(widget.conjuntoNit);
     });
-    await _futureConjunto;
+
+    final conjunto = await _futureConjunto;
+    await _cargarMapaSiExiste(conjunto);
+  }
+
+  Future<void> _cargarMapaSiExiste(Conjunto conjunto) async {
+    if (!conjunto.tieneMapaConjunto) {
+      if (!mounted) return;
+      setState(() {
+        _mapaBytes = null;
+        _errorMapa = null;
+        _cargandoMapa = false;
+      });
+      return;
+    }
+
+    if (_cargandoMapa || _mapaBytes != null || _errorMapa != null) return;
+
+    try {
+      if (mounted) {
+        setState(() => _cargandoMapa = true);
+      }
+      final bytes = await _api.descargarMapaConjunto(conjunto.nit);
+      if (!mounted) return;
+      setState(() {
+        _mapaBytes = bytes;
+        _errorMapa = null;
+        _cargandoMapa = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _mapaBytes = null;
+        _errorMapa = AppError.messageOf(e);
+        _cargandoMapa = false;
+      });
+    }
+  }
+
+  Future<void> _seleccionarYSubirMapa(Conjunto conjunto) async {
+    final archivos = await UniversalFilePick.pick(
+      allowMultiple: false,
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+    );
+    if (archivos.isEmpty) return;
+
+    final SelectedUploadFile archivo = archivos.first;
+    setState(() => _subiendoMapa = true);
+
+    try {
+      final actualizado = await _api.subirMapaConjunto(
+        conjuntoNit: conjunto.nit,
+        archivo: archivo,
+      );
+
+      Uint8List? bytes;
+      if (archivo.hasBytes) {
+        bytes = archivo.bytes;
+      } else {
+        bytes = await _api.descargarMapaConjunto(conjunto.nit);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _futureConjunto = Future<Conjunto>.value(actualizado);
+        _mapaBytes = bytes;
+        _errorMapa = null;
+        _cargandoMapa = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            conjunto.tieneMapaConjunto
+                ? 'Mapa actualizado correctamente.'
+                : 'Mapa cargado correctamente.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(AppError.messageOf(e))));
+    } finally {
+      if (mounted) setState(() => _subiendoMapa = false);
+    }
   }
 
   List<UbicacionConElementos> _filtrarUbicaciones(
@@ -113,6 +224,12 @@ class _MapaConjuntoPageState extends State<MapaConjuntoPage> {
           final totalZonas = _countZonas(conjunto.ubicaciones);
           final totalAreas = _countAreas(conjunto.ubicaciones);
 
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _cargarMapaSiExiste(conjunto);
+            }
+          });
+
           return RefreshIndicator(
             onRefresh: _refresh,
             child: ListView(
@@ -124,6 +241,15 @@ class _MapaConjuntoPageState extends State<MapaConjuntoPage> {
                   ubicaciones: totalUbicaciones,
                   zonas: totalZonas,
                   areas: totalAreas,
+                ),
+                const SizedBox(height: 14),
+                _MapaImagenCard(
+                  conjunto: conjunto,
+                  puedeEditar: _puedeEditarMapa,
+                  subiendo: _subiendoMapa,
+                  mapaBytes: _mapaBytes,
+                  errorMapa: _errorMapa,
+                  onSubir: () => _seleccionarYSubirMapa(conjunto),
                 ),
                 const SizedBox(height: 14),
                 TextField(
@@ -213,7 +339,7 @@ class _ResumenMapaCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const Text(
-            'Aquí puedes entender rápidamente cómo está organizado el conjunto desde las ubicaciones principales hasta las áreas finales.',
+            'Todos los roles pueden consultar el mapa cargado del conjunto y revisar la estructura registrada por ubicaciones, subzonas y áreas.',
             style: TextStyle(color: AppTheme.textMuted, height: 1.35),
           ),
           const SizedBox(height: 18),
@@ -227,6 +353,212 @@ class _ResumenMapaCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MapaImagenCard extends StatelessWidget {
+  const _MapaImagenCard({
+    required this.conjunto,
+    required this.puedeEditar,
+    required this.subiendo,
+    required this.mapaBytes,
+    required this.errorMapa,
+    required this.onSubir,
+  });
+
+  final Conjunto conjunto;
+  final bool puedeEditar;
+  final bool subiendo;
+  final Uint8List? mapaBytes;
+  final String? errorMapa;
+  final VoidCallback onSubir;
+
+  @override
+  Widget build(BuildContext context) {
+    final fechaActualizacion = conjunto.mapaConjuntoActualizadoEn;
+    final fechaLabel = fechaActualizacion == null
+        ? null
+        : DateFormat('dd/MM/yyyy HH:mm').format(fechaActualizacion.toLocal());
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.black12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 18,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Plano o foto del mapa',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.primaryDark,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      conjunto.tieneMapaConjunto
+                          ? 'El mapa cargado queda visible para todos los roles del sistema.'
+                          : 'Aun no se ha cargado una imagen del mapa del conjunto.',
+                      style: const TextStyle(
+                        color: Colors.black54,
+                        height: 1.35,
+                      ),
+                    ),
+                    if (fechaLabel != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Ultima actualizacion: $fechaLabel',
+                        style: const TextStyle(
+                          color: AppTheme.textMuted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (puedeEditar)
+                FilledButton.icon(
+                  onPressed: subiendo ? null : onSubir,
+                  icon: subiendo
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          conjunto.tieneMapaConjunto
+                              ? Icons.edit_rounded
+                              : Icons.upload_file_rounded,
+                        ),
+                  label: Text(
+                    conjunto.tieneMapaConjunto ? 'Actualizar' : 'Subir foto',
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(minHeight: 220, maxHeight: 520),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF4F7F5),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFDCE7E1)),
+            ),
+            child: Builder(
+              builder: (context) {
+                if (subiendo && mapaBytes == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (errorMapa != null) {
+                  return _MapaPlaceholder(
+                    icon: Icons.broken_image_outlined,
+                    title: 'No se pudo cargar la imagen',
+                    message: errorMapa!,
+                  );
+                }
+                if (mapaBytes == null) {
+                  return _MapaPlaceholder(
+                    icon: Icons.map_outlined,
+                    title: 'Mapa pendiente',
+                    message: puedeEditar
+                        ? 'Sube una foto o plano del conjunto para que todos los roles puedan consultarlo.'
+                        : 'Cuando gerente o jefe de operaciones carguen el mapa, podras verlo aqui.',
+                  );
+                }
+
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 4,
+                    child: Image.memory(
+                      mapaBytes!,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const _MapaPlaceholder(
+                        icon: Icons.image_not_supported_outlined,
+                        title: 'Formato no compatible',
+                        message:
+                            'La imagen cargada no se pudo renderizar en esta vista.',
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (!puedeEditar) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Solo gerente y jefe de operaciones pueden subir o reemplazar la imagen.',
+              style: TextStyle(
+                color: AppTheme.textMuted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MapaPlaceholder extends StatelessWidget {
+  const _MapaPlaceholder({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 46, color: AppTheme.primary),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.black54, height: 1.35),
+            ),
+          ],
+        ),
       ),
     );
   }

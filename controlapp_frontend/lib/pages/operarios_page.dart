@@ -10,6 +10,7 @@ import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
+import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
 
 class OperarioDashboardPage extends StatefulWidget {
   final String nit;
@@ -133,7 +134,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
               const Expanded(
                 child: DashboardStatusCard(
                   label: 'Accesos principales',
-                  value: '2',
+                  value: '3',
                   icon: Icons.touch_app_rounded,
                   color: AppTheme.green,
                 ),
@@ -211,6 +212,20 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                                 MaterialPageRoute(
                                   builder: (_) =>
                                       SolicitudesPage(nit: widget.nit),
+                                ),
+                              );
+                            },
+                          ),
+                          _simpleCard(
+                            'Mapa de areas',
+                            Colors.teal,
+                            Icons.account_tree_outlined,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      MapaConjuntoPage(conjuntoNit: widget.nit),
                                 ),
                               );
                             },

@@ -195,6 +195,50 @@ export class ConjuntoController {
     }
   };
 
+  obtenerDetalleMapa: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const service = new ConjuntoService(prisma, conjuntoId);
+      const data = await service.obtenerDetalleMapa();
+      res.json(data);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  obtenerMapaArchivo: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const service = new ConjuntoService(prisma, conjuntoId);
+      const mapa = await service.obtenerMapaArchivo();
+      res.setHeader("Content-Type", mapa.mimeType);
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${mapa.nombreArchivo.replace(/"/g, "")}"`,
+      );
+      res.send(mapa.bytes);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  actualizarMapa: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const file = req.file;
+      if (!file) {
+        res.status(400).json({ message: "Debes adjuntar una imagen." });
+        return;
+      }
+
+      const service = new ConjuntoService(prisma, conjuntoId);
+      const data = await service.actualizarMapaArchivo(file);
+      res.json(data);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   // POST /conjuntos/:nit/cronograma/tareas
   agregarTareaACronograma: RequestHandler = async (req, res, next) => {
     try {

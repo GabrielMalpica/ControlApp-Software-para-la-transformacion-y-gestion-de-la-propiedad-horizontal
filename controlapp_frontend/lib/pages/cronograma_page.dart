@@ -1726,7 +1726,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final ubicacionLabel =
         t.ubicacionNombre ?? 'ID ${t.ubicacionId.toString()}';
     final elementoLabel = t.elementoNombre ?? 'ID ${t.elementoId.toString()}';
-    final prioridadLabel = 'P${t.prioridad}';
+    final prioridadLabel = 'Prioridad ${t.prioridad}';
 
     final supervisorLabel =
         t.supervisorNombre ??

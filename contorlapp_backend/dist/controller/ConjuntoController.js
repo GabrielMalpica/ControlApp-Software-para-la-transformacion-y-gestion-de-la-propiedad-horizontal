@@ -181,6 +181,46 @@ class ConjuntoController {
                 next(err);
             }
         };
+        this.obtenerDetalleMapa = async (req, res, next) => {
+            try {
+                const conjuntoId = resolveConjuntoId(req);
+                const service = new ConjuntoServices_1.ConjuntoService(prisma_1.prisma, conjuntoId);
+                const data = await service.obtenerDetalleMapa();
+                res.json(data);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        this.obtenerMapaArchivo = async (req, res, next) => {
+            try {
+                const conjuntoId = resolveConjuntoId(req);
+                const service = new ConjuntoServices_1.ConjuntoService(prisma_1.prisma, conjuntoId);
+                const mapa = await service.obtenerMapaArchivo();
+                res.setHeader("Content-Type", mapa.mimeType);
+                res.setHeader("Content-Disposition", `inline; filename="${mapa.nombreArchivo.replace(/"/g, "")}"`);
+                res.send(mapa.bytes);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        this.actualizarMapa = async (req, res, next) => {
+            try {
+                const conjuntoId = resolveConjuntoId(req);
+                const file = req.file;
+                if (!file) {
+                    res.status(400).json({ message: "Debes adjuntar una imagen." });
+                    return;
+                }
+                const service = new ConjuntoServices_1.ConjuntoService(prisma_1.prisma, conjuntoId);
+                const data = await service.actualizarMapaArchivo(file);
+                res.json(data);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
         // POST /conjuntos/:nit/cronograma/tareas
         this.agregarTareaACronograma = async (req, res, next) => {
             try {

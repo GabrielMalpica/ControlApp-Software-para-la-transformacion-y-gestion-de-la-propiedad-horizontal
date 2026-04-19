@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { CrearUbicacionDTO, FiltroUbicacionDTO } from "../model/Ubicacion";
 import { InventarioService } from "./InventarioServices";
+import { elementoTreeInclude } from "../utils/elementoHierarchy";
 
 // DTOs locales
 const AsignarOperarioDTO = z.object({
@@ -364,6 +365,98 @@ export class ConjuntoService {
         operarios: { some: { id: operarioId.toString() } },
       },
     });
+  }
+
+  async obtenerDetalleMapa() {
+    const conjunto = await this.prisma.conjunto.findUnique({
+      where: { nit: this.conjuntoId },
+      select: {
+        nit: true,
+        nombre: true,
+        direccion: true,
+        correo: true,
+        activo: true,
+        tipoServicio: true,
+        valorMensual: true,
+        fechaInicioContrato: true,
+        fechaFinContrato: true,
+        consignasEspeciales: true,
+        valorAgregado: true,
+        administrador: {
+          include: { usuario: true },
+        },
+        operarios: {
+          include: { usuario: true },
+        },
+        horarios: true,
+        ubicaciones: {
+          include: {
+            elementos: {
+              where: { padreId: null },
+              include: elementoTreeInclude,
+              orderBy: { nombre: "asc" },
+            },
+          },
+        },
+        mapaConjuntoNombreArchivo: true,
+        mapaConjuntoMimeType: true,
+        mapaConjuntoActualizadoEn: true,
+      },
+    });
+
+    if (!conjunto) throw new Error("Conjunto no encontrado.");
+    return conjunto;
+  }
+
+  async obtenerMapaArchivo() {
+    const conjunto = await this.prisma.conjunto.findUnique({
+      where: { nit: this.conjuntoId },
+      select: {
+        nit: true,
+        mapaConjuntoBytes: true,
+        mapaConjuntoMimeType: true,
+        mapaConjuntoNombreArchivo: true,
+      },
+    });
+
+    if (!conjunto) throw new Error("Conjunto no encontrado.");
+    if (!conjunto.mapaConjuntoBytes || !conjunto.mapaConjuntoMimeType) {
+      const error: Error & { status?: number } = new Error(
+        "Este conjunto todavia no tiene un mapa cargado.",
+      );
+      error.status = 404;
+      throw error;
+    }
+
+    return {
+      bytes: conjunto.mapaConjuntoBytes,
+      mimeType: conjunto.mapaConjuntoMimeType,
+      nombreArchivo: conjunto.mapaConjuntoNombreArchivo ?? "mapa_conjunto",
+    };
+  }
+
+  async actualizarMapaArchivo(file: Express.Multer.File) {
+    if (!file?.buffer?.length) {
+      throw new Error("Debes adjuntar una imagen del mapa del conjunto.");
+    }
+
+    const mimeType = String(file.mimetype ?? "").toLowerCase();
+    if (!mimeType.startsWith("image/")) {
+      throw new Error("Solo se permiten archivos de imagen para el mapa.");
+    }
+
+    await this.prisma.conjunto.update({
+      where: { nit: this.conjuntoId },
+      data: {
+        mapaConjuntoNombreArchivo: file.originalname?.trim() || "mapa_conjunto",
+        mapaConjuntoMimeType: mimeType,
+        mapaConjuntoBytes: file.buffer,
+        mapaConjuntoActualizadoEn: new Date(),
+      },
+      select: { nit: true },
+    });
+
+    return this.obtenerDetalleMapa();
   }
 
   async tareasPorUbicacion(payload: unknown) {

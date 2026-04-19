@@ -6,6 +6,7 @@ import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_pag
 import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
+import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
 import 'package:flutter_application_1/pages/cumpleanos_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
@@ -275,6 +276,19 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
             ),
           );
         }),
+        _JefeTile(
+          'Mapa de areas',
+          Icons.account_tree_outlined,
+          Colors.teal,
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MapaConjuntoPage(conjuntoNit: nit),
+              ),
+            );
+          },
+        ),
         _JefeTile('Cronograma', Icons.calendar_month, Colors.purple, () {
           Navigator.push(
             context,

@@ -15,6 +15,7 @@ import 'compartidos/reportes_dashboard_page.dart';
 import 'cronograma_page.dart';
 import 'inventario_page.dart';
 import 'gerente/compromisos_page.dart';
+import 'gerente/mapa_conjunto_page.dart';
 
 class _AdminTile {
   final String title;
@@ -256,6 +257,12 @@ class _AdministradorPageState extends State<AdministradorPage> {
           Icons.calendar_month,
           Colors.purple,
           () => _go(CronogramaPage(nit: conjunto.nit)),
+        ),
+        _AdminTile(
+          'Mapa de areas',
+          Icons.account_tree_outlined,
+          Colors.teal,
+          () => _go(MapaConjuntoPage(conjuntoNit: conjunto.nit)),
         ),
       ]),
       _AdminSection('Analisis y control', [

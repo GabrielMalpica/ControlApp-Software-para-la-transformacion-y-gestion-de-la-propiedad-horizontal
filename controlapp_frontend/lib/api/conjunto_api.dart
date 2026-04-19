@@ -1,14 +1,37 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/maquinaria_model.dart';
 import 'package:flutter_application_1/service/api_client.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/session_service.dart';
+import 'package:flutter_application_1/service/upload_media_type.dart';
+import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
+import 'package:http/http.dart' as http;
 
 class ConjuntoApi {
   final ApiClient _client = ApiClient();
   final SessionService _session = SessionService();
+
+  Future<Map<String, String>> _authHeaders({bool json = true}) async {
+    final token = await _session.getToken();
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'x-empresa-id': AppConstants.empresaNit,
+    };
+
+    if (json) {
+      headers['Content-Type'] = 'application/json';
+    }
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
+    return headers;
+  }
 
   /// GET /conjunto/:nit/maquinaria
   Future<List<MaquinariaResponse>> listarMaquinariaConjunto(
@@ -47,6 +70,110 @@ class ConjuntoApi {
       default:
         return const [];
     }
+  }
+
+  Future<Conjunto> obtenerDetalleMapaConjunto(String conjuntoNit) async {
+    final resp = await _client.get('/conjunto/conjuntos/$conjuntoNit/mapa');
+    if (resp.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo cargar el mapa del conjunto.',
+        ),
+      );
+    }
+
+    final Map<String, dynamic> data = jsonDecode(resp.body);
+    return Conjunto.fromJson(data);
+  }
+
+  Future<Uint8List> descargarMapaConjunto(String conjuntoNit) async {
+    final uri = Uri.parse(
+      '${AppConstants.baseUrl}/conjunto/conjuntos/$conjuntoNit/mapa/archivo',
+    );
+    final resp = await http.get(uri, headers: await _authHeaders(json: false));
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo descargar la imagen del mapa.',
+        ),
+      );
+    }
+
+    return resp.bodyBytes;
+  }
+
+  Future<Conjunto> subirMapaConjunto({
+    required String conjuntoNit,
+    required SelectedUploadFile archivo,
+  }) async {
+    final uri = Uri.parse(
+      '${AppConstants.baseUrl}/conjunto/conjuntos/$conjuntoNit/mapa',
+    );
+    final req = http.MultipartRequest('PUT', uri);
+    req.headers.addAll(await _authHeaders(json: false));
+
+    if (kIsWeb) {
+      if (!archivo.hasBytes) {
+        throw Exception('El archivo seleccionado no contiene datos.');
+      }
+      req.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          archivo.bytes!,
+          filename: archivo.name,
+          contentType: uploadMediaTypeFromName(
+            archivo.name,
+            fallbackMimeType: archivo.mimeType,
+          ),
+        ),
+      );
+    } else if (archivo.hasPath) {
+      req.files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          archivo.path!,
+          filename: archivo.name,
+          contentType: uploadMediaTypeFromName(
+            archivo.name,
+            fallbackMimeType: archivo.mimeType,
+          ),
+        ),
+      );
+    } else if (archivo.hasBytes) {
+      req.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          archivo.bytes!,
+          filename: archivo.name,
+          contentType: uploadMediaTypeFromName(
+            archivo.name,
+            fallbackMimeType: archivo.mimeType,
+          ),
+        ),
+      );
+    } else {
+      throw Exception(
+        'El archivo seleccionado no tiene una ruta o bytes validos.',
+      );
+    }
+
+    final streamed = await req.send();
+    final resp = await http.Response.fromStream(streamed);
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo subir la imagen del mapa.',
+        ),
+      );
+    }
+
+    final Map<String, dynamic> data = jsonDecode(resp.body);
+    return Conjunto.fromJson(data);
   }
 
   Future<List<HorarioConjunto>> _obtenerHorariosDesdeRuta(String ruta) async {

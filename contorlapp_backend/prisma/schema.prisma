@@ -555,6 +555,10 @@ model Conjunto {
   valorMensual        Decimal?       @db.Decimal(14, 2)
   consignasEspeciales String[]       @default([])
   valorAgregado       String[]       @default([])
+  mapaConjuntoNombreArchivo String?
+  mapaConjuntoMimeType      String?
+  mapaConjuntoBytes         Bytes?
+  mapaConjuntoActualizadoEn DateTime?
 
   // Operación
   operarios   Operario[]  @relation("OperarioConjuntos")

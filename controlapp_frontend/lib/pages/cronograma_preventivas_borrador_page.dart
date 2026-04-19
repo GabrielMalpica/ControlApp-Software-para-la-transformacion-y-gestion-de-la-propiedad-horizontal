@@ -399,6 +399,330 @@ class _CronogramaPreventivasBorradorPageState
     return _nombresOperarios(t).contains(nombreOperario);
   }
 
+  DateTime _ensureEndAfterStart(DateTime start, DateTime end) {
+    if (end.isAfter(start)) return end;
+    return start.add(const Duration(minutes: 30));
+  }
+
+  List<_MinuteRange> _rangosDisponiblesDia(DateTime day) {
+    final fecha = DateTime(day.year, day.month, day.day);
+    if (_esFestivo(fecha)) return const [];
+    if (fecha.weekday == DateTime.sunday) return const [];
+
+    final inicio = _horaInicioJornada * 60;
+    final fin = _horaFinJornada * 60;
+    if (fin <= inicio) return const [];
+
+    final tieneDescanso =
+        _horaDescansoInicio != null &&
+        _horaDescansoFin != null &&
+        _horaDescansoFin! > _horaDescansoInicio!;
+
+    if (!tieneDescanso) {
+      return [_MinuteRange(start: inicio, end: fin)];
+    }
+
+    final descansoInicio = _horaDescansoInicio! * 60;
+    final descansoFin = _horaDescansoFin! * 60;
+    final rangos = <_MinuteRange>[];
+
+    if (descansoInicio > inicio) {
+      rangos.add(_MinuteRange(start: inicio, end: descansoInicio));
+    }
+    if (descansoFin < fin) {
+      rangos.add(_MinuteRange(start: descansoFin, end: fin));
+    }
+    return rangos;
+  }
+
+  List<_MinuteRange> _mergeMinuteRanges(List<_MinuteRange> ranges) {
+    if (ranges.isEmpty) return const [];
+    final sorted = [...ranges]..sort((a, b) => a.start.compareTo(b.start));
+    final merged = <_MinuteRange>[sorted.first];
+
+    for (final range in sorted.skip(1)) {
+      final last = merged.last;
+      if (range.start <= last.end) {
+        merged[merged.length - 1] = _MinuteRange(
+          start: last.start,
+          end: range.end > last.end ? range.end : last.end,
+        );
+      } else {
+        merged.add(range);
+      }
+    }
+    return merged;
+  }
+
+  _SemanaHorasResumen _calcularResumenHorasSemana(
+    DateTime weekStart,
+    List<TareaModel> tareas,
+  ) {
+    var disponiblesMin = 0;
+    var ocupadasMin = 0;
+
+    for (int i = 0; i < 7; i++) {
+      final day = DateTime(weekStart.year, weekStart.month, weekStart.day)
+          .add(Duration(days: i));
+      final rangosDisponibles = _rangosDisponiblesDia(day);
+      if (rangosDisponibles.isEmpty) continue;
+
+      for (final rango in rangosDisponibles) {
+        disponiblesMin += rango.end - rango.start;
+      }
+
+      final dayStart = DateTime(day.year, day.month, day.day);
+      final dayEnd = dayStart.add(const Duration(days: 1));
+      final rangosOcupados = <_MinuteRange>[];
+
+      for (final t in tareas) {
+        final inicioOriginal = t.fechaInicio.toLocal();
+        final finOriginal = _ensureEndAfterStart(
+          inicioOriginal,
+          t.fechaFin.toLocal(),
+        );
+        if (!finOriginal.isAfter(dayStart) || !inicioOriginal.isBefore(dayEnd)) {
+          continue;
+        }
+
+        final inicioDia = inicioOriginal.isBefore(dayStart) ? dayStart : inicioOriginal;
+        final finDia = finOriginal.isAfter(dayEnd) ? dayEnd : finOriginal;
+        final inicioMin = inicioDia.hour * 60 + inicioDia.minute;
+        final finMin = finDia.hour * 60 + finDia.minute;
+
+        for (final rango in rangosDisponibles) {
+          final inicioClip = inicioMin > rango.start ? inicioMin : rango.start;
+          final finClip = finMin < rango.end ? finMin : rango.end;
+          if (finClip > inicioClip) {
+            rangosOcupados.add(_MinuteRange(start: inicioClip, end: finClip));
+          }
+        }
+      }
+
+      for (final rango in _mergeMinuteRanges(rangosOcupados)) {
+        ocupadasMin += rango.end - rango.start;
+      }
+    }
+
+    return _SemanaHorasResumen(
+      disponiblesMin: disponiblesMin,
+      ocupadasMin: ocupadasMin,
+    );
+  }
+
+  List<_OperarioSemanaResumen> _calcularResumenHorasSemanaPorOperario(
+    DateTime weekStart,
+    List<TareaModel> tareas,
+  ) {
+    var disponiblesMin = 0;
+    final ocupadasPorOperario = <String, int>{};
+
+    for (int i = 0; i < 7; i++) {
+      final day = DateTime(weekStart.year, weekStart.month, weekStart.day)
+          .add(Duration(days: i));
+      final rangosDisponibles = _rangosDisponiblesDia(day);
+      if (rangosDisponibles.isEmpty) continue;
+
+      for (final rango in rangosDisponibles) {
+        disponiblesMin += rango.end - rango.start;
+      }
+
+      final dayStart = DateTime(day.year, day.month, day.day);
+      final dayEnd = dayStart.add(const Duration(days: 1));
+      final rangosPorOperario = <String, List<_MinuteRange>>{};
+
+      for (final t in tareas) {
+        final operarios = t.operariosNombres
+            .map((name) => name.trim())
+            .where((name) => name.isNotEmpty)
+            .toSet();
+        if (operarios.isEmpty) continue;
+
+        final inicioOriginal = t.fechaInicio.toLocal();
+        final finOriginal = _ensureEndAfterStart(
+          inicioOriginal,
+          t.fechaFin.toLocal(),
+        );
+        if (!finOriginal.isAfter(dayStart) || !inicioOriginal.isBefore(dayEnd)) {
+          continue;
+        }
+
+        final inicioDia = inicioOriginal.isBefore(dayStart) ? dayStart : inicioOriginal;
+        final finDia = finOriginal.isAfter(dayEnd) ? dayEnd : finOriginal;
+        final inicioMin = inicioDia.hour * 60 + inicioDia.minute;
+        final finMin = finDia.hour * 60 + finDia.minute;
+
+        for (final rango in rangosDisponibles) {
+          final inicioClip = inicioMin > rango.start ? inicioMin : rango.start;
+          final finClip = finMin < rango.end ? finMin : rango.end;
+          if (finClip <= inicioClip) continue;
+
+          for (final operario in operarios) {
+            rangosPorOperario
+                .putIfAbsent(operario, () => <_MinuteRange>[])
+                .add(_MinuteRange(start: inicioClip, end: finClip));
+          }
+        }
+      }
+
+      for (final entry in rangosPorOperario.entries) {
+        final ocupadasDia = _mergeMinuteRanges(entry.value)
+            .fold<int>(0, (acc, rango) => acc + (rango.end - rango.start));
+        ocupadasPorOperario.update(
+          entry.key,
+          (actual) => actual + ocupadasDia,
+          ifAbsent: () => ocupadasDia,
+        );
+      }
+    }
+
+    final lista = ocupadasPorOperario.entries
+        .map(
+          (entry) => _OperarioSemanaResumen(
+            nombre: entry.key,
+            disponiblesMin: disponiblesMin,
+            ocupadasMin: entry.value,
+          ),
+        )
+        .toList();
+
+    lista.sort((a, b) {
+      final byBusy = b.ocupadasMin.compareTo(a.ocupadasMin);
+      if (byBusy != 0) return byBusy;
+      return a.nombre.compareTo(b.nombre);
+    });
+    return lista;
+  }
+
+  Widget _buildResumenHorasSemanaCard(
+    _SemanaHorasResumen resumen,
+    List<_OperarioSemanaResumen> operarios,
+  ) {
+    final porcentaje = resumen.porcentajeOcupacion.clamp(0, 1).toDouble();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Horas semanales por operario',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${resumen.ocupadasHorasLabel} ocupadas de ${resumen.disponiblesHorasLabel} disponibles',
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade800,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 9,
+              value: porcentaje,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                porcentaje >= 0.9 ? Colors.red.shade400 : AppTheme.primary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Libres: ${resumen.libresHorasLabel} • Ocupación: ${resumen.porcentajeTexto}',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 10),
+          const Divider(height: 1),
+          const SizedBox(height: 10),
+          if (operarios.isEmpty)
+            Text(
+              'No hay operarios con horas asignadas en esta semana.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            )
+          else
+            Column(
+              children: [
+                for (int index = 0; index < operarios.length; index++) ...[
+                  if (index > 0) const SizedBox(height: 8),
+                  Builder(
+                    builder: (context) {
+                      final item = operarios[index];
+                      return Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    item.nombre,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  item.porcentajeTexto,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${item.ocupadasHorasLabel} / ${item.disponiblesHorasLabel}',
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                            ),
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: LinearProgressIndicator(
+                                minHeight: 7,
+                                value: item.porcentajeOcupacion.clamp(0, 1).toDouble(),
+                                backgroundColor: Colors.grey.shade200,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.red.shade300),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
   void _reconstruirFiltrosDisponibles() {
     final ops = <String>{};
     final ubis = <String>{};
@@ -2407,7 +2731,7 @@ class _CronogramaPreventivasBorradorPageState
     final ubicacionLabel =
         t.ubicacionNombre ?? 'ID ${t.ubicacionId.toString()}';
     final elementoLabel = t.elementoNombre ?? 'ID ${t.elementoId.toString()}';
-    final prioridadLabel = 'P${t.prioridad}';
+    final prioridadLabel = 'Prioridad ${t.prioridad}';
 
     final supervisorLabel =
         t.supervisorNombre ??
@@ -2867,6 +3191,11 @@ class _CronogramaPreventivasBorradorPageState
   Widget _buildAgendaSemanal() {
     final weekStart = _startOfWeekMonday(_semanaBase);
     final tareas = _tareasSemana(_semanaBase);
+    final resumenSemana = _calcularResumenHorasSemana(weekStart, tareas);
+    final resumenOperarios = _calcularResumenHorasSemanaPorOperario(
+      weekStart,
+      tareas,
+    );
 
     final w = MediaQuery.of(context).size.width;
     final showSidebar = w >= 1100;
@@ -2896,9 +3225,16 @@ class _CronogramaPreventivasBorradorPageState
               'Tareas mes: ${_tareasFiltradas.length}',
               _resumenHorario,
             ],
-            child: Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: _buildFiltrosComoColumna(mostrarTitulo: false),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: _buildFiltrosComoColumna(mostrarTitulo: false),
+                ),
+                const SizedBox(height: 12),
+                _buildResumenHorasSemanaCard(resumenSemana, resumenOperarios),
+              ],
             ),
           ),
         ),
@@ -3945,4 +4281,45 @@ class _FilaCrono {
     required this.responsable,
     required this.porDia,
   });
+}
+
+class _MinuteRange {
+  final int start;
+  final int end;
+
+  const _MinuteRange({required this.start, required this.end});
+}
+
+class _SemanaHorasResumen {
+  final int disponiblesMin;
+  final int ocupadasMin;
+
+  const _SemanaHorasResumen({
+    required this.disponiblesMin,
+    required this.ocupadasMin,
+  });
+
+  int get libresMin => (disponiblesMin - ocupadasMin).clamp(0, disponiblesMin);
+  double get porcentajeOcupacion => disponiblesMin == 0 ? 0 : ocupadasMin / disponiblesMin;
+  String get porcentajeTexto => '${(porcentajeOcupacion * 100).toStringAsFixed(0)}%';
+  String get ocupadasHorasLabel => '${(ocupadasMin / 60).toStringAsFixed(1)} h';
+  String get disponiblesHorasLabel => '${(disponiblesMin / 60).toStringAsFixed(1)} h';
+  String get libresHorasLabel => '${(libresMin / 60).toStringAsFixed(1)} h';
+}
+
+class _OperarioSemanaResumen {
+  final String nombre;
+  final int disponiblesMin;
+  final int ocupadasMin;
+
+  const _OperarioSemanaResumen({
+    required this.nombre,
+    required this.disponiblesMin,
+    required this.ocupadasMin,
+  });
+
+  double get porcentajeOcupacion => disponiblesMin == 0 ? 0 : ocupadasMin / disponiblesMin;
+  String get porcentajeTexto => '${(porcentajeOcupacion * 100).toStringAsFixed(0)}%';
+  String get ocupadasHorasLabel => '${(ocupadasMin / 60).toStringAsFixed(1)} h';
+  String get disponiblesHorasLabel => '${(disponiblesMin / 60).toStringAsFixed(1)} h';
 }

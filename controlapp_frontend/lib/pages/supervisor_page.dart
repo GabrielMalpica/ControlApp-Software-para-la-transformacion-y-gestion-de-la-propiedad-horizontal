@@ -18,6 +18,7 @@ import 'inventario_page.dart';
 import 'cronograma_page.dart';
 import 'reportes_page.dart';
 import 'preventivas_page.dart';
+import 'gerente/mapa_conjunto_page.dart';
 import '../service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 
@@ -263,6 +264,15 @@ class _SupervisorPageState extends State<SupervisorPage> {
           () {
             if (!_requiereConjuntoOrWarn()) return;
             _go(PreventivasPage(nit: nit));
+          },
+        ),
+        _SupervisorTile(
+          'Mapa de areas',
+          Icons.account_tree_outlined,
+          Colors.teal,
+          () {
+            if (!_requiereConjuntoOrWarn()) return;
+            _go(MapaConjuntoPage(conjuntoNit: nit));
           },
         ),
       ]),

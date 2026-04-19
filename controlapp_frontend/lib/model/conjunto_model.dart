@@ -45,7 +45,12 @@ class Elemento {
     final path = [...parentPath, nombre];
     if (hijos.isEmpty) {
       return [
-        Elemento(id: id, nombre: path.join(' > '), padreId: padreId, hijos: const []),
+        Elemento(
+          id: id,
+          nombre: path.join(' > '),
+          padreId: padreId,
+          hijos: const [],
+        ),
       ];
     }
 
@@ -110,6 +115,9 @@ class Conjunto {
   final List<Usuario> operarios;
   final List<HorarioConjunto> horarios;
   final List<UbicacionConElementos> ubicaciones;
+  final String? mapaConjuntoNombreArchivo;
+  final String? mapaConjuntoMimeType;
+  final DateTime? mapaConjuntoActualizadoEn;
 
   Conjunto({
     required this.nit,
@@ -128,7 +136,14 @@ class Conjunto {
     this.operarios = const [],
     this.horarios = const [],
     this.ubicaciones = const [],
+    this.mapaConjuntoNombreArchivo,
+    this.mapaConjuntoMimeType,
+    this.mapaConjuntoActualizadoEn,
   });
+
+  bool get tieneMapaConjunto =>
+      (mapaConjuntoMimeType?.trim().isNotEmpty ?? false) &&
+      (mapaConjuntoNombreArchivo?.trim().isNotEmpty ?? false);
 
   factory Conjunto.fromJson(Map<String, dynamic> json) {
     // admin viene como { id, usuario: {...} } si hiciste el include en Prisma
@@ -188,6 +203,11 @@ class Conjunto {
       ubicaciones: ubicacionesJson
           .map((u) => UbicacionConElementos.fromJson(u as Map<String, dynamic>))
           .toList(),
+      mapaConjuntoNombreArchivo: json['mapaConjuntoNombreArchivo'] as String?,
+      mapaConjuntoMimeType: json['mapaConjuntoMimeType'] as String?,
+      mapaConjuntoActualizadoEn: json['mapaConjuntoActualizadoEn'] != null
+          ? DateTime.parse(json['mapaConjuntoActualizadoEn'] as String)
+          : null,
     );
   }
 }
