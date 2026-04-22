@@ -3860,7 +3860,6 @@ export class GerenteService {
     // Ã°Å¸â€â€™ Reglas de negocio (ajÃƒÂºstalas a tu gusto)
     if (
       tarea.estado === EstadoTarea.COMPLETADA ||
-      tarea.estado === EstadoTarea.APROBADA ||
       tarea.estado === EstadoTarea.PENDIENTE_APROBACION
     ) {
       throw new Error(

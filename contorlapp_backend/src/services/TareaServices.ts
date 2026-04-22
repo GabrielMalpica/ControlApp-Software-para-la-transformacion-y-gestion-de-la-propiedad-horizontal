@@ -468,7 +468,6 @@ export class TareaService {
     // 🔒 Reglas de negocio (ajústalas a tu gusto)
     if (
       tarea.estado === EstadoTarea.COMPLETADA ||
-      tarea.estado === EstadoTarea.APROBADA ||
       tarea.estado === EstadoTarea.PENDIENTE_APROBACION
     ) {
       throw new Error(

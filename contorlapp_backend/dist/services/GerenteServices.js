@@ -2956,7 +2956,6 @@ class GerenteService {
             throw new Error("Tarea no encontrada.");
         // Ã°Å¸â€â€™ Reglas de negocio (ajÃƒÂºstalas a tu gusto)
         if (tarea.estado === client_1.EstadoTarea.COMPLETADA ||
-            tarea.estado === client_1.EstadoTarea.APROBADA ||
             tarea.estado === client_1.EstadoTarea.PENDIENTE_APROBACION) {
             throw new Error("No se puede eliminar una tarea que ya fue ejecutada o estÃƒÂ¡ en aprobaciÃƒÂ³n.");
         }

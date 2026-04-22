@@ -79,35 +79,6 @@ class CronogramaService {
         this.prisma = prisma;
         this.conjuntoId = conjuntoId;
     }
-    async eliminarTareaPublicada(tx, id) {
-        const tarea = await tx.tarea.findUnique({
-            where: { id },
-            select: {
-                id: true,
-                estado: true,
-            },
-        });
-        if (!tarea) {
-            throw new Error("Tarea no encontrada.");
-        }
-        if (tarea.estado === client_1.EstadoTarea.COMPLETADA ||
-            tarea.estado === client_1.EstadoTarea.APROBADA ||
-            tarea.estado === client_1.EstadoTarea.PENDIENTE_APROBACION) {
-            throw new Error("No se puede eliminar el cronograma porque tiene tareas ya ejecutadas o en aprobacion.");
-        }
-        await tx.maquinariaConjunto.updateMany({
-            where: { tareaId: id },
-            data: { tareaId: null },
-        });
-        await tx.usoMaquinaria.deleteMany({ where: { tareaId: id } });
-        await tx.usoHerramienta.deleteMany({ where: { tareaId: id } });
-        await tx.consumoInsumo.deleteMany({ where: { tareaId: id } });
-        await tx.tarea.update({
-            where: { id },
-            data: { operarios: { set: [] } },
-        });
-        await tx.tarea.delete({ where: { id } });
-    }
     /* ==================== Consultas básicas ==================== */
     async cronogramaMensual(payload) {
         const { anio, mes, borrador } = CronoMesDTO.parse(payload);
@@ -139,17 +110,36 @@ class CronogramaService {
                 conjuntoId: this.conjuntoId,
                 borrador: false,
             },
-            select: { id: true },
+            select: { id: true, estado: true },
             orderBy: [{ fechaInicio: "desc" }, { id: "desc" }],
         });
         if (!tareas.length) {
             return { ok: true, eliminadas: 0 };
         }
-        await this.prisma.$transaction(async (tx) => {
-            for (const tarea of tareas) {
-                await this.eliminarTareaPublicada(tx, tarea.id);
-            }
-        });
+        const tareasBloqueadas = tareas.filter((tarea) => tarea.estado === client_1.EstadoTarea.COMPLETADA ||
+            tarea.estado === client_1.EstadoTarea.PENDIENTE_APROBACION);
+        if (tareasBloqueadas.length > 0) {
+            throw new Error("No se puede eliminar el cronograma porque tiene tareas completadas o pendientes de aprobacion.");
+        }
+        const tareaIds = tareas.map((tarea) => tarea.id);
+        await this.prisma.$transaction([
+            this.prisma.maquinariaConjunto.updateMany({
+                where: { tareaId: { in: tareaIds } },
+                data: { tareaId: null },
+            }),
+            this.prisma.usoMaquinaria.deleteMany({
+                where: { tareaId: { in: tareaIds } },
+            }),
+            this.prisma.usoHerramienta.deleteMany({
+                where: { tareaId: { in: tareaIds } },
+            }),
+            this.prisma.consumoInsumo.deleteMany({
+                where: { tareaId: { in: tareaIds } },
+            }),
+            this.prisma.tarea.deleteMany({
+                where: { id: { in: tareaIds } },
+            }),
+        ]);
         return { ok: true, eliminadas: tareas.length };
     }
     async tareasPorOperario(payload) {
