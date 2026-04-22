@@ -3,12 +3,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // src/routes/cronograma.ts
 const express_1 = require("express");
 const CronogramaController_1 = require("../controller/CronogramaController");
+const auth_middleware_1 = require("../middlewares/auth.middleware");
+const role_middleware_1 = require("../middlewares/role.middleware");
 const router = (0, express_1.Router)();
 const controller = new CronogramaController_1.CronogramaController();
 // Sugerencia de operarios para un rango
 router.get("/conjuntos/:nit/operarios/sugerir", controller.sugerirOperarios);
 // Vistas de cronograma
 router.get("/conjuntos/:nit/cronograma", controller.cronogramaMensual); // lista cruda del mes
+router.delete("/conjuntos/:nit/cronograma/publicado", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente"), controller.eliminarCronogramaPublicado);
 router.get("/conjuntos/:nit/cronograma/mes", controller.calendarioMensual); // resumen por día (para el calendario)
 // Consultas de tareas
 router.get("/conjuntos/:nit/cronograma/tareas/por-operario/:operarioId", controller.tareasPorOperario);

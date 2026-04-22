@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CronogramaService = void 0;
 // src/services/CronogramaService.ts
+const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
 const schedulerUtils_1 = require("../utils/schedulerUtils");
 const elementoHierarchy_1 = require("../utils/elementoHierarchy");
@@ -78,6 +79,35 @@ class CronogramaService {
         this.prisma = prisma;
         this.conjuntoId = conjuntoId;
     }
+    async eliminarTareaPublicada(tx, id) {
+        const tarea = await tx.tarea.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                estado: true,
+            },
+        });
+        if (!tarea) {
+            throw new Error("Tarea no encontrada.");
+        }
+        if (tarea.estado === client_1.EstadoTarea.COMPLETADA ||
+            tarea.estado === client_1.EstadoTarea.APROBADA ||
+            tarea.estado === client_1.EstadoTarea.PENDIENTE_APROBACION) {
+            throw new Error("No se puede eliminar el cronograma porque tiene tareas ya ejecutadas o en aprobacion.");
+        }
+        await tx.maquinariaConjunto.updateMany({
+            where: { tareaId: id },
+            data: { tareaId: null },
+        });
+        await tx.usoMaquinaria.deleteMany({ where: { tareaId: id } });
+        await tx.usoHerramienta.deleteMany({ where: { tareaId: id } });
+        await tx.consumoInsumo.deleteMany({ where: { tareaId: id } });
+        await tx.tarea.update({
+            where: { id },
+            data: { operarios: { set: [] } },
+        });
+        await tx.tarea.delete({ where: { id } });
+    }
     /* ==================== Consultas básicas ==================== */
     async cronogramaMensual(payload) {
         const { anio, mes, borrador } = CronoMesDTO.parse(payload);
@@ -102,6 +132,25 @@ class CronogramaService {
             },
             orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
         });
+    }
+    async eliminarCronogramaPublicado() {
+        const tareas = await this.prisma.tarea.findMany({
+            where: {
+                conjuntoId: this.conjuntoId,
+                borrador: false,
+            },
+            select: { id: true },
+            orderBy: [{ fechaInicio: "desc" }, { id: "desc" }],
+        });
+        if (!tareas.length) {
+            return { ok: true, eliminadas: 0 };
+        }
+        await this.prisma.$transaction(async (tx) => {
+            for (const tarea of tareas) {
+                await this.eliminarTareaPublicada(tx, tarea.id);
+            }
+        });
+        return { ok: true, eliminadas: tareas.length };
     }
     async tareasPorOperario(payload) {
         const { operarioId } = OperarioIdDTO.parse(payload);

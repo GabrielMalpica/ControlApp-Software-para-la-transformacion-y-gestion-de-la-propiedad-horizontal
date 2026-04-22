@@ -100,6 +100,17 @@ export class CronogramaController {
     }
   };
 
+  eliminarCronogramaPublicado: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const service = new CronogramaService(prisma, conjuntoId);
+      const out = await service.eliminarCronogramaPublicado();
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   // GET /conjuntos/:nit/cronograma/mes?anio=2025&mes=10&operarioId=&tipo=&borrador=
   calendarioMensual: RequestHandler = async (req, res, next) => {
     try {

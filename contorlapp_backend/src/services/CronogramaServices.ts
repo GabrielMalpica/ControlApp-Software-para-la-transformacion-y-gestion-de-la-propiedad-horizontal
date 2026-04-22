@@ -1,6 +1,6 @@
 // src/services/CronogramaService.ts
+import { EstadoTarea, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import type{ PrismaClient } from "@prisma/client";
 import { isFestivoDate } from "../utils/schedulerUtils";
 import {
   construirRutaElemento,
@@ -95,6 +95,46 @@ function dateKeyLocal(d: Date) {
 export class CronogramaService {
   constructor(private prisma: PrismaClient, private conjuntoId: string) {}
 
+  private async eliminarTareaPublicada(tx: PrismaClient, id: number) {
+    const tarea = await tx.tarea.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        estado: true,
+      },
+    });
+
+    if (!tarea) {
+      throw new Error("Tarea no encontrada.");
+    }
+
+    if (
+      tarea.estado === EstadoTarea.COMPLETADA ||
+      tarea.estado === EstadoTarea.APROBADA ||
+      tarea.estado === EstadoTarea.PENDIENTE_APROBACION
+    ) {
+      throw new Error(
+        "No se puede eliminar el cronograma porque tiene tareas ya ejecutadas o en aprobacion.",
+      );
+    }
+
+    await tx.maquinariaConjunto.updateMany({
+      where: { tareaId: id },
+      data: { tareaId: null },
+    });
+
+    await tx.usoMaquinaria.deleteMany({ where: { tareaId: id } });
+    await tx.usoHerramienta.deleteMany({ where: { tareaId: id } });
+    await tx.consumoInsumo.deleteMany({ where: { tareaId: id } });
+
+    await tx.tarea.update({
+      where: { id },
+      data: { operarios: { set: [] } },
+    });
+
+    await tx.tarea.delete({ where: { id } });
+  }
+
   /* ==================== Consultas básicas ==================== */
 
   async cronogramaMensual(payload: unknown) {
@@ -124,6 +164,29 @@ export class CronogramaService {
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
+  }
+
+  async eliminarCronogramaPublicado() {
+    const tareas = await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        borrador: false,
+      },
+      select: { id: true },
+      orderBy: [{ fechaInicio: "desc" }, { id: "desc" }],
+    });
+
+    if (!tareas.length) {
+      return { ok: true, eliminadas: 0 };
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const tarea of tareas) {
+        await this.eliminarTareaPublicada(tx as PrismaClient, tarea.id);
+      }
+    });
+
+    return { ok: true, eliminadas: tareas.length };
   }
 
   async tareasPorOperario(payload: unknown) {

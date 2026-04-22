@@ -2,6 +2,7 @@
 import 'dart:convert';
 
 import '../service/api_client.dart';
+import '../service/app_error.dart';
 import '../service/app_constants.dart';
 import '../model/tarea_model.dart';
 
@@ -106,10 +107,28 @@ class CronogramaApi {
     return jsonDecode(resp.body) as Map<String, dynamic>;
   }
 
-  Future<int> getLimiteMinSemanaPorConjunto({required String nit}) async {
-    final uri = Uri.parse(
-      '${AppConstants.empresaBase}/$nit/limite-min-semana',
+  Future<Map<String, dynamic>> eliminarCronogramaPublicado({
+    required String nit,
+  }) async {
+    final resp = await _client.delete(
+      '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/publicado',
     );
+
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo eliminar el cronograma publicado.',
+        ),
+      );
+    }
+
+    if (resp.body.trim().isEmpty) return <String, dynamic>{};
+    return jsonDecode(resp.body) as Map<String, dynamic>;
+  }
+
+  Future<int> getLimiteMinSemanaPorConjunto({required String nit}) async {
+    final uri = Uri.parse('${AppConstants.empresaBase}/$nit/limite-min-semana');
 
     final resp = await _client.get(uri.toString());
 

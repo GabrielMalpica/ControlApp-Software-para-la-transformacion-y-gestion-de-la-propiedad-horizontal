@@ -88,6 +88,17 @@ class CronogramaController {
                 next(err);
             }
         };
+        this.eliminarCronogramaPublicado = async (req, res, next) => {
+            try {
+                const conjuntoId = resolveConjuntoId(req);
+                const service = new CronogramaServices_1.CronogramaService(prisma_1.prisma, conjuntoId);
+                const out = await service.eliminarCronogramaPublicado();
+                res.json(out);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
         // GET /conjuntos/:nit/cronograma/mes?anio=2025&mes=10&operarioId=&tipo=&borrador=
         this.calendarioMensual = async (req, res, next) => {
             try {

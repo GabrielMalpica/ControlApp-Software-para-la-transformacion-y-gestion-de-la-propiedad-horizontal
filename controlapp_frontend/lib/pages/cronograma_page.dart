@@ -98,6 +98,12 @@ class _CronogramaPageState extends State<CronogramaPage> {
   String? _rolActual;
   String? _usuarioIdActual;
 
+  bool get _puedeEliminarCronogramaPublicado =>
+      !widget.soloLectura &&
+      _rolActual == 'gerente' &&
+      _tareasMes.isNotEmpty &&
+      !_loading;
+
   @override
   void initState() {
     super.initState();
@@ -630,6 +636,62 @@ class _CronogramaPageState extends State<CronogramaPage> {
     }
   }
 
+  Future<void> _eliminarCronogramaPublicado() async {
+    if (!_puedeEliminarCronogramaPublicado) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Borrar cronograma publicado'),
+        content: Text(
+          '¿Seguro que deseas borrar todas las tareas publicadas del conjunto ${widget.nit}? Esta accion no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Borrar todo',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+
+    setState(() => _loading = true);
+    try {
+      final res = await _cronogramaApi.eliminarCronogramaPublicado(
+        nit: widget.nit,
+      );
+      if (!mounted) return;
+      final eliminadas = res['eliminadas'];
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            eliminadas is num
+                ? 'Cronograma eliminado. Tareas borradas: ${eliminadas.toInt()}.'
+                : 'Cronograma eliminado correctamente.',
+          ),
+        ),
+      );
+      await _cargarDatos();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+    }
+  }
+
   void _recalcularResumenDias() {
     _diasResumen = [];
     for (int dia = 1; dia <= _daysInMonth; dia++) {
@@ -1095,232 +1157,232 @@ class _CronogramaPageState extends State<CronogramaPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                // Header 1
-                Row(
-                  children: [
-                    cellBox(
-                      w: wFrecuencia,
-                      color: Colors.green.shade200,
-                      child: Text('Frecuencia', style: headerStyle),
-                    ),
-                    cellBox(
-                      w: wDiagnostico,
-                      color: Colors.green.shade200,
-                      child: Text('Tarea', style: headerStyle),
-                    ),
-                    cellBox(
-                      w: wUbicacion,
-                      color: Colors.green.shade200,
-                      child: Text('Ubicación', style: headerStyle),
-                    ),
-                    cellBox(
-                      w: wElemento,
-                      color: Colors.green.shade200,
-                      child: Text('Elemento', style: headerStyle),
-                    ),
-                    cellBox(
-                      w: wResponsable,
-                      color: Colors.green.shade200,
-                      child: Text('Responsable', style: headerStyle),
-                    ),
-                    ...dias.map((dia) {
-                      final fecha = DateTime(_anioActual, _mesActual, dia);
-                      final dom = _esDomingo(fecha);
-                      final fest = _esFestivo(fecha);
-
-                      Color headerColor;
-                      if (dom) {
-                        headerColor = Colors.yellow.shade300;
-                      } else if (fest) {
-                        headerColor = const Color(0xFFE53935); // festivo
-                      } else {
-                        headerColor = Colors.green.shade200;
-                      }
-
-                      return cellBox(
-                        w: wDia,
-                        color: headerColor,
-                        child: Tooltip(
-                          message: fest
-                              ? (_nombreFestivo(fecha) ?? 'Festivo')
-                              : '',
-                          child: Text(
-                            _weekdayLetter(fecha),
-                            style: headerStyle,
-                          ),
-                        ),
-                      );
-                    }),
-                  ],
-                ),
-                // Header 2
-                Row(
-                  children: [
-                    cellBox(
-                      w: wFrecuencia,
-                      color: Colors.white,
-                      child: const SizedBox.shrink(),
-                    ),
-                    cellBox(
-                      w: wDiagnostico,
-                      color: Colors.white,
-                      child: const SizedBox.shrink(),
-                    ),
-                    cellBox(
-                      w: wUbicacion,
-                      color: Colors.white,
-                      child: const SizedBox.shrink(),
-                    ),
-                    cellBox(
-                      w: wElemento,
-                      color: Colors.white,
-                      child: const SizedBox.shrink(),
-                    ),
-                    cellBox(
-                      w: wResponsable,
-                      color: Colors.white,
-                      child: const SizedBox.shrink(),
-                    ),
-                    ...dias.map((dia) {
-                      final fecha = DateTime(_anioActual, _mesActual, dia);
-                      final dom = _esDomingo(fecha);
-                      final fest = _esFestivo(fecha);
-
-                      Color header2Color;
-                      if (dom) {
-                        header2Color = Colors.yellow.shade300;
-                      } else if (fest) {
-                        header2Color = const Color(0xFFFFCDD2); // festivo
-                      } else {
-                        header2Color = Colors.grey.shade100;
-                      }
-
-                      return cellBox(
-                        w: wDia,
-                        color: header2Color,
-                        child: Tooltip(
-                          message: fest
-                              ? (_nombreFestivo(fecha) ?? 'Festivo')
-                              : '',
-                          child: Text(
-                            '$dia',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.grey.shade900,
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                  ],
-                ),
-
-                // Body
-                ...filas.map((f) {
-                  final colorFila = f.esCorrectiva
-                      ? const Color(0xFFFFF7F7)
-                      : Colors.white;
-                  final colorCeldaCorrectiva = const Color(0xFFFDE2E1);
-                  final colorTextoCorrectiva = const Color(0xFFB23A33);
-
-                  return Row(
+                  // Header 1
+                  Row(
                     children: [
                       cellBox(
                         w: wFrecuencia,
-                        h: hFila,
-                        color: colorFila,
-                        align: Alignment.topLeft,
-                        child: Text(
-                          f.frecuencia,
-                          style: const TextStyle(fontSize: 12),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        color: Colors.green.shade200,
+                        child: Text('Frecuencia', style: headerStyle),
                       ),
                       cellBox(
                         w: wDiagnostico,
-                        h: hFila,
-                        color: colorFila,
-                        align: Alignment.topLeft,
-                        child: Text(
-                          f.diagnostico,
-                          style: const TextStyle(fontSize: 12),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        color: Colors.green.shade200,
+                        child: Text('Tarea', style: headerStyle),
                       ),
                       cellBox(
                         w: wUbicacion,
-                        h: hFila,
-                        color: colorFila,
-                        align: Alignment.topLeft,
-                        child: Text(
-                          f.ubicacion,
-                          style: const TextStyle(fontSize: 12),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        color: Colors.green.shade200,
+                        child: Text('Ubicación', style: headerStyle),
                       ),
                       cellBox(
                         w: wElemento,
-                        h: hFila,
-                        color: colorFila,
-                        align: Alignment.topLeft,
-                        child: Text(
-                          f.objeto,
-                          style: const TextStyle(fontSize: 12),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        color: Colors.green.shade200,
+                        child: Text('Elemento', style: headerStyle),
                       ),
                       cellBox(
                         w: wResponsable,
-                        h: hFila,
-                        color: colorFila,
-                        align: Alignment.topLeft,
-                        child: Text(
-                          f.responsable,
-                          style: const TextStyle(fontSize: 12, height: 1.3),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        color: Colors.green.shade200,
+                        child: Text('Responsable', style: headerStyle),
                       ),
                       ...dias.map((dia) {
                         final fecha = DateTime(_anioActual, _mesActual, dia);
                         final dom = _esDomingo(fecha);
                         final fest = _esFestivo(fecha);
-                        final val = f.porDia[dia] ?? '';
 
-                        return GestureDetector(
-                          onTap: () => _abrirDia(dia),
-                          child: cellBox(
-                            w: wDia,
-                            h: hFila,
-                            color: val.isNotEmpty && f.esCorrectiva
-                                ? colorCeldaCorrectiva
-                                : dom
-                                ? Colors.yellow.shade200
-                                : fest
-                                ? const Color(0xFFFFEBEE)
-                                : Colors.white,
+                        Color headerColor;
+                        if (dom) {
+                          headerColor = Colors.yellow.shade300;
+                        } else if (fest) {
+                          headerColor = const Color(0xFFE53935); // festivo
+                        } else {
+                          headerColor = Colors.green.shade200;
+                        }
+
+                        return cellBox(
+                          w: wDia,
+                          color: headerColor,
+                          child: Tooltip(
+                            message: fest
+                                ? (_nombreFestivo(fecha) ?? 'Festivo')
+                                : '',
                             child: Text(
-                              val,
-                              textAlign: TextAlign.center,
+                              _weekdayLetter(fecha),
+                              style: headerStyle,
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                  // Header 2
+                  Row(
+                    children: [
+                      cellBox(
+                        w: wFrecuencia,
+                        color: Colors.white,
+                        child: const SizedBox.shrink(),
+                      ),
+                      cellBox(
+                        w: wDiagnostico,
+                        color: Colors.white,
+                        child: const SizedBox.shrink(),
+                      ),
+                      cellBox(
+                        w: wUbicacion,
+                        color: Colors.white,
+                        child: const SizedBox.shrink(),
+                      ),
+                      cellBox(
+                        w: wElemento,
+                        color: Colors.white,
+                        child: const SizedBox.shrink(),
+                      ),
+                      cellBox(
+                        w: wResponsable,
+                        color: Colors.white,
+                        child: const SizedBox.shrink(),
+                      ),
+                      ...dias.map((dia) {
+                        final fecha = DateTime(_anioActual, _mesActual, dia);
+                        final dom = _esDomingo(fecha);
+                        final fest = _esFestivo(fecha);
+
+                        Color header2Color;
+                        if (dom) {
+                          header2Color = Colors.yellow.shade300;
+                        } else if (fest) {
+                          header2Color = const Color(0xFFFFCDD2); // festivo
+                        } else {
+                          header2Color = Colors.grey.shade100;
+                        }
+
+                        return cellBox(
+                          w: wDia,
+                          color: header2Color,
+                          child: Tooltip(
+                            message: fest
+                                ? (_nombreFestivo(fecha) ?? 'Festivo')
+                                : '',
+                            child: Text(
+                              '$dia',
                               style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: val.isNotEmpty && f.esCorrectiva
-                                    ? colorTextoCorrectiva
-                                    : _colorPorCodigo(val),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.grey.shade900,
                               ),
                             ),
                           ),
                         );
                       }),
                     ],
-                  );
-                }),
+                  ),
+
+                  // Body
+                  ...filas.map((f) {
+                    final colorFila = f.esCorrectiva
+                        ? const Color(0xFFFFF7F7)
+                        : Colors.white;
+                    final colorCeldaCorrectiva = const Color(0xFFFDE2E1);
+                    final colorTextoCorrectiva = const Color(0xFFB23A33);
+
+                    return Row(
+                      children: [
+                        cellBox(
+                          w: wFrecuencia,
+                          h: hFila,
+                          color: colorFila,
+                          align: Alignment.topLeft,
+                          child: Text(
+                            f.frecuencia,
+                            style: const TextStyle(fontSize: 12),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        cellBox(
+                          w: wDiagnostico,
+                          h: hFila,
+                          color: colorFila,
+                          align: Alignment.topLeft,
+                          child: Text(
+                            f.diagnostico,
+                            style: const TextStyle(fontSize: 12),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        cellBox(
+                          w: wUbicacion,
+                          h: hFila,
+                          color: colorFila,
+                          align: Alignment.topLeft,
+                          child: Text(
+                            f.ubicacion,
+                            style: const TextStyle(fontSize: 12),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        cellBox(
+                          w: wElemento,
+                          h: hFila,
+                          color: colorFila,
+                          align: Alignment.topLeft,
+                          child: Text(
+                            f.objeto,
+                            style: const TextStyle(fontSize: 12),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        cellBox(
+                          w: wResponsable,
+                          h: hFila,
+                          color: colorFila,
+                          align: Alignment.topLeft,
+                          child: Text(
+                            f.responsable,
+                            style: const TextStyle(fontSize: 12, height: 1.3),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        ...dias.map((dia) {
+                          final fecha = DateTime(_anioActual, _mesActual, dia);
+                          final dom = _esDomingo(fecha);
+                          final fest = _esFestivo(fecha);
+                          final val = f.porDia[dia] ?? '';
+
+                          return GestureDetector(
+                            onTap: () => _abrirDia(dia),
+                            child: cellBox(
+                              w: wDia,
+                              h: hFila,
+                              color: val.isNotEmpty && f.esCorrectiva
+                                  ? colorCeldaCorrectiva
+                                  : dom
+                                  ? Colors.yellow.shade200
+                                  : fest
+                                  ? const Color(0xFFFFEBEE)
+                                  : Colors.white,
+                              child: Text(
+                                val,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: val.isNotEmpty && f.esCorrectiva
+                                      ? colorTextoCorrectiva
+                                      : _colorPorCodigo(val),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                    );
+                  }),
                 ],
               ),
             ),
@@ -1776,7 +1838,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 rows.add(const SizedBox(height: 8));
                 addRow('fechaInicio', 'Fecha inicio', fechaIniStr);
                 addRow('fechaFin', 'Fecha fin', fechaFinStr);
-                addRow('duracion', 'Duración', '$durMin min (${durH.toStringAsFixed(1)} h)');
+                addRow(
+                  'duracion',
+                  'Duración',
+                  '$durMin min (${durH.toStringAsFixed(1)} h)',
+                );
                 rows.add(const SizedBox(height: 8));
                 addRow('conjunto', 'Conjunto', conjuntoLabel);
                 addRow('ubicacion', 'Ubicación', ubicacionLabel);
@@ -1786,33 +1852,53 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 addRow('operarios', 'Operarios', operarios);
                 addRow('maquinaria', 'Maquinaria planificada', maquinariaTxt);
                 rows.add(const SizedBox(height: 8));
-                addRow('observaciones', 'Observaciones', t.observaciones ?? '—');
-                addRow('reprogramacion', 'Obs. rechazo', t.observacionesRechazo ?? '—');
+                addRow(
+                  'observaciones',
+                  'Observaciones',
+                  t.observaciones ?? '—',
+                );
+                addRow(
+                  'reprogramacion',
+                  'Obs. rechazo',
+                  t.observacionesRechazo ?? '—',
+                );
                 addRow('evidencias', 'Evidencias', evidenciasTxt);
                 addRow(
                   'insumos',
                   'Insumos usados',
-                  insumosCount == 0 ? 'Sin insumos registrados' : '$insumosCount ítem(s)',
+                  insumosCount == 0
+                      ? 'Sin insumos registrados'
+                      : '$insumosCount ítem(s)',
                 );
 
                 return Material(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
                   child: Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                         child: Row(
                           children: [
                             const Expanded(
                               child: Text(
                                 'Detalle de la tarea',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                             IconButton(
                               icon: const Icon(Icons.tune),
                               tooltip: 'Elegir informacion visible',
-                              onPressed: () => _configurarCamposDetalle(() => setSheetState(() {})),
+                              onPressed: () => _configurarCamposDetalle(
+                                () => setSheetState(() {}),
+                              ),
                             ),
                             IconButton(
                               icon: const Icon(Icons.close),
@@ -1846,7 +1932,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
                                 const SizedBox(height: 8),
                                 Text(
                                   'Nota: El veredicto (aprobar/rechazar) lo hace el Jefe de Operaciones.',
-                                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade600,
+                                  ),
                                 ),
                               ],
                               const SizedBox(height: 16),
@@ -1957,6 +2046,18 @@ class _CronogramaPageState extends State<CronogramaPage> {
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          if (_puedeEliminarCronogramaPublicado)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: IconButton(
+                tooltip: 'Borrar cronograma publicado',
+                onPressed: _eliminarCronogramaPublicado,
+                icon: const Icon(
+                  Icons.delete_forever_rounded,
+                  color: Colors.white,
+                ),
+              ),
+            ),
           IconButton(onPressed: _cargarDatos, icon: const Icon(Icons.refresh)),
         ],
       ),
@@ -2685,7 +2786,9 @@ Color _cronogramaColorBaseTareaSemana(TareaModel t) {
   if (texto.contains('humed') || texto.contains('agua')) {
     return Colors.blue.shade500;
   }
-  if (texto.contains('verde') || texto.contains('jardin') || texto.contains('cesped')) {
+  if (texto.contains('verde') ||
+      texto.contains('jardin') ||
+      texto.contains('cesped')) {
     return Colors.green.shade600;
   }
   if (texto.contains('transit') || texto.contains('circul')) {
@@ -3080,243 +3183,250 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                         child: SizedBox(
                           height: heightGrid,
                           child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: Row(
-                                children: [
-                                  SizedBox(
-                                    width: anchoHora,
-                                    child: _HoursColumnDark(
-                                      pxPorMin: pxPorMin,
-                                      textColor: subtext,
-                                      horaInicio: _horaInicio,
-                                      horaFin: _horaFin,
-                                    ),
-                                  ),
-                                  ...List.generate(7, (_) {
-                                    return Container(
-                                      width: colWidth,
-                                      decoration: BoxDecoration(
-                                        border: Border(
-                                          left: BorderSide(color: line),
-                                        ),
+                            children: [
+                              Positioned.fill(
+                                child: Row(
+                                  children: [
+                                    SizedBox(
+                                      width: anchoHora,
+                                      child: _HoursColumnDark(
+                                        pxPorMin: pxPorMin,
+                                        textColor: subtext,
+                                        horaInicio: _horaInicio,
+                                        horaFin: _horaFin,
                                       ),
-                                    );
-                                  }),
-                                ],
-                              ),
-                            ),
-                            ...List.generate(hours + 1, (h) {
-                              final top = (h * 60) * pxPorMin;
-                              return Positioned(
-                                left: 0,
-                                right: 0,
-                                top: top,
-                                child: Container(height: 1, color: line),
-                              );
-                            }),
-                            if (lunchStartMin != null &&
-                                lunchDurMin != null &&
-                                lunchDurMin > 0 &&
-                                lunchStartMin >= 0)
-                              Positioned(
-                                left: anchoHora,
-                                right: 0,
-                                top: lunchStartMin * pxPorMin,
-                                height: lunchDurMin * pxPorMin,
-                                child: Container(
-                                  color: Colors.orange.withValues(alpha: 0.12),
+                                    ),
+                                    ...List.generate(7, (_) {
+                                      return Container(
+                                        width: colWidth,
+                                        decoration: BoxDecoration(
+                                          border: Border(
+                                            left: BorderSide(color: line),
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                  ],
                                 ),
                               ),
-                            ...taskPlacements.map((placement) {
-                              final t = placement.tarea;
-                              final ini = placement.inicio;
-                              final fin = placement.fin;
+                              ...List.generate(hours + 1, (h) {
+                                final top = (h * 60) * pxPorMin;
+                                return Positioned(
+                                  left: 0,
+                                  right: 0,
+                                  top: top,
+                                  child: Container(height: 1, color: line),
+                                );
+                              }),
+                              if (lunchStartMin != null &&
+                                  lunchDurMin != null &&
+                                  lunchDurMin > 0 &&
+                                  lunchStartMin >= 0)
+                                Positioned(
+                                  left: anchoHora,
+                                  right: 0,
+                                  top: lunchStartMin * pxPorMin,
+                                  height: lunchDurMin * pxPorMin,
+                                  child: Container(
+                                    color: Colors.orange.withValues(
+                                      alpha: 0.12,
+                                    ),
+                                  ),
+                                ),
+                              ...taskPlacements.map((placement) {
+                                final t = placement.tarea;
+                                final ini = placement.inicio;
+                                final fin = placement.fin;
 
-                              final startMin = _minutesFromStart(ini);
-                              final durMin = fin.difference(ini).inMinutes;
+                                final startMin = _minutesFromStart(ini);
+                                final durMin = fin.difference(ini).inMinutes;
 
-                              const dayPadding = 6.0;
-                              final left =
-                                  anchoHora +
-                                  placement.dayIndex * colWidth +
-                                  dayPadding;
-                              final top = startMin * pxPorMin;
-                              final fullWidth = colWidth - (dayPadding * 2);
+                                const dayPadding = 6.0;
+                                final left =
+                                    anchoHora +
+                                    placement.dayIndex * colWidth +
+                                    dayPadding;
+                                final top = startMin * pxPorMin;
+                                final fullWidth = colWidth - (dayPadding * 2);
 
-                              final colorBase = _cronogramaColorBaseTareaSemana(t);
-                              final fill = colorBase.withValues(alpha: 0.12);
-                              final border = colorBase.withValues(alpha: 0.55);
+                                final colorBase =
+                                    _cronogramaColorBaseTareaSemana(t);
+                                final fill = colorBase.withValues(alpha: 0.12);
+                                final border = colorBase.withValues(
+                                  alpha: 0.55,
+                                );
 
-                              final horaIni = DateFormat('HH:mm').format(ini);
-                              final horaFinStr = DateFormat(
-                                'HH:mm',
-                              ).format(fin);
-                              final horaFinGrupo = DateFormat(
-                                'HH:mm',
-                              ).format(placement.groupEnd);
+                                final horaIni = DateFormat('HH:mm').format(ini);
+                                final horaFinStr = DateFormat(
+                                  'HH:mm',
+                                ).format(fin);
+                                final horaFinGrupo = DateFormat(
+                                  'HH:mm',
+                                ).format(placement.groupEnd);
 
-                              if (placement.groupSize > 1) {
-                                if (placement.orderInGroup != 0) {
-                                  return const SizedBox.shrink();
+                                if (placement.groupSize > 1) {
+                                  if (placement.orderInGroup != 0) {
+                                    return const SizedBox.shrink();
+                                  }
+
+                                  final colors = [
+                                    Colors.red.shade400,
+                                    Colors.blue.shade500,
+                                    Colors.green.shade500,
+                                    Colors.orange.shade500,
+                                  ];
+                                  final dotCount = placement.groupSize > 4
+                                      ? 4
+                                      : placement.groupSize;
+                                  final resumen = placement.groupTitles
+                                      .take(2)
+                                      .join(' / ');
+                                  final extra = placement.groupSize - 2;
+                                  const markerHeight = 72.0;
+
+                                  return Positioned(
+                                    left: left,
+                                    top: top,
+                                    width: fullWidth,
+                                    height: markerHeight,
+                                    child: GestureDetector(
+                                      onTap: () => widget.onTapTarea(t),
+                                      child: Container(
+                                        clipBehavior: Clip.hardEdge,
+                                        padding: const EdgeInsets.fromLTRB(
+                                          8,
+                                          7,
+                                          8,
+                                          7,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.withValues(
+                                            alpha: 0.14,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.amber.shade700,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                ...List.generate(dotCount, (i) {
+                                                  return Container(
+                                                    width: 10,
+                                                    height: 10,
+                                                    margin: EdgeInsets.only(
+                                                      right: i == dotCount - 1
+                                                          ? 0
+                                                          : 4,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color:
+                                                          colors[i %
+                                                              colors.length],
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            2,
+                                                          ),
+                                                    ),
+                                                  );
+                                                }),
+                                                if (placement.groupSize >
+                                                    dotCount) ...[
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    '+${placement.groupSize - dotCount}',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color: text,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ],
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    'Superposicion detectada',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color: text,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Aqui hay ${placement.groupSize} tareas superpuestas. Filtra por operario para verlo mejor.',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: subtext,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra mas' : ''}'}',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: subtext,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
                                 }
 
-                                final colors = [
-                                  Colors.red.shade400,
-                                  Colors.blue.shade500,
-                                  Colors.green.shade500,
-                                  Colors.orange.shade500,
-                                ];
-                                final dotCount = placement.groupSize > 4
-                                    ? 4
-                                    : placement.groupSize;
-                                final resumen = placement.groupTitles
-                                    .take(2)
-                                    .join(' / ');
-                                final extra = placement.groupSize - 2;
-                                const markerHeight = 72.0;
+                                final height =
+                                    ((durMin <= 0 ? 1 : durMin) * pxPorMin)
+                                        .clamp(18.0, 9999.0);
 
                                 return Positioned(
                                   left: left,
                                   top: top,
                                   width: fullWidth,
-                                  height: markerHeight,
+                                  height: height,
                                   child: GestureDetector(
                                     onTap: () => widget.onTapTarea(t),
                                     child: Container(
                                       clipBehavior: Clip.hardEdge,
-                                      padding: const EdgeInsets.fromLTRB(
-                                        8,
-                                        7,
-                                        8,
-                                        7,
+                                      padding: EdgeInsets.fromLTRB(
+                                        6,
+                                        height < 30 ? 1 : (height < 42 ? 3 : 8),
+                                        6,
+                                        height < 30 ? 1 : (height < 42 ? 3 : 8),
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.amber.withValues(
-                                          alpha: 0.14,
-                                        ),
+                                        color: fill,
                                         borderRadius: BorderRadius.circular(10),
                                         border: Border.all(
-                                          color: Colors.amber.shade700,
+                                          color: border,
                                           width: 1,
                                         ),
                                       ),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              ...List.generate(dotCount, (i) {
-                                                return Container(
-                                                  width: 10,
-                                                  height: 10,
-                                                  margin: EdgeInsets.only(
-                                                    right: i == dotCount - 1
-                                                        ? 0
-                                                        : 4,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color:
-                                                        colors[i %
-                                                            colors.length],
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          2,
-                                                        ),
-                                                  ),
-                                                );
-                                              }),
-                                              if (placement.groupSize >
-                                                  dotCount) ...[
-                                                const SizedBox(width: 6),
-                                                Text(
-                                                  '+${placement.groupSize - dotCount}',
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    color: text,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ],
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  'Superposicion detectada',
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    color: text,
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            'Aqui hay ${placement.groupSize} tareas superpuestas. Filtra por operario para verlo mejor.',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: subtext,
-                                              fontSize: 10,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra mas' : ''}'}',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: subtext,
-                                              fontSize: 10,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              final height =
-                                  ((durMin <= 0 ? 1 : durMin) * pxPorMin).clamp(
-                                    18.0,
-                                    9999.0,
-                                  );
-
-                              return Positioned(
-                                left: left,
-                                top: top,
-                                width: fullWidth,
-                                height: height,
-                                child: GestureDetector(
-                                  onTap: () => widget.onTapTarea(t),
-                                  child: Container(
-                                    clipBehavior: Clip.hardEdge,
-                                    padding: EdgeInsets.fromLTRB(
-                                      6,
-                                      height < 30 ? 1 : (height < 42 ? 3 : 8),
-                                      6,
-                                      height < 30 ? 1 : (height < 42 ? 3 : 8),
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: fill,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: border,
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: LayoutBuilder(
-                                      builder: (context, box) {
-                                        final h = box.maxHeight;
-                                        final tiny = h < 26;
-                                        final compact = h < 54;
+                                      child: LayoutBuilder(
+                                        builder: (context, box) {
+                                          final h = box.maxHeight;
+                                          final tiny = h < 26;
+                                          final compact = h < 54;
 
                                           return Column(
                                             mainAxisSize: MainAxisSize.min,
@@ -3324,42 +3434,43 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                 CrossAxisAlignment.start,
                                             children: [
                                               Tooltip(
-                                              message: t.descripcion,
-                                              waitDuration: const Duration(
-                                                milliseconds: 250,
-                                              ),
-                                              child: Text(
-                                                t.descripcion,
-                                                maxLines: compact ? 1 : 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  color: text,
-                                                  fontSize: tiny
-                                                      ? 8
-                                                      : (compact ? 10 : 12),
-                                                  fontWeight: FontWeight.w700,
+                                                message: t.descripcion,
+                                                waitDuration: const Duration(
+                                                  milliseconds: 250,
+                                                ),
+                                                child: Text(
+                                                  t.descripcion,
+                                                  maxLines: compact ? 1 : 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: text,
+                                                    fontSize: tiny
+                                                        ? 8
+                                                        : (compact ? 10 : 12),
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
                                                 ),
                                               ),
-                                            ),
-                                            if (!compact) ...[
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                '$horaIni - $horaFinStr',
-                                                style: TextStyle(
-                                                  color: subtext,
-                                                  fontSize: 10,
+                                              if (!compact) ...[
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  '$horaIni - $horaFinStr',
+                                                  style: TextStyle(
+                                                    color: subtext,
+                                                    fontSize: 10,
+                                                  ),
                                                 ),
-                                              ),
+                                              ],
                                             ],
-                                          ],
-                                        );
-                                      },
+                                          );
+                                        },
+                                      ),
                                     ),
                                   ),
-                                ),
-                              );
-                            }),
-                          ],
+                                );
+                              }),
+                            ],
                           ),
                         ),
                       ),

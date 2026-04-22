@@ -493,6 +493,8 @@ class _MapaImagenCard extends StatelessWidget {
                   child: InteractiveViewer(
                     minScale: 1,
                     maxScale: 4,
+                    scaleEnabled: false,
+                    trackpadScrollCausesScale: false,
                     child: Image.memory(
                       mapaBytes!,
                       width: double.infinity,
