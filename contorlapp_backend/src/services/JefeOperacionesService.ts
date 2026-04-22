@@ -41,7 +41,15 @@ export class JefeOperacionesService {
       },
       orderBy: [{ fechaFinalizarTarea: "desc" }, { id: "desc" }],
       include: {
-        conjunto: true,
+        conjunto: {
+          select: {
+            nit: true,
+            nombre: true,
+            direccion: true,
+            correo: true,
+            activo: true,
+          },
+        },
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
         operarios: { include: { usuario: true } },
