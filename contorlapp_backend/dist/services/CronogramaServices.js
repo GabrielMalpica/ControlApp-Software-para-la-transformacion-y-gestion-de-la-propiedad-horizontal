@@ -79,6 +79,22 @@ class CronogramaService {
         this.prisma = prisma;
         this.conjuntoId = conjuntoId;
     }
+    async eliminarTareaPublicada(id) {
+        await this.prisma.$transaction(async (tx) => {
+            await tx.maquinariaConjunto.updateMany({
+                where: { tareaId: id },
+                data: { tareaId: null },
+            });
+            await tx.usoMaquinaria.deleteMany({ where: { tareaId: id } });
+            await tx.usoHerramienta.deleteMany({ where: { tareaId: id } });
+            await tx.consumoInsumo.deleteMany({ where: { tareaId: id } });
+            await tx.tarea.update({
+                where: { id },
+                data: { operarios: { set: [] } },
+            });
+            await tx.tarea.delete({ where: { id } });
+        });
+    }
     /* ==================== Consultas básicas ==================== */
     async cronogramaMensual(payload) {
         const { anio, mes, borrador } = CronoMesDTO.parse(payload);
@@ -122,25 +138,17 @@ class CronogramaService {
             throw new Error("No se puede eliminar el cronograma porque tiene tareas completadas o pendientes de aprobacion.");
         }
         const tareaIds = tareas.map((tarea) => tarea.id);
-        await this.prisma.$transaction([
-            this.prisma.maquinariaConjunto.updateMany({
-                where: { tareaId: { in: tareaIds } },
-                data: { tareaId: null },
-            }),
-            this.prisma.usoMaquinaria.deleteMany({
-                where: { tareaId: { in: tareaIds } },
-            }),
-            this.prisma.usoHerramienta.deleteMany({
-                where: { tareaId: { in: tareaIds } },
-            }),
-            this.prisma.consumoInsumo.deleteMany({
-                where: { tareaId: { in: tareaIds } },
-            }),
-            this.prisma.tarea.deleteMany({
-                where: { id: { in: tareaIds } },
-            }),
-        ]);
-        return { ok: true, eliminadas: tareas.length };
+        for (const tareaId of tareaIds) {
+            await this.eliminarTareaPublicada(tareaId);
+        }
+        const restantes = await this.prisma.tarea.count({
+            where: { id: { in: tareaIds } },
+        });
+        const eliminadas = tareaIds.length - restantes;
+        if (restantes > 0) {
+            throw new Error("No se pudo eliminar completamente el cronograma publicado.");
+        }
+        return { ok: true, eliminadas };
     }
     async tareasPorOperario(payload) {
         const { operarioId } = OperarioIdDTO.parse(payload);
