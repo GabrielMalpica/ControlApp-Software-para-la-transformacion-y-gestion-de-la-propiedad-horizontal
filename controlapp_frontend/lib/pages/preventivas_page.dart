@@ -314,6 +314,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
                 SizedBox(
                   width: 220,
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _filtroUbicacion,
                     decoration: const InputDecoration(
                       labelText: 'Zona / ubicación',
@@ -323,7 +324,10 @@ class _PreventivasPageState extends State<PreventivasPage> {
                         .map(
                           (item) => DropdownMenuItem(
                             value: item,
-                            child: Text(item == 'TODAS' ? 'Todas' : item),
+                            child: Text(
+                              item == 'TODAS' ? 'Todas' : item,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         )
                         .toList(),
@@ -336,6 +340,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
                 SizedBox(
                   width: 180,
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _filtroFrecuencia,
                     decoration: const InputDecoration(
                       labelText: 'Frecuencia',
@@ -358,6 +363,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
                 SizedBox(
                   width: 170,
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _filtroEstado,
                     decoration: const InputDecoration(
                       labelText: 'Estado',
@@ -386,6 +392,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
                 SizedBox(
                   width: 210,
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _ordenActual,
                     decoration: const InputDecoration(
                       labelText: 'Ordenar por',
@@ -460,46 +467,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
     );
 
     if (result == true) {
-      await _regenerarBorradorActual();
       await _cargar();
-    }
-  }
-
-  Future<void> _regenerarBorradorActual() async {
-    final ahora = DateTime.now();
-
-    try {
-      final gen = await _preventivaApi.generarCronogramaMensual(
-        nit: widget.nit,
-        anio: ahora.year,
-        mes: ahora.month,
-        tamanoBloqueMinutos: 60,
-      );
-
-      if (!mounted) return;
-
-      final creadas = int.tryParse('${gen['creadas'] ?? 0}') ?? 0;
-      AppFeedback.showFromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            creadas > 0
-                ? 'Borrador actualizado. Se programaron $creadas tarea(s).'
-                : 'Borrador actualizado con las reglas actuales de programación.',
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      AppFeedback.showFromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            'La preventiva se guardó, pero no se pudo regenerar el borrador: $e',
-          ),
-          backgroundColor: Colors.orange,
-        ),
-      );
     }
   }
 
@@ -526,7 +494,6 @@ class _PreventivasPageState extends State<PreventivasPage> {
 
     try {
       await _preventivaApi.eliminar(widget.nit, def.id);
-      await _regenerarBorradorActual();
       await _cargar();
       if (!mounted) return;
       AppFeedback.showFromSnackBar(

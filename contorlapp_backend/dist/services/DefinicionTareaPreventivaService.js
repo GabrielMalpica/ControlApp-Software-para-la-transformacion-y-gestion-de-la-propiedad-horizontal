@@ -121,6 +121,368 @@ class DefinicionTareaPreventivaService {
             throw new Error(`El cronograma ${anio}-${String(mes).padStart(2, "0")} solo se puede publicar desde ${ymd(apertura)} (7 días antes del inicio del periodo: ${ymd(inicioPeriodo)}).`);
         }
     }
+    normalizarListaStrings(values) {
+        return values.map((v) => String(v ?? "").trim()).filter((v) => v.length > 0);
+    }
+    async registrarEventoBorrador(params) {
+        await this.prisma.preventivaBorradorEvento.create({
+            data: {
+                conjuntoId: params.conjuntoId,
+                periodoAnio: params.periodoAnio,
+                periodoMes: params.periodoMes,
+                tipo: params.tipo,
+                detalle: params.detalle,
+                tareaId: params.tareaId ?? null,
+                excluidaId: params.excluidaId ?? null,
+                metadataJson: params.metadataJson,
+            },
+        });
+    }
+    async crearExcluida(snapshot) {
+        const created = await this.prisma.preventivaExcluidaBorrador.create({
+            data: {
+                conjuntoId: snapshot.conjuntoId,
+                periodoAnio: snapshot.periodoAnio,
+                periodoMes: snapshot.periodoMes,
+                defId: snapshot.defId ?? null,
+                origenTareaId: snapshot.origenTareaId ?? null,
+                tareaProgramadaId: snapshot.tareaProgramadaId ?? null,
+                descripcion: snapshot.descripcion,
+                frecuencia: snapshot.frecuencia ?? null,
+                prioridad: snapshot.prioridad,
+                duracionMinutos: Math.max(1, snapshot.duracionMinutos),
+                fechaObjetivo: snapshot.fechaObjetivo,
+                ubicacionId: snapshot.ubicacionId,
+                ubicacionNombre: snapshot.ubicacionNombre ?? null,
+                elementoId: snapshot.elementoId,
+                elementoNombre: snapshot.elementoNombre ?? null,
+                supervisorId: snapshot.supervisorId ?? null,
+                supervisorNombre: snapshot.supervisorNombre ?? null,
+                operariosIds: snapshot.operariosIds ?? [],
+                operariosNombres: snapshot.operariosNombres ?? [],
+                motivoTipo: snapshot.motivoTipo,
+                motivoMensaje: snapshot.motivoMensaje ?? null,
+                metadataJson: snapshot.metadataJson,
+            },
+        });
+        await this.registrarEventoBorrador({
+            conjuntoId: snapshot.conjuntoId,
+            periodoAnio: snapshot.periodoAnio,
+            periodoMes: snapshot.periodoMes,
+            tipo: `EXCLUIDA_${snapshot.motivoTipo}`,
+            detalle: snapshot.motivoMensaje ?? undefined,
+            excluidaId: created.id,
+            tareaId: snapshot.tareaProgramadaId ?? snapshot.origenTareaId ?? null,
+            metadataJson: snapshot.metadataJson,
+        });
+        return created;
+    }
+    async cargarSnapshotDefinicion(defId, conjuntoId) {
+        const def = await this.prisma.definicionTareaPreventiva.findFirst({
+            where: { id: defId, conjuntoId },
+            include: {
+                operarios: { include: { usuario: { select: { nombre: true } } } },
+                supervisor: { include: { usuario: { select: { nombre: true } } } },
+                ubicacion: { select: { nombre: true } },
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
+            },
+        });
+        if (!def)
+            return null;
+        return def;
+    }
+    async crearExcluidaDesdeDefinicion(params) {
+        const def = await this.cargarSnapshotDefinicion(params.defId, params.conjuntoId);
+        if (!def)
+            return null;
+        return this.crearExcluida({
+            conjuntoId: params.conjuntoId,
+            periodoAnio: params.periodoAnio,
+            periodoMes: params.periodoMes,
+            defId: def.id,
+            descripcion: def.descripcion,
+            frecuencia: def.frecuencia,
+            prioridad: Number(def.prioridad ?? 2),
+            duracionMinutos: params.duracionMinutos,
+            fechaObjetivo: params.fechaObjetivo,
+            ubicacionId: def.ubicacionId,
+            ubicacionNombre: def.ubicacion?.nombre ?? null,
+            elementoId: def.elementoId,
+            elementoNombre: (0, elementoHierarchy_1.construirRutaElemento)(def.elemento) ?? null,
+            supervisorId: def.supervisorId ?? null,
+            supervisorNombre: def.supervisor?.usuario?.nombre ?? null,
+            operariosIds: def.operarios.map((o) => o.id),
+            operariosNombres: def.operarios
+                .map((o) => o.usuario?.nombre ?? "")
+                .filter((name) => name.trim().length > 0),
+            motivoTipo: params.motivoTipo,
+            motivoMensaje: params.motivoMensaje,
+            metadataJson: params.metadataJson,
+        });
+    }
+    async crearExcluidaDesdeTarea(params) {
+        const tarea = await this.prisma.tarea.findUnique({
+            where: { id: params.tareaId },
+            include: {
+                operarios: { include: { usuario: { select: { nombre: true } } } },
+                supervisor: { include: { usuario: { select: { nombre: true } } } },
+                ubicacion: { select: { nombre: true } },
+                elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
+            },
+        });
+        if (!tarea || !tarea.conjuntoId)
+            return null;
+        return this.crearExcluida({
+            conjuntoId: tarea.conjuntoId,
+            periodoAnio: tarea.periodoAnio ?? tarea.fechaInicio.getFullYear(),
+            periodoMes: tarea.periodoMes ?? tarea.fechaInicio.getMonth() + 1,
+            origenTareaId: tarea.id,
+            descripcion: tarea.descripcion,
+            frecuencia: tarea.frecuencia,
+            prioridad: tarea.prioridad,
+            duracionMinutos: tarea.duracionMinutos,
+            fechaObjetivo: tarea.fechaInicioOriginal ?? tarea.fechaInicio,
+            ubicacionId: tarea.ubicacionId,
+            ubicacionNombre: tarea.ubicacion?.nombre ?? null,
+            elementoId: tarea.elementoId,
+            elementoNombre: (0, elementoHierarchy_1.construirRutaElemento)(tarea.elemento) ?? null,
+            supervisorId: tarea.supervisorId ?? null,
+            supervisorNombre: tarea.supervisor?.usuario?.nombre ?? null,
+            operariosIds: tarea.operarios.map((o) => o.id),
+            operariosNombres: tarea.operarios
+                .map((o) => o.usuario?.nombre ?? "")
+                .filter((name) => name.trim().length > 0),
+            motivoTipo: params.motivoTipo,
+            motivoMensaje: params.motivoMensaje,
+            metadataJson: params.metadataJson,
+        });
+    }
+    async validarSlotPreventivaBorrador(params) {
+        const { conjuntoId, fechaInicio, fechaFin, operariosIds, excluirTareaId } = params;
+        if (fechaFin < fechaInicio) {
+            throw new Error("fechaFin debe ser mayor o igual a fechaInicio");
+        }
+        const inicioEsFestivo = await (0, schedulerUtils_1.isFestivoDate)({
+            prisma: this.prisma,
+            fecha: fechaInicio,
+            pais: "CO",
+        });
+        if (inicioEsFestivo) {
+            throw new Error("No se permite programar tareas preventivas en festivos.");
+        }
+        if (operariosIds.length) {
+            const disponibilidad = await (0, operarioAvailability_1.validarOperariosDisponiblesEnFecha)({
+                prisma: this.prisma,
+                fecha: fechaInicio,
+                operariosIds,
+            });
+            if (!disponibilidad.ok) {
+                throw new Error(`Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`);
+            }
+            for (const opId of operariosIds) {
+                const haySolape = await existeSolapeParaOperario(this.prisma, {
+                    conjuntoId,
+                    operarioId: opId,
+                    fechaInicio,
+                    fechaFin,
+                    soloBorrador: true,
+                    excluirTareaId,
+                });
+                if (haySolape) {
+                    const nombre = await getOperarioNombre(this.prisma, opId);
+                    throw new Error(`Solape de agenda con operario ${nombre}`);
+                }
+            }
+            await (0, operarioAvailability_1.validarLimiteSemanalOperarios)({
+                prisma: this.prisma,
+                conjuntoId,
+                operariosIds,
+                fechaInicio,
+                duracionMinutos: Math.max(1, Math.round((+fechaFin - +fechaInicio) / 60000)),
+                excluirTareaId,
+            });
+        }
+    }
+    async sugerirHuecosParaExcluidaCore(params) {
+        const { conjuntoId, excluida, fechaPreferida, maxOpciones = 8, mismoDiaPrimero = true, } = params;
+        const horarios = await this.prisma.conjuntoHorario.findMany({ where: { conjuntoId } });
+        const horariosPorDia = new Map();
+        for (const h of horarios) {
+            horariosPorDia.set(h.dia, {
+                startMin: (0, schedulerUtils_1.toMin)(h.horaApertura),
+                endMin: (0, schedulerUtils_1.toMin)(h.horaCierre),
+                descansoStartMin: h.descansoInicio ? (0, schedulerUtils_1.toMin)(h.descansoInicio) : undefined,
+                descansoEndMin: h.descansoFin ? (0, schedulerUtils_1.toMin)(h.descansoFin) : undefined,
+            });
+        }
+        const inicioMes = new Date(excluida.periodoAnio, excluida.periodoMes - 1, 1, 0, 0, 0, 0);
+        const finMes = new Date(excluida.periodoAnio, excluida.periodoMes, 0, 23, 59, 59, 999);
+        const festivosSet = await (0, schedulerUtils_1.getFestivosSet)({
+            prisma: this.prisma,
+            pais: "CO",
+            inicio: inicioMes,
+            fin: finMes,
+        });
+        const fechas = enumerateDays(inicioMes, finMes);
+        const preferida = fechaPreferida ?? excluida.fechaObjetivo;
+        fechas.sort((a, b) => {
+            const aSame = dayKey(a) == dayKey(preferida) ? 0 : 1;
+            const bSame = dayKey(b) == dayKey(preferida) ? 0 : 1;
+            if (mismoDiaPrimero && aSame != bSame)
+                return aSame - bSame;
+            return a.getTime() - b.getTime();
+        });
+        const opciones = [];
+        for (const dia of fechas) {
+            if (opciones.length >= maxOpciones)
+                break;
+            const key = dayKey(dia);
+            if (festivosSet.has(key))
+                continue;
+            const horario = horariosPorDia.get(dateToDiaSemana(dia));
+            if (!horario)
+                continue;
+            const disponibilidad = excluida.operariosIds.length
+                ? await (0, operarioAvailability_1.validarOperariosDisponiblesEnFecha)({
+                    prisma: this.prisma,
+                    fecha: dia,
+                    operariosIds: excluida.operariosIds,
+                })
+                : { ok: true, noDisponibles: [] };
+            if (!disponibilidad.ok)
+                continue;
+            const bloqueos = [
+                ...buildBloqueosPorDescanso(horario),
+                ...(await buildBloqueosPorPatronJornada({
+                    prisma: this.prisma,
+                    fechaDia: dia,
+                    horarioDia: horario,
+                    operariosIds: excluida.operariosIds,
+                })),
+            ];
+            let ocupadosGlobal = [];
+            if (excluida.operariosIds.length) {
+                const agenda = await (0, schedulerUtils_1.buildAgendaPorOperarioDia)({
+                    prisma: this.prisma,
+                    conjuntoId,
+                    fechaDia: dia,
+                    operariosIds: excluida.operariosIds,
+                    incluirBorrador: true,
+                    bloqueosGlobales: bloqueos,
+                    excluirEstados: ["PENDIENTE_REPROGRAMACION"],
+                });
+                const all = [];
+                for (const opId of Object.keys(agenda))
+                    all.push(...agenda[opId]);
+                ocupadosGlobal = (0, schedulerUtils_1.mergeIntervalos)(all);
+            }
+            else {
+                ocupadosGlobal = (0, schedulerUtils_1.mergeIntervalos)(bloqueos.map((b) => ({ i: b.startMin, f: b.endMin })));
+            }
+            const bloques = (0, schedulerUtils_1.buscarHuecoDiaConSplitEarliest)({
+                startMin: horario.startMin,
+                endMin: horario.endMin,
+                durMin: excluida.duracionMinutos,
+                ocupados: ocupadosGlobal,
+                bloqueos,
+                desiredStartMin: dayKey(dia) === dayKey(preferida)
+                    ? Math.max(horario.startMin, (0, schedulerUtils_1.toMinOfDay)(preferida))
+                    : horario.startMin,
+                maxBloques: 1,
+            });
+            if (!bloques || bloques.length != 1)
+                continue;
+            const fechaInicio = (0, schedulerUtils_1.toDateAtMin)(dia, bloques[0].i);
+            const fechaFin = (0, schedulerUtils_1.toDateAtMin)(dia, bloques[0].f);
+            try {
+                await this.validarSlotPreventivaBorrador({
+                    conjuntoId,
+                    fechaInicio,
+                    fechaFin,
+                    operariosIds: excluida.operariosIds,
+                });
+            }
+            catch {
+                continue;
+            }
+            opciones.push({
+                fecha: key,
+                fechaInicio: fechaInicio.toISOString(),
+                fechaFin: fechaFin.toISOString(),
+                duracionMinutos: excluida.duracionMinutos,
+                tipoSugerencia: dayKey(dia) === dayKey(preferida) ? "MISMO_DIA" : "MISMO_MES",
+            });
+        }
+        return {
+            excluidaId: excluida.id,
+            descripcion: excluida.descripcion,
+            opciones,
+        };
+    }
+    async materializarExcluidaEnTarea(params) {
+        const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
+            where: { id: params.excluidaId },
+        });
+        if (!excluida || excluida.conjuntoId !== params.conjuntoId) {
+            throw new Error("La tarea excluida no existe para este conjunto.");
+        }
+        if (excluida.estado !== "PENDIENTE") {
+            throw new Error("La tarea excluida ya fue resuelta o agendada.");
+        }
+        await this.validarSlotPreventivaBorrador({
+            conjuntoId: params.conjuntoId,
+            fechaInicio: params.fechaInicio,
+            fechaFin: params.fechaFin,
+            operariosIds: excluida.operariosIds,
+        });
+        const created = await this.prisma.tarea.create({
+            data: {
+                descripcion: excluida.descripcion,
+                fechaInicio: params.fechaInicio,
+                fechaFin: params.fechaFin,
+                duracionMinutos: Math.max(1, Math.round((+params.fechaFin - +params.fechaInicio) / 60000)),
+                prioridad: excluida.prioridad,
+                estado: client_1.EstadoTarea.ASIGNADA,
+                tipo: client_1.TipoTarea.PREVENTIVA,
+                frecuencia: excluida.frecuencia,
+                borrador: true,
+                periodoAnio: excluida.periodoAnio,
+                periodoMes: excluida.periodoMes,
+                grupoPlanId: null,
+                bloqueIndex: null,
+                bloquesTotales: null,
+                ubicacionId: excluida.ubicacionId,
+                elementoId: excluida.elementoId,
+                conjuntoId: params.conjuntoId,
+                supervisorId: excluida.supervisorId,
+                operarios: excluida.operariosIds.length
+                    ? { connect: excluida.operariosIds.map((id) => ({ id })) }
+                    : undefined,
+            },
+        });
+        await this.prisma.preventivaExcluidaBorrador.update({
+            where: { id: excluida.id },
+            data: {
+                estado: "AGENDADA",
+                tareaProgramadaId: created.id,
+                resueltaEn: new Date(),
+            },
+        });
+        await this.registrarEventoBorrador({
+            conjuntoId: params.conjuntoId,
+            periodoAnio: excluida.periodoAnio,
+            periodoMes: excluida.periodoMes,
+            tipo: "EXCLUIDA_AGENDADA",
+            detalle: `La tarea excluida '${excluida.descripcion}' fue agendada manualmente.`,
+            excluidaId: excluida.id,
+            tareaId: created.id,
+            metadataJson: {
+                fechaInicio: params.fechaInicio.toISOString(),
+                fechaFin: params.fechaFin.toISOString(),
+            },
+        });
+        return created;
+    }
     /* =========================
      * CRUD BÁSICO
      * ======================= */
@@ -619,10 +981,14 @@ class DefinicionTareaPreventivaService {
             },
             data: { borrador: false },
         });
+        const excluidasEliminadas = await this.prisma.preventivaExcluidaBorrador.deleteMany({
+            where: { conjuntoId, periodoAnio: anio, periodoMes: mes },
+        });
         return {
             ok: true,
             publicadas: borradores.length,
             reservas: reservasResp?.creadas ?? 0,
+            excluidasDescartadas: excluidasEliminadas.count,
         };
     }
     /**
@@ -710,6 +1076,12 @@ class DefinicionTareaPreventivaService {
                 tipo: client_1.TipoTarea.PREVENTIVA,
             },
         });
+        await this.prisma.preventivaExcluidaBorrador.deleteMany({
+            where: { conjuntoId, periodoAnio, periodoMes },
+        });
+        await this.prisma.preventivaBorradorEvento.deleteMany({
+            where: { conjuntoId, periodoAnio, periodoMes },
+        });
         // ✅ Cache de límite semanal por operario (para no recalcular siempre)
         const limitePorOperario = new Map();
         let creadas = 0;
@@ -750,6 +1122,9 @@ class DefinicionTareaPreventivaService {
                     const diaBaseEsFestivo = festivosSet.has(dayKey(diaBase));
                     const diaBaseEsDomingo = dateToDiaSemana(diaBase) === client_1.DiaSemana.DOMINGO;
                     if (diaBaseEsFestivo || diaBaseEsDomingo) {
+                        const mensaje = diaBaseEsDomingo
+                            ? "La tarea cae en domingo y no se programo en el periodo."
+                            : "La tarea cae en festivo y no se programo en el periodo.";
                         novedades.push({
                             tipo: "FESTIVO_OMITIDO",
                             defId: def.id,
@@ -757,6 +1132,20 @@ class DefinicionTareaPreventivaService {
                             prioridad,
                             fecha: dayKey(diaBase),
                             motivo: diaBaseEsDomingo ? "DOMINGO" : "FESTIVO",
+                            mensaje,
+                        });
+                        await this.crearExcluidaDesdeDefinicion({
+                            conjuntoId,
+                            periodoAnio,
+                            periodoMes,
+                            defId: def.id,
+                            fechaObjetivo: diaBase,
+                            duracionMinutos: Math.max(1, tamanoBloqueMinutos),
+                            motivoTipo: "FESTIVO_OMITIDO",
+                            motivoMensaje: mensaje,
+                            metadataJson: {
+                                motivo: diaBaseEsDomingo ? "DOMINGO" : "FESTIVO",
+                            },
                         });
                     }
                     continue;
@@ -1194,6 +1583,21 @@ class DefinicionTareaPreventivaService {
                                 candidatasIds: pendienteConfirmacion.candidatasIds,
                                 mensaje: `No se encontro hueco ni reemplazo automatico en la fecha objetivo.${p3Contexto} ${msgObjetivo}`,
                             });
+                            await this.crearExcluidaDesdeDefinicion({
+                                conjuntoId,
+                                periodoAnio,
+                                periodoMes,
+                                defId: def.id,
+                                fechaObjetivo: diaParte ?? cursorDia,
+                                duracionMinutos: durMinParte,
+                                motivoTipo: "REQUIERE_CONFIRMACION_REEMPLAZO",
+                                motivoMensaje: `No se encontro hueco ni reemplazo automatico en la fecha objetivo.${p3Contexto} ${msgObjetivo}`,
+                                metadataJson: {
+                                    fecha: pendienteConfirmacion.fecha,
+                                    prioridadObjetivo: objetivo,
+                                    candidatasIds: pendienteConfirmacion.candidatasIds,
+                                },
+                            });
                         }
                         else if (prioridad === 1 && diasConCandidatasP3SinHueco > 0) {
                             const fechas = Array.from(fechasConCandidatasP3).sort();
@@ -1208,6 +1612,17 @@ class DefinicionTareaPreventivaService {
                                 fecha: dayKey(diaParte ?? cursorDia),
                                 mensaje: `Se encontraron candidatas P3 en la fecha objetivo, pero ninguna libero hueco para ubicar la tarea.${fechasTxt}`,
                             });
+                            await this.crearExcluidaDesdeDefinicion({
+                                conjuntoId,
+                                periodoAnio,
+                                periodoMes,
+                                defId: def.id,
+                                fechaObjetivo: diaParte ?? cursorDia,
+                                duracionMinutos: durMinParte,
+                                motivoTipo: "SIN_HUECO",
+                                motivoMensaje: `Se encontraron candidatas P3 en la fecha objetivo, pero ninguna libero hueco para ubicar la tarea.${fechasTxt}`,
+                                metadataJson: { fechasEvaluadas: fechas },
+                            });
                         }
                         else if (prioridad === 1) {
                             novedades.push({
@@ -1217,6 +1632,16 @@ class DefinicionTareaPreventivaService {
                                 prioridad,
                                 fecha: dayKey(diaParte ?? cursorDia),
                                 mensaje: `No se encontraron tareas candidatas P3 para reemplazo en la fecha objetivo.`,
+                            });
+                            await this.crearExcluidaDesdeDefinicion({
+                                conjuntoId,
+                                periodoAnio,
+                                periodoMes,
+                                defId: def.id,
+                                fechaObjetivo: diaParte ?? cursorDia,
+                                duracionMinutos: durMinParte,
+                                motivoTipo: "SIN_CANDIDATAS",
+                                motivoMensaje: "No se encontraron tareas candidatas P3 para reemplazo en la fecha objetivo.",
                             });
                         }
                         else if (diasConCandidatasP3ParaP2 > 0 ||
@@ -1229,6 +1654,16 @@ class DefinicionTareaPreventivaService {
                                 fecha: dayKey(diaParte ?? cursorDia),
                                 mensaje: `Se encontraron candidatas P3 para reemplazo en la fecha objetivo, pero no se logro agendar la tarea.`,
                             });
+                            await this.crearExcluidaDesdeDefinicion({
+                                conjuntoId,
+                                periodoAnio,
+                                periodoMes,
+                                defId: def.id,
+                                fechaObjetivo: diaParte ?? cursorDia,
+                                duracionMinutos: durMinParte,
+                                motivoTipo: "SIN_HUECO",
+                                motivoMensaje: "Se encontraron candidatas P3 para reemplazo en la fecha objetivo, pero no se logro agendar la tarea.",
+                            });
                         }
                         else {
                             novedades.push({
@@ -1238,6 +1673,16 @@ class DefinicionTareaPreventivaService {
                                 prioridad,
                                 fecha: dayKey(diaParte ?? cursorDia),
                                 mensaje: `No se encontraron candidatas P3 para reemplazo de esta tarea de prioridad 2 en la fecha objetivo.`,
+                            });
+                            await this.crearExcluidaDesdeDefinicion({
+                                conjuntoId,
+                                periodoAnio,
+                                periodoMes,
+                                defId: def.id,
+                                fechaObjetivo: diaParte ?? cursorDia,
+                                duracionMinutos: durMinParte,
+                                motivoTipo: "SIN_CANDIDATAS",
+                                motivoMensaje: "No se encontraron candidatas P3 para reemplazo de esta tarea de prioridad 2 en la fecha objetivo.",
                             });
                         }
                     }
@@ -1538,6 +1983,164 @@ class DefinicionTareaPreventivaService {
         }
         return { tareaId, descripcion: tarea.descripcion, opciones };
     }
+    async listarExcluidasBorrador(payload) {
+        const dto = DefinicionTareaPreventiva_1.ListarExcluidasBorradorDTO.parse(payload);
+        const inicioDia = dto.fecha
+            ? new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 0, 0, 0, 0)
+            : null;
+        const finDia = dto.fecha
+            ? new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 23, 59, 59, 999)
+            : null;
+        return this.prisma.preventivaExcluidaBorrador.findMany({
+            where: {
+                conjuntoId: dto.conjuntoId,
+                periodoAnio: dto.anio,
+                periodoMes: dto.mes,
+                estado: "PENDIENTE",
+                ...(inicioDia && finDia
+                    ? { fechaObjetivo: { gte: inicioDia, lte: finDia } }
+                    : {}),
+            },
+            orderBy: [
+                { prioridad: "asc" },
+                { fechaObjetivo: "asc" },
+                { id: "asc" },
+            ],
+        });
+    }
+    async sugerirHuecosExcluida(payload) {
+        const dto = DefinicionTareaPreventiva_1.SugerirHuecosExcluidaDTO.parse(payload);
+        const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
+            where: { id: dto.excluidaId },
+        });
+        if (!excluida || excluida.conjuntoId !== dto.conjuntoId) {
+            throw new Error("La tarea excluida no existe para este conjunto.");
+        }
+        return this.sugerirHuecosParaExcluidaCore({
+            conjuntoId: dto.conjuntoId,
+            excluida: {
+                id: excluida.id,
+                periodoAnio: excluida.periodoAnio,
+                periodoMes: excluida.periodoMes,
+                descripcion: excluida.descripcion,
+                duracionMinutos: excluida.duracionMinutos,
+                fechaObjetivo: excluida.fechaObjetivo,
+                operariosIds: excluida.operariosIds,
+            },
+            fechaPreferida: dto.fechaPreferida,
+            maxOpciones: dto.maxOpciones ?? 8,
+        });
+    }
+    async agendarExcluidaBorrador(payload) {
+        const dto = DefinicionTareaPreventiva_1.AgendarExcluidaDTO.parse(payload);
+        let fechaInicio = dto.fechaInicio ?? null;
+        let fechaFin = dto.fechaFin ?? null;
+        if (!fechaInicio || !fechaFin) {
+            const sugerencias = await this.sugerirHuecosExcluida({
+                conjuntoId: dto.conjuntoId,
+                excluidaId: dto.excluidaId,
+                fechaPreferida: dto.fechaInicio ?? undefined,
+                maxOpciones: 1,
+            });
+            const sugerida = sugerencias.opciones[0];
+            if (!sugerida) {
+                throw new Error("No se encontraron huecos disponibles para esta tarea excluida.");
+            }
+            fechaInicio = new Date(sugerida.fechaInicio);
+            fechaFin = new Date(sugerida.fechaFin);
+        }
+        const tarea = await this.materializarExcluidaEnTarea({
+            excluidaId: dto.excluidaId,
+            conjuntoId: dto.conjuntoId,
+            fechaInicio,
+            fechaFin,
+        });
+        return { ok: true, tarea };
+    }
+    async reemplazarTareaBorradorConExcluida(payload) {
+        const dto = DefinicionTareaPreventiva_1.ReemplazarConExcluidaDTO.parse(payload);
+        const tarea = await this.prisma.tarea.findUnique({
+            where: { id: dto.tareaId },
+            include: { operarios: { select: { id: true } } },
+        });
+        if (!tarea || !tarea.borrador || tarea.conjuntoId !== dto.conjuntoId) {
+            throw new Error("La tarea del borrador no existe para este conjunto.");
+        }
+        const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
+            where: { id: dto.excluidaId },
+        });
+        if (!excluida || excluida.conjuntoId !== dto.conjuntoId || excluida.estado !== "PENDIENTE") {
+            throw new Error("La tarea excluida no esta disponible para reemplazo.");
+        }
+        let fechaInicio = new Date(tarea.fechaInicio);
+        let fechaFin = new Date(fechaInicio.getTime() + excluida.duracionMinutos * 60000);
+        try {
+            await this.validarSlotPreventivaBorrador({
+                conjuntoId: dto.conjuntoId,
+                fechaInicio,
+                fechaFin,
+                operariosIds: excluida.operariosIds,
+                excluirTareaId: tarea.id,
+            });
+        }
+        catch {
+            const sugerencias = await this.sugerirHuecosParaExcluidaCore({
+                conjuntoId: dto.conjuntoId,
+                excluida: {
+                    id: excluida.id,
+                    periodoAnio: excluida.periodoAnio,
+                    periodoMes: excluida.periodoMes,
+                    descripcion: excluida.descripcion,
+                    duracionMinutos: excluida.duracionMinutos,
+                    fechaObjetivo: tarea.fechaInicio,
+                    operariosIds: excluida.operariosIds,
+                },
+                fechaPreferida: tarea.fechaInicio,
+                maxOpciones: 1,
+            });
+            const sugerida = sugerencias.opciones[0];
+            if (!sugerida) {
+                throw new Error("No se encontro un hueco disponible para reemplazar esta tarea.");
+            }
+            fechaInicio = new Date(sugerida.fechaInicio);
+            fechaFin = new Date(sugerida.fechaFin);
+        }
+        const excluidaGenerada = await this.crearExcluidaDesdeTarea({
+            tareaId: tarea.id,
+            motivoTipo: "MANUAL_REEMPLAZADA",
+            motivoMensaje: `La tarea fue desplazada manualmente por '${excluida.descripcion}'.`,
+            metadataJson: {
+                reemplazadaPorExcluidaId: excluida.id,
+                reemplazadaPorDescripcion: excluida.descripcion,
+            },
+        });
+        await this.prisma.tarea.delete({ where: { id: tarea.id } });
+        const nuevaTarea = await this.materializarExcluidaEnTarea({
+            excluidaId: excluida.id,
+            conjuntoId: dto.conjuntoId,
+            fechaInicio,
+            fechaFin,
+        });
+        await this.registrarEventoBorrador({
+            conjuntoId: dto.conjuntoId,
+            periodoAnio: excluida.periodoAnio,
+            periodoMes: excluida.periodoMes,
+            tipo: "REEMPLAZO_MANUAL",
+            detalle: `Se reemplazo manualmente la tarea '${tarea.descripcion}' por '${excluida.descripcion}'.`,
+            tareaId: nuevaTarea.id,
+            excluidaId: excluidaGenerada?.id ?? null,
+            metadataJson: {
+                tareaAnteriorId: tarea.id,
+                tareaNuevaId: nuevaTarea.id,
+                excluidaConsumidaId: excluida.id,
+            },
+        });
+        return {
+            ok: true,
+            nuevaTarea,
+            tareaEnviadaAExcluidasId: excluidaGenerada?.id ?? null,
+        };
+    }
     /* =========================
      * MAQUINARIA DISPONIBLE
      * ======================= */
@@ -1743,17 +2346,24 @@ class DefinicionTareaPreventivaService {
         };
     }
     async eliminarBloqueBorrador(conjuntoId, tareaId) {
-        const res = await this.prisma.tarea.deleteMany({
+        const tarea = await this.prisma.tarea.findFirst({
             where: {
                 id: tareaId,
                 conjuntoId,
                 borrador: true,
                 tipo: client_1.TipoTarea.PREVENTIVA,
             },
+            select: { id: true },
         });
-        if (res.count === 0) {
+        if (!tarea) {
             throw new Error("Bloque no encontrado o no es borrador preventivo.");
         }
+        await this.crearExcluidaDesdeTarea({
+            tareaId,
+            motivoTipo: "MANUAL_ELIMINADA",
+            motivoMensaje: "La tarea fue retirada manualmente del borrador.",
+        });
+        await this.prisma.tarea.delete({ where: { id: tareaId } });
     }
     async listarBorrador(params) {
         const { conjuntoId, anio, mes } = params;
@@ -1773,6 +2383,44 @@ class DefinicionTareaPreventivaService {
             },
             orderBy: [{ grupoPlanId: "asc" }, { bloqueIndex: "asc" }, { id: "asc" }],
         });
+    }
+    async informeMensualActividad(params) {
+        const { conjuntoId, anio, mes, borrador } = params;
+        const tareas = await this.prisma.tarea.findMany({
+            where: {
+                conjuntoId,
+                borrador,
+                tipo: client_1.TipoTarea.PREVENTIVA,
+                periodoAnio: anio,
+                periodoMes: mes,
+            },
+            select: {
+                descripcion: true,
+                duracionMinutos: true,
+                fechaInicio: true,
+            },
+            orderBy: [{ descripcion: "asc" }, { fechaInicio: "asc" }],
+        });
+        const weekOfMonth = (fecha) => {
+            const firstDay = new Date(anio, mes - 1, 1);
+            const offset = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+            return Math.min(5, Math.floor((fecha.getDate() + offset - 1) / 7) + 1);
+        };
+        const rows = new Map();
+        for (const tarea of tareas) {
+            const actividad = tarea.descripcion.trim();
+            const row = rows.get(actividad) ?? {
+                actividad,
+                horasMes: 0,
+                semanas: { semana1: 0, semana2: 0, semana3: 0, semana4: 0, semana5: 0 },
+            };
+            const horas = Number((tarea.duracionMinutos / 60).toFixed(2));
+            const semana = `semana${weekOfMonth(tarea.fechaInicio)}`;
+            row.horasMes = Number((row.horasMes + horas).toFixed(2));
+            row.semanas[semana] = Number(((row.semanas[semana] ?? 0) + horas).toFixed(2));
+            rows.set(actividad, row);
+        }
+        return Array.from(rows.values()).sort((a, b) => a.actividad.localeCompare(b.actividad));
     }
     /* =========================
      * Reservas de maquinaria

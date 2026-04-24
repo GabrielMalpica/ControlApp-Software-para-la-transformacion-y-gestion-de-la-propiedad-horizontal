@@ -1121,6 +1121,72 @@ model Tarea {
   @@map("Tarea")
 }
 
+model PreventivaExcluidaBorrador {
+  id Int @id @default(autoincrement())
+
+  conjuntoId String
+  periodoAnio Int
+  periodoMes Int
+
+  defId Int?
+  origenTareaId Int?
+  tareaProgramadaId Int?
+
+  descripcion String
+  frecuencia Frecuencia?
+  prioridad Int @default(2)
+  duracionMinutos Int
+
+  fechaObjetivo DateTime
+
+  ubicacionId Int
+  ubicacionNombre String?
+  elementoId Int
+  elementoNombre String?
+
+  supervisorId String?
+  supervisorNombre String?
+  operariosIds String[] @default([])
+  operariosNombres String[] @default([])
+
+  motivoTipo String
+  motivoMensaje String?
+  estado String @default("PENDIENTE")
+  metadataJson Json?
+
+  creadaEn DateTime @default(now())
+  actualizadaEn DateTime @updatedAt
+  resueltaEn DateTime?
+
+  @@index([conjuntoId, periodoAnio, periodoMes], map: "PEB_periodo_idx")
+  @@index([conjuntoId, periodoAnio, periodoMes, fechaObjetivo], map: "PEB_periodo_fecha_idx")
+  @@index([conjuntoId, periodoAnio, periodoMes, estado], map: "PEB_periodo_estado_idx")
+  @@map("PreventivaExcluidaBorrador")
+}
+
+model PreventivaBorradorEvento {
+  id Int @id @default(autoincrement())
+
+  conjuntoId String
+  periodoAnio Int
+  periodoMes Int
+
+  tareaId Int?
+  excluidaId Int?
+  tipo String
+  detalle String?
+  metadataJson Json?
+
+  actorId String?
+  actorRol String?
+
+  creadoEn DateTime @default(now())
+
+  @@index([conjuntoId, periodoAnio, periodoMes], map: "PBE_periodo_idx")
+  @@index([conjuntoId, periodoAnio, periodoMes, tipo], map: "PBE_periodo_tipo_idx")
+  @@map("PreventivaBorradorEvento")
+}
+
 /**
  * =========================================
  * MODELOS - SOLICITUDES

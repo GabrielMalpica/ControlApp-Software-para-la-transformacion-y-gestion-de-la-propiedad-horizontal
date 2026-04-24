@@ -1,6 +1,11 @@
 class AppConstants {
   static const String _railwayBaseUrl =
       'https://controlapp-software-para-la-transformacion-y-ges-production.up.railway.app';
+  static const String _localBaseUrl = 'http://localhost:3000';
+
+  // Para pruebas locales cambia a `true` y vuelve a correr Flutter.
+  // En nube/produccion dejalo en `false`.
+  static const bool _usarApiLocalEnDebug = false;
 
   /// Cambia en build/run con:
   /// --dart-define=API_BASE_URL=https://tu-api
@@ -14,7 +19,14 @@ class AppConstants {
   /// forzamos Railway para evitar que apunte al backend local por error.
   static String get baseUrl {
     final env = _apiBaseFromEnv.trim();
-    if (env.isEmpty) return _railwayBaseUrl;
+    if (env.isEmpty) {
+      if (_usarApiLocalEnDebug) {
+        final host = Uri.base.host.toLowerCase();
+        final runningOnLocalhost = host == 'localhost' || host == '127.0.0.1';
+        if (runningOnLocalhost) return _localBaseUrl;
+      }
+      return _railwayBaseUrl;
+    }
 
     final host = Uri.base.host.toLowerCase();
     final runningOnLocalhost = host == 'localhost' || host == '127.0.0.1';

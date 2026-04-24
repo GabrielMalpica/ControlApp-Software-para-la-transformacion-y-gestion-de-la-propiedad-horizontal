@@ -12,6 +12,10 @@ router.get("/conjuntos/:nit/operarios/sugerir", controller.sugerirOperarios);
 
 // Vistas de cronograma
 router.get("/conjuntos/:nit/cronograma", controller.cronogramaMensual);       // lista cruda del mes
+router.get(
+  "/conjuntos/:nit/cronograma/informe-actividad",
+  controller.informeMensualActividad,
+);
 router.delete(
   "/conjuntos/:nit/cronograma/publicado",
   authRequired,

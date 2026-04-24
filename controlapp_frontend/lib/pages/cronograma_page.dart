@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/api/inventario_api.dart';
+import 'package:flutter_application_1/model/cronograma_actividad_informe_model.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
@@ -21,7 +22,7 @@ import '../widgets/section_card.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
-enum _VistaCronograma { mensual, semanal }
+enum _VistaCronograma { mensual, semanal, informe }
 
 class CronogramaPage extends StatefulWidget {
   final String nit;
@@ -63,6 +64,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   /// Todas las tareas PUBLICADAS (preventivas + correctivas) del mes
   List<TareaModel> _tareasMes = [];
+  List<CronogramaActividadInformeModel> _informeActividad = [];
   List<TareaModel> _tareasFiltradasCache = [];
   List<_FilaCrono> _filasCronoMensualCache = [];
 
@@ -587,12 +589,19 @@ class _CronogramaPageState extends State<CronogramaPage> {
         ),
         _festivoApi.listarFestivosRango(desde: desde, hasta: hasta, pais: 'CO'),
         horariosFuture,
+        _cronogramaApi.informeActividadMensual(
+          nit: widget.nit,
+          anio: _anioActual,
+          mes: _mesActual,
+          borrador: false,
+        ),
       ]);
 
       final prev = results[0] as List<TareaModel>;
       final corr = results[1] as List<TareaModel>;
       final festivos = results[2] as List<FestivoItem>;
       final horarios = results[3] as List<HorarioConjunto>;
+      final informe = results[4] as List<CronogramaActividadInformeModel>;
 
       // unir y quitar duplicados por id (por si backend repite algo)
       final Map<int, TareaModel> porId = {};
@@ -621,6 +630,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
       setState(() {
         _tareasMes = filtradas;
+        _informeActividad = informe;
         _reconstruirFiltrosDisponibles();
         _recalcularColeccionesDerivadas();
         _festivosYmd = setYmd;
@@ -2119,7 +2129,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 Expanded(
                   child: _vista == _VistaCronograma.mensual
                       ? _buildCronogramaMensualTipoFoto()
-                      : _buildAgendaSemanal(),
+                      : _vista == _VistaCronograma.semanal
+                      ? _buildAgendaSemanal()
+                      : _buildInformeActividad(),
                 ),
                 if (_vista == _VistaCronograma.mensual) _buildLeyendaMensual(),
               ],
@@ -2154,6 +2166,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
                   value: _VistaCronograma.semanal,
                   label: Text('Semanal'),
                   icon: Icon(Icons.view_week),
+                ),
+                ButtonSegment(
+                  value: _VistaCronograma.informe,
+                  label: Text('Informe'),
+                  icon: Icon(Icons.table_chart_outlined),
                 ),
               ],
               selected: {_vista},
@@ -2241,6 +2258,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
               value: _VistaCronograma.semanal,
               label: Text('Semanal'),
               icon: Icon(Icons.view_week),
+            ),
+            ButtonSegment(
+              value: _VistaCronograma.informe,
+              label: Text('Informe'),
+              icon: Icon(Icons.table_chart_outlined),
             ),
           ],
           selected: {_vista},
@@ -2768,6 +2790,64 @@ class _CronogramaPageState extends State<CronogramaPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildInformeActividad() {
+    if (_informeActividad.isEmpty) {
+      return const Center(
+        child: Text('No hay actividades planificadas para este periodo.'),
+      );
+    }
+
+    DataColumn col(String label) => DataColumn(label: Text(label));
+    DataCell cellNum(num value) => DataCell(Text(value.toStringAsFixed(1)));
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          columns: [
+            col('Actividad'),
+            col('Horas mes'),
+            col('Semana 1'),
+            col('Semana 2'),
+            col('Semana 3'),
+            col('Semana 4'),
+            col('Semana 5'),
+          ],
+          rows: _informeActividad
+              .map(
+                (item) => DataRow(
+                  cells: [
+                    DataCell(
+                      SizedBox(
+                        width: 320,
+                        child: Text(
+                          item.actividad,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                    cellNum(item.horasMes),
+                    cellNum(item.semana1),
+                    cellNum(item.semana2),
+                    cellNum(item.semana3),
+                    cellNum(item.semana4),
+                    cellNum(item.semana5),
+                  ],
+                ),
+              )
+              .toList(),
+        ),
+      ),
     );
   }
 }

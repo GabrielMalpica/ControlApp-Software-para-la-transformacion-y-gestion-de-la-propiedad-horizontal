@@ -134,13 +134,15 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
   Future<void> _cargarConjuntos() async {
     try {
       final lista = await _gerenteApi.listarConjuntos();
+      if (!mounted) return;
       final seleccionadoActual = _conjuntoSeleccionadoNit;
       setState(() {
         _conjuntos = lista;
         _cargandoConjuntos = false;
         _errorConjuntos = null;
         if (_conjuntos.isNotEmpty) {
-          final existeSeleccionado = seleccionadoActual != null &&
+          final existeSeleccionado =
+              seleccionadoActual != null &&
               _conjuntos.any((c) => c.nit == seleccionadoActual);
           _conjuntoSeleccionadoNit = existeSeleccionado
               ? seleccionadoActual
@@ -150,6 +152,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         }
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _cargandoConjuntos = false;
         _errorConjuntos = AppError.messageOf(e);
@@ -158,10 +161,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
   }
 
   Future<void> _abrirYRecargar(Widget page) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => page),
-    );
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
     if (!mounted) return;
     await _cargarConjuntos();
   }

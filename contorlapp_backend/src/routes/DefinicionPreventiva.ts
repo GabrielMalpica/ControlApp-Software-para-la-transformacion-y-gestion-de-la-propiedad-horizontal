@@ -42,9 +42,34 @@ router.get(
   asyncHandler(ctrl.listarOpcionesReprogramacionBorrador),
 );
 
+router.get(
+  "/conjuntos/:nit/preventivas/borrador/excluidas",
+  asyncHandler(ctrl.listarExcluidasBorrador),
+);
+
+router.get(
+  "/conjuntos/:nit/preventivas/borrador/excluidas/:id/huecos",
+  asyncHandler(ctrl.sugerirHuecosExcluida),
+);
+
+router.post(
+  "/conjuntos/:nit/preventivas/borrador/excluidas/:id/agendar",
+  asyncHandler(ctrl.agendarExcluidaBorrador),
+);
+
+router.post(
+  "/conjuntos/:nit/preventivas/borrador/tarea/:id/reemplazar-por-excluida",
+  asyncHandler(ctrl.reemplazarConExcluida),
+);
+
 router.delete(
   "/conjuntos/:nit/preventivas/borrador/tarea/:id",
   asyncHandler(ctrl.eliminarBloqueBorrador),
+);
+
+router.get(
+  "/conjuntos/:nit/preventivas/borrador/informe-actividad",
+  asyncHandler(ctrl.informeActividadBorrador),
 );
 
 // 🔹 Publicar

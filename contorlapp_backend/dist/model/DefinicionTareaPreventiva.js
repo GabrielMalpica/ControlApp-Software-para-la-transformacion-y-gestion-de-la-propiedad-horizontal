@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.definicionPreventivaPublicSelect = exports.GenerarCronogramaMensualDTO = exports.GenerarCronogramaDTO = exports.FiltroDefinicionPreventivaDTO = exports.EditarDefinicionPreventivaDTO = exports.CrearDefinicionPreventivaDTO = void 0;
+exports.definicionPreventivaPublicSelect = exports.GenerarCronogramaMensualDTO = exports.ReemplazarConExcluidaDTO = exports.AgendarExcluidaDTO = exports.SugerirHuecosExcluidaDTO = exports.ListarExcluidasBorradorDTO = exports.GenerarCronogramaDTO = exports.FiltroDefinicionPreventivaDTO = exports.EditarDefinicionPreventivaDTO = exports.CrearDefinicionPreventivaDTO = void 0;
 exports.toDefinicionTareaPreventivaPublica = toDefinicionTareaPreventivaPublica;
 exports.calcularMinutosEstimados = calcularMinutosEstimados;
 // src/model/DefinicionTareaPreventiva.ts
@@ -121,6 +121,32 @@ exports.GenerarCronogramaDTO = zod_1.z.object({
         .max(12 * 60)
         .optional(),
     confirmacionesReemplazo: zod_1.z.array(ConfirmacionReemplazoDTO).optional(),
+});
+exports.ListarExcluidasBorradorDTO = zod_1.z.object({
+    conjuntoId: zod_1.z.string().min(3),
+    anio: zod_1.z.coerce.number().int().min(2000).max(2100),
+    mes: zod_1.z.coerce.number().int().min(1).max(12),
+    fecha: zod_1.z.coerce.date().optional(),
+});
+exports.SugerirHuecosExcluidaDTO = zod_1.z.object({
+    conjuntoId: zod_1.z.string().min(3),
+    excluidaId: zod_1.z.coerce.number().int().positive(),
+    fechaPreferida: zod_1.z.coerce.date().optional(),
+    maxOpciones: zod_1.z.coerce.number().int().min(1).max(20).optional(),
+});
+exports.AgendarExcluidaDTO = zod_1.z.object({
+    conjuntoId: zod_1.z.string().min(3),
+    excluidaId: zod_1.z.coerce.number().int().positive(),
+    fechaInicio: zod_1.z.coerce.date().optional(),
+    fechaFin: zod_1.z.coerce.date().optional(),
+}).refine((d) => (d.fechaInicio == null && d.fechaFin == null) ||
+    (d.fechaInicio != null && d.fechaFin != null && d.fechaFin >= d.fechaInicio), {
+    message: "Si envias fechaInicio y fechaFin, ambas son obligatorias y fechaFin debe ser mayor o igual.",
+});
+exports.ReemplazarConExcluidaDTO = zod_1.z.object({
+    conjuntoId: zod_1.z.string().min(3),
+    tareaId: zod_1.z.coerce.number().int().positive(),
+    excluidaId: zod_1.z.coerce.number().int().positive(),
 });
 // Alias opcional por compatibilidad
 exports.GenerarCronogramaMensualDTO = exports.GenerarCronogramaDTO;

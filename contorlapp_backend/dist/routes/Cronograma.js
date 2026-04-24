@@ -11,6 +11,7 @@ const controller = new CronogramaController_1.CronogramaController();
 router.get("/conjuntos/:nit/operarios/sugerir", controller.sugerirOperarios);
 // Vistas de cronograma
 router.get("/conjuntos/:nit/cronograma", controller.cronogramaMensual); // lista cruda del mes
+router.get("/conjuntos/:nit/cronograma/informe-actividad", controller.informeMensualActividad);
 router.delete("/conjuntos/:nit/cronograma/publicado", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente"), controller.eliminarCronogramaPublicado);
 router.get("/conjuntos/:nit/cronograma/mes", controller.calendarioMensual); // resumen por día (para el calendario)
 // Consultas de tareas

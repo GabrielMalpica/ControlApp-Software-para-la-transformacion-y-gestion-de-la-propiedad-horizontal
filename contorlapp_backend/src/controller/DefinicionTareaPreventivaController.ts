@@ -241,4 +241,72 @@ export class DefinicionTareaPreventivaController {
     const out = await svc.listarOpcionesReprogramacionBorrador(conjuntoId, id);
     res.json(out);
   };
+
+  listarExcluidasBorrador = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const svc = new DefinicionTareaPreventivaService(prisma);
+    const out = await svc.listarExcluidasBorrador({
+      conjuntoId,
+      anio: Number(req.query.anio),
+      mes: Number(req.query.mes),
+      fecha: req.query.fecha ? new Date(String(req.query.fecha)) : undefined,
+    });
+    res.json(out);
+  };
+
+  sugerirHuecosExcluida = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) throw new Error("ID inválido");
+    const svc = new DefinicionTareaPreventivaService(prisma);
+    const out = await svc.sugerirHuecosExcluida({
+      conjuntoId,
+      excluidaId: id,
+      fechaPreferida: req.query.fechaPreferida
+        ? new Date(String(req.query.fechaPreferida))
+        : undefined,
+      maxOpciones: req.query.maxOpciones,
+    });
+    res.json(out);
+  };
+
+  agendarExcluidaBorrador = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) throw new Error("ID inválido");
+    const svc = new DefinicionTareaPreventivaService(prisma);
+    const out = await svc.agendarExcluidaBorrador({
+      conjuntoId,
+      excluidaId: id,
+      ...req.body,
+    });
+    res.json(out);
+  };
+
+  reemplazarConExcluida = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const tareaId = Number(req.params.id);
+    if (!Number.isFinite(tareaId)) throw new Error("ID inválido");
+    const svc = new DefinicionTareaPreventivaService(prisma);
+    const out = await svc.reemplazarTareaBorradorConExcluida({
+      conjuntoId,
+      tareaId,
+      excluidaId: Number(req.body?.excluidaId),
+    });
+    res.json(out);
+  };
+
+  informeActividadBorrador = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const anio = Number(req.query.anio);
+    const mes = Number(req.query.mes);
+    const svc = new DefinicionTareaPreventivaService(prisma);
+    const out = await svc.informeMensualActividad({
+      conjuntoId,
+      anio,
+      mes,
+      borrador: true,
+    });
+    res.json(out);
+  };
 }

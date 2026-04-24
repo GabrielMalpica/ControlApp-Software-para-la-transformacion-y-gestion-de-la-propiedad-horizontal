@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:flutter_application_1/api/preventiva_api.dart';
+import 'package:flutter_application_1/model/cronograma_actividad_informe_model.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/novedad_cronograma_model.dart';
+import 'package:flutter_application_1/model/preventiva_excluida_borrador_model.dart';
 import 'package:intl/intl.dart';
 
 import '../api/cronograma_api.dart';
@@ -15,7 +17,7 @@ import '../service/theme.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
-enum _VistaCronograma { mensual, semanal }
+enum _VistaCronograma { mensual, semanal, informe }
 
 class CronogramaPreventivasBorradorPage extends StatefulWidget {
   final String nit;
@@ -57,6 +59,8 @@ class _CronogramaPreventivasBorradorPageState
 
   /// Todas las tareas preventivas en borrador de ese mes
   List<TareaModel> _tareasMes = [];
+  List<PreventivaExcluidaBorradorModel> _excluidasMes = [];
+  List<CronogramaActividadInformeModel> _informeActividad = [];
 
   /// Resumen por día (mensual)
   List<_DiaResumen> _diasResumen = [];
@@ -270,6 +274,15 @@ class _CronogramaPreventivasBorradorPageState
   List<TareaModel> get _tareasFiltradas =>
       _tareasMes.where(_pasaFiltros).toList();
 
+  List<PreventivaExcluidaBorradorModel> _excluidasPorFecha(DateTime fecha) {
+    return _excluidasMes.where((item) {
+      final d = item.fechaObjetivo;
+      return d.year == fecha.year &&
+          d.month == fecha.month &&
+          d.day == fecha.day;
+    }).toList();
+  }
+
   bool _esCanceladaPorReemplazo(TareaModel t) {
     final estado = (t.estado ?? '').trim().toUpperCase();
     return estado == 'NO_COMPLETADA' &&
@@ -462,8 +475,11 @@ class _CronogramaPreventivasBorradorPageState
     var ocupadasMin = 0;
 
     for (int i = 0; i < 7; i++) {
-      final day = DateTime(weekStart.year, weekStart.month, weekStart.day)
-          .add(Duration(days: i));
+      final day = DateTime(
+        weekStart.year,
+        weekStart.month,
+        weekStart.day,
+      ).add(Duration(days: i));
       final rangosDisponibles = _rangosDisponiblesDia(day);
       if (rangosDisponibles.isEmpty) continue;
 
@@ -481,11 +497,14 @@ class _CronogramaPreventivasBorradorPageState
           inicioOriginal,
           t.fechaFin.toLocal(),
         );
-        if (!finOriginal.isAfter(dayStart) || !inicioOriginal.isBefore(dayEnd)) {
+        if (!finOriginal.isAfter(dayStart) ||
+            !inicioOriginal.isBefore(dayEnd)) {
           continue;
         }
 
-        final inicioDia = inicioOriginal.isBefore(dayStart) ? dayStart : inicioOriginal;
+        final inicioDia = inicioOriginal.isBefore(dayStart)
+            ? dayStart
+            : inicioOriginal;
         final finDia = finOriginal.isAfter(dayEnd) ? dayEnd : finOriginal;
         final inicioMin = inicioDia.hour * 60 + inicioDia.minute;
         final finMin = finDia.hour * 60 + finDia.minute;
@@ -518,8 +537,11 @@ class _CronogramaPreventivasBorradorPageState
     final ocupadasPorOperario = <String, int>{};
 
     for (int i = 0; i < 7; i++) {
-      final day = DateTime(weekStart.year, weekStart.month, weekStart.day)
-          .add(Duration(days: i));
+      final day = DateTime(
+        weekStart.year,
+        weekStart.month,
+        weekStart.day,
+      ).add(Duration(days: i));
       final rangosDisponibles = _rangosDisponiblesDia(day);
       if (rangosDisponibles.isEmpty) continue;
 
@@ -543,11 +565,14 @@ class _CronogramaPreventivasBorradorPageState
           inicioOriginal,
           t.fechaFin.toLocal(),
         );
-        if (!finOriginal.isAfter(dayStart) || !inicioOriginal.isBefore(dayEnd)) {
+        if (!finOriginal.isAfter(dayStart) ||
+            !inicioOriginal.isBefore(dayEnd)) {
           continue;
         }
 
-        final inicioDia = inicioOriginal.isBefore(dayStart) ? dayStart : inicioOriginal;
+        final inicioDia = inicioOriginal.isBefore(dayStart)
+            ? dayStart
+            : inicioOriginal;
         final finDia = finOriginal.isAfter(dayEnd) ? dayEnd : finOriginal;
         final inicioMin = inicioDia.hour * 60 + inicioDia.minute;
         final finMin = finDia.hour * 60 + finDia.minute;
@@ -566,8 +591,9 @@ class _CronogramaPreventivasBorradorPageState
       }
 
       for (final entry in rangosPorOperario.entries) {
-        final ocupadasDia = _mergeMinuteRanges(entry.value)
-            .fold<int>(0, (acc, rango) => acc + (rango.end - rango.start));
+        final ocupadasDia = _mergeMinuteRanges(
+          entry.value,
+        ).fold<int>(0, (acc, rango) => acc + (rango.end - rango.start));
         ocupadasPorOperario.update(
           entry.key,
           (actual) => actual + ocupadasDia,
@@ -698,16 +724,23 @@ class _CronogramaPreventivasBorradorPageState
                             const SizedBox(height: 4),
                             Text(
                               '${item.ocupadasHorasLabel} / ${item.disponiblesHorasLabel}',
-                              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade700,
+                              ),
                             ),
                             const SizedBox(height: 6),
                             ClipRRect(
                               borderRadius: BorderRadius.circular(999),
                               child: LinearProgressIndicator(
                                 minHeight: 7,
-                                value: item.porcentajeOcupacion.clamp(0, 1).toDouble(),
+                                value: item.porcentajeOcupacion
+                                    .clamp(0, 1)
+                                    .toDouble(),
                                 backgroundColor: Colors.grey.shade200,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.red.shade300),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.red.shade300,
+                                ),
                               ),
                             ),
                           ],
@@ -1186,7 +1219,9 @@ class _CronogramaPreventivasBorradorPageState
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (_, index) {
                 final item = opciones[index];
-                final inicio = DateTime.tryParse(item['fechaInicio'].toString());
+                final inicio = DateTime.tryParse(
+                  item['fechaInicio'].toString(),
+                );
                 final fin = DateTime.tryParse(item['fechaFin'].toString());
                 final label = inicio != null && fin != null
                     ? '${DateFormat('dd/MM/yyyy HH:mm').format(inicio)} - ${DateFormat('HH:mm').format(fin)}'
@@ -1460,8 +1495,12 @@ class _CronogramaPreventivasBorradorPageState
                                                                 procesando
                                                                 ? null
                                                                 : () async {
-                                                                    final reprogramar = await preguntarReprogramacionReemplazada(ctx);
-                                                                    if (reprogramar == null) {
+                                                                    final reprogramar =
+                                                                        await preguntarReprogramacionReemplazada(
+                                                                          ctx,
+                                                                        );
+                                                                    if (reprogramar ==
+                                                                        null) {
                                                                       return;
                                                                     }
                                                                     setModalState(
@@ -1482,18 +1521,33 @@ class _CronogramaPreventivasBorradorPageState
                                                                       if (reprogramar) {
                                                                         final reemplazo = nuevas.firstWhere(
                                                                           (x) =>
-                                                                              x.tipo == 'REEMPLAZO_PRIORIDAD' &&
+                                                                              x.tipo ==
+                                                                                  'REEMPLAZO_PRIORIDAD' &&
                                                                               x.reprogramadasIds.isNotEmpty,
-                                                                          orElse: () => NovedadCronogramaModel(tipo: 'OTRO'),
+                                                                          orElse: () => NovedadCronogramaModel(
+                                                                            tipo:
+                                                                                'OTRO',
+                                                                          ),
                                                                         );
-                                                                        final tareaId = reemplazo.reprogramadasIds.isNotEmpty
+                                                                        final tareaId =
+                                                                            reemplazo.reprogramadasIds.isNotEmpty
                                                                             ? reemplazo.reprogramadasIds.first
                                                                             : null;
-                                                                        if (tareaId != null && ctx.mounted) {
-                                                                          final hueco = await elegirHuecoReprogramacion(ctx, tareaId);
-                                                                          if (hueco != null) {
-                                                                            final fi = DateTime.parse(hueco['fechaInicio'].toString());
-                                                                            final ff = DateTime.parse(hueco['fechaFin'].toString());
+                                                                        if (tareaId !=
+                                                                                null &&
+                                                                            ctx.mounted) {
+                                                                          final hueco = await elegirHuecoReprogramacion(
+                                                                            ctx,
+                                                                            tareaId,
+                                                                          );
+                                                                          if (hueco !=
+                                                                              null) {
+                                                                            final fi = DateTime.parse(
+                                                                              hueco['fechaInicio'].toString(),
+                                                                            );
+                                                                            final ff = DateTime.parse(
+                                                                              hueco['fechaFin'].toString(),
+                                                                            );
                                                                             await _preventivaApi.editarBloqueBorrador(
                                                                               nit: widget.nit,
                                                                               tareaId: tareaId,
@@ -1604,12 +1658,24 @@ class _CronogramaPreventivasBorradorPageState
         ),
         _festivoApi.listarFestivosRango(desde: desde, hasta: hasta, pais: 'CO'),
         horariosFuture,
+        _preventivaApi.listarExcluidasBorrador(
+          nit: widget.nit,
+          anio: _anioActual,
+          mes: _mesActual,
+        ),
+        _cronogramaApi.informeActividadMensual(
+          nit: widget.nit,
+          anio: _anioActual,
+          mes: _mesActual,
+          borrador: true,
+        ),
       ]);
 
       final lista = results[0] as List<TareaModel>;
       final festivos = results[1] as List<FestivoItem>;
       final horarios = results[2] as List<HorarioConjunto>;
-
+      final excluidas = results[3] as List<PreventivaExcluidaBorradorModel>;
+      final informe = results[4] as List<CronogramaActividadInformeModel>;
       final filtradas = lista
           .where((t) => _isInThisMonth(t.fechaInicio))
           .toList();
@@ -1627,6 +1693,8 @@ class _CronogramaPreventivasBorradorPageState
 
       setState(() {
         _tareasMes = filtradas;
+        _excluidasMes = excluidas;
+        _informeActividad = informe;
         _reconstruirFiltrosDisponibles();
         _festivosYmd = setYmd;
         _festivoNombrePorYmd = nombrePorYmd;
@@ -1655,6 +1723,155 @@ class _CronogramaPreventivasBorradorPageState
       'es',
     ).format(_inicioPeriodoSeleccionado);
     return 'La publicación de $periodo se habilita desde $desde.';
+  }
+
+  Future<void> _eliminarTareaBorrador(TareaModel tarea) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Eliminar del borrador'),
+        content: Text(
+          'La tarea "${tarea.descripcion}" se quitara del borrador y pasara a excluidas. ¿Continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    await _preventivaApi.eliminarBloqueBorrador(
+      nit: widget.nit,
+      tareaId: tarea.id,
+    );
+    if (!mounted) return;
+    AppFeedback.showFromSnackBar(
+      context,
+      const SnackBar(content: Text('Tarea enviada a excluidas.')),
+    );
+    await _cargarDatos();
+  }
+
+  Future<void> _agendarExcluida(
+    PreventivaExcluidaBorradorModel excluida,
+  ) async {
+    final sugerencias = await _preventivaApi.sugerirHuecosExcluida(
+      nit: widget.nit,
+      excluidaId: excluida.id,
+      fechaPreferida: excluida.fechaObjetivo,
+    );
+    final opciones = (sugerencias['opciones'] as List? ?? const []);
+    if (!mounted) return;
+    if (opciones.isEmpty) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(content: Text('No se encontraron huecos disponibles.')),
+      );
+      return;
+    }
+
+    final seleccion = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: ListView.separated(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(16),
+          itemCount: opciones.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final item = Map<String, dynamic>.from(opciones[index] as Map);
+            final fi = DateTime.parse(item['fechaInicio'].toString()).toLocal();
+            final ff = DateTime.parse(item['fechaFin'].toString()).toLocal();
+            return ListTile(
+              tileColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey.shade300),
+              ),
+              title: Text(DateFormat('EEE dd MMM · HH:mm', 'es').format(fi)),
+              subtitle: Text(
+                '${DateFormat('HH:mm').format(fi)} - ${DateFormat('HH:mm').format(ff)} • ${item['tipoSugerencia'] == 'MISMO_DIA' ? 'Mismo dia' : 'Otro dia del mes'}',
+              ),
+              onTap: () => Navigator.pop(context, item),
+            );
+          },
+        ),
+      ),
+    );
+
+    if (seleccion == null) return;
+
+    await _preventivaApi.agendarExcluidaBorrador(
+      nit: widget.nit,
+      excluidaId: excluida.id,
+      fechaInicio: DateTime.parse(seleccion['fechaInicio'].toString()),
+      fechaFin: DateTime.parse(seleccion['fechaFin'].toString()),
+    );
+    if (!mounted) return;
+    AppFeedback.showFromSnackBar(
+      context,
+      const SnackBar(content: Text('Tarea excluida agendada en borrador.')),
+    );
+    await _cargarDatos();
+  }
+
+  Future<void> _reemplazarTareaConExcluida(TareaModel tarea) async {
+    if (_excluidasMes.isEmpty) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(content: Text('No hay tareas excluidas disponibles.')),
+      );
+      return;
+    }
+
+    final excluida = await showModalBottomSheet<PreventivaExcluidaBorradorModel>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: _excluidasMes.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final item = _excluidasMes[index];
+            return ListTile(
+              tileColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey.shade300),
+              ),
+              title: Text(item.descripcion),
+              subtitle: Text(
+                'P${item.prioridad} • ${item.ubicacionNombre ?? '-'} • ${item.duracionLabel}',
+              ),
+              onTap: () => Navigator.pop(context, item),
+            );
+          },
+        ),
+      ),
+    );
+
+    if (excluida == null) return;
+
+    await _preventivaApi.reemplazarTareaConExcluida(
+      nit: widget.nit,
+      tareaId: tarea.id,
+      excluidaId: excluida.id,
+    );
+    if (!mounted) return;
+    AppFeedback.showFromSnackBar(
+      context,
+      const SnackBar(content: Text('Reemplazo manual aplicado.')),
+    );
+    await _cargarDatos();
   }
 
   Future<void> _publicarCronograma() async {
@@ -2138,226 +2355,226 @@ class _CronogramaPreventivasBorradorPageState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                // ===== Header 1: títulos fijos + letras de semana =====
-                Row(
-                  children: [
-                    cellBox(
-                      w: wFrecuencia,
-                      color: Colors.green.shade200,
-                      align: Alignment.center,
-                      child: Text('Frecuencia', style: headerStyle),
-                    ),
-                    cellBox(
-                      w: wDiagnostico,
-                      color: Colors.green.shade200,
-                      align: Alignment.center,
-                      child: Text('Tarea', style: headerStyle),
-                    ),
-                    cellBox(
-                      w: wUbicacion,
-                      color: Colors.green.shade200,
-                      align: Alignment.center,
-                      child: Text('Ubicación', style: headerStyle),
-                    ),
-                    cellBox(
-                      w: wElemento,
-                      color: Colors.green.shade200,
-                      align: Alignment.center,
-                      child: Text('Elemento', style: headerStyle),
-                    ),
-                    cellBox(
-                      w: wResponsable,
-                      color: Colors.green.shade200,
-                      align: Alignment.center,
-                      child: Text('Responsable', style: headerStyle),
-                    ),
-                    ...dias.map((dia) {
-                      final fecha = DateTime(_anioActual, _mesActual, dia);
-                      final dom = _esDomingo(fecha);
-                      final fest = _esFestivo(fecha);
-
-                      Color headerColor;
-                      if (dom) {
-                        headerColor = Colors.yellow.shade300;
-                      } else if (fest) {
-                        headerColor = const Color(0xFFE53935); // festivo
-                      } else {
-                        headerColor = Colors.green.shade200;
-                      }
-
-                      return cellBox(
-                        w: wDia,
-                        color: headerColor,
-                        child: Tooltip(
-                          message: fest
-                              ? (_nombreFestivo(fecha) ?? 'Festivo')
-                              : '',
-                          child: Text(
-                            _weekdayLetter(fecha),
-                            style: headerStyle,
-                          ),
-                        ),
-                      );
-                    }),
-                  ],
-                ),
-                // ===== Header 2: números de día =====
-                Row(
-                  children: [
-                    cellBox(
-                      w: wFrecuencia,
-                      color: Colors.white,
-                      child: const SizedBox.shrink(),
-                    ),
-                    cellBox(
-                      w: wDiagnostico,
-                      color: Colors.white,
-                      child: const SizedBox.shrink(),
-                    ),
-                    cellBox(
-                      w: wUbicacion,
-                      color: Colors.white,
-                      child: const SizedBox.shrink(),
-                    ),
-                    cellBox(
-                      w: wElemento,
-                      color: Colors.white,
-                      child: const SizedBox.shrink(),
-                    ),
-                    cellBox(
-                      w: wResponsable,
-                      color: Colors.white,
-                      child: const SizedBox.shrink(),
-                    ),
-                    ...dias.map((dia) {
-                      final fecha = DateTime(_anioActual, _mesActual, dia);
-                      final dom = _esDomingo(fecha);
-                      final fest = _esFestivo(fecha);
-
-                      Color header2Color;
-                      if (dom) {
-                        header2Color = Colors.yellow.shade300;
-                      } else if (fest) {
-                        header2Color = const Color(
-                          0xFFFFCDD2,
-                        ); // festivo // 👈 festivo
-                      } else {
-                        header2Color = Colors.grey.shade100;
-                      }
-
-                      return cellBox(
-                        w: wDia,
-                        color: header2Color,
-                        child: Tooltip(
-                          message: fest
-                              ? (_nombreFestivo(fecha) ?? 'Festivo')
-                              : '',
-                          child: Text(
-                            '$dia',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.grey.shade900,
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                  ],
-                ),
-
-                // ===== Body =====
-                ...filas.map((f) {
-                  return Row(
+                  // ===== Header 1: títulos fijos + letras de semana =====
+                  Row(
                     children: [
                       cellBox(
                         w: wFrecuencia,
-                        h: hFila,
-                        align: Alignment.topLeft,
-                        child: Text(
-                          f.frecuencia,
-                          style: const TextStyle(fontSize: 12),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        color: Colors.green.shade200,
+                        align: Alignment.center,
+                        child: Text('Frecuencia', style: headerStyle),
                       ),
                       cellBox(
                         w: wDiagnostico,
-                        h: hFila,
-                        align: Alignment.topLeft,
-                        child: Text(
-                          f.diagnostico,
-                          style: const TextStyle(fontSize: 12),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        color: Colors.green.shade200,
+                        align: Alignment.center,
+                        child: Text('Tarea', style: headerStyle),
                       ),
                       cellBox(
                         w: wUbicacion,
-                        h: hFila,
-                        align: Alignment.topLeft,
-                        child: Text(
-                          f.ubicacion,
-                          style: const TextStyle(fontSize: 12),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        color: Colors.green.shade200,
+                        align: Alignment.center,
+                        child: Text('Ubicación', style: headerStyle),
                       ),
                       cellBox(
                         w: wElemento,
-                        h: hFila,
-                        align: Alignment.topLeft,
-                        child: Text(
-                          f.objeto,
-                          style: const TextStyle(fontSize: 12),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        color: Colors.green.shade200,
+                        align: Alignment.center,
+                        child: Text('Elemento', style: headerStyle),
                       ),
                       cellBox(
                         w: wResponsable,
-                        h: hFila,
-                        align: Alignment.topLeft,
-                        child: Text(
-                          f.responsable,
-                          style: const TextStyle(fontSize: 12, height: 1.3),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        color: Colors.green.shade200,
+                        align: Alignment.center,
+                        child: Text('Responsable', style: headerStyle),
                       ),
                       ...dias.map((dia) {
                         final fecha = DateTime(_anioActual, _mesActual, dia);
                         final dom = _esDomingo(fecha);
                         final fest = _esFestivo(fecha);
-                        final val = f.porDia[dia] ?? '';
 
-                        return GestureDetector(
-                          onTap: () => _abrirDia(dia),
-                          child: cellBox(
-                            w: wDia,
-                            h: hFila,
-                            color: dom
-                                ? Colors.yellow.shade200
-                                : fest
-                                ? const Color(0xFFFFEBEE)
-                                : Colors.white,
+                        Color headerColor;
+                        if (dom) {
+                          headerColor = Colors.yellow.shade300;
+                        } else if (fest) {
+                          headerColor = const Color(0xFFE53935); // festivo
+                        } else {
+                          headerColor = Colors.green.shade200;
+                        }
+
+                        return cellBox(
+                          w: wDia,
+                          color: headerColor,
+                          child: Tooltip(
+                            message: fest
+                                ? (_nombreFestivo(fecha) ?? 'Festivo')
+                                : '',
                             child: Text(
-                              val,
-                              textAlign: TextAlign.center,
+                              _weekdayLetter(fecha),
+                              style: headerStyle,
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                  // ===== Header 2: números de día =====
+                  Row(
+                    children: [
+                      cellBox(
+                        w: wFrecuencia,
+                        color: Colors.white,
+                        child: const SizedBox.shrink(),
+                      ),
+                      cellBox(
+                        w: wDiagnostico,
+                        color: Colors.white,
+                        child: const SizedBox.shrink(),
+                      ),
+                      cellBox(
+                        w: wUbicacion,
+                        color: Colors.white,
+                        child: const SizedBox.shrink(),
+                      ),
+                      cellBox(
+                        w: wElemento,
+                        color: Colors.white,
+                        child: const SizedBox.shrink(),
+                      ),
+                      cellBox(
+                        w: wResponsable,
+                        color: Colors.white,
+                        child: const SizedBox.shrink(),
+                      ),
+                      ...dias.map((dia) {
+                        final fecha = DateTime(_anioActual, _mesActual, dia);
+                        final dom = _esDomingo(fecha);
+                        final fest = _esFestivo(fecha);
+
+                        Color header2Color;
+                        if (dom) {
+                          header2Color = Colors.yellow.shade300;
+                        } else if (fest) {
+                          header2Color = const Color(
+                            0xFFFFCDD2,
+                          ); // festivo // 👈 festivo
+                        } else {
+                          header2Color = Colors.grey.shade100;
+                        }
+
+                        return cellBox(
+                          w: wDia,
+                          color: header2Color,
+                          child: Tooltip(
+                            message: fest
+                                ? (_nombreFestivo(fecha) ?? 'Festivo')
+                                : '',
+                            child: Text(
+                              '$dia',
                               style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: _colorPorCodigo(
-                                  val,
-                                ), // Aqui se usa el color por codigo
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.grey.shade900,
                               ),
                             ),
                           ),
                         );
                       }),
                     ],
-                  );
-                }),
+                  ),
+
+                  // ===== Body =====
+                  ...filas.map((f) {
+                    return Row(
+                      children: [
+                        cellBox(
+                          w: wFrecuencia,
+                          h: hFila,
+                          align: Alignment.topLeft,
+                          child: Text(
+                            f.frecuencia,
+                            style: const TextStyle(fontSize: 12),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        cellBox(
+                          w: wDiagnostico,
+                          h: hFila,
+                          align: Alignment.topLeft,
+                          child: Text(
+                            f.diagnostico,
+                            style: const TextStyle(fontSize: 12),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        cellBox(
+                          w: wUbicacion,
+                          h: hFila,
+                          align: Alignment.topLeft,
+                          child: Text(
+                            f.ubicacion,
+                            style: const TextStyle(fontSize: 12),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        cellBox(
+                          w: wElemento,
+                          h: hFila,
+                          align: Alignment.topLeft,
+                          child: Text(
+                            f.objeto,
+                            style: const TextStyle(fontSize: 12),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        cellBox(
+                          w: wResponsable,
+                          h: hFila,
+                          align: Alignment.topLeft,
+                          child: Text(
+                            f.responsable,
+                            style: const TextStyle(fontSize: 12, height: 1.3),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        ...dias.map((dia) {
+                          final fecha = DateTime(_anioActual, _mesActual, dia);
+                          final dom = _esDomingo(fecha);
+                          final fest = _esFestivo(fecha);
+                          final val = f.porDia[dia] ?? '';
+
+                          return GestureDetector(
+                            onTap: () => _abrirDia(dia),
+                            child: cellBox(
+                              w: wDia,
+                              h: hFila,
+                              color: dom
+                                  ? Colors.yellow.shade200
+                                  : fest
+                                  ? const Color(0xFFFFEBEE)
+                                  : Colors.white,
+                              child: Text(
+                                val,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: _colorPorCodigo(
+                                    val,
+                                  ), // Aqui se usa el color por codigo
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                    );
+                  }),
                 ],
               ),
             ),
@@ -2781,7 +2998,11 @@ class _CronogramaPreventivasBorradorPageState
                 rows.add(const SizedBox(height: 8));
                 addRow('fechaInicio', 'Fecha inicio', fechaIniStr);
                 addRow('fechaFin', 'Fecha fin', fechaFinStr);
-                addRow('duracion', 'Duración', '$durMin min (${durH.toStringAsFixed(1)} h)');
+                addRow(
+                  'duracion',
+                  'Duración',
+                  '$durMin min (${durH.toStringAsFixed(1)} h)',
+                );
                 rows.add(const SizedBox(height: 8));
                 addRow('conjunto', 'Conjunto', conjuntoLabel);
                 addRow('ubicacion', 'Ubicación', ubicacionLabel);
@@ -2791,32 +3012,48 @@ class _CronogramaPreventivasBorradorPageState
                 addRow('operarios', 'Operarios', operarios);
                 addRow('maquinaria', 'Maquinaria planificada', maquinariaTxt);
                 rows.add(const SizedBox(height: 8));
-                addRow('observaciones', 'Observaciones', t.observaciones ?? '—');
+                addRow(
+                  'observaciones',
+                  'Observaciones',
+                  t.observaciones ?? '—',
+                );
                 addRow('evidencias', 'Evidencias', evidenciasTxt);
                 addRow(
                   'insumos',
                   'Insumos usados',
-                  insumosCount == 0 ? 'Sin insumos registrados' : '$insumosCount ítem(s)',
+                  insumosCount == 0
+                      ? 'Sin insumos registrados'
+                      : '$insumosCount ítem(s)',
                 );
 
                 return Material(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
                   child: Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                         child: Row(
                           children: [
                             const Expanded(
                               child: Text(
                                 'Detalle de la tarea',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                             IconButton(
                               icon: const Icon(Icons.tune),
                               tooltip: 'Elegir informacion visible',
-                              onPressed: () => _configurarCamposDetalle(() => setSheetState(() {})),
+                              onPressed: () => _configurarCamposDetalle(
+                                () => setSheetState(() {}),
+                              ),
                             ),
                             IconButton(
                               icon: const Icon(Icons.close),
@@ -2832,10 +3069,7 @@ class _CronogramaPreventivasBorradorPageState
                           padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              ...rows,
-                              const SizedBox(height: 16),
-                            ],
+                            children: [...rows, const SizedBox(height: 16)],
                           ),
                         ),
                       ),
@@ -3010,7 +3244,9 @@ class _CronogramaPreventivasBorradorPageState
                 Expanded(
                   child: _vista == _VistaCronograma.mensual
                       ? _buildCronogramaMensualTipoFoto()
-                      : _buildAgendaSemanal(),
+                      : _vista == _VistaCronograma.semanal
+                      ? _buildAgendaSemanal()
+                      : _buildInformeActividad(),
                 ),
                 if (_vista == _VistaCronograma.mensual) _buildLeyendaMensual(),
               ],
@@ -3045,6 +3281,11 @@ class _CronogramaPreventivasBorradorPageState
                   value: _VistaCronograma.semanal,
                   label: Text('Semanal'),
                   icon: Icon(Icons.view_week),
+                ),
+                ButtonSegment(
+                  value: _VistaCronograma.informe,
+                  label: Text('Informe'),
+                  icon: Icon(Icons.table_chart_outlined),
                 ),
               ],
               selected: {_vista},
@@ -3132,6 +3373,11 @@ class _CronogramaPreventivasBorradorPageState
               value: _VistaCronograma.semanal,
               label: Text('Semanal'),
               icon: Icon(Icons.view_week),
+            ),
+            ButtonSegment(
+              value: _VistaCronograma.informe,
+              label: Text('Informe'),
+              icon: Icon(Icons.table_chart_outlined),
             ),
           ],
           selected: {_vista},
@@ -3260,9 +3506,72 @@ class _CronogramaPreventivasBorradorPageState
             weekStart: weekStart,
             tareasSemana: tareas,
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
+            excluidasMes: _excluidasMes,
+            excluirPorFecha: _excluidasPorFecha,
+            onEliminarTarea: _eliminarTareaBorrador,
+            onAgendarExcluida: _agendarExcluida,
+            onReemplazarConExcluida: _reemplazarTareaConExcluida,
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildInformeActividad() {
+    if (_informeActividad.isEmpty) {
+      return const Center(
+        child: Text('No hay actividades planificadas para este periodo.'),
+      );
+    }
+
+    DataColumn col(String label) => DataColumn(label: Text(label));
+    DataCell cellNum(num value) => DataCell(Text(value.toStringAsFixed(1)));
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          columns: [
+            col('Actividad'),
+            col('Horas mes'),
+            col('Semana 1'),
+            col('Semana 2'),
+            col('Semana 3'),
+            col('Semana 4'),
+            col('Semana 5'),
+          ],
+          rows: _informeActividad
+              .map(
+                (item) => DataRow(
+                  cells: [
+                    DataCell(
+                      SizedBox(
+                        width: 320,
+                        child: Text(
+                          item.actividad,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                    cellNum(item.horasMes),
+                    cellNum(item.semana1),
+                    cellNum(item.semana2),
+                    cellNum(item.semana3),
+                    cellNum(item.semana4),
+                    cellNum(item.semana5),
+                  ],
+                ),
+              )
+              .toList(),
+        ),
+      ),
     );
   }
 
@@ -3317,7 +3626,9 @@ Color _cronogramaBorradorColorBaseTareaSemana(TareaModel t) {
   if (texto.contains('humed') || texto.contains('agua')) {
     return Colors.blue.shade500;
   }
-  if (texto.contains('verde') || texto.contains('jardin') || texto.contains('cesped')) {
+  if (texto.contains('verde') ||
+      texto.contains('jardin') ||
+      texto.contains('cesped')) {
     return Colors.green.shade600;
   }
   if (texto.contains('transit') || texto.contains('circul')) {
@@ -3714,226 +4025,233 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                         child: SizedBox(
                           height: heightGrid,
                           child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: Row(
-                                children: [
-                                  SizedBox(
-                                    width: anchoHora,
-                                    child: _HoursColumnDark(
-                                      pxPorMin: pxPorMin,
-                                      textColor: subtext,
-                                      horaInicio: _horaInicio,
-                                      horaFin: _horaFin,
-                                    ),
-                                  ),
-                                  ...List.generate(7, (_) {
-                                    return Container(
-                                      width: colWidth,
-                                      decoration: BoxDecoration(
-                                        border: Border(
-                                          left: BorderSide(color: line),
-                                        ),
+                            children: [
+                              Positioned.fill(
+                                child: Row(
+                                  children: [
+                                    SizedBox(
+                                      width: anchoHora,
+                                      child: _HoursColumnDark(
+                                        pxPorMin: pxPorMin,
+                                        textColor: subtext,
+                                        horaInicio: _horaInicio,
+                                        horaFin: _horaFin,
                                       ),
-                                    );
-                                  }),
-                                ],
-                              ),
-                            ),
-
-                            // líneas horizontales por hora
-                            ...List.generate(hours + 1, (h) {
-                              final top = (h * 60) * pxPorMin;
-                              return Positioned(
-                                left: 0,
-                                right: 0,
-                                top: top,
-                                child: Container(height: 1, color: line),
-                              );
-                            }),
-
-                            if (lunchStartMin != null &&
-                                lunchDurMin != null &&
-                                lunchDurMin > 0 &&
-                                lunchStartMin >= 0)
-                              Positioned(
-                                left: anchoHora,
-                                right: 0,
-                                top: lunchStartMin * pxPorMin,
-                                height: lunchDurMin * pxPorMin,
-                                child: Container(
-                                  color: Colors.orange.withValues(alpha: 0.12),
+                                    ),
+                                    ...List.generate(7, (_) {
+                                      return Container(
+                                        width: colWidth,
+                                        decoration: BoxDecoration(
+                                          border: Border(
+                                            left: BorderSide(color: line),
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                  ],
                                 ),
                               ),
 
-                            // tareas
-                            ...taskPlacements.map((placement) {
-                              final t = placement.tarea;
-                              final ini = placement.inicio;
-                              final fin = placement.fin;
+                              // líneas horizontales por hora
+                              ...List.generate(hours + 1, (h) {
+                                final top = (h * 60) * pxPorMin;
+                                return Positioned(
+                                  left: 0,
+                                  right: 0,
+                                  top: top,
+                                  child: Container(height: 1, color: line),
+                                );
+                              }),
 
-                              final startMin = _minutesFromStart(ini);
-                              final durMin = fin.difference(ini).inMinutes;
+                              if (lunchStartMin != null &&
+                                  lunchDurMin != null &&
+                                  lunchDurMin > 0 &&
+                                  lunchStartMin >= 0)
+                                Positioned(
+                                  left: anchoHora,
+                                  right: 0,
+                                  top: lunchStartMin * pxPorMin,
+                                  height: lunchDurMin * pxPorMin,
+                                  child: Container(
+                                    color: Colors.orange.withValues(
+                                      alpha: 0.12,
+                                    ),
+                                  ),
+                                ),
 
-                              const dayPadding = 6.0;
-                              final left =
-                                  anchoHora +
-                                  placement.dayIndex * colWidth +
-                                  dayPadding;
-                              final top = startMin * pxPorMin;
-                              final fullWidth = colWidth - (dayPadding * 2);
+                              // tareas
+                              ...taskPlacements.map((placement) {
+                                final t = placement.tarea;
+                                final ini = placement.inicio;
+                                final fin = placement.fin;
 
-                              final colorBase = _cronogramaBorradorColorBaseTareaSemana(t);
-                              final fill = colorBase.withValues(alpha: 0.12);
-                              final border = colorBase.withValues(alpha: 0.55);
+                                final startMin = _minutesFromStart(ini);
+                                final durMin = fin.difference(ini).inMinutes;
 
-                              final horaIni = DateFormat('HH:mm').format(ini);
-                              final horaFinStr = DateFormat(
-                                'HH:mm',
-                              ).format(fin);
-                              final horaFinGrupo = DateFormat(
-                                'HH:mm',
-                              ).format(placement.groupEnd);
+                                const dayPadding = 6.0;
+                                final left =
+                                    anchoHora +
+                                    placement.dayIndex * colWidth +
+                                    dayPadding;
+                                final top = startMin * pxPorMin;
+                                final fullWidth = colWidth - (dayPadding * 2);
 
-                              if (placement.groupSize > 1) {
-                                if (placement.orderInGroup != 0) {
-                                  return const SizedBox.shrink();
+                                final colorBase =
+                                    _cronogramaBorradorColorBaseTareaSemana(t);
+                                final fill = colorBase.withValues(alpha: 0.12);
+                                final border = colorBase.withValues(
+                                  alpha: 0.55,
+                                );
+
+                                final horaIni = DateFormat('HH:mm').format(ini);
+                                final horaFinStr = DateFormat(
+                                  'HH:mm',
+                                ).format(fin);
+                                final horaFinGrupo = DateFormat(
+                                  'HH:mm',
+                                ).format(placement.groupEnd);
+
+                                if (placement.groupSize > 1) {
+                                  if (placement.orderInGroup != 0) {
+                                    return const SizedBox.shrink();
+                                  }
+
+                                  final colors = [
+                                    Colors.red.shade400,
+                                    Colors.blue.shade500,
+                                    Colors.green.shade500,
+                                    Colors.orange.shade500,
+                                  ];
+                                  final dotCount = placement.groupSize > 4
+                                      ? 4
+                                      : placement.groupSize;
+                                  final resumen = placement.groupTitles
+                                      .take(2)
+                                      .join(' / ');
+                                  final extra = placement.groupSize - 2;
+                                  const markerHeight = 68.0;
+
+                                  return Positioned(
+                                    left: left,
+                                    top: top,
+                                    width: fullWidth,
+                                    height: markerHeight,
+                                    child: GestureDetector(
+                                      onTap: () => widget.onTapTarea(t),
+                                      child: Container(
+                                        clipBehavior: Clip.hardEdge,
+                                        padding: const EdgeInsets.fromLTRB(
+                                          8,
+                                          7,
+                                          8,
+                                          7,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.withValues(
+                                            alpha: 0.14,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.amber.shade700,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                ...List.generate(dotCount, (i) {
+                                                  return Container(
+                                                    width: 10,
+                                                    height: 10,
+                                                    margin: EdgeInsets.only(
+                                                      right: i == dotCount - 1
+                                                          ? 0
+                                                          : 4,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color:
+                                                          colors[i %
+                                                              colors.length],
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            2,
+                                                          ),
+                                                    ),
+                                                  );
+                                                }),
+                                                if (placement.groupSize >
+                                                    dotCount) ...[
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    '+${placement.groupSize - dotCount}',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color: text,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ],
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    'Superposicion detectada',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color: text,
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Aqui hay ${placement.groupSize} tareas superpuestas. Filtra por operario para verlo mejor.',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: subtext,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra mas' : ''}'}',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: subtext,
+                                                fontSize: 10,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
                                 }
 
-                                final colors = [
-                                  Colors.red.shade400,
-                                  Colors.blue.shade500,
-                                  Colors.green.shade500,
-                                  Colors.orange.shade500,
-                                ];
-                                final dotCount = placement.groupSize > 4
-                                    ? 4
-                                    : placement.groupSize;
-                                final resumen = placement.groupTitles
-                                    .take(2)
-                                    .join(' / ');
-                                final extra = placement.groupSize - 2;
-                                const markerHeight = 68.0;
+                                final height =
+                                    ((durMin <= 0 ? 1 : durMin) * pxPorMin)
+                                        .clamp(18.0, 9999.0);
 
                                 return Positioned(
                                   left: left,
                                   top: top,
                                   width: fullWidth,
-                                  height: markerHeight,
+                                  height: height,
                                   child: GestureDetector(
                                     onTap: () => widget.onTapTarea(t),
-                                    child: Container(
-                                      clipBehavior: Clip.hardEdge,
-                                      padding: const EdgeInsets.fromLTRB(
-                                        8,
-                                        7,
-                                        8,
-                                        7,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.amber.withValues(
-                                          alpha: 0.14,
-                                        ),
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(
-                                          color: Colors.amber.shade700,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              ...List.generate(dotCount, (i) {
-                                                return Container(
-                                                  width: 10,
-                                                  height: 10,
-                                                  margin: EdgeInsets.only(
-                                                    right: i == dotCount - 1
-                                                        ? 0
-                                                        : 4,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color:
-                                                        colors[i %
-                                                            colors.length],
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          2,
-                                                        ),
-                                                  ),
-                                                );
-                                              }),
-                                              if (placement.groupSize >
-                                                  dotCount) ...[
-                                                const SizedBox(width: 6),
-                                                Text(
-                                                  '+${placement.groupSize - dotCount}',
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    color: text,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ],
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  'Superposicion detectada',
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    color: text,
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            'Aqui hay ${placement.groupSize} tareas superpuestas. Filtra por operario para verlo mejor.',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: subtext,
-                                              fontSize: 10,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra mas' : ''}'}',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: subtext,
-                                              fontSize: 10,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              final height =
-                                  ((durMin <= 0 ? 1 : durMin) * pxPorMin).clamp(
-                                    18.0,
-                                    9999.0,
-                                  );
-
-                              return Positioned(
-                                left: left,
-                                top: top,
-                                width: fullWidth,
-                                height: height,
-                                child: GestureDetector(
-                                  onTap: () => widget.onTapTarea(t),
                                     child: Container(
                                       clipBehavior: Clip.hardEdge,
                                       padding: EdgeInsets.fromLTRB(
@@ -3969,7 +4287,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                 child: Text(
                                                   t.descripcion,
                                                   maxLines: compact ? 1 : 2,
-                                                  overflow: TextOverflow.ellipsis,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
                                                   style: TextStyle(
                                                     color: text,
                                                     fontSize: tiny
@@ -3994,10 +4313,10 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                         },
                                       ),
                                     ),
-                                ),
-                              );
-                            }),
-                          ],
+                                  ),
+                                );
+                              }),
+                            ],
                           ),
                         ),
                       ),
@@ -4110,11 +4429,23 @@ class _SidebarAgendaDia extends StatefulWidget {
   final DateTime weekStart;
   final List<TareaModel> tareasSemana;
   final void Function(TareaModel t) onTapTarea;
+  final List<PreventivaExcluidaBorradorModel> excluidasMes;
+  final List<PreventivaExcluidaBorradorModel> Function(DateTime fecha)
+  excluirPorFecha;
+  final Future<void> Function(TareaModel tarea) onEliminarTarea;
+  final Future<void> Function(PreventivaExcluidaBorradorModel excluida)
+  onAgendarExcluida;
+  final Future<void> Function(TareaModel tarea) onReemplazarConExcluida;
 
   const _SidebarAgendaDia({
     required this.weekStart,
     required this.tareasSemana,
     required this.onTapTarea,
+    required this.excluidasMes,
+    required this.excluirPorFecha,
+    required this.onEliminarTarea,
+    required this.onAgendarExcluida,
+    required this.onReemplazarConExcluida,
   });
 
   @override
@@ -4123,6 +4454,7 @@ class _SidebarAgendaDia extends StatefulWidget {
 
 class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
   int _diaIndex = 0; // 0..6
+  bool _verExcluidasMes = false;
 
   @override
   Widget build(BuildContext context) {
@@ -4133,6 +4465,9 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
           d.month == fecha.month &&
           d.day == fecha.day;
     }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+    final excluidas = _verExcluidasMes
+        ? widget.excluidasMes
+        : widget.excluirPorFecha(fecha);
 
     return Card(
       color: Colors.white,
@@ -4176,67 +4511,184 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
               ],
             ),
             const SizedBox(height: 6),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment<bool>(value: false, label: Text('Excluidas dia')),
+                ButtonSegment<bool>(value: true, label: Text('Excluidas mes')),
+              ],
+              selected: {_verExcluidasMes},
+              onSelectionChanged: (value) {
+                setState(() => _verExcluidasMes = value.first);
+              },
+            ),
+            const SizedBox(height: 6),
             Text(
               DateFormat("EEEE dd MMMM", "es").format(fecha),
               style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
             ),
             const Divider(height: 18),
-            if (tareasDia.isEmpty)
-              const Expanded(
-                child: Center(
-                  child: Text(
-                    'Sin tareas este día',
-                    style: TextStyle(fontSize: 12),
+            Expanded(
+              child: ListView(
+                children: [
+                  Text(
+                    'Programadas (${tareasDia.length})',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
-                ),
-              )
-            else
-              Expanded(
-                child: ListView.separated(
-                  itemCount: tareasDia.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, i) {
-                    final t = tareasDia[i];
-                    final ini = t.fechaInicio.toLocal();
-                    final fin = t.fechaFin.toLocal();
-                    return InkWell(
-                      onTap: () => widget.onTapTarea(t),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: AppTheme.primary.withValues(alpha: 0.25),
+                  const SizedBox(height: 8),
+                  if (tareasDia.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        'Sin tareas este día',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    )
+                  else
+                    ...tareasDia.map((t) {
+                      final ini = t.fechaInicio.toLocal();
+                      final fin = t.fechaFin.toLocal();
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: InkWell(
+                          onTap: () => widget.onTapTarea(t),
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppTheme.primary.withValues(alpha: 0.25),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  t.descripcion,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  "${DateFormat('HH:mm').format(ini)} - ${DateFormat('HH:mm').format(fin)}",
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: () =>
+                                          widget.onEliminarTarea(t),
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        size: 16,
+                                      ),
+                                      label: const Text('Eliminar'),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    TextButton.icon(
+                                      onPressed: () =>
+                                          widget.onReemplazarConExcluida(t),
+                                      icon: const Icon(
+                                        Icons.swap_horiz,
+                                        size: 16,
+                                      ),
+                                      label: const Text('Reemplazar'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              t.descripcion,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                              ),
+                      );
+                    }),
+                  const Divider(height: 24),
+                  Text(
+                    _verExcluidasMes
+                        ? 'Excluidas del mes (${excluidas.length})'
+                        : 'Excluidas del día (${excluidas.length})',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  if (excluidas.isEmpty)
+                    const Text(
+                      'No hay excluidas en este filtro.',
+                      style: TextStyle(fontSize: 12),
+                    )
+                  else
+                    ...excluidas.map(
+                      (item) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.orange.withValues(alpha: 0.22),
                             ),
-                            const SizedBox(height: 6),
-                            Text(
-                              "${DateFormat('HH:mm').format(ini)} - ${DateFormat('HH:mm').format(fin)}",
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey.shade700,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.descripcion,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 4),
+                              Text(
+                                'P${item.prioridad} • ${item.ubicacionNombre ?? '-'} • ${item.duracionLabel}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                              if ((item.motivoMensaje ?? '')
+                                  .trim()
+                                  .isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  item.motivoMensaje!,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: FilledButton.tonalIcon(
+                                  onPressed: () =>
+                                      widget.onAgendarExcluida(item),
+                                  icon: const Icon(
+                                    Icons.add_task_outlined,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Ver huecos y agendar'),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                ],
               ),
+            ),
           ],
         ),
       ),
@@ -4300,10 +4752,13 @@ class _SemanaHorasResumen {
   });
 
   int get libresMin => (disponiblesMin - ocupadasMin).clamp(0, disponiblesMin);
-  double get porcentajeOcupacion => disponiblesMin == 0 ? 0 : ocupadasMin / disponiblesMin;
-  String get porcentajeTexto => '${(porcentajeOcupacion * 100).toStringAsFixed(0)}%';
+  double get porcentajeOcupacion =>
+      disponiblesMin == 0 ? 0 : ocupadasMin / disponiblesMin;
+  String get porcentajeTexto =>
+      '${(porcentajeOcupacion * 100).toStringAsFixed(0)}%';
   String get ocupadasHorasLabel => '${(ocupadasMin / 60).toStringAsFixed(1)} h';
-  String get disponiblesHorasLabel => '${(disponiblesMin / 60).toStringAsFixed(1)} h';
+  String get disponiblesHorasLabel =>
+      '${(disponiblesMin / 60).toStringAsFixed(1)} h';
   String get libresHorasLabel => '${(libresMin / 60).toStringAsFixed(1)} h';
 }
 
@@ -4318,8 +4773,11 @@ class _OperarioSemanaResumen {
     required this.ocupadasMin,
   });
 
-  double get porcentajeOcupacion => disponiblesMin == 0 ? 0 : ocupadasMin / disponiblesMin;
-  String get porcentajeTexto => '${(porcentajeOcupacion * 100).toStringAsFixed(0)}%';
+  double get porcentajeOcupacion =>
+      disponiblesMin == 0 ? 0 : ocupadasMin / disponiblesMin;
+  String get porcentajeTexto =>
+      '${(porcentajeOcupacion * 100).toStringAsFixed(0)}%';
   String get ocupadasHorasLabel => '${(ocupadasMin / 60).toStringAsFixed(1)} h';
-  String get disponiblesHorasLabel => '${(disponiblesMin / 60).toStringAsFixed(1)} h';
+  String get disponiblesHorasLabel =>
+      '${(disponiblesMin / 60).toStringAsFixed(1)} h';
 }

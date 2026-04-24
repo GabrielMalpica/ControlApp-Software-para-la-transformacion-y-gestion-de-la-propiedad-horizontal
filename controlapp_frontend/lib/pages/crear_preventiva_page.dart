@@ -1113,7 +1113,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                 child: Column(
                   children: [
                     DropdownButtonFormField<int>(
-                      key: ValueKey<int?>(_ubicacionSeleccionada?.id),
+                      key: ValueKey<String>(
+                        'ubicacion_${_ubicacionSeleccionada?.id ?? 'none'}',
+                      ),
                       decoration: const InputDecoration(
                         labelText: 'Ubicación',
                         border: OutlineInputBorder(),
@@ -1143,7 +1145,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<int>(
-                      key: ValueKey<int?>(_elementoSeleccionado?.id),
+                      key: ValueKey<String>(
+                        'elemento_${_elementoSeleccionado?.id ?? 'none'}',
+                      ),
                       decoration: const InputDecoration(
                         labelText: 'Area final',
                         border: OutlineInputBorder(),
@@ -1189,7 +1193,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      key: ValueKey<String?>(_frecuencia),
+                      key: ValueKey<String>(
+                        'frecuencia_${_frecuencia ?? 'none'}',
+                      ),
                       decoration: const InputDecoration(
                         labelText: 'Frecuencia',
                         border: OutlineInputBorder(),
@@ -1225,7 +1231,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
                     if (_frecuencia == 'SEMANAL') ...[
                       DropdownButtonFormField<String>(
-                        key: ValueKey<String?>(_diaSemanaProgramado),
+                        key: ValueKey<String>(
+                          'diaSemana_${_diaSemanaProgramado ?? 'none'}',
+                        ),
                         decoration: const InputDecoration(
                           labelText: 'Día de la semana',
                           border: OutlineInputBorder(),
@@ -1256,7 +1264,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
                     if (_frecuencia == 'MENSUAL') ...[
                       DropdownButtonFormField<int>(
-                        key: ValueKey<int?>(_diaMesProgramado),
+                        key: ValueKey<String>(
+                          'diaMes_${_diaMesProgramado ?? 'none'}',
+                        ),
                         decoration: const InputDecoration(
                           labelText: 'Día del mes',
                           border: OutlineInputBorder(),
@@ -1274,7 +1284,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     ],
 
                     DropdownButtonFormField<int>(
-                      key: ValueKey<int>(prioridadValue),
+                      key: ValueKey<String>('prioridad_$prioridadValue'),
                       decoration: const InputDecoration(
                         labelText: 'Prioridad',
                         border: OutlineInputBorder(),

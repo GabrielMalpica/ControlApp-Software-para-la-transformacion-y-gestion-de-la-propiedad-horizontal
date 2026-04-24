@@ -4,6 +4,7 @@ import 'dart:convert';
 import '../service/api_client.dart';
 import '../service/app_error.dart';
 import '../service/app_constants.dart';
+import '../model/cronograma_actividad_informe_model.dart';
 import '../model/tarea_model.dart';
 
 class CronogramaApi {
@@ -144,5 +145,42 @@ class CronogramaApi {
     if (limite == null) throw Exception('Respuesta sin limiteMinSemana');
 
     return int.parse(limite.toString());
+  }
+
+  Future<List<CronogramaActividadInformeModel>> informeActividadMensual({
+    required String nit,
+    required int anio,
+    required int mes,
+    required bool borrador,
+  }) async {
+    final uri =
+        Uri.parse(
+          '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/informe-actividad',
+        ).replace(
+          queryParameters: {
+            'anio': '$anio',
+            'mes': '$mes',
+            'borrador': borrador.toString(),
+          },
+        );
+
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo cargar el informe mensual.',
+        ),
+      );
+    }
+
+    final data = jsonDecode(resp.body) as List<dynamic>;
+    return data
+        .map(
+          (e) => CronogramaActividadInformeModel.fromJson(
+            e as Map<String, dynamic>,
+          ),
+        )
+        .toList();
   }
 }

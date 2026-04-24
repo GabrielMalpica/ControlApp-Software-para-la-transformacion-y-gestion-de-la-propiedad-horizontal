@@ -213,6 +213,40 @@ export const GenerarCronogramaDTO = z.object({
   confirmacionesReemplazo: z.array(ConfirmacionReemplazoDTO).optional(),
 });
 
+export const ListarExcluidasBorradorDTO = z.object({
+  conjuntoId: z.string().min(3),
+  anio: z.coerce.number().int().min(2000).max(2100),
+  mes: z.coerce.number().int().min(1).max(12),
+  fecha: z.coerce.date().optional(),
+});
+
+export const SugerirHuecosExcluidaDTO = z.object({
+  conjuntoId: z.string().min(3),
+  excluidaId: z.coerce.number().int().positive(),
+  fechaPreferida: z.coerce.date().optional(),
+  maxOpciones: z.coerce.number().int().min(1).max(20).optional(),
+});
+
+export const AgendarExcluidaDTO = z.object({
+  conjuntoId: z.string().min(3),
+  excluidaId: z.coerce.number().int().positive(),
+  fechaInicio: z.coerce.date().optional(),
+  fechaFin: z.coerce.date().optional(),
+}).refine(
+  (d) =>
+    (d.fechaInicio == null && d.fechaFin == null) ||
+    (d.fechaInicio != null && d.fechaFin != null && d.fechaFin >= d.fechaInicio),
+  {
+    message: "Si envias fechaInicio y fechaFin, ambas son obligatorias y fechaFin debe ser mayor o igual.",
+  },
+);
+
+export const ReemplazarConExcluidaDTO = z.object({
+  conjuntoId: z.string().min(3),
+  tareaId: z.coerce.number().int().positive(),
+  excluidaId: z.coerce.number().int().positive(),
+});
+
 // Alias opcional por compatibilidad
 export const GenerarCronogramaMensualDTO = GenerarCronogramaDTO;
 

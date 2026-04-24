@@ -3,6 +3,7 @@
 import 'dart:convert';
 
 import 'package:flutter_application_1/model/maquinaria_model.dart';
+import 'package:flutter_application_1/model/preventiva_excluida_borrador_model.dart';
 
 import '../model/preventiva_model.dart';
 import '../service/api_client.dart';
@@ -161,7 +162,9 @@ class DefinicionPreventivaApi {
       '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/tarea/$tareaId/opciones-reprogramacion',
     );
     if (resp.statusCode != 200) {
-      throw Exception('Error consultando huecos de reprogramacion: ${resp.statusCode} ${resp.body}');
+      throw Exception(
+        'Error consultando huecos de reprogramacion: ${resp.statusCode} ${resp.body}',
+      );
     }
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
   }
@@ -180,8 +183,137 @@ class DefinicionPreventivaApi {
       },
     );
     if (resp.statusCode != 200) {
-      throw Exception('Error reprogramando preventiva reemplazada: ${resp.statusCode} ${resp.body}');
+      throw Exception(
+        'Error reprogramando preventiva reemplazada: ${resp.statusCode} ${resp.body}',
+      );
     }
+  }
+
+  Future<void> eliminarBloqueBorrador({
+    required String nit,
+    required int tareaId,
+  }) async {
+    final resp = await _client.delete(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/tarea/$tareaId',
+    );
+    if (resp.statusCode != 204 && resp.statusCode != 200) {
+      throw Exception(
+        'Error eliminando bloque borrador: ${resp.statusCode} ${resp.body}',
+      );
+    }
+  }
+
+  Future<List<PreventivaExcluidaBorradorModel>> listarExcluidasBorrador({
+    required String nit,
+    required int anio,
+    required int mes,
+    DateTime? fecha,
+  }) async {
+    final uri =
+        Uri.parse(
+          '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/excluidas',
+        ).replace(
+          queryParameters: {
+            'anio': anio.toString(),
+            'mes': mes.toString(),
+            if (fecha != null) 'fecha': fecha.toIso8601String(),
+          },
+        );
+
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error listando excluidas: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final data = jsonDecode(resp.body) as List<dynamic>;
+    return data
+        .map(
+          (e) => PreventivaExcluidaBorradorModel.fromJson(
+            e as Map<String, dynamic>,
+          ),
+        )
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> sugerirHuecosExcluida({
+    required String nit,
+    required int excluidaId,
+    DateTime? fechaPreferida,
+  }) async {
+    final uri =
+        Uri.parse(
+          '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/excluidas/$excluidaId/huecos',
+        ).replace(
+          queryParameters: {
+            if (fechaPreferida != null)
+              'fechaPreferida': fechaPreferida.toIso8601String(),
+          },
+        );
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error consultando huecos: ${resp.statusCode} ${resp.body}',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  Future<Map<String, dynamic>> agendarExcluidaBorrador({
+    required String nit,
+    required int excluidaId,
+    DateTime? fechaInicio,
+    DateTime? fechaFin,
+  }) async {
+    final resp = await _client.post(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/excluidas/$excluidaId/agendar',
+      body: {
+        if (fechaInicio != null) 'fechaInicio': fechaInicio.toIso8601String(),
+        if (fechaFin != null) 'fechaFin': fechaFin.toIso8601String(),
+      },
+    );
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error agendando excluida: ${resp.statusCode} ${resp.body}',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  Future<Map<String, dynamic>> reemplazarTareaConExcluida({
+    required String nit,
+    required int tareaId,
+    required int excluidaId,
+  }) async {
+    final resp = await _client.post(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/tarea/$tareaId/reemplazar-por-excluida',
+      body: {'excluidaId': excluidaId},
+    );
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error reemplazando tarea: ${resp.statusCode} ${resp.body}',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> informeActividadBorrador({
+    required String nit,
+    required int anio,
+    required int mes,
+  }) async {
+    final uri = Uri.parse(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/informe-actividad',
+    ).replace(queryParameters: {'anio': '$anio', 'mes': '$mes'});
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error cargando informe de borrador: ${resp.statusCode} ${resp.body}',
+      );
+    }
+    final data = jsonDecode(resp.body) as List<dynamic>;
+    return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
   Future<void> publicarCronogramaMensual({

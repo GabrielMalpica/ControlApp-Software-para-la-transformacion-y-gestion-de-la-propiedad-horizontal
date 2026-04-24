@@ -88,6 +88,22 @@ class CronogramaController {
                 next(err);
             }
         };
+        this.informeMensualActividad = async (req, res, next) => {
+            try {
+                const conjuntoId = resolveConjuntoId(req);
+                const anio = Number(req.query.anio);
+                const mes = Number(req.query.mes);
+                const borrador = req.query.borrador === undefined
+                    ? false
+                    : String(req.query.borrador) === "true";
+                const service = new CronogramaServices_1.CronogramaService(prisma_1.prisma, conjuntoId);
+                const out = await service.informeMensualActividad({ anio, mes, borrador });
+                res.json(out);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
         this.eliminarCronogramaPublicado = async (req, res, next) => {
             try {
                 const conjuntoId = resolveConjuntoId(req);

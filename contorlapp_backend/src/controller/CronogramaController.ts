@@ -100,6 +100,23 @@ export class CronogramaController {
     }
   };
 
+  informeMensualActividad: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const anio = Number(req.query.anio);
+      const mes = Number(req.query.mes);
+      const borrador =
+        req.query.borrador === undefined
+          ? false
+          : String(req.query.borrador) === "true";
+      const service = new CronogramaService(prisma, conjuntoId);
+      const out = await service.informeMensualActividad({ anio, mes, borrador });
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   eliminarCronogramaPublicado: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);

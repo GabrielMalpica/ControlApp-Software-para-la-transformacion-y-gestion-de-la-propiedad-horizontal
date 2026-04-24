@@ -146,6 +146,68 @@ export class CronogramaService {
     });
   }
 
+  async informeMensualActividad(payload: unknown) {
+    const { anio, mes, borrador } = CronoMesDTO.parse(payload);
+
+    const tareas = await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        borrador: borrador ?? false,
+        tipo: "PREVENTIVA",
+        periodoAnio: anio,
+        periodoMes: mes,
+        estado: { notIn: ESTADOS_NO_CRONOGRAMA },
+      },
+      select: {
+        descripcion: true,
+        duracionMinutos: true,
+        fechaInicio: true,
+      },
+      orderBy: [{ descripcion: "asc" }, { fechaInicio: "asc" }],
+    });
+
+    const firstDay = new Date(anio, mes - 1, 1);
+    const offset = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+
+    const rows = new Map<string, {
+      actividad: string;
+      horasMes: number;
+      semana1: number;
+      semana2: number;
+      semana3: number;
+      semana4: number;
+      semana5: number;
+    }>();
+
+    for (const tarea of tareas) {
+      const actividad = tarea.descripcion.trim();
+      const horas = Number((tarea.duracionMinutos / 60).toFixed(2));
+      const semana = Math.min(
+        5,
+        Math.floor((tarea.fechaInicio.getDate() + offset - 1) / 7) + 1,
+      );
+
+      const row = rows.get(actividad) ?? {
+        actividad,
+        horasMes: 0,
+        semana1: 0,
+        semana2: 0,
+        semana3: 0,
+        semana4: 0,
+        semana5: 0,
+      };
+
+      row.horasMes = Number((row.horasMes + horas).toFixed(2));
+      const key = `semana${semana}` as const;
+      row[key] = Number((row[key] + horas).toFixed(2));
+      rows.set(actividad, row);
+    }
+
+    return Array.from(rows.values()).sort((a, b) =>
+      a.actividad.localeCompare(b.actividad),
+    );
+  }
+
   async eliminarCronogramaPublicado() {
     const tareas = await this.prisma.tarea.findMany({
       where: {
