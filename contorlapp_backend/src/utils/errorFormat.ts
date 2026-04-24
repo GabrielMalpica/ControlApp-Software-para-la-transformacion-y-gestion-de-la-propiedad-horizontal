@@ -1,5 +1,6 @@
 type ConflictoMaquinaria = {
   tareaId: number;
+  tareaDescripcion?: string | null;
   maquinariaId: number;
   rangoSolicitado: { entrega: string; recogida: string; ini: string; fin: string };
   ocupadoPor: {
@@ -28,6 +29,10 @@ export function buildMaquinariaNoDisponibleError(params: {
   const ejemplos = conflictos.slice(0, 4).map((c) => {
     const desc = c.ocupadoPor.descripcion ?? "Tarea sin descripción";
     return {
+      tareaSolicitada: {
+        tareaId: c.tareaId,
+        descripcion: c.tareaDescripcion ?? "Tarea sin descripción",
+      },
       entrega: c.rangoSolicitado.entrega,
       recogida: c.rangoSolicitado.recogida,
       ocupadaPor: {
@@ -40,13 +45,21 @@ export function buildMaquinariaNoDisponibleError(params: {
     };
   });
 
+  const primerConflicto = conflictos[0];
+  const tareaSolicitadaLabel = primerConflicto
+    ? `La tarea "${(primerConflicto.tareaDescripcion ?? "Tarea sin descripción").trim()}" (#${primerConflicto.tareaId})`
+    : "Una tarea del cronograma";
+
+  const tareaOcupanteLabel = primerConflicto
+    ? `la tarea "${(primerConflicto.ocupadoPor.descripcion ?? "Tarea sin descripción").trim()}" (#${primerConflicto.ocupadoPor.tareaId})`
+    : "otra tarea";
+
   const message =
-    `${titulo}. ` +
-    `Está reservada en ${conflictos.length} fecha(s) del cronograma. ` +
-    `Selecciona otra máquina o ajusta el plan (días/fechas).`;
+    `${titulo}. ${tareaSolicitadaLabel} tiene agenda cruzada con ${tareaOcupanteLabel}. ` +
+    `Se detectaron ${conflictos.length} conflicto(s) de reserva/uso. Revisa esa tarea antes de publicar.`;
 
   const userHint =
-    "Tip: abre la agenda de maquinaria o cambia la máquina por una del conjunto si está disponible.";
+    "Tip: revisa la tarea reportada, abre la agenda de maquinaria y ajusta fechas, bloque o máquina asignada.";
 
   return {
     ok: false as const,

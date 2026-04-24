@@ -2513,6 +2513,7 @@ class DefinicionTareaPreventivaService {
                         continue;
                     conflictosInternos.push({
                         tareaId: a.tareaIdRepresentante,
+                        tareaDescripcion: a.descripcion,
                         maquinariaId,
                         rangoSolicitado: {
                             ini: a.iniReserva.toISOString(),
@@ -2590,6 +2591,7 @@ class DefinicionTareaPreventivaService {
                     }
                     conflictos.push({
                         tareaId: p.tareaIdRepresentante,
+                        tareaDescripcion: p.descripcion,
                         maquinariaId,
                         rangoSolicitado: {
                             ini: p.iniReserva.toISOString(),

@@ -3364,6 +3364,7 @@ export class DefinicionTareaPreventivaService {
           if (!maqSetB.has(maquinariaId)) continue;
           conflictosInternos.push({
             tareaId: a.tareaIdRepresentante,
+            tareaDescripcion: a.descripcion,
             maquinariaId,
             rangoSolicitado: {
               ini: a.iniReserva.toISOString(),
@@ -3460,6 +3461,7 @@ export class DefinicionTareaPreventivaService {
 
           conflictos.push({
             tareaId: p.tareaIdRepresentante,
+            tareaDescripcion: p.descripcion,
             maquinariaId,
             rangoSolicitado: {
               ini: p.iniReserva.toISOString(),
