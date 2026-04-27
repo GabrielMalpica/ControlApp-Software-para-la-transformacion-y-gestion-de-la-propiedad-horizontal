@@ -828,7 +828,8 @@ class GerenteService {
         });
         return this.obtenerConjunto(conjuntoId);
     }
-    async eliminarConjunto(conjuntoId) {
+    async eliminarConjunto(conjuntoId, options = {}) {
+        const { confirmar = false } = options;
         const [tareasPendientes, maquinariaActivaEnConjunto] = await Promise.all([
             this.prisma.tarea.findMany({
                 where: {
@@ -849,12 +850,71 @@ class GerenteService {
             throw new Error("Ã¢ÂÅ’ El conjunto tiene tareas pendientes.");
         if (maquinariaActivaEnConjunto.length > 0)
             throw new Error("Ã¢ÂÅ’ El conjunto tiene maquinaria activa asignada (propia o prestada).");
-        await this.prisma.$transaction(async (tx) => {
-            const inventario = await tx.inventario.findUnique({
+        const [inventario, totalInsumosInventario, totalConsumos, totalSolicitudesInsumo, totalSolicitudesMaquinaria, totalSolicitudesTarea, totalAsignacionesMaquinaria] = await Promise.all([
+            this.prisma.inventario.findUnique({
                 where: { conjuntoId },
                 select: { id: true },
-            });
+            }),
+            this.prisma.inventarioInsumo.count({
+                where: { inventario: { conjuntoId } },
+            }),
+            this.prisma.consumoInsumo.count({
+                where: { inventario: { conjuntoId } },
+            }),
+            this.prisma.solicitudInsumo.count({ where: { conjuntoId } }),
+            this.prisma.solicitudMaquinaria.count({ where: { conjuntoId } }),
+            this.prisma.solicitudTarea.count({ where: { conjuntoId } }),
+            this.prisma.maquinariaConjunto.count({ where: { conjuntoId } }),
+        ]);
+        const dependencias = [
+            {
+                tipo: "insumosInventario",
+                cantidad: totalInsumosInventario,
+                mensaje: `${totalInsumosInventario} insumo(s) en inventario seran eliminados.`,
+            },
+            {
+                tipo: "consumosInventario",
+                cantidad: totalConsumos,
+                mensaje: `${totalConsumos} movimiento(s) de consumo de insumos seran eliminados.`,
+            },
+            {
+                tipo: "solicitudesInsumo",
+                cantidad: totalSolicitudesInsumo,
+                mensaje: `${totalSolicitudesInsumo} solicitud(es) de insumo seran eliminadas.`,
+            },
+            {
+                tipo: "solicitudesMaquinaria",
+                cantidad: totalSolicitudesMaquinaria,
+                mensaje: `${totalSolicitudesMaquinaria} solicitud(es) de maquinaria seran eliminadas.`,
+            },
+            {
+                tipo: "solicitudesTarea",
+                cantidad: totalSolicitudesTarea,
+                mensaje: `${totalSolicitudesTarea} solicitud(es) de tarea seran eliminadas.`,
+            },
+            {
+                tipo: "asignacionesMaquinaria",
+                cantidad: totalAsignacionesMaquinaria,
+                mensaje: `${totalAsignacionesMaquinaria} asignacion(es) historicas de maquinaria seran eliminadas.`,
+            },
+        ].filter((item) => item.cantidad > 0);
+        if (dependencias.length > 0 && !confirmar) {
+            return {
+                ok: false,
+                requiresConfirmation: true,
+                message: "El conjunto todavia tiene informacion relacionada. Si deseas borrarlo de todas formas, repite la solicitud con ?confirmar=true.",
+                details: {
+                    conjuntoId,
+                    inventarioId: inventario?.id ?? null,
+                    dependencias,
+                },
+            };
+        }
+        await this.prisma.$transaction(async (tx) => {
             if (inventario) {
+                await tx.consumoInsumo.deleteMany({
+                    where: { inventarioId: inventario.id },
+                });
                 await tx.inventarioInsumo.deleteMany({
                     where: { inventarioId: inventario.id },
                 });
@@ -866,6 +926,7 @@ class GerenteService {
             await tx.solicitudTarea.deleteMany({ where: { conjuntoId } });
             await tx.conjunto.delete({ where: { nit: conjuntoId } });
         });
+        return { ok: true };
     }
     async asignarOperarioAConjunto(args) {
         const { conjuntoId, operarioId } = args;

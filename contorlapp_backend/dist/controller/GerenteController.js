@@ -19,6 +19,9 @@ const MaquinariaIdParam = zod_1.z.object({
     maquinariaId: zod_1.z.coerce.number().int().positive(),
 });
 const ConjuntoIdParam = zod_1.z.object({ conjuntoId: zod_1.z.string().min(3) });
+const EliminarConjuntoQuery = zod_1.z.object({
+    confirmar: zod_1.z.coerce.boolean().optional().default(false),
+});
 // Para endpoints que agregan insumo a conjunto por URL + body
 const AddInsumoBody = zod_1.z.object({
     insumoId: zod_1.z.number().int().positive(),
@@ -427,7 +430,12 @@ class GerenteController {
         this.eliminarConjunto = async (req, res, next) => {
             try {
                 const { conjuntoId } = ConjuntoIdParam.parse(req.params);
-                await service.eliminarConjunto(conjuntoId);
+                const { confirmar } = EliminarConjuntoQuery.parse(req.query);
+                const result = await service.eliminarConjunto(conjuntoId, { confirmar });
+                if (!result.ok && result.requiresConfirmation) {
+                    res.status(409).json(result);
+                    return;
+                }
                 res.status(204).send();
             }
             catch (err) {

@@ -3535,41 +3535,43 @@ class _CronogramaPreventivasBorradorPageState
         border: Border.all(color: Colors.grey.shade300),
       ),
       child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columns: [
-            col('Actividad'),
-            col('Horas mes'),
-            col('Semana 1'),
-            col('Semana 2'),
-            col('Semana 3'),
-            col('Semana 4'),
-            col('Semana 5'),
-          ],
-          rows: _informeActividad
-              .map(
-                (item) => DataRow(
-                  cells: [
-                    DataCell(
-                      SizedBox(
-                        width: 320,
-                        child: Text(
-                          item.actividad,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columns: [
+              col('Actividad'),
+              col('Horas mes'),
+              col('Semana 1'),
+              col('Semana 2'),
+              col('Semana 3'),
+              col('Semana 4'),
+              col('Semana 5'),
+            ],
+            rows: _informeActividad
+                .map(
+                  (item) => DataRow(
+                    cells: [
+                      DataCell(
+                        SizedBox(
+                          width: 320,
+                          child: Text(
+                            item.actividad,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
-                    ),
-                    cellNum(item.horasMes),
-                    cellNum(item.semana1),
-                    cellNum(item.semana2),
-                    cellNum(item.semana3),
-                    cellNum(item.semana4),
-                    cellNum(item.semana5),
-                  ],
-                ),
-              )
-              .toList(),
+                      cellNum(item.horasMes),
+                      cellNum(item.semana1),
+                      cellNum(item.semana2),
+                      cellNum(item.semana3),
+                      cellNum(item.semana4),
+                      cellNum(item.semana5),
+                    ],
+                  ),
+                )
+                .toList(),
+          ),
         ),
       ),
     );
