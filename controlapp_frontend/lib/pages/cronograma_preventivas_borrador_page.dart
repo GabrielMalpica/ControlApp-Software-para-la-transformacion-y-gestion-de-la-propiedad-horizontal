@@ -14,6 +14,7 @@ import '../api/cronograma_api.dart';
 import '../model/tarea_model.dart';
 import '../service/app_error.dart';
 import '../service/theme.dart';
+import '../utils/schedule_utils.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -61,6 +62,7 @@ class _CronogramaPreventivasBorradorPageState
   List<TareaModel> _tareasMes = [];
   List<PreventivaExcluidaBorradorModel> _excluidasMes = [];
   List<CronogramaActividadInformeModel> _informeActividad = [];
+  List<HorarioConjunto> _horariosConjunto = const [];
 
   /// Resumen por día (mensual)
   List<_DiaResumen> _diasResumen = [];
@@ -81,9 +83,11 @@ class _CronogramaPreventivasBorradorPageState
   String _filtroEstado = 'TODOS';
   String _filtroOperario = 'TODOS';
   String _filtroUbicacion = 'TODAS';
+  String _filtroEquipo = 'TODOS';
 
   List<String> _operariosDisponibles = [];
   List<String> _ubicacionesDisponibles = [];
+  List<String> _equiposDisponibles = [];
 
   // ✅ Para no mostrar el cuadro de novedades repetido en el mismo periodo
   final Set<String> _novedadesMostradasPorPeriodo = {};
@@ -225,6 +229,55 @@ class _CronogramaPreventivasBorradorPageState
         : 'Horario: ${_fmtMinutes(minApertura)} - ${_fmtMinutes(maxCierre)}';
   }
 
+  HorarioConjunto? _horarioConjuntoParaDia(DateTime day) {
+    for (final horario in _horariosConjunto) {
+      if (weekdayFromScheduleDay(horario.dia) == day.weekday) {
+        return horario;
+      }
+    }
+    return null;
+  }
+
+  List<_MinuteRange> _rangosDesdeHorarioConjunto(HorarioConjunto horario) {
+    final apertura = parseHourToTimeOfDay(horario.horaApertura);
+    final cierre = parseHourToTimeOfDay(horario.horaCierre);
+    if (apertura == null || cierre == null) return const [];
+
+    final inicio = timeOfDayToMinutes(apertura);
+    final fin = timeOfDayToMinutes(cierre);
+    if (fin <= inicio) return const [];
+
+    final descansoInicio = horario.descansoInicio == null
+        ? null
+        : parseHourToTimeOfDay(horario.descansoInicio);
+    final descansoFin = horario.descansoFin == null
+        ? null
+        : parseHourToTimeOfDay(horario.descansoFin);
+
+    final tieneDescanso =
+        descansoInicio != null &&
+        descansoFin != null &&
+        timeOfDayToMinutes(descansoFin) > timeOfDayToMinutes(descansoInicio) &&
+        timeOfDayToMinutes(descansoInicio) > inicio &&
+        timeOfDayToMinutes(descansoFin) < fin;
+
+    if (!tieneDescanso) {
+      return [_MinuteRange(start: inicio, end: fin)];
+    }
+
+    final descansoIniMin = timeOfDayToMinutes(descansoInicio);
+    final descansoFinMin = timeOfDayToMinutes(descansoFin);
+    final rangos = <_MinuteRange>[];
+
+    if (descansoIniMin > inicio) {
+      rangos.add(_MinuteRange(start: inicio, end: descansoIniMin));
+    }
+    if (descansoFinMin < fin) {
+      rangos.add(_MinuteRange(start: descansoFinMin, end: fin));
+    }
+    return rangos;
+  }
+
   String _toYmd(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -315,6 +368,13 @@ class _CronogramaPreventivasBorradorPageState
       if (u != _filtroUbicacion) return false;
     }
 
+    if (_filtroEquipo != 'TODOS') {
+      final equipo = _equipoOperariosLabel(t);
+      if (equipo != _filtroEquipo) {
+        return false;
+      }
+    }
+
     return true;
   }
 
@@ -364,6 +424,30 @@ class _CronogramaPreventivasBorradorPageState
   };
 
   List<String> _nombresOperarios(TareaModel t) => t.operariosNombres;
+
+  String _labelPrioridad(int prioridad) {
+    switch (prioridad) {
+      case 1:
+        return 'Prioridad alta';
+      case 2:
+        return 'Prioridad media';
+      case 3:
+        return 'Prioridad baja';
+      default:
+        return 'Prioridad $prioridad';
+    }
+  }
+
+  String? _equipoOperariosLabel(TareaModel t) {
+    final operarios = t.operariosNombres
+        .map((name) => name.trim())
+        .where((name) => name.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    if (operarios.length < 2) return null;
+    return operarios.join(' + ');
+  }
 
   Future<void> _configurarCamposDetalle(VoidCallback refreshSheet) async {
     await showModalBottomSheet<void>(
@@ -420,6 +504,12 @@ class _CronogramaPreventivasBorradorPageState
   List<_MinuteRange> _rangosDisponiblesDia(DateTime day) {
     final fecha = DateTime(day.year, day.month, day.day);
     if (_esFestivo(fecha)) return const [];
+
+    final horarioDia = _horarioConjuntoParaDia(fecha);
+    if (horarioDia != null) {
+      return _rangosDesdeHorarioConjunto(horarioDia);
+    }
+
     if (fecha.weekday == DateTime.sunday) return const [];
 
     final inicio = _horaInicioJornada * 60;
@@ -626,6 +716,12 @@ class _CronogramaPreventivasBorradorPageState
   ) {
     final porcentaje = resumen.porcentajeOcupacion.clamp(0, 1).toDouble();
 
+    Color colorPorUso(double value) {
+      if (value >= 0.8) return Colors.green.shade500;
+      if (value >= 0.4) return Colors.orange.shade500;
+      return Colors.red.shade400;
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -662,7 +758,7 @@ class _CronogramaPreventivasBorradorPageState
               value: porcentaje,
               backgroundColor: Colors.grey.shade200,
               valueColor: AlwaysStoppedAnimation<Color>(
-                porcentaje >= 0.9 ? Colors.red.shade400 : AppTheme.primary,
+                colorPorUso(porcentaje),
               ),
             ),
           ),
@@ -739,7 +835,7 @@ class _CronogramaPreventivasBorradorPageState
                                     .toDouble(),
                                 backgroundColor: Colors.grey.shade200,
                                 valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.red.shade300,
+                                  colorPorUso(item.porcentajeOcupacion),
                                 ),
                               ),
                             ),
@@ -759,6 +855,7 @@ class _CronogramaPreventivasBorradorPageState
   void _reconstruirFiltrosDisponibles() {
     final ops = <String>{};
     final ubis = <String>{};
+    final equipos = <String>{};
 
     for (final t in _tareasMes) {
       if (_esCanceladaPorReemplazo(t)) continue;
@@ -770,10 +867,19 @@ class _CronogramaPreventivasBorradorPageState
         final n = op.trim();
         if (n.isNotEmpty) ops.add(n);
       }
+
+      final equipo = _equipoOperariosLabel(t);
+      if (equipo != null) equipos.add(equipo);
     }
 
     _operariosDisponibles = ops.toList()..sort();
     _ubicacionesDisponibles = ubis.toList()..sort();
+    _equiposDisponibles = equipos.toList()..sort();
+    if (_equiposDisponibles.isEmpty ||
+        (_filtroEquipo != 'TODOS' &&
+            !_equiposDisponibles.contains(_filtroEquipo))) {
+      _filtroEquipo = 'TODOS';
+    }
   }
 
   void _aplicarFiltrosYRefrescar() {
@@ -787,6 +893,7 @@ class _CronogramaPreventivasBorradorPageState
       _filtroEstado = 'TODOS';
       _filtroOperario = 'TODOS';
       _filtroUbicacion = 'TODAS';
+      _filtroEquipo = 'TODOS';
     });
     _aplicarFiltrosYRefrescar();
   }
@@ -1695,6 +1802,7 @@ class _CronogramaPreventivasBorradorPageState
         _tareasMes = filtradas;
         _excluidasMes = excluidas;
         _informeActividad = informe;
+        _horariosConjunto = horarios;
         _reconstruirFiltrosDisponibles();
         _festivosYmd = setYmd;
         _festivoNombrePorYmd = nombrePorYmd;
@@ -1969,7 +2077,8 @@ class _CronogramaPreventivasBorradorPageState
     return _filtroTipo != 'TODAS' ||
         _filtroEstado != 'TODOS' ||
         _filtroOperario != 'TODOS' ||
-        _filtroUbicacion != 'TODAS';
+        _filtroUbicacion != 'TODAS' ||
+        _filtroEquipo != 'TODOS';
   }
 
   // ========= NUEVO: Mensual tipo matriz (como la foto) =========
@@ -2112,6 +2221,29 @@ class _CronogramaPreventivasBorradorPageState
     );
   }
 
+  Widget _ddEquipo() {
+    return DropdownButtonFormField<String>(
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Equipo',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      initialValue: _filtroEquipo,
+      items: [
+        const DropdownMenuItem(value: 'TODOS', child: Text('Todos')),
+        ..._equiposDisponibles.map(
+          (equipo) => DropdownMenuItem(value: equipo, child: Text(equipo)),
+        ),
+      ],
+      onChanged: (v) {
+        if (v == null) return;
+        setState(() => _filtroEquipo = v);
+        _aplicarFiltrosYRefrescar();
+      },
+    );
+  }
+
   Widget _buildFiltrosMensualCompacto() {
     return Card(
       elevation: 0,
@@ -2152,7 +2284,19 @@ class _CronogramaPreventivasBorradorPageState
               children: [
                 Expanded(child: _ddOperario()),
                 const SizedBox(width: 10),
+                Expanded(
+                  child: _equiposDisponibles.isNotEmpty
+                      ? _ddEquipo()
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
                 Expanded(child: _ddUbicacion()),
+                const SizedBox(width: 10),
+                const Expanded(child: SizedBox.shrink()),
               ],
             ),
           ],
@@ -2177,6 +2321,10 @@ class _CronogramaPreventivasBorradorPageState
         _ddEstado(),
         const SizedBox(height: 8),
         _ddOperario(),
+        if (_equiposDisponibles.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _ddEquipo(),
+        ],
         const SizedBox(height: 8),
         _ddUbicacion(),
       ],
@@ -2948,7 +3096,7 @@ class _CronogramaPreventivasBorradorPageState
     final ubicacionLabel =
         t.ubicacionNombre ?? 'ID ${t.ubicacionId.toString()}';
     final elementoLabel = t.elementoNombre ?? 'ID ${t.elementoId.toString()}';
-    final prioridadLabel = 'Prioridad ${t.prioridad}';
+    final prioridadLabel = _labelPrioridad(t.prioridad);
 
     final supervisorLabel =
         t.supervisorNombre ??
@@ -3517,12 +3665,143 @@ class _CronogramaPreventivasBorradorPageState
     );
   }
 
+  int _indiceSemanaMes(DateTime date) => (((date.toLocal().day - 1) ~/ 7) + 1)
+      .clamp(1, 5);
+
+  List<_HorasGrupoResumen> _resumenHorasAgrupadas(
+    List<TareaModel> tareas,
+    Iterable<String> Function(TareaModel tarea) keysForTask,
+  ) {
+    final acumulado = <String, List<double>>{};
+
+    for (final tarea in tareas) {
+      final keys = keysForTask(tarea)
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toSet();
+      if (keys.isEmpty) continue;
+
+      final semana = _indiceSemanaMes(tarea.fechaInicio);
+      final horas = tarea.duracionHorasDecimal;
+
+      for (final key in keys) {
+        final bucket = acumulado.putIfAbsent(key, () => List.filled(6, 0));
+        bucket[0] += horas;
+        bucket[semana] += horas;
+      }
+    }
+
+    final rows = acumulado.entries
+        .map(
+          (entry) => _HorasGrupoResumen(
+            nombre: entry.key,
+            horasMes: entry.value[0],
+            semana1: entry.value[1],
+            semana2: entry.value[2],
+            semana3: entry.value[3],
+            semana4: entry.value[4],
+            semana5: entry.value[5],
+          ),
+        )
+        .toList();
+
+    rows.sort((a, b) {
+      final byHours = b.horasMes.compareTo(a.horasMes);
+      if (byHours != 0) return byHours;
+      return a.nombre.compareTo(b.nombre);
+    });
+    return rows;
+  }
+
+  Widget _buildInformeHorasTable({
+    required String titulo,
+    required String columnaPrincipal,
+    required List<_HorasGrupoResumen> rows,
+    required String emptyLabel,
+  }) {
+    DataColumn col(String label) => DataColumn(label: Text(label));
+    DataCell cellNum(num value) => DataCell(Text(value.toStringAsFixed(1)));
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              titulo,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+            ),
+          ),
+          const SizedBox(height: 4),
+          if (rows.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                emptyLabel,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              ),
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: [
+                  col(columnaPrincipal),
+                  col('Horas mes'),
+                  col('Semana 1'),
+                  col('Semana 2'),
+                  col('Semana 3'),
+                  col('Semana 4'),
+                  col('Semana 5'),
+                ],
+                rows: rows
+                    .map(
+                      (item) => DataRow(
+                        cells: [
+                          DataCell(
+                            SizedBox(
+                              width: 320,
+                              child: Text(
+                                item.nombre,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                          cellNum(item.horasMes),
+                          cellNum(item.semana1),
+                          cellNum(item.semana2),
+                          cellNum(item.semana3),
+                          cellNum(item.semana4),
+                          cellNum(item.semana5),
+                        ],
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInformeActividad() {
     if (_informeActividad.isEmpty) {
       return const Center(
         child: Text('No hay actividades planificadas para este periodo.'),
       );
     }
+
+    final horasPorZona = _resumenHorasAgrupadas(
+      _tareasFiltradas,
+      (tarea) => [(tarea.ubicacionNombre ?? '').trim()],
+    );
+    final horasPorTrabajador = _resumenHorasAgrupadas(
+      _tareasFiltradas,
+      (tarea) => tarea.operariosNombres,
+    );
 
     DataColumn col(String label) => DataColumn(label: Text(label));
     DataCell cellNum(num value) => DataCell(Text(value.toStringAsFixed(1)));
@@ -3535,43 +3814,60 @@ class _CronogramaPreventivasBorradorPageState
         border: Border.all(color: Colors.grey.shade300),
       ),
       child: SingleChildScrollView(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            columns: [
-              col('Actividad'),
-              col('Horas mes'),
-              col('Semana 1'),
-              col('Semana 2'),
-              col('Semana 3'),
-              col('Semana 4'),
-              col('Semana 5'),
-            ],
-            rows: _informeActividad
-                .map(
-                  (item) => DataRow(
-                    cells: [
-                      DataCell(
-                        SizedBox(
-                          width: 320,
-                          child: Text(
-                            item.actividad,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: [
+                  col('Actividad'),
+                  col('Horas mes'),
+                  col('Semana 1'),
+                  col('Semana 2'),
+                  col('Semana 3'),
+                  col('Semana 4'),
+                  col('Semana 5'),
+                ],
+                rows: _informeActividad
+                    .map(
+                      (item) => DataRow(
+                        cells: [
+                          DataCell(
+                            SizedBox(
+                              width: 320,
+                              child: Text(
+                                item.actividad,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           ),
-                        ),
+                          cellNum(item.horasMes),
+                          cellNum(item.semana1),
+                          cellNum(item.semana2),
+                          cellNum(item.semana3),
+                          cellNum(item.semana4),
+                          cellNum(item.semana5),
+                        ],
                       ),
-                      cellNum(item.horasMes),
-                      cellNum(item.semana1),
-                      cellNum(item.semana2),
-                      cellNum(item.semana3),
-                      cellNum(item.semana4),
-                      cellNum(item.semana5),
-                    ],
-                  ),
-                )
-                .toList(),
-          ),
+                    )
+                    .toList(),
+              ),
+            ),
+            _buildInformeHorasTable(
+              titulo: 'Horas por ubicación',
+              columnaPrincipal: 'Ubicación',
+              rows: horasPorZona,
+              emptyLabel: 'Sin ubicaciones con horas registradas.',
+            ),
+            _buildInformeHorasTable(
+              titulo: 'Horas por trabajador',
+              columnaPrincipal: 'Trabajador',
+              rows: horasPorTrabajador,
+              emptyLabel: 'Sin trabajadores con horas registradas.',
+            ),
+          ],
         ),
       ),
     );
@@ -3612,6 +3908,26 @@ class _CronogramaPreventivasBorradorPageState
       ),
     );
   }
+}
+
+class _HorasGrupoResumen {
+  final String nombre;
+  final double horasMes;
+  final double semana1;
+  final double semana2;
+  final double semana3;
+  final double semana4;
+  final double semana5;
+
+  const _HorasGrupoResumen({
+    required this.nombre,
+    required this.horasMes,
+    required this.semana1,
+    required this.semana2,
+    required this.semana3,
+    required this.semana4,
+    required this.semana5,
+  });
 }
 
 // ============================
@@ -3753,6 +4069,26 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     return start.add(const Duration(minutes: 1));
   }
 
+  bool _tareaTieneVariosOperarios(TareaModel tarea) {
+    return tarea.operariosNombres
+            .map((name) => name.trim())
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .length >=
+        2;
+  }
+
+  DateTime _effectiveGroupEnd(_WeekTaskSpan span) {
+    if (!_tareaTieneVariosOperarios(span.tarea)) {
+      return span.fin;
+    }
+
+    final normalized = _ensureEndAfterStart(span.inicio, span.fin);
+    final minMinutes = (18 / pxPorMin).ceil();
+    final visualMinEnd = span.inicio.add(Duration(minutes: minMinutes));
+    return normalized.isAfter(visualMinEnd) ? normalized : visualMinEnd;
+  }
+
   List<_WeekTaskPlacement> _buildTaskPlacements() {
     final spansByDay = List.generate(7, (_) => <_WeekTaskSpan>[]);
 
@@ -3817,22 +4153,23 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       }
 
       for (final span in daySpans) {
+        final effectiveEnd = _effectiveGroupEnd(span);
         if (group.isEmpty) {
           group.add(span);
-          groupEnd = span.fin;
+          groupEnd = effectiveEnd;
           continue;
         }
 
         final overlapsGroup = span.inicio.isBefore(groupEnd!);
         if (overlapsGroup) {
           group.add(span);
-          if (span.fin.isAfter(groupEnd!)) groupEnd = span.fin;
+          if (effectiveEnd.isAfter(groupEnd!)) groupEnd = effectiveEnd;
           continue;
         }
 
         flushGroup();
         group.add(span);
-        groupEnd = span.fin;
+        groupEnd = effectiveEnd;
       }
 
       flushGroup();
@@ -4097,7 +4434,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                     dayPadding;
                                 final top = startMin * pxPorMin;
                                 final fullWidth = colWidth - (dayPadding * 2);
-
                                 final colorBase =
                                     _cronogramaBorradorColorBaseTareaSemana(t);
                                 final fill = colorBase.withValues(alpha: 0.12);
@@ -4131,7 +4467,13 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                       .take(2)
                                       .join(' / ');
                                   final extra = placement.groupSize - 2;
-                                  const markerHeight = 68.0;
+                                  final overlapMinutes = placement.groupEnd
+                                      .difference(placement.inicio)
+                                      .inMinutes;
+                                  final markerHeight =
+                                      ((overlapMinutes <= 0 ? 1 : overlapMinutes) *
+                                              pxPorMin)
+                                          .clamp(26.0, 120.0);
 
                                   return Positioned(
                                     left: left,
@@ -4160,83 +4502,103 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                             width: 1,
                                           ),
                                         ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
+                                        child: LayoutBuilder(
+                                          builder: (context, box) {
+                                            if (box.maxHeight < 18) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            final compactMarker =
+                                                box.maxHeight < 58;
+                                            final ultraCompactMarker =
+                                                box.maxHeight < 34;
+                                            return Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
-                                                ...List.generate(dotCount, (i) {
-                                                  return Container(
-                                                    width: 10,
-                                                    height: 10,
-                                                    margin: EdgeInsets.only(
-                                                      right: i == dotCount - 1
-                                                          ? 0
-                                                          : 4,
+                                                Row(
+                                                  children: [
+                                                    ...List.generate(dotCount, (i) {
+                                                      return Container(
+                                                        width: 10,
+                                                        height: 10,
+                                                        margin: EdgeInsets.only(
+                                                          right:
+                                                              i == dotCount - 1
+                                                              ? 0
+                                                              : 4,
+                                                        ),
+                                                        decoration: BoxDecoration(
+                                                          color:
+                                                              colors[i %
+                                                                  colors.length],
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                2,
+                                                              ),
+                                                        ),
+                                                      );
+                                                    }),
+                                                    if (!ultraCompactMarker &&
+                                                        placement.groupSize >
+                                                        dotCount) ...[
+                                                      const SizedBox(width: 6),
+                                                      Text(
+                                                        '+${placement.groupSize - dotCount}',
+                                                        style: TextStyle(
+                                                          fontSize: 10,
+                                                          color: text,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        compactMarker
+                                                            ? 'Tareas solapadas'
+                                                            : 'Superposicion detectada',
+                                                        maxLines: 1,
+                                                        overflow:
+                                                            TextOverflow.ellipsis,
+                                                        style: TextStyle(
+                                                          color: text,
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.w800,
+                                                        ),
+                                                      ),
                                                     ),
-                                                    decoration: BoxDecoration(
-                                                      color:
-                                                          colors[i %
-                                                              colors.length],
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            2,
-                                                          ),
-                                                    ),
-                                                  );
-                                                }),
-                                                if (placement.groupSize >
-                                                    dotCount) ...[
-                                                  const SizedBox(width: 6),
+                                                  ],
+                                                ),
+                                                if (!compactMarker) ...[
+                                                  const SizedBox(height: 2),
                                                   Text(
-                                                    '+${placement.groupSize - dotCount}',
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      color: text,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                ],
-                                                const SizedBox(width: 8),
-                                                Expanded(
-                                                  child: Text(
-                                                    'Superposicion detectada',
+                                                    'Aqui hay ${placement.groupSize} tareas superpuestas. Filtra por operario para verlo mejor.',
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,
                                                     style: TextStyle(
-                                                      color: text,
-                                                      fontSize: 11,
-                                                      fontWeight:
-                                                          FontWeight.w800,
+                                                      color: subtext,
+                                                      fontSize: 10,
                                                     ),
                                                   ),
-                                                ),
+                                                  const SizedBox(height: 2),
+                                                ] else if (!ultraCompactMarker)
+                                                  const SizedBox(height: 2),
+                                                if (!ultraCompactMarker)
+                                                  Text(
+                                                    '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra mas' : ''}'}',
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color: subtext,
+                                                      fontSize: 10,
+                                                    ),
+                                                  ),
                                               ],
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              'Aqui hay ${placement.groupSize} tareas superpuestas. Filtra por operario para verlo mejor.',
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                color: subtext,
-                                                fontSize: 10,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra mas' : ''}'}',
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                color: subtext,
-                                                fontSize: 10,
-                                              ),
-                                            ),
-                                          ],
+                                            );
+                                          },
                                         ),
                                       ),
                                     ),
@@ -4397,30 +4759,52 @@ class _SidebarSimple extends StatelessWidget {
       color: Colors.white,
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ...items.map(
+                          (s) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              '• $s',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ),
+                        if (child != null) ...[const Divider(), child!],
+                        const SizedBox(height: 12),
+                        Text(
+                          'Tip: aquí metes filtros (supervisor, operario, ubicación) sin tocar la agenda.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            ...items.map(
-              (s) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text("• $s", style: const TextStyle(fontSize: 12)),
-              ),
-            ),
-            if (child != null) ...[const Divider(), child!],
-            const Spacer(),
-            Text(
-              "Tip: aquí metes filtros (supervisor, operario, ubicación) sin tocar la agenda.",
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

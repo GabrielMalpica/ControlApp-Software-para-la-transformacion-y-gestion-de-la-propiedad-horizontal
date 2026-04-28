@@ -161,24 +161,80 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
     );
     if (ok != true) return;
 
+    await _eliminarConjunto(c);
+  }
+
+  Future<void> _eliminarConjunto(Conjunto c, {bool confirmar = false}) async {
+    String mensajeExito = 'Conjunto eliminado correctamente';
+
     try {
-      await _api.eliminarConjunto(c.nit);
+      await _api.eliminarConjuntoConConfirmacion(c.nit, confirmar: confirmar);
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
-        const SnackBar(
-          content: Text('Conjunto eliminado correctamente'),
-          backgroundColor: Colors.green,
-        ),
+        SnackBar(content: Text(mensajeExito), backgroundColor: Colors.green),
       );
       _hasChanges = true;
       _loadConjuntos();
+    } on DeleteConjuntoConfirmationRequired catch (e) {
+      if (!mounted) return;
+
+      final confirmarBorrado = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Confirmar eliminacion total'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(e.message),
+              const SizedBox(height: 12),
+              const Text(
+                'Tambien se eliminara:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              ...e.dependencias.map(
+                (item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('• '),
+                      Expanded(child: Text(item.mensaje)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text(
+                'Eliminar todo',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmarBorrado != true) return;
+      mensajeExito = 'Conjunto y dependencias eliminados correctamente';
+      await _eliminarConjunto(c, confirmar: true);
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
         SnackBar(
-          content: Text('Error al eliminar: $e'),
+          content: Text(
+            AppError.messageOf(e, fallback: 'No se pudo eliminar el conjunto.'),
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -530,272 +586,328 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
         Navigator.of(context).pop(true);
       },
       child: Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.primary,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context, _hasChanges),
-        ),
-        title: const Text('Conjuntos', style: TextStyle(color: Colors.white)),
-        actions: [
-          IconButton(
-            tooltip: 'Crear conjunto',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CrearConjuntoPage(nit: widget.nit),
-                ),
-              ).then((changed) {
-                if (changed == true) {
-                  _hasChanges = true;
-                  _loadConjuntos();
-                  if (!context.mounted) return;
-                  AppFeedback.showFromSnackBar(
-                    context,
-                    const SnackBar(
-                      content: Text('✅ Conjunto creado correctamente'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              });
-            },
-            icon: const Icon(Icons.add_business, color: Colors.white),
+        backgroundColor: AppTheme.background,
+        appBar: AppBar(
+          backgroundColor: AppTheme.primary,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.pop(context, _hasChanges),
           ),
-        ],
-      ),
-      body: FutureBuilder<List<Conjunto>>(
-        future: _futureConjuntos,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.error_outline, color: Colors.red, size: 42),
-                  const SizedBox(height: 8),
-                  Text('Error: ${AppError.messageOf(snapshot.error)}'),
-                  const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: _loadConjuntos,
-                    child: const Text('Reintentar'),
+          title: const Text('Conjuntos', style: TextStyle(color: Colors.white)),
+          actions: [
+            IconButton(
+              tooltip: 'Crear conjunto',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CrearConjuntoPage(nit: widget.nit),
                   ),
-                ],
-              ),
-            );
-          }
+                ).then((changed) {
+                  if (changed == true) {
+                    _hasChanges = true;
+                    _loadConjuntos();
+                    if (!context.mounted) return;
+                    AppFeedback.showFromSnackBar(
+                      context,
+                      const SnackBar(
+                        content: Text('✅ Conjunto creado correctamente'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                });
+              },
+              icon: const Icon(Icons.add_business, color: Colors.white),
+            ),
+          ],
+        ),
+        body: FutureBuilder<List<Conjunto>>(
+          future: _futureConjuntos,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.red,
+                      size: 42,
+                    ),
+                    const SizedBox(height: 8),
+                    Text('Error: ${AppError.messageOf(snapshot.error)}'),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: _loadConjuntos,
+                      child: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
+              );
+            }
 
-          final conjuntos = <Conjunto>[...(snapshot.data ?? const <Conjunto>[])]
-            ..sort(
-              (a, b) =>
-                  a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()),
-            );
-          final conjuntosFiltrados = _filtrarConjuntos(conjuntos);
+            final conjuntos =
+                <Conjunto>[...(snapshot.data ?? const <Conjunto>[])]..sort(
+                  (a, b) =>
+                      a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()),
+                );
+            final conjuntosFiltrados = _filtrarConjuntos(conjuntos);
 
-          if (conjuntos.isEmpty) {
+            if (conjuntos.isEmpty) {
+              return RefreshIndicator(
+                onRefresh: _refreshConjuntos,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(24),
+                  children: const [
+                    SizedBox(height: 130),
+                    Icon(
+                      Icons.apartment_outlined,
+                      size: 58,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'No hay conjuntos registrados.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            final activos = conjuntos.where((c) => c.activo).length;
+            final conHorario = conjuntos
+                .where((c) => c.horarios.isNotEmpty)
+                .length;
+
             return RefreshIndicator(
               onRefresh: _refreshConjuntos,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(24),
-                children: const [
-                  SizedBox(height: 130),
-                  Icon(Icons.apartment_outlined, size: 58, color: Colors.grey),
-                  SizedBox(height: 8),
-                  Text(
-                    'No hay conjuntos registrados.',
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final activos = conjuntos.where((c) => c.activo).length;
-          final conHorario = conjuntos
-              .where((c) => c.horarios.isNotEmpty)
-              .length;
-
-          return RefreshIndicator(
-            onRefresh: _refreshConjuntos,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppTheme.primary.withValues(alpha: 0.96),
-                        const Color(0xFF118550),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          AppTheme.primary.withValues(alpha: 0.96),
+                          const Color(0xFF118550),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(18),
                     ),
-                    borderRadius: BorderRadius.circular(18),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Resumen de conjuntos',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            _stat('Total', '${conjuntos.length}'),
+                            const SizedBox(width: 8),
+                            _stat('Activos', '$activos'),
+                            const SizedBox(width: 8),
+                            _stat('Con horario', '$conHorario'),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Resumen de conjuntos',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _busquedaCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Buscar conjunto',
+                      hintText: 'Nombre o NIT',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _busqueda.trim().isEmpty
+                          ? null
+                          : IconButton(
+                              onPressed: () {
+                                _busquedaCtrl.clear();
+                                setState(() => _busqueda = '');
+                              },
+                              icon: const Icon(Icons.clear_rounded),
+                            ),
+                    ),
+                    onChanged: (value) => setState(() => _busqueda = value),
+                  ),
+                  const SizedBox(height: 12),
+                  if (conjuntosFiltrados.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 32),
+                      child: Center(
+                        child: Text(
+                          'No hay conjuntos que coincidan con la búsqueda.',
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          _stat('Total', '${conjuntos.length}'),
-                          const SizedBox(width: 8),
-                          _stat('Activos', '$activos'),
-                          const SizedBox(width: 8),
-                          _stat('Con horario', '$conHorario'),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _busquedaCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Buscar conjunto',
-                    hintText: 'Nombre o NIT',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: _busqueda.trim().isEmpty
-                        ? null
-                        : IconButton(
-                            onPressed: () {
-                              _busquedaCtrl.clear();
-                              setState(() => _busqueda = '');
-                            },
-                            icon: const Icon(Icons.clear_rounded),
-                          ),
-                  ),
-                  onChanged: (value) => setState(() => _busqueda = value),
-                ),
-                const SizedBox(height: 12),
-                if (conjuntosFiltrados.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 32),
-                    child: Center(
-                      child: Text(
-                        'No hay conjuntos que coincidan con la búsqueda.',
-                      ),
                     ),
-                  ),
-                ...conjuntosFiltrados.map(
-                  (c) => Card(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    elevation: 2,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  c.nombre,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _estadoColor(
-                                    c.activo,
-                                  ).withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  c.activo ? 'Activo' : 'Inactivo',
-                                  style: TextStyle(
-                                    color: _estadoColor(c.activo),
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text('NIT: ${c.nit}'),
-                          const SizedBox(height: 3),
-                          Text(c.direccion),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              _pill(
-                                _valorMensual(c.valorMensual),
-                                Icons.payments_outlined,
-                              ),
-                              _pill(
-                                '${c.operarios.length} operarios',
-                                Icons.groups_2_outlined,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.all(9),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF3F7F4),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Row(
+                  ...conjuntosFiltrados.map(
+                    (c) => Card(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
                               children: [
-                                const Icon(
-                                  Icons.schedule,
-                                  size: 16,
-                                  color: Color(0xFF365D49),
-                                ),
-                                const SizedBox(width: 6),
                                 Expanded(
                                   child: Text(
-                                    _resumenHorarios(c),
+                                    c.nombre,
                                     style: const TextStyle(
-                                      color: Color(0xFF2D5641),
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _estadoColor(
+                                      c.activo,
+                                    ).withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    c.activo ? 'Activo' : 'Inactivo',
+                                    style: TextStyle(
+                                      color: _estadoColor(c.activo),
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
+                            const SizedBox(height: 4),
+                            Text('NIT: ${c.nit}'),
+                            const SizedBox(height: 3),
+                            Text(c.direccion),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _pill(
+                                  _valorMensual(c.valorMensual),
+                                  Icons.payments_outlined,
+                                ),
+                                _pill(
+                                  '${c.operarios.length} operarios',
+                                  Icons.groups_2_outlined,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(9),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF3F7F4),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.schedule,
+                                    size: 16,
+                                    color: Color(0xFF365D49),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      _resumenHorarios(c),
+                                      style: const TextStyle(
+                                        color: Color(0xFF2D5641),
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      Navigator.push<bool>(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => DetalleConjuntoPage(
+                                            conjuntoNit: c.nit,
+                                            modoEdicionBasico: true,
+                                          ),
+                                        ),
+                                      ).then((changed) {
+                                        if (changed == true) {
+                                          _hasChanges = true;
+                                        }
+                                        _loadConjuntos();
+                                      });
+                                    },
+                                    icon: const Icon(
+                                      Icons.edit_outlined,
+                                      size: 18,
+                                    ),
+                                    label: const Text('Editar'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => _editarHorarios(c),
+                                    icon: const Icon(
+                                      Icons.access_time,
+                                      size: 18,
+                                    ),
+                                    label: const Text('Horario'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppTheme.primary,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                IconButton(
+                                  tooltip: 'Eliminar',
+                                  onPressed: () => _confirmarEliminar(c),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Detalle',
                                   onPressed: () {
                                     Navigator.push<bool>(
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) => DetalleConjuntoPage(
                                           conjuntoNit: c.nit,
-                                          modoEdicionBasico: true,
                                         ),
                                       ),
                                     ).then((changed) {
@@ -806,67 +918,22 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
                                     });
                                   },
                                   icon: const Icon(
-                                    Icons.edit_outlined,
+                                    Icons.arrow_forward_ios,
                                     size: 18,
                                   ),
-                                  label: const Text('Editar'),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => _editarHorarios(c),
-                                  icon: const Icon(Icons.access_time, size: 18),
-                                  label: const Text('Horario'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppTheme.primary,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              IconButton(
-                                tooltip: 'Eliminar',
-                                onPressed: () => _confirmarEliminar(c),
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  color: Colors.red,
-                                ),
-                              ),
-                              IconButton(
-                                tooltip: 'Detalle',
-                                onPressed: () {
-                                  Navigator.push<bool>(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => DetalleConjuntoPage(
-                                        conjuntoNit: c.nit,
-                                      ),
-                                    ),
-                                  ).then((changed) {
-                                    if (changed == true) {
-                                      _hasChanges = true;
-                                    }
-                                    _loadConjuntos();
-                                  });
-                                },
-                                icon: const Icon(
-                                  Icons.arrow_forward_ios,
-                                  size: 18,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }

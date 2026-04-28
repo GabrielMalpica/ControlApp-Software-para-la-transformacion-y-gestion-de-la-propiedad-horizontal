@@ -34,8 +34,9 @@ class GerenteApi {
         'fechaUltimasVacaciones': fechaUltimasVacaciones.toIso8601String(),
       if (observaciones != null && observaciones.trim().isNotEmpty)
         'observaciones': observaciones.trim(),
-      'disponibilidadPeriodos':
-          disponibilidadPeriodos.map((e) => e.toJson()).toList(),
+      'disponibilidadPeriodos': disponibilidadPeriodos
+          .map((e) => e.toJson())
+          .toList(),
     };
 
     final resp = await _apiClient.post(url, body: body);
@@ -209,22 +210,20 @@ class GerenteApi {
     }
 
     final data = jsonDecode(resp.body) as List<dynamic>;
-    return data
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
+    return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
   Future<List<Map<String, dynamic>>> listarCompromisosGlobales() async {
-    final resp = await _apiClient.get('${AppConstants.gerenteBase}/compromisos');
+    final resp = await _apiClient.get(
+      '${AppConstants.gerenteBase}/compromisos',
+    );
 
     if (resp.statusCode != 200) {
       throw Exception('Error listando compromisos globales: ${resp.body}');
     }
 
     final data = jsonDecode(resp.body) as List<dynamic>;
-    return data
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
+    return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
   Future<Map<String, dynamic>> crearCompromisoConjunto({
@@ -265,7 +264,9 @@ class GerenteApi {
   }
 
   Future<void> eliminarCompromiso(int id) async {
-    final resp = await _apiClient.delete('${AppConstants.gerenteBase}/compromisos/$id');
+    final resp = await _apiClient.delete(
+      '${AppConstants.gerenteBase}/compromisos/$id',
+    );
     if (resp.statusCode != 200 && resp.statusCode != 204) {
       throw Exception('Error eliminando compromiso: ${resp.body}');
     }
@@ -285,9 +286,30 @@ class GerenteApi {
   }
 
   Future<void> eliminarConjunto(String nit) async {
+    return eliminarConjuntoConConfirmacion(nit);
+  }
+
+  Future<void> eliminarConjuntoConConfirmacion(
+    String nit, {
+    bool confirmar = false,
+  }) async {
     final resp = await _apiClient.delete(
-      '${AppConstants.conjuntosGerente}/$nit',
+      '${AppConstants.conjuntosGerente}/$nit${confirmar ? '?confirmar=true' : ''}',
     );
+
+    if (resp.statusCode == 409) {
+      dynamic data;
+      try {
+        data = jsonDecode(resp.body);
+      } catch (_) {
+        data = null;
+      }
+
+      if (data is Map<String, dynamic> &&
+          data['requiresConfirmation'] == true) {
+        throw DeleteConjuntoConfirmationRequired.fromJson(data);
+      }
+    }
 
     if (resp.statusCode >= 400) {
       throw Exception(
@@ -340,5 +362,74 @@ class GerenteApi {
 
     final Map<String, dynamic> data = jsonDecode(resp.body);
     return Conjunto.fromJson(data);
+  }
+}
+
+class DeleteConjuntoConfirmationRequired implements Exception {
+  final String message;
+  final String? conjuntoId;
+  final int? inventarioId;
+  final List<DeleteConjuntoDependency> dependencias;
+
+  DeleteConjuntoConfirmationRequired({
+    required this.message,
+    required this.dependencias,
+    this.conjuntoId,
+    this.inventarioId,
+  });
+
+  factory DeleteConjuntoConfirmationRequired.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    final details = json['details'];
+    final detailMap = details is Map<String, dynamic>
+        ? details
+        : <String, dynamic>{};
+    final rawDependencias = detailMap['dependencias'];
+
+    return DeleteConjuntoConfirmationRequired(
+      message:
+          json['message']?.toString() ??
+          'El conjunto tiene informacion relacionada y requiere confirmacion.',
+      conjuntoId: detailMap['conjuntoId']?.toString(),
+      inventarioId: detailMap['inventarioId'] is num
+          ? (detailMap['inventarioId'] as num).toInt()
+          : int.tryParse('${detailMap['inventarioId'] ?? ''}'),
+      dependencias: rawDependencias is List
+          ? rawDependencias
+                .whereType<Map>()
+                .map(
+                  (item) => DeleteConjuntoDependency.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ),
+                )
+                .toList()
+          : const <DeleteConjuntoDependency>[],
+    );
+  }
+
+  @override
+  String toString() => message;
+}
+
+class DeleteConjuntoDependency {
+  final String tipo;
+  final int cantidad;
+  final String mensaje;
+
+  const DeleteConjuntoDependency({
+    required this.tipo,
+    required this.cantidad,
+    required this.mensaje,
+  });
+
+  factory DeleteConjuntoDependency.fromJson(Map<String, dynamic> json) {
+    return DeleteConjuntoDependency(
+      tipo: json['tipo']?.toString() ?? '',
+      cantidad: json['cantidad'] is num
+          ? (json['cantidad'] as num).toInt()
+          : int.tryParse('${json['cantidad'] ?? 0}') ?? 0,
+      mensaje: json['mensaje']?.toString() ?? '',
+    );
   }
 }
