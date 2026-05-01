@@ -262,6 +262,12 @@ const GestionarBloqueExcluidaDTO = z.object({
   fechaFin: z.coerce.date().optional(),
 });
 
+const ReordenarTareasDiaBorradorDTO = z.object({
+  conjuntoId: z.string().min(3),
+  fecha: z.coerce.date(),
+  tareaIds: z.array(z.number().int().positive()).min(2),
+});
+
 /* =========================================================
  * Service
  * ======================================================= */
@@ -3316,6 +3322,120 @@ export class DefinicionTareaPreventivaService {
     });
 
     return { ok: true, tarea };
+  }
+
+  async reordenarTareasBorradorDia(payload: unknown) {
+    const dto = ReordenarTareasDiaBorradorDTO.parse(payload);
+    const inicioDia = new Date(
+      dto.fecha.getFullYear(),
+      dto.fecha.getMonth(),
+      dto.fecha.getDate(),
+      0,
+      0,
+      0,
+      0,
+    );
+    const finDia = new Date(
+      dto.fecha.getFullYear(),
+      dto.fecha.getMonth(),
+      dto.fecha.getDate(),
+      23,
+      59,
+      59,
+      999,
+    );
+
+    const tareas = await this.prisma.tarea.findMany({
+      where: {
+        id: { in: dto.tareaIds },
+        conjuntoId: dto.conjuntoId,
+        borrador: true,
+        tipo: TipoTarea.PREVENTIVA,
+        fechaInicio: { gte: inicioDia, lte: finDia },
+      },
+      include: { operarios: { select: { id: true } } },
+    });
+
+    if (tareas.length !== dto.tareaIds.length) {
+      throw new Error("Algunas tareas no pertenecen a ese día del borrador o no son válidas.");
+    }
+
+    const tareasPorId = new Map(tareas.map((tarea) => [tarea.id, tarea]));
+    const ordenadas = dto.tareaIds.map((id) => {
+      const tarea = tareasPorId.get(id);
+      if (!tarea) throw new Error("No se pudo resolver una tarea para reordenar.");
+      return tarea;
+    });
+
+    const primerInicio = [...tareas]
+      .sort((a, b) => a.fechaInicio.getTime() - b.fechaInicio.getTime())[0]
+      .fechaInicio;
+
+    const actualizaciones: Array<{ id: number; fechaInicio: Date; fechaFin: Date }> = [];
+    let cursor = new Date(primerInicio);
+    for (const tarea of ordenadas) {
+      const duracion = Math.max(1, tarea.duracionMinutos ?? 1);
+      const fechaInicio = new Date(cursor);
+      const fechaFin = new Date(cursor.getTime() + duracion * 60000);
+
+      const inicioEsFestivo = await isFestivoDate({
+        prisma: this.prisma,
+        fecha: fechaInicio,
+        pais: "CO",
+      });
+      if (inicioEsFestivo) {
+        throw new Error("No se permite programar tareas preventivas en festivos.");
+      }
+
+      const operariosIds = tarea.operarios.map((item) => item.id);
+      if (operariosIds.length) {
+        const disponibilidad = await validarOperariosDisponiblesEnFecha({
+          prisma: this.prisma,
+          fecha: fechaInicio,
+          operariosIds,
+        });
+        if (!disponibilidad.ok) {
+          throw new Error(
+            `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese día.`,
+          );
+        }
+
+        const solape = await this.prisma.tarea.findFirst({
+          where: {
+            conjuntoId: dto.conjuntoId,
+            borrador: true,
+            id: { notIn: dto.tareaIds },
+            estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
+            fechaInicio: { lt: fechaFin },
+            fechaFin: { gt: fechaInicio },
+            operarios: { some: { id: { in: operariosIds } } },
+          },
+          select: { id: true },
+        });
+        if (solape) {
+          throw new Error(
+            "No se pudo reordenar porque una de las tareas quedaría solapada con otra agenda del borrador.",
+          );
+        }
+      }
+
+      actualizaciones.push({ id: tarea.id, fechaInicio, fechaFin });
+      cursor = fechaFin;
+    }
+
+    await this.prisma.$transaction(
+      actualizaciones.map((item) =>
+        this.prisma.tarea.update({
+          where: { id: item.id },
+          data: {
+            fechaInicio: item.fechaInicio,
+            fechaFin: item.fechaFin,
+          },
+        }),
+      ),
+    );
+
+    return { ok: true, reordenadas: actualizaciones.length };
   }
 
   async listarOpcionesReprogramacionBorrador(conjuntoId: string, tareaId: number) {

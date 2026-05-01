@@ -2230,6 +2230,23 @@ class _CronogramaPreventivasBorradorPageState
     await _cargarDatos();
   }
 
+  Future<void> _reordenarTareasDia(
+    DateTime fecha,
+    List<TareaModel> tareasOrdenadas,
+  ) async {
+    await _preventivaApi.reordenarTareasDiaBorrador(
+      nit: widget.nit,
+      fecha: fecha,
+      tareaIds: tareasOrdenadas.map((item) => item.id).toList(),
+    );
+    if (!mounted) return;
+    AppFeedback.showFromSnackBar(
+      context,
+      const SnackBar(content: Text('Orden del día actualizado.')),
+    );
+    await _cargarDatos();
+  }
+
   Future<void> _reemplazarTareaConExcluida(TareaModel tarea) async {
     if (_excluidasMes.isEmpty) {
       AppFeedback.showFromSnackBar(
@@ -4305,6 +4322,7 @@ class _CronogramaPreventivasBorradorPageState
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
             excluidasMes: _excluidasMes,
             excluirPorFecha: _excluidasPorFecha,
+            onReordenarTareasDia: _reordenarTareasDia,
             onEliminarTarea: _eliminarTareaBorrador,
             onTapExcluida: _mostrarDetalleExcluida,
             onAgendarExcluida: _agendarExcluida,
@@ -5477,6 +5495,8 @@ class _SidebarAgendaDia extends StatefulWidget {
   final List<PreventivaExcluidaBorradorModel> excluidasMes;
   final List<PreventivaExcluidaBorradorModel> Function(DateTime fecha)
   excluirPorFecha;
+  final Future<void> Function(DateTime fecha, List<TareaModel> tareasOrdenadas)
+  onReordenarTareasDia;
   final Future<void> Function(TareaModel tarea) onEliminarTarea;
   final void Function(PreventivaExcluidaBorradorModel excluida) onTapExcluida;
   final Future<void> Function(PreventivaExcluidaBorradorModel excluida)
@@ -5499,6 +5519,7 @@ class _SidebarAgendaDia extends StatefulWidget {
     required this.onTapTarea,
     required this.excluidasMes,
     required this.excluirPorFecha,
+    required this.onReordenarTareasDia,
     required this.onEliminarTarea,
     required this.onTapExcluida,
     required this.onAgendarExcluida,
@@ -5517,6 +5538,7 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
   int _diaIndex = 0; // 0..6
   bool _verExcluidasMes = false;
   final Set<int> _excluidasExpandidaIds = <int>{};
+  bool _reordenandoDia = false;
 
   @override
   Widget build(BuildContext context) {
@@ -5605,83 +5627,143 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                         style: TextStyle(fontSize: 12),
                       ),
                     )
-                  else
-                    ...tareasDia.map((t) {
-                      final ini = t.fechaInicio.toLocal();
-                      final fin = t.fechaFin.toLocal();
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: InkWell(
-                          onTap: () => widget.onTapTarea(t),
-                          child: Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primary.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: AppTheme.primary.withValues(alpha: 0.25),
+                  else ...[
+                    Text(
+                      'Arrastra para cambiar el orden del día.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ReorderableListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: tareasDia.length,
+                      buildDefaultDragHandles: false,
+                      onReorder: (oldIndex, newIndex) async {
+                        if (_reordenandoDia) return;
+                        if (newIndex > oldIndex) newIndex -= 1;
+                        final nuevas = [...tareasDia];
+                        final item = nuevas.removeAt(oldIndex);
+                        nuevas.insert(newIndex, item);
+                        setState(() => _reordenandoDia = true);
+                        try {
+                          await widget.onReordenarTareasDia(fecha, nuevas);
+                        } catch (e) {
+                          if (context.mounted) {
+                            AppFeedback.showFromSnackBar(
+                              context,
+                              SnackBar(
+                                content: Text(
+                                  'No se pudo reordenar el día: $e',
+                                ),
+                              ),
+                            );
+                          }
+                        } finally {
+                          if (mounted) setState(() => _reordenandoDia = false);
+                        }
+                      },
+                      itemBuilder: (context, index) {
+                        final t = tareasDia[index];
+                        final ini = t.fechaInicio.toLocal();
+                        final fin = t.fechaFin.toLocal();
+                        return Padding(
+                          key: ValueKey('task-${t.id}'),
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: InkWell(
+                            onTap: () => widget.onTapTarea(t),
+                            child: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: AppTheme.primary.withValues(
+                                    alpha: 0.25,
+                                  ),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          t.descripcion,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                      ReorderableDragStartListener(
+                                        index: index,
+                                        child: const Padding(
+                                          padding: EdgeInsets.only(left: 8),
+                                          child: Icon(Icons.drag_indicator),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    "${DateFormat('HH:mm').format(ini)} - ${DateFormat('HH:mm').format(fin)}",
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      TextButton.icon(
+                                        onPressed: () =>
+                                            widget.onEliminarTarea(t),
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          size: 16,
+                                        ),
+                                        label: const Text('Eliminar'),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      TextButton.icon(
+                                        onPressed: () =>
+                                            widget.onReemplazarConExcluida(t),
+                                        icon: const Icon(
+                                          Icons.swap_horiz,
+                                          size: 16,
+                                        ),
+                                        label: const Text('Reemplazar'),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      TextButton.icon(
+                                        onPressed: () =>
+                                            widget.onReasignarOperario(t),
+                                        icon: const Icon(
+                                          Icons.person_search_outlined,
+                                          size: 16,
+                                        ),
+                                        label: const Text('Operario'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  t.descripcion,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  "${DateFormat('HH:mm').format(ini)} - ${DateFormat('HH:mm').format(fin)}",
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade700,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    TextButton.icon(
-                                      onPressed: () =>
-                                          widget.onEliminarTarea(t),
-                                      icon: const Icon(
-                                        Icons.delete_outline,
-                                        size: 16,
-                                      ),
-                                      label: const Text('Eliminar'),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    TextButton.icon(
-                                      onPressed: () =>
-                                          widget.onReemplazarConExcluida(t),
-                                      icon: const Icon(
-                                        Icons.swap_horiz,
-                                        size: 16,
-                                      ),
-                                      label: const Text('Reemplazar'),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    TextButton.icon(
-                                      onPressed: () =>
-                                          widget.onReasignarOperario(t),
-                                      icon: const Icon(
-                                        Icons.person_search_outlined,
-                                        size: 16,
-                                      ),
-                                      label: const Text('Operario'),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
                           ),
-                        ),
-                      );
-                    }),
+                        );
+                      },
+                    ),
+                    if (_reordenandoDia) ...[
+                      const SizedBox(height: 8),
+                      const LinearProgressIndicator(minHeight: 3),
+                    ],
+                  ],
                   const Divider(height: 24),
                   Text(
                     _verExcluidasMes

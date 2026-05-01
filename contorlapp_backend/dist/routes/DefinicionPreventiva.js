@@ -15,6 +15,7 @@ router.post("/conjuntos/:nit/preventivas/generar-cronograma", (0, DefinicionTare
 router.get("/conjuntos/:nit/preventivas/borrador", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.listarBorrador));
 router.post("/conjuntos/:nit/preventivas/borrador/tarea", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.crearBloqueBorrador));
 router.patch("/conjuntos/:nit/preventivas/borrador/tarea/:id", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.editarBloqueBorrador));
+router.post("/conjuntos/:nit/preventivas/borrador/tareas/reordenar-dia", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.reordenarTareasDiaBorrador));
 router.get("/conjuntos/:nit/preventivas/borrador/tarea/:id/opciones-reprogramacion", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.listarOpcionesReprogramacionBorrador));
 router.get("/conjuntos/:nit/preventivas/borrador/excluidas", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.listarExcluidasBorrador));
 router.get("/conjuntos/:nit/preventivas/borrador/excluidas/:id/huecos", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.sugerirHuecosExcluida));

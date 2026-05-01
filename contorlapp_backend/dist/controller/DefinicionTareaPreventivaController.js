@@ -163,6 +163,16 @@ class DefinicionTareaPreventivaController {
             const out = await svc.editarBloqueBorrador(conjuntoId, id, req.body);
             res.json(out);
         };
+        this.reordenarTareasDiaBorrador = async (req, res) => {
+            const conjuntoId = req.params.nit;
+            const svc = new DefinicionTareaPreventivaService_1.DefinicionTareaPreventivaService(prisma_1.prisma);
+            const out = await svc.reordenarTareasBorradorDia({
+                conjuntoId,
+                fecha: req.body?.fecha,
+                tareaIds: req.body?.tareaIds,
+            });
+            res.json(out);
+        };
         /** DELETE /conjuntos/:nit/preventivas/borrador/tarea/:id */
         this.eliminarBloqueBorrador = async (req, res) => {
             const conjuntoId = req.params.nit;

@@ -204,6 +204,17 @@ export class DefinicionTareaPreventivaController {
     res.json(out);
   };
 
+  reordenarTareasDiaBorrador = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const svc = new DefinicionTareaPreventivaService(prisma);
+    const out = await svc.reordenarTareasBorradorDia({
+      conjuntoId,
+      fecha: req.body?.fecha,
+      tareaIds: req.body?.tareaIds,
+    });
+    res.json(out);
+  };
+
   /** DELETE /conjuntos/:nit/preventivas/borrador/tarea/:id */
   eliminarBloqueBorrador = async (req: Request, res: Response) => {
     const conjuntoId = req.params.nit;

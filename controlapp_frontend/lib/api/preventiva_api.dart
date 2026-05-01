@@ -192,6 +192,22 @@ class DefinicionPreventivaApi {
     }
   }
 
+  Future<void> reordenarTareasDiaBorrador({
+    required String nit,
+    required DateTime fecha,
+    required List<int> tareaIds,
+  }) async {
+    final resp = await _client.post(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/tareas/reordenar-dia',
+      body: {'fecha': fecha.toIso8601String(), 'tareaIds': tareaIds},
+    );
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error reordenando tareas del día: ${resp.statusCode} ${resp.body}',
+      );
+    }
+  }
+
   Future<void> eliminarBloqueBorrador({
     required String nit,
     required int tareaId,
