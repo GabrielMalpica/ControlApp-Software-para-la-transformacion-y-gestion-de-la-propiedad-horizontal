@@ -172,15 +172,18 @@ class DefinicionPreventivaApi {
   Future<void> editarBloqueBorrador({
     required String nit,
     required int tareaId,
-    required DateTime fechaInicio,
-    required DateTime fechaFin,
+    DateTime? fechaInicio,
+    DateTime? fechaFin,
+    List<int>? operariosIds,
   }) async {
+    final body = <String, dynamic>{
+      if (fechaInicio != null) 'fechaInicio': fechaInicio.toIso8601String(),
+      if (fechaFin != null) 'fechaFin': fechaFin.toIso8601String(),
+      if (operariosIds != null) 'operariosIds': operariosIds,
+    };
     final resp = await _client.patch(
       '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/tarea/$tareaId',
-      body: {
-        'fechaInicio': fechaInicio.toIso8601String(),
-        'fechaFin': fechaFin.toIso8601String(),
-      },
+      body: body,
     );
     if (resp.statusCode != 200) {
       throw Exception(
@@ -265,12 +268,14 @@ class DefinicionPreventivaApi {
     required int excluidaId,
     DateTime? fechaInicio,
     DateTime? fechaFin,
+    List<Map<String, String>>? bloques,
   }) async {
     final resp = await _client.post(
       '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/excluidas/$excluidaId/agendar',
       body: {
         if (fechaInicio != null) 'fechaInicio': fechaInicio.toIso8601String(),
         if (fechaFin != null) 'fechaFin': fechaFin.toIso8601String(),
+        if (bloques != null) 'bloques': bloques,
       },
     );
     if (resp.statusCode != 200) {
@@ -293,6 +298,115 @@ class DefinicionPreventivaApi {
     if (resp.statusCode != 200) {
       throw Exception(
         'Error reemplazando tarea: ${resp.statusCode} ${resp.body}',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  Future<Map<String, dynamic>> reasignarOperarioBorrador({
+    required String nit,
+    required int tareaId,
+    required int nuevoOperarioId,
+    required bool aplicarADefinicion,
+  }) async {
+    final resp = await _client.post(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/tarea/$tareaId/reasignar-operario',
+      body: {
+        'nuevoOperarioId': nuevoOperarioId,
+        'aplicarADefinicion': aplicarADefinicion,
+      },
+    );
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error reasignando operario: ${resp.statusCode} ${resp.body}',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  Future<Map<String, dynamic>> reasignarOperarioExcluidaBorrador({
+    required String nit,
+    required int excluidaId,
+    required int nuevoOperarioId,
+    required bool aplicarADefinicion,
+  }) async {
+    final resp = await _client.post(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/excluidas/$excluidaId/reasignar-operario',
+      body: {
+        'nuevoOperarioId': nuevoOperarioId,
+        'aplicarADefinicion': aplicarADefinicion,
+      },
+    );
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error reasignando operario de excluida: ${resp.statusCode} ${resp.body}',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  Future<Map<String, dynamic>> dividirExcluidaManual({
+    required String nit,
+    required int excluidaId,
+    required List<int> bloquesDuracionMinutos,
+  }) async {
+    final resp = await _client.post(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/excluidas/$excluidaId/dividir-manual',
+      body: {
+        'bloques': bloquesDuracionMinutos
+            .map((duracion) => {'duracionMinutos': duracion})
+            .toList(),
+      },
+    );
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error dividiendo excluida: ${resp.statusCode} ${resp.body}',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  Future<Map<String, dynamic>> sugerirHuecosBloqueExcluida({
+    required String nit,
+    required int excluidaId,
+    required String bloqueId,
+    DateTime? fechaPreferida,
+  }) async {
+    final uri =
+        Uri.parse(
+          '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/excluidas/$excluidaId/bloques/$bloqueId/huecos',
+        ).replace(
+          queryParameters: {
+            if (fechaPreferida != null)
+              'fechaPreferida': fechaPreferida.toIso8601String(),
+          },
+        );
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error consultando huecos del bloque: ${resp.statusCode} ${resp.body}',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  Future<Map<String, dynamic>> agendarBloqueExcluida({
+    required String nit,
+    required int excluidaId,
+    required String bloqueId,
+    DateTime? fechaInicio,
+    DateTime? fechaFin,
+  }) async {
+    final resp = await _client.post(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/excluidas/$excluidaId/bloques/$bloqueId/agendar',
+      body: {
+        if (fechaInicio != null) 'fechaInicio': fechaInicio.toIso8601String(),
+        if (fechaFin != null) 'fechaFin': fechaFin.toIso8601String(),
+      },
+    );
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error agendando bloque excluido: ${resp.statusCode} ${resp.body}',
       );
     }
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);

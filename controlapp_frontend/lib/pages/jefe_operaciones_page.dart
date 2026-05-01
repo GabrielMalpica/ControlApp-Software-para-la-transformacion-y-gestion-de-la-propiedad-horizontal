@@ -7,6 +7,7 @@ import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_p
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
+import 'package:flutter_application_1/pages/cronograma_impresion_page.dart';
 import 'package:flutter_application_1/pages/cumpleanos_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
@@ -293,6 +294,12 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => CronogramaPage(nit: nit)),
+          );
+        }),
+        _JefeTile('Imprimir cronograma', Icons.print, Colors.deepOrange, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => CronogramaImpresionPage(nit: nit)),
           );
         }),
       ]),

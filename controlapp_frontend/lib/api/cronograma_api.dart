@@ -183,4 +183,32 @@ class CronogramaApi {
         )
         .toList();
   }
+
+  Future<List<Map<String, dynamic>>> sugerirOperarios({
+    required String nit,
+    required DateTime inicio,
+    required DateTime fin,
+    int? max,
+  }) async {
+    final uri =
+        Uri.parse(
+          '${AppConstants.baseUrl}/cronograma/conjuntos/$nit/operarios/sugerir',
+        ).replace(
+          queryParameters: {
+            'inicio': inicio.toIso8601String(),
+            'fin': fin.toIso8601String(),
+            if (max != null) 'max': '$max',
+          },
+        );
+
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'Error al sugerir operarios: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final data = jsonDecode(resp.body) as List<dynamic>;
+    return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
 }

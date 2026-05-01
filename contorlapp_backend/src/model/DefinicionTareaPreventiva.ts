@@ -232,12 +232,28 @@ export const AgendarExcluidaDTO = z.object({
   excluidaId: z.coerce.number().int().positive(),
   fechaInicio: z.coerce.date().optional(),
   fechaFin: z.coerce.date().optional(),
+  bloques: z
+    .array(
+      z.object({
+        fechaInicio: z.coerce.date(),
+        fechaFin: z.coerce.date(),
+      }),
+    )
+    .min(1)
+    .optional(),
 }).refine(
   (d) =>
-    (d.fechaInicio == null && d.fechaFin == null) ||
-    (d.fechaInicio != null && d.fechaFin != null && d.fechaFin >= d.fechaInicio),
+    ((d.fechaInicio == null && d.fechaFin == null) ||
+      (d.fechaInicio != null && d.fechaFin != null && d.fechaFin >= d.fechaInicio)) &&
+    (d.bloques == null || d.bloques.every((b) => b.fechaFin >= b.fechaInicio)) &&
+    !(
+      d.bloques != null &&
+      d.bloques.length > 0 &&
+      (d.fechaInicio != null || d.fechaFin != null)
+    ),
   {
-    message: "Si envias fechaInicio y fechaFin, ambas son obligatorias y fechaFin debe ser mayor o igual.",
+    message:
+      "Envia fechaInicio/fechaFin o bloques validos, pero no ambos a la vez.",
   },
 );
 

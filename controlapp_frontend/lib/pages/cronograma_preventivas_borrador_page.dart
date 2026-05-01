@@ -20,6 +20,8 @@ import 'package:flutter_application_1/service/app_feedback.dart';
 
 enum _VistaCronograma { mensual, semanal, informe }
 
+enum _ModoCambioOperario { soloBorrador, tambienDefinicion }
+
 class CronogramaPreventivasBorradorPage extends StatefulWidget {
   final String nit;
   final int anio;
@@ -439,12 +441,13 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   String? _equipoOperariosLabel(TareaModel t) {
-    final operarios = t.operariosNombres
-        .map((name) => name.trim())
-        .where((name) => name.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+    final operarios =
+        t.operariosNombres
+            .map((name) => name.trim())
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
     if (operarios.length < 2) return null;
     return operarios.join(' + ');
   }
@@ -1892,22 +1895,64 @@ class _CronogramaPreventivasBorradorPageState
         child: ListView.separated(
           shrinkWrap: true,
           padding: const EdgeInsets.all(16),
-          itemCount: opciones.length,
+          itemCount: opciones.length + 1,
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (context, index) {
-            final item = Map<String, dynamic>.from(opciones[index] as Map);
+            if (index == 0) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Opciones para agendar o dividir',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Si una tarea no cabe completa en un día, aquí verás planes divididos por horas entre varios días.',
+                  ),
+                ],
+              );
+            }
+            final item = Map<String, dynamic>.from(opciones[index - 1] as Map);
+            final bloques = ((item['bloques'] as List?) ?? const [])
+                .map((e) => Map<String, dynamic>.from(e as Map))
+                .toList();
             final fi = DateTime.parse(item['fechaInicio'].toString()).toLocal();
             final ff = DateTime.parse(item['fechaFin'].toString()).toLocal();
+            final requiereDivision = item['requiereDivision'] == true;
+            final detalleBloques = bloques.isEmpty
+                ? '${DateFormat('HH:mm').format(fi)} - ${DateFormat('HH:mm').format(ff)}'
+                : bloques
+                      .map((bloque) {
+                        final bfi = DateTime.parse(
+                          bloque['fechaInicio'].toString(),
+                        ).toLocal();
+                        final bff = DateTime.parse(
+                          bloque['fechaFin'].toString(),
+                        ).toLocal();
+                        return '${DateFormat('EEE dd MMM · HH:mm', 'es').format(bfi)} - ${DateFormat('HH:mm').format(bff)}';
+                      })
+                      .join('\n');
             return ListTile(
               tileColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
                 side: BorderSide(color: Colors.grey.shade300),
               ),
-              title: Text(DateFormat('EEE dd MMM · HH:mm', 'es').format(fi)),
-              subtitle: Text(
-                '${DateFormat('HH:mm').format(fi)} - ${DateFormat('HH:mm').format(ff)} • ${item['tipoSugerencia'] == 'MISMO_DIA' ? 'Mismo dia' : 'Otro dia del mes'}',
+              leading: requiereDivision
+                  ? const Icon(Icons.splitscreen_outlined, color: Colors.orange)
+                  : const Icon(Icons.event_available_outlined),
+              title: Text(
+                requiereDivision
+                    ? 'Plan dividido en ${item['diasUtilizados'] ?? bloques.length} dia(s)'
+                    : DateFormat('EEE dd MMM · HH:mm', 'es').format(fi),
               ),
+              subtitle: Text(
+                requiereDivision
+                    ? detalleBloques
+                    : '${DateFormat('HH:mm').format(fi)} - ${DateFormat('HH:mm').format(ff)} • ${item['tipoSugerencia'] == 'MISMO_DIA' ? 'Mismo dia' : 'Otro dia del mes'}',
+              ),
+              isThreeLine: requiereDivision,
               onTap: () => Navigator.pop(context, item),
             );
           },
@@ -1917,16 +1962,270 @@ class _CronogramaPreventivasBorradorPageState
 
     if (seleccion == null) return;
 
-    await _preventivaApi.agendarExcluidaBorrador(
+    final bloques = ((seleccion['bloques'] as List?) ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+
+    final res = await _preventivaApi.agendarExcluidaBorrador(
       nit: widget.nit,
       excluidaId: excluida.id,
+      fechaInicio: bloques.isEmpty
+          ? DateTime.parse(seleccion['fechaInicio'].toString())
+          : null,
+      fechaFin: bloques.isEmpty
+          ? DateTime.parse(seleccion['fechaFin'].toString())
+          : null,
+      bloques: bloques.isEmpty
+          ? null
+          : bloques
+                .map(
+                  (bloque) => {
+                    'fechaInicio': bloque['fechaInicio'].toString(),
+                    'fechaFin': bloque['fechaFin'].toString(),
+                  },
+                )
+                .toList(),
+    );
+    if (!mounted) return;
+    final tareasCreadas = (res['tareas'] as List?)?.length ?? 1;
+    AppFeedback.showFromSnackBar(
+      context,
+      SnackBar(
+        content: Text(
+          tareasCreadas > 1
+              ? 'Tarea excluida agendada y dividida en $tareasCreadas bloques.'
+              : 'Tarea excluida agendada en borrador.',
+        ),
+      ),
+    );
+    await _cargarDatos();
+  }
+
+  Future<List<int>?> _pedirDivisionManualExcluida(
+    PreventivaExcluidaBorradorModel excluida,
+  ) {
+    final totalHoras = excluida.duracionMinutos / 60;
+    return showDialog<List<int>>(
+      context: context,
+      builder: (ctx) {
+        int cantidadBloques = 2;
+        List<TextEditingController> controllers = List.generate(
+          cantidadBloques,
+          (_) => TextEditingController(),
+        );
+
+        void syncControllers(StateSetter setState) {
+          final actuales = controllers;
+          controllers = List.generate(cantidadBloques, (index) {
+            if (index < actuales.length) return actuales[index];
+            return TextEditingController();
+          });
+          if (actuales.length > cantidadBloques) {
+            for (final item in actuales.skip(cantidadBloques)) {
+              item.dispose();
+            }
+          }
+          setState(() {});
+        }
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            final valores = controllers
+                .map(
+                  (item) =>
+                      double.tryParse(item.text.replaceAll(',', '.')) ?? 0,
+                )
+                .toList();
+            final totalDigitado = valores.fold<double>(0, (a, b) => a + b);
+            return AlertDialog(
+              title: const Text('Dividir tarea en horas'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Duración total: ${totalHoras.toStringAsFixed(1)} h'),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      initialValue: cantidadBloques,
+                      decoration: const InputDecoration(
+                        labelText: 'Cantidad de bloques',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: List.generate(
+                        6,
+                        (index) => DropdownMenuItem(
+                          value: index + 2,
+                          child: Text('${index + 2} bloques'),
+                        ),
+                      ),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        cantidadBloques = value;
+                        syncControllers(setState);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    ...List.generate(cantidadBloques, (index) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: TextField(
+                          controller: controllers[index],
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Bloque ${index + 1} (horas)',
+                            hintText: 'Ej. 2 o 1.5',
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                      );
+                    }),
+                    Text(
+                      'Total digitado: ${totalDigitado.toStringAsFixed(1)} h',
+                      style: TextStyle(
+                        color: (totalDigitado - totalHoras).abs() < 0.01
+                            ? Colors.green.shade700
+                            : Colors.orange.shade800,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final minutos = controllers
+                        .map(
+                          (item) =>
+                              ((double.tryParse(
+                                            item.text.replaceAll(',', '.'),
+                                          ) ??
+                                          0) *
+                                      60)
+                                  .round(),
+                        )
+                        .toList();
+                    final total = minutos.fold<int>(0, (a, b) => a + b);
+                    final tieneInvalidos = minutos.any((item) => item <= 0);
+                    if (tieneInvalidos || total != excluida.duracionMinutos) {
+                      AppFeedback.showFromSnackBar(
+                        context,
+                        SnackBar(
+                          content: Text(
+                            'La suma de bloques debe ser exactamente ${totalHoras.toStringAsFixed(1)} h y todos los bloques deben ser mayores a 0.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                    Navigator.pop(ctx, minutos);
+                  },
+                  child: const Text('Guardar división'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _dividirExcluidaEnHoras(
+    PreventivaExcluidaBorradorModel excluida,
+  ) async {
+    final minutos = await _pedirDivisionManualExcluida(excluida);
+    if (minutos == null || minutos.isEmpty) return;
+    await _preventivaApi.dividirExcluidaManual(
+      nit: widget.nit,
+      excluidaId: excluida.id,
+      bloquesDuracionMinutos: minutos,
+    );
+    if (!mounted) return;
+    AppFeedback.showFromSnackBar(
+      context,
+      SnackBar(
+        content: Text(
+          'Tarea dividida manualmente en ${minutos.length} bloques.',
+        ),
+      ),
+    );
+    await _cargarDatos();
+  }
+
+  Future<void> _agendarBloqueExcluida(
+    PreventivaExcluidaBorradorModel excluida,
+    PreventivaExcluidaBloqueModel bloque,
+  ) async {
+    final sugerencias = await _preventivaApi.sugerirHuecosBloqueExcluida(
+      nit: widget.nit,
+      excluidaId: excluida.id,
+      bloqueId: bloque.id,
+      fechaPreferida: excluida.fechaObjetivo,
+    );
+    final opciones = (sugerencias['opciones'] as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    if (!mounted) return;
+    if (opciones.isEmpty) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text(
+            'No se encontraron huecos disponibles para este bloque.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final seleccion = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: ListView.separated(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(16),
+          itemCount: opciones.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (ctx, index) {
+            final item = opciones[index];
+            final fi = DateTime.parse(item['fechaInicio'].toString()).toLocal();
+            final ff = DateTime.parse(item['fechaFin'].toString()).toLocal();
+            return ListTile(
+              tileColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey.shade300),
+              ),
+              title: Text('Bloque ${bloque.orden} · ${bloque.duracionLabel}'),
+              subtitle: Text(
+                '${DateFormat('EEE dd MMM · HH:mm', 'es').format(fi)} - ${DateFormat('HH:mm').format(ff)}',
+              ),
+              onTap: () => Navigator.pop(ctx, item),
+            );
+          },
+        ),
+      ),
+    );
+    if (seleccion == null) return;
+
+    await _preventivaApi.agendarBloqueExcluida(
+      nit: widget.nit,
+      excluidaId: excluida.id,
+      bloqueId: bloque.id,
       fechaInicio: DateTime.parse(seleccion['fechaInicio'].toString()),
       fechaFin: DateTime.parse(seleccion['fechaFin'].toString()),
     );
     if (!mounted) return;
     AppFeedback.showFromSnackBar(
       context,
-      const SnackBar(content: Text('Tarea excluida agendada en borrador.')),
+      SnackBar(content: Text('Bloque ${bloque.orden} agendado.')),
     );
     await _cargarDatos();
   }
@@ -3076,6 +3375,344 @@ class _CronogramaPreventivasBorradorPageState
     );
   }
 
+  Future<_ModoCambioOperario?> _preguntarModoCambioOperario() {
+    return showDialog<_ModoCambioOperario>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Aplicar cambio de operario'),
+        content: const Text(
+          'Puedes mover esta tarea solo en este borrador o dejar el nuevo operario también en la definición para futuros cronogramas.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(ctx, _ModoCambioOperario.soloBorrador),
+            child: const Text('Solo este borrador'),
+          ),
+          ElevatedButton(
+            onPressed: () =>
+                Navigator.pop(ctx, _ModoCambioOperario.tambienDefinicion),
+            child: const Text('Tambien en definicion'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _cargarOperariosDelConjunto({
+    required DateTime inicio,
+    required DateTime fin,
+  }) {
+    return _cronogramaApi.sugerirOperarios(
+      nit: widget.nit,
+      inicio: inicio,
+      fin: fin,
+      max: 20,
+    );
+  }
+
+  Future<Map<String, dynamic>?> _seleccionarOperarioDelConjunto({
+    required DateTime inicio,
+    required DateTime fin,
+    required Set<String> actualIds,
+  }) async {
+    final operarios = await _cargarOperariosDelConjunto(
+      inicio: inicio,
+      fin: fin,
+    );
+    if (!mounted) return null;
+    if (operarios.isEmpty) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text(
+            'No hay operarios del conjunto disponibles para reasignar.',
+          ),
+        ),
+      );
+      return null;
+    }
+
+    return showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: operarios.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (ctx, index) {
+            final item = operarios[index];
+            final id = (item['id'] ?? '').toString();
+            final esActual = actualIds.contains(id);
+            final horasSemana =
+                num.tryParse((item['horasSemana'] ?? 0).toString()) ?? 0;
+            final solapa = item['solapa'] == true;
+            final subtitulo = esActual
+                ? 'Operario actual'
+                : solapa
+                ? 'Tiene cruce en ese rango'
+                : '${(horasSemana / 60).toStringAsFixed(1)} h programadas esa semana';
+            return ListTile(
+              tileColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey.shade300),
+              ),
+              title: Text((item['nombre'] ?? 'Operario').toString()),
+              subtitle: Text(subtitulo),
+              trailing: esActual
+                  ? const Icon(Icons.check_circle_outline, color: Colors.green)
+                  : solapa
+                  ? const Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.orange,
+                    )
+                  : const Icon(Icons.chevron_right),
+              onTap: () => Navigator.pop(ctx, item),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _reasignarOperarioTarea(TareaModel tarea) async {
+    final actualIds = tarea.operariosIds.toSet();
+    final seleccionado = await _seleccionarOperarioDelConjunto(
+      inicio: tarea.fechaInicio,
+      fin: tarea.fechaFin,
+      actualIds: actualIds,
+    );
+
+    if (seleccionado == null) return;
+    if (!mounted) return;
+
+    final nuevoOperarioId = int.tryParse((seleccionado['id'] ?? '').toString());
+    if (nuevoOperarioId == null) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text(
+            'No se pudo interpretar el ID del operario seleccionado.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final modo = await _preguntarModoCambioOperario();
+    if (modo == null) return;
+
+    final res = await _preventivaApi.reasignarOperarioBorrador(
+      nit: widget.nit,
+      tareaId: tarea.id,
+      nuevoOperarioId: nuevoOperarioId,
+      aplicarADefinicion: modo == _ModoCambioOperario.tambienDefinicion,
+    );
+    if (!mounted) return;
+
+    final warning = (res['warning'] ?? '').toString().trim();
+    final definicionActualizada = res['definicionActualizada'] == true;
+    final mensaje = warning.isNotEmpty
+        ? warning
+        : definicionActualizada
+        ? 'Operario cambiado en el borrador y en la definición.'
+        : 'Operario cambiado solo en este borrador.';
+
+    AppFeedback.showFromSnackBar(context, SnackBar(content: Text(mensaje)));
+    await _cargarDatos();
+  }
+
+  Future<void> _reasignarOperarioExcluida(
+    PreventivaExcluidaBorradorModel excluida,
+  ) async {
+    final actualIds = excluida.operariosIds.toSet();
+    final finReferencia = excluida.fechaObjetivo.add(
+      Duration(minutes: excluida.duracionMinutos),
+    );
+    final seleccionado = await _seleccionarOperarioDelConjunto(
+      inicio: excluida.fechaObjetivo,
+      fin: finReferencia,
+      actualIds: actualIds,
+    );
+
+    if (seleccionado == null) return;
+    if (!mounted) return;
+
+    final nuevoOperarioId = int.tryParse((seleccionado['id'] ?? '').toString());
+    if (nuevoOperarioId == null) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text(
+            'No se pudo interpretar el ID del operario seleccionado.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final modo = await _preguntarModoCambioOperario();
+    if (modo == null) return;
+
+    final res = await _preventivaApi.reasignarOperarioExcluidaBorrador(
+      nit: widget.nit,
+      excluidaId: excluida.id,
+      nuevoOperarioId: nuevoOperarioId,
+      aplicarADefinicion: modo == _ModoCambioOperario.tambienDefinicion,
+    );
+    if (!mounted) return;
+
+    final warning = (res['warning'] ?? '').toString().trim();
+    final definicionActualizada = res['definicionActualizada'] == true;
+    final mensaje = warning.isNotEmpty
+        ? warning
+        : definicionActualizada
+        ? 'Operario de la excluida cambiado en borrador y definición.'
+        : 'Operario de la excluida cambiado solo en este borrador.';
+
+    AppFeedback.showFromSnackBar(context, SnackBar(content: Text(mensaje)));
+    await _cargarDatos();
+  }
+
+  void _mostrarDetalleExcluida(PreventivaExcluidaBorradorModel item) {
+    final fechaObjetivo = DateFormat(
+      'dd/MM/yyyy',
+      'es',
+    ).format(item.fechaObjetivo);
+    final operarios = item.operariosNombres.isEmpty
+        ? 'Sin operario sugerido'
+        : item.operariosNombres.join(', ');
+    final bloques = item.divisionManual?.bloques ?? const [];
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Detalle de excluida',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _infoRow('Descripción', item.descripcion),
+              _infoRow('Fecha objetivo', fechaObjetivo),
+              _infoRow('Prioridad', _labelPrioridad(item.prioridad)),
+              _infoRow('Duración', item.duracionLabel),
+              _infoRow('Ubicación', item.ubicacionNombre ?? '—'),
+              _infoRow('Elemento', item.elementoNombre ?? '—'),
+              _infoRow('Supervisor', item.supervisorNombre ?? '—'),
+              _infoRow('Operarios', operarios),
+              _infoRow('Motivo', item.motivoMensaje ?? item.motivoTipo),
+              if (bloques.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Bloques manuales',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                ...bloques.map(
+                  (bloque) => Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.orange.shade200),
+                      color: Colors.orange.withValues(alpha: 0.06),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Bloque ${bloque.orden} · ${bloque.duracionLabel}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          bloque.agendado &&
+                                  bloque.fechaInicio != null &&
+                                  bloque.fechaFin != null
+                              ? 'Agendado: ${DateFormat('dd/MM HH:mm', 'es').format(bloque.fechaInicio!)} - ${DateFormat('HH:mm').format(bloque.fechaFin!)}'
+                              : 'Pendiente por agendar',
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                        if (!bloque.agendado) ...[
+                          const SizedBox(height: 8),
+                          FilledButton.tonalIcon(
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              _agendarBloqueExcluida(item, bloque);
+                            },
+                            icon: const Icon(Icons.search_outlined),
+                            label: const Text('Buscar hueco para este bloque'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (!item.tieneDivisionManual)
+                    FilledButton.tonalIcon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _agendarExcluida(item);
+                      },
+                      icon: const Icon(Icons.search_outlined),
+                      label: const Text('Encontrar hueco'),
+                    ),
+                  FilledButton.tonalIcon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _dividirExcluidaEnHoras(item);
+                    },
+                    icon: const Icon(Icons.splitscreen_outlined),
+                    label: Text(
+                      item.tieneDivisionManual
+                          ? 'Redefinir división'
+                          : 'Dividir en horas',
+                    ),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _reasignarOperarioExcluida(item);
+                    },
+                    icon: const Icon(Icons.person_search_outlined),
+                    label: const Text('Cambiar operario'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _mostrarDetalleTarea(TareaModel t, BuildContext ctx) {
     final iniLocal = t.fechaInicio.toLocal();
     final finLocal = t.fechaFin.toLocal();
@@ -3217,7 +3854,19 @@ class _CronogramaPreventivasBorradorPageState
                           padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [...rows, const SizedBox(height: 16)],
+                            children: [
+                              ...rows,
+                              const SizedBox(height: 16),
+                              FilledButton.tonalIcon(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _reasignarOperarioTarea(t);
+                                },
+                                icon: const Icon(Icons.person_search_outlined),
+                                label: const Text('Cambiar operario'),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
                           ),
                         ),
                       ),
@@ -3657,16 +4306,21 @@ class _CronogramaPreventivasBorradorPageState
             excluidasMes: _excluidasMes,
             excluirPorFecha: _excluidasPorFecha,
             onEliminarTarea: _eliminarTareaBorrador,
+            onTapExcluida: _mostrarDetalleExcluida,
             onAgendarExcluida: _agendarExcluida,
+            onDividirExcluida: _dividirExcluidaEnHoras,
+            onAgendarBloqueExcluida: _agendarBloqueExcluida,
             onReemplazarConExcluida: _reemplazarTareaConExcluida,
+            onReasignarOperario: _reasignarOperarioTarea,
+            onReasignarOperarioExcluida: _reasignarOperarioExcluida,
           ),
         ),
       ],
     );
   }
 
-  int _indiceSemanaMes(DateTime date) => (((date.toLocal().day - 1) ~/ 7) + 1)
-      .clamp(1, 5);
+  int _indiceSemanaMes(DateTime date) =>
+      (((date.toLocal().day - 1) ~/ 7) + 1).clamp(1, 5);
 
   List<_HorasGrupoResumen> _resumenHorasAgrupadas(
     List<TareaModel> tareas,
@@ -3675,10 +4329,9 @@ class _CronogramaPreventivasBorradorPageState
     final acumulado = <String, List<double>>{};
 
     for (final tarea in tareas) {
-      final keys = keysForTask(tarea)
-          .map((item) => item.trim())
-          .where((item) => item.isNotEmpty)
-          .toSet();
+      final keys = keysForTask(
+        tarea,
+      ).map((item) => item.trim()).where((item) => item.isNotEmpty).toSet();
       if (keys.isEmpty) continue;
 
       final semana = _indiceSemanaMes(tarea.fechaInicio);
@@ -4471,7 +5124,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                       .difference(placement.inicio)
                                       .inMinutes;
                                   final markerHeight =
-                                      ((overlapMinutes <= 0 ? 1 : overlapMinutes) *
+                                      ((overlapMinutes <= 0
+                                                  ? 1
+                                                  : overlapMinutes) *
                                               pxPorMin)
                                           .clamp(26.0, 120.0);
 
@@ -4517,7 +5172,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                               children: [
                                                 Row(
                                                   children: [
-                                                    ...List.generate(dotCount, (i) {
+                                                    ...List.generate(dotCount, (
+                                                      i,
+                                                    ) {
                                                       return Container(
                                                         width: 10,
                                                         height: 10,
@@ -4530,7 +5187,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                         decoration: BoxDecoration(
                                                           color:
                                                               colors[i %
-                                                                  colors.length],
+                                                                  colors
+                                                                      .length],
                                                           borderRadius:
                                                               BorderRadius.circular(
                                                                 2,
@@ -4540,7 +5198,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                     }),
                                                     if (!ultraCompactMarker &&
                                                         placement.groupSize >
-                                                        dotCount) ...[
+                                                            dotCount) ...[
                                                       const SizedBox(width: 6),
                                                       Text(
                                                         '+${placement.groupSize - dotCount}',
@@ -4559,8 +5217,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                             ? 'Tareas solapadas'
                                                             : 'Superposicion detectada',
                                                         maxLines: 1,
-                                                        overflow:
-                                                            TextOverflow.ellipsis,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
                                                         style: TextStyle(
                                                           color: text,
                                                           fontSize: 11,
@@ -4590,7 +5248,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                   Text(
                                                     '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra mas' : ''}'}',
                                                     maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                     style: TextStyle(
                                                       color: subtext,
                                                       fontSize: 10,
@@ -4819,9 +5478,20 @@ class _SidebarAgendaDia extends StatefulWidget {
   final List<PreventivaExcluidaBorradorModel> Function(DateTime fecha)
   excluirPorFecha;
   final Future<void> Function(TareaModel tarea) onEliminarTarea;
+  final void Function(PreventivaExcluidaBorradorModel excluida) onTapExcluida;
   final Future<void> Function(PreventivaExcluidaBorradorModel excluida)
   onAgendarExcluida;
+  final Future<void> Function(PreventivaExcluidaBorradorModel excluida)
+  onDividirExcluida;
+  final Future<void> Function(
+    PreventivaExcluidaBorradorModel excluida,
+    PreventivaExcluidaBloqueModel bloque,
+  )
+  onAgendarBloqueExcluida;
   final Future<void> Function(TareaModel tarea) onReemplazarConExcluida;
+  final Future<void> Function(TareaModel tarea) onReasignarOperario;
+  final Future<void> Function(PreventivaExcluidaBorradorModel excluida)
+  onReasignarOperarioExcluida;
 
   const _SidebarAgendaDia({
     required this.weekStart,
@@ -4830,8 +5500,13 @@ class _SidebarAgendaDia extends StatefulWidget {
     required this.excluidasMes,
     required this.excluirPorFecha,
     required this.onEliminarTarea,
+    required this.onTapExcluida,
     required this.onAgendarExcluida,
+    required this.onDividirExcluida,
+    required this.onAgendarBloqueExcluida,
     required this.onReemplazarConExcluida,
+    required this.onReasignarOperario,
+    required this.onReasignarOperarioExcluida,
   });
 
   @override
@@ -4841,6 +5516,7 @@ class _SidebarAgendaDia extends StatefulWidget {
 class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
   int _diaIndex = 0; // 0..6
   bool _verExcluidasMes = false;
+  final Set<int> _excluidasExpandidaIds = <int>{};
 
   @override
   Widget build(BuildContext context) {
@@ -4988,6 +5664,16 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                       ),
                                       label: const Text('Reemplazar'),
                                     ),
+                                    const SizedBox(width: 6),
+                                    TextButton.icon(
+                                      onPressed: () =>
+                                          widget.onReasignarOperario(t),
+                                      icon: const Icon(
+                                        Icons.person_search_outlined,
+                                        size: 16,
+                                      ),
+                                      label: const Text('Operario'),
+                                    ),
                                   ],
                                 ),
                               ],
@@ -5010,8 +5696,12 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                       style: TextStyle(fontSize: 12),
                     )
                   else
-                    ...excluidas.map(
-                      (item) => Padding(
+                    ...excluidas.map((item) {
+                      final expandida = _excluidasExpandidaIds.contains(
+                        item.id,
+                      );
+                      final bloques = item.divisionManual?.bloques ?? const [];
+                      return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Container(
                           padding: const EdgeInsets.all(10),
@@ -5025,53 +5715,187 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                item.descripcion,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
+                              InkWell(
+                                onTap: () => widget.onTapExcluida(item),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            item.descripcion,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                        if (bloques.isNotEmpty)
+                                          IconButton(
+                                            onPressed: () {
+                                              setState(() {
+                                                if (expandida) {
+                                                  _excluidasExpandidaIds.remove(
+                                                    item.id,
+                                                  );
+                                                } else {
+                                                  _excluidasExpandidaIds.add(
+                                                    item.id,
+                                                  );
+                                                }
+                                              });
+                                            },
+                                            icon: Icon(
+                                              expandida
+                                                  ? Icons.expand_less
+                                                  : Icons.expand_more,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'P${item.prioridad} • ${item.ubicacionNombre ?? '-'} • ${item.duracionLabel}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                    if (item.tieneDivisionManual) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Dividida manualmente en ${bloques.length} bloque(s)',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.orange.shade900,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                    if ((item.motivoMensaje ?? '')
+                                        .trim()
+                                        .isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        item.motivoMensaje!,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'P${item.prioridad} • ${item.ubicacionNombre ?? '-'} • ${item.duracionLabel}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade700,
-                                ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  if (!item.tieneDivisionManual)
+                                    FilledButton.tonalIcon(
+                                      onPressed: () =>
+                                          widget.onAgendarExcluida(item),
+                                      icon: const Icon(
+                                        Icons.search_outlined,
+                                        size: 16,
+                                      ),
+                                      label: const Text('Encontrar hueco'),
+                                    ),
+                                  FilledButton.tonalIcon(
+                                    onPressed: () =>
+                                        widget.onDividirExcluida(item),
+                                    icon: const Icon(
+                                      Icons.splitscreen_outlined,
+                                      size: 16,
+                                    ),
+                                    label: Text(
+                                      item.tieneDivisionManual
+                                          ? 'Redefinir división'
+                                          : 'Dividir en horas',
+                                    ),
+                                  ),
+                                  FilledButton.tonalIcon(
+                                    onPressed: () => widget
+                                        .onReasignarOperarioExcluida(item),
+                                    icon: const Icon(
+                                      Icons.person_search_outlined,
+                                      size: 16,
+                                    ),
+                                    label: const Text('Operario'),
+                                  ),
+                                ],
                               ),
-                              if ((item.motivoMensaje ?? '')
-                                  .trim()
-                                  .isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  item.motivoMensaje!,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade700,
+                              if (bloques.isNotEmpty && expandida) ...[
+                                const SizedBox(height: 10),
+                                ...bloques.map(
+                                  (bloque) => Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: Colors.orange.shade100,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Bloque ${bloque.orden} · ${bloque.duracionLabel}',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                bloque.agendado &&
+                                                        bloque.fechaInicio !=
+                                                            null &&
+                                                        bloque.fechaFin != null
+                                                    ? 'Agendado ${DateFormat('dd/MM HH:mm', 'es').format(bloque.fechaInicio!)} - ${DateFormat('HH:mm').format(bloque.fechaFin!)}'
+                                                    : 'Pendiente por agendar',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey.shade700,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (!bloque.agendado)
+                                          TextButton.icon(
+                                            onPressed: () =>
+                                                widget.onAgendarBloqueExcluida(
+                                                  item,
+                                                  bloque,
+                                                ),
+                                            icon: const Icon(
+                                              Icons.search_outlined,
+                                              size: 16,
+                                            ),
+                                            label: const Text('Buscar hueco'),
+                                          ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ],
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: FilledButton.tonalIcon(
-                                  onPressed: () =>
-                                      widget.onAgendarExcluida(item),
-                                  icon: const Icon(
-                                    Icons.add_task_outlined,
-                                    size: 16,
-                                  ),
-                                  label: const Text('Ver huecos y agendar'),
-                                ),
-                              ),
                             ],
                           ),
                         ),
-                      ),
-                    ),
+                      );
+                    }),
                 ],
               ),
             ),

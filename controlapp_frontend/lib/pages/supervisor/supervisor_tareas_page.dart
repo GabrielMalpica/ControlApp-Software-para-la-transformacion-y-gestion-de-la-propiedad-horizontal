@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/api/supervisor_api.dart';
 import 'package:flutter_application_1/api/inventario_api.dart';
-import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/service/tarea_cierre_service.dart';
-import 'package:flutter_application_1/pdf/cronograma_pdf.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
@@ -26,7 +23,6 @@ class SupervisorTareasPage extends StatefulWidget {
 
 class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
   final _api = SupervisorApi();
-  final _conjuntoApi = ConjuntoApi();
   final _inventarioApi = InventarioApi();
   final _session = SessionService();
   final _tareaCierreService = TareaCierreService();
@@ -35,14 +31,11 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
   String? _error;
 
   List<TareaModel> _tareas = [];
-  List<HorarioConjunto> _horariosConjunto = [];
-
   // filtros
   String _filtroEstado = 'TODOS';
   String _filtroOperario = 'TODOS';
   List<String> _operariosDisponibles = [];
 
-  int _semanaImprimir = 1;
   String? _rolActual;
   String? _usuarioIdActual;
 
@@ -50,15 +43,6 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
   void initState() {
     super.initState();
     _cargar();
-  }
-
-  DateTime _dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
-
-  // Lunes como inicio
-  DateTime _startOfWeekMonday(DateTime d) {
-    final dd = _dayOnly(d);
-    final diff = dd.weekday - DateTime.monday; // 0 si es lunes
-    return dd.subtract(Duration(days: diff));
   }
 
   Future<void> _cargar() async {
@@ -73,15 +57,11 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
         _session.getRol(),
         _session.getUserId(),
         _api.listarTareas(conjuntoId: widget.nit),
-        _conjuntoApi
-            .obtenerHorariosConjunto(widget.nit)
-            .catchError((_) => <HorarioConjunto>[]),
       ]);
 
       _rolActual = (results[0] as String?)?.trim().toLowerCase();
       _usuarioIdActual = (results[1] as String?)?.trim();
       _tareas = results[2] as List<TareaModel>;
-      _horariosConjunto = results[3] as List<HorarioConjunto>;
       _reconstruirOperarios();
     } catch (e) {
       _error = AppError.messageOf(e);
@@ -201,74 +181,6 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
     }
   }
 
-  DateTime _weekStartOfMonthByIndex(int year, int month, int weekIndex) {
-    final firstDay = DateTime(year, month, 1);
-    final firstWeekStart = _startOfWeekMonday(firstDay);
-    return firstWeekStart.add(Duration(days: 7 * (weekIndex - 1)));
-  }
-
-  Future<void> _imprimirSemanaSeleccionada() async {
-    if (_filtroOperario == 'TODOS') {
-      if (!mounted) return;
-      AppFeedback.showFromSnackBar(
-        context,
-        const SnackBar(content: Text('Selecciona un operario en los filtros')),
-      );
-      return;
-    }
-
-    final now = DateTime.now();
-    final year = now.year;
-    final month = now.month;
-
-    final weekStart = _weekStartOfMonthByIndex(year, month, _semanaImprimir);
-    final weekEnd = weekStart.add(const Duration(days: 6)); // L-D
-
-    final tareasSemana = _filtradas.where((t) {
-      final d = _dayOnly(t.fechaInicio);
-      return !d.isBefore(_dayOnly(weekStart)) && !d.isAfter(_dayOnly(weekEnd));
-    }).toList();
-
-    final conjuntoNombre = tareasSemana.isNotEmpty
-        ? (tareasSemana.first.conjuntoNombre ?? widget.nit)
-        : widget.nit;
-
-    final payload = <String, dynamic>{
-      'operarioNombre': _filtroOperario,
-      'operarioId': '',
-      'conjuntoNombre': conjuntoNombre,
-      'anio': year,
-      'mes': month,
-      'semanaDelMes': _semanaImprimir,
-      'weekStart': DateFormat('yyyy-MM-dd').format(weekStart),
-      'weekEnd': DateFormat('yyyy-MM-dd').format(weekEnd),
-      'horariosConjunto': _horariosConjunto
-          .map(
-            (h) => {
-              'dia': h.dia,
-              'horaApertura': h.horaApertura,
-              'horaCierre': h.horaCierre,
-              'descansoInicio': h.descansoInicio,
-              'descansoFin': h.descansoFin,
-            },
-          )
-          .toList(),
-      'tareas': tareasSemana
-          .map(
-            (t) => {
-              'fechaInicio': t.fechaInicio.toIso8601String(),
-              'fechaFin': t.fechaFin.toIso8601String(),
-              'descripcion': t.descripcion,
-              'ubicacionNombre': t.ubicacionNombre ?? '',
-              'elementoNombre': t.elementoNombre ?? '',
-            },
-          )
-          .toList(),
-    };
-
-    await imprimirCronogramaOperario(payload);
-  }
-
   Widget _buildFiltros() {
     return Card(
       elevation: 1,
@@ -360,26 +272,6 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
                     ],
                     onChanged: (v) =>
                         setState(() => _filtroOperario = v ?? 'TODOS'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: DropdownButtonFormField<int>(
-                    initialValue: _semanaImprimir,
-                    decoration: const InputDecoration(
-                      labelText: 'Semana a imprimir',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: List.generate(6, (i) => i + 1)
-                        .map(
-                          (w) => DropdownMenuItem(
-                            value: w,
-                            child: Text('Semana $w'),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) => setState(() => _semanaImprimir = v ?? 1),
                   ),
                 ),
               ],
@@ -492,11 +384,6 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
         ),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(
-            tooltip: 'Imprimir semana actual (según filtros)',
-            onPressed: _imprimirSemanaSeleccionada,
-            icon: const Icon(Icons.print, color: Colors.white),
-          ),
           IconButton(
             onPressed: _cargar,
             icon: const Icon(Icons.refresh, color: Colors.white),

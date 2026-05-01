@@ -28,6 +28,7 @@ import {
   buildAgendaPorOperarioDia,
   buscarHuecoDiaConSplitEarliest,
   findNextValidDay,
+  freeFromOccupied,
   getFestivosSet,
   intentarReemplazoPorPrioridadBaja,
   isFestivoDate,
@@ -63,6 +64,22 @@ type Patron =
   | "MEDIO_SEMANA_SABADO_TARDE";
 
 type Jornada = "COMPLETA" | "MEDIO_TIEMPO";
+type BloqueProgramacion = { fechaInicio: Date; fechaFin: Date };
+type EstadoBloqueExcluida = "PENDIENTE" | "AGENDADO";
+type BloqueExcluidaManual = {
+  id: string;
+  orden: number;
+  duracionMinutos: number;
+  estado: EstadoBloqueExcluida;
+  tareaProgramadaId?: number | null;
+  fechaInicio?: string | null;
+  fechaFin?: string | null;
+};
+type DivisionManualExcluida = {
+  activa: boolean;
+  bloques: BloqueExcluidaManual[];
+  actualizadaEn: string;
+};
 
 type NovedadCronograma =
   | {
@@ -211,6 +228,40 @@ const EditarBloqueBorradorDTO = z.object({
   tiempoEstimadoMinutos: z.number().positive().nullable().optional(),
 });
 
+const ReasignarOperarioBorradorDTO = z.object({
+  conjuntoId: z.string().min(3),
+  tareaId: z.number().int().positive(),
+  nuevoOperarioId: z.coerce.number().int().positive(),
+  aplicarADefinicion: z.boolean().optional().default(false),
+});
+
+const ReasignarOperarioExcluidaDTO = z.object({
+  conjuntoId: z.string().min(3),
+  excluidaId: z.number().int().positive(),
+  nuevoOperarioId: z.coerce.number().int().positive(),
+  aplicarADefinicion: z.boolean().optional().default(false),
+});
+
+const DividirExcluidaManualDTO = z.object({
+  conjuntoId: z.string().min(3),
+  excluidaId: z.number().int().positive(),
+  bloques: z
+    .array(
+      z.object({
+        duracionMinutos: z.number().int().positive(),
+      }),
+    )
+    .min(2, "Debes crear al menos 2 bloques"),
+});
+
+const GestionarBloqueExcluidaDTO = z.object({
+  conjuntoId: z.string().min(3),
+  excluidaId: z.number().int().positive(),
+  bloqueId: z.string().min(1),
+  fechaInicio: z.coerce.date().optional(),
+  fechaFin: z.coerce.date().optional(),
+});
+
 /* =========================================================
  * Service
  * ======================================================= */
@@ -299,6 +350,78 @@ export class DefinicionTareaPreventivaService {
 
   private normalizarListaStrings(values: Array<string | null | undefined>) {
     return values.map((v) => String(v ?? "").trim()).filter((v) => v.length > 0);
+  }
+
+  private metadataAsObject(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? ({ ...(value as Record<string, unknown>) })
+      : {};
+  }
+
+  private leerDivisionManualExcluida(value: Prisma.JsonValue | null | undefined): DivisionManualExcluida | null {
+    const root = this.metadataAsObject(value);
+    const raw = root.divisionManual;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const record = raw as Record<string, unknown>;
+    const bloquesRaw = Array.isArray(record.bloques) ? record.bloques : [];
+    const bloques: BloqueExcluidaManual[] = [];
+    for (let index = 0; index < bloquesRaw.length; index++) {
+      const item = bloquesRaw[index];
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const block = item as Record<string, unknown>;
+      const duracionMinutos = Number(block.duracionMinutos ?? 0);
+      if (!Number.isFinite(duracionMinutos) || duracionMinutos <= 0) continue;
+      bloques.push({
+          id: String(block.id ?? `b${index + 1}`),
+          orden: Number(block.orden ?? index + 1),
+          duracionMinutos: Math.max(1, Math.round(duracionMinutos)),
+          estado: String(block.estado ?? "PENDIENTE") === "AGENDADO" ? "AGENDADO" : "PENDIENTE",
+          tareaProgramadaId:
+            block.tareaProgramadaId == null ? null : Number(block.tareaProgramadaId),
+          fechaInicio: block.fechaInicio == null ? null : String(block.fechaInicio),
+          fechaFin: block.fechaFin == null ? null : String(block.fechaFin),
+      });
+    }
+    bloques.sort((a, b) => a.orden - b.orden);
+    if (!bloques.length) return null;
+    return {
+      activa: record.activa !== false,
+      bloques,
+      actualizadaEn: String(record.actualizadaEn ?? new Date().toISOString()),
+    };
+  }
+
+  private construirMetadataConDivisionManual(
+    base: Prisma.JsonValue | null | undefined,
+    division: DivisionManualExcluida | null,
+  ): Prisma.InputJsonValue {
+    const root = this.metadataAsObject(base);
+    if (division == null) {
+      delete root.divisionManual;
+      return root as Prisma.InputJsonValue;
+    }
+    root.divisionManual = {
+      activa: division.activa,
+      actualizadaEn: division.actualizadaEn,
+      bloques: division.bloques.map((bloque) => ({
+        id: bloque.id,
+        orden: bloque.orden,
+        duracionMinutos: bloque.duracionMinutos,
+        estado: bloque.estado,
+        tareaProgramadaId: bloque.tareaProgramadaId ?? null,
+        fechaInicio: bloque.fechaInicio ?? null,
+        fechaFin: bloque.fechaFin ?? null,
+      })),
+    } satisfies Prisma.InputJsonValue;
+    return root as Prisma.InputJsonValue;
+  }
+
+  private resolverBloqueDivision(
+    division: DivisionManualExcluida | null,
+    bloqueId: string,
+  ) {
+    if (!division?.activa) return null;
+    return division.bloques.find((bloque) => bloque.id === bloqueId) ?? null;
   }
 
   private async registrarEventoBorrador(params: {
@@ -539,6 +662,8 @@ export class DefinicionTareaPreventivaService {
     fechaPreferida?: Date;
     maxOpciones?: number;
     mismoDiaPrimero?: boolean;
+    permitirSplitMismoDia?: boolean;
+    permitirDivisionFlexible?: boolean;
   }) {
     const {
       conjuntoId,
@@ -546,6 +671,8 @@ export class DefinicionTareaPreventivaService {
       fechaPreferida,
       maxOpciones = 8,
       mismoDiaPrimero = true,
+      permitirSplitMismoDia = true,
+      permitirDivisionFlexible = true,
     } = params;
 
     const horarios = await this.prisma.conjuntoHorario.findMany({ where: { conjuntoId } });
@@ -582,8 +709,56 @@ export class DefinicionTareaPreventivaService {
       fechaInicio: string;
       fechaFin: string;
       duracionMinutos: number;
-      tipoSugerencia: "MISMO_DIA" | "MISMO_MES";
+      tipoSugerencia: "MISMO_DIA" | "MISMO_MES" | "DIVIDIDA";
+      requiereDivision: boolean;
+      diasUtilizados: number;
+      bloques: Array<{
+        fecha: string;
+        fechaInicio: string;
+        fechaFin: string;
+        duracionMinutos: number;
+      }>;
     }> = [];
+
+    const pushOpcion = (bloquesPlan: BloqueProgramacion[]) => {
+      if (!bloquesPlan.length || opciones.length >= maxOpciones) return;
+      const bloques = bloquesPlan
+        .map((bloque) => ({
+          fecha: dayKey(bloque.fechaInicio),
+          fechaInicio: bloque.fechaInicio.toISOString(),
+          fechaFin: bloque.fechaFin.toISOString(),
+          duracionMinutos: Math.max(
+            1,
+            Math.round((bloque.fechaFin.getTime() - bloque.fechaInicio.getTime()) / 60000),
+          ),
+        }))
+        .sort((a, b) => a.fechaInicio.localeCompare(b.fechaInicio));
+      const primera = bloques[0];
+      const ultima = bloques[bloques.length - 1];
+      const diasUtilizados = new Set(bloques.map((bloque) => bloque.fecha)).size;
+      const requiereDivision = bloques.length > 1;
+      const firma = bloques
+        .map((bloque) => `${bloque.fechaInicio}|${bloque.fechaFin}`)
+        .join(";");
+      if (opciones.some((item) => item.bloques.map((b) => `${b.fechaInicio}|${b.fechaFin}`).join(";") === firma)) {
+        return;
+      }
+
+      opciones.push({
+        fecha: primera.fecha,
+        fechaInicio: primera.fechaInicio,
+        fechaFin: ultima.fechaFin,
+        duracionMinutos: bloques.reduce((acc, bloque) => acc + bloque.duracionMinutos, 0),
+        tipoSugerencia: requiereDivision
+          ? "DIVIDIDA"
+          : primera.fecha === dayKey(preferida)
+            ? "MISMO_DIA"
+            : "MISMO_MES",
+        requiereDivision,
+        diasUtilizados,
+        bloques,
+      });
+    };
 
     for (const dia of fechas) {
       if (opciones.length >= maxOpciones) break;
@@ -642,33 +817,42 @@ export class DefinicionTareaPreventivaService {
         desiredStartMin: dayKey(dia) === dayKey(preferida)
           ? Math.max(horario.startMin, toMinOfDay(preferida))
           : horario.startMin,
-        maxBloques: 1,
+        maxBloques: permitirSplitMismoDia ? 2 : 1,
       });
 
-      if (!bloques || bloques.length != 1) continue;
+      if (bloques?.length) {
+        const bloquesPlan = bloques.map((bloque) => ({
+          fechaInicio: toDateAtMin(dia, bloque.i),
+          fechaFin: toDateAtMin(dia, bloque.f),
+        }));
 
-      const fechaInicio = toDateAtMin(dia, bloques[0].i);
-      const fechaFin = toDateAtMin(dia, bloques[0].f);
-
-      try {
-        await this.validarSlotPreventivaBorrador({
-          conjuntoId,
-          fechaInicio,
-          fechaFin,
-          operariosIds: excluida.operariosIds,
-        });
-      } catch {
-        continue;
+        try {
+          for (const bloque of bloquesPlan) {
+            await this.validarSlotPreventivaBorrador({
+              conjuntoId,
+              fechaInicio: bloque.fechaInicio,
+              fechaFin: bloque.fechaFin,
+              operariosIds: excluida.operariosIds,
+            });
+          }
+          pushOpcion(bloquesPlan);
+        } catch {
+          // seguir buscando otras alternativas
+        }
       }
 
-      opciones.push({
-        fecha: key,
-        fechaInicio: fechaInicio.toISOString(),
-        fechaFin: fechaFin.toISOString(),
-        duracionMinutos: excluida.duracionMinutos,
-        tipoSugerencia:
-          dayKey(dia) === dayKey(preferida) ? "MISMO_DIA" : "MISMO_MES",
+      if (!permitirDivisionFlexible || opciones.length >= maxOpciones) continue;
+
+      const planDividido = await this.construirPlanFlexibleExcluida({
+        conjuntoId,
+        excluida,
+        fechas,
+        horariosPorDia,
+        festivosSet,
+        preferida,
+        startIndex: fechas.findIndex((f) => dayKey(f) === key),
       });
+      if (planDividido.length) pushOpcion(planDividido);
     }
 
     return {
@@ -678,11 +862,133 @@ export class DefinicionTareaPreventivaService {
     };
   }
 
+  private async construirPlanFlexibleExcluida(params: {
+    conjuntoId: string;
+    excluida: {
+      id: number;
+      periodoAnio: number;
+      periodoMes: number;
+      descripcion: string;
+      duracionMinutos: number;
+      fechaObjetivo: Date;
+      operariosIds: string[];
+    };
+    fechas: Date[];
+    horariosPorDia: Map<DiaSemana, HorarioDia>;
+    festivosSet: Set<string>;
+    preferida: Date;
+    startIndex: number;
+  }): Promise<BloqueProgramacion[]> {
+    const { conjuntoId, excluida, fechas, horariosPorDia, festivosSet, preferida, startIndex } = params;
+    if (startIndex < 0 || startIndex >= fechas.length) return [];
+
+    let restante = excluida.duracionMinutos;
+    const plan: BloqueProgramacion[] = [];
+
+    for (let idx = startIndex; idx < fechas.length && restante > 0; idx++) {
+      const dia = fechas[idx];
+      const key = dayKey(dia);
+      if (festivosSet.has(key)) continue;
+
+      const horario = horariosPorDia.get(dateToDiaSemana(dia));
+      if (!horario) continue;
+
+      const disponibilidad = excluida.operariosIds.length
+        ? await validarOperariosDisponiblesEnFecha({
+            prisma: this.prisma,
+            fecha: dia,
+            operariosIds: excluida.operariosIds,
+          })
+        : { ok: true, noDisponibles: [] as string[] };
+      if (!disponibilidad.ok) continue;
+
+      const bloqueos = [
+        ...buildBloqueosPorDescanso(horario),
+        ...(await buildBloqueosPorPatronJornada({
+          prisma: this.prisma,
+          fechaDia: dia,
+          horarioDia: horario,
+          operariosIds: excluida.operariosIds,
+        })),
+      ];
+
+      let ocupadosGlobal: Intervalo[] = [];
+      if (excluida.operariosIds.length) {
+        const agenda = await buildAgendaPorOperarioDia({
+          prisma: this.prisma,
+          conjuntoId,
+          fechaDia: dia,
+          operariosIds: excluida.operariosIds,
+          incluirBorrador: true,
+          bloqueosGlobales: bloqueos,
+          excluirEstados: ["PENDIENTE_REPROGRAMACION"],
+        });
+
+        const all: Intervalo[] = [];
+        for (const opId of Object.keys(agenda)) all.push(...agenda[opId]);
+        ocupadosGlobal = mergeIntervalos(all);
+      } else {
+        ocupadosGlobal = mergeIntervalos(
+          bloqueos.map((bloqueo) => ({ i: bloqueo.startMin, f: bloqueo.endMin })),
+        );
+      }
+
+      const blocked = mergeIntervalos([
+        ...ocupadosGlobal,
+        ...bloqueos.map((bloqueo) => ({ i: bloqueo.startMin, f: bloqueo.endMin })),
+      ]);
+      const libres = freeFromOccupied(horario.startMin, horario.endMin, blocked);
+      const desiredStartMin = key === dayKey(preferida)
+        ? Math.max(horario.startMin, toMinOfDay(preferida))
+        : horario.startMin;
+
+      for (const libre of libres) {
+        const inicioMin = Math.max(libre.i, desiredStartMin);
+        const capacidad = libre.f - inicioMin;
+        if (capacidad <= 0) continue;
+
+        const tomar = Math.min(capacidad, restante);
+        const fechaInicio = toDateAtMin(dia, inicioMin);
+        const fechaFin = toDateAtMin(dia, inicioMin + tomar);
+
+        try {
+          await this.validarSlotPreventivaBorrador({
+            conjuntoId,
+            fechaInicio,
+            fechaFin,
+            operariosIds: excluida.operariosIds,
+          });
+        } catch {
+          continue;
+        }
+
+        plan.push({ fechaInicio, fechaFin });
+        restante -= tomar;
+        if (restante <= 0) break;
+      }
+    }
+
+    return restante <= 0 && plan.length > 1 ? plan : [];
+  }
+
   private async materializarExcluidaEnTarea(params: {
     excluidaId: number;
     conjuntoId: string;
     fechaInicio: Date;
     fechaFin: Date;
+  }) {
+    const tareas = await this.materializarExcluidaEnBloques({
+      excluidaId: params.excluidaId,
+      conjuntoId: params.conjuntoId,
+      bloques: [{ fechaInicio: params.fechaInicio, fechaFin: params.fechaFin }],
+    });
+    return tareas[0];
+  }
+
+  private async materializarExcluidaEnBloques(params: {
+    excluidaId: number;
+    conjuntoId: string;
+    bloques: BloqueProgramacion[];
   }) {
     const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
       where: { id: params.excluidaId },
@@ -694,60 +1000,100 @@ export class DefinicionTareaPreventivaService {
       throw new Error("La tarea excluida ya fue resuelta o agendada.");
     }
 
-    await this.validarSlotPreventivaBorrador({
-      conjuntoId: params.conjuntoId,
-      fechaInicio: params.fechaInicio,
-      fechaFin: params.fechaFin,
-      operariosIds: excluida.operariosIds,
-    });
+    if (!params.bloques.length) {
+      throw new Error("Debes indicar al menos un bloque para agendar la excluida.");
+    }
 
-    const created = await this.prisma.tarea.create({
-      data: {
-        descripcion: excluida.descripcion,
-        fechaInicio: params.fechaInicio,
-        fechaFin: params.fechaFin,
-        duracionMinutos: Math.max(1, Math.round((+params.fechaFin - +params.fechaInicio) / 60000)),
-        prioridad: excluida.prioridad,
-        estado: EstadoTarea.ASIGNADA,
-        tipo: TipoTarea.PREVENTIVA,
-        frecuencia: excluida.frecuencia,
-        borrador: true,
-        periodoAnio: excluida.periodoAnio,
-        periodoMes: excluida.periodoMes,
-        grupoPlanId: null,
-        bloqueIndex: null,
-        bloquesTotales: null,
-        ubicacionId: excluida.ubicacionId,
-        elementoId: excluida.elementoId,
+    const bloquesOrdenados = [...params.bloques].sort(
+      (a, b) => a.fechaInicio.getTime() - b.fechaInicio.getTime(),
+    );
+
+    const duracionTotal = bloquesOrdenados.reduce(
+      (acc, bloque) =>
+        acc + Math.max(1, Math.round((bloque.fechaFin.getTime() - bloque.fechaInicio.getTime()) / 60000)),
+      0,
+    );
+    if (duracionTotal !== excluida.duracionMinutos) {
+      throw new Error("La suma de bloques no coincide con la duración de la tarea excluida.");
+    }
+
+    for (const bloque of bloquesOrdenados) {
+      await this.validarSlotPreventivaBorrador({
         conjuntoId: params.conjuntoId,
-        supervisorId: excluida.supervisorId,
-        operarios: excluida.operariosIds.length
-          ? { connect: excluida.operariosIds.map((id) => ({ id })) }
-          : undefined,
-      },
-    });
+        fechaInicio: bloque.fechaInicio,
+        fechaFin: bloque.fechaFin,
+        operariosIds: excluida.operariosIds,
+      });
+    }
 
-    await this.prisma.preventivaExcluidaBorrador.update({
-      where: { id: excluida.id },
-      data: {
-        estado: "AGENDADA",
-        tareaProgramadaId: created.id,
-        resueltaEn: new Date(),
-      },
-    });
+    const grupoPlanId = bloquesOrdenados.length > 1
+      ? `EXC-${excluida.id}-${Date.now().toString(36)}`
+      : null;
 
-    await this.registrarEventoBorrador({
-      conjuntoId: params.conjuntoId,
-      periodoAnio: excluida.periodoAnio,
-      periodoMes: excluida.periodoMes,
-      tipo: "EXCLUIDA_AGENDADA",
-      detalle: `La tarea excluida '${excluida.descripcion}' fue agendada manualmente.`,
-      excluidaId: excluida.id,
-      tareaId: created.id,
-      metadataJson: {
-        fechaInicio: params.fechaInicio.toISOString(),
-        fechaFin: params.fechaFin.toISOString(),
-      },
+    const created = await this.prisma.$transaction(async (tx) => {
+      const creadas = [] as Awaited<ReturnType<typeof tx.tarea.create>>[];
+
+      for (let index = 0; index < bloquesOrdenados.length; index++) {
+        const bloque = bloquesOrdenados[index];
+        const tarea = await tx.tarea.create({
+          data: {
+            descripcion: excluida.descripcion,
+            fechaInicio: bloque.fechaInicio,
+            fechaFin: bloque.fechaFin,
+            duracionMinutos: Math.max(
+              1,
+              Math.round((bloque.fechaFin.getTime() - bloque.fechaInicio.getTime()) / 60000),
+            ),
+            prioridad: excluida.prioridad,
+            estado: EstadoTarea.ASIGNADA,
+            tipo: TipoTarea.PREVENTIVA,
+            frecuencia: excluida.frecuencia,
+            borrador: true,
+            periodoAnio: excluida.periodoAnio,
+            periodoMes: excluida.periodoMes,
+            grupoPlanId,
+            bloqueIndex: grupoPlanId ? index + 1 : null,
+            bloquesTotales: grupoPlanId ? bloquesOrdenados.length : null,
+            ubicacionId: excluida.ubicacionId,
+            elementoId: excluida.elementoId,
+            conjuntoId: params.conjuntoId,
+            supervisorId: excluida.supervisorId,
+            operarios: excluida.operariosIds.length
+              ? { connect: excluida.operariosIds.map((id) => ({ id })) }
+              : undefined,
+          },
+        });
+        creadas.push(tarea);
+      }
+
+      await tx.preventivaExcluidaBorrador.update({
+        where: { id: excluida.id },
+        data: {
+          estado: "AGENDADA",
+          tareaProgramadaId: creadas[0]?.id ?? null,
+          resueltaEn: new Date(),
+        },
+      });
+
+      await tx.preventivaBorradorEvento.create({
+        data: {
+          conjuntoId: params.conjuntoId,
+          periodoAnio: excluida.periodoAnio,
+          periodoMes: excluida.periodoMes,
+          tipo: "EXCLUIDA_AGENDADA",
+          detalle: `La tarea excluida '${excluida.descripcion}' fue agendada manualmente.`,
+          excluidaId: excluida.id,
+          tareaId: creadas[0]?.id ?? null,
+          metadataJson: {
+            bloques: bloquesOrdenados.map((bloque) => ({
+              fechaInicio: bloque.fechaInicio.toISOString(),
+              fechaFin: bloque.fechaFin.toISOString(),
+            })),
+          },
+        },
+      });
+
+      return creadas;
     });
 
     return created;
@@ -2576,6 +2922,402 @@ export class DefinicionTareaPreventivaService {
     });
   }
 
+  async reasignarOperarioTareaBorrador(payload: unknown) {
+    const dto = ReasignarOperarioBorradorDTO.parse(payload);
+    const tarea = await this.prisma.tarea.findUnique({
+      where: { id: dto.tareaId },
+      select: {
+        id: true,
+        conjuntoId: true,
+        borrador: true,
+        tipo: true,
+        fechaInicio: true,
+        fechaFin: true,
+        descripcion: true,
+        ubicacionId: true,
+        elementoId: true,
+        frecuencia: true,
+        supervisorId: true,
+      },
+    });
+
+    if (
+      !tarea ||
+      tarea.conjuntoId !== dto.conjuntoId ||
+      !tarea.borrador ||
+      tarea.tipo !== TipoTarea.PREVENTIVA
+    ) {
+      throw new Error("No es una tarea preventiva válida del borrador.");
+    }
+
+    const tareaActualizada = await this.editarBloqueBorrador(
+      dto.conjuntoId,
+      dto.tareaId,
+      {
+        fechaInicio: tarea.fechaInicio,
+        fechaFin: tarea.fechaFin,
+        operariosIds: [dto.nuevoOperarioId],
+      },
+    );
+
+    let definicionActualizada = false;
+    let definicionId: number | null = null;
+    let warning: string | null = null;
+
+    if (dto.aplicarADefinicion) {
+      const candidatas = await this.prisma.definicionTareaPreventiva.findMany({
+        where: {
+          conjuntoId: dto.conjuntoId,
+          descripcion: tarea.descripcion,
+          ubicacionId: tarea.ubicacionId,
+          elementoId: tarea.elementoId,
+          ...(tarea.frecuencia == null ? {} : { frecuencia: tarea.frecuencia }),
+          ...(tarea.supervisorId == null ? {} : { supervisorId: tarea.supervisorId }),
+        },
+        select: { id: true },
+        orderBy: { id: "asc" },
+        take: 2,
+      });
+
+      if (candidatas.length === 1) {
+        definicionId = candidatas[0].id;
+        await this.actualizar(dto.conjuntoId, definicionId, {
+          operariosIds: [dto.nuevoOperarioId],
+        });
+        definicionActualizada = true;
+      } else if (candidatas.length === 0) {
+        warning =
+          "Se actualizó el borrador, pero no se encontró una definición única para aplicar el cambio definitivo.";
+      } else {
+        warning =
+          "Se actualizó el borrador, pero hubo varias definiciones candidatas y no se cambió la definición base.";
+      }
+    }
+
+    return {
+      ok: true,
+      tarea: tareaActualizada,
+      definicionActualizada,
+      definicionId,
+      warning,
+    };
+  }
+
+  async reasignarOperarioExcluidaBorrador(payload: unknown) {
+    const dto = ReasignarOperarioExcluidaDTO.parse(payload);
+    const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
+      where: { id: dto.excluidaId },
+      select: {
+        id: true,
+        conjuntoId: true,
+        estado: true,
+        fechaObjetivo: true,
+        defId: true,
+        periodoAnio: true,
+        periodoMes: true,
+      },
+    });
+
+    if (!excluida || excluida.conjuntoId !== dto.conjuntoId) {
+      throw new Error("La tarea excluida no existe para este conjunto.");
+    }
+    if (excluida.estado !== "PENDIENTE") {
+      throw new Error("La tarea excluida ya no se puede editar.");
+    }
+
+    const nuevoOperarioId = dto.nuevoOperarioId.toString();
+    const disponibilidad = await validarOperariosDisponiblesEnFecha({
+      prisma: this.prisma,
+      fecha: excluida.fechaObjetivo,
+      operariosIds: [nuevoOperarioId],
+    });
+    if (!disponibilidad.ok) {
+      throw new Error(
+        `El operario ${disponibilidad.noDisponibles.join(", ")} no tiene disponibilidad para la fecha objetivo de esta excluida.`,
+      );
+    }
+
+    const nombreOperario = await getOperarioNombre(this.prisma, nuevoOperarioId);
+    const excluidaActualizada = await this.prisma.preventivaExcluidaBorrador.update({
+      where: { id: dto.excluidaId },
+      data: {
+        operariosIds: [nuevoOperarioId],
+        operariosNombres: nombreOperario ? [nombreOperario] : [],
+      },
+    });
+
+    let definicionActualizada = false;
+    let warning: string | null = null;
+
+    if (dto.aplicarADefinicion) {
+      if (excluida.defId != null) {
+        await this.actualizar(dto.conjuntoId, excluida.defId, {
+          operariosIds: [dto.nuevoOperarioId],
+        });
+        definicionActualizada = true;
+      } else {
+        warning =
+          "Se actualizó la excluida, pero no se encontró la definición base para aplicar el cambio definitivo.";
+      }
+    }
+
+    await this.registrarEventoBorrador({
+      conjuntoId: dto.conjuntoId,
+      periodoAnio: excluida.periodoAnio,
+      periodoMes: excluida.periodoMes,
+      tipo: "EXCLUIDA_REASIGNADA",
+      excluidaId: excluida.id,
+      detalle: `Se reasignó el operario de la tarea excluida al operario ${nombreOperario || nuevoOperarioId}.`,
+      metadataJson: {
+        nuevoOperarioId,
+        nuevoOperarioNombre: nombreOperario,
+        aplicarADefinicion: dto.aplicarADefinicion,
+      },
+    });
+
+    return {
+      ok: true,
+      excluida: excluidaActualizada,
+      definicionActualizada,
+      warning,
+    };
+  }
+
+  async dividirExcluidaManual(payload: unknown) {
+    const dto = DividirExcluidaManualDTO.parse(payload);
+    const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
+      where: { id: dto.excluidaId },
+      select: {
+        id: true,
+        conjuntoId: true,
+        estado: true,
+        duracionMinutos: true,
+        metadataJson: true,
+        periodoAnio: true,
+        periodoMes: true,
+        descripcion: true,
+      },
+    });
+    if (!excluida || excluida.conjuntoId !== dto.conjuntoId) {
+      throw new Error("La tarea excluida no existe para este conjunto.");
+    }
+    if (excluida.estado !== "PENDIENTE") {
+      throw new Error("La tarea excluida ya no se puede dividir manualmente.");
+    }
+
+    const actual = this.leerDivisionManualExcluida(excluida.metadataJson);
+    if (actual?.bloques.some((bloque) => bloque.estado === "AGENDADO")) {
+      throw new Error(
+        "La tarea ya tiene bloques agendados. No puedes redefinir la división manual en este momento.",
+      );
+    }
+
+    const total = dto.bloques.reduce((acc, bloque) => acc + bloque.duracionMinutos, 0);
+    if (total !== excluida.duracionMinutos) {
+      throw new Error("La suma de horas de los bloques debe coincidir con la duración total de la tarea excluida.");
+    }
+
+    const division: DivisionManualExcluida = {
+      activa: true,
+      actualizadaEn: new Date().toISOString(),
+      bloques: dto.bloques.map((bloque, index) => ({
+        id: `b${index + 1}`,
+        orden: index + 1,
+        duracionMinutos: bloque.duracionMinutos,
+        estado: "PENDIENTE",
+        tareaProgramadaId: null,
+        fechaInicio: null,
+        fechaFin: null,
+      })),
+    };
+
+    const actualizada = await this.prisma.preventivaExcluidaBorrador.update({
+      where: { id: excluida.id },
+      data: {
+        metadataJson: this.construirMetadataConDivisionManual(excluida.metadataJson, division),
+      },
+    });
+
+    await this.registrarEventoBorrador({
+      conjuntoId: dto.conjuntoId,
+      periodoAnio: excluida.periodoAnio,
+      periodoMes: excluida.periodoMes,
+      tipo: "EXCLUIDA_DIVIDIDA_MANUAL",
+      excluidaId: excluida.id,
+      detalle: `Se dividió manualmente la tarea excluida '${excluida.descripcion}' en ${division.bloques.length} bloque(s).`,
+      metadataJson: {
+        bloques: division.bloques.map((bloque) => ({
+          id: bloque.id,
+          orden: bloque.orden,
+          duracionMinutos: bloque.duracionMinutos,
+        })),
+      },
+    });
+
+    return { ok: true, excluida: actualizada };
+  }
+
+  async sugerirHuecosBloqueExcluida(payload: unknown) {
+    const dto = GestionarBloqueExcluidaDTO.parse(payload);
+    const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
+      where: { id: dto.excluidaId },
+    });
+    if (!excluida || excluida.conjuntoId !== dto.conjuntoId) {
+      throw new Error("La tarea excluida no existe para este conjunto.");
+    }
+
+    const division = this.leerDivisionManualExcluida(excluida.metadataJson);
+    const bloque = this.resolverBloqueDivision(division, dto.bloqueId);
+    if (!bloque) {
+      throw new Error("El bloque solicitado no existe en la división manual de la excluida.");
+    }
+    if (bloque.estado === "AGENDADO") {
+      throw new Error("Ese bloque ya fue agendado.");
+    }
+
+    return this.sugerirHuecosParaExcluidaCore({
+      conjuntoId: dto.conjuntoId,
+      excluida: {
+        id: excluida.id,
+        periodoAnio: excluida.periodoAnio,
+        periodoMes: excluida.periodoMes,
+        descripcion: `${excluida.descripcion} · Bloque ${bloque.orden}`,
+        duracionMinutos: bloque.duracionMinutos,
+        fechaObjetivo: excluida.fechaObjetivo,
+        operariosIds: excluida.operariosIds,
+      },
+      fechaPreferida: dto.fechaInicio ?? excluida.fechaObjetivo,
+      maxOpciones: 8,
+      permitirSplitMismoDia: false,
+      permitirDivisionFlexible: false,
+    });
+  }
+
+  async agendarBloqueExcluida(payload: unknown) {
+    const dto = GestionarBloqueExcluidaDTO.parse(payload);
+    const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
+      where: { id: dto.excluidaId },
+    });
+    if (!excluida || excluida.conjuntoId !== dto.conjuntoId) {
+      throw new Error("La tarea excluida no existe para este conjunto.");
+    }
+
+    const division = this.leerDivisionManualExcluida(excluida.metadataJson);
+    const bloque = this.resolverBloqueDivision(division, dto.bloqueId);
+    if (!division || !bloque) {
+      throw new Error("La excluida no tiene una división manual válida para este bloque.");
+    }
+    if (bloque.estado === "AGENDADO") {
+      throw new Error("Ese bloque ya fue agendado.");
+    }
+
+    let fechaInicio = dto.fechaInicio ?? null;
+    let fechaFin = dto.fechaFin ?? null;
+    if (!fechaInicio || !fechaFin) {
+      const sugerencias = await this.sugerirHuecosBloqueExcluida({
+        conjuntoId: dto.conjuntoId,
+        excluidaId: dto.excluidaId,
+        bloqueId: dto.bloqueId,
+        fechaInicio: dto.fechaInicio,
+      });
+      const sugerida = sugerencias.opciones[0];
+      if (!sugerida) {
+        throw new Error("No se encontraron huecos disponibles para este bloque.");
+      }
+      fechaInicio = new Date(sugerida.fechaInicio);
+      fechaFin = new Date(sugerida.fechaFin);
+    }
+
+    await this.validarSlotPreventivaBorrador({
+      conjuntoId: dto.conjuntoId,
+      fechaInicio,
+      fechaFin,
+      operariosIds: excluida.operariosIds,
+    });
+
+    const grupoPlanId = `EXC-MANUAL-${excluida.id}`;
+    const tarea = await this.prisma.$transaction(async (tx) => {
+      const creada = await tx.tarea.create({
+        data: {
+          descripcion: `${excluida.descripcion} · Bloque ${bloque.orden}`,
+          fechaInicio,
+          fechaFin,
+          duracionMinutos: Math.max(
+            1,
+            Math.round((fechaFin.getTime() - fechaInicio.getTime()) / 60000),
+          ),
+          prioridad: excluida.prioridad,
+          estado: EstadoTarea.ASIGNADA,
+          tipo: TipoTarea.PREVENTIVA,
+          frecuencia: excluida.frecuencia,
+          borrador: true,
+          periodoAnio: excluida.periodoAnio,
+          periodoMes: excluida.periodoMes,
+          grupoPlanId,
+          bloqueIndex: bloque.orden,
+          bloquesTotales: division.bloques.length,
+          ubicacionId: excluida.ubicacionId,
+          elementoId: excluida.elementoId,
+          conjuntoId: dto.conjuntoId,
+          supervisorId: excluida.supervisorId,
+          operarios: excluida.operariosIds.length
+            ? { connect: excluida.operariosIds.map((id) => ({ id })) }
+            : undefined,
+        },
+      });
+
+      const nuevaDivision: DivisionManualExcluida = {
+        ...division,
+        actualizadaEn: new Date().toISOString(),
+        bloques: division.bloques.map((item) =>
+          item.id === dto.bloqueId
+            ? {
+                ...item,
+                estado: "AGENDADO",
+                tareaProgramadaId: creada.id,
+                fechaInicio: fechaInicio.toISOString(),
+                fechaFin: fechaFin.toISOString(),
+              }
+            : item,
+        ),
+      };
+      const todosAgendados = nuevaDivision.bloques.every((item) => item.estado === "AGENDADO");
+
+      await tx.preventivaExcluidaBorrador.update({
+        where: { id: excluida.id },
+        data: {
+          estado: todosAgendados ? "AGENDADA" : excluida.estado,
+          tareaProgramadaId: creada.id,
+          resueltaEn: todosAgendados ? new Date() : null,
+          metadataJson: this.construirMetadataConDivisionManual(excluida.metadataJson, nuevaDivision),
+        },
+      });
+
+      await tx.preventivaBorradorEvento.create({
+        data: {
+          conjuntoId: dto.conjuntoId,
+          periodoAnio: excluida.periodoAnio,
+          periodoMes: excluida.periodoMes,
+          tipo: "EXCLUIDA_BLOQUE_AGENDADO",
+          excluidaId: excluida.id,
+          tareaId: creada.id,
+          detalle: `Se agendó el bloque ${bloque.orden} de la tarea excluida '${excluida.descripcion}'.`,
+          metadataJson: {
+            bloqueId: bloque.id,
+            orden: bloque.orden,
+            fechaInicio: fechaInicio.toISOString(),
+            fechaFin: fechaFin.toISOString(),
+            completaExcluida: todosAgendados,
+          },
+        },
+      });
+
+      return creada;
+    });
+
+    return { ok: true, tarea };
+  }
+
   async listarOpcionesReprogramacionBorrador(conjuntoId: string, tareaId: number) {
     const tarea = await this.prisma.tarea.findUnique({
       where: { id: tareaId },
@@ -2749,10 +3491,27 @@ export class DefinicionTareaPreventivaService {
 
   async agendarExcluidaBorrador(payload: unknown) {
     const dto = AgendarExcluidaDTO.parse(payload);
+    const excluidaActual = await this.prisma.preventivaExcluidaBorrador.findUnique({
+      where: { id: dto.excluidaId },
+      select: { id: true, conjuntoId: true, metadataJson: true },
+    });
+    if (!excluidaActual || excluidaActual.conjuntoId !== dto.conjuntoId) {
+      throw new Error("La tarea excluida no existe para este conjunto.");
+    }
+    if ((this.leerDivisionManualExcluida(excluidaActual.metadataJson)?.bloques.length ?? 0) > 0) {
+      throw new Error(
+        "Esta tarea ya fue dividida manualmente. Agenda cada bloque por separado desde el desplegable.",
+      );
+    }
+
     let fechaInicio = dto.fechaInicio ?? null;
     let fechaFin = dto.fechaFin ?? null;
+    let bloques = dto.bloques?.map((bloque) => ({
+      fechaInicio: bloque.fechaInicio,
+      fechaFin: bloque.fechaFin,
+    })) ?? [];
 
-    if (!fechaInicio || !fechaFin) {
+    if (!fechaInicio && !fechaFin && bloques.length === 0) {
       const sugerencias = await this.sugerirHuecosExcluida({
         conjuntoId: dto.conjuntoId,
         excluidaId: dto.excluidaId,
@@ -2763,18 +3522,33 @@ export class DefinicionTareaPreventivaService {
       if (!sugerida) {
         throw new Error("No se encontraron huecos disponibles para esta tarea excluida.");
       }
-      fechaInicio = new Date(sugerida.fechaInicio);
-      fechaFin = new Date(sugerida.fechaFin);
+      bloques = ((sugerida.bloques as Array<{ fechaInicio: string; fechaFin: string }> | undefined) ?? [])
+        .map((bloque) => ({
+          fechaInicio: new Date(bloque.fechaInicio),
+          fechaFin: new Date(bloque.fechaFin),
+        }));
+      if (!bloques.length) {
+        fechaInicio = new Date(sugerida.fechaInicio);
+        fechaFin = new Date(sugerida.fechaFin);
+      }
     }
 
-    const tarea = await this.materializarExcluidaEnTarea({
-      excluidaId: dto.excluidaId,
-      conjuntoId: dto.conjuntoId,
-      fechaInicio,
-      fechaFin,
-    });
+    const tareas = bloques.length
+      ? await this.materializarExcluidaEnBloques({
+          excluidaId: dto.excluidaId,
+          conjuntoId: dto.conjuntoId,
+          bloques,
+        })
+      : [
+          await this.materializarExcluidaEnTarea({
+            excluidaId: dto.excluidaId,
+            conjuntoId: dto.conjuntoId,
+            fechaInicio: fechaInicio!,
+            fechaFin: fechaFin!,
+          }),
+        ];
 
-    return { ok: true, tarea };
+    return { ok: true, tarea: tareas[0], tareas };
   }
 
   async reemplazarTareaBorradorConExcluida(payload: unknown) {

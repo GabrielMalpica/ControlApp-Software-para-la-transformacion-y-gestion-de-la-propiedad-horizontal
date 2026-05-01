@@ -20,6 +20,11 @@ router.get("/conjuntos/:nit/preventivas/borrador/excluidas", (0, DefinicionTarea
 router.get("/conjuntos/:nit/preventivas/borrador/excluidas/:id/huecos", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.sugerirHuecosExcluida));
 router.post("/conjuntos/:nit/preventivas/borrador/excluidas/:id/agendar", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.agendarExcluidaBorrador));
 router.post("/conjuntos/:nit/preventivas/borrador/tarea/:id/reemplazar-por-excluida", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.reemplazarConExcluida));
+router.post("/conjuntos/:nit/preventivas/borrador/tarea/:id/reasignar-operario", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.reasignarOperarioBorrador));
+router.post("/conjuntos/:nit/preventivas/borrador/excluidas/:id/reasignar-operario", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.reasignarOperarioExcluidaBorrador));
+router.post("/conjuntos/:nit/preventivas/borrador/excluidas/:id/dividir-manual", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.dividirExcluidaManual));
+router.get("/conjuntos/:nit/preventivas/borrador/excluidas/:id/bloques/:bloqueId/huecos", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.sugerirHuecosBloqueExcluida));
+router.post("/conjuntos/:nit/preventivas/borrador/excluidas/:id/bloques/:bloqueId/agendar", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.agendarBloqueExcluida));
 router.delete("/conjuntos/:nit/preventivas/borrador/tarea/:id", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.eliminarBloqueBorrador));
 router.get("/conjuntos/:nit/preventivas/borrador/informe-actividad", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.informeActividadBorrador));
 // 🔹 Publicar

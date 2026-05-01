@@ -251,6 +251,83 @@ class DefinicionTareaPreventivaController {
             });
             res.json(out);
         };
+        this.reasignarOperarioBorrador = async (req, res) => {
+            const conjuntoId = req.params.nit;
+            const tareaId = Number(req.params.id);
+            if (!Number.isFinite(tareaId))
+                throw new Error("ID inválido");
+            const svc = new DefinicionTareaPreventivaService_1.DefinicionTareaPreventivaService(prisma_1.prisma);
+            const out = await svc.reasignarOperarioTareaBorrador({
+                conjuntoId,
+                tareaId,
+                nuevoOperarioId: req.body?.nuevoOperarioId,
+                aplicarADefinicion: req.body?.aplicarADefinicion,
+            });
+            res.json(out);
+        };
+        this.reasignarOperarioExcluidaBorrador = async (req, res) => {
+            const conjuntoId = req.params.nit;
+            const excluidaId = Number(req.params.id);
+            if (!Number.isFinite(excluidaId))
+                throw new Error("ID inválido");
+            const svc = new DefinicionTareaPreventivaService_1.DefinicionTareaPreventivaService(prisma_1.prisma);
+            const out = await svc.reasignarOperarioExcluidaBorrador({
+                conjuntoId,
+                excluidaId,
+                nuevoOperarioId: req.body?.nuevoOperarioId,
+                aplicarADefinicion: req.body?.aplicarADefinicion,
+            });
+            res.json(out);
+        };
+        this.dividirExcluidaManual = async (req, res) => {
+            const conjuntoId = req.params.nit;
+            const excluidaId = Number(req.params.id);
+            if (!Number.isFinite(excluidaId))
+                throw new Error("ID inválido");
+            const svc = new DefinicionTareaPreventivaService_1.DefinicionTareaPreventivaService(prisma_1.prisma);
+            const out = await svc.dividirExcluidaManual({
+                conjuntoId,
+                excluidaId,
+                bloques: req.body?.bloques,
+            });
+            res.json(out);
+        };
+        this.sugerirHuecosBloqueExcluida = async (req, res) => {
+            const conjuntoId = req.params.nit;
+            const excluidaId = Number(req.params.id);
+            if (!Number.isFinite(excluidaId))
+                throw new Error("ID inválido");
+            const bloqueId = String(req.params.bloqueId ?? "").trim();
+            if (!bloqueId)
+                throw new Error("Bloque inválido");
+            const svc = new DefinicionTareaPreventivaService_1.DefinicionTareaPreventivaService(prisma_1.prisma);
+            const out = await svc.sugerirHuecosBloqueExcluida({
+                conjuntoId,
+                excluidaId,
+                bloqueId,
+                fechaInicio: req.query.fechaPreferida
+                    ? new Date(String(req.query.fechaPreferida))
+                    : undefined,
+            });
+            res.json(out);
+        };
+        this.agendarBloqueExcluida = async (req, res) => {
+            const conjuntoId = req.params.nit;
+            const excluidaId = Number(req.params.id);
+            if (!Number.isFinite(excluidaId))
+                throw new Error("ID inválido");
+            const bloqueId = String(req.params.bloqueId ?? "").trim();
+            if (!bloqueId)
+                throw new Error("Bloque inválido");
+            const svc = new DefinicionTareaPreventivaService_1.DefinicionTareaPreventivaService(prisma_1.prisma);
+            const out = await svc.agendarBloqueExcluida({
+                conjuntoId,
+                excluidaId,
+                bloqueId,
+                ...req.body,
+            });
+            res.json(out);
+        };
         this.informeActividadBorrador = async (req, res) => {
             const conjuntoId = req.params.nit;
             const anio = Number(req.query.anio);

@@ -16,6 +16,7 @@ import 'agenda_maquinaria_page.dart';
 import 'agenda_herramientas_page.dart';
 import 'inventario_page.dart';
 import 'cronograma_page.dart';
+import 'cronograma_impresion_page.dart';
 import 'reportes_page.dart';
 import 'preventivas_page.dart';
 import 'gerente/mapa_conjunto_page.dart';
@@ -76,6 +77,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
   }
 
   Future<void> _cargarConjuntos() async {
+    if (!mounted) return;
     setState(() {
       _cargandoConjuntos = true;
       _errorConjuntos = null;
@@ -83,12 +85,14 @@ class _SupervisorPageState extends State<SupervisorPage> {
 
     try {
       final lista = await _api.listarConjuntos();
+      if (!mounted) return;
       setState(() {
         _conjuntos = lista;
         _conjuntoSeleccionadoNit = lista.isNotEmpty ? lista.first.nit : null;
         _cargandoConjuntos = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorConjuntos = AppError.messageOf(e);
         _cargandoConjuntos = false;
@@ -280,6 +284,10 @@ class _SupervisorPageState extends State<SupervisorPage> {
         _SupervisorTile('Reportes', Icons.bar_chart, Colors.teal, () {
           if (!_requiereConjuntoOrWarn()) return;
           _go(ReportesPage(nit: nit, soloResumenTipos: true));
+        }),
+        _SupervisorTile('Imprimir cronograma', Icons.print, Colors.deepOrange, () {
+          if (!_requiereConjuntoOrWarn()) return;
+          _go(CronogramaImpresionPage(nit: nit));
         }),
       ]),
     ];

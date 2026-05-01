@@ -41,6 +41,7 @@ import 'lista_usuarios_page.dart';
 import '../crear_tarea_page.dart';
 import '../solicitudes_page.dart';
 import '../cronograma_page.dart';
+import '../cronograma_impresion_page.dart';
 import '../crear_cronograma_page.dart';
 import 'crear_conjunto_page.dart';
 
@@ -649,6 +650,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             MaterialPageRoute(
               builder: (_) => ReportesDashboardPage(conjuntoIdInicial: nit),
             ),
+          );
+        }),
+        _Tile("Imprimir cronograma", Icons.print, Colors.deepOrange, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => CronogramaImpresionPage(nit: nit)),
           );
         }),
         _Tile(

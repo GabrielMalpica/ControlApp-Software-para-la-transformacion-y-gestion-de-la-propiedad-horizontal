@@ -139,9 +139,20 @@ exports.AgendarExcluidaDTO = zod_1.z.object({
     excluidaId: zod_1.z.coerce.number().int().positive(),
     fechaInicio: zod_1.z.coerce.date().optional(),
     fechaFin: zod_1.z.coerce.date().optional(),
-}).refine((d) => (d.fechaInicio == null && d.fechaFin == null) ||
-    (d.fechaInicio != null && d.fechaFin != null && d.fechaFin >= d.fechaInicio), {
-    message: "Si envias fechaInicio y fechaFin, ambas son obligatorias y fechaFin debe ser mayor o igual.",
+    bloques: zod_1.z
+        .array(zod_1.z.object({
+        fechaInicio: zod_1.z.coerce.date(),
+        fechaFin: zod_1.z.coerce.date(),
+    }))
+        .min(1)
+        .optional(),
+}).refine((d) => ((d.fechaInicio == null && d.fechaFin == null) ||
+    (d.fechaInicio != null && d.fechaFin != null && d.fechaFin >= d.fechaInicio)) &&
+    (d.bloques == null || d.bloques.every((b) => b.fechaFin >= b.fechaInicio)) &&
+    !(d.bloques != null &&
+        d.bloques.length > 0 &&
+        (d.fechaInicio != null || d.fechaFin != null)), {
+    message: "Envia fechaInicio/fechaFin o bloques validos, pero no ambos a la vez.",
 });
 exports.ReemplazarConExcluidaDTO = zod_1.z.object({
     conjuntoId: zod_1.z.string().min(3),

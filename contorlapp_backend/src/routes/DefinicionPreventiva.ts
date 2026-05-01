@@ -62,6 +62,31 @@ router.post(
   asyncHandler(ctrl.reemplazarConExcluida),
 );
 
+router.post(
+  "/conjuntos/:nit/preventivas/borrador/tarea/:id/reasignar-operario",
+  asyncHandler(ctrl.reasignarOperarioBorrador),
+);
+
+router.post(
+  "/conjuntos/:nit/preventivas/borrador/excluidas/:id/reasignar-operario",
+  asyncHandler(ctrl.reasignarOperarioExcluidaBorrador),
+);
+
+router.post(
+  "/conjuntos/:nit/preventivas/borrador/excluidas/:id/dividir-manual",
+  asyncHandler(ctrl.dividirExcluidaManual),
+);
+
+router.get(
+  "/conjuntos/:nit/preventivas/borrador/excluidas/:id/bloques/:bloqueId/huecos",
+  asyncHandler(ctrl.sugerirHuecosBloqueExcluida),
+);
+
+router.post(
+  "/conjuntos/:nit/preventivas/borrador/excluidas/:id/bloques/:bloqueId/agendar",
+  asyncHandler(ctrl.agendarBloqueExcluida),
+);
+
 router.delete(
   "/conjuntos/:nit/preventivas/borrador/tarea/:id",
   asyncHandler(ctrl.eliminarBloqueBorrador),
