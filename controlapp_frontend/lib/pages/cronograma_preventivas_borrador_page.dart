@@ -78,6 +78,8 @@ class _CronogramaPreventivasBorradorPageState
   // Vista y semana seleccionada
   _VistaCronograma _vista = _VistaCronograma.mensual;
   late DateTime _semanaBase;
+  int _sidebarDiaIndex = 0;
+  bool _sidebarVerExcluidasMes = false;
 
   bool _mostrarFiltrosMensual = false;
 
@@ -4318,6 +4320,12 @@ class _CronogramaPreventivasBorradorPageState
           flex: 4,
           child: _SidebarAgendaDia(
             weekStart: weekStart,
+            dayIndex: _sidebarDiaIndex,
+            verExcluidasMes: _sidebarVerExcluidasMes,
+            onDayIndexChanged: (value) =>
+                setState(() => _sidebarDiaIndex = value),
+            onVerExcluidasMesChanged: (value) =>
+                setState(() => _sidebarVerExcluidasMes = value),
             tareasSemana: tareas,
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
             excluidasMes: _excluidasMes,
@@ -5490,6 +5498,10 @@ class _SidebarSimple extends StatelessWidget {
 // Sidebar agenda del día (derecha)
 class _SidebarAgendaDia extends StatefulWidget {
   final DateTime weekStart;
+  final int dayIndex;
+  final bool verExcluidasMes;
+  final ValueChanged<int> onDayIndexChanged;
+  final ValueChanged<bool> onVerExcluidasMesChanged;
   final List<TareaModel> tareasSemana;
   final void Function(TareaModel t) onTapTarea;
   final List<PreventivaExcluidaBorradorModel> excluidasMes;
@@ -5515,6 +5527,10 @@ class _SidebarAgendaDia extends StatefulWidget {
 
   const _SidebarAgendaDia({
     required this.weekStart,
+    required this.dayIndex,
+    required this.verExcluidasMes,
+    required this.onDayIndexChanged,
+    required this.onVerExcluidasMesChanged,
     required this.tareasSemana,
     required this.onTapTarea,
     required this.excluidasMes,
@@ -5535,21 +5551,19 @@ class _SidebarAgendaDia extends StatefulWidget {
 }
 
 class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
-  int _diaIndex = 0; // 0..6
-  bool _verExcluidasMes = false;
   final Set<int> _excluidasExpandidaIds = <int>{};
   bool _reordenandoDia = false;
 
   @override
   Widget build(BuildContext context) {
-    final fecha = widget.weekStart.add(Duration(days: _diaIndex));
+    final fecha = widget.weekStart.add(Duration(days: widget.dayIndex));
     final tareasDia = widget.tareasSemana.where((t) {
       final d = t.fechaInicio.toLocal();
       return d.year == fecha.year &&
           d.month == fecha.month &&
           d.day == fecha.day;
     }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
-    final excluidas = _verExcluidasMes
+    final excluidas = widget.verExcluidasMes
         ? widget.excluidasMes
         : widget.excluirPorFecha(fecha);
 
@@ -5570,7 +5584,7 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                 ),
                 const Spacer(),
                 DropdownButton<int>(
-                  value: _diaIndex,
+                  value: widget.dayIndex,
                   items: List.generate(7, (i) {
                     final d = widget.weekStart.add(Duration(days: i));
                     final label = [
@@ -5589,7 +5603,7 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                   }),
                   onChanged: (v) {
                     if (v == null) return;
-                    setState(() => _diaIndex = v);
+                    widget.onDayIndexChanged(v);
                   },
                 ),
               ],
@@ -5600,9 +5614,9 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                 ButtonSegment<bool>(value: false, label: Text('Excluidas dia')),
                 ButtonSegment<bool>(value: true, label: Text('Excluidas mes')),
               ],
-              selected: {_verExcluidasMes},
+              selected: {widget.verExcluidasMes},
               onSelectionChanged: (value) {
-                setState(() => _verExcluidasMes = value.first);
+                widget.onVerExcluidasMesChanged(value.first);
               },
             ),
             const SizedBox(height: 6),
@@ -5766,7 +5780,7 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                   ],
                   const Divider(height: 24),
                   Text(
-                    _verExcluidasMes
+                    widget.verExcluidasMes
                         ? 'Excluidas del mes (${excluidas.length})'
                         : 'Excluidas del día (${excluidas.length})',
                     style: const TextStyle(fontWeight: FontWeight.w800),
