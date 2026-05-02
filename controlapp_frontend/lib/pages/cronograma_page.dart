@@ -835,6 +835,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
         rol: _rolActual,
         usuarioId: _usuarioIdActual,
         tarea: t,
+        accion: res.accion,
         observaciones: res.observaciones,
         insumosUsados: res.insumosUsados,
         evidencias: res.evidencias, // ✅ aquí
@@ -843,8 +844,12 @@ class _CronogramaPageState extends State<CronogramaPage> {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
-        const SnackBar(
-          content: Text('✅ Tarea cerrada. Quedó PENDIENTE_APROBACION.'),
+        SnackBar(
+          content: Text(
+            res.accion == 'NO_COMPLETADA'
+                ? '✅ Tarea marcada como no completada.'
+                : '✅ Tarea cerrada. Quedó PENDIENTE_APROBACION.',
+          ),
         ),
       );
 
@@ -3286,7 +3291,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   double get pxPorMin {
     switch (widget.scaleMinutes) {
       case 1:
-        return 3.2;
+        return 15.6;
       case 15:
         return 2.4;
       case 30:

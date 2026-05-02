@@ -221,18 +221,21 @@ class DisponibilidadMaquinariaResponse {
   final List<MaquinariaDisponibleItem> propiasDisponibles;
   final List<MaquinariaDisponibleItem> empresaDisponibles;
   final List<MaquinariaOcupadaItem> ocupadas;
+  final List<MaquinariaDisponibilidadDetalladaItem> catalogo;
 
   DisponibilidadMaquinariaResponse({
     required this.ok,
     required this.propiasDisponibles,
     required this.empresaDisponibles,
     required this.ocupadas,
+    this.catalogo = const [],
   });
 
   factory DisponibilidadMaquinariaResponse.fromJson(Map<String, dynamic> json) {
     final propias = (json['propiasDisponibles'] as List?) ?? [];
     final empresa = (json['empresaDisponibles'] as List?) ?? [];
     final ocup = (json['ocupadas'] as List?) ?? [];
+    final catalogo = (json['catalogo'] as List?) ?? [];
 
     return DisponibilidadMaquinariaResponse(
       ok: json['ok'] == true,
@@ -257,6 +260,97 @@ class DisponibilidadMaquinariaResponse {
             ),
           )
           .toList(),
+      catalogo: catalogo
+          .map(
+            (e) => MaquinariaDisponibilidadDetalladaItem.fromJson(
+              (e as Map).cast<String, dynamic>(),
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class MaquinariaDisponibilidadConflictoItem {
+  final int maquinariaId;
+  final String? maquinaNombre;
+  final int? tareaId;
+  final String? conjuntoId;
+  final String? conjuntoNombre;
+  final String? descripcion;
+  final DateTime ini;
+  final DateTime fin;
+  final String? fuente;
+
+  MaquinariaDisponibilidadConflictoItem({
+    required this.maquinariaId,
+    this.maquinaNombre,
+    this.tareaId,
+    this.conjuntoId,
+    this.conjuntoNombre,
+    this.descripcion,
+    required this.ini,
+    required this.fin,
+    this.fuente,
+  });
+
+  factory MaquinariaDisponibilidadConflictoItem.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return MaquinariaDisponibilidadConflictoItem(
+      maquinariaId: (json['maquinariaId'] as num).toInt(),
+      maquinaNombre: json['maquinaNombre']?.toString(),
+      tareaId: (json['tareaId'] as num?)?.toInt(),
+      conjuntoId: json['conjuntoId']?.toString(),
+      conjuntoNombre: json['conjuntoNombre']?.toString(),
+      descripcion: json['descripcion']?.toString(),
+      ini: DateTime.parse(json['ini'].toString()),
+      fin: DateTime.parse(json['fin'].toString()),
+      fuente: json['fuente']?.toString(),
+    );
+  }
+}
+
+class MaquinariaDisponibilidadDetalladaItem {
+  final int id;
+  final String nombre;
+  final String tipo;
+  final String marca;
+  final String origen;
+  final bool disponible;
+  final String motivo;
+  final List<MaquinariaDisponibilidadConflictoItem> conflictos;
+
+  MaquinariaDisponibilidadDetalladaItem({
+    required this.id,
+    required this.nombre,
+    required this.tipo,
+    required this.marca,
+    required this.origen,
+    required this.disponible,
+    required this.motivo,
+    required this.conflictos,
+  });
+
+  factory MaquinariaDisponibilidadDetalladaItem.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    final conflictos = (json['conflictos'] as List? ?? const [])
+        .map(
+          (e) => MaquinariaDisponibilidadConflictoItem.fromJson(
+            (e as Map).cast<String, dynamic>(),
+          ),
+        )
+        .toList();
+    return MaquinariaDisponibilidadDetalladaItem(
+      id: (json['id'] as num).toInt(),
+      nombre: (json['nombre'] ?? '').toString(),
+      tipo: (json['tipo'] ?? '').toString(),
+      marca: (json['marca'] ?? '').toString(),
+      origen: (json['origen'] ?? 'EMPRESA').toString(),
+      disponible: json['disponible'] == true,
+      motivo: (json['motivo'] ?? '').toString(),
+      conflictos: conflictos,
     );
   }
 }

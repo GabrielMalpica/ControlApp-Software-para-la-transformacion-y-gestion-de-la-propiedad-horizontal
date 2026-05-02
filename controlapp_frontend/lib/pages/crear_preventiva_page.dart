@@ -2,6 +2,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/agenda_api.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:intl/intl.dart';
 
@@ -14,8 +15,11 @@ import '../model/preventiva_model.dart';
 import '../model/conjunto_model.dart';
 import '../model/usuario_model.dart';
 import '../model/insumo_model.dart';
+import '../model/agenda_maquinaria_model.dart';
 import '../model/maquinaria_model.dart';
 import '../model/herramienta_model.dart';
+import 'cronograma_page.dart';
+import 'cronograma_preventivas_borrador_page.dart';
 import '../widgets/searchable_select_field.dart';
 
 import '../service/theme.dart';
@@ -46,6 +50,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   final _api = DefinicionPreventivaApi();
   final _gerenteApi = GerenteApi();
+  final _agendaApi = AgendaApi();
   final _empresaApi = EmpresaApi();
   final _herramientaApi = HerramientaApi();
 
@@ -196,6 +201,303 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         setState(() => _cargandoDispMaq = false);
       }
     }
+  }
+
+  List<MaquinariaDisponibilidadDetalladaItem> get _catalogoDisponibilidadMaq {
+    if (_dispMaq == null) return const [];
+    if (_dispMaq!.catalogo.isNotEmpty) return _dispMaq!.catalogo;
+    return [
+      ..._dispMaq!.propiasDisponibles.map(
+        (m) => MaquinariaDisponibilidadDetalladaItem(
+          id: m.id,
+          nombre: m.nombre,
+          tipo: m.tipo,
+          marca: m.marca,
+          origen: m.origen,
+          disponible: true,
+          motivo: 'Disponible para el rango solicitado.',
+          conflictos: const [],
+        ),
+      ),
+      ..._dispMaq!.empresaDisponibles.map(
+        (m) => MaquinariaDisponibilidadDetalladaItem(
+          id: m.id,
+          nombre: m.nombre,
+          tipo: m.tipo,
+          marca: m.marca,
+          origen: m.origen,
+          disponible: true,
+          motivo: 'Disponible para el rango solicitado.',
+          conflictos: const [],
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _abrirConflictoMaquinaria(
+    MaquinariaDisponibilidadConflictoItem conflicto,
+  ) async {
+    if (conflicto.conjuntoId == null || conflicto.conjuntoId!.trim().isEmpty) {
+      _snack(
+        'No se pudo identificar el conjunto del conflicto.',
+        type: SnackType.info,
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    if ((conflicto.fuente ?? '').toUpperCase() == 'BORRADOR_PREVENTIVA') {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => CronogramaPreventivasBorradorPage(
+            nit: conflicto.conjuntoId!.trim(),
+            anio: conflicto.ini.toLocal().year,
+            mes: conflicto.ini.toLocal().month,
+          ),
+        ),
+      );
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CronogramaPage(
+          nit: conflicto.conjuntoId!.trim(),
+          soloLectura: true,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _mostrarAgendaMaquinaria(
+    int maquinariaId, {
+    MaquinariaDisponibilidadDetalladaItem? detalle,
+  }) async {
+    final fechaBase = _dateOnly(_proximaFechaProgramada());
+    final desde = DateTime(fechaBase.year, fechaBase.month, 1);
+    final hasta = DateTime(fechaBase.year, fechaBase.month + 1, 0, 23, 59, 59);
+    final agenda = await _agendaApi.obtenerAgenda(
+      conjuntoId: widget.nit,
+      maquinariaId: maquinariaId,
+      desde: desde,
+      hasta: hasta,
+    );
+    if (!mounted) return;
+
+    final reservas = (agenda?.reservas ?? const <ReservaMaquinaria>[])
+      ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+    final diasReservados = reservas
+        .expand((reserva) {
+          final out = <DateTime>[];
+          var d = DateTime(
+            reserva.fechaInicio.year,
+            reserva.fechaInicio.month,
+            reserva.fechaInicio.day,
+          );
+          final fin = DateTime(
+            reserva.fechaFin.year,
+            reserva.fechaFin.month,
+            reserva.fechaFin.day,
+          );
+          while (!d.isAfter(fin)) {
+            out.add(d);
+            d = d.add(const Duration(days: 1));
+          }
+          return out;
+        })
+        .map((d) => '${d.year}-${d.month}-${d.day}')
+        .toSet();
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final daysInMonth = DateTime(desde.year, desde.month + 1, 0).day;
+        final firstWeekday = DateTime(desde.year, desde.month, 1).weekday;
+        final slots = List<int?>.filled(firstWeekday - 1, null)
+          ..addAll(List.generate(daysInMonth, (i) => i + 1));
+        while (slots.length % 7 != 0) {
+          slots.add(null);
+        }
+
+        return AlertDialog(
+          title: Text('Agenda de ${agenda?.nombre ?? 'maquinaria'}'),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    DateFormat('MMMM yyyy', 'es').format(desde),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _maqInfoChip(
+                        'Agenda publicada',
+                        reservas.length,
+                        Colors.blue,
+                      ),
+                      _maqInfoChip(
+                        'Choques definidas/borrador',
+                        detalle?.conflictos
+                                .where(
+                                  (c) =>
+                                      (c.fuente ?? '').toUpperCase() ==
+                                      'BORRADOR_PREVENTIVA',
+                                )
+                                .length ??
+                            0,
+                        Colors.orange,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: slots.length,
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 7,
+                          mainAxisSpacing: 6,
+                          crossAxisSpacing: 6,
+                          childAspectRatio: 1.25,
+                        ),
+                    itemBuilder: (_, index) {
+                      final day = slots[index];
+                      if (day == null) return const SizedBox.shrink();
+                      final key = '${desde.year}-${desde.month}-$day';
+                      final ocupado = diasReservados.contains(key);
+                      return Container(
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: ocupado
+                              ? Colors.blue.withValues(alpha: 0.16)
+                              : Colors.green.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: ocupado
+                                ? Colors.blue.shade300
+                                : Colors.green.shade300,
+                          ),
+                        ),
+                        child: Text('$day'),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Reservas del mes',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  if (reservas.isEmpty)
+                    const Text('No tiene agenda ocupada en este mes.')
+                  else
+                    ...reservas.map((reserva) {
+                      final ini = DateFormat(
+                        'dd/MM HH:mm',
+                        'es',
+                      ).format(reserva.fechaInicio.toLocal());
+                      final fin = DateFormat(
+                        'dd/MM HH:mm',
+                        'es',
+                      ).format(reserva.fechaFin.toLocal());
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(
+                          Icons.precision_manufacturing,
+                          color: Colors.blue,
+                        ),
+                        title: Text(reserva.tarea?.descripcion ?? 'Reserva'),
+                        subtitle: Text('$ini -> $fin'),
+                      );
+                    }),
+                  if (detalle != null && detalle.conflictos.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Preventivas definidas / borrador que generan conflicto',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    ...detalle.conflictos.map((conflicto) {
+                      final rango =
+                          '${DateFormat('dd/MM/yyyy', 'es').format(conflicto.ini.toLocal())} -> ${DateFormat('dd/MM/yyyy', 'es').format(conflicto.fin.toLocal())}';
+                      final conjunto =
+                          (conflicto.conjuntoNombre ??
+                                  conflicto.conjuntoId ??
+                                  'otro conjunto')
+                              .trim();
+                      final esBorrador =
+                          (conflicto.fuente ?? '').toUpperCase() ==
+                          'BORRADOR_PREVENTIVA';
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: esBorrador
+                              ? Colors.orange.withValues(alpha: 0.08)
+                              : Colors.red.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: esBorrador
+                                ? Colors.orange.shade300
+                                : Colors.red.shade200,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              conflicto.descripcion ??
+                                  'Preventiva en conflicto',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$conjunto · $rango',
+                              style: TextStyle(color: Colors.grey.shade700),
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.pop(ctx);
+                                  _abrirConflictoMaquinaria(conflicto);
+                                },
+                                icon: const Icon(Icons.open_in_new, size: 16),
+                                label: Text(
+                                  esBorrador
+                                      ? 'Abrir borrador'
+                                      : 'Abrir cronograma',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   // ===========================
@@ -1059,6 +1361,109 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     return '$nombre ocupada por conjunto $conjunto desde $desde hasta $hasta';
   }
 
+  Widget _maqInfoChip(String label, int count, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        '$label: $count',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResumenVisualDisponibilidadMaquinaria() {
+    final catalogo = _catalogoDisponibilidadMaq;
+    if (catalogo.isEmpty) return const SizedBox.shrink();
+
+    final disponibles = catalogo.where((item) => item.disponible).toList();
+    final ocupadas = catalogo.where((item) => !item.disponible).toList();
+
+    Widget buildCard(MaquinariaDisponibilidadDetalladaItem item) {
+      final conflicto = item.conflictos.isEmpty ? null : item.conflictos.first;
+      final conjuntoLabel = conflicto == null
+          ? ''
+          : ((conflicto.conjuntoNombre ?? '').trim().isNotEmpty
+                ? conflicto.conjuntoNombre!.trim()
+                : (conflicto.conjuntoId ?? 'otro conjunto'));
+      final rango = conflicto == null
+          ? ''
+          : '${DateFormat('dd/MM', 'es').format(conflicto.ini.toLocal())} -> ${DateFormat('dd/MM', 'es').format(conflicto.fin.toLocal())}';
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: item.disponible
+              ? Colors.green.withValues(alpha: 0.06)
+              : Colors.red.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: item.disponible
+                ? Colors.green.withValues(alpha: 0.22)
+                : Colors.red.withValues(alpha: 0.18),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${_labelMaq(MaquinariaDisponibleItem(id: item.id, nombre: item.nombre, tipo: item.tipo, marca: item.marca, origen: item.origen))}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              item.motivo,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
+            ),
+            if (conflicto != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Conflicto: ${conflicto.descripcion ?? 'Preventiva'}${conjuntoLabel.isEmpty ? '' : ' · $conjuntoLabel'}${rango.isEmpty ? '' : ' · $rango'}',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Resultado de la consulta',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        if (disponibles.isNotEmpty) ...[
+          const Text(
+            'Maquinaria libre para este rango',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          ...disponibles.take(6).map(buildCard),
+        ],
+        if (ocupadas.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          const Text(
+            'Maquinaria con conflicto en este rango',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 6),
+          ...ocupadas.take(6).map(buildCard),
+        ],
+      ],
+    );
+  }
+
   String _labelMaq(MaquinariaDisponibleItem m) {
     final o = m.origen.trim().toUpperCase();
     final tag = (o == 'CONJUNTO') ? 'Conjunto' : 'Empresa';
@@ -1577,10 +1982,25 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     if (_dispMaq != null) ...[
                       Builder(
                         builder: (_) {
-                          final ocupadasBorrador = _dispMaq!.ocupadas
+                          final catalogo = _catalogoDisponibilidadMaq;
+                          final disponibles = catalogo
+                              .where((item) => item.disponible)
+                              .length;
+                          final conflictosBorrador = catalogo
+                              .where((item) => !item.disponible)
+                              .expand((item) => item.conflictos)
                               .where(
-                                (o) =>
-                                    (o.fuente ?? '').trim().toUpperCase() ==
+                                (item) =>
+                                    (item.fuente ?? '').toUpperCase() ==
+                                    'BORRADOR_PREVENTIVA',
+                              )
+                              .length;
+                          final conflictosPublicados = catalogo
+                              .where((item) => !item.disponible)
+                              .expand((item) => item.conflictos)
+                              .where(
+                                (item) =>
+                                    (item.fuente ?? '').toUpperCase() !=
                                     'BORRADOR_PREVENTIVA',
                               )
                               .length;
@@ -1596,18 +2016,42 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Empresa: ${_dispMaq!.empresaDisponibles.length} | '
-                                  'Conjunto: ${_dispMaq!.propiasDisponibles.length} | '
-                                  'Ocupadas: ${_dispMaq!.ocupadas.length}',
+                                  'Disponibles: $disponibles | Con conflicto: ${catalogo.length - disponibles}',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                if (ocupadasBorrador > 0) ...[
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    _maqInfoChip(
+                                      'Conjunto libres',
+                                      _dispMaq!.propiasDisponibles.length,
+                                      Colors.green,
+                                    ),
+                                    _maqInfoChip(
+                                      'Empresa libres',
+                                      _dispMaq!.empresaDisponibles.length,
+                                      Colors.blue,
+                                    ),
+                                    _maqInfoChip(
+                                      'Choques publicadas',
+                                      conflictosPublicados,
+                                      Colors.red,
+                                    ),
+                                    _maqInfoChip(
+                                      'Choques definidas/borrador',
+                                      conflictosBorrador,
+                                      Colors.orange,
+                                    ),
+                                  ],
+                                ),
+                                if (conflictosBorrador > 0) ...[
                                   const SizedBox(height: 6),
                                   Text(
-                                    'Aviso: $ocupadasBorrador ocupación(es) vienen de preventivas en borrador. '
-                                    'Si se solapan, el cronograma no podrá publicarse.',
+                                    'Aviso: hay preventivas definidas o en borrador que ya tienen maquinaria seleccionada y se solapan con el rango de esta preventiva.',
                                     style: TextStyle(
                                       color: Colors.orange.shade900,
                                       fontWeight: FontWeight.w700,
@@ -1619,6 +2063,8 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           );
                         },
                       ),
+                      const SizedBox(height: 10),
+                      _buildResumenVisualDisponibilidadMaquinaria(),
                       const SizedBox(height: 10),
                     ],
 
@@ -1815,6 +2261,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     final row = _maquinariaPlanRows[index];
 
     final opciones = _opcionesMaquinariaDropdown();
+    final catalogo = _catalogoDisponibilidadMaq;
 
     if (_dispMaq == null) {
       return const Padding(
@@ -1832,6 +2279,15 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     final ocupada = row.maquinariaId != null
         ? _ocupadaPorId[row.maquinariaId!]
         : null;
+    MaquinariaDisponibilidadDetalladaItem? detalleSeleccion;
+    if (row.maquinariaId != null) {
+      for (final item in catalogo) {
+        if (item.id == row.maquinariaId) {
+          detalleSeleccion = item;
+          break;
+        }
+      }
+    }
 
     final options = <SearchableSelectOption<int>>[
       ...opciones.map(
@@ -1889,6 +2345,18 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                   },
                 ),
               ),
+              IconButton(
+                tooltip: row.maquinariaId == null
+                    ? 'Selecciona primero una maquinaria'
+                    : 'Mirar disponibilidad de esta maquinaria',
+                onPressed: row.maquinariaId == null
+                    ? null
+                    : () => _mostrarAgendaMaquinaria(
+                        row.maquinariaId!,
+                        detalle: detalleSeleccion,
+                      ),
+                icon: const Icon(Icons.calendar_month),
+              ),
               const SizedBox(width: 8),
               if (_dispMaq != null)
                 Text(
@@ -1913,6 +2381,35 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                 child: Text(
                   '⛔ ${_detalleOcupacionMaquinaria(ocupada)}',
                   style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
+          if (detalleSeleccion != null && !detalleSeleccion.disponible)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  detalleSeleccion.conflictos.isEmpty
+                      ? detalleSeleccion.motivo
+                      : detalleSeleccion.conflictos
+                            .map((c) {
+                              final conjunto =
+                                  (c.conjuntoNombre ??
+                                          c.conjuntoId ??
+                                          'otro conjunto')
+                                      .trim();
+                              final rango =
+                                  '${DateFormat('dd/MM', 'es').format(c.ini.toLocal())} -> ${DateFormat('dd/MM', 'es').format(c.fin.toLocal())}';
+                              final fuente =
+                                  (c.fuente ?? '').toUpperCase() ==
+                                      'BORRADOR_PREVENTIVA'
+                                  ? 'Preventiva definida/borrador'
+                                  : 'Agenda publicada';
+                              return '$fuente: ${c.descripcion ?? 'Preventiva'}${conjunto.isEmpty ? '' : ' · $conjunto'} · $rango';
+                            })
+                            .join('\n'),
+                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
                 ),
               ),
             ),

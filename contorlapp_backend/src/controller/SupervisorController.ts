@@ -138,6 +138,7 @@ export class SupervisorController {
         await svc.cerrarTareaConEvidencias(
           tareaId,
           {
+            accion: req.body.accion,
             observaciones: req.body.observaciones,
             fechaFinalizarTarea: req.body.fechaFinalizarTarea,
             insumosUsados: req.body.insumosUsados,
@@ -165,6 +166,7 @@ export class SupervisorController {
       await svc.cerrarTareaConEvidencias(
         tareaId,
         {
+          accion: req.body.accion,
           observaciones: req.body.observaciones,
           fechaFinalizarTarea: req.body.fechaFinalizarTarea,
           insumosUsados: req.body.insumosUsados,

@@ -107,6 +107,7 @@ export class OperarioController {
       await service.cerrarTareaConEvidencias(
         tareaId,
         {
+          accion: req.body.accion,
           observaciones: req.body.observaciones,
           fechaFinalizarTarea: req.body.fechaFinalizarTarea,
           insumosUsados: req.body.insumosUsados,

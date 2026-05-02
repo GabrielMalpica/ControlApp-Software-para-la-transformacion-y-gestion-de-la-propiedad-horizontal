@@ -12,6 +12,7 @@ import '../utils/pickers/selected_upload_file.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 
 class CerrarTareaResult {
+  final String accion;
   final String? observaciones;
   final List<Map<String, num>> insumosUsados;
 
@@ -21,6 +22,7 @@ class CerrarTareaResult {
   final List<EvidenciaAdjunto> evidencias;
 
   CerrarTareaResult({
+    required this.accion,
     required this.insumosUsados,
     this.observaciones,
     this.evidencias = const [],
@@ -45,6 +47,7 @@ class CerrarTareaSheet extends StatefulWidget {
 
 class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
   final _obsCtrl = TextEditingController();
+  String _accion = 'COMPLETADA';
 
   /// filas para consumo
   final List<_ConsumoRow> _rows = [];
@@ -205,6 +208,8 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
     return out;
   }
 
+  bool get _requiereObservacionNoCompletada => _accion == 'NO_COMPLETADA';
+
   String _displayName(EvidenciaAdjunto e) {
     // En mobile podemos mostrar filename desde path si viene, si no el nombre
     final p = e.path;
@@ -247,6 +252,39 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
               style: TextStyle(color: Colors.grey.shade700),
             ),
             const SizedBox(height: 12),
+
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'COMPLETADA', label: Text('Completada')),
+                ButtonSegment(
+                  value: 'NO_COMPLETADA',
+                  label: Text('No completada'),
+                ),
+              ],
+              selected: {_accion},
+              onSelectionChanged: (value) {
+                setState(() => _accion = value.first);
+              },
+            ),
+            const SizedBox(height: 12),
+
+            if (_requiereObservacionNoCompletada)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.orange.withValues(alpha: 0.22),
+                  ),
+                ),
+                child: const Text(
+                  'Marca la tarea como no completada e indica el motivo u observación. Esto alimenta informes y gráficas.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+            if (_requiereObservacionNoCompletada) const SizedBox(height: 12),
 
             Card(
               elevation: 0,
@@ -407,6 +445,11 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                 'No hay inventario disponible (o no se pudo cargar). Puedes cerrar sin insumos.',
                 style: TextStyle(color: Colors.grey.shade700),
               )
+            else if (_requiereObservacionNoCompletada)
+              Text(
+                'Si la tarea queda no completada no es necesario registrar consumo de insumos.',
+                style: TextStyle(color: Colors.grey.shade700),
+              )
             else
               Expanded(
                 child: ListView.separated(
@@ -506,8 +549,10 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
             TextField(
               controller: _obsCtrl,
               maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Observaciones (opcional)',
+              decoration: InputDecoration(
+                labelText: _requiereObservacionNoCompletada
+                    ? 'Motivo / observación (obligatorio)'
+                    : 'Observaciones (opcional)',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -517,19 +562,37 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () {
+                  final observacion = _obsCtrl.text.trim();
+                  if (_requiereObservacionNoCompletada &&
+                      observacion.length < 3) {
+                    AppFeedback.showFromSnackBar(
+                      context,
+                      const SnackBar(
+                        content: Text(
+                          'Debes indicar un motivo u observación de al menos 3 caracteres.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
                   Navigator.pop(
                     context,
                     CerrarTareaResult(
-                      insumosUsados: _buildInsumosUsados(),
-                      observaciones: _obsCtrl.text.trim().isEmpty
-                          ? null
-                          : _obsCtrl.text.trim(),
+                      accion: _accion,
+                      insumosUsados: _requiereObservacionNoCompletada
+                          ? const []
+                          : _buildInsumosUsados(),
+                      observaciones: observacion.isEmpty ? null : observacion,
                       evidencias: _evidencias, // ✅ listo para web+mobile
                     ),
                   );
                 },
                 icon: const Icon(Icons.send),
-                label: const Text('Cerrar y enviar'),
+                label: Text(
+                  _requiereObservacionNoCompletada
+                      ? 'Marcar no completada'
+                      : 'Cerrar y enviar',
+                ),
               ),
             ),
           ],

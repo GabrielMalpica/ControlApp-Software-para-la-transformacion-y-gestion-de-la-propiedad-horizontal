@@ -276,6 +276,7 @@ class _TareasPageState extends State<TareasPage> {
         rol: _rol,
         usuarioId: _usuarioId,
         tarea: t,
+        accion: result.accion,
         observaciones: result.observaciones,
         insumosUsados: result.insumosUsados,
         evidencias: result.evidencias, // ✅ correcto
@@ -284,8 +285,12 @@ class _TareasPageState extends State<TareasPage> {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
-        const SnackBar(
-          content: Text('✅ Tarea cerrada. Quedó pendiente aprobación.'),
+        SnackBar(
+          content: Text(
+            result.accion == 'NO_COMPLETADA'
+                ? '✅ Tarea marcada como no completada.'
+                : '✅ Tarea cerrada. Quedó pendiente aprobación.',
+          ),
         ),
       );
       await _cargarTareas();

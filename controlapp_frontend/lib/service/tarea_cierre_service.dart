@@ -99,6 +99,7 @@ class TareaCierreService {
     required String? rol,
     required String? usuarioId,
     required TareaModel tarea,
+    String accion = 'COMPLETADA',
     String? observaciones,
     List<Map<String, num>> insumosUsados = const [],
     List<EvidenciaAdjunto> evidencias = const [],
@@ -121,6 +122,7 @@ class TareaCierreService {
         await _operarioApi.cerrarTareaConEvidencias(
           operarioId: operarioId,
           tareaId: tarea.id,
+          accion: accion,
           observaciones: observaciones,
           insumosUsados: insumosUsados,
           evidencias: evidencias,
@@ -130,6 +132,7 @@ class TareaCierreService {
         try {
           await _tareaApi.cerrarTareaConEvidencias(
             tareaId: tarea.id,
+            accion: accion,
             observaciones: observaciones,
             insumosUsados: insumosUsados,
             evidencias: evidencias,
@@ -140,6 +143,7 @@ class TareaCierreService {
         }
         await _supervisorApi.cerrarTareaConEvidencias(
           tareaId: tarea.id,
+          accion: accion,
           observaciones: observaciones,
           insumosUsados: insumosUsados,
           evidencias: evidencias,
@@ -149,6 +153,7 @@ class TareaCierreService {
         try {
           await _jefeOperacionesApi.cerrarTareaConEvidencias(
             tareaId: tarea.id,
+            accion: accion,
             observaciones: observaciones,
             insumosUsados: insumosUsados,
             evidencias: evidencias,
@@ -159,6 +164,7 @@ class TareaCierreService {
         }
         await _supervisorApi.cerrarTareaConEvidencias(
           tareaId: tarea.id,
+          accion: accion,
           observaciones: observaciones,
           insumosUsados: insumosUsados,
           evidencias: evidencias,
@@ -167,6 +173,7 @@ class TareaCierreService {
       case 'supervisor':
         await _supervisorApi.cerrarTareaConEvidencias(
           tareaId: tarea.id,
+          accion: accion,
           observaciones: observaciones,
           insumosUsados: insumosUsados,
           evidencias: evidencias,

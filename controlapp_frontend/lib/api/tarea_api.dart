@@ -185,15 +185,19 @@ class TareaApi {
 
   Future<void> cerrarTareaConEvidencias({
     required int tareaId,
+    String accion = 'COMPLETADA',
     String? observaciones,
     DateTime? fechaFinalizarTarea,
     List<Map<String, num>> insumosUsados = const [],
     List<EvidenciaAdjunto> evidencias = const [],
   }) async {
-    final uri = Uri.parse('${AppConstants.supervisorBase}/tareas/$tareaId/cerrar');
+    final uri = Uri.parse(
+      '${AppConstants.supervisorBase}/tareas/$tareaId/cerrar',
+    );
 
     final req = http.MultipartRequest('POST', uri);
     req.headers.addAll(await _authHeaders());
+    req.fields['accion'] = accion;
 
     if (observaciones != null && observaciones.trim().isNotEmpty) {
       req.fields['observaciones'] = observaciones.trim();

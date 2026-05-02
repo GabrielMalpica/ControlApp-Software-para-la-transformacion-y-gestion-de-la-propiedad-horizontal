@@ -99,6 +99,7 @@ class OperarioController {
                 const service = new OperarioServices_1.OperarioService(prisma_1.prisma, operarioId);
                 const files = req.files ?? [];
                 await service.cerrarTareaConEvidencias(tareaId, {
+                    accion: req.body.accion,
                     observaciones: req.body.observaciones,
                     fechaFinalizarTarea: req.body.fechaFinalizarTarea,
                     insumosUsados: req.body.insumosUsados,

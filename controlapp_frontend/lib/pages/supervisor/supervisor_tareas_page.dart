@@ -159,6 +159,7 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
         rol: _rolActual,
         usuarioId: _usuarioIdActual,
         tarea: t,
+        accion: res.accion,
         observaciones: res.observaciones,
         insumosUsados: res.insumosUsados,
         evidencias: res.evidencias,
@@ -167,8 +168,12 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
-        const SnackBar(
-          content: Text('✅ Tarea cerrada. Quedó PENDIENTE_APROBACION.'),
+        SnackBar(
+          content: Text(
+            res.accion == 'NO_COMPLETADA'
+                ? '✅ Tarea marcada como no completada.'
+                : '✅ Tarea cerrada. Quedó PENDIENTE_APROBACION.',
+          ),
         ),
       );
       await _cargar();

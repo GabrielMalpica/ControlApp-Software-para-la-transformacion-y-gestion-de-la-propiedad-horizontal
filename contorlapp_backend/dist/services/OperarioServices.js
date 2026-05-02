@@ -25,6 +25,7 @@ const MarcarCompletadaDTO = zod_1.z.object({
 });
 const FechaDTO = zod_1.z.object({ fecha: zod_1.z.coerce.date() });
 const CerrarMultipartDTO = zod_1.z.object({
+    accion: zod_1.z.enum(["COMPLETADA", "NO_COMPLETADA"]).optional(),
     observaciones: zod_1.z.string().optional(),
     fechaFinalizarTarea: zod_1.z.string().optional(),
     insumosUsados: zod_1.z.string().optional(),
@@ -182,6 +183,7 @@ class OperarioService {
     }
     async cerrarTareaConEvidencias(tareaId, payload, files) {
         const dto = CerrarMultipartDTO.parse(payload ?? {});
+        const accion = dto.accion ?? "COMPLETADA";
         const fechaCierre = dto.fechaFinalizarTarea
             ? new Date(dto.fechaFinalizarTarea)
             : new Date();
@@ -216,11 +218,11 @@ class OperarioService {
         if (!permitidos.has(tarea.estado)) {
             throw new Error(`No puedes cerrar una tarea en estado ${tarea.estado}.`);
         }
-        if (!tarea.conjuntoId) {
+        if (accion === "COMPLETADA" && !tarea.conjuntoId) {
             throw new Error("La tarea no tiene conjunto asignado, no puedo descontar inventario.");
         }
         let insumosUsados = [];
-        if (dto.insumosUsados && dto.insumosUsados.trim().length) {
+        if (accion === "COMPLETADA" && dto.insumosUsados && dto.insumosUsados.trim().length) {
             try {
                 insumosUsados = zod_1.z
                     .array(zod_1.z.object({
@@ -242,7 +244,7 @@ class OperarioService {
                         .toISOString()
                         .replace(/[:.]/g, "-")}_${f.originalname}`,
                     mimeType: f.mimetype,
-                    conjuntoNit: tarea.conjunto?.nit ?? tarea.conjuntoId,
+                    conjuntoNit: tarea.conjunto?.nit ?? tarea.conjuntoId ?? "SIN_CONJUNTO",
                     conjuntoNombre: tarea.conjunto?.nombre ?? undefined,
                     fecha: fechaCierre,
                 });
@@ -260,11 +262,13 @@ class OperarioService {
         }
         const evidenciasMerge = [...(tarea.evidencias ?? []), ...urls];
         await this.prisma.$transaction(async (tx) => {
-            const inventario = await tx.inventario.findUnique({
-                where: { conjuntoId: tarea.conjuntoId },
-                select: { id: true },
-            });
-            if (!inventario) {
+            const inventario = accion === "COMPLETADA"
+                ? await tx.inventario.findUnique({
+                    where: { conjuntoId: tarea.conjuntoId },
+                    select: { id: true },
+                })
+                : null;
+            if (accion === "COMPLETADA" && !inventario) {
                 throw new Error("No existe inventario para este conjunto.");
             }
             for (const item of insumosUsados) {
@@ -325,13 +329,18 @@ class OperarioService {
                 where: { tareaId },
                 data: { tareaId: null, operarioId: null, fechaDevolucionEstimada: null },
             });
+            if (accion === "NO_COMPLETADA" && (!dto.observaciones || dto.observaciones.trim().length < 3)) {
+                throw new Error("Debes indicar el motivo u observación de por qué no se realizó la tarea.");
+            }
             await tx.tarea.update({
                 where: { id: tareaId },
                 data: {
                     evidencias: evidenciasMerge,
                     observaciones: dto.observaciones ?? undefined,
-                    insumosUsados: insumosUsados,
-                    estado: client_1.EstadoTarea.PENDIENTE_APROBACION,
+                    insumosUsados: accion === "COMPLETADA" ? insumosUsados : undefined,
+                    estado: accion === "NO_COMPLETADA"
+                        ? client_1.EstadoTarea.NO_COMPLETADA
+                        : client_1.EstadoTarea.PENDIENTE_APROBACION,
                     fechaFinalizarTarea: fechaCierre,
                     finalizadaPorId: this.operarioId.toString(),
                     finalizadaPorRol: "OPERARIO",
@@ -340,14 +349,16 @@ class OperarioService {
         });
         try {
             const notificaciones = new NotificacionService_1.NotificacionService(this.prisma);
-            await notificaciones.notificarCierreTarea({
-                tareaId,
-                descripcionTarea: tarea.descripcion,
-                conjuntoId: tarea.conjuntoId,
-                actorId: this.operarioId.toString(),
-                actorRol: "OPERARIO",
-                supervisorId: tarea.supervisorId,
-            });
+            if (tarea.conjuntoId) {
+                await notificaciones.notificarCierreTarea({
+                    tareaId,
+                    descripcionTarea: tarea.descripcion,
+                    conjuntoId: tarea.conjuntoId,
+                    actorId: this.operarioId.toString(),
+                    actorRol: "OPERARIO",
+                    supervisorId: tarea.supervisorId,
+                });
+            }
         }
         catch (e) {
             console.error("No se pudo notificar cierre de tarea (operario):", e);

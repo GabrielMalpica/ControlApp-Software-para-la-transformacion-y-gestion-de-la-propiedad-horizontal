@@ -4871,7 +4871,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   double get pxPorMin {
     switch (widget.scaleMinutes) {
       case 1:
-        return 3.2;
+        return 15.6;
       case 15:
         return 2.4;
       case 30:

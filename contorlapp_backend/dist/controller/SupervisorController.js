@@ -121,6 +121,7 @@ class SupervisorController {
                     }
                     const files = req.files ?? [];
                     await svc.cerrarTareaConEvidencias(tareaId, {
+                        accion: req.body.accion,
                         observaciones: req.body.observaciones,
                         fechaFinalizarTarea: req.body.fechaFinalizarTarea,
                         insumosUsados: req.body.insumosUsados,
@@ -136,6 +137,7 @@ class SupervisorController {
                 }
                 const files = req.files ?? [];
                 await svc.cerrarTareaConEvidencias(tareaId, {
+                    accion: req.body.accion,
                     observaciones: req.body.observaciones,
                     fechaFinalizarTarea: req.body.fechaFinalizarTarea,
                     insumosUsados: req.body.insumosUsados,

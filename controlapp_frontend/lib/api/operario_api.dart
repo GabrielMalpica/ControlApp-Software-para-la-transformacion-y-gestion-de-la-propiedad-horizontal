@@ -51,6 +51,7 @@ class OperarioApi {
   Future<void> cerrarTareaConEvidencias({
     required int operarioId,
     required int tareaId,
+    String accion = 'COMPLETADA',
     String? observaciones,
     List<Map<String, num>> insumosUsados = const [],
     List<EvidenciaAdjunto> evidencias = const [],
@@ -71,6 +72,8 @@ class OperarioApi {
       'x-empresa-id': AppConstants.empresaNit,
       'Accept': 'application/json',
     });
+
+    req.fields['accion'] = accion;
 
     if (observaciones != null && observaciones.trim().isNotEmpty) {
       req.fields['observaciones'] = observaciones.trim();

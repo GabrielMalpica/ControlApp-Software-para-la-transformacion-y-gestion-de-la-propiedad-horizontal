@@ -70,6 +70,7 @@ const ListarDTO = z.object({
 });
 
 const CerrarMultipartDTO = z.object({
+  accion: z.enum(["COMPLETADA", "NO_COMPLETADA"]).optional(),
   observaciones: z.string().optional(),
   fechaFinalizarTarea: z.string().optional(), // viene string ISO
   insumosUsados: z.string().optional(), // JSON string
@@ -569,6 +570,7 @@ export class SupervisorService {
     files: Express.Multer.File[],
   ) {
     const dto = CerrarMultipartDTO.parse(payload ?? {});
+    const accion = dto.accion ?? "COMPLETADA";
     const fechaCierre = dto.fechaFinalizarTarea
       ? new Date(dto.fechaFinalizarTarea)
       : new Date();
@@ -598,7 +600,7 @@ export class SupervisorService {
       throw new Error(`No puedes cerrar una tarea en estado ${tarea.estado}.`);
     }
 
-    if (!tarea.conjuntoId) {
+    if (accion === "COMPLETADA" && !tarea.conjuntoId) {
       throw new Error(
         "La tarea no tiene conjunto asignado, no puedo descontar inventario.",
       );
@@ -606,7 +608,7 @@ export class SupervisorService {
 
     // 1) Parse insumosUsados (JSON string)
     let insumosUsados: InsumoUsado[] = [];
-    if (dto.insumosUsados && dto.insumosUsados.trim().length) {
+    if (accion === "COMPLETADA" && dto.insumosUsados && dto.insumosUsados.trim().length) {
       try {
         const parsed = JSON.parse(dto.insumosUsados);
         insumosUsados = z
@@ -634,7 +636,7 @@ export class SupervisorService {
             .toISOString()
             .replace(/[:.]/g, "-")}_${f.originalname}`,
           mimeType: f.mimetype,
-          conjuntoNit: tarea.conjunto?.nit ?? tarea.conjuntoId,
+          conjuntoNit: tarea.conjunto?.nit ?? tarea.conjuntoId ?? "SIN_CONJUNTO",
           conjuntoNombre: tarea.conjunto?.nombre ?? undefined,
           fecha: fechaCierre,
         });
@@ -652,12 +654,14 @@ export class SupervisorService {
 
     // 3) Transacción: descontar inventario + registrar consumo + liberar usos + cerrar tarea
     await this.prisma.$transaction(async (tx) => {
-      const inventario = await tx.inventario.findUnique({
-        where: { conjuntoId: tarea.conjuntoId! },
-        select: { id: true },
-      });
+      const inventario = accion === "COMPLETADA"
+        ? await tx.inventario.findUnique({
+            where: { conjuntoId: tarea.conjuntoId! },
+            select: { id: true },
+          })
+        : null;
 
-      if (!inventario) {
+      if (accion === "COMPLETADA" && !inventario) {
         throw new Error("No existe inventario para este conjunto.");
       }
 
@@ -666,7 +670,7 @@ export class SupervisorService {
         const invItem = await tx.inventarioInsumo.findUnique({
           where: {
             inventarioId_insumoId: {
-              inventarioId: inventario.id,
+                inventarioId: inventario!.id,
               insumoId: item.insumoId,
             },
           },
@@ -696,7 +700,7 @@ export class SupervisorService {
 
         await tx.consumoInsumo.create({
           data: {
-            inventario: { connect: { id: inventario.id } },
+            inventario: { connect: { id: inventario!.id } },
             insumo: { connect: { id: item.insumoId } },
             tipo: TipoMovimientoInsumo.SALIDA,
             tarea: { connect: { id: tareaId } },
@@ -734,13 +738,20 @@ export class SupervisorService {
       });
 
       // ✅ cerrar tarea
+      if (accion === "NO_COMPLETADA" && (!dto.observaciones || dto.observaciones.trim().length < 3)) {
+        throw new Error("Debes indicar el motivo u observación de por qué no se realizó la tarea.");
+      }
+
       await tx.tarea.update({
         where: { id: tareaId },
         data: {
           evidencias: evidenciasMerge,
           observaciones: dto.observaciones ?? undefined,
-          insumosUsados: insumosUsados as any,
-          estado: EstadoTarea.PENDIENTE_APROBACION,
+          insumosUsados: accion === "COMPLETADA" ? (insumosUsados as any) : undefined,
+          estado:
+            accion === "NO_COMPLETADA"
+              ? EstadoTarea.NO_COMPLETADA
+              : EstadoTarea.PENDIENTE_APROBACION,
           fechaFinalizarTarea: fechaCierre,
           supervisorId:
             this.actorRol === "SUPERVISOR" ? this.supervisorId : undefined,
@@ -752,14 +763,16 @@ export class SupervisorService {
 
     try {
       const notificaciones = new NotificacionService(this.prisma);
-      await notificaciones.notificarCierreTarea({
-        tareaId,
-        descripcionTarea: tarea.descripcion,
-        conjuntoId: tarea.conjuntoId,
-        actorId: this.supervisorId,
-        actorRol: this.actorRolDb(),
-        supervisorId: tarea.supervisorId,
-      });
+      if (tarea.conjuntoId) {
+        await notificaciones.notificarCierreTarea({
+          tareaId,
+          descripcionTarea: tarea.descripcion,
+          conjuntoId: tarea.conjuntoId,
+          actorId: this.supervisorId,
+          actorRol: this.actorRolDb(),
+          supervisorId: tarea.supervisorId,
+        });
+      }
     } catch (e) {
       console.error("No se pudo notificar cierre de tarea (supervisor):", e);
     }

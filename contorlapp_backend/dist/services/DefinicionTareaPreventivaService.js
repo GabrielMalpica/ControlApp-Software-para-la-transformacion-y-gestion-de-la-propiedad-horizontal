@@ -3049,9 +3049,20 @@ class DefinicionTareaPreventivaService {
             ...ocupadasBorrador,
         ];
         const nombrePorId = new Map([...propias, ...empresa].map((maquina) => [maquina.id, maquina.nombre]));
+        const conjuntoIds = Array.from(new Set(ocupadasDetalle
+            .map((item) => item.conjuntoId)
+            .filter((item) => !!item && item.trim().length > 0)));
+        const conjuntos = conjuntoIds.length
+            ? await this.prisma.conjunto.findMany({
+                where: { nit: { in: conjuntoIds } },
+                select: { nit: true, nombre: true },
+            })
+            : [];
+        const conjuntoNombrePorId = new Map(conjuntos.map((conjunto) => [conjunto.nit, conjunto.nombre]));
         const ocupadasDetalleConNombre = ocupadasDetalle.map((item) => ({
             ...item,
             maquinaNombre: nombrePorId.get(item.maquinariaId) ?? null,
+            conjuntoNombre: item.conjuntoId == null ? null : (conjuntoNombrePorId.get(item.conjuntoId) ?? null),
         }));
         const ocupadasSet = new Set(ocupadasDetalleConNombre.map((o) => o.maquinariaId));
         const propiasDisponibles = propias
@@ -3073,12 +3084,50 @@ class DefinicionTareaPreventivaService {
             origen: "EMPRESA",
             empresaId: m.empresaId,
         }));
+        const propiasIds = new Set(propias.map((item) => item.id));
+        const catalogo = [...propias, ...empresa]
+            .map((m) => {
+            const conflictos = ocupadasDetalleConNombre.filter((item) => item.maquinariaId === m.id);
+            const origen = propiasIds.has(m.id) ? "CONJUNTO" : "EMPRESA";
+            return {
+                id: m.id,
+                nombre: m.nombre,
+                tipo: m.tipo,
+                marca: m.marca,
+                origen,
+                disponible: conflictos.length === 0,
+                motivo: conflictos.length === 0
+                    ? "Disponible para el rango solicitado."
+                    : conflictos.some((item) => item.fuente === "BORRADOR_PREVENTIVA")
+                        ? "Tiene preventivas definidas/borrador que se solapan con este rango."
+                        : "Tiene agenda publicada que se solapa con este rango.",
+                conflictos: conflictos.map((item) => ({
+                    maquinariaId: item.maquinariaId,
+                    maquinaNombre: item.maquinaNombre,
+                    tareaId: item.tareaId,
+                    conjuntoId: item.conjuntoId,
+                    conjuntoNombre: item.conjuntoNombre,
+                    descripcion: item.descripcion,
+                    ini: item.ini,
+                    fin: item.fin,
+                    fuente: item.fuente,
+                })),
+            };
+        })
+            .sort((a, b) => {
+            if (a.disponible !== b.disponible)
+                return a.disponible ? -1 : 1;
+            if (a.origen !== b.origen)
+                return a.origen.localeCompare(b.origen);
+            return a.nombre.localeCompare(b.nombre);
+        });
         return {
             ok: true,
             rango: { entregaDia, recogidaDia, iniReserva, finReserva },
             propiasDisponibles,
             empresaDisponibles,
             ocupadas: ocupadasDetalleConNombre,
+            catalogo,
         };
     }
     async eliminarBloqueBorrador(conjuntoId, tareaId) {
