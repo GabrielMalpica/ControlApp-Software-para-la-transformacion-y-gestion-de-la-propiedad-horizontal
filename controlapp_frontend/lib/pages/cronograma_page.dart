@@ -80,6 +80,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   // Vista y semana seleccionada
   _VistaCronograma _vista = _VistaCronograma.mensual;
   late DateTime _semanaBase;
+  int _escalaSemanalMinutos = 60;
 
   bool _mostrarFiltrosMensual = false;
 
@@ -473,12 +474,13 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   String? _equipoOperariosLabel(TareaModel t) {
-    final operarios = t.operariosNombres
-        .map((name) => name.trim())
-        .where((name) => name.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+    final operarios =
+        t.operariosNombres
+            .map((name) => name.trim())
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
     if (operarios.length < 2) return null;
     return operarios.join(' + ');
   }
@@ -2323,6 +2325,43 @@ class _CronogramaPageState extends State<CronogramaPage> {
                     ),
                     icon: const Icon(Icons.chevron_right),
                   ),
+                  const SizedBox(width: 8),
+                  PopupMenuButton<int>(
+                    tooltip: 'Cambiar escala semanal',
+                    initialValue: _escalaSemanalMinutos,
+                    onSelected: (value) =>
+                        setState(() => _escalaSemanalMinutos = value),
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(value: 1, child: Text('Escala 1 minuto')),
+                      PopupMenuItem(
+                        value: 15,
+                        child: Text('Escala 15 minutos'),
+                      ),
+                      PopupMenuItem(
+                        value: 30,
+                        child: Text('Escala 30 minutos'),
+                      ),
+                      PopupMenuItem(value: 60, child: Text('Escala 1 hora')),
+                    ],
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.shade400),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.zoom_in, size: 18),
+                          const SizedBox(width: 6),
+                          Text('Escala ${_escalaSemanalMinutos}m'),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -2399,6 +2438,34 @@ class _CronogramaPageState extends State<CronogramaPage> {
               () => _semanaBase = _semanaBase.add(const Duration(days: 7)),
             ),
             icon: const Icon(Icons.chevron_right),
+          ),
+          const SizedBox(width: 8),
+          PopupMenuButton<int>(
+            tooltip: 'Cambiar escala semanal',
+            initialValue: _escalaSemanalMinutos,
+            onSelected: (value) =>
+                setState(() => _escalaSemanalMinutos = value),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 1, child: Text('Escala 1 minuto')),
+              PopupMenuItem(value: 15, child: Text('Escala 15 minutos')),
+              PopupMenuItem(value: 30, child: Text('Escala 30 minutos')),
+              PopupMenuItem(value: 60, child: Text('Escala 1 hora')),
+            ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade400),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.zoom_in, size: 18),
+                  const SizedBox(width: 6),
+                  Text('Escala ${_escalaSemanalMinutos}m'),
+                ],
+              ),
+            ),
           ),
         ],
       ],
@@ -2816,6 +2883,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
             child: _WeekScheduleView(
               weekStart: weekStart,
               tareas: tareas,
+              scaleMinutes: _escalaSemanalMinutos,
               horaInicio: _horaInicioJornada,
               horaFin: _horaFinJornada,
               horaDescansoInicio: _horaDescansoInicio,
@@ -2863,6 +2931,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
           child: _WeekScheduleView(
             weekStart: weekStart,
             tareas: tareas,
+            scaleMinutes: _escalaSemanalMinutos,
             horaInicio: _horaInicioJornada,
             horaFin: _horaFinJornada,
             horaDescansoInicio: _horaDescansoInicio,
@@ -2882,11 +2951,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
           ),
         ),
       ],
-      );
+    );
   }
 
-  int _indiceSemanaMes(DateTime date) => (((date.toLocal().day - 1) ~/ 7) + 1)
-      .clamp(1, 5);
+  int _indiceSemanaMes(DateTime date) =>
+      (((date.toLocal().day - 1) ~/ 7) + 1).clamp(1, 5);
 
   List<_HorasGrupoResumen> _resumenHorasAgrupadas(
     List<TareaModel> tareas,
@@ -2895,10 +2964,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final acumulado = <String, List<double>>{};
 
     for (final tarea in tareas) {
-      final keys = keysForTask(tarea)
-          .map((item) => item.trim())
-          .where((item) => item.isNotEmpty)
-          .toSet();
+      final keys = keysForTask(
+        tarea,
+      ).map((item) => item.trim()).where((item) => item.isNotEmpty).toSet();
       if (keys.isEmpty) continue;
 
       final semana = _indiceSemanaMes(tarea.fechaInicio);
@@ -3145,6 +3213,7 @@ Color _cronogramaColorBaseTareaSemana(TareaModel t) {
 class _WeekScheduleView extends StatefulWidget {
   final DateTime weekStart; // lunes 00:00
   final List<TareaModel> tareas;
+  final int scaleMinutes;
   final int horaInicio;
   final int horaFin;
   final int? horaDescansoInicio;
@@ -3156,6 +3225,7 @@ class _WeekScheduleView extends StatefulWidget {
   const _WeekScheduleView({
     required this.weekStart,
     required this.tareas,
+    required this.scaleMinutes,
     required this.horaInicio,
     required this.horaFin,
     this.horaDescansoInicio,
@@ -3210,9 +3280,21 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   bool _syncingHeader = false;
   bool _syncingBody = false;
 
-  static const double pxPorMin = 1.6;
   static const double anchoHora = 56;
   static const double altoHeader = 44;
+
+  double get pxPorMin {
+    switch (widget.scaleMinutes) {
+      case 1:
+        return 3.2;
+      case 15:
+        return 2.4;
+      case 30:
+        return 1.7;
+      default:
+        return 1.1;
+    }
+  }
 
   int get _horaInicio => widget.horaInicio;
   int get _horaFin => widget.horaFin;
@@ -3581,6 +3663,28 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   child: Container(height: 1, color: line),
                                 );
                               }),
+
+                              if (widget.scaleMinutes < 60)
+                                ...List.generate(
+                                  hours * (60 ~/ widget.scaleMinutes),
+                                  (i) {
+                                    final minutes =
+                                        (i + 1) * widget.scaleMinutes;
+                                    if (minutes % 60 == 0) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    final top = minutes * pxPorMin;
+                                    return Positioned(
+                                      left: anchoHora,
+                                      right: 0,
+                                      top: top,
+                                      child: Container(
+                                        height: 1,
+                                        color: line.withValues(alpha: 0.45),
+                                      ),
+                                    );
+                                  },
+                                ),
                               if (lunchStartMin != null &&
                                   lunchDurMin != null &&
                                   lunchDurMin > 0 &&
@@ -3648,7 +3752,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                       .difference(placement.inicio)
                                       .inMinutes;
                                   final markerHeight =
-                                      ((overlapMinutes <= 0 ? 1 : overlapMinutes) *
+                                      ((overlapMinutes <= 0
+                                                  ? 1
+                                                  : overlapMinutes) *
                                               pxPorMin)
                                           .clamp(26.0, 120.0);
 
@@ -3695,7 +3801,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                               children: [
                                                 Row(
                                                   children: [
-                                                    ...List.generate(dotCount, (i) {
+                                                    ...List.generate(dotCount, (
+                                                      i,
+                                                    ) {
                                                       return Container(
                                                         width: 10,
                                                         height: 10,
@@ -3708,7 +3816,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                         decoration: BoxDecoration(
                                                           color:
                                                               colors[i %
-                                                                  colors.length],
+                                                                  colors
+                                                                      .length],
                                                           borderRadius:
                                                               BorderRadius.circular(
                                                                 2,
@@ -3718,7 +3827,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                     }),
                                                     if (!ultraCompactMarker &&
                                                         placement.groupSize >
-                                                        dotCount) ...[
+                                                            dotCount) ...[
                                                       const SizedBox(width: 6),
                                                       Text(
                                                         '+${placement.groupSize - dotCount}',
@@ -3737,8 +3846,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                             ? 'Tareas solapadas'
                                                             : 'Superposicion detectada',
                                                         maxLines: 1,
-                                                        overflow:
-                                                            TextOverflow.ellipsis,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
                                                         style: TextStyle(
                                                           color: text,
                                                           fontSize: 11,
@@ -3768,7 +3877,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                   Text(
                                                     '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra mas' : ''}'}',
                                                     maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
                                                     style: TextStyle(
                                                       color: subtext,
                                                       fontSize: 10,

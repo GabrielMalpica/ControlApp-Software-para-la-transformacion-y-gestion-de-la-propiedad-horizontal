@@ -12,6 +12,28 @@ import '../service/app_constants.dart';
 class DefinicionPreventivaApi {
   final ApiClient _client = ApiClient();
 
+  Never _throwCrudApiError(dynamic resp, {required String fallback}) {
+    dynamic body;
+    try {
+      body = jsonDecode(resp.body);
+    } catch (_) {
+      body = null;
+    }
+
+    final friendly = _friendlyMessageFromBody(body, fallback: fallback);
+    String? reason;
+    if (body is Map<String, dynamic>) {
+      reason = body['reason']?.toString();
+    }
+
+    throw ApiError(
+      statusCode: resp.statusCode as int,
+      message: friendly,
+      reason: reason,
+      details: body ?? resp.body,
+    );
+  }
+
   /// Listar definiciones preventivas de un conjunto
   /// GET /definicion-preventiva/conjuntos/:nit/preventivas
   Future<List<DefinicionPreventiva>> listarPorConjunto(String nit) async {
@@ -67,8 +89,10 @@ class DefinicionPreventivaApi {
     );
 
     if (resp.statusCode != 201) {
-      throw Exception(
-        'Error al crear preventiva: ${resp.statusCode} ${resp.body}',
+      _throwCrudApiError(
+        resp,
+        fallback:
+            'No se pudo crear la preventiva. Revisa maquinaria, fechas y recursos.',
       );
     }
 
@@ -89,8 +113,10 @@ class DefinicionPreventivaApi {
     );
 
     if (resp.statusCode != 200) {
-      throw Exception(
-        'Error al editar preventiva: ${resp.statusCode} ${resp.body}',
+      _throwCrudApiError(
+        resp,
+        fallback:
+            'No se pudo editar la preventiva. Revisa maquinaria, fechas y recursos.',
       );
     }
 

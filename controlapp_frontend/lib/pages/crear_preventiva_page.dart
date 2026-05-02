@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:intl/intl.dart';
 
 import '../api/preventiva_api.dart';
 import '../api/empresa_api.dart';
@@ -1049,6 +1050,15 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     return opciones;
   }
 
+  String _detalleOcupacionMaquinaria(MaquinariaOcupadaItem ocupada) {
+    final nombre =
+        (ocupada.maquinaNombre ?? 'Maquinaria #${ocupada.maquinariaId}').trim();
+    final conjunto = (ocupada.conjuntoId ?? '—').trim();
+    final desde = DateFormat('dd/MM/yyyy', 'es').format(ocupada.ini.toLocal());
+    final hasta = DateFormat('dd/MM/yyyy', 'es').format(ocupada.fin.toLocal());
+    return '$nombre ocupada por conjunto $conjunto desde $desde hasta $hasta';
+  }
+
   String _labelMaq(MaquinariaDisponibleItem m) {
     final o = m.origen.trim().toUpperCase();
     final tag = (o == 'CONJUNTO') ? 'Conjunto' : 'Empresa';
@@ -1818,6 +1828,11 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         ? true
         : opciones.any((o) => o.id == row.maquinariaId);
 
+    // hint ocupada (si aplica)
+    final ocupada = row.maquinariaId != null
+        ? _ocupadaPorId[row.maquinariaId!]
+        : null;
+
     final options = <SearchableSelectOption<int>>[
       ...opciones.map(
         (m) => SearchableSelectOption<int>(
@@ -1830,13 +1845,11 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         SearchableSelectOption<int>(
           value: row.maquinariaId!,
           label: '[No disponible] #${row.maquinariaId}',
+          subtitle: ocupada != null
+              ? _detalleOcupacionMaquinaria(ocupada)
+              : null,
         ),
     ];
-
-    // hint ocupada (si aplica)
-    final ocupada = row.maquinariaId != null
-        ? _ocupadaPorId[row.maquinariaId!]
-        : null;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
@@ -1876,6 +1889,12 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                   },
                 ),
               ),
+              const SizedBox(width: 8),
+              if (_dispMaq != null)
+                Text(
+                  '${opciones.length} libres',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                ),
               IconButton(
                 icon: const Icon(Icons.delete_outline),
                 onPressed: () {
@@ -1892,11 +1911,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  (ocupada.fuente ?? '').trim().toUpperCase() ==
-                          'BORRADOR_PREVENTIVA'
-                      ? '⛔ Ocupada por otra preventiva en borrador: ${ocupada.descripcion ?? ''}'
-                            .trim()
-                      : '⛔ Ocupada: ${ocupada.descripcion ?? ''}'.trim(),
+                  '⛔ ${_detalleOcupacionMaquinaria(ocupada)}',
                   style: const TextStyle(fontSize: 12),
                 ),
               ),

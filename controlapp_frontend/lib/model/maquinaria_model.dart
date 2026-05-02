@@ -183,6 +183,7 @@ class MaquinariaDisponibleItem {
 
 class MaquinariaOcupadaItem {
   final int maquinariaId;
+  final String? maquinaNombre;
   final DateTime ini;
   final DateTime fin;
   final int? tareaId;
@@ -192,6 +193,7 @@ class MaquinariaOcupadaItem {
 
   MaquinariaOcupadaItem({
     required this.maquinariaId,
+    this.maquinaNombre,
     required this.ini,
     required this.fin,
     this.tareaId,
@@ -203,6 +205,7 @@ class MaquinariaOcupadaItem {
   factory MaquinariaOcupadaItem.fromJson(Map<String, dynamic> json) {
     return MaquinariaOcupadaItem(
       maquinariaId: (json['maquinariaId'] as num).toInt(),
+      maquinaNombre: json['maquinaNombre']?.toString(),
       ini: DateTime.parse(json['ini'].toString()),
       fin: DateTime.parse(json['fin'].toString()),
       tareaId: (json['tareaId'] as num?)?.toInt(),
@@ -257,4 +260,5 @@ class DisponibilidadMaquinariaResponse {
     );
   }
 }
+
 // ignore_for_file: constant_identifier_names

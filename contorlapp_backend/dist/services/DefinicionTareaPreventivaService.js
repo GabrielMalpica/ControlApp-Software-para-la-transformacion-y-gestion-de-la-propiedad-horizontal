@@ -2309,13 +2309,22 @@ class DefinicionTareaPreventivaService {
             throw new Error("La tarea ya tiene bloques agendados. No puedes redefinir la división manual en este momento.");
         }
         const total = dto.bloques.reduce((acc, bloque) => acc + bloque.duracionMinutos, 0);
-        if (total !== excluida.duracionMinutos) {
+        if (Math.abs(total - excluida.duracionMinutos) > 1) {
             throw new Error("La suma de horas de los bloques debe coincidir con la duración total de la tarea excluida.");
+        }
+        const bloquesNormalizados = dto.bloques.map((bloque) => ({ ...bloque }));
+        const diff = excluida.duracionMinutos - total;
+        if (diff !== 0) {
+            const ultimo = bloquesNormalizados[bloquesNormalizados.length - 1];
+            ultimo.duracionMinutos += diff;
+            if (ultimo.duracionMinutos <= 0) {
+                throw new Error("La suma de horas de los bloques no permite ajustar correctamente la duración final.");
+            }
         }
         const division = {
             activa: true,
             actualizadaEn: new Date().toISOString(),
-            bloques: dto.bloques.map((bloque, index) => ({
+            bloques: bloquesNormalizados.map((bloque, index) => ({
                 id: `b${index + 1}`,
                 orden: index + 1,
                 duracionMinutos: bloque.duracionMinutos,
@@ -3039,7 +3048,12 @@ class DefinicionTareaPreventivaService {
             })),
             ...ocupadasBorrador,
         ];
-        const ocupadasSet = new Set(ocupadasDetalle.map((o) => o.maquinariaId));
+        const nombrePorId = new Map([...propias, ...empresa].map((maquina) => [maquina.id, maquina.nombre]));
+        const ocupadasDetalleConNombre = ocupadasDetalle.map((item) => ({
+            ...item,
+            maquinaNombre: nombrePorId.get(item.maquinariaId) ?? null,
+        }));
+        const ocupadasSet = new Set(ocupadasDetalleConNombre.map((o) => o.maquinariaId));
         const propiasDisponibles = propias
             .filter((m) => !ocupadasSet.has(m.id))
             .map((m) => ({
@@ -3064,7 +3078,7 @@ class DefinicionTareaPreventivaService {
             rango: { entregaDia, recogidaDia, iniReserva, finReserva },
             propiasDisponibles,
             empresaDisponibles,
-            ocupadas: ocupadasDetalle,
+            ocupadas: ocupadasDetalleConNombre,
         };
     }
     async eliminarBloqueBorrador(conjuntoId, tareaId) {
