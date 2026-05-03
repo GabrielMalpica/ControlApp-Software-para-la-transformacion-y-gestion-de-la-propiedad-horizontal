@@ -2057,7 +2057,14 @@ class DefinicionTareaPreventivaService {
         const dto = EditarBloqueBorradorDTO.parse(payload);
         const tarea = await this.prisma.tarea.findUnique({
             where: { id: tareaId },
-            select: { id: true, conjuntoId: true, borrador: true, tipo: true },
+            select: {
+                id: true,
+                conjuntoId: true,
+                borrador: true,
+                tipo: true,
+                descripcion: true,
+                maquinariaPlanJson: true,
+            },
         });
         if (!tarea ||
             tarea.conjuntoId !== conjuntoId ||
@@ -2111,6 +2118,33 @@ class DefinicionTareaPreventivaService {
                 if (haySolape) {
                     const nombre = await getOperarioNombre(this.prisma, opId);
                     throw new Error(`Solape de agenda con operario ${nombre}`);
+                }
+            }
+        }
+        if (fechaInicio && fechaFin) {
+            const getMaqIds = (json) => {
+                if (!Array.isArray(json))
+                    return [];
+                return json
+                    .map((x) => Number(x?.maquinariaId))
+                    .filter((n) => Number.isFinite(n) && n > 0);
+            };
+            const maqIds = Array.from(new Set(getMaqIds(tarea.maquinariaPlanJson)));
+            if (maqIds.length) {
+                const disponibilidad = await this.listarMaquinariaDisponible({
+                    conjuntoId,
+                    fechaInicioUso: fechaInicio,
+                    fechaFinUso: fechaFin,
+                    excluirTareaId: tareaId,
+                });
+                if (disponibilidad.ok) {
+                    const ocupadas = disponibilidad.ocupadas ?? [];
+                    const conflicto = ocupadas.find((item) => maqIds.includes(item.maquinariaId));
+                    if (conflicto) {
+                        const maquina = conflicto.maquinaNombre ?? `Maquinaria #${conflicto.maquinariaId}`;
+                        const conjunto = conflicto.conjuntoNombre ?? conflicto.conjuntoId ?? "otro conjunto";
+                        throw new Error(`No se pudo mover la tarea '${tarea.descripcion}' por agenda de maquinaria. ${maquina} entra en conflicto con ${conflicto.descripcion ?? "otra preventiva"} del conjunto ${conjunto}.`);
+                    }
                 }
             }
         }
