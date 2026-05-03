@@ -975,6 +975,7 @@ class _CronogramaPreventivasBorradorPageState
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = AppError.messageOf(e);
         _loading = false;
@@ -1806,6 +1807,7 @@ class _CronogramaPreventivasBorradorPageState
         }
       }
 
+      if (!mounted) return;
       setState(() {
         _tareasMes = filtradas;
         _excluidasMes = excluidas;
@@ -1818,7 +1820,7 @@ class _CronogramaPreventivasBorradorPageState
         _recalcularResumenDias();
       });
     } catch (e) {
-      setState(() => _error = AppError.messageOf(e));
+      if (mounted) setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

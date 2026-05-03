@@ -307,13 +307,41 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         })
         .map((d) => '${d.year}-${d.month}-${d.day}')
         .toSet();
+    final diasConflictoBorrador = <String>{};
+    final diasConflictoPublicado = <String>{};
+    final eventosPorDia = <String, List<ReservaMaquinaria>>{};
+    for (final reserva in reservas) {
+      var d = DateTime(
+        reserva.fechaInicio.year,
+        reserva.fechaInicio.month,
+        reserva.fechaInicio.day,
+      );
+      final fin = DateTime(
+        reserva.fechaFin.year,
+        reserva.fechaFin.month,
+        reserva.fechaFin.day,
+      );
+      while (!d.isAfter(fin)) {
+        final key = '${d.year}-${d.month}-${d.day}';
+        eventosPorDia
+            .putIfAbsent(key, () => <ReservaMaquinaria>[])
+            .add(reserva);
+        final fuente = (reserva.fuente ?? '').toUpperCase();
+        if (fuente == 'DEFINICION') {
+          diasConflictoBorrador.add(key);
+        } else if (fuente == 'BORRADOR' || fuente == 'PUBLICADA') {
+          diasConflictoPublicado.add(key);
+        }
+        d = d.add(const Duration(days: 1));
+      }
+    }
 
     await showDialog<void>(
       context: context,
       builder: (ctx) {
         final daysInMonth = DateTime(desde.year, desde.month + 1, 0).day;
         final firstWeekday = DateTime(desde.year, desde.month, 1).weekday;
-        final slots = List<int?>.filled(firstWeekday - 1, null)
+        final slots = List<int?>.filled(firstWeekday - 1, null, growable: true)
           ..addAll(List.generate(daysInMonth, (i) => i + 1));
         while (slots.length % 7 != 0) {
           slots.add(null);
@@ -353,6 +381,18 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                             0,
                         Colors.orange,
                       ),
+                      _maqInfoChip(
+                        'Choques publicados',
+                        detalle?.conflictos
+                                .where(
+                                  (c) =>
+                                      (c.fuente ?? '').toUpperCase() !=
+                                      'BORRADOR_PREVENTIVA',
+                                )
+                                .length ??
+                            0,
+                        Colors.red,
+                      ),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -372,20 +412,198 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       if (day == null) return const SizedBox.shrink();
                       final key = '${desde.year}-${desde.month}-$day';
                       final ocupado = diasReservados.contains(key);
+                      final conflictoBorrador = diasConflictoBorrador.contains(
+                        key,
+                      );
+                      final conflictoPublicado = diasConflictoPublicado
+                          .contains(key);
                       return Container(
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: ocupado
-                              ? Colors.blue.withValues(alpha: 0.16)
-                              : Colors.green.withValues(alpha: 0.10),
+                        child: InkWell(
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: ocupado
-                                ? Colors.blue.shade300
-                                : Colors.green.shade300,
+                          onTap: () async {
+                            final dayDate = DateTime(
+                              desde.year,
+                              desde.month,
+                              day,
+                            );
+                            final dayKey =
+                                '${dayDate.year}-${dayDate.month}-${dayDate.day}';
+                            final eventos =
+                                eventosPorDia[dayKey] ??
+                                const <ReservaMaquinaria>[];
+                            final tieneDefinicion = eventos.any(
+                              (e) =>
+                                  (e.fuente ?? '').toUpperCase() ==
+                                  'DEFINICION',
+                            );
+                            final tieneBorrador = eventos.any(
+                              (e) =>
+                                  (e.fuente ?? '').toUpperCase() == 'BORRADOR',
+                            );
+                            final tienePublicada = eventos.any(
+                              (e) =>
+                                  (e.fuente ?? '').toUpperCase() == 'PUBLICADA',
+                            );
+                            final usoPropio = eventos.any(
+                              (e) =>
+                                  (e.tarea?.conjuntoId ?? '').trim() ==
+                                  widget.nit.trim(),
+                            );
+                            final tipoConflicto = tieneDefinicion
+                                ? 'DEFINICION'
+                                : (tieneBorrador ||
+                                      (tienePublicada && !usoPropio))
+                                ? 'PUBLICADA'
+                                : usoPropio
+                                ? 'USO_PROPIO'
+                                : 'LIBRE';
+                            await showDialog<void>(
+                              context: ctx,
+                              builder: (popupCtx) => AlertDialog(
+                                title: Text(
+                                  'Detalle ${DateFormat('dd/MM/yyyy', 'es').format(dayDate)}',
+                                ),
+                                content: SizedBox(
+                                  width: 420,
+                                  child: SingleChildScrollView(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (tipoConflicto == 'DEFINICION')
+                                          Text(
+                                            'Hay una preventiva en definición para esta maquinaria en este día.',
+                                            style: TextStyle(
+                                              color: Colors.orange.shade900,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          )
+                                        else if (tipoConflicto == 'PUBLICADA')
+                                          Text(
+                                            tieneBorrador
+                                                ? 'Hay una preventiva en borrador para esta maquinaria en este día.'
+                                                : 'Hay una preventiva publicada para esta maquinaria en este día.',
+                                            style: TextStyle(
+                                              color: Colors.red.shade800,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          )
+                                        else if (tipoConflicto == 'USO_PROPIO')
+                                          Text(
+                                            'Para este día se estaría usando la maquinaria en este conjunto.',
+                                            style: TextStyle(
+                                              color: Colors.blue.shade800,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          )
+                                        else
+                                          Text(
+                                            'La maquinaria está libre en este día.',
+                                            style: TextStyle(
+                                              color: Colors.green.shade800,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        const SizedBox(height: 10),
+                                        if (eventos.isEmpty)
+                                          const Text(
+                                            'No hay eventos detallados para este día.',
+                                          )
+                                        else
+                                          ...eventos.map((evento) {
+                                            final fuente = (evento.fuente ?? '')
+                                                .toUpperCase();
+                                            final conjuntoNombre =
+                                                evento.tarea?.conjuntoNombre ??
+                                                evento.tarea?.conjuntoId ??
+                                                'otro conjunto';
+                                            final color = fuente == 'DEFINICION'
+                                                ? Colors.orange
+                                                : fuente == 'BORRADOR'
+                                                ? Colors.red
+                                                : Colors.blue;
+                                            return Container(
+                                              margin: const EdgeInsets.only(
+                                                bottom: 8,
+                                              ),
+                                              padding: const EdgeInsets.all(10),
+                                              decoration: BoxDecoration(
+                                                color: color.withValues(
+                                                  alpha: 0.08,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                border: Border.all(
+                                                  color: color.withValues(
+                                                    alpha: 0.22,
+                                                  ),
+                                                ),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    evento.tarea?.descripcion ??
+                                                        'Reserva',
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    'Conjunto: $conjuntoNombre',
+                                                  ),
+                                                  Text(
+                                                    'Estado: ${evento.fuente == 'DEFINICION'
+                                                        ? 'DEFINICION'
+                                                        : evento.fuente == 'BORRADOR'
+                                                        ? 'BORRADOR'
+                                                        : 'PUBLICADA'}',
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          }),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(popupCtx),
+                                    child: const Text('Cerrar'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                          child: Container(
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: conflictoPublicado
+                                  ? Colors.red.withValues(alpha: 0.18)
+                                  : conflictoBorrador
+                                  ? Colors.orange.withValues(alpha: 0.22)
+                                  : ocupado
+                                  ? Colors.blue.withValues(alpha: 0.16)
+                                  : Colors.green.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: conflictoPublicado
+                                    ? Colors.red.shade300
+                                    : conflictoBorrador
+                                    ? Colors.orange.shade300
+                                    : ocupado
+                                    ? Colors.blue.shade300
+                                    : Colors.green.shade300,
+                              ),
+                            ),
+                            child: Text('$day'),
                           ),
                         ),
-                        child: Text('$day'),
                       );
                     },
                   ),
@@ -1342,6 +1560,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     }
 
     opciones.sort((a, b) {
+      final tipoA = a.tipo.trim().toLowerCase();
+      final tipoB = b.tipo.trim().toLowerCase();
+      final byTipo = tipoA.compareTo(tipoB);
+      if (byTipo != 0) return byTipo;
       final origenA = a.origen.trim().toUpperCase();
       final origenB = b.origen.trim().toUpperCase();
       final byOrigen = origenA.compareTo(origenB);
@@ -1387,80 +1609,171 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     final disponibles = catalogo.where((item) => item.disponible).toList();
     final ocupadas = catalogo.where((item) => !item.disponible).toList();
 
-    Widget buildCard(MaquinariaDisponibilidadDetalladaItem item) {
-      final conflicto = item.conflictos.isEmpty ? null : item.conflictos.first;
-      final conjuntoLabel = conflicto == null
-          ? ''
-          : ((conflicto.conjuntoNombre ?? '').trim().isNotEmpty
-                ? conflicto.conjuntoNombre!.trim()
-                : (conflicto.conjuntoId ?? 'otro conjunto'));
-      final rango = conflicto == null
-          ? ''
-          : '${DateFormat('dd/MM', 'es').format(conflicto.ini.toLocal())} -> ${DateFormat('dd/MM', 'es').format(conflicto.fin.toLocal())}';
-      return Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: item.disponible
-              ? Colors.green.withValues(alpha: 0.06)
-              : Colors.red.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: item.disponible
-                ? Colors.green.withValues(alpha: 0.22)
-                : Colors.red.withValues(alpha: 0.18),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${_labelMaq(MaquinariaDisponibleItem(id: item.id, nombre: item.nombre, tipo: item.tipo, marca: item.marca, origen: item.origen))}',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              item.motivo,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
-            ),
-            if (conflicto != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Conflicto: ${conflicto.descripcion ?? 'Preventiva'}${conjuntoLabel.isEmpty ? '' : ' · $conjuntoLabel'}${rango.isEmpty ? '' : ' · $rango'}',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-              ),
-            ],
-          ],
-        ),
-      );
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Resultado de la consulta',
+          'Resultado general de la consulta',
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 8),
-        if (disponibles.isNotEmpty) ...[
-          const Text(
-            'Maquinaria libre para este rango',
-            style: TextStyle(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          ...disponibles.take(6).map(buildCard),
-        ],
-        if (ocupadas.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          const Text(
-            'Maquinaria con conflicto en este rango',
-            style: TextStyle(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          ...ocupadas.take(6).map(buildCard),
-        ],
+        Text(
+          'Se encontraron ${disponibles.length} máquina(s) libres y ${ocupadas.length} con conflicto para el rango consultado. El detalle y las sugerencias se muestran por cada maquinaria seleccionada.',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+        ),
       ],
+    );
+  }
+
+  List<MaquinariaDisponibilidadDetalladaItem> _sugerenciasMaquinariaPorTipo({
+    required MaquinariaDisponibilidadDetalladaItem detalle,
+    required int selectedId,
+  }) {
+    return _catalogoDisponibilidadMaq
+        .where(
+          (item) =>
+              item.disponible &&
+              item.id != selectedId &&
+              item.tipo.trim().toUpperCase() ==
+                  detalle.tipo.trim().toUpperCase(),
+        )
+        .toList()
+      ..sort((a, b) {
+        if (a.origen != b.origen) return a.origen.compareTo(b.origen);
+        return a.nombre.compareTo(b.nombre);
+      });
+  }
+
+  Widget _buildDetalleSeleccionMaquinaria({
+    required _MaquinariaPlanRow row,
+    required MaquinariaDisponibilidadDetalladaItem detalle,
+  }) {
+    final sugeridas = _sugerenciasMaquinariaPorTipo(
+      detalle: detalle,
+      selectedId: row.maquinariaId ?? detalle.id,
+    );
+    final libre = detalle.disponible;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: libre
+            ? Colors.green.withValues(alpha: 0.06)
+            : Colors.red.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: libre
+              ? Colors.green.withValues(alpha: 0.22)
+              : Colors.red.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            libre
+                ? 'Esta maquinaria está libre para el rango de la tarea'
+                : 'Esta maquinaria tiene conflicto para el rango de la tarea',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: libre ? Colors.green.shade800 : Colors.red.shade800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(detalle.motivo, style: TextStyle(color: Colors.grey.shade800)),
+          if (!libre && detalle.conflictos.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ...detalle.conflictos.map((c) {
+              final conjunto =
+                  (c.conjuntoNombre ?? c.conjuntoId ?? 'otro conjunto').trim();
+              final rango =
+                  '${DateFormat('dd/MM/yyyy', 'es').format(c.ini.toLocal())} -> ${DateFormat('dd/MM/yyyy', 'es').format(c.fin.toLocal())}';
+              final fuente =
+                  (c.fuente ?? '').toUpperCase() == 'BORRADOR_PREVENTIVA'
+                  ? 'Preventiva definida/borrador'
+                  : 'Agenda publicada';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  '- $fuente: ${c.descripcion ?? 'Preventiva'} · $conjunto · $rango',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              );
+            }),
+          ],
+          if (!libre) ...[
+            const SizedBox(height: 10),
+            if (sugeridas.isNotEmpty)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: Colors.green.withValues(alpha: 0.22),
+                  ),
+                ),
+                child: Text(
+                  'Recomendación principal: usa ${sugeridas.first.nombre} porque es del mismo tipo (${_tipoMaquinariaLabel(sugeridas.first.tipo)}) y no presenta solape para este rango.',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.green.shade800,
+                  ),
+                ),
+              ),
+            Text(
+              'Máquinas sugeridas del mismo tipo (${detalle.tipo})',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            if (sugeridas.isEmpty)
+              Text(
+                'No encontré máquinas libres del mismo tipo para este rango.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              )
+            else
+              ...sugeridas.take(6).map((sug) {
+                final option = MaquinariaDisponibleItem(
+                  id: sug.id,
+                  nombre: sug.nombre,
+                  tipo: sug.tipo,
+                  marca: sug.marca,
+                  origen: sug.origen,
+                );
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.green.withValues(alpha: 0.20),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _labelMaq(option),
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          setState(() => row.maquinariaId = sug.id);
+                        },
+                        child: const Text('Usar esta'),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1469,6 +1782,45 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     final tag = (o == 'CONJUNTO') ? 'Conjunto' : 'Empresa';
     final marca = m.marca.trim().isEmpty ? '' : ' • ${m.marca}';
     return '[$tag] ${m.nombre}$marca';
+  }
+
+  String _tipoMaquinariaLabel(String tipo) {
+    final clean = tipo.trim();
+    return clean.isEmpty ? 'Sin tipo' : clean;
+  }
+
+  List<String> _mensajesConflictoMaquinariaSeleccionada() {
+    final mensajes = <String>[];
+    for (final row in _maquinariaPlanRows) {
+      if (row.maquinariaId == null) continue;
+      MaquinariaDisponibilidadDetalladaItem? detalle;
+      for (final item in _catalogoDisponibilidadMaq) {
+        if (item.id == row.maquinariaId) {
+          detalle = item;
+          break;
+        }
+      }
+      if (detalle == null || detalle.disponible || detalle.conflictos.isEmpty) {
+        continue;
+      }
+      for (final conflicto in detalle.conflictos) {
+        final estado =
+            (conflicto.fuente ?? '').toUpperCase() == 'BORRADOR_PREVENTIVA'
+            ? 'está en borrador'
+            : 'está publicada';
+        final conjunto =
+            (conflicto.conjuntoNombre ??
+                    conflicto.conjuntoId ??
+                    'otro conjunto')
+                .trim();
+        final rango =
+            '${DateFormat('dd/MM/yyyy', 'es').format(conflicto.ini.toLocal())} -> ${DateFormat('dd/MM/yyyy', 'es').format(conflicto.fin.toLocal())}';
+        mensajes.add(
+          'La preventiva "${conflicto.descripcion ?? 'Sin nombre'}" $estado en el conjunto "$conjunto" y se solapa con esta maquinaria en el rango $rango.',
+        );
+      }
+    }
+    return mensajes;
   }
 
   List<SearchableSelectOption<int>> _buildInsumoOptions() {
@@ -2004,6 +2356,8 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                                     'BORRADOR_PREVENTIVA',
                               )
                               .length;
+                          final mensajesConflictoSeleccionados =
+                              _mensajesConflictoMaquinariaSeleccionada();
 
                           return Container(
                             padding: const EdgeInsets.all(12),
@@ -2048,13 +2402,27 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                                     ),
                                   ],
                                 ),
-                                if (conflictosBorrador > 0) ...[
+                                if (mensajesConflictoSeleccionados
+                                    .isNotEmpty) ...[
                                   const SizedBox(height: 6),
                                   Text(
-                                    'Aviso: hay preventivas definidas o en borrador que ya tienen maquinaria seleccionada y se solapan con el rango de esta preventiva.',
+                                    'Aviso: encontré conflictos de maquinaria en las filas que ya tienen máquina seleccionada:',
                                     style: TextStyle(
                                       color: Colors.orange.shade900,
                                       fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  ...mensajesConflictoSeleccionados.map(
+                                    (msg) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Text(
+                                        '- $msg',
+                                        style: TextStyle(
+                                          color: Colors.orange.shade900,
+                                          fontSize: 12,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -2293,8 +2661,8 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       ...opciones.map(
         (m) => SearchableSelectOption<int>(
           value: m.id,
-          label: _labelMaq(m),
-          subtitle: m.tipo,
+          label: '${_labelMaq(m)} • ${_tipoMaquinariaLabel(m.tipo)}',
+          subtitle: 'Tipo: ${_tipoMaquinariaLabel(m.tipo)}',
         ),
       ),
       if (!selectedExists && row.maquinariaId != null)
@@ -2384,34 +2752,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                 ),
               ),
             ),
-          if (detalleSeleccion != null && !detalleSeleccion.disponible)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  detalleSeleccion.conflictos.isEmpty
-                      ? detalleSeleccion.motivo
-                      : detalleSeleccion.conflictos
-                            .map((c) {
-                              final conjunto =
-                                  (c.conjuntoNombre ??
-                                          c.conjuntoId ??
-                                          'otro conjunto')
-                                      .trim();
-                              final rango =
-                                  '${DateFormat('dd/MM', 'es').format(c.ini.toLocal())} -> ${DateFormat('dd/MM', 'es').format(c.fin.toLocal())}';
-                              final fuente =
-                                  (c.fuente ?? '').toUpperCase() ==
-                                      'BORRADOR_PREVENTIVA'
-                                  ? 'Preventiva definida/borrador'
-                                  : 'Agenda publicada';
-                              return '$fuente: ${c.descripcion ?? 'Preventiva'}${conjunto.isEmpty ? '' : ' · $conjunto'} · $rango';
-                            })
-                            .join('\n'),
-                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
-                ),
-              ),
+          if (detalleSeleccion != null)
+            _buildDetalleSeleccionMaquinaria(
+              row: row,
+              detalle: detalleSeleccion,
             ),
         ],
       ),

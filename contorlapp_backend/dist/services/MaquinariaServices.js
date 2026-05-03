@@ -125,7 +125,6 @@ class MaquinariaService {
                 maquinariaId: this.maquinariaId,
                 fechaInicio: { lt: hasta },
                 fechaFin: { gt: desde },
-                tarea: { conjuntoId },
             },
             include: {
                 maquinaria: { select: { id: true, nombre: true } },
@@ -138,6 +137,9 @@ class MaquinariaService {
                         estado: true,
                         tipo: true,
                         prioridad: true,
+                        borrador: true,
+                        conjuntoId: true,
+                        conjunto: { select: { nombre: true } },
                         ubicacion: { select: { nombre: true } },
                         elemento: { include: elementoHierarchy_1.elementoParentChainInclude },
                     },
@@ -145,30 +147,157 @@ class MaquinariaService {
             },
             orderBy: [{ fechaInicio: "asc" }],
         });
+        const getMaqIds = (json) => {
+            if (!Array.isArray(json))
+                return [];
+            return json
+                .map((x) => Number(x?.maquinariaId))
+                .filter((n) => Number.isFinite(n) && n > 0);
+        };
+        const borradores = await this.prisma.tarea.findMany({
+            where: {
+                borrador: true,
+                tipo: "PREVENTIVA",
+                fechaInicio: { lt: hasta },
+                fechaFin: { gt: desde },
+            },
+            select: {
+                id: true,
+                descripcion: true,
+                fechaInicio: true,
+                fechaFin: true,
+                conjuntoId: true,
+                conjunto: { select: { nombre: true } },
+                maquinariaPlanJson: true,
+            },
+            orderBy: [{ fechaInicio: "asc" }],
+        });
+        const definiciones = await this.prisma.definicionTareaPreventiva.findMany({
+            where: { activo: true },
+            select: {
+                id: true,
+                descripcion: true,
+                frecuencia: true,
+                diaSemanaProgramado: true,
+                diaMesProgramado: true,
+                diasParaCompletar: true,
+                conjuntoId: true,
+                conjunto: { select: { nombre: true } },
+                maquinariaPlanJson: true,
+            },
+            orderBy: [{ descripcion: "asc" }],
+        });
+        const diaSemanaToJs = {
+            LUNES: 1,
+            MARTES: 2,
+            MIERCOLES: 3,
+            JUEVES: 4,
+            VIERNES: 5,
+            SABADO: 6,
+            DOMINGO: 0,
+        };
+        const definicionReservas = definiciones.flatMap((def) => {
+            const maqIds = new Set(getMaqIds(def.maquinariaPlanJson));
+            if (!maqIds.has(maquinariaId))
+                return [];
+            const items = [];
+            const duracionDias = Math.max(1, def.diasParaCompletar ?? 1);
+            const pushReserva = (fechaBase) => {
+                const ini = startOfDayLocal(fechaBase);
+                const fin = addDaysLocal(ini, duracionDias - 1);
+                if (ini >= hasta || fin < desde)
+                    return;
+                items.push({
+                    id: -def.id,
+                    fechaInicio: ini,
+                    fechaFin: new Date(fin.getFullYear(), fin.getMonth(), fin.getDate(), 23, 59, 59),
+                    tareaId: null,
+                    tarea: {
+                        id: def.id,
+                        descripcion: def.descripcion,
+                        estado: "DEFINICION",
+                        tipo: "PREVENTIVA",
+                        prioridad: 0,
+                        ubicacion: null,
+                        elemento: null,
+                        fechaInicio: ini,
+                        fechaFin: fin,
+                        conjuntoId: def.conjuntoId,
+                        conjuntoNombre: def.conjunto?.nombre ?? null,
+                    },
+                    observacion: "Preventiva en definicion",
+                    fuente: "DEFINICION",
+                });
+            };
+            const cursor = new Date(desde.getFullYear(), desde.getMonth(), 1);
+            const finMes = new Date(hasta.getFullYear(), hasta.getMonth(), 0);
+            if (def.diaMesProgramado != null) {
+                const day = Math.max(1, Math.min(31, def.diaMesProgramado));
+                const fecha = new Date(cursor.getFullYear(), cursor.getMonth(), day);
+                pushReserva(fecha);
+            }
+            else if (def.diaSemanaProgramado != null) {
+                const target = diaSemanaToJs[def.diaSemanaProgramado];
+                for (let d = new Date(cursor); d <= finMes; d = addDaysLocal(d, 1)) {
+                    if (d.getDay() == target)
+                        pushReserva(d);
+                }
+            }
+            return items;
+        });
         return {
             maquinariaId,
             nombre: usos[0]?.maquinaria?.nombre ?? "",
             esPropiaConjunto,
-            reservas: usos.map((u) => ({
-                id: u.id,
-                fechaInicio: u.fechaInicio,
-                fechaFin: u.fechaFin,
-                tareaId: u.tareaId,
-                tarea: u.tarea
-                    ? {
-                        id: u.tarea.id,
-                        descripcion: u.tarea.descripcion,
-                        estado: u.tarea.estado,
-                        tipo: u.tarea.tipo,
-                        prioridad: u.tarea.prioridad,
-                        ubicacion: u.tarea.ubicacion?.nombre ?? null,
-                        elemento: (0, elementoHierarchy_1.construirRutaElemento)(u.tarea.elemento) ?? null,
-                        fechaInicio: u.tarea.fechaInicio,
-                        fechaFin: u.tarea.fechaFin,
-                    }
-                    : null,
-                observacion: u.observacion ?? null,
-            })),
+            reservas: [
+                ...usos.map((u) => ({
+                    id: u.id,
+                    fechaInicio: u.fechaInicio,
+                    fechaFin: u.fechaFin,
+                    tareaId: u.tareaId,
+                    tarea: u.tarea
+                        ? {
+                            id: u.tarea.id,
+                            descripcion: u.tarea.descripcion,
+                            estado: u.tarea.estado,
+                            tipo: u.tarea.tipo,
+                            prioridad: u.tarea.prioridad,
+                            ubicacion: u.tarea.ubicacion?.nombre ?? null,
+                            elemento: (0, elementoHierarchy_1.construirRutaElemento)(u.tarea.elemento) ?? null,
+                            fechaInicio: u.tarea.fechaInicio,
+                            fechaFin: u.tarea.fechaFin,
+                            conjuntoId: u.tarea.conjuntoId,
+                            conjuntoNombre: u.tarea.conjunto?.nombre ?? null,
+                        }
+                        : null,
+                    observacion: u.observacion ?? null,
+                    fuente: u.tarea?.borrador == true ? "BORRADOR" : "PUBLICADA",
+                })),
+                ...borradores
+                    .filter((t) => getMaqIds(t.maquinariaPlanJson).includes(maquinariaId))
+                    .map((t) => ({
+                    id: -t.id,
+                    fechaInicio: t.fechaInicio,
+                    fechaFin: t.fechaFin,
+                    tareaId: t.id,
+                    tarea: {
+                        id: t.id,
+                        descripcion: t.descripcion,
+                        estado: "BORRADOR",
+                        tipo: "PREVENTIVA",
+                        prioridad: 0,
+                        ubicacion: null,
+                        elemento: null,
+                        fechaInicio: t.fechaInicio,
+                        fechaFin: t.fechaFin,
+                        conjuntoId: t.conjuntoId,
+                        conjuntoNombre: t.conjunto?.nombre ?? null,
+                    },
+                    observacion: "Preventiva en borrador",
+                    fuente: "BORRADOR",
+                })),
+                ...definicionReservas,
+            ].sort((a, b) => a.fechaInicio.getTime() - b.fechaInicio.getTime()),
         };
     }
     async resumenEstado() {

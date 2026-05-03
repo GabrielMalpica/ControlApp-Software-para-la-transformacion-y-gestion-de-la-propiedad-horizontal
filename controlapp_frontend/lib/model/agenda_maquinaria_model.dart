@@ -32,6 +32,7 @@ class ReservaMaquinaria {
   final int? tareaId;
   final TareaAgenda? tarea;
   final String? observacion;
+  final String? fuente;
 
   const ReservaMaquinaria({
     required this.id,
@@ -40,6 +41,7 @@ class ReservaMaquinaria {
     this.tareaId,
     this.tarea,
     this.observacion,
+    this.fuente,
   });
 
   factory ReservaMaquinaria.fromJson(Map<String, dynamic> json) {
@@ -50,6 +52,7 @@ class ReservaMaquinaria {
       tareaId: (json['tareaId'] as num?)?.toInt(),
       tarea: json['tarea'] != null ? TareaAgenda.fromJson(json['tarea']) : null,
       observacion: json['observacion']?.toString(),
+      fuente: json['fuente']?.toString(),
     );
   }
 }
@@ -64,6 +67,8 @@ class TareaAgenda {
   final String? elemento;
   final DateTime fechaInicio;
   final DateTime fechaFin;
+  final String? conjuntoId;
+  final String? conjuntoNombre;
 
   const TareaAgenda({
     required this.id,
@@ -75,6 +80,8 @@ class TareaAgenda {
     this.elemento,
     required this.fechaInicio,
     required this.fechaFin,
+    this.conjuntoId,
+    this.conjuntoNombre,
   });
 
   factory TareaAgenda.fromJson(Map<String, dynamic> json) {
@@ -88,6 +95,8 @@ class TareaAgenda {
       elemento: json['elemento']?.toString(),
       fechaInicio: DateTime.parse(json['fechaInicio']),
       fechaFin: DateTime.parse(json['fechaFin']),
+      conjuntoId: json['conjuntoId']?.toString(),
+      conjuntoNombre: json['conjuntoNombre']?.toString(),
     );
   }
 }
