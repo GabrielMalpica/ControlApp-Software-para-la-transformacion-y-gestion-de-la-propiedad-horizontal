@@ -14,6 +14,7 @@ import '../api/cronograma_api.dart';
 import '../model/tarea_model.dart';
 import '../service/app_error.dart';
 import '../service/theme.dart';
+import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -409,6 +410,24 @@ class _CronogramaPreventivasBorradorPageState
     'insumos',
   };
 
+  final Set<String> _detalleCamposExcluidaVisibles = {
+    'id',
+    'descripcion',
+    'estado',
+    'tipo',
+    'frecuencia',
+    'prioridad',
+    'fechaObjetivo',
+    'duracion',
+    'conjunto',
+    'ubicacion',
+    'elemento',
+    'supervisor',
+    'operarios',
+    'motivo',
+    'division',
+  };
+
   static const Map<String, String> _detalleCamposLabels = {
     'id': 'ID',
     'descripcion': 'Descripcion',
@@ -428,6 +447,24 @@ class _CronogramaPreventivasBorradorPageState
     'observaciones': 'Observaciones',
     'evidencias': 'Evidencias',
     'insumos': 'Insumos usados',
+  };
+
+  static const Map<String, String> _detalleCamposExcluidaLabels = {
+    'id': 'ID',
+    'descripcion': 'Descripcion',
+    'estado': 'Estado',
+    'tipo': 'Tipo',
+    'frecuencia': 'Frecuencia',
+    'prioridad': 'Prioridad',
+    'fechaObjetivo': 'Fecha objetivo',
+    'duracion': 'Duracion',
+    'conjunto': 'Conjunto',
+    'ubicacion': 'Ubicacion',
+    'elemento': 'Elemento',
+    'supervisor': 'Supervisor',
+    'operarios': 'Operarios',
+    'motivo': 'Motivo',
+    'division': 'Division manual',
   };
 
   List<String> _nombresOperarios(TareaModel t) => t.operariosNombres;
@@ -484,6 +521,51 @@ class _CronogramaPreventivasBorradorPageState
                             _detalleCamposVisibles.add(entry.key);
                           } else {
                             _detalleCamposVisibles.remove(entry.key);
+                          }
+                        });
+                        setModalState(() {});
+                        refreshSheet();
+                      },
+                    );
+                  }),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _configurarCamposDetalleExcluida(VoidCallback refreshSheet) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.all(12),
+                children: [
+                  const Text(
+                    'Selecciona la informacion a mostrar',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  ..._detalleCamposExcluidaLabels.entries.map((entry) {
+                    final activo = _detalleCamposExcluidaVisibles.contains(
+                      entry.key,
+                    );
+                    return CheckboxListTile(
+                      value: activo,
+                      title: Text(entry.value),
+                      onChanged: (value) {
+                        setState(() {
+                          if (value == true) {
+                            _detalleCamposExcluidaVisibles.add(entry.key);
+                          } else {
+                            _detalleCamposExcluidaVisibles.remove(entry.key);
                           }
                         });
                         setModalState(() {});
@@ -1877,6 +1959,43 @@ class _CronogramaPreventivasBorradorPageState
     await _cargarDatos();
   }
 
+  Future<void> _descartarExcluidaBorrador(
+    PreventivaExcluidaBorradorModel excluida,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Descartar excluida'),
+        content: Text(
+          'La tarea excluida "${excluida.descripcion}" se ocultara de la lista pendiente. ¿Continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Descartar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    await _preventivaApi.descartarExcluidaBorrador(
+      nit: widget.nit,
+      excluidaId: excluida.id,
+    );
+    if (!mounted) return;
+    AppFeedback.showFromSnackBar(
+      context,
+      const SnackBar(content: Text('Tarea excluida descartada.')),
+    );
+    await _cargarDatos();
+  }
+
   Future<void> _agendarExcluida(
     PreventivaExcluidaBorradorModel excluida,
   ) async {
@@ -2097,7 +2216,7 @@ class _CronogramaPreventivasBorradorPageState
                       );
                     }),
                     Text(
-                      'Total digitado: ${totalDigitado.toStringAsFixed(1)} h',
+                      'Total digitado: ${formatHoursMinutes((totalDigitado * 60).round())}',
                       style: TextStyle(
                         color: (totalDigitado - totalHoras).abs() < 0.01
                             ? Colors.green.shade700
@@ -3421,7 +3540,6 @@ class _CronogramaPreventivasBorradorPageState
     final horaFin = TimeOfDay.fromDateTime(finLocal).format(ctx);
 
     final durMin = t.duracionMinutos;
-    final durH = durMin / 60.0;
 
     final operarios = t.operariosNombres.isEmpty
         ? 'Sin asignar'
@@ -3443,7 +3561,7 @@ class _CronogramaPreventivasBorradorPageState
           children: [
             const SizedBox(height: 4),
             Text(
-              'Duracion: $durMin min (${durH.toStringAsFixed(1)} h) | $horaIni - $horaFin',
+              'Duracion: ${formatHoursMinutes(durMin)} | $horaIni - $horaFin',
               style: const TextStyle(fontSize: 12),
             ),
             Text(
@@ -3538,7 +3656,7 @@ class _CronogramaPreventivasBorradorPageState
                 ? 'Operario actual'
                 : solapa
                 ? 'Tiene cruce en ese rango'
-                : '${(horasSemana / 60).toStringAsFixed(1)} h programadas esa semana';
+                : '${formatHoursMinutes(horasSemana.round())} programadas esa semana';
             return ListTile(
               tileColor: Colors.white,
               shape: RoundedRectangleBorder(
@@ -3668,131 +3786,212 @@ class _CronogramaPreventivasBorradorPageState
         ? 'Sin operario sugerido'
         : item.operariosNombres.join(', ');
     final bloques = item.divisionManual?.bloques ?? const [];
+    final divisionLabel = bloques.isEmpty
+        ? 'Sin division manual'
+        : 'Dividida en ${bloques.length} bloque(s)';
+    final motivoLabel = item.motivoMensaje ?? item.motivoTipo;
+    final conjuntoLabel = widget.nit;
 
-    showModalBottomSheet<void>(
+    showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Detalle de excluida',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.78,
+          minChildSize: 0.45,
+          maxChildSize: 0.95,
+          builder: (context, scrollController) {
+            return StatefulBuilder(
+              builder: (context, setSheetState) {
+                final rows = <Widget>[];
+                void addRow(String key, String label, String value) {
+                  if (!_detalleCamposExcluidaVisibles.contains(key)) return;
+                  rows.add(_infoRow(label, value));
+                }
+
+                addRow('id', 'ID', item.id.toString());
+                addRow('descripcion', 'Descripción', item.descripcion);
+                addRow('estado', 'Estado', item.estado);
+                addRow('tipo', 'Tipo', 'Preventiva excluida');
+                addRow('frecuencia', 'Frecuencia', item.frecuencia ?? '—');
+                addRow('prioridad', 'Prioridad', _labelPrioridad(item.prioridad));
+                rows.add(const SizedBox(height: 8));
+                addRow('fechaObjetivo', 'Fecha objetivo', fechaObjetivo);
+                addRow('duracion', 'Duración', item.duracionLabel);
+                rows.add(const SizedBox(height: 8));
+                addRow('conjunto', 'Conjunto', conjuntoLabel);
+                addRow('ubicacion', 'Ubicación', item.ubicacionNombre ?? '—');
+                addRow('elemento', 'Elemento', item.elementoNombre ?? '—');
+                addRow('supervisor', 'Supervisor', item.supervisorNombre ?? '—');
+                rows.add(const SizedBox(height: 8));
+                addRow('operarios', 'Operarios', operarios);
+                addRow('motivo', 'Motivo', motivoLabel);
+                addRow('division', 'División manual', divisionLabel);
+
+                return Material(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(16),
+                  ),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Detalle de excluida',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.tune),
+                              tooltip: 'Elegir informacion visible',
+                              onPressed: () => _configurarCamposDetalleExcluida(
+                                () => setSheetState(() {}),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              _infoRow('Descripción', item.descripcion),
-              _infoRow('Fecha objetivo', fechaObjetivo),
-              _infoRow('Prioridad', _labelPrioridad(item.prioridad)),
-              _infoRow('Duración', item.duracionLabel),
-              _infoRow('Ubicación', item.ubicacionNombre ?? '—'),
-              _infoRow('Elemento', item.elementoNombre ?? '—'),
-              _infoRow('Supervisor', item.supervisorNombre ?? '—'),
-              _infoRow('Operarios', operarios),
-              _infoRow('Motivo', item.motivoMensaje ?? item.motivoTipo),
-              if (bloques.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Text(
-                  'Bloques manuales',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 8),
-                ...bloques.map(
-                  (bloque) => Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.orange.shade200),
-                      color: Colors.orange.withValues(alpha: 0.06),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Bloque ${bloque.orden} · ${bloque.duracionLabel}',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          bloque.agendado &&
-                                  bloque.fechaInicio != null &&
-                                  bloque.fechaFin != null
-                              ? 'Agendado: ${DateFormat('dd/MM HH:mm', 'es').format(bloque.fechaInicio!)} - ${DateFormat('HH:mm').format(bloque.fechaFin!)}'
-                              : 'Pendiente por agendar',
-                          style: TextStyle(color: Colors.grey.shade700),
-                        ),
-                        if (!bloque.agendado) ...[
-                          const SizedBox(height: 8),
-                          FilledButton.tonalIcon(
-                            onPressed: () {
-                              Navigator.pop(ctx);
-                              _agendarBloqueExcluida(item, bloque);
-                            },
-                            icon: const Icon(Icons.search),
-                            label: const Text('Buscar hueco para este bloque'),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ...rows,
+                              if (bloques.isNotEmpty) ...[
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Bloques manuales',
+                                  style: TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 8),
+                                ...bloques.map(
+                                  (bloque) => Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.orange.shade200,
+                                      ),
+                                      color: Colors.orange.withValues(alpha: 0.06),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Bloque ${bloque.orden} · ${bloque.duracionLabel}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          bloque.agendado &&
+                                                  bloque.fechaInicio != null &&
+                                                  bloque.fechaFin != null
+                                              ? 'Agendado: ${DateFormat('dd/MM HH:mm', 'es').format(bloque.fechaInicio!)} - ${DateFormat('HH:mm').format(bloque.fechaFin!)}'
+                                              : 'Pendiente por agendar',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade700,
+                                          ),
+                                        ),
+                                        if (!bloque.agendado) ...[
+                                          const SizedBox(height: 8),
+                                          FilledButton.tonalIcon(
+                                            onPressed: () {
+                                              Navigator.pop(context);
+                                              _agendarBloqueExcluida(item, bloque);
+                                            },
+                                            icon: const Icon(Icons.search),
+                                            label: const Text(
+                                              'Buscar hueco para este bloque',
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 16),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  if (!item.tieneDivisionManual)
+                                    FilledButton.tonalIcon(
+                                      onPressed: () {
+                                        Navigator.pop(context);
+                                        _agendarExcluida(item);
+                                      },
+                                      icon: const Icon(Icons.search),
+                                      label: const Text('Encontrar hueco'),
+                                    ),
+                                  FilledButton.tonalIcon(
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      _dividirExcluidaEnHoras(item);
+                                    },
+                                    icon: const Icon(Icons.call_split),
+                                    label: Text(
+                                      item.tieneDivisionManual
+                                          ? 'Redefinir división'
+                                          : 'Dividir en horas',
+                                    ),
+                                  ),
+                                  FilledButton.tonalIcon(
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      _reasignarOperarioExcluida(item);
+                                    },
+                                    icon: const Icon(Icons.person),
+                                    label: const Text('Cambiar operario'),
+                                  ),
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.red.shade700,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      _descartarExcluidaBorrador(item);
+                                    },
+                                    icon: const Icon(Icons.delete_outline),
+                                    label: const Text('Descartar'),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                            ],
                           ),
-                        ],
-                      ],
-                    ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (!item.tieneDivisionManual)
-                    FilledButton.tonalIcon(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _agendarExcluida(item);
-                      },
-                      icon: const Icon(Icons.search),
-                      label: const Text('Encontrar hueco'),
-                    ),
-                  FilledButton.tonalIcon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _dividirExcluidaEnHoras(item);
-                    },
-                    icon: const Icon(Icons.call_split),
-                    label: Text(
-                      item.tieneDivisionManual
-                          ? 'Redefinir división'
-                          : 'Dividir en horas',
-                    ),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _reasignarOperarioExcluida(item);
-                    },
-                    icon: const Icon(Icons.person),
-                    label: const Text('Cambiar operario'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 
@@ -3823,7 +4022,6 @@ class _CronogramaPreventivasBorradorPageState
         (t.supervisorId != null ? 'ID ${t.supervisorId}' : '—');
 
     final durMin = t.duracionMinutos;
-    final durH = durMin / 60.0;
 
     final maquinariaLista = t.maquinariaPlan ?? const [];
     final maquinariaTxt = maquinariaLista.isEmpty
@@ -3869,7 +4067,7 @@ class _CronogramaPreventivasBorradorPageState
                 addRow(
                   'duracion',
                   'Duración',
-                  '$durMin min (${durH.toStringAsFixed(1)} h)',
+                  formatHoursMinutes(durMin),
                 );
                 rows.add(const SizedBox(height: 8));
                 addRow('conjunto', 'Conjunto', conjuntoLabel);
@@ -3940,13 +4138,31 @@ class _CronogramaPreventivasBorradorPageState
                             children: [
                               ...rows,
                               const SizedBox(height: 16),
-                              FilledButton.tonalIcon(
-                                onPressed: () {
-                                  Navigator.pop(context);
-                                  _reasignarOperarioTarea(t);
-                                },
-                                icon: const Icon(Icons.person),
-                                label: const Text('Cambiar operario'),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  FilledButton.tonalIcon(
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      _reasignarOperarioTarea(t);
+                                    },
+                                    icon: const Icon(Icons.person),
+                                    label: const Text('Cambiar operario'),
+                                  ),
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.red.shade700,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      _eliminarTareaBorrador(t);
+                                    },
+                                    icon: const Icon(Icons.delete_outline),
+                                    label: const Text('Eliminar'),
+                                  ),
+                                ],
                               ),
                               const SizedBox(height: 16),
                             ],
@@ -4431,6 +4647,7 @@ class _CronogramaPreventivasBorradorPageState
             onReordenarTareasDia: _reordenarTareasDia,
             onEliminarTarea: _eliminarTareaBorrador,
             onTapExcluida: _mostrarDetalleExcluida,
+            onDescartarExcluida: _descartarExcluidaBorrador,
             onAgendarExcluida: _agendarExcluida,
             onDividirExcluida: _dividirExcluidaEnHoras,
             onAgendarBloqueExcluida: _agendarBloqueExcluida,
@@ -6024,6 +6241,8 @@ class _SidebarAgendaDia extends StatefulWidget {
   final Future<void> Function(TareaModel tarea) onEliminarTarea;
   final void Function(PreventivaExcluidaBorradorModel excluida) onTapExcluida;
   final Future<void> Function(PreventivaExcluidaBorradorModel excluida)
+  onDescartarExcluida;
+  final Future<void> Function(PreventivaExcluidaBorradorModel excluida)
   onAgendarExcluida;
   final Future<void> Function(PreventivaExcluidaBorradorModel excluida)
   onDividirExcluida;
@@ -6050,6 +6269,7 @@ class _SidebarAgendaDia extends StatefulWidget {
     required this.onReordenarTareasDia,
     required this.onEliminarTarea,
     required this.onTapExcluida,
+    required this.onDescartarExcluida,
     required this.onAgendarExcluida,
     required this.onDividirExcluida,
     required this.onAgendarBloqueExcluida,
@@ -6433,6 +6653,19 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                     icon: const Icon(Icons.person, size: 16),
                                     label: const Text('Operario'),
                                   ),
+                                  FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: Colors.red.shade700,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    onPressed: () =>
+                                        widget.onDescartarExcluida(item),
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      size: 16,
+                                    ),
+                                    label: const Text('Descartar'),
+                                  ),
                                 ],
                               ),
                               if (bloques.isNotEmpty && expandida) ...[
@@ -6605,15 +6838,15 @@ class _SemanaHorasResumen {
     required this.ocupadasMin,
   });
 
-  int get libresMin => (disponiblesMin - ocupadasMin).clamp(0, disponiblesMin);
+  int get libresMin =>
+      (disponiblesMin - ocupadasMin).clamp(0, disponiblesMin).toInt();
   double get porcentajeOcupacion =>
       disponiblesMin == 0 ? 0 : ocupadasMin / disponiblesMin;
   String get porcentajeTexto =>
       '${(porcentajeOcupacion * 100).toStringAsFixed(0)}%';
-  String get ocupadasHorasLabel => '${(ocupadasMin / 60).toStringAsFixed(1)} h';
-  String get disponiblesHorasLabel =>
-      '${(disponiblesMin / 60).toStringAsFixed(1)} h';
-  String get libresHorasLabel => '${(libresMin / 60).toStringAsFixed(1)} h';
+  String get ocupadasHorasLabel => formatHoursMinutes(ocupadasMin);
+  String get disponiblesHorasLabel => formatHoursMinutes(disponiblesMin);
+  String get libresHorasLabel => formatHoursMinutes(libresMin);
 }
 
 class _OperarioSemanaResumen {
@@ -6631,7 +6864,6 @@ class _OperarioSemanaResumen {
       disponiblesMin == 0 ? 0 : ocupadasMin / disponiblesMin;
   String get porcentajeTexto =>
       '${(porcentajeOcupacion * 100).toStringAsFixed(0)}%';
-  String get ocupadasHorasLabel => '${(ocupadasMin / 60).toStringAsFixed(1)} h';
-  String get disponiblesHorasLabel =>
-      '${(disponiblesMin / 60).toStringAsFixed(1)} h';
+  String get ocupadasHorasLabel => formatHoursMinutes(ocupadasMin);
+  String get disponiblesHorasLabel => formatHoursMinutes(disponiblesMin);
 }

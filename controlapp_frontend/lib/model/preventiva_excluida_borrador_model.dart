@@ -1,3 +1,5 @@
+import 'package:flutter_application_1/utils/duration_format.dart';
+
 class PreventivaExcluidaBloqueModel {
   final String id;
   final int orden;
@@ -17,7 +19,7 @@ class PreventivaExcluidaBloqueModel {
     this.fechaFin,
   });
 
-  String get duracionLabel => '${(duracionMinutos / 60).toStringAsFixed(1)} h';
+  String get duracionLabel => formatHoursMinutes(duracionMinutos);
   bool get agendado => estado.toUpperCase() == 'AGENDADO';
 
   factory PreventivaExcluidaBloqueModel.fromJson(Map<String, dynamic> json) {
@@ -109,7 +111,7 @@ class PreventivaExcluidaBorradorModel {
     this.divisionManual,
   });
 
-  String get duracionLabel => '${(duracionMinutos / 60).toStringAsFixed(1)} h';
+  String get duracionLabel => formatHoursMinutes(duracionMinutos);
 
   factory PreventivaExcluidaBorradorModel.fromJson(Map<String, dynamic> json) {
     List<String> parseStringList(dynamic raw) {

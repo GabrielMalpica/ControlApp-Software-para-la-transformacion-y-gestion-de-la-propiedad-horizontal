@@ -265,6 +265,15 @@ export class DefinicionTareaPreventivaController {
     res.json(out);
   };
 
+  descartarExcluidaBorrador = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) throw new Error("ID inválido");
+    const svc = new DefinicionTareaPreventivaService(prisma);
+    await svc.descartarExcluidaBorrador(conjuntoId, id);
+    res.status(204).send();
+  };
+
   sugerirHuecosExcluida = async (req: Request, res: Response) => {
     const conjuntoId = req.params.nit;
     const id = Number(req.params.id);

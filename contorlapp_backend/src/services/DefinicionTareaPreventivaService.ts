@@ -606,6 +606,12 @@ export class DefinicionTareaPreventivaService {
       throw new Error("fechaFin debe ser mayor o igual a fechaInicio");
     }
 
+    await this.validarHorarioBloqueBorrador({
+      conjuntoId,
+      fechaInicio,
+      fechaFin,
+    });
+
     const inicioEsFestivo = await isFestivoDate({
       prisma: this.prisma,
       fecha: fechaInicio,
@@ -651,6 +657,69 @@ export class DefinicionTareaPreventivaService {
         duracionMinutos: Math.max(1, Math.round((+fechaFin - +fechaInicio) / 60000)),
         excluirTareaId,
       });
+    }
+  }
+
+  private async validarHorarioBloqueBorrador(params: {
+    conjuntoId: string;
+    fechaInicio: Date;
+    fechaFin: Date;
+  }) {
+    const { conjuntoId, fechaInicio, fechaFin } = params;
+
+    if (ymdLocal(fechaInicio) !== ymdLocal(fechaFin)) {
+      throw new Error(
+        "La tarea debe quedar programada dentro del mismo día y no puede cruzar al siguiente.",
+      );
+    }
+
+    const diaSemana = dateToDiaSemana(fechaInicio);
+    const horarioDia = await this.prisma.conjuntoHorario.findFirst({
+      where: { conjuntoId, dia: diaSemana },
+      select: {
+        horaApertura: true,
+        horaCierre: true,
+        descansoInicio: true,
+        descansoFin: true,
+      },
+    });
+
+    if (!horarioDia) {
+      throw new Error("No hay horario configurado para ese día en el conjunto.");
+    }
+
+    const horario: HorarioDia = {
+      startMin: toMin(horarioDia.horaApertura),
+      endMin: toMin(horarioDia.horaCierre),
+      descansoStartMin: horarioDia.descansoInicio
+        ? toMin(horarioDia.descansoInicio)
+        : undefined,
+      descansoEndMin: horarioDia.descansoFin
+        ? toMin(horarioDia.descansoFin)
+        : undefined,
+    };
+
+    const inicioMin = toMinOfDay(fechaInicio);
+    const finMin = toMinOfDay(fechaFin);
+
+    if (finMin <= inicioMin) {
+      throw new Error("La tarea debe tener una duración válida dentro del día.");
+    }
+
+    if (inicioMin < horario.startMin || finMin > horario.endMin) {
+      throw new Error(
+        "La tarea queda por fuera del horario laboral configurado para ese día.",
+      );
+    }
+
+    const cruzaDescanso = buildBloqueosPorDescanso(horario).some(
+      (bloqueo) => inicioMin < bloqueo.endMin && finMin > bloqueo.startMin,
+    );
+
+    if (cruzaDescanso) {
+      throw new Error(
+        "La tarea no puede quedar programada encima del horario de almuerzo.",
+      );
     }
   }
 
@@ -3426,6 +3495,12 @@ export class DefinicionTareaPreventivaService {
       const fechaInicio = new Date(cursor);
       const fechaFin = new Date(cursor.getTime() + duracion * 60000);
 
+      await this.validarHorarioBloqueBorrador({
+        conjuntoId: dto.conjuntoId,
+        fechaInicio,
+        fechaFin,
+      });
+
       const inicioEsFestivo = await isFestivoDate({
         prisma: this.prisma,
         fecha: fechaInicio,
@@ -3629,6 +3704,50 @@ export class DefinicionTareaPreventivaService {
         { id: "asc" },
       ],
     });
+  }
+
+  async descartarExcluidaBorrador(conjuntoId: string, excluidaId: number) {
+    const excluida = await this.prisma.preventivaExcluidaBorrador.findFirst({
+      where: {
+        id: excluidaId,
+        conjuntoId,
+      },
+      select: {
+        id: true,
+        conjuntoId: true,
+        periodoAnio: true,
+        periodoMes: true,
+        descripcion: true,
+        estado: true,
+      },
+    });
+
+    if (!excluida) {
+      throw new Error("La tarea excluida no existe para este conjunto.");
+    }
+
+    if (excluida.estado !== "PENDIENTE") {
+      throw new Error("La tarea excluida ya no se puede descartar.");
+    }
+
+    await this.prisma.preventivaExcluidaBorrador.update({
+      where: { id: excluidaId },
+      data: {
+        estado: "DESCARTADA",
+        resueltaEn: new Date(),
+      },
+    });
+
+    await this.registrarEventoBorrador({
+      conjuntoId,
+      periodoAnio: excluida.periodoAnio,
+      periodoMes: excluida.periodoMes,
+      tipo: "EXCLUIDA_DESCARTADA",
+      excluidaId: excluida.id,
+      detalle: `Se descartó manualmente la tarea excluida '${excluida.descripcion}'.`,
+    });
+
+    return { ok: true };
   }
 
   async sugerirHuecosExcluida(payload: unknown) {

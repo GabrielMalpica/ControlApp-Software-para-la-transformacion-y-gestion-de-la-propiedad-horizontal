@@ -53,6 +53,11 @@ router.get(
   asyncHandler(ctrl.listarExcluidasBorrador),
 );
 
+router.delete(
+  "/conjuntos/:nit/preventivas/borrador/excluidas/:id",
+  asyncHandler(ctrl.descartarExcluidaBorrador),
+);
+
 router.get(
   "/conjuntos/:nit/preventivas/borrador/excluidas/:id/huecos",
   asyncHandler(ctrl.sugerirHuecosExcluida),

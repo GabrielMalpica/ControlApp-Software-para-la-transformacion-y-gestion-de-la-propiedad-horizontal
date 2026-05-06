@@ -289,16 +289,14 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     final diasReservados = reservas
         .expand((reserva) {
           final out = <DateTime>[];
+          final inicioLocal = reserva.fechaInicio.toLocal();
+          final finLocal = reserva.fechaFin.toLocal();
           var d = DateTime(
-            reserva.fechaInicio.year,
-            reserva.fechaInicio.month,
-            reserva.fechaInicio.day,
+            inicioLocal.year,
+            inicioLocal.month,
+            inicioLocal.day,
           );
-          final fin = DateTime(
-            reserva.fechaFin.year,
-            reserva.fechaFin.month,
-            reserva.fechaFin.day,
-          );
+          final fin = DateTime(finLocal.year, finLocal.month, finLocal.day);
           while (!d.isAfter(fin)) {
             out.add(d);
             d = d.add(const Duration(days: 1));
@@ -311,16 +309,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     final diasConflictoPublicado = <String>{};
     final eventosPorDia = <String, List<ReservaMaquinaria>>{};
     for (final reserva in reservas) {
-      var d = DateTime(
-        reserva.fechaInicio.year,
-        reserva.fechaInicio.month,
-        reserva.fechaInicio.day,
-      );
-      final fin = DateTime(
-        reserva.fechaFin.year,
-        reserva.fechaFin.month,
-        reserva.fechaFin.day,
-      );
+      final inicioLocal = reserva.fechaInicio.toLocal();
+      final finLocal = reserva.fechaFin.toLocal();
+      var d = DateTime(inicioLocal.year, inicioLocal.month, inicioLocal.day);
+      final fin = DateTime(finLocal.year, finLocal.month, finLocal.day);
       while (!d.isAfter(fin)) {
         final key = '${d.year}-${d.month}-${d.day}';
         eventosPorDia
@@ -348,18 +340,22 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         }
 
         return AlertDialog(
-          title: Text('Agenda de ${agenda?.nombre ?? 'maquinaria'}'),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Agenda de ${agenda?.nombre ?? 'maquinaria'} ${DateFormat('MMMM yyyy', 'es').format(desde)}',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
           content: SizedBox(
             width: 520,
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    DateFormat('MMMM yyyy', 'es').format(desde),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
@@ -396,6 +392,18 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     ],
                   ),
                   const SizedBox(height: 10),
+                  const Row(
+                    children: [
+                      Expanded(child: Center(child: Text('L'))),
+                      Expanded(child: Center(child: Text('M'))),
+                      Expanded(child: Center(child: Text('M'))),
+                      Expanded(child: Center(child: Text('J'))),
+                      Expanded(child: Center(child: Text('V'))),
+                      Expanded(child: Center(child: Text('S'))),
+                      Expanded(child: Center(child: Text('D'))),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -417,113 +425,112 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       );
                       final conflictoPublicado = diasConflictoPublicado
                           .contains(key);
-                      return Container(
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(10),
-                          onTap: () async {
-                            final dayDate = DateTime(
-                              desde.year,
-                              desde.month,
-                              day,
-                            );
-                            final dayKey =
-                                '${dayDate.year}-${dayDate.month}-${dayDate.day}';
-                            final eventos =
-                                eventosPorDia[dayKey] ??
-                                const <ReservaMaquinaria>[];
-                            final tieneDefinicion = eventos.any(
-                              (e) =>
-                                  (e.fuente ?? '').toUpperCase() ==
-                                  'DEFINICION',
-                            );
-                            final tieneBorrador = eventos.any(
-                              (e) =>
-                                  (e.fuente ?? '').toUpperCase() == 'BORRADOR',
-                            );
-                            final tienePublicada = eventos.any(
-                              (e) =>
-                                  (e.fuente ?? '').toUpperCase() == 'PUBLICADA',
-                            );
-                            final usoPropio = eventos.any(
-                              (e) =>
-                                  (e.tarea?.conjuntoId ?? '').trim() ==
-                                  widget.nit.trim(),
-                            );
-                            final tipoConflicto = tieneDefinicion
-                                ? 'DEFINICION'
-                                : (tieneBorrador ||
-                                      (tienePublicada && !usoPropio))
-                                ? 'PUBLICADA'
-                                : usoPropio
-                                ? 'USO_PROPIO'
-                                : 'LIBRE';
-                            await showDialog<void>(
-                              context: ctx,
-                              builder: (popupCtx) => AlertDialog(
-                                title: Text(
-                                  'Detalle ${DateFormat('dd/MM/yyyy', 'es').format(dayDate)}',
-                                ),
-                                content: SizedBox(
-                                  width: 420,
-                                  child: SingleChildScrollView(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (tipoConflicto == 'DEFINICION')
-                                          Text(
-                                            'Hay una preventiva en definición para esta maquinaria en este día.',
-                                            style: TextStyle(
-                                              color: Colors.orange.shade900,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          )
-                                        else if (tipoConflicto == 'PUBLICADA')
-                                          Text(
-                                            tieneBorrador
-                                                ? 'Hay una preventiva en borrador para esta maquinaria en este día.'
-                                                : 'Hay una preventiva publicada para esta maquinaria en este día.',
-                                            style: TextStyle(
-                                              color: Colors.red.shade800,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          )
-                                        else if (tipoConflicto == 'USO_PROPIO')
-                                          Text(
-                                            'Para este día se estaría usando la maquinaria en este conjunto.',
-                                            style: TextStyle(
-                                              color: Colors.blue.shade800,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          )
-                                        else
-                                          Text(
-                                            'La maquinaria está libre en este día.',
-                                            style: TextStyle(
-                                              color: Colors.green.shade800,
-                                              fontWeight: FontWeight.w700,
-                                            ),
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () async {
+                          final dayDate = DateTime(
+                            desde.year,
+                            desde.month,
+                            day,
+                          );
+                          final dayKey =
+                              '${dayDate.year}-${dayDate.month}-${dayDate.day}';
+                          final eventos =
+                              eventosPorDia[dayKey] ??
+                              const <ReservaMaquinaria>[];
+                          final tieneDefinicion = eventos.any(
+                            (e) =>
+                                (e.fuente ?? '').toUpperCase() == 'DEFINICION',
+                          );
+                          final tieneBorrador = eventos.any(
+                            (e) => (e.fuente ?? '').toUpperCase() == 'BORRADOR',
+                          );
+                          final tienePublicada = eventos.any(
+                            (e) =>
+                                (e.fuente ?? '').toUpperCase() == 'PUBLICADA',
+                          );
+                          final usoPropio = eventos.any(
+                            (e) =>
+                                (e.tarea?.conjuntoId ?? '').trim() ==
+                                widget.nit.trim(),
+                          );
+                          final tipoConflicto = tieneDefinicion
+                              ? 'DEFINICION'
+                              : (tieneBorrador ||
+                                    (tienePublicada && !usoPropio))
+                              ? 'PUBLICADA'
+                              : usoPropio
+                              ? 'USO_PROPIO'
+                              : 'LIBRE';
+                          await showDialog<void>(
+                            context: ctx,
+                            builder: (popupCtx) => AlertDialog(
+                              title: Text(
+                                'Detalle ${DateFormat('dd/MM/yyyy', 'es').format(dayDate)}',
+                              ),
+                              content: SizedBox(
+                                width: 420,
+                                child: SingleChildScrollView(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (tipoConflicto == 'DEFINICION')
+                                        Text(
+                                          'Hay una preventiva en definición para esta maquinaria en este día.',
+                                          style: TextStyle(
+                                            color: Colors.orange.shade900,
+                                            fontWeight: FontWeight.w700,
                                           ),
-                                        const SizedBox(height: 10),
-                                        if (eventos.isEmpty)
-                                          const Text(
-                                            'No hay eventos detallados para este día.',
-                                          )
-                                        else
-                                          ...eventos.map((evento) {
-                                            final fuente = (evento.fuente ?? '')
-                                                .toUpperCase();
-                                            final conjuntoNombre =
-                                                evento.tarea?.conjuntoNombre ??
-                                                evento.tarea?.conjuntoId ??
-                                                'otro conjunto';
-                                            final color = fuente == 'DEFINICION'
-                                                ? Colors.orange
-                                                : fuente == 'BORRADOR'
-                                                ? Colors.red
-                                                : Colors.blue;
-                                            return Container(
+                                        )
+                                      else if (tipoConflicto == 'PUBLICADA')
+                                        Text(
+                                          tieneBorrador
+                                              ? 'Hay una preventiva en borrador para esta maquinaria en este día.'
+                                              : 'Hay una preventiva publicada para esta maquinaria en este día.',
+                                          style: TextStyle(
+                                            color: Colors.red.shade800,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        )
+                                      else if (tipoConflicto == 'USO_PROPIO')
+                                        Text(
+                                          'Para este día se estaría usando la maquinaria en este conjunto.',
+                                          style: TextStyle(
+                                            color: Colors.blue.shade800,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        )
+                                      else
+                                        Text(
+                                          'La maquinaria está libre en este día.',
+                                          style: TextStyle(
+                                            color: Colors.green.shade800,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      const SizedBox(height: 10),
+                                      if (eventos.isEmpty)
+                                        const Text(
+                                          'No hay eventos detallados para este día.',
+                                        )
+                                      else
+                                        ...eventos.map((evento) {
+                                          final fuente = (evento.fuente ?? '')
+                                              .toUpperCase();
+                                          final conjuntoNombre =
+                                              evento.tarea?.conjuntoNombre ??
+                                              evento.tarea?.conjuntoId ??
+                                              'otro conjunto';
+                                          final color = fuente == 'DEFINICION'
+                                              ? Colors.orange
+                                              : fuente == 'BORRADOR'
+                                              ? Colors.red
+                                              : Colors.blue;
+                                          return SizedBox(
+                                            width: double.infinity,
+                                            child: Container(
                                               margin: const EdgeInsets.only(
                                                 bottom: 8,
                                               ),
@@ -565,21 +572,23 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                                                   ),
                                                 ],
                                               ),
-                                            );
-                                          }),
-                                      ],
-                                    ),
+                                            ),
+                                          );
+                                        }),
+                                    ],
                                   ),
                                 ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(popupCtx),
-                                    child: const Text('Cerrar'),
-                                  ),
-                                ],
                               ),
-                            );
-                          },
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(popupCtx),
+                                  child: const Text('Cerrar'),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        child: SizedBox.expand(
                           child: Container(
                             alignment: Alignment.center,
                             decoration: BoxDecoration(

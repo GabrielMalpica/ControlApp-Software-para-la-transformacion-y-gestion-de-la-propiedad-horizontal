@@ -13,6 +13,7 @@ import '../model/maquinaria_model.dart';
 import '../service/app_constants.dart';
 import '../service/app_router.dart';
 import '../service/theme.dart';
+import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
 import '../widgets/section_card.dart';
 import '../widgets/searchable_select_field.dart';
@@ -699,9 +700,9 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               title: const Text('Límite semanal superado'),
               content: Text(
                 'El operario $opId supera el límite semanal.\n\n'
-                'Actual: ${(minutosSemana / 60).toStringAsFixed(1)} h\n'
-                'Con nueva: ${(minutosConNueva / 60).toStringAsFixed(1)} h\n'
-                'Límite: ${(limiteMinutosSemana / 60).toStringAsFixed(1)} h',
+                'Actual: ${formatHoursMinutes(minutosSemana)}\n'
+                'Con nueva: ${formatHoursMinutes(minutosConNueva)}\n'
+                'Límite: ${formatHoursMinutes(limiteMinutosSemana)}',
               ),
               actions: [
                 TextButton(

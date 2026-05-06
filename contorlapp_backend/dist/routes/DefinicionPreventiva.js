@@ -18,6 +18,7 @@ router.patch("/conjuntos/:nit/preventivas/borrador/tarea/:id", (0, DefinicionTar
 router.post("/conjuntos/:nit/preventivas/borrador/tareas/reordenar-dia", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.reordenarTareasDiaBorrador));
 router.get("/conjuntos/:nit/preventivas/borrador/tarea/:id/opciones-reprogramacion", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.listarOpcionesReprogramacionBorrador));
 router.get("/conjuntos/:nit/preventivas/borrador/excluidas", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.listarExcluidasBorrador));
+router.delete("/conjuntos/:nit/preventivas/borrador/excluidas/:id", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.descartarExcluidaBorrador));
 router.get("/conjuntos/:nit/preventivas/borrador/excluidas/:id/huecos", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.sugerirHuecosExcluida));
 router.post("/conjuntos/:nit/preventivas/borrador/excluidas/:id/agendar", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.agendarExcluidaBorrador));
 router.post("/conjuntos/:nit/preventivas/borrador/tarea/:id/reemplazar-por-excluida", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.reemplazarConExcluida));

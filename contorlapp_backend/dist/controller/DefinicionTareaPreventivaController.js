@@ -219,6 +219,15 @@ class DefinicionTareaPreventivaController {
             });
             res.json(out);
         };
+        this.descartarExcluidaBorrador = async (req, res) => {
+            const conjuntoId = req.params.nit;
+            const id = Number(req.params.id);
+            if (!Number.isFinite(id))
+                throw new Error("ID inválido");
+            const svc = new DefinicionTareaPreventivaService_1.DefinicionTareaPreventivaService(prisma_1.prisma);
+            await svc.descartarExcluidaBorrador(conjuntoId, id);
+            res.status(204).send();
+        };
         this.sugerirHuecosExcluida = async (req, res) => {
             const conjuntoId = req.params.nit;
             const id = Number(req.params.id);

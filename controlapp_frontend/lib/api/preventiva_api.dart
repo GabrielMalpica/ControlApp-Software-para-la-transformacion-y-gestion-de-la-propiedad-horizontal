@@ -282,6 +282,20 @@ class DefinicionPreventivaApi {
         .toList();
   }
 
+  Future<void> descartarExcluidaBorrador({
+    required String nit,
+    required int excluidaId,
+  }) async {
+    final resp = await _client.delete(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/excluidas/$excluidaId',
+    );
+    if (resp.statusCode != 204 && resp.statusCode != 200) {
+      throw Exception(
+        'Error descartando excluida: ${resp.statusCode} ${resp.body}',
+      );
+    }
+  }
+
   Future<Map<String, dynamic>> sugerirHuecosExcluida({
     required String nit,
     required int excluidaId,

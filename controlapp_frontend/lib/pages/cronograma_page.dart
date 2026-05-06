@@ -17,6 +17,7 @@ import '../service/app_error.dart';
 import '../service/session_service.dart';
 import '../service/tarea_cierre_service.dart';
 import '../service/theme.dart';
+import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
 import '../widgets/section_card.dart';
 
@@ -1800,7 +1801,6 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final horaFin = TimeOfDay.fromDateTime(finLocal).format(ctx);
 
     final durMin = t.duracionMinutos;
-    final durH = durMin / 60.0;
 
     final operarios = t.operariosNombres.isEmpty
         ? 'Sin asignar'
@@ -1853,7 +1853,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 ),
               ),
             Text(
-              '⏱ $durMin min (${durH.toStringAsFixed(1)} h)  •  $horaIni - $horaFin',
+              '⏱ ${formatHoursMinutes(durMin)}  •  $horaIni - $horaFin',
               style: const TextStyle(fontSize: 12),
             ),
             Text(
@@ -1898,7 +1898,6 @@ class _CronogramaPageState extends State<CronogramaPage> {
         (t.supervisorId != null ? 'ID ${t.supervisorId}' : '—');
 
     final durMin = t.duracionMinutos;
-    final durH = durMin / 60.0;
 
     final maquinariaLista = t.maquinariaPlan ?? const [];
     final maquinariaTxt = maquinariaLista.isEmpty
@@ -1944,7 +1943,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 addRow(
                   'duracion',
                   'Duración',
-                  '$durMin min (${durH.toStringAsFixed(1)} h)',
+                  formatHoursMinutes(durMin),
                 );
                 rows.add(const SizedBox(height: 8));
                 addRow('conjunto', 'Conjunto', conjuntoLabel);
@@ -4256,10 +4255,10 @@ class _SemanaHorasResumen {
   double get porcentajeOcupacion =>
       disponiblesMin <= 0 ? 0 : ocupadasMin / disponiblesMin;
 
-  String get disponiblesHorasLabel =>
-      '${disponiblesHoras.toStringAsFixed(1)} h';
-  String get ocupadasHorasLabel => '${ocupadasHoras.toStringAsFixed(1)} h';
-  String get libresHorasLabel => '${libresHoras.toStringAsFixed(1)} h';
+  String get disponiblesHorasLabel => formatHoursMinutes(disponiblesMin);
+  String get ocupadasHorasLabel => formatHoursMinutes(ocupadasMin);
+  String get libresHorasLabel =>
+      formatHoursMinutes((disponiblesMin - ocupadasMin).clamp(0, 1 << 30));
   String get porcentajeTexto =>
       '${(porcentajeOcupacion * 100).clamp(0, 999).toStringAsFixed(0)}%';
 }
@@ -4278,10 +4277,8 @@ class _OperarioSemanaResumen {
   double get porcentajeOcupacion =>
       disponiblesMin <= 0 ? 0 : ocupadasMin / disponiblesMin;
 
-  String get disponiblesHorasLabel =>
-      '${(disponiblesMin / 60.0).toStringAsFixed(1)} h';
-  String get ocupadasHorasLabel =>
-      '${(ocupadasMin / 60.0).toStringAsFixed(1)} h';
+  String get disponiblesHorasLabel => formatHoursMinutes(disponiblesMin);
+  String get ocupadasHorasLabel => formatHoursMinutes(ocupadasMin);
   String get porcentajeTexto =>
       '${(porcentajeOcupacion * 100).clamp(0, 999).toStringAsFixed(0)}%';
 }

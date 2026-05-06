@@ -11,6 +11,7 @@ import 'package:flutter_application_1/pdf/pdf_download.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/chart_capture.dart';
 import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/utils/duration_format.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -3449,8 +3450,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   }
 
   String _horasFromMin(int minutos) {
-    final h = minutos / 60.0;
-    return '${h.toStringAsFixed(1)} h';
+    return formatHoursMinutes(minutos);
   }
 
   Color _usoColor(double pctRaw) {
