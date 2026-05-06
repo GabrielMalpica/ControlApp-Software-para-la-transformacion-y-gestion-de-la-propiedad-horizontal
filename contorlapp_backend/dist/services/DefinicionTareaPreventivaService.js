@@ -381,7 +381,7 @@ class DefinicionTareaPreventivaService {
                 operariosIds,
             });
             if (!disponibilidad.ok) {
-                throw new Error(`Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`);
+                throw new Error(await construirMensajeSinDisponibilidadOperarios(this.prisma, disponibilidad.noDisponibles));
             }
             for (const opId of operariosIds) {
                 const haySolape = await existeSolapeParaOperario(this.prisma, {
@@ -2050,7 +2050,7 @@ class DefinicionTareaPreventivaService {
             operariosIds: (dto.operariosIds ?? []).map((id) => id.toString()),
         });
         if (!disponibilidad.ok) {
-            throw new Error(`Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`);
+            throw new Error(await construirMensajeSinDisponibilidadOperarios(this.prisma, disponibilidad.noDisponibles));
         }
         if (dto.operariosIds?.length) {
             for (const opId of dto.operariosIds) {
@@ -2147,7 +2147,7 @@ class DefinicionTareaPreventivaService {
                     operariosIds: operariosIdsFinal.map(String),
                 });
                 if (!disponibilidad.ok) {
-                    throw new Error(`Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`);
+                    throw new Error(await construirMensajeSinDisponibilidadOperarios(this.prisma, disponibilidad.noDisponibles));
                 }
             }
         }
@@ -2634,7 +2634,7 @@ class DefinicionTareaPreventivaService {
                     operariosIds,
                 });
                 if (!disponibilidad.ok) {
-                    throw new Error(`Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese día.`);
+                    throw new Error(await construirMensajeSinDisponibilidadOperarios(this.prisma, disponibilidad.noDisponibles));
                 }
                 const solape = await this.prisma.tarea.findFirst({
                     where: {
@@ -3720,6 +3720,14 @@ async function getOperarioNombre(prisma, operarioId) {
         include: { usuario: true },
     });
     return op?.usuario?.nombre ?? `Operario ${idStr}`;
+}
+async function construirMensajeSinDisponibilidadOperarios(prisma, operariosIds) {
+    const nombres = await Promise.all(operariosIds.map((operarioId) => getOperarioNombre(prisma, operarioId)));
+    const nombresUnicos = Array.from(new Set(nombres.map((nombre) => nombre.trim()).filter(Boolean)));
+    if (nombresUnicos.length <= 1) {
+        return `El operario ${nombresUnicos[0] ?? "seleccionado"} no tiene disponibilidad para ese día.`;
+    }
+    return `Los operarios ${nombresUnicos.join(", ")} no tienen disponibilidad para ese día.`;
 }
 function pickDaysByFrecuencia(days, def) {
     switch (def.frecuencia) {

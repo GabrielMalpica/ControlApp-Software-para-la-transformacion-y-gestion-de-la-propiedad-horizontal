@@ -494,6 +494,44 @@ class _CronogramaPreventivasBorradorPageState
     return operarios.join(' + ');
   }
 
+  String _mensajeDisponibilidadOperarios(
+    List<String> operariosNombres,
+    String fallback,
+  ) {
+    final nombres = operariosNombres
+        .map((name) => name.trim())
+        .where((name) => name.isNotEmpty)
+        .toSet()
+        .toList();
+    if (nombres.isEmpty) return fallback;
+    if (nombres.length == 1) {
+      return 'El operario ${nombres.first} no tiene disponibilidad para ese día.';
+    }
+    return 'Los operarios ${nombres.join(', ')} no tienen disponibilidad para ese día.';
+  }
+
+  String _normalizarMensajeMovimientoBorrador({
+    required Object error,
+    required List<String> operariosNombres,
+  }) {
+    final mensaje = AppError.messageOf(error);
+    final lower = mensaje.toLowerCase();
+    final pareceMensajeConNombres = RegExp(
+      r'^(el|los) operarios?\s+[a-záéíóúñ]',
+      caseSensitive: false,
+    ).hasMatch(mensaje);
+    if (pareceMensajeConNombres) {
+      return mensaje;
+    }
+    if (lower.contains('no tiene disponibilidad para ese dia') ||
+        lower.contains('no tienen disponibilidad para ese dia') ||
+        lower.contains('no tiene disponibilidad para ese día') ||
+        lower.contains('no tienen disponibilidad para ese día')) {
+      return _mensajeDisponibilidadOperarios(operariosNombres, mensaje);
+    }
+    return mensaje;
+  }
+
   Future<void> _configurarCamposDetalle(VoidCallback refreshSheet) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -4574,6 +4612,7 @@ class _CronogramaPreventivasBorradorPageState
       return _WeekScheduleView(
         weekStart: weekStart,
         tareas: tareas,
+        horariosConjunto: _horariosConjunto,
         scaleMinutes: _escalaSemanalMinutos,
         horaInicio: _horaInicioJornada,
         horaFin: _horaFinJornada,
@@ -4584,6 +4623,11 @@ class _CronogramaPreventivasBorradorPageState
         onTapTarea: (t) => _mostrarDetalleTarea(t, context),
         onMoverTarea: _moverTareaSemana,
         onAgendarBloqueExcluida: _agendarBloqueExcluidaEnSemana,
+        normalizarMensajeMovimiento: (error, operariosNombres) =>
+            _normalizarMensajeMovimientoBorrador(
+              error: error,
+              operariosNombres: operariosNombres,
+            ),
       );
     }
 
@@ -4617,6 +4661,7 @@ class _CronogramaPreventivasBorradorPageState
           child: _WeekScheduleView(
             weekStart: weekStart,
             tareas: tareas,
+            horariosConjunto: _horariosConjunto,
             scaleMinutes: _escalaSemanalMinutos,
             horaInicio: _horaInicioJornada,
             horaFin: _horaFinJornada,
@@ -4627,6 +4672,11 @@ class _CronogramaPreventivasBorradorPageState
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
             onMoverTarea: _moverTareaSemana,
             onAgendarBloqueExcluida: _agendarBloqueExcluidaEnSemana,
+            normalizarMensajeMovimiento: (error, operariosNombres) =>
+                _normalizarMensajeMovimientoBorrador(
+                  error: error,
+                  operariosNombres: operariosNombres,
+                ),
           ),
         ),
         const SizedBox(width: 10),
@@ -4955,6 +5005,7 @@ Color _cronogramaBorradorColorBaseTareaSemana(TareaModel t) {
 class _WeekScheduleView extends StatefulWidget {
   final DateTime weekStart; // lunes 00:00
   final List<TareaModel> tareas;
+  final List<HorarioConjunto> horariosConjunto;
   final int scaleMinutes;
   final int horaInicio;
   final int horaFin;
@@ -4976,10 +5027,13 @@ class _WeekScheduleView extends StatefulWidget {
     required DateTime nuevoFin,
   })
   onAgendarBloqueExcluida;
+  final String Function(Object error, List<String> operariosNombres)
+  normalizarMensajeMovimiento;
 
   const _WeekScheduleView({
     required this.weekStart,
     required this.tareas,
+    required this.horariosConjunto,
     required this.scaleMinutes,
     required this.horaInicio,
     required this.horaFin,
@@ -4990,6 +5044,7 @@ class _WeekScheduleView extends StatefulWidget {
     required this.onTapTarea,
     required this.onMoverTarea,
     required this.onAgendarBloqueExcluida,
+    required this.normalizarMensajeMovimiento,
   });
 
   @override
@@ -5201,22 +5256,90 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     return ((minutes / snap).round()) * snap;
   }
 
-  bool _estaEnAlmuerzo(int minuteOfDay) {
-    if (widget.horaDescansoInicio == null || widget.horaDescansoFin == null) {
-      return false;
+  List<_MinuteRange> _rangosDisponiblesDia(int dayIndex) {
+    final fecha = DateTime(
+      widget.weekStart.year,
+      widget.weekStart.month,
+      widget.weekStart.day,
+    ).add(Duration(days: dayIndex));
+
+    if (widget.esFestivo(fecha)) return const [];
+
+    HorarioConjunto? horarioDia;
+    for (final horario in widget.horariosConjunto) {
+      if (weekdayFromScheduleDay(horario.dia) == fecha.weekday) {
+        horarioDia = horario;
+        break;
+      }
     }
+
+    if (horarioDia != null) {
+      final apertura = parseHourToTimeOfDay(horarioDia.horaApertura);
+      final cierre = parseHourToTimeOfDay(horarioDia.horaCierre);
+      if (apertura == null || cierre == null) return const [];
+
+      final inicio = timeOfDayToMinutes(apertura);
+      final fin = timeOfDayToMinutes(cierre);
+      if (fin <= inicio) return const [];
+
+      final descansoInicio = horarioDia.descansoInicio == null
+          ? null
+          : parseHourToTimeOfDay(horarioDia.descansoInicio);
+      final descansoFin = horarioDia.descansoFin == null
+          ? null
+          : parseHourToTimeOfDay(horarioDia.descansoFin);
+
+      final tieneDescanso =
+          descansoInicio != null &&
+          descansoFin != null &&
+          timeOfDayToMinutes(descansoFin) > timeOfDayToMinutes(descansoInicio) &&
+          timeOfDayToMinutes(descansoInicio) > inicio &&
+          timeOfDayToMinutes(descansoFin) < fin;
+
+      if (!tieneDescanso) {
+        return [_MinuteRange(start: inicio, end: fin)];
+      }
+
+      final descansoIniMin = timeOfDayToMinutes(descansoInicio);
+      final descansoFinMin = timeOfDayToMinutes(descansoFin);
+      final rangos = <_MinuteRange>[];
+      if (descansoIniMin > inicio) {
+        rangos.add(_MinuteRange(start: inicio, end: descansoIniMin));
+      }
+      if (descansoFinMin < fin) {
+        rangos.add(_MinuteRange(start: descansoFinMin, end: fin));
+      }
+      return rangos;
+    }
+
+    final inicio = _horaInicio * 60;
+    final fin = _horaFin * 60;
+    if (fin <= inicio) return const [];
+    if (widget.horaDescansoInicio == null || widget.horaDescansoFin == null) {
+      return [_MinuteRange(start: inicio, end: fin)];
+    }
+
     final lunchStart = widget.horaDescansoInicio! * 60;
     final lunchEnd = widget.horaDescansoFin! * 60;
-    return minuteOfDay >= lunchStart && minuteOfDay < lunchEnd;
+    if (lunchEnd <= lunchStart || lunchStart <= inicio || lunchEnd >= fin) {
+      return [_MinuteRange(start: inicio, end: fin)];
+    }
+
+    return [
+      _MinuteRange(start: inicio, end: lunchStart),
+      _MinuteRange(start: lunchEnd, end: fin),
+    ];
   }
 
-  bool _cruzaAlmuerzo(int startMinute, int endMinute) {
-    if (widget.horaDescansoInicio == null || widget.horaDescansoFin == null) {
-      return false;
-    }
-    final lunchStart = widget.horaDescansoInicio! * 60;
-    final lunchEnd = widget.horaDescansoFin! * 60;
-    return startMinute < lunchEnd && endMinute > lunchStart;
+  bool _cabeCompletaEnRangoDisponible({
+    required int startMinute,
+    required int duracionMinutos,
+    required List<_MinuteRange> rangosDisponibles,
+  }) {
+    final endMinute = startMinute + duracionMinutos;
+    return rangosDisponibles.any(
+      (rango) => startMinute >= rango.start && endMinute <= rango.end,
+    );
   }
 
   int? _resolverInicioLibreEnDia({
@@ -5226,13 +5349,14 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     required int desiredMinuteOfDay,
   }) {
     final duracion = duracionMinutos;
-    final inicioJornada = _horaInicio * 60;
-    final finJornada = _horaFin * 60;
-    if (desiredMinuteOfDay < inicioJornada ||
-        desiredMinuteOfDay >= finJornada) {
+    final rangosDisponibles = _rangosDisponiblesDia(dayIndex);
+    if (rangosDisponibles.isEmpty) {
       return null;
     }
-    if (_estaEnAlmuerzo(desiredMinuteOfDay)) {
+
+    final inicioJornada = rangosDisponibles.first.start;
+    final finJornada = rangosDisponibles.last.end;
+    if (desiredMinuteOfDay < inicioJornada || desiredMinuteOfDay >= finJornada) {
       return null;
     }
 
@@ -5242,9 +5366,22 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
     var start = _snapToQuarter(desiredMinuteOfDay);
     while (start + duracion <= finJornada) {
-      if (_cruzaAlmuerzo(start, start + duracion)) {
-        return null;
+      if (!_cabeCompletaEnRangoDisponible(
+        startMinute: start,
+        duracionMinutos: duracion,
+        rangosDisponibles: rangosDisponibles,
+      )) {
+        final siguienteRango = rangosDisponibles.firstWhere(
+          (rango) => start < rango.start || start < rango.end,
+          orElse: () => const _MinuteRange(start: -1, end: -1),
+        );
+        if (siguienteRango.start < 0) return null;
+        start = _snapToQuarter(
+          start < siguienteRango.start ? siguienteRango.start : siguienteRango.end,
+        );
+        continue;
       }
+
       var ajustado = false;
       for (final range in spans) {
         final overlaps = start < range.end && (start + duracion) > range.start;
@@ -5326,9 +5463,16 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       }
     } catch (e) {
       if (!mounted) return;
+      final operariosNombres = dragged.tarea?.operariosNombres ??
+          dragged.excluida?.operariosNombres ??
+          const <String>[];
+      final mensaje = widget.normalizarMensajeMovimiento(
+        e,
+        operariosNombres,
+      );
       AppFeedback.showFromSnackBar(
         context,
-        SnackBar(content: Text('No se pudo mover la tarea: $e')),
+        SnackBar(content: Text('No se pudo mover la tarea: $mensaje')),
       );
     } finally {
       if (mounted) {

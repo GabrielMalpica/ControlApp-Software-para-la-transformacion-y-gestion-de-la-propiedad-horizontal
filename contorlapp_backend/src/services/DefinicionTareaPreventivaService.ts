@@ -629,7 +629,10 @@ export class DefinicionTareaPreventivaService {
       });
       if (!disponibilidad.ok) {
         throw new Error(
-          `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
+          await construirMensajeSinDisponibilidadOperarios(
+            this.prisma,
+            disponibilidad.noDisponibles,
+          ),
         );
       }
 
@@ -2822,7 +2825,10 @@ export class DefinicionTareaPreventivaService {
       });
       if (!disponibilidad.ok) {
         throw new Error(
-          `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
+          await construirMensajeSinDisponibilidadOperarios(
+            this.prisma,
+            disponibilidad.noDisponibles,
+          ),
         );
       }
 
@@ -2946,7 +2952,10 @@ export class DefinicionTareaPreventivaService {
         });
         if (!disponibilidad.ok) {
           throw new Error(
-            `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
+            await construirMensajeSinDisponibilidadOperarios(
+              this.prisma,
+              disponibilidad.noDisponibles,
+            ),
           );
         }
       }
@@ -3519,7 +3528,10 @@ export class DefinicionTareaPreventivaService {
         });
         if (!disponibilidad.ok) {
           throw new Error(
-            `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese día.`,
+            await construirMensajeSinDisponibilidadOperarios(
+              this.prisma,
+              disponibilidad.noDisponibles,
+            ),
           );
         }
 
@@ -4917,6 +4929,24 @@ async function getOperarioNombre(
   });
 
   return op?.usuario?.nombre ?? `Operario ${idStr}`;
+}
+
+async function construirMensajeSinDisponibilidadOperarios(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  operariosIds: Array<string | number>,
+): Promise<string> {
+  const nombres = await Promise.all(
+    operariosIds.map((operarioId) => getOperarioNombre(prisma, operarioId)),
+  );
+  const nombresUnicos = Array.from(
+    new Set(nombres.map((nombre) => nombre.trim()).filter(Boolean)),
+  );
+
+  if (nombresUnicos.length <= 1) {
+    return `El operario ${nombresUnicos[0] ?? "seleccionado"} no tiene disponibilidad para ese día.`;
+  }
+
+  return `Los operarios ${nombresUnicos.join(", ")} no tienen disponibilidad para ese día.`;
 }
 
 function pickDaysByFrecuencia(days: Date[], def: any): Date[] {
