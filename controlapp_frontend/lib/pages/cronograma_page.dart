@@ -2884,12 +2884,13 @@ class _CronogramaPageState extends State<CronogramaPage> {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: _WeekScheduleView(
-              weekStart: weekStart,
-              tareas: tareas,
-              scaleMinutes: _escalaSemanalMinutos,
-              horaInicio: _horaInicioJornada,
-              horaFin: _horaFinJornada,
+              child: _WeekScheduleView(
+                weekStart: weekStart,
+                tareas: tareas,
+                horariosConjunto: _horariosConjunto,
+                scaleMinutes: _escalaSemanalMinutos,
+                horaInicio: _horaInicioJornada,
+                horaFin: _horaFinJornada,
               horaDescansoInicio: _horaDescansoInicio,
               horaDescansoFin: _horaDescansoFin,
               esFestivo: _esFestivo,
@@ -2935,6 +2936,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
           child: _WeekScheduleView(
             weekStart: weekStart,
             tareas: tareas,
+            horariosConjunto: _horariosConjunto,
             scaleMinutes: _escalaSemanalMinutos,
             horaInicio: _horaInicioJornada,
             horaFin: _horaFinJornada,
@@ -2958,8 +2960,32 @@ class _CronogramaPageState extends State<CronogramaPage> {
     );
   }
 
-  int _indiceSemanaMes(DateTime date) =>
-      (((date.toLocal().day - 1) ~/ 7) + 1).clamp(1, 5);
+  int _indiceSemanaMes(DateTime date) {
+    final localDate = date.toLocal();
+    final firstDay = DateTime(_anioActual, _mesActual, 1);
+    final offset = firstDay.weekday - DateTime.monday;
+    return (((localDate.day + offset - 1) ~/ 7) + 1).clamp(1, 5);
+  }
+
+  List<String> _labelsSemanasInforme() {
+    final firstDay = DateTime(_anioActual, _mesActual, 1);
+    final lastDay = DateTime(_anioActual, _mesActual + 1, 0);
+    final offset = firstDay.weekday - DateTime.monday;
+
+    return List.generate(5, (index) {
+      final weekStartDay = index == 0 ? 1 : (index * 7) - offset + 1;
+      final weekEndDay = ((index + 1) * 7) - offset;
+      final startDay = weekStartDay.clamp(1, lastDay.day);
+      final endDay = weekEndDay.clamp(1, lastDay.day);
+      final start = DateTime(_anioActual, _mesActual, startDay);
+      final end = DateTime(_anioActual, _mesActual, endDay);
+      final rango = DateFormat('d MMM', 'es').format(start) ==
+              DateFormat('d MMM', 'es').format(end)
+          ? DateFormat('d MMM', 'es').format(start)
+          : '${DateFormat('d MMM', 'es').format(start)} - ${DateFormat('d MMM', 'es').format(end)}';
+      return 'Semana ${index + 1}\n($rango)';
+    });
+  }
 
   List<_HorasGrupoResumen> _resumenHorasAgrupadas(
     List<TareaModel> tareas,
@@ -3011,6 +3037,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
     required List<_HorasGrupoResumen> rows,
     required String emptyLabel,
   }) {
+    final weekLabels = _labelsSemanasInforme();
     DataColumn col(String label) => DataColumn(label: Text(label));
     DataCell cellNum(num value) => DataCell(Text(value.toStringAsFixed(1)));
 
@@ -3042,11 +3069,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 columns: [
                   col(columnaPrincipal),
                   col('Horas mes'),
-                  col('Semana 1'),
-                  col('Semana 2'),
-                  col('Semana 3'),
-                  col('Semana 4'),
-                  col('Semana 5'),
+                  col(weekLabels[0]),
+                  col(weekLabels[1]),
+                  col(weekLabels[2]),
+                  col(weekLabels[3]),
+                  col(weekLabels[4]),
                 ],
                 rows: rows
                     .map(
@@ -3086,6 +3113,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       );
     }
 
+    final weekLabels = _labelsSemanasInforme();
     final horasPorZona = _resumenHorasAgrupadas(
       _tareasFiltradas,
       (tarea) => [(tarea.ubicacionNombre ?? '').trim()],
@@ -3115,11 +3143,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 columns: [
                   col('Actividad'),
                   col('Horas mes'),
-                  col('Semana 1'),
-                  col('Semana 2'),
-                  col('Semana 3'),
-                  col('Semana 4'),
-                  col('Semana 5'),
+                  col(weekLabels[0]),
+                  col(weekLabels[1]),
+                  col(weekLabels[2]),
+                  col(weekLabels[3]),
+                  col(weekLabels[4]),
                 ],
                 rows: _informeActividad
                     .map(
@@ -3217,6 +3245,7 @@ Color _cronogramaColorBaseTareaSemana(TareaModel t) {
 class _WeekScheduleView extends StatefulWidget {
   final DateTime weekStart; // lunes 00:00
   final List<TareaModel> tareas;
+  final List<HorarioConjunto> horariosConjunto;
   final int scaleMinutes;
   final int horaInicio;
   final int horaFin;
@@ -3229,6 +3258,7 @@ class _WeekScheduleView extends StatefulWidget {
   const _WeekScheduleView({
     required this.weekStart,
     required this.tareas,
+    required this.horariosConjunto,
     required this.scaleMinutes,
     required this.horaInicio,
     required this.horaFin,
@@ -3303,6 +3333,38 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   int get _horaInicio => widget.horaInicio;
   int get _horaFin => widget.horaFin;
   int get _horasVisible => (_horaFin - _horaInicio).clamp(1, 24);
+
+  _MinuteRange? _descansoDia(int dayIndex) {
+    final fecha = DateTime(
+      widget.weekStart.year,
+      widget.weekStart.month,
+      widget.weekStart.day,
+    ).add(Duration(days: dayIndex));
+
+    for (final horario in widget.horariosConjunto) {
+      if (weekdayFromScheduleDay(horario.dia) != fecha.weekday) continue;
+      final descansoInicioTime = horario.descansoInicio == null
+          ? null
+          : parseHourToTimeOfDay(horario.descansoInicio);
+      final descansoFinTime = horario.descansoFin == null
+          ? null
+          : parseHourToTimeOfDay(horario.descansoFin);
+      final descansoInicio = descansoInicioTime == null
+          ? null
+          : timeOfDayToMinutes(descansoInicioTime);
+      final descansoFin = descansoFinTime == null
+          ? null
+          : timeOfDayToMinutes(descansoFinTime);
+      final tieneDescanso =
+          descansoInicio != null &&
+          descansoFin != null &&
+          descansoFin > descansoInicio;
+
+      if (!tieneDescanso) return null;
+      return _MinuteRange(start: descansoInicio, end: descansoFin);
+    }
+    return null;
+  }
 
   int _minutesFromStart(DateTime d) {
     final start = DateTime(d.year, d.month, d.day, _horaInicio);
@@ -3513,14 +3575,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     final text = Colors.grey.shade900;
     final subtext = Colors.grey.shade700;
 
-    final lunchStartMin = widget.horaDescansoInicio != null
-        ? (widget.horaDescansoInicio! - _horaInicio) * 60
-        : null;
-    final lunchDurMin =
-        widget.horaDescansoInicio != null && widget.horaDescansoFin != null
-        ? (widget.horaDescansoFin! - widget.horaDescansoInicio!) * 60
-        : null;
-
     return LayoutBuilder(
       builder: (context, c) {
         final minDayCol = c.maxWidth < 700 ? 96.0 : 120.0;
@@ -3689,21 +3743,26 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                     );
                                   },
                                 ),
-                              if (lunchStartMin != null &&
-                                  lunchDurMin != null &&
-                                  lunchDurMin > 0 &&
-                                  lunchStartMin >= 0)
-                                Positioned(
-                                  left: anchoHora,
-                                  right: 0,
-                                  top: lunchStartMin * pxPorMin,
-                                  height: lunchDurMin * pxPorMin,
+                              ...List.generate(7, (dayIndex) {
+                                final descanso = _descansoDia(dayIndex);
+                                if (descanso == null) {
+                                  return const SizedBox.shrink();
+                                }
+                                final top =
+                                    (descanso.start - (_horaInicio * 60)) *
+                                    pxPorMin;
+                                final height =
+                                    (descanso.end - descanso.start) * pxPorMin;
+                                return Positioned(
+                                  left: anchoHora + dayIndex * colWidth,
+                                  width: colWidth,
+                                  top: top,
+                                  height: height,
                                   child: Container(
-                                    color: Colors.orange.withValues(
-                                      alpha: 0.12,
-                                    ),
+                                    color: Colors.orange.withValues(alpha: 0.12),
                                   ),
-                                ),
+                                );
+                              }),
                               ...taskPlacements.map((placement) {
                                 final t = placement.tarea;
                                 final ini = placement.inicio;
