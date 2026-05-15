@@ -14,11 +14,13 @@ import '../service/theme.dart';
 import 'solicitudes_page.dart';
 import 'agenda_maquinaria_page.dart';
 import 'agenda_herramientas_page.dart';
+import 'crear_tarea_page.dart';
 import 'inventario_page.dart';
 import 'cronograma_page.dart';
 import 'cronograma_impresion_page.dart';
 import 'reportes_page.dart';
-import 'preventivas_page.dart';
+import 'gerente/compromisos_page.dart';
+import 'gerente/compromisos_por_conjunto_page.dart';
 import 'gerente/mapa_conjunto_page.dart';
 import '../service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
@@ -218,8 +220,18 @@ class _SupervisorPageState extends State<SupervisorPage> {
     }
 
     final nit = conjunto.nit;
+    final nombreConjunto = conjunto.nombre;
     final sections = <_SupervisorSection>[
       _SupervisorSection('Operacion diaria', [
+        _SupervisorTile(
+          'Crear correctiva',
+          Icons.emergency_rounded,
+          Colors.red,
+          () {
+            if (!_requiereConjuntoOrWarn()) return;
+            _go(CrearTareaPage(nit: nit));
+          },
+        ),
         _SupervisorTile('Tareas', Icons.assignment, AppTheme.green, () {
           if (!_requiereConjuntoOrWarn()) return;
           _go(SupervisorTareasPage(nit: nit));
@@ -237,6 +249,20 @@ class _SupervisorPageState extends State<SupervisorPage> {
           if (!_requiereConjuntoOrWarn()) return;
           _go(CronogramaPage(nit: nit));
         }),
+        _SupervisorTile(
+          'Compromisos',
+          Icons.checklist_rounded,
+          Colors.indigo,
+          () {
+            if (!_requiereConjuntoOrWarn()) return;
+            _go(
+              CompromisosPage(
+                nit: nit,
+                nombreConjunto: nombreConjunto,
+              ),
+            );
+          },
+        ),
       ]),
       _SupervisorSection('Planeacion y recursos', [
         _SupervisorTile(
@@ -262,15 +288,6 @@ class _SupervisorPageState extends State<SupervisorPage> {
           _go(AgendaHerramientasPage(conjuntoId: nit));
         }),
         _SupervisorTile(
-          'Preventivas',
-          Icons.build_circle_outlined,
-          Colors.deepOrange,
-          () {
-            if (!_requiereConjuntoOrWarn()) return;
-            _go(PreventivasPage(nit: nit));
-          },
-        ),
-        _SupervisorTile(
           'Mapa de areas',
           Icons.account_tree_outlined,
           Colors.teal,
@@ -289,6 +306,14 @@ class _SupervisorPageState extends State<SupervisorPage> {
           if (!_requiereConjuntoOrWarn()) return;
           _go(CronogramaImpresionPage(nit: nit));
         }),
+        _SupervisorTile(
+          'Compromisos globales',
+          Icons.rule_folder_outlined,
+          Colors.indigo.shade300,
+          () {
+            _go(const CompromisosPorConjuntoPage());
+          },
+        ),
       ]),
     ];
 

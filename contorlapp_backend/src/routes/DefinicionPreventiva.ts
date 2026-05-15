@@ -4,9 +4,14 @@ import {
   DefinicionTareaPreventivaController,
   asyncHandler,
 } from "../controller/DefinicionTareaPreventivaController";
+import { authRequired } from "../middlewares/auth.middleware";
+import { requireRoles } from "../middlewares/role.middleware";
 
 const router = Router();
 const ctrl = new DefinicionTareaPreventivaController();
+
+router.use(authRequired);
+router.use(requireRoles("gerente"));
 
 // 🔹 Definiciones (todas con /conjuntos/:nit/...)
 router.post("/conjuntos/:nit/preventivas", asyncHandler(ctrl.crear));

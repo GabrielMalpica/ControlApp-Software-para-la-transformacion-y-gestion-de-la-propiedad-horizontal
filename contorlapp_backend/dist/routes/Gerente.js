@@ -4,6 +4,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const CompromisoConjuntoController_1 = require("../controller/CompromisoConjuntoController");
 const GerenteController_1 = require("../controller/GerenteController");
+const auth_middleware_1 = require("../middlewares/auth.middleware");
+const role_middleware_1 = require("../middlewares/role.middleware");
 const router = (0, express_1.Router)();
 const ctrl = new GerenteController_1.GerenteController();
 const compromisosCtrl = new CompromisoConjuntoController_1.CompromisoConjuntoController();
@@ -29,12 +31,12 @@ router.get("/conjuntos", ctrl.listarConjuntos);
 router.get("/conjuntos/:conjuntoId", ctrl.obtenerConjunto);
 router.post("/conjuntos/:conjuntoId/operarios", ctrl.asignarOperarioAConjunto);
 router.post("/conjuntos/:conjuntoId/insumos", ctrl.agregarInsumoAConjunto);
-router.get("/conjuntos/:conjuntoId/compromisos", compromisosCtrl.listarPorConjunto);
-router.post("/conjuntos/:conjuntoId/compromisos", compromisosCtrl.crear);
+router.get("/conjuntos/:conjuntoId/compromisos", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente", "jefe_operaciones", "supervisor"), compromisosCtrl.listarPorConjunto);
+router.post("/conjuntos/:conjuntoId/compromisos", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente", "jefe_operaciones", "supervisor"), compromisosCtrl.crear);
 /* Compromisos */
-router.get("/compromisos", compromisosCtrl.listarGlobal);
-router.patch("/compromisos/:id", compromisosCtrl.actualizar);
-router.delete("/compromisos/:id", compromisosCtrl.eliminar);
+router.get("/compromisos", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente", "jefe_operaciones", "supervisor"), compromisosCtrl.listarGlobal);
+router.patch("/compromisos/:id", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente", "jefe_operaciones", "supervisor"), compromisosCtrl.actualizar);
+router.delete("/compromisos/:id", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente", "jefe_operaciones", "supervisor"), compromisosCtrl.eliminar);
 /* Tareas */
 router.post("/tareas", ctrl.asignarTarea);
 router.post("/tareas/reemplazo", ctrl.asignarTareaConReemplazo);

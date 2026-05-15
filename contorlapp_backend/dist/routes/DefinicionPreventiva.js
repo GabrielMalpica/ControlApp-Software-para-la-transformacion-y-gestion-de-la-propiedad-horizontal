@@ -3,8 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // src/routes/DefinicionPreventiva.ts
 const express_1 = require("express");
 const DefinicionTareaPreventivaController_1 = require("../controller/DefinicionTareaPreventivaController");
+const auth_middleware_1 = require("../middlewares/auth.middleware");
+const role_middleware_1 = require("../middlewares/role.middleware");
 const router = (0, express_1.Router)();
 const ctrl = new DefinicionTareaPreventivaController_1.DefinicionTareaPreventivaController();
+router.use(auth_middleware_1.authRequired);
+router.use((0, role_middleware_1.requireRoles)("gerente"));
 // 🔹 Definiciones (todas con /conjuntos/:nit/...)
 router.post("/conjuntos/:nit/preventivas", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.crear));
 router.get("/conjuntos/:nit/preventivas", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.listar));

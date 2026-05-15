@@ -2,6 +2,8 @@
 import { Router } from "express";
 import { CompromisoConjuntoController } from "../controller/CompromisoConjuntoController";
 import { GerenteController } from "../controller/GerenteController";
+import { authRequired } from "../middlewares/auth.middleware";
+import { requireRoles } from "../middlewares/role.middleware";
 
 const router = Router();
 const ctrl = new GerenteController();
@@ -32,13 +34,38 @@ router.get("/conjuntos", ctrl.listarConjuntos);
 router.get("/conjuntos/:conjuntoId", ctrl.obtenerConjunto); 
 router.post("/conjuntos/:conjuntoId/operarios", ctrl.asignarOperarioAConjunto);
 router.post("/conjuntos/:conjuntoId/insumos", ctrl.agregarInsumoAConjunto);
-router.get("/conjuntos/:conjuntoId/compromisos", compromisosCtrl.listarPorConjunto);
-router.post("/conjuntos/:conjuntoId/compromisos", compromisosCtrl.crear);
+router.get(
+  "/conjuntos/:conjuntoId/compromisos",
+  authRequired,
+  requireRoles("gerente", "jefe_operaciones", "supervisor"),
+  compromisosCtrl.listarPorConjunto,
+);
+router.post(
+  "/conjuntos/:conjuntoId/compromisos",
+  authRequired,
+  requireRoles("gerente", "jefe_operaciones", "supervisor"),
+  compromisosCtrl.crear,
+);
 
 /* Compromisos */
-router.get("/compromisos", compromisosCtrl.listarGlobal);
-router.patch("/compromisos/:id", compromisosCtrl.actualizar);
-router.delete("/compromisos/:id", compromisosCtrl.eliminar);
+router.get(
+  "/compromisos",
+  authRequired,
+  requireRoles("gerente", "jefe_operaciones", "supervisor"),
+  compromisosCtrl.listarGlobal,
+);
+router.patch(
+  "/compromisos/:id",
+  authRequired,
+  requireRoles("gerente", "jefe_operaciones", "supervisor"),
+  compromisosCtrl.actualizar,
+);
+router.delete(
+  "/compromisos/:id",
+  authRequired,
+  requireRoles("gerente", "jefe_operaciones", "supervisor"),
+  compromisosCtrl.eliminar,
+);
 
 /* Tareas */
 router.post("/tareas", ctrl.asignarTarea);
