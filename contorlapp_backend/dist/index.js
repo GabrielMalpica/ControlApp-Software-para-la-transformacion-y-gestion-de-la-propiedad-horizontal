@@ -253,7 +253,7 @@ const errorHandler = (err, _req, res, _next) => {
 };
 app.use(errorHandler);
 /* ------------------------------- levantar server -------------------------- */
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 (async () => {
     try {
         await (0, NotificacionService_1.bootstrapNotificacionesSchema)(prisma_1.prisma);

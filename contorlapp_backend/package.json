@@ -6,7 +6,7 @@
     "dev": "ts-node-dev --respawn src/index.ts",
     "build": "node ./node_modules/typescript/bin/tsc -p tsconfig.json",
     "postinstall": "prisma generate",
-    "start": "./scripts/start-railway.sh",
+    "start": "node dist/index.js",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test-prisma": "ts-node test.ts",
