@@ -369,6 +369,7 @@ app.use(errorHandler);
 
 /* ------------------------------- levantar server -------------------------- */
 const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || "0.0.0.0";
 (async () => {
   try {
     await bootstrapNotificacionesSchema(prisma);
@@ -377,8 +378,8 @@ const PORT = Number(process.env.PORT) || 3000;
     console.error("No se pudo inicializar tabla de notificaciones:", e);
   }
 
-  app.listen(PORT, () => {
-    console.log(`API escuchando en http://localhost:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`API escuchando en http://${HOST}:${PORT}`);
   });
 })();
 
