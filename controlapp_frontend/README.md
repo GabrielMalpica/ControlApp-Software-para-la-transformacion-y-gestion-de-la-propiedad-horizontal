@@ -5,7 +5,7 @@
 El frontend usa una URL base configurable por `--dart-define`.
 
 - Variable: `API_BASE_URL`
-- Valor por defecto: `https://controlapp-software-para-la-transformacion-y-ges-production.up.railway.app`
+- Valor por defecto: `https://thriving-empathy-production-2f17.up.railway.app`
 
 ### Producción (Railway)
 No necesitas pasar nada extra si quieres usar la URL por defecto.

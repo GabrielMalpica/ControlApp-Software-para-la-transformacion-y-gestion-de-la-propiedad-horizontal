@@ -1,6 +1,6 @@
 class AppConstants {
   static const String _railwayBaseUrl =
-      'https://controlapp-software-para-la-transformacion-y-ges-production.up.railway.app';
+      'https://thriving-empathy-production-2f17.up.railway.app';
   static const String _localBaseUrl = 'http://localhost:3000';
 
   // Para pruebas locales cambia a `true` y vuelve a correr Flutter.
