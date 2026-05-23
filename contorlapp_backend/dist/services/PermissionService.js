@@ -292,10 +292,20 @@ class PermissionService {
         if (normalizedRole === client_1.Rol.gerente) {
             return effective;
         }
-        const overrides = await this.prisma.permisoRol.findMany({
-            where: { empresaId, rol: normalizedRole },
-            select: { permiso: true, permitido: true },
-        });
+        let overrides = [];
+        try {
+            overrides = await this.prisma.permisoRol.findMany({
+                where: { empresaId, rol: normalizedRole },
+                select: { permiso: true, permitido: true },
+            });
+        }
+        catch (error) {
+            if (error instanceof client_1.Prisma.PrismaClientKnownRequestError &&
+                error.code === "P2021") {
+                return effective;
+            }
+            throw error;
+        }
         for (const override of overrides) {
             if (!PermissionService.isValidPermission(override.permiso))
                 continue;
@@ -356,12 +366,21 @@ class PermissionService {
         }
         const uniqueRoles = [...new Set(payloadRoles)];
         await this.prisma.$transaction(async (tx) => {
-            await tx.permisoRol.deleteMany({
-                where: {
-                    empresaId,
-                    rol: { in: uniqueRoles },
-                },
-            });
+            try {
+                await tx.permisoRol.deleteMany({
+                    where: {
+                        empresaId,
+                        rol: { in: uniqueRoles },
+                    },
+                });
+            }
+            catch (error) {
+                if (error instanceof client_1.Prisma.PrismaClientKnownRequestError &&
+                    error.code === "P2021") {
+                    throw new Error("La tabla de permisos aun no existe en la base de datos. Ejecuta las migraciones del backend antes de usar esta pantalla.");
+                }
+                throw error;
+            }
             const rows = [];
             for (const role of uniqueRoles) {
                 const defaults = PermissionService.defaultPermissionsForRole(role);
@@ -381,7 +400,16 @@ class PermissionService {
                 }
             }
             if (rows.length > 0) {
-                await tx.permisoRol.createMany({ data: rows });
+                try {
+                    await tx.permisoRol.createMany({ data: rows });
+                }
+                catch (error) {
+                    if (error instanceof client_1.Prisma.PrismaClientKnownRequestError &&
+                        error.code === "P2021") {
+                        throw new Error("La tabla de permisos aun no existe en la base de datos. Ejecuta las migraciones del backend antes de guardar cambios.");
+                    }
+                    throw error;
+                }
             }
         });
         return this.getPermissionMatrix(empresaId);
