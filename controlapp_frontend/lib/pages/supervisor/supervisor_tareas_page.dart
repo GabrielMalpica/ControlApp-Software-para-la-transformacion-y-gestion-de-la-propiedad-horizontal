@@ -4,6 +4,7 @@ import 'package:flutter_application_1/api/inventario_api.dart';
 import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
 import 'package:flutter_application_1/service/app_error.dart';
+import 'package:flutter_application_1/service/permission_service.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/service/tarea_cierre_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
@@ -38,6 +39,8 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
 
   String? _rolActual;
   String? _usuarioIdActual;
+
+  bool get _canViewTasks => PermissionService.instance.can('tareas.ver');
 
   @override
   void initState() {
@@ -379,6 +382,21 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_canViewTasks) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Tareas (Supervisor)')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Tu rol no tiene acceso a esta pantalla. Pidele al gerente que habilite el permiso de tareas.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(

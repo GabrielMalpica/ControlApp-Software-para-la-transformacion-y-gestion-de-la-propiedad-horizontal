@@ -2,8 +2,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GerenteController = void 0;
 const zod_1 = require("zod");
+const client_1 = require("@prisma/client");
 const prisma_1 = require("../db/prisma");
 const GerenteServices_1 = require("../services/GerenteServices");
+const PermissionService_1 = require("../services/PermissionService");
 const Gerente_1 = require("../model/Gerente");
 // â”€â”€ Schemas de params simples â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const IdParam = zod_1.z.object({ id: zod_1.z.coerce.number().int().positive() });
@@ -45,9 +47,44 @@ const LimiteHorasBody = zod_1.z.object({
 const QuitarOperarioBody = zod_1.z.object({
     operarioId: zod_1.z.string().min(1),
 });
+const ActualizarMatrizPermisosBody = zod_1.z.object({
+    matrix: zod_1.z.record(zod_1.z.string(), zod_1.z.record(zod_1.z.string(), zod_1.z.boolean())),
+});
 const service = new GerenteServices_1.GerenteService(prisma_1.prisma);
+const permissionService = new PermissionService_1.PermissionService(prisma_1.prisma);
 class GerenteController {
     constructor() {
+        this.obtenerCatalogoPermisos = async (req, res, next) => {
+            try {
+                const actorUserId = req.user?.sub;
+                if (!actorUserId) {
+                    res.status(401).json({ message: "No autenticado" });
+                    return;
+                }
+                const empresaId = await permissionService.resolveEmpresaIdForUser(actorUserId, client_1.Rol.gerente);
+                const matrix = await permissionService.getPermissionMatrix(empresaId);
+                res.json(matrix);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        this.actualizarMatrizPermisos = async (req, res, next) => {
+            try {
+                const actorUserId = req.user?.sub;
+                if (!actorUserId) {
+                    res.status(401).json({ message: "No autenticado" });
+                    return;
+                }
+                const { matrix } = ActualizarMatrizPermisosBody.parse(req.body);
+                const empresaId = await permissionService.resolveEmpresaIdForUser(actorUserId, client_1.Rol.gerente);
+                const updated = await permissionService.replacePermissionMatrix(empresaId, matrix);
+                res.json(updated);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
         // â”€â”€ Empresa â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         this.crearEmpresa = async (req, res, next) => {
             try {

@@ -2,6 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { ConjuntoController } from "../controller/ConjuntoController";
 import { authRequired } from "../middlewares/auth.middleware";
+import { requirePermission } from "../middlewares/permission.middleware";
 import { requireRoles } from "../middlewares/role.middleware";
 
 
@@ -29,10 +30,16 @@ conjuntoRouter.delete("/conjuntos/:nit/administrador", c.eliminarAdministrador);
 conjuntoRouter.post("/conjuntos/:nit/maquinaria", c.agregarMaquinaria);
 conjuntoRouter.post("/conjuntos/:nit/maquinaria/entregar", c.entregarMaquinaria);
 conjuntoRouter.get("/:nit/maquinaria", c.listarMaquinaria);
-conjuntoRouter.get("/conjuntos/:nit/mapa", authRequired, c.obtenerDetalleMapa);
+conjuntoRouter.get(
+  "/conjuntos/:nit/mapa",
+  authRequired,
+  requirePermission("mapa_areas.ver"),
+  c.obtenerDetalleMapa,
+);
 conjuntoRouter.get(
   "/conjuntos/:nit/mapa/archivo",
   authRequired,
+  requirePermission("mapa_areas.ver"),
   c.obtenerMapaArchivo,
 );
 conjuntoRouter.put(

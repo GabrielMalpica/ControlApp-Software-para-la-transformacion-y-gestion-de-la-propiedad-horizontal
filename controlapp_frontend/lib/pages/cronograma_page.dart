@@ -14,6 +14,7 @@ import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
 import '../api/cronograma_api.dart';
 import '../model/tarea_model.dart';
 import '../service/app_error.dart';
+import '../service/permission_service.dart';
 import '../service/session_service.dart';
 import '../service/tarea_cierre_service.dart';
 import '../service/theme.dart';
@@ -106,9 +107,13 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   bool get _puedeEliminarCronogramaPublicado =>
       !widget.soloLectura &&
+      PermissionService.instance.can('cronograma.eliminar_publicado') &&
       _rolActual == 'gerente' &&
       _tareasMes.isNotEmpty &&
       !_loading;
+
+  bool get _canViewCronograma =>
+      PermissionService.instance.can('cronograma.ver');
 
   @override
   void initState() {
@@ -1940,11 +1945,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 rows.add(const SizedBox(height: 8));
                 addRow('fechaInicio', 'Fecha inicio', fechaIniStr);
                 addRow('fechaFin', 'Fecha fin', fechaFinStr);
-                addRow(
-                  'duracion',
-                  'Duración',
-                  formatHoursMinutes(durMin),
-                );
+                addRow('duracion', 'Duración', formatHoursMinutes(durMin));
                 rows.add(const SizedBox(height: 8));
                 addRow('conjunto', 'Conjunto', conjuntoLabel);
                 addRow('ubicacion', 'Ubicación', ubicacionLabel);
@@ -2135,6 +2136,21 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_canViewCronograma) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Cronograma')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Tu rol no tiene acceso a esta pantalla. Pidele al gerente que habilite el permiso de cronogramas.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
     final primary = AppTheme.primary;
     final mesNombre = DateFormat.MMMM('es').format(_inicioMes).toUpperCase();
 
@@ -2884,13 +2900,13 @@ class _CronogramaPageState extends State<CronogramaPage> {
           ),
           const SizedBox(height: 10),
           Expanded(
-              child: _WeekScheduleView(
-                weekStart: weekStart,
-                tareas: tareas,
-                horariosConjunto: _horariosConjunto,
-                scaleMinutes: _escalaSemanalMinutos,
-                horaInicio: _horaInicioJornada,
-                horaFin: _horaFinJornada,
+            child: _WeekScheduleView(
+              weekStart: weekStart,
+              tareas: tareas,
+              horariosConjunto: _horariosConjunto,
+              scaleMinutes: _escalaSemanalMinutos,
+              horaInicio: _horaInicioJornada,
+              horaFin: _horaFinJornada,
               horaDescansoInicio: _horaDescansoInicio,
               horaDescansoFin: _horaDescansoFin,
               esFestivo: _esFestivo,
@@ -2979,7 +2995,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
       final endDay = weekEndDay.clamp(1, lastDay.day);
       final start = DateTime(_anioActual, _mesActual, startDay);
       final end = DateTime(_anioActual, _mesActual, endDay);
-      final rango = DateFormat('d MMM', 'es').format(start) ==
+      final rango =
+          DateFormat('d MMM', 'es').format(start) ==
               DateFormat('d MMM', 'es').format(end)
           ? DateFormat('d MMM', 'es').format(start)
           : '${DateFormat('d MMM', 'es').format(start)} - ${DateFormat('d MMM', 'es').format(end)}';
@@ -3759,7 +3776,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   top: top,
                                   height: height,
                                   child: Container(
-                                    color: Colors.orange.withValues(alpha: 0.12),
+                                    color: Colors.orange.withValues(
+                                      alpha: 0.12,
+                                    ),
                                   ),
                                 );
                               }),

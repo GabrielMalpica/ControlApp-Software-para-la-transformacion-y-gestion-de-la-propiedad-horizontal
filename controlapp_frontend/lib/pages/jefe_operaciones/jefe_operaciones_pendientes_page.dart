@@ -15,6 +15,7 @@ import 'package:flutter_application_1/utils/evidence_utils.dart';
 
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/service/permission_service.dart';
 
 class JefeOperacionesPendientesPage extends StatefulWidget {
   final String? conjuntoId; // opcional
@@ -28,6 +29,10 @@ class JefeOperacionesPendientesPage extends StatefulWidget {
 class _JefeOperacionesPendientesPageState
     extends State<JefeOperacionesPendientesPage> {
   final _api = JefeOperacionesApi();
+
+  bool get _canView => PermissionService.instance.can('tareas.ver');
+  bool get _canGiveVerdict =>
+      PermissionService.instance.can('tareas.veredicto');
 
   bool _loading = true;
   String? _error;
@@ -68,6 +73,21 @@ class _JefeOperacionesPendientesPageState
 
   @override
   Widget build(BuildContext context) {
+    if (!_canView) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Aprobar tareas')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Tu rol no tiene acceso a esta pantalla. Pidele al gerente que habilite el permiso de tareas.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
     final primary = AppTheme.primary;
 
     return Scaffold(
@@ -656,75 +676,86 @@ class _JefeOperacionesPendientesPageState
                             width: double.infinity,
                             child: ElevatedButton.icon(
                               icon: const Icon(Icons.check_circle_outline),
-                              label: const Text('Confirmar'),
-                              onPressed: () async {
-                                if (accion == 'RECHAZAR' &&
-                                    obsRechazoCtrl.text.trim().isEmpty) {
-                                  setModal(() {});
-                                  return;
-                                }
+                              label: Text(
+                                _canGiveVerdict
+                                    ? 'Confirmar'
+                                    : 'Sin permiso de veredicto',
+                              ),
+                              onPressed: !_canGiveVerdict
+                                  ? null
+                                  : () async {
+                                      if (accion == 'RECHAZAR' &&
+                                          obsRechazoCtrl.text.trim().isEmpty) {
+                                        setModal(() {});
+                                        return;
+                                      }
 
-                                final hasFiles = archivos.isNotEmpty;
+                                      final hasFiles = archivos.isNotEmpty;
 
-                                try {
-                                  Map<String, dynamic> out;
+                                      try {
+                                        Map<String, dynamic> out;
 
-                                  if (hasFiles) {
-                                    out = await _api.veredictoConEvidencias(
-                                      tareaId: t.id,
-                                      accion: accion,
-                                      observacionesRechazo: obsRechazoCtrl.text,
-                                      fechaVerificacion: DateTime.now(),
-                                      archivos: archivos,
-                                    );
-                                  } else {
-                                    out = await _api.veredicto(
-                                      tareaId: t.id,
-                                      accion: accion,
-                                      observacionesRechazo: obsRechazoCtrl.text,
-                                      fechaVerificacion: DateTime.now(),
-                                    );
-                                  }
+                                        if (hasFiles) {
+                                          out = await _api
+                                              .veredictoConEvidencias(
+                                                tareaId: t.id,
+                                                accion: accion,
+                                                observacionesRechazo:
+                                                    obsRechazoCtrl.text,
+                                                fechaVerificacion:
+                                                    DateTime.now(),
+                                                archivos: archivos,
+                                              );
+                                        } else {
+                                          out = await _api.veredicto(
+                                            tareaId: t.id,
+                                            accion: accion,
+                                            observacionesRechazo:
+                                                obsRechazoCtrl.text,
+                                            fechaVerificacion: DateTime.now(),
+                                          );
+                                        }
 
-                                  if (out['ok'] == false) {
-                                    if (!mounted) return;
-                                    AppFeedback.showFromSnackBar(
-                                      context,
-                                      SnackBar(
-                                        content: Text(
-                                          out['error']?.toString() ?? 'Error',
-                                        ),
-                                      ),
-                                    );
-                                    return;
-                                  }
+                                        if (out['ok'] == false) {
+                                          if (!mounted) return;
+                                          AppFeedback.showFromSnackBar(
+                                            context,
+                                            SnackBar(
+                                              content: Text(
+                                                out['error']?.toString() ??
+                                                    'Error',
+                                              ),
+                                            ),
+                                          );
+                                          return;
+                                        }
 
-                                  if (!mounted || !ctx.mounted) return;
-                                  Navigator.pop(ctx);
-                                  await _cargar();
+                                        if (!mounted || !ctx.mounted) return;
+                                        Navigator.pop(ctx);
+                                        await _cargar();
 
-                                  if (!mounted) return;
+                                        if (!mounted) return;
 
-                                  AppFeedback.showFromSnackBar(
-                                    context,
-                                    SnackBar(
-                                      content: Text(
-                                        accion == 'APROBAR'
-                                            ? 'Tarea aprobada'
-                                            : accion == 'RECHAZAR'
-                                            ? 'Tarea rechazada'
-                                            : 'Tarea marcada No Completada',
-                                      ),
-                                    ),
-                                  );
-                                } catch (e) {
-                                  if (!mounted) return;
-                                  AppFeedback.showFromSnackBar(
-                                    context,
-                                    SnackBar(content: Text('Error: $e')),
-                                  );
-                                }
-                              },
+                                        AppFeedback.showFromSnackBar(
+                                          context,
+                                          SnackBar(
+                                            content: Text(
+                                              accion == 'APROBAR'
+                                                  ? 'Tarea aprobada'
+                                                  : accion == 'RECHAZAR'
+                                                  ? 'Tarea rechazada'
+                                                  : 'Tarea marcada No Completada',
+                                            ),
+                                          ),
+                                        );
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        AppFeedback.showFromSnackBar(
+                                          context,
+                                          SnackBar(content: Text('Error: $e')),
+                                        );
+                                      }
+                                    },
                             ),
                           ),
                           const SizedBox(height: 20),

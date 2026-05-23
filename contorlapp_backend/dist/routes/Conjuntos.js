@@ -8,6 +8,7 @@ const express_1 = require("express");
 const multer_1 = __importDefault(require("multer"));
 const ConjuntoController_1 = require("../controller/ConjuntoController");
 const auth_middleware_1 = require("../middlewares/auth.middleware");
+const permission_middleware_1 = require("../middlewares/permission.middleware");
 const role_middleware_1 = require("../middlewares/role.middleware");
 const c = new ConjuntoController_1.ConjuntoController();
 exports.conjuntoRouter = (0, express_1.Router)();
@@ -30,8 +31,8 @@ exports.conjuntoRouter.delete("/conjuntos/:nit/administrador", c.eliminarAdminis
 exports.conjuntoRouter.post("/conjuntos/:nit/maquinaria", c.agregarMaquinaria);
 exports.conjuntoRouter.post("/conjuntos/:nit/maquinaria/entregar", c.entregarMaquinaria);
 exports.conjuntoRouter.get("/:nit/maquinaria", c.listarMaquinaria);
-exports.conjuntoRouter.get("/conjuntos/:nit/mapa", auth_middleware_1.authRequired, c.obtenerDetalleMapa);
-exports.conjuntoRouter.get("/conjuntos/:nit/mapa/archivo", auth_middleware_1.authRequired, c.obtenerMapaArchivo);
+exports.conjuntoRouter.get("/conjuntos/:nit/mapa", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("mapa_areas.ver"), c.obtenerDetalleMapa);
+exports.conjuntoRouter.get("/conjuntos/:nit/mapa/archivo", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("mapa_areas.ver"), c.obtenerMapaArchivo);
 exports.conjuntoRouter.put("/conjuntos/:nit/mapa", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente", "jefe_operaciones"), uploadMapa.single("file"), c.actualizarMapa);
 exports.conjuntoRouter.post("/conjuntos/:nit/ubicaciones", c.agregarUbicacion);
 exports.conjuntoRouter.get("/conjuntos/:nit/ubicaciones/buscar", c.buscarUbicacion);

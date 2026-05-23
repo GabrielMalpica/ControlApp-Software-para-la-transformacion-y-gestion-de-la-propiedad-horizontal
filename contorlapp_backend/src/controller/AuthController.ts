@@ -1,7 +1,7 @@
 // src/controllers/AuthController.ts
 import { RequestHandler } from "express";
-import { prisma } from "../db/prisma";
 import { z } from "zod";
+import { prisma } from "../db/prisma";
 import { AuthService } from "../services/authService";
 
 const LoginSchema = z.object({
@@ -49,16 +49,7 @@ export class AuthController {
         return;
       }
 
-      const usuario = await prisma.usuario.findUnique({
-        where: { id: userId },
-        select: { id: true, nombre: true, correo: true, rol: true },
-      });
-
-      if (!usuario) {
-        res.status(404).json({ message: "Usuario no existe" });
-        return;
-      }
-
+      const usuario = await service.obtenerSesionUsuario(userId);
       res.json({ user: usuario });
     } catch (err) {
       next(err);

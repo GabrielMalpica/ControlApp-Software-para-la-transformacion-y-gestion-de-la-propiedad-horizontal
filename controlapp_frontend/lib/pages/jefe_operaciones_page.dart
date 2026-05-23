@@ -12,6 +12,7 @@ import 'package:flutter_application_1/pages/cumpleanos_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/logout.dart';
+import 'package:flutter_application_1/service/permission_service.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
@@ -48,6 +49,8 @@ class JefeOperacionesPage extends StatefulWidget {
 
 class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
   final GerenteApi _api = GerenteApi();
+
+  bool _can(String permission) => PermissionService.instance.can(permission);
 
   List<Conjunto> _conjuntos = [];
   String? _conjuntoSeleccionadoNit;
@@ -218,113 +221,128 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
     final nit = conjunto.nit;
     final sections = <_JefeSection>[
       _JefeSection('Operacion diaria', [
-        _JefeTile('Tareas', Icons.assignment, AppTheme.green, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => JefeOperacionesPendientesPage(conjuntoId: nit),
-            ),
-          );
-        }),
-        _JefeTile('Solicitudes', Icons.pending_actions, AppTheme.primary, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => SolicitudesPage(nit: nit)),
-          );
-        }),
-        _JefeTile('Compromisos', Icons.checklist_rounded, Colors.indigo, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  CompromisosPage(nit: nit, nombreConjunto: conjunto.nombre),
-            ),
-          );
-        }),
-      ]),
-      _JefeSection('Planeacion y recursos', [
-        _JefeTile(
-          'Maquinaria',
-          Icons.precision_manufacturing,
-          AppTheme.red,
-          () {
+        if (_can('tareas.ver'))
+          _JefeTile('Tareas', Icons.assignment, AppTheme.green, () {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => AgendaMaquinariaGlobalExcelPage(
+                builder: (_) => JefeOperacionesPendientesPage(conjuntoId: nit),
+              ),
+            );
+          }),
+        if (_can('solicitudes.ver'))
+          _JefeTile('Solicitudes', Icons.pending_actions, AppTheme.primary, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => SolicitudesPage(nit: nit)),
+            );
+          }),
+        if (_can('compromisos.ver'))
+          _JefeTile('Compromisos', Icons.checklist_rounded, Colors.indigo, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    CompromisosPage(nit: nit, nombreConjunto: conjunto.nombre),
+              ),
+            );
+          }),
+      ]),
+      _JefeSection('Planeacion y recursos', [
+        if (_can('maquinaria.ver'))
+          _JefeTile(
+            'Maquinaria',
+            Icons.precision_manufacturing,
+            AppTheme.red,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AgendaMaquinariaGlobalExcelPage(
+                    empresaNit: AppConstants.empresaNit,
+                  ),
+                ),
+              );
+            },
+          ),
+        if (_can('herramientas.ver'))
+          _JefeTile('Herramientas', Icons.handyman, Colors.orange, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => AgendaHerramientasGlobalPage(
                   empresaNit: AppConstants.empresaNit,
                 ),
               ),
             );
-          },
-        ),
-        _JefeTile('Herramientas', Icons.handyman, Colors.orange, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => AgendaHerramientasGlobalPage(
-                empresaNit: AppConstants.empresaNit,
-              ),
-            ),
-          );
-        }),
-        _JefeTile('Inventario', Icons.inventory, AppTheme.yellow, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  InventarioPage(nit: nit, empresaId: AppConstants.empresaNit),
-            ),
-          );
-        }),
-        _JefeTile(
-          'Mapa de areas',
-          Icons.account_tree_outlined,
-          Colors.teal,
-          () {
+          }),
+        if (_can('inventario.ver'))
+          _JefeTile('Inventario', Icons.inventory, AppTheme.yellow, () {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => MapaConjuntoPage(conjuntoNit: nit),
+                builder: (_) => InventarioPage(
+                  nit: nit,
+                  empresaId: AppConstants.empresaNit,
+                ),
               ),
             );
-          },
-        ),
-        _JefeTile('Cronograma', Icons.calendar_month, Colors.purple, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => CronogramaPage(nit: nit)),
-          );
-        }),
-        _JefeTile('Imprimir cronograma', Icons.print, Colors.deepOrange, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => CronogramaImpresionPage(nit: nit)),
-          );
-        }),
+          }),
+        if (_can('mapa_areas.ver'))
+          _JefeTile(
+            'Mapa de areas',
+            Icons.account_tree_outlined,
+            Colors.teal,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => MapaConjuntoPage(conjuntoNit: nit),
+                ),
+              );
+            },
+          ),
+        if (_can('cronograma.ver'))
+          _JefeTile('Cronograma', Icons.calendar_month, Colors.purple, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => CronogramaPage(nit: nit)),
+            );
+          }),
+        if (_can('cronograma.imprimir'))
+          _JefeTile('Imprimir cronograma', Icons.print, Colors.deepOrange, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CronogramaImpresionPage(nit: nit),
+              ),
+            );
+          }),
       ]),
       _JefeSection('Analisis y control', [
-        _JefeTile(
-          'Compromisos globales',
-          Icons.rule_folder_outlined,
-          Colors.indigo.shade300,
-          () {
+        if (_can('compromisos.globales_ver'))
+          _JefeTile(
+            'Compromisos globales',
+            Icons.rule_folder_outlined,
+            Colors.indigo.shade300,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const CompromisosPorConjuntoPage(),
+                ),
+              );
+            },
+          ),
+        if (_can('cumpleanos.ver'))
+          _JefeTile('Cumpleanos', Icons.cake_outlined, AppTheme.accent, () {
             Navigator.push(
               context,
-              MaterialPageRoute(
-                builder: (_) => const CompromisosPorConjuntoPage(),
-              ),
+              MaterialPageRoute(builder: (_) => const CumpleanosPage()),
             );
-          },
-        ),
-        _JefeTile('Cumpleanos', Icons.cake_outlined, AppTheme.accent, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const CumpleanosPage()),
-          );
-        }),
+          }),
       ]),
-    ];
+    ].where((section) => section.tiles.isNotEmpty).toList();
 
     return DashboardScaffold(
       title: 'Panel del jefe de operaciones',
@@ -378,8 +396,10 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
             onChanged: (v) => setState(() => _conjuntoSeleccionadoNit = v),
           ),
           const SizedBox(height: 18),
-          const CumpleanosBanner(),
-          const SizedBox(height: 18),
+          if (_can('cumpleanos.ver')) ...[
+            const CumpleanosBanner(),
+            const SizedBox(height: 18),
+          ],
           DashboardSurface(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,6 +412,15 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final count = _gridCountForWidth(constraints.maxWidth);
+                    if (sections.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.only(top: 12),
+                        child: Text(
+                          'Este rol no tiene accesos activos. Pidele al gerente que habilite permisos para continuar.',
+                        ),
+                      );
+                    }
+
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: sections

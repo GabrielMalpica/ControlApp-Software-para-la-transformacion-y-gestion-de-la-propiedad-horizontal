@@ -3,6 +3,7 @@ import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 
+import '../service/permission_service.dart';
 import '../service/theme.dart';
 import 'tareas_page.dart';
 import 'solicitudes_page.dart';
@@ -21,6 +22,8 @@ class OperarioDashboardPage extends StatefulWidget {
 }
 
 class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
+  bool _can(String permission) => PermissionService.instance.can(permission);
+
   Conjunto get _conjuntoActual => Conjunto(
     nit: widget.nit,
     nombre: 'Conjunto asignado',
@@ -167,8 +170,10 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                 onChanged: (_) {},
               ),
               const SizedBox(height: 18),
-              const CumpleanosBanner(),
-              const SizedBox(height: 18),
+              if (_can('cumpleanos.ver')) ...[
+                const CumpleanosBanner(),
+                const SizedBox(height: 18),
+              ],
               Text(
                 'Panel general',
                 style: Theme.of(context).textTheme.titleLarge,
@@ -177,6 +182,61 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
               LayoutBuilder(
                 builder: (context, c) {
                   final cols = _gridCountForWidth(c.maxWidth);
+                  final cards = <Widget>[
+                    if (_can('tareas.ver'))
+                      _simpleCard(
+                        'Tareas',
+                        AppTheme.green,
+                        Icons.assignment,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => TareasPage(nit: widget.nit),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('solicitudes.ver'))
+                      _simpleCard(
+                        'Solicitudes',
+                        AppTheme.primary,
+                        Icons.pending_actions,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => SolicitudesPage(nit: widget.nit),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('mapa_areas.ver'))
+                      _simpleCard(
+                        'Mapa de areas',
+                        Colors.teal,
+                        Icons.account_tree_outlined,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  MapaConjuntoPage(conjuntoNit: widget.nit),
+                            ),
+                          );
+                        },
+                      ),
+                  ];
+
+                  if (cards.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.only(top: 12),
+                      child: Text(
+                        'Este rol no tiene accesos activos. Pidele al gerente que habilite permisos para continuar.',
+                      ),
+                    );
+                  }
+
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
@@ -188,49 +248,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
                         childAspectRatio: 1.05,
-                        children: [
-                          _simpleCard(
-                            'Tareas',
-                            AppTheme.green,
-                            Icons.assignment,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => TareasPage(nit: widget.nit),
-                                ),
-                              );
-                            },
-                          ),
-                          _simpleCard(
-                            'Solicitudes',
-                            AppTheme.primary,
-                            Icons.pending_actions,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      SolicitudesPage(nit: widget.nit),
-                                ),
-                              );
-                            },
-                          ),
-                          _simpleCard(
-                            'Mapa de areas',
-                            Colors.teal,
-                            Icons.account_tree_outlined,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      MapaConjuntoPage(conjuntoNit: widget.nit),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
+                        children: cards,
                       ),
                     ],
                   );

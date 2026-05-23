@@ -12,6 +12,7 @@ import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_p
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
+import 'package:flutter_application_1/pages/gerente/gestion_permisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_insumo_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_maquinaria_page.dart';
@@ -68,6 +69,7 @@ enum _QuickAction {
   // Usuarios
   usuariosGestion,
   usuarioCrear,
+  permisosGestion,
 
   // Conjuntos
   conjuntoCrear,
@@ -302,6 +304,11 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         Icons.person_add_alt_1,
         enabled: enabledNit,
       ),
+      item(
+        _QuickAction.permisosGestion,
+        "Gestionar permisos",
+        Icons.admin_panel_settings_outlined,
+      ),
 
       const PopupMenuDivider(),
 
@@ -445,6 +452,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
       case _QuickAction.usuarioCrear:
         if (!_requiereConjuntoOrWarn()) return;
         await go(CrearUsuarioPage(nit: nit!));
+        return;
+
+      case _QuickAction.permisosGestion:
+        await go(const GestionPermisosPage());
         return;
 
       case _QuickAction.conjuntoCrear:
@@ -639,6 +650,15 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         _Tile("Usuarios", Icons.people_outline, AppTheme.green, () {
           _abrirYRecargar(UsuariosConjuntoPage(conjuntoNit: nit));
         }),
+        _Tile(
+          "Permisos por rol",
+          Icons.admin_panel_settings_outlined,
+          Colors.blueGrey,
+          () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const GestionPermisosPage()),
+          ),
+        ),
         _Tile("Mapa de areas", Icons.account_tree_outlined, Colors.teal, () {
           _abrirYRecargar(MapaConjuntoPage(conjuntoNit: nit));
         }),
@@ -655,7 +675,9 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         _Tile("Imprimir cronograma", Icons.print, Colors.deepOrange, () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => CronogramaImpresionPage(nit: nit)),
+            MaterialPageRoute(
+              builder: (_) => CronogramaImpresionPage(nit: nit),
+            ),
           );
         }),
         _Tile(

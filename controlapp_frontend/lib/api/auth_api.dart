@@ -41,6 +41,7 @@ class AuthApi {
       correo: result.user.correo,
       nombre: result.user.nombre,
       userId: result.user.id,
+      permissions: result.user.permissions,
     );
 
     return result;
@@ -54,7 +55,15 @@ class AuthApi {
     }
 
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    return AuthUser.fromJson(data['user'] as Map<String, dynamic>);
+    final user = AuthUser.fromJson(data['user'] as Map<String, dynamic>);
+    await _session.saveProfile(
+      rol: user.rol,
+      correo: user.correo,
+      nombre: user.nombre,
+      userId: user.id,
+      permissions: user.permissions,
+    );
+    return user;
   }
 
   Future<void> cambiarContrasena({

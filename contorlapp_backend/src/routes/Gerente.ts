@@ -3,6 +3,7 @@ import { Router } from "express";
 import { CompromisoConjuntoController } from "../controller/CompromisoConjuntoController";
 import { GerenteController } from "../controller/GerenteController";
 import { authRequired } from "../middlewares/auth.middleware";
+import { requirePermission } from "../middlewares/permission.middleware";
 import { requireRoles } from "../middlewares/role.middleware";
 
 const router = Router();
@@ -10,6 +11,19 @@ const ctrl = new GerenteController();
 const compromisosCtrl = new CompromisoConjuntoController();
 
 /* Empresa */
+router.get(
+  "/permisos",
+  authRequired,
+  requireRoles("gerente"),
+  ctrl.obtenerCatalogoPermisos,
+);
+router.put(
+  "/permisos",
+  authRequired,
+  requireRoles("gerente"),
+  ctrl.actualizarMatrizPermisos,
+);
+
 router.post("/empresa", ctrl.crearEmpresa);
 router.patch("/empresa/limite-horas", ctrl.actualizarLimiteHoras); // opcional
 
@@ -37,13 +51,13 @@ router.post("/conjuntos/:conjuntoId/insumos", ctrl.agregarInsumoAConjunto);
 router.get(
   "/conjuntos/:conjuntoId/compromisos",
   authRequired,
-  requireRoles("gerente", "jefe_operaciones", "supervisor"),
+  requirePermission("compromisos.ver"),
   compromisosCtrl.listarPorConjunto,
 );
 router.post(
   "/conjuntos/:conjuntoId/compromisos",
   authRequired,
-  requireRoles("gerente", "jefe_operaciones", "supervisor"),
+  requirePermission("compromisos.gestionar"),
   compromisosCtrl.crear,
 );
 
@@ -51,27 +65,42 @@ router.post(
 router.get(
   "/compromisos",
   authRequired,
-  requireRoles("gerente", "jefe_operaciones", "supervisor"),
+  requirePermission("compromisos.globales_ver"),
   compromisosCtrl.listarGlobal,
 );
 router.patch(
   "/compromisos/:id",
   authRequired,
-  requireRoles("gerente", "jefe_operaciones", "supervisor"),
+  requirePermission("compromisos.gestionar"),
   compromisosCtrl.actualizar,
 );
 router.delete(
   "/compromisos/:id",
   authRequired,
-  requireRoles("gerente", "jefe_operaciones", "supervisor"),
+  requirePermission("compromisos.gestionar"),
   compromisosCtrl.eliminar,
 );
 
 /* Tareas */
-router.post("/tareas", ctrl.asignarTarea);
-router.post("/tareas/reemplazo", ctrl.asignarTareaConReemplazo);
-router.patch("/tareas/:tareaId", ctrl.editarTarea);
-router.get("/conjuntos/:conjuntoId/tareas", ctrl.listarTareasPorConjunto);
+router.post("/tareas", authRequired, requirePermission("tareas.crear"), ctrl.asignarTarea);
+router.post(
+  "/tareas/reemplazo",
+  authRequired,
+  requirePermission("tareas.crear"),
+  ctrl.asignarTareaConReemplazo,
+);
+router.patch(
+  "/tareas/:tareaId",
+  authRequired,
+  requirePermission("tareas.crear"),
+  ctrl.editarTarea,
+);
+router.get(
+  "/conjuntos/:conjuntoId/tareas",
+  authRequired,
+  requirePermission("tareas.ver"),
+  ctrl.listarTareasPorConjunto,
+);
 
 /* Eliminaciones con reglas */
 router.delete("/administradores/:adminId", ctrl.eliminarAdministrador);
@@ -82,7 +111,12 @@ router.delete("/supervisores/:supervisorId", ctrl.eliminarSupervisor);
 
 router.delete("/conjuntos/:conjuntoId", ctrl.eliminarConjunto);
 router.delete("/maquinaria/:maquinariaId", ctrl.eliminarMaquinaria);
-router.delete("/tareas/:tareaId", ctrl.eliminarTarea);
+router.delete(
+  "/tareas/:tareaId",
+  authRequired,
+  requirePermission("tareas.crear"),
+  ctrl.eliminarTarea,
+);
 
 /* Ediciones rápidas */
 router.patch("/administradores/:adminId", ctrl.editarAdministrador);

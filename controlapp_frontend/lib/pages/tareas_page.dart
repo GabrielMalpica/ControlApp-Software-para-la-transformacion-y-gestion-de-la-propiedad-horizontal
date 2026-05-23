@@ -11,6 +11,7 @@ import '../model/tarea_model.dart';
 import '../service/session_service.dart';
 import '../service/tarea_cierre_service.dart';
 import '../service/theme.dart';
+import '../service/permission_service.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import '../widgets/cerrar_tarea_sheet.dart';
 import 'editar_tarea_page.dart';
@@ -40,6 +41,9 @@ class _TareasPageState extends State<TareasPage> {
   String? _rol;
   String? _usuarioId;
   int? _operarioId;
+
+  bool get _canViewTasks => PermissionService.instance.can('tareas.ver');
+  bool get _canManageTasks => PermissionService.instance.can('tareas.crear');
 
   // filtros para vista operario
   String _filtroOperario = 'HOY';
@@ -229,6 +233,7 @@ class _TareasPageState extends State<TareasPage> {
   }
 
   bool _puedeCerrar(TareaModel t) {
+    if (!PermissionService.instance.can('tareas.cerrar')) return false;
     return _tareaCierreService.puedeCerrar(
       rol: _rol,
       usuarioId: _usuarioId,
@@ -352,21 +357,26 @@ class _TareasPageState extends State<TareasPage> {
                       onPressed: () => _cerrarComoOperario(t),
                     )
                   : null)
-            : IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red),
-                onPressed: () => _eliminarTarea(t),
-              ),
+            : (_canManageTasks
+                  ? IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => _eliminarTarea(t),
+                    )
+                  : null),
         onTap: _esOperario()
             ? null
-            : () async {
-                final updated = await Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => EditarTareaPage(nit: widget.nit, tarea: t),
-                  ),
-                );
-                if (updated == true) _cargarTareas();
-              },
+            : (_canManageTasks
+                  ? () async {
+                      final updated = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              EditarTareaPage(nit: widget.nit, tarea: t),
+                        ),
+                      );
+                      if (updated == true) _cargarTareas();
+                    }
+                  : null),
       ),
     );
   }
@@ -581,6 +591,21 @@ class _TareasPageState extends State<TareasPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_canViewTasks) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Tareas')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Tu rol no tiene acceso a esta pantalla. Pidele al gerente que habilite el permiso de tareas.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(

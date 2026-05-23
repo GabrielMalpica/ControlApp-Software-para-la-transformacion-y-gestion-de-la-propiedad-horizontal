@@ -5,6 +5,7 @@ export type AuthPayload = {
   sub: string;
   rol: string;
   correo: string;
+  empresaId?: string;
   iat?: number;
   exp?: number;
 };

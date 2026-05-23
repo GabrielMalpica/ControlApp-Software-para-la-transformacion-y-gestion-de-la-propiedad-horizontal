@@ -3,12 +3,16 @@ class AuthUser {
   final String nombre;
   final String correo;
   final String rol;
+  final String empresaId;
+  final List<String> permissions;
 
   AuthUser({
     required this.id,
     required this.nombre,
     required this.correo,
     required this.rol,
+    this.empresaId = '',
+    this.permissions = const [],
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
@@ -17,6 +21,10 @@ class AuthUser {
       nombre: json['nombre']?.toString() ?? '',
       correo: json['correo']?.toString() ?? '',
       rol: json['rol']?.toString() ?? '',
+      empresaId: json['empresaId']?.toString() ?? '',
+      permissions: (json['permissions'] as List<dynamic>? ?? const [])
+          .map((item) => item.toString())
+          .toList(),
     );
   }
 }

@@ -26,6 +26,7 @@ import '../service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/service/permission_service.dart';
 
 class _SupervisorTile {
   final String title;
@@ -51,6 +52,8 @@ class SupervisorPage extends StatefulWidget {
 }
 
 class _SupervisorPageState extends State<SupervisorPage> {
+  bool _can(String permission) => PermissionService.instance.can(permission);
+
   final GerenteApi _api = GerenteApi();
 
   List<Conjunto> _conjuntos = [];
@@ -223,99 +226,116 @@ class _SupervisorPageState extends State<SupervisorPage> {
     final nombreConjunto = conjunto.nombre;
     final sections = <_SupervisorSection>[
       _SupervisorSection('Operacion diaria', [
-        _SupervisorTile(
-          'Crear correctiva',
-          Icons.emergency_rounded,
-          Colors.red,
-          () {
+        if (_can('tareas.crear'))
+          _SupervisorTile(
+            'Crear correctiva',
+            Icons.emergency_rounded,
+            Colors.red,
+            () {
+              if (!_requiereConjuntoOrWarn()) return;
+              _go(CrearTareaPage(nit: nit));
+            },
+          ),
+        if (_can('tareas.ver'))
+          _SupervisorTile('Tareas', Icons.assignment, AppTheme.green, () {
             if (!_requiereConjuntoOrWarn()) return;
-            _go(CrearTareaPage(nit: nit));
-          },
-        ),
-        _SupervisorTile('Tareas', Icons.assignment, AppTheme.green, () {
-          if (!_requiereConjuntoOrWarn()) return;
-          _go(SupervisorTareasPage(nit: nit));
-        }),
-        _SupervisorTile(
-          'Solicitudes',
-          Icons.pending_actions,
-          AppTheme.primary,
-          () {
-            if (!_requiereConjuntoOrWarn()) return;
-            _go(SolicitudesPage(nit: nit));
-          },
-        ),
-        _SupervisorTile('Cronograma', Icons.calendar_month, Colors.purple, () {
-          if (!_requiereConjuntoOrWarn()) return;
-          _go(CronogramaPage(nit: nit));
-        }),
-        _SupervisorTile(
-          'Compromisos',
-          Icons.checklist_rounded,
-          Colors.indigo,
-          () {
-            if (!_requiereConjuntoOrWarn()) return;
-            _go(
-              CompromisosPage(
-                nit: nit,
-                nombreConjunto: nombreConjunto,
-              ),
-            );
-          },
-        ),
+            _go(SupervisorTareasPage(nit: nit));
+          }),
+        if (_can('solicitudes.ver'))
+          _SupervisorTile(
+            'Solicitudes',
+            Icons.pending_actions,
+            AppTheme.primary,
+            () {
+              if (!_requiereConjuntoOrWarn()) return;
+              _go(SolicitudesPage(nit: nit));
+            },
+          ),
+        if (_can('cronograma.ver'))
+          _SupervisorTile(
+            'Cronograma',
+            Icons.calendar_month,
+            Colors.purple,
+            () {
+              if (!_requiereConjuntoOrWarn()) return;
+              _go(CronogramaPage(nit: nit));
+            },
+          ),
+        if (_can('compromisos.ver'))
+          _SupervisorTile(
+            'Compromisos',
+            Icons.checklist_rounded,
+            Colors.indigo,
+            () {
+              if (!_requiereConjuntoOrWarn()) return;
+              _go(CompromisosPage(nit: nit, nombreConjunto: nombreConjunto));
+            },
+          ),
       ]),
       _SupervisorSection('Planeacion y recursos', [
-        _SupervisorTile(
-          'Inventario',
-          Icons.inventory_2_outlined,
-          AppTheme.yellow,
-          () {
+        if (_can('inventario.ver'))
+          _SupervisorTile(
+            'Inventario',
+            Icons.inventory_2_outlined,
+            AppTheme.yellow,
+            () {
+              if (!_requiereConjuntoOrWarn()) return;
+              _go(InventarioPage(nit: nit, empresaId: AppConstants.empresaNit));
+            },
+          ),
+        if (_can('maquinaria.ver'))
+          _SupervisorTile(
+            'Maquinaria',
+            Icons.precision_manufacturing,
+            AppTheme.red,
+            () {
+              if (!_requiereConjuntoOrWarn()) return;
+              _go(AgendaMaquinariaPage(conjuntoId: nit));
+            },
+          ),
+        if (_can('herramientas.ver'))
+          _SupervisorTile('Herramientas', Icons.handyman, Colors.orange, () {
             if (!_requiereConjuntoOrWarn()) return;
-            _go(InventarioPage(nit: nit, empresaId: AppConstants.empresaNit));
-          },
-        ),
-        _SupervisorTile(
-          'Maquinaria',
-          Icons.precision_manufacturing,
-          AppTheme.red,
-          () {
-            if (!_requiereConjuntoOrWarn()) return;
-            _go(AgendaMaquinariaPage(conjuntoId: nit));
-          },
-        ),
-        _SupervisorTile('Herramientas', Icons.handyman, Colors.orange, () {
-          if (!_requiereConjuntoOrWarn()) return;
-          _go(AgendaHerramientasPage(conjuntoId: nit));
-        }),
-        _SupervisorTile(
-          'Mapa de areas',
-          Icons.account_tree_outlined,
-          Colors.teal,
-          () {
-            if (!_requiereConjuntoOrWarn()) return;
-            _go(MapaConjuntoPage(conjuntoNit: nit));
-          },
-        ),
+            _go(AgendaHerramientasPage(conjuntoId: nit));
+          }),
+        if (_can('mapa_areas.ver'))
+          _SupervisorTile(
+            'Mapa de areas',
+            Icons.account_tree_outlined,
+            Colors.teal,
+            () {
+              if (!_requiereConjuntoOrWarn()) return;
+              _go(MapaConjuntoPage(conjuntoNit: nit));
+            },
+          ),
       ]),
       _SupervisorSection('Analisis y control', [
-        _SupervisorTile('Reportes', Icons.bar_chart, Colors.teal, () {
-          if (!_requiereConjuntoOrWarn()) return;
-          _go(ReportesPage(nit: nit, soloResumenTipos: true));
-        }),
-        _SupervisorTile('Imprimir cronograma', Icons.print, Colors.deepOrange, () {
-          if (!_requiereConjuntoOrWarn()) return;
-          _go(CronogramaImpresionPage(nit: nit));
-        }),
-        _SupervisorTile(
-          'Compromisos globales',
-          Icons.rule_folder_outlined,
-          Colors.indigo.shade300,
-          () {
-            _go(const CompromisosPorConjuntoPage());
-          },
-        ),
+        if (_can('reportes.ver'))
+          _SupervisorTile('Reportes', Icons.bar_chart, Colors.teal, () {
+            if (!_requiereConjuntoOrWarn()) return;
+            _go(ReportesPage(nit: nit, soloResumenTipos: true));
+          }),
+        if (_can('cronograma.imprimir'))
+          _SupervisorTile(
+            'Imprimir cronograma',
+            Icons.print,
+            Colors.deepOrange,
+            () {
+              if (!_requiereConjuntoOrWarn()) return;
+              _go(CronogramaImpresionPage(nit: nit));
+            },
+          ),
+        if (_can('compromisos.globales_ver'))
+          _SupervisorTile(
+            'Compromisos globales',
+            Icons.rule_folder_outlined,
+            Colors.indigo.shade300,
+            () {
+              _go(const CompromisosPorConjuntoPage());
+            },
+          ),
       ]),
-    ];
+    ].where((section) => section.tiles.isNotEmpty).toList();
 
     return DashboardScaffold(
       title: 'Panel del supervisor',
@@ -372,8 +392,10 @@ class _SupervisorPageState extends State<SupervisorPage> {
             },
           ),
           const SizedBox(height: 18),
-          const CumpleanosBanner(),
-          const SizedBox(height: 18),
+          if (_can('cumpleanos.ver')) ...[
+            const CumpleanosBanner(),
+            const SizedBox(height: 18),
+          ],
           DashboardSurface(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -386,6 +408,15 @@ class _SupervisorPageState extends State<SupervisorPage> {
                 LayoutBuilder(
                   builder: (context, c) {
                     final cols = _gridCountForWidth(c.maxWidth);
+                    if (sections.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.only(top: 12),
+                        child: Text(
+                          'Este rol no tiene accesos activos. Pidele al gerente que habilite permisos para continuar.',
+                        ),
+                      );
+                    }
+
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: sections

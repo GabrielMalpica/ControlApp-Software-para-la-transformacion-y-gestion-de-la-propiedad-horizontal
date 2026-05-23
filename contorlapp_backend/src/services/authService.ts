@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import type { PrismaClient } from "@prisma/client";
+import { Rol, type PrismaClient } from "@prisma/client";
+import { PermissionService } from "./PermissionService";
 
 type HttpError = Error & { status: number };
 
@@ -11,7 +12,63 @@ function makeHttpError(status: number, message: string): HttpError {
 }
 
 export class AuthService {
-  constructor(private prisma: PrismaClient) {}
+  private permissionService: PermissionService;
+
+  constructor(private prisma: PrismaClient) {
+    this.permissionService = new PermissionService(prisma);
+  }
+
+  private normalizeRole(value: string): Rol | null {
+    const normalized = value.trim().toLowerCase();
+    return Object.values(Rol).find((role) => role === normalized) ?? null;
+  }
+
+  private async buildSessionUser(usuario: {
+    id: string;
+    nombre: string;
+    correo: string;
+    rol: string;
+  }) {
+    const normalizedRole = this.normalizeRole(usuario.rol);
+
+    if (!normalizedRole) {
+      return {
+        id: usuario.id,
+        nombre: usuario.nombre,
+        correo: usuario.correo,
+        rol: usuario.rol,
+        empresaId: "",
+        permissions: [] as string[],
+      };
+    }
+
+    const { empresaId, permissions } = await this.permissionService.getEffectivePermissionsForUser({
+      userId: usuario.id,
+      role: normalizedRole,
+    });
+
+    return {
+      id: usuario.id,
+      nombre: usuario.nombre,
+      correo: usuario.correo,
+      rol: usuario.rol,
+      empresaId,
+      permissions,
+    };
+  }
+
+  async obtenerSesionUsuario(userId: string) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: userId },
+      select: { id: true, nombre: true, correo: true, rol: true },
+    });
+
+    if (!usuario) {
+      throw makeHttpError(404, "Usuario no encontrado");
+    }
+
+    return this.buildSessionUser(usuario);
+  }
 
   async login(correo: string, contrasena: string) {
     const credencialesInvalidas = "Credenciales inválidas";
@@ -33,20 +90,27 @@ export class AuthService {
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) throw makeHttpError(500, "JWT_SECRET no está configurado");
 
+    const sessionUser = await this.buildSessionUser({
+      id: usuario.id,
+      nombre: usuario.nombre,
+      correo: usuario.correo,
+      rol: usuario.rol,
+    });
+
     const token = jwt.sign(
-      { sub: usuario.id, rol: usuario.rol, correo: usuario.correo },
+      {
+        sub: usuario.id,
+        rol: usuario.rol,
+        correo: usuario.correo,
+        empresaId: sessionUser.empresaId || undefined,
+      },
       jwtSecret,
       { expiresIn: "8h" },
     );
 
     return {
       token,
-      user: {
-        id: usuario.id,
-        nombre: usuario.nombre,
-        correo: usuario.correo,
-        rol: usuario.rol,
-      },
+      user: sessionUser,
     };
   }
 

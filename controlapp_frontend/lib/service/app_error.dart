@@ -22,6 +22,9 @@ class AppError {
     var text = _fixMojibake(raw).trim();
     if (text.isEmpty) return fallback;
 
+    final transportMessage = _mapTransportError(text);
+    if (transportMessage != null) return transportMessage;
+
     final embeddedJson = _extractEmbeddedJson(text);
     if (embeddedJson != null) {
       final structured = _messageFromStructured(_tryDecodeJson(embeddedJson));
@@ -262,6 +265,32 @@ class AppError {
       default:
         return null;
     }
+  }
+
+  static String? _mapTransportError(String message) {
+    final normalized = _fixMojibake(message).trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+
+    final mentionsUrl =
+        normalized.contains('http://') ||
+        normalized.contains('https://') ||
+        normalized.contains('railway.app');
+
+    final looksLikeNetworkFailure =
+        normalized.contains('failed to fetch') ||
+        normalized.contains('error al hacer fetch') ||
+        normalized.contains('xmlhttprequest error') ||
+        normalized.contains('clientexception') ||
+        normalized.contains('networkerror') ||
+        normalized.contains('network error') ||
+        normalized.contains('net::err') ||
+        normalized.contains('cors');
+
+    if (looksLikeNetworkFailure || mentionsUrl) {
+      return 'Error al conectar con el backend. Intenta nuevamente en unos minutos.';
+    }
+
+    return null;
   }
 
   static String _fixMojibake(String text) {

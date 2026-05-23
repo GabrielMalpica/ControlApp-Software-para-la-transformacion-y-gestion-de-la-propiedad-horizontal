@@ -1,9 +1,14 @@
 // src/routes/reportes.ts
 import { Router } from "express";
 import { ReporteController } from "../controller/ReporteController";
+import { authRequired } from "../middlewares/auth.middleware";
+import { requirePermission } from "../middlewares/permission.middleware";
 
 const router = Router();
 const c = new ReporteController();
+
+router.use(authRequired);
+router.use(requirePermission("reportes.ver"));
 
 // DASHBOARD
 router.get("/kpis", c.kpis);

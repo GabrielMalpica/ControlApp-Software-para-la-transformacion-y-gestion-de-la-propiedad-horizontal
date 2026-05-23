@@ -6,6 +6,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const client_1 = require("@prisma/client");
+const PermissionService_1 = require("./PermissionService");
 function makeHttpError(status, message) {
     const err = new Error(message);
     err.status = status;
@@ -14,6 +16,46 @@ function makeHttpError(status, message) {
 class AuthService {
     constructor(prisma) {
         this.prisma = prisma;
+        this.permissionService = new PermissionService_1.PermissionService(prisma);
+    }
+    normalizeRole(value) {
+        const normalized = value.trim().toLowerCase();
+        return Object.values(client_1.Rol).find((role) => role === normalized) ?? null;
+    }
+    async buildSessionUser(usuario) {
+        const normalizedRole = this.normalizeRole(usuario.rol);
+        if (!normalizedRole) {
+            return {
+                id: usuario.id,
+                nombre: usuario.nombre,
+                correo: usuario.correo,
+                rol: usuario.rol,
+                empresaId: "",
+                permissions: [],
+            };
+        }
+        const { empresaId, permissions } = await this.permissionService.getEffectivePermissionsForUser({
+            userId: usuario.id,
+            role: normalizedRole,
+        });
+        return {
+            id: usuario.id,
+            nombre: usuario.nombre,
+            correo: usuario.correo,
+            rol: usuario.rol,
+            empresaId,
+            permissions,
+        };
+    }
+    async obtenerSesionUsuario(userId) {
+        const usuario = await this.prisma.usuario.findUnique({
+            where: { id: userId },
+            select: { id: true, nombre: true, correo: true, rol: true },
+        });
+        if (!usuario) {
+            throw makeHttpError(404, "Usuario no encontrado");
+        }
+        return this.buildSessionUser(usuario);
     }
     async login(correo, contrasena) {
         const credencialesInvalidas = "Credenciales inválidas";
@@ -33,15 +75,21 @@ class AuthService {
         const jwtSecret = process.env.JWT_SECRET;
         if (!jwtSecret)
             throw makeHttpError(500, "JWT_SECRET no está configurado");
-        const token = jsonwebtoken_1.default.sign({ sub: usuario.id, rol: usuario.rol, correo: usuario.correo }, jwtSecret, { expiresIn: "8h" });
+        const sessionUser = await this.buildSessionUser({
+            id: usuario.id,
+            nombre: usuario.nombre,
+            correo: usuario.correo,
+            rol: usuario.rol,
+        });
+        const token = jsonwebtoken_1.default.sign({
+            sub: usuario.id,
+            rol: usuario.rol,
+            correo: usuario.correo,
+            empresaId: sessionUser.empresaId || undefined,
+        }, jwtSecret, { expiresIn: "8h" });
         return {
             token,
-            user: {
-                id: usuario.id,
-                nombre: usuario.nombre,
-                correo: usuario.correo,
-                rol: usuario.rol,
-            },
+            user: sessionUser,
         };
     }
     async cambiarContrasena(userId, contrasenaActual, nuevaContrasena) {

@@ -1,8 +1,10 @@
 ﻿// src/controllers/GerenteController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
+import { Rol } from "@prisma/client";
 import { prisma } from "../db/prisma";
 import { GerenteService } from "../services/GerenteServices";
+import { PermissionService } from "../services/PermissionService";
 import { ListarUsuariosDTO, UsuarioIdParam } from "../model/Gerente";
 
 // â”€â”€ Schemas de params simples â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -53,9 +55,58 @@ const QuitarOperarioBody = z.object({
   operarioId: z.string().min(1),
 });
 
+const ActualizarMatrizPermisosBody = z.object({
+  matrix: z.record(
+    z.string(),
+    z.record(z.string(), z.boolean()),
+  ),
+});
+
 const service = new GerenteService(prisma);
+const permissionService = new PermissionService(prisma);
 
 export class GerenteController {
+  obtenerCatalogoPermisos: RequestHandler = async (req, res, next) => {
+    try {
+      const actorUserId = req.user?.sub;
+      if (!actorUserId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      const empresaId = await permissionService.resolveEmpresaIdForUser(
+        actorUserId,
+        Rol.gerente,
+      );
+
+      const matrix = await permissionService.getPermissionMatrix(empresaId);
+      res.json(matrix);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  actualizarMatrizPermisos: RequestHandler = async (req, res, next) => {
+    try {
+      const actorUserId = req.user?.sub;
+      if (!actorUserId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      const { matrix } = ActualizarMatrizPermisosBody.parse(req.body);
+      const empresaId = await permissionService.resolveEmpresaIdForUser(
+        actorUserId,
+        Rol.gerente,
+      );
+
+      const updated = await permissionService.replacePermissionMatrix(empresaId, matrix);
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   // â”€â”€ Empresa â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   crearEmpresa: RequestHandler = async (req, res, next) => {
     try {

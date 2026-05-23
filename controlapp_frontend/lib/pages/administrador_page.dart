@@ -3,6 +3,7 @@ import 'package:flutter_application_1/api/administrador_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
+import 'package:flutter_application_1/service/permission_service.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
@@ -43,6 +44,8 @@ class AdministradorPage extends StatefulWidget {
 class _AdministradorPageState extends State<AdministradorPage> {
   final AdministradorApi _api = AdministradorApi();
   final SessionService _sessionService = SessionService();
+
+  bool _can(String permission) => PermissionService.instance.can(permission);
 
   List<Conjunto> _conjuntos = [];
   String? _conjuntoSeleccionadoNit;
@@ -224,62 +227,67 @@ class _AdministradorPageState extends State<AdministradorPage> {
     final conjunto = _conjuntoSeleccionado!;
     final sections = <_AdminSection>[
       _AdminSection('Operacion diaria', [
-        _AdminTile(
-          'PQRS',
-          Icons.support_agent,
-          Colors.indigo,
-          () => _go(
-            CompromisosPage(
-              nit: conjunto.nit,
-              nombreConjunto: conjunto.nombre,
-              pageTitle: 'PQRS',
-              inputLabel: 'Nueva PQRS',
-              inputHint: 'Ej: Reporte de novedad o requerimiento',
-              emptyMessage: 'Aun no hay PQRS.\nRegistra la primera.',
-              addButtonLabel: 'Registrar',
-              usarFlujoAdministrador: true,
+        if (_can('compromisos.ver'))
+          _AdminTile(
+            'PQRS',
+            Icons.support_agent,
+            Colors.indigo,
+            () => _go(
+              CompromisosPage(
+                nit: conjunto.nit,
+                nombreConjunto: conjunto.nombre,
+                pageTitle: 'PQRS',
+                inputLabel: 'Nueva PQRS',
+                inputHint: 'Ej: Reporte de novedad o requerimiento',
+                emptyMessage: 'Aun no hay PQRS.\nRegistra la primera.',
+                addButtonLabel: 'Registrar',
+                usarFlujoAdministrador: true,
+              ),
             ),
           ),
-        ),
-        _AdminTile(
-          'Inventario',
-          Icons.inventory_2_outlined,
-          AppTheme.yellow,
-          () => _go(
-            InventarioPage(
-              nit: conjunto.nit,
-              empresaId: AppConstants.empresaNit,
+        if (_can('inventario.ver'))
+          _AdminTile(
+            'Inventario',
+            Icons.inventory_2_outlined,
+            AppTheme.yellow,
+            () => _go(
+              InventarioPage(
+                nit: conjunto.nit,
+                empresaId: AppConstants.empresaNit,
+              ),
             ),
           ),
-        ),
-        _AdminTile(
-          'Cronograma',
-          Icons.calendar_month,
-          Colors.purple,
-          () => _go(CronogramaPage(nit: conjunto.nit)),
-        ),
-        _AdminTile(
-          'Mapa de areas',
-          Icons.account_tree_outlined,
-          Colors.teal,
-          () => _go(MapaConjuntoPage(conjuntoNit: conjunto.nit)),
-        ),
+        if (_can('cronograma.ver'))
+          _AdminTile(
+            'Cronograma',
+            Icons.calendar_month,
+            Colors.purple,
+            () => _go(CronogramaPage(nit: conjunto.nit)),
+          ),
+        if (_can('mapa_areas.ver'))
+          _AdminTile(
+            'Mapa de areas',
+            Icons.account_tree_outlined,
+            Colors.teal,
+            () => _go(MapaConjuntoPage(conjuntoNit: conjunto.nit)),
+          ),
       ]),
       _AdminSection('Analisis y control', [
-        _AdminTile(
-          'Reportes',
-          Icons.bar_chart,
-          AppTheme.green,
-          () => _go(
-            ReportesDashboardPage(
-              conjuntoIdInicial: conjunto.nit,
-              permitirInformesPdf: false,
-              soloResumenTipos: true,
+        if (_can('reportes.ver'))
+          _AdminTile(
+            'Reportes',
+            Icons.bar_chart,
+            AppTheme.green,
+            () => _go(
+              ReportesDashboardPage(
+                conjuntoIdInicial: conjunto.nit,
+                permitirInformesPdf: false,
+                soloResumenTipos: true,
+              ),
             ),
           ),
-        ),
       ]),
-    ];
+    ].where((section) => section.tiles.isNotEmpty).toList();
 
     return DashboardScaffold(
       title: 'Panel del administrador',
@@ -333,8 +341,10 @@ class _AdministradorPageState extends State<AdministradorPage> {
             onChanged: (v) => setState(() => _conjuntoSeleccionadoNit = v),
           ),
           const SizedBox(height: 18),
-          const CumpleanosBanner(),
-          const SizedBox(height: 18),
+          if (_can('cumpleanos.ver')) ...[
+            const CumpleanosBanner(),
+            const SizedBox(height: 18),
+          ],
           DashboardSurface(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -347,6 +357,15 @@ class _AdministradorPageState extends State<AdministradorPage> {
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final count = _gridCountForWidth(constraints.maxWidth);
+                    if (sections.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.only(top: 12),
+                        child: Text(
+                          'Este rol no tiene accesos activos. Pidele al gerente que habilite al menos un permiso.',
+                        ),
+                      );
+                    }
+
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: sections

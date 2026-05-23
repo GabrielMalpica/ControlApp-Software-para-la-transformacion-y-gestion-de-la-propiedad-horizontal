@@ -3,8 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // src/routes/reportes.ts
 const express_1 = require("express");
 const ReporteController_1 = require("../controller/ReporteController");
+const auth_middleware_1 = require("../middlewares/auth.middleware");
+const permission_middleware_1 = require("../middlewares/permission.middleware");
 const router = (0, express_1.Router)();
 const c = new ReporteController_1.ReporteController();
+router.use(auth_middleware_1.authRequired);
+router.use((0, permission_middleware_1.requirePermission)("reportes.ver"));
 // DASHBOARD
 router.get("/kpis", c.kpis);
 router.get("/serie-diaria", c.serieDiariaPorEstado);

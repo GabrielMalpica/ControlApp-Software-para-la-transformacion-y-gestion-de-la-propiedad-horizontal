@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
-const prisma_1 = require("../db/prisma");
 const zod_1 = require("zod");
+const prisma_1 = require("../db/prisma");
 const authService_1 = require("../services/authService");
 const LoginSchema = zod_1.z.object({
     correo: zod_1.z.string().email(),
@@ -42,14 +42,7 @@ class AuthController {
                     res.status(401).json({ message: "No autenticado" });
                     return;
                 }
-                const usuario = await prisma_1.prisma.usuario.findUnique({
-                    where: { id: userId },
-                    select: { id: true, nombre: true, correo: true, rol: true },
-                });
-                if (!usuario) {
-                    res.status(404).json({ message: "Usuario no existe" });
-                    return;
-                }
+                const usuario = await service.obtenerSesionUsuario(userId);
                 res.json({ user: usuario });
             }
             catch (err) {

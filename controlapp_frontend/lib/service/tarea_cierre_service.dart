@@ -4,6 +4,7 @@ import 'package:flutter_application_1/api/supervisor_api.dart';
 import 'package:flutter_application_1/api/tarea_api.dart';
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
+import 'package:flutter_application_1/service/permission_service.dart';
 
 class TareaCierreService {
   TareaCierreService({
@@ -57,6 +58,10 @@ class TareaCierreService {
   }) {
     if (soloLectura) {
       return 'Esta vista es solo lectura.';
+    }
+
+    if (!PermissionService.instance.can('tareas.cerrar')) {
+      return 'Tu rol no tiene permiso para cerrar tareas.';
     }
 
     final estado = (tarea.estado ?? '').trim().toUpperCase();
