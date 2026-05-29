@@ -2607,17 +2607,50 @@ class DefinicionTareaPreventivaService {
         const primerInicio = [...tareas]
             .sort((a, b) => a.fechaInicio.getTime() - b.fechaInicio.getTime())[0]
             .fechaInicio;
+        const horarioDia = await this.prisma.conjuntoHorario.findFirst({
+            where: { conjuntoId: dto.conjuntoId, dia: dateToDiaSemana(dto.fecha) },
+            select: {
+                horaApertura: true,
+                horaCierre: true,
+                descansoInicio: true,
+                descansoFin: true,
+            },
+        });
+        if (!horarioDia) {
+            throw new Error("No hay horario configurado para ese día en el conjunto.");
+        }
+        const horario = {
+            startMin: (0, schedulerUtils_1.toMin)(horarioDia.horaApertura),
+            endMin: (0, schedulerUtils_1.toMin)(horarioDia.horaCierre),
+            descansoStartMin: horarioDia.descansoInicio
+                ? (0, schedulerUtils_1.toMin)(horarioDia.descansoInicio)
+                : undefined,
+            descansoEndMin: horarioDia.descansoFin ? (0, schedulerUtils_1.toMin)(horarioDia.descansoFin) : undefined,
+        };
+        const ventanasTrabajo = construirVentanasTrabajoDia(horario);
         const actualizaciones = [];
+        const recreaciones = [];
         let cursor = new Date(primerInicio);
         for (const tarea of ordenadas) {
             const duracion = Math.max(1, tarea.duracionMinutos ?? 1);
-            const fechaInicio = new Date(cursor);
-            const fechaFin = new Date(cursor.getTime() + duracion * 60000);
-            await this.validarHorarioBloqueBorrador({
-                conjuntoId: dto.conjuntoId,
-                fechaInicio,
-                fechaFin,
+            const segmentos = distribuirDuracionEnVentanas({
+                fecha: dto.fecha,
+                ventanas: ventanasTrabajo,
+                inicioCursor: cursor,
+                duracionMinutos: duracion,
             });
+            const fechaInicio = segmentos[0]?.fechaInicio;
+            const fechaFin = segmentos[segmentos.length - 1]?.fechaFin;
+            if (!fechaInicio || !fechaFin) {
+                throw new Error("No se pudo calcular la nueva programación de una tarea.");
+            }
+            for (const segmento of segmentos) {
+                await this.validarHorarioBloqueBorrador({
+                    conjuntoId: dto.conjuntoId,
+                    fechaInicio: segmento.fechaInicio,
+                    fechaFin: segmento.fechaFin,
+                });
+            }
             const inicioEsFestivo = await (0, schedulerUtils_1.isFestivoDate)({
                 prisma: this.prisma,
                 fecha: fechaInicio,
@@ -2636,33 +2669,56 @@ class DefinicionTareaPreventivaService {
                 if (!disponibilidad.ok) {
                     throw new Error(await construirMensajeSinDisponibilidadOperarios(this.prisma, disponibilidad.noDisponibles));
                 }
-                const solape = await this.prisma.tarea.findFirst({
-                    where: {
-                        conjuntoId: dto.conjuntoId,
-                        borrador: true,
-                        id: { notIn: dto.tareaIds },
-                        estado: { notIn: ["PENDIENTE_REPROGRAMACION"] },
-                        fechaInicio: { lt: fechaFin },
-                        fechaFin: { gt: fechaInicio },
-                        operarios: { some: { id: { in: operariosIds } } },
-                    },
-                    select: { id: true },
-                });
-                if (solape) {
-                    throw new Error("No se pudo reordenar porque una de las tareas quedaría solapada con otra agenda del borrador.");
+                for (const segmento of segmentos) {
+                    const solape = await this.prisma.tarea.findFirst({
+                        where: {
+                            conjuntoId: dto.conjuntoId,
+                            borrador: true,
+                            id: { notIn: dto.tareaIds },
+                            estado: { notIn: ["PENDIENTE_REPROGRAMACION"] },
+                            fechaInicio: { lt: segmento.fechaFin },
+                            fechaFin: { gt: segmento.fechaInicio },
+                            operarios: { some: { id: { in: operariosIds } } },
+                        },
+                        select: { id: true },
+                    });
+                    if (solape) {
+                        throw new Error("No se pudo reordenar porque una de las tareas quedaría solapada con otra agenda del borrador.");
+                    }
                 }
             }
-            actualizaciones.push({ id: tarea.id, fechaInicio, fechaFin });
+            if (segmentos.length === 1) {
+                actualizaciones.push({ id: tarea.id, fechaInicio, fechaFin });
+            }
+            else {
+                recreaciones.push({ original: tarea, segmentos });
+            }
             cursor = fechaFin;
         }
-        await this.prisma.$transaction(actualizaciones.map((item) => this.prisma.tarea.update({
-            where: { id: item.id },
-            data: {
-                fechaInicio: item.fechaInicio,
-                fechaFin: item.fechaFin,
-            },
-        })));
-        return { ok: true, reordenadas: actualizaciones.length };
+        await this.prisma.$transaction(async (tx) => {
+            for (const item of actualizaciones) {
+                await tx.tarea.update({
+                    where: { id: item.id },
+                    data: {
+                        fechaInicio: item.fechaInicio,
+                        fechaFin: item.fechaFin,
+                    },
+                });
+            }
+            for (const item of recreaciones) {
+                await tx.tarea.delete({ where: { id: item.original.id } });
+                for (const segmento of item.segmentos) {
+                    await tx.tarea.create({
+                        data: buildTareaBorradorCreateData(item.original, segmento.fechaInicio, segmento.fechaFin),
+                    });
+                }
+            }
+        });
+        return {
+            ok: true,
+            reordenadas: actualizaciones.length + recreaciones.length,
+            divididas: recreaciones.length,
+        };
     }
     async listarOpcionesReprogramacionBorrador(conjuntoId, tareaId) {
         const tarea = await this.prisma.tarea.findUnique({
@@ -3641,6 +3697,115 @@ function enumerateDays(start, end) {
         cur.setDate(cur.getDate() + 1);
     }
     return out;
+}
+function construirVentanasTrabajoDia(horario) {
+    const bloqueos = buildBloqueosPorDescanso(horario).sort((a, b) => a.startMin - b.startMin);
+    const ventanas = [];
+    let cursor = horario.startMin;
+    for (const bloqueo of bloqueos) {
+        if (bloqueo.startMin > cursor) {
+            ventanas.push({ i: cursor, f: bloqueo.startMin });
+        }
+        cursor = Math.max(cursor, bloqueo.endMin);
+    }
+    if (cursor < horario.endMin) {
+        ventanas.push({ i: cursor, f: horario.endMin });
+    }
+    return ventanas.filter((ventana) => ventana.f > ventana.i);
+}
+function distribuirDuracionEnVentanas(params) {
+    const { fecha, ventanas, inicioCursor, duracionMinutos } = params;
+    let restante = Math.max(1, Math.round(duracionMinutos));
+    let cursorMin = (0, schedulerUtils_1.toMinOfDay)(inicioCursor);
+    const segmentos = [];
+    for (const ventana of ventanas) {
+        if (restante <= 0)
+            break;
+        const inicioSegmento = Math.max(cursorMin, ventana.i);
+        if (inicioSegmento >= ventana.f)
+            continue;
+        const disponible = ventana.f - inicioSegmento;
+        const usados = Math.min(disponible, restante);
+        const finSegmento = inicioSegmento + usados;
+        segmentos.push({
+            fechaInicio: (0, schedulerUtils_1.toDateAtMin)(fecha, inicioSegmento),
+            fechaFin: (0, schedulerUtils_1.toDateAtMin)(fecha, finSegmento),
+        });
+        restante -= usados;
+        cursorMin = finSegmento;
+    }
+    if (restante > 0 || segmentos.length === 0) {
+        throw new Error("No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día.");
+    }
+    return segmentos;
+}
+function buildTareaBorradorCreateData(original, fechaInicio, fechaFin) {
+    const duracionMinutos = Math.max(1, Math.round((+fechaFin - +fechaInicio) / 60000));
+    return {
+        descripcion: original.descripcion,
+        fechaInicio,
+        fechaFin,
+        fechaIniciarTarea: original.fechaIniciarTarea,
+        fechaFinalizarTarea: original.fechaFinalizarTarea,
+        duracionMinutos,
+        prioridad: original.prioridad ?? 2,
+        estado: original.estado,
+        evidencias: original.evidencias ?? [],
+        insumosUsados: original.insumosUsados == null
+            ? undefined
+            : original.insumosUsados,
+        observaciones: original.observaciones,
+        observacionesRechazo: original.observacionesRechazo,
+        fechaVerificacion: original.fechaVerificacion,
+        finalizadaPorId: original.finalizadaPorId,
+        finalizadaPorRol: original.finalizadaPorRol,
+        supervisor: original.supervisorId ? { connect: { id: original.supervisorId } } : undefined,
+        ubicacion: { connect: { id: original.ubicacionId } },
+        elemento: { connect: { id: original.elementoId } },
+        conjunto: original.conjuntoId ? { connect: { nit: original.conjuntoId } } : undefined,
+        empresaAprobada: original.empresaAprobadaId
+            ? { connect: { id: original.empresaAprobadaId } }
+            : undefined,
+        empresaRechazada: original.empresaRechazadaId
+            ? { connect: { id: original.empresaRechazadaId } }
+            : undefined,
+        tipo: original.tipo,
+        frecuencia: original.frecuencia,
+        borrador: true,
+        periodoAnio: fechaInicio.getFullYear(),
+        periodoMes: fechaInicio.getMonth() + 1,
+        grupoPlanId: original.grupoPlanId,
+        bloqueIndex: original.bloqueIndex,
+        bloquesTotales: original.bloquesTotales,
+        tiempoEstimadoMinutos: original.tiempoEstimadoMinutos,
+        insumoPrincipal: original.insumoPrincipalId
+            ? { connect: { id: original.insumoPrincipalId } }
+            : undefined,
+        consumoPrincipalPorUnidad: original.consumoPrincipalPorUnidad,
+        consumoTotalEstimado: original.consumoTotalEstimado,
+        insumosPlanJson: original.insumosPlanJson == null
+            ? undefined
+            : original.insumosPlanJson,
+        maquinariaPlanJson: original.maquinariaPlanJson == null
+            ? undefined
+            : original.maquinariaPlanJson,
+        herramientasPlanJson: original.herramientasPlanJson == null
+            ? undefined
+            : original.herramientasPlanJson,
+        reprogramada: original.reprogramada ?? false,
+        reprogramadaEn: original.reprogramadaEn,
+        reprogramadaMotivo: original.reprogramadaMotivo,
+        reprogramadaPorTareaId: original.reprogramadaPorTareaId,
+        fechaInicioOriginal: original.fechaInicioOriginal,
+        fechaFinOriginal: original.fechaFinOriginal,
+        operarios: original.operarios?.length
+            ? {
+                connect: original.operarios.map((operario) => ({
+                    id: operario.id,
+                })),
+            }
+            : undefined,
+    };
 }
 function buildBloqueosPorDescanso(horario) {
     const ds = horario.descansoStartMin;
