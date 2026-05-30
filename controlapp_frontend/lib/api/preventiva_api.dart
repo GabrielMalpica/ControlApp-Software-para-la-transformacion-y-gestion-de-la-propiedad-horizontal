@@ -364,12 +364,14 @@ class DefinicionPreventivaApi {
     required String nit,
     required int tareaId,
     required int nuevoOperarioId,
+    required String modoAplicacion,
     required bool aplicarADefinicion,
   }) async {
     final resp = await _client.post(
       '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/tarea/$tareaId/reasignar-operario',
       body: {
         'nuevoOperarioId': nuevoOperarioId,
+        'modoAplicacion': modoAplicacion,
         'aplicarADefinicion': aplicarADefinicion,
       },
     );
@@ -385,12 +387,14 @@ class DefinicionPreventivaApi {
     required String nit,
     required int excluidaId,
     required int nuevoOperarioId,
+    required String modoAplicacion,
     required bool aplicarADefinicion,
   }) async {
     final resp = await _client.post(
       '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/excluidas/$excluidaId/reasignar-operario',
       body: {
         'nuevoOperarioId': nuevoOperarioId,
+        'modoAplicacion': modoAplicacion,
         'aplicarADefinicion': aplicarADefinicion,
       },
     );

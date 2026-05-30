@@ -21,7 +21,7 @@ import 'package:flutter_application_1/service/app_feedback.dart';
 
 enum _VistaCronograma { mensual, semanal, informe }
 
-enum _ModoCambioOperario { soloBorrador, tambienDefinicion }
+enum _ModoCambioOperario { soloTarea, todoBorrador, tambienDefinicion }
 
 final ValueNotifier<bool> _weekDragActiveNotifier = ValueNotifier<bool>(false);
 
@@ -584,7 +584,9 @@ class _CronogramaPreventivasBorradorPageState
     );
   }
 
-  Future<void> _configurarCamposDetalleExcluida(VoidCallback refreshSheet) async {
+  Future<void> _configurarCamposDetalleExcluida(
+    VoidCallback refreshSheet,
+  ) async {
     await showModalBottomSheet<void>(
       context: context,
       builder: (context) {
@@ -631,9 +633,9 @@ class _CronogramaPreventivasBorradorPageState
 
   bool _tareaTieneOperario(TareaModel t, String nombreOperario) {
     final buscado = nombreOperario.trim().toLowerCase();
-    return _nombresOperarios(t).any(
-      (nombre) => nombre.trim().toLowerCase() == buscado,
-    );
+    return _nombresOperarios(
+      t,
+    ).any((nombre) => nombre.trim().toLowerCase() == buscado);
   }
 
   DateTime _ensureEndAfterStart(DateTime start, DateTime end) {
@@ -3635,13 +3637,17 @@ class _CronogramaPreventivasBorradorPageState
       builder: (ctx) => AlertDialog(
         title: const Text('Aplicar cambio de operario'),
         content: const Text(
-          'Puedes mover esta tarea solo en este borrador o dejar el nuevo operario también en la definición para futuros cronogramas.',
+          'Puedes cambiar el operario solo en esta tarea, en todas las tareas relacionadas de este borrador o también dejarlo guardado en la definición para los próximos cronogramas.',
         ),
         actions: [
           TextButton(
+            onPressed: () => Navigator.pop(ctx, _ModoCambioOperario.soloTarea),
+            child: const Text('Solo esta tarea'),
+          ),
+          TextButton(
             onPressed: () =>
-                Navigator.pop(ctx, _ModoCambioOperario.soloBorrador),
-            child: const Text('Solo este borrador'),
+                Navigator.pop(ctx, _ModoCambioOperario.todoBorrador),
+            child: const Text('Todo este borrador'),
           ),
           ElevatedButton(
             onPressed: () =>
@@ -3759,17 +3765,26 @@ class _CronogramaPreventivasBorradorPageState
       nit: widget.nit,
       tareaId: tarea.id,
       nuevoOperarioId: nuevoOperarioId,
+      modoAplicacion: switch (modo) {
+        _ModoCambioOperario.soloTarea => 'SOLO_TAREA',
+        _ModoCambioOperario.todoBorrador => 'TODO_BORRADOR',
+        _ModoCambioOperario.tambienDefinicion => 'TAMBIEN_DEFINICION',
+      },
       aplicarADefinicion: modo == _ModoCambioOperario.tambienDefinicion,
     );
     if (!mounted) return;
 
     final warning = (res['warning'] ?? '').toString().trim();
     final definicionActualizada = res['definicionActualizada'] == true;
+    final tareasActualizadas =
+        int.tryParse((res['tareasActualizadas'] ?? 1).toString()) ?? 1;
     final mensaje = warning.isNotEmpty
         ? warning
         : definicionActualizada
-        ? 'Operario cambiado en el borrador y en la definición.'
-        : 'Operario cambiado solo en este borrador.';
+        ? 'Operario cambiado en $tareasActualizadas tarea(s) del borrador y en la definición.'
+        : modo == _ModoCambioOperario.todoBorrador
+        ? 'Operario cambiado en $tareasActualizadas tarea(s) de este borrador.'
+        : 'Operario cambiado solo en esta tarea.';
 
     AppFeedback.showFromSnackBar(context, SnackBar(content: Text(mensaje)));
     await _cargarDatos();
@@ -3811,17 +3826,26 @@ class _CronogramaPreventivasBorradorPageState
       nit: widget.nit,
       excluidaId: excluida.id,
       nuevoOperarioId: nuevoOperarioId,
+      modoAplicacion: switch (modo) {
+        _ModoCambioOperario.soloTarea => 'SOLO_TAREA',
+        _ModoCambioOperario.todoBorrador => 'TODO_BORRADOR',
+        _ModoCambioOperario.tambienDefinicion => 'TAMBIEN_DEFINICION',
+      },
       aplicarADefinicion: modo == _ModoCambioOperario.tambienDefinicion,
     );
     if (!mounted) return;
 
     final warning = (res['warning'] ?? '').toString().trim();
     final definicionActualizada = res['definicionActualizada'] == true;
+    final excluidasActualizadas =
+        int.tryParse((res['excluidasActualizadas'] ?? 1).toString()) ?? 1;
     final mensaje = warning.isNotEmpty
         ? warning
         : definicionActualizada
-        ? 'Operario de la excluida cambiado en borrador y definición.'
-        : 'Operario de la excluida cambiado solo en este borrador.';
+        ? 'Operario de la excluida cambiado en $excluidasActualizadas tarea(s) del borrador y en la definición.'
+        : modo == _ModoCambioOperario.todoBorrador
+        ? 'Operario de la excluida cambiado en $excluidasActualizadas tarea(s) de este borrador.'
+        : 'Operario de la excluida cambiado solo en esta tarea.';
 
     AppFeedback.showFromSnackBar(context, SnackBar(content: Text(mensaje)));
     await _cargarDatos();
@@ -3865,7 +3889,11 @@ class _CronogramaPreventivasBorradorPageState
                 addRow('estado', 'Estado', item.estado);
                 addRow('tipo', 'Tipo', 'Preventiva excluida');
                 addRow('frecuencia', 'Frecuencia', item.frecuencia ?? '—');
-                addRow('prioridad', 'Prioridad', _labelPrioridad(item.prioridad));
+                addRow(
+                  'prioridad',
+                  'Prioridad',
+                  _labelPrioridad(item.prioridad),
+                );
                 rows.add(const SizedBox(height: 8));
                 addRow('fechaObjetivo', 'Fecha objetivo', fechaObjetivo);
                 addRow('duracion', 'Duración', item.duracionLabel);
@@ -3873,7 +3901,11 @@ class _CronogramaPreventivasBorradorPageState
                 addRow('conjunto', 'Conjunto', conjuntoLabel);
                 addRow('ubicacion', 'Ubicación', item.ubicacionNombre ?? '—');
                 addRow('elemento', 'Elemento', item.elementoNombre ?? '—');
-                addRow('supervisor', 'Supervisor', item.supervisorNombre ?? '—');
+                addRow(
+                  'supervisor',
+                  'Supervisor',
+                  item.supervisorNombre ?? '—',
+                );
                 rows.add(const SizedBox(height: 8));
                 addRow('operarios', 'Operarios', operarios);
                 addRow('motivo', 'Motivo', motivoLabel);
@@ -3940,7 +3972,9 @@ class _CronogramaPreventivasBorradorPageState
                                       border: Border.all(
                                         color: Colors.orange.shade200,
                                       ),
-                                      color: Colors.orange.withValues(alpha: 0.06),
+                                      color: Colors.orange.withValues(
+                                        alpha: 0.06,
+                                      ),
                                     ),
                                     child: Column(
                                       crossAxisAlignment:
@@ -3968,7 +4002,10 @@ class _CronogramaPreventivasBorradorPageState
                                           FilledButton.tonalIcon(
                                             onPressed: () {
                                               Navigator.pop(context);
-                                              _agendarBloqueExcluida(item, bloque);
+                                              _agendarBloqueExcluida(
+                                                item,
+                                                bloque,
+                                              );
                                             },
                                             icon: const Icon(Icons.search),
                                             label: const Text(
@@ -4114,11 +4151,7 @@ class _CronogramaPreventivasBorradorPageState
                 rows.add(const SizedBox(height: 8));
                 addRow('fechaInicio', 'Fecha inicio', fechaIniStr);
                 addRow('fechaFin', 'Fecha fin', fechaFinStr);
-                addRow(
-                  'duracion',
-                  'Duración',
-                  formatHoursMinutes(durMin),
-                );
+                addRow('duracion', 'Duración', formatHoursMinutes(durMin));
                 rows.add(const SizedBox(height: 8));
                 addRow('conjunto', 'Conjunto', conjuntoLabel);
                 addRow('ubicacion', 'Ubicación', ubicacionLabel);
@@ -4743,7 +4776,8 @@ class _CronogramaPreventivasBorradorPageState
       final endDay = weekEndDay.clamp(1, lastDay.day);
       final start = DateTime(_anioActual, _mesActual, startDay);
       final end = DateTime(_anioActual, _mesActual, endDay);
-      final rango = DateFormat('d MMM', 'es').format(start) ==
+      final rango =
+          DateFormat('d MMM', 'es').format(start) ==
               DateFormat('d MMM', 'es').format(end)
           ? DateFormat('d MMM', 'es').format(start)
           : '${DateFormat('d MMM', 'es').format(start)} - ${DateFormat('d MMM', 'es').format(end)}';
@@ -5361,7 +5395,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       final tieneDescanso =
           descansoInicio != null &&
           descansoFin != null &&
-          timeOfDayToMinutes(descansoFin) > timeOfDayToMinutes(descansoInicio) &&
+          timeOfDayToMinutes(descansoFin) >
+              timeOfDayToMinutes(descansoInicio) &&
           timeOfDayToMinutes(descansoInicio) > inicio &&
           timeOfDayToMinutes(descansoFin) < fin;
 
@@ -5425,7 +5460,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
     final inicioJornada = rangosDisponibles.first.start;
     final finJornada = rangosDisponibles.last.end;
-    if (desiredMinuteOfDay < inicioJornada || desiredMinuteOfDay >= finJornada) {
+    if (desiredMinuteOfDay < inicioJornada ||
+        desiredMinuteOfDay >= finJornada) {
       return null;
     }
 
@@ -5446,7 +5482,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
         );
         if (siguienteRango.start < 0) return null;
         start = _snapToQuarter(
-          start < siguienteRango.start ? siguienteRango.start : siguienteRango.end,
+          start < siguienteRango.start
+              ? siguienteRango.start
+              : siguienteRango.end,
         );
         continue;
       }
@@ -5532,13 +5570,11 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       }
     } catch (e) {
       if (!mounted) return;
-      final operariosNombres = dragged.tarea?.operariosNombres ??
+      final operariosNombres =
+          dragged.tarea?.operariosNombres ??
           dragged.excluida?.operariosNombres ??
           const <String>[];
-      final mensaje = widget.normalizarMensajeMovimiento(
-        e,
-        operariosNombres,
-      );
+      final mensaje = widget.normalizarMensajeMovimiento(e, operariosNombres);
       AppFeedback.showFromSnackBar(
         context,
         SnackBar(content: Text('No se pudo mover la tarea: $mensaje')),
@@ -5975,7 +6011,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   top: top,
                                   height: height,
                                   child: Container(
-                                    color: Colors.orange.withValues(alpha: 0.12),
+                                    color: Colors.orange.withValues(
+                                      alpha: 0.12,
+                                    ),
                                   ),
                                 );
                               }),

@@ -280,6 +280,7 @@ class DefinicionTareaPreventivaController {
                 conjuntoId,
                 tareaId,
                 nuevoOperarioId: req.body?.nuevoOperarioId,
+                modoAplicacion: req.body?.modoAplicacion,
                 aplicarADefinicion: req.body?.aplicarADefinicion,
             });
             res.json(out);
@@ -294,6 +295,7 @@ class DefinicionTareaPreventivaController {
                 conjuntoId,
                 excluidaId,
                 nuevoOperarioId: req.body?.nuevoOperarioId,
+                modoAplicacion: req.body?.modoAplicacion,
                 aplicarADefinicion: req.body?.aplicarADefinicion,
             });
             res.json(out);

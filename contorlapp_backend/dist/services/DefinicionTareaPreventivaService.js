@@ -65,12 +65,18 @@ const ReasignarOperarioBorradorDTO = zod_1.z.object({
     conjuntoId: zod_1.z.string().min(3),
     tareaId: zod_1.z.number().int().positive(),
     nuevoOperarioId: zod_1.z.coerce.number().int().positive(),
+    modoAplicacion: zod_1.z
+        .enum(["SOLO_TAREA", "TODO_BORRADOR", "TAMBIEN_DEFINICION"])
+        .optional(),
     aplicarADefinicion: zod_1.z.boolean().optional().default(false),
 });
 const ReasignarOperarioExcluidaDTO = zod_1.z.object({
     conjuntoId: zod_1.z.string().min(3),
     excluidaId: zod_1.z.number().int().positive(),
     nuevoOperarioId: zod_1.z.coerce.number().int().positive(),
+    modoAplicacion: zod_1.z
+        .enum(["SOLO_TAREA", "TODO_BORRADOR", "TAMBIEN_DEFINICION"])
+        .optional(),
     aplicarADefinicion: zod_1.z.boolean().optional().default(false),
 });
 const DividirExcluidaManualDTO = zod_1.z.object({
@@ -2293,6 +2299,8 @@ class DefinicionTareaPreventivaService {
     }
     async reasignarOperarioTareaBorrador(payload) {
         const dto = ReasignarOperarioBorradorDTO.parse(payload);
+        const modoAplicacion = dto.modoAplicacion ??
+            (dto.aplicarADefinicion ? "TAMBIEN_DEFINICION" : "SOLO_TAREA");
         const tarea = await this.prisma.tarea.findUnique({
             where: { id: dto.tareaId },
             select: {
@@ -2307,6 +2315,8 @@ class DefinicionTareaPreventivaService {
                 elementoId: true,
                 frecuencia: true,
                 supervisorId: true,
+                periodoAnio: true,
+                periodoMes: true,
             },
         });
         if (!tarea ||
@@ -2315,15 +2325,51 @@ class DefinicionTareaPreventivaService {
             tarea.tipo !== client_1.TipoTarea.PREVENTIVA) {
             throw new Error("No es una tarea preventiva válida del borrador.");
         }
-        const tareaActualizada = await this.editarBloqueBorrador(dto.conjuntoId, dto.tareaId, {
-            fechaInicio: tarea.fechaInicio,
-            fechaFin: tarea.fechaFin,
-            operariosIds: [dto.nuevoOperarioId],
-        });
+        let tareasObjetivo = [
+            {
+                id: tarea.id,
+                fechaInicio: tarea.fechaInicio,
+                fechaFin: tarea.fechaFin,
+            },
+        ];
+        if (modoAplicacion !== "SOLO_TAREA") {
+            const relacionadas = await this.prisma.tarea.findMany({
+                where: {
+                    conjuntoId: dto.conjuntoId,
+                    borrador: true,
+                    tipo: client_1.TipoTarea.PREVENTIVA,
+                    periodoAnio: tarea.periodoAnio ?? tarea.fechaInicio.getFullYear(),
+                    periodoMes: tarea.periodoMes ?? tarea.fechaInicio.getMonth() + 1,
+                    descripcion: tarea.descripcion,
+                    ubicacionId: tarea.ubicacionId,
+                    elementoId: tarea.elementoId,
+                    ...(tarea.frecuencia == null ? {} : { frecuencia: tarea.frecuencia }),
+                    ...(tarea.supervisorId == null
+                        ? {}
+                        : { supervisorId: tarea.supervisorId }),
+                },
+                select: { id: true, fechaInicio: true, fechaFin: true },
+                orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
+            });
+            if (relacionadas.length > 0) {
+                tareasObjetivo = relacionadas;
+            }
+        }
+        let tareaActualizada = null;
+        for (const tareaObjetivo of tareasObjetivo) {
+            const actualizada = await this.editarBloqueBorrador(dto.conjuntoId, tareaObjetivo.id, {
+                fechaInicio: tareaObjetivo.fechaInicio,
+                fechaFin: tareaObjetivo.fechaFin,
+                operariosIds: [dto.nuevoOperarioId],
+            });
+            if (tareaObjetivo.id === dto.tareaId) {
+                tareaActualizada = actualizada;
+            }
+        }
         let definicionActualizada = false;
         let definicionId = null;
         let warning = null;
-        if (dto.aplicarADefinicion) {
+        if (modoAplicacion === "TAMBIEN_DEFINICION") {
             const candidatas = await this.prisma.definicionTareaPreventiva.findMany({
                 where: {
                     conjuntoId: dto.conjuntoId,
@@ -2356,6 +2402,8 @@ class DefinicionTareaPreventivaService {
         return {
             ok: true,
             tarea: tareaActualizada,
+            tareasActualizadas: tareasObjetivo.length,
+            modoAplicacion,
             definicionActualizada,
             definicionId,
             warning,
@@ -2363,6 +2411,8 @@ class DefinicionTareaPreventivaService {
     }
     async reasignarOperarioExcluidaBorrador(payload) {
         const dto = ReasignarOperarioExcluidaDTO.parse(payload);
+        const modoAplicacion = dto.modoAplicacion ??
+            (dto.aplicarADefinicion ? "TAMBIEN_DEFINICION" : "SOLO_TAREA");
         const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
             where: { id: dto.excluidaId },
             select: {
@@ -2391,16 +2441,36 @@ class DefinicionTareaPreventivaService {
             throw new Error(`El operario ${disponibilidad.noDisponibles.join(", ")} no tiene disponibilidad para la fecha objetivo de esta excluida.`);
         }
         const nombreOperario = await getOperarioNombre(this.prisma, nuevoOperarioId);
-        const excluidaActualizada = await this.prisma.preventivaExcluidaBorrador.update({
-            where: { id: dto.excluidaId },
+        let excluidasObjetivo = [dto.excluidaId];
+        if (modoAplicacion !== "SOLO_TAREA" && excluida.defId != null) {
+            const relacionadas = await this.prisma.preventivaExcluidaBorrador.findMany({
+                where: {
+                    conjuntoId: dto.conjuntoId,
+                    estado: "PENDIENTE",
+                    defId: excluida.defId,
+                    periodoAnio: excluida.periodoAnio,
+                    periodoMes: excluida.periodoMes,
+                },
+                select: { id: true },
+                orderBy: [{ fechaObjetivo: "asc" }, { id: "asc" }],
+            });
+            if (relacionadas.length > 0) {
+                excluidasObjetivo = relacionadas.map((item) => item.id);
+            }
+        }
+        await this.prisma.preventivaExcluidaBorrador.updateMany({
+            where: { id: { in: excluidasObjetivo } },
             data: {
                 operariosIds: [nuevoOperarioId],
                 operariosNombres: nombreOperario ? [nombreOperario] : [],
             },
         });
+        const excluidaActualizada = await this.prisma.preventivaExcluidaBorrador.findUnique({
+            where: { id: dto.excluidaId },
+        });
         let definicionActualizada = false;
         let warning = null;
-        if (dto.aplicarADefinicion) {
+        if (modoAplicacion === "TAMBIEN_DEFINICION") {
             if (excluida.defId != null) {
                 await this.actualizar(dto.conjuntoId, excluida.defId, {
                     operariosIds: [dto.nuevoOperarioId],
@@ -2422,12 +2492,16 @@ class DefinicionTareaPreventivaService {
             metadataJson: {
                 nuevoOperarioId,
                 nuevoOperarioNombre: nombreOperario,
-                aplicarADefinicion: dto.aplicarADefinicion,
+                modoAplicacion,
+                aplicarADefinicion: modoAplicacion === "TAMBIEN_DEFINICION",
+                excluidasActualizadas: excluidasObjetivo.length,
             },
         });
         return {
             ok: true,
             excluida: excluidaActualizada,
+            excluidasActualizadas: excluidasObjetivo.length,
+            modoAplicacion,
             definicionActualizada,
             warning,
         };
