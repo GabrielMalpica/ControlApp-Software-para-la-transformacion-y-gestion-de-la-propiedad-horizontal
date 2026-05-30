@@ -3615,10 +3615,6 @@ export class DefinicionTareaPreventivaService {
     });
     const idsDia = tareasDia.map((tarea) => tarea.id);
 
-    const primerInicio = [...tareasDia]
-      .sort((a, b) => a.fechaInicio.getTime() - b.fechaInicio.getTime())[0]
-      .fechaInicio;
-
     const horarioDia = await this.prisma.conjuntoHorario.findFirst({
       where: { conjuntoId: dto.conjuntoId, dia: dateToDiaSemana(dto.fecha) },
       select: {
@@ -3642,13 +3638,21 @@ export class DefinicionTareaPreventivaService {
       descansoEndMin: horarioDia.descansoFin ? toMin(horarioDia.descansoFin) : undefined,
     };
     const ventanasTrabajo = construirVentanasTrabajoDia(horario);
+    const ventanasReordenamiento = construirVentanasOcupadasReordenamiento({
+      tareas: tareasDia,
+      ventanasTrabajo,
+    });
+    const primeraVentana = ventanasReordenamiento[0] ?? ventanasTrabajo[0];
+    if (!primeraVentana) {
+      throw new Error("No hay ventanas disponibles para reordenar las tareas del día.");
+    }
 
     const actualizaciones: Array<{ id: number; fechaInicio: Date; fechaFin: Date }> = [];
     const recreaciones: Array<{
       original: (typeof tareasDia)[number];
       segmentos: Array<{ fechaInicio: Date; fechaFin: Date }>;
     }> = [];
-    let cursor = new Date(primerInicio);
+    let cursor = toDateAtMin(dto.fecha, primeraVentana.i);
     for (const tarea of ordenadas) {
       const duracion = calcularDuracionLaboralReordenamiento({
         tarea,
@@ -3656,7 +3660,9 @@ export class DefinicionTareaPreventivaService {
       });
       const segmentos = distribuirDuracionEnVentanas({
         fecha: dto.fecha,
-        ventanas: ventanasTrabajo,
+        ventanas: ventanasReordenamiento.length
+          ? ventanasReordenamiento
+          : ventanasTrabajo,
         inicioCursor: cursor,
         duracionMinutos: duracion,
       });
@@ -5084,6 +5090,30 @@ function calcularDuracionLaboralReordenamiento(params: {
   }
 
   return Math.max(1, tarea.duracionMinutos ?? 1);
+}
+
+function construirVentanasOcupadasReordenamiento(params: {
+  tareas: Array<{ fechaInicio: Date; fechaFin: Date }>;
+  ventanasTrabajo: Intervalo[];
+}): Intervalo[] {
+  const { tareas, ventanasTrabajo } = params;
+  const ocupadas: Intervalo[] = [];
+
+  for (const tarea of tareas) {
+    const inicioMin = toMinOfDay(tarea.fechaInicio);
+    const finMin = toMinOfDay(tarea.fechaFin);
+    if (finMin <= inicioMin) continue;
+
+    for (const ventana of ventanasTrabajo) {
+      const i = Math.max(inicioMin, ventana.i);
+      const f = Math.min(finMin, ventana.f);
+      if (f > i) {
+        ocupadas.push({ i, f });
+      }
+    }
+  }
+
+  return ocupadas.sort((a, b) => (a.i - b.i) || (a.f - b.f));
 }
 
 function buildTareaBorradorCreateData(
