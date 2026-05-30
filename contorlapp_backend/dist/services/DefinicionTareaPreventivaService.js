@@ -2651,11 +2651,6 @@ class DefinicionTareaPreventivaService {
     }
     async reordenarTareasBorradorDia(payload) {
         const dto = ReordenarTareasDiaBorradorDTO.parse(payload);
-        console.log("[preventivas][reordenar-borrador-dia] inicio", {
-            conjuntoId: dto.conjuntoId,
-            fecha: dto.fecha.toISOString(),
-            tareaIds: dto.tareaIds,
-        });
         const inicioDia = new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 0, 0, 0, 0);
         const finDia = new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 23, 59, 59, 999);
         const tareasSeleccionadas = await this.prisma.tarea.findMany({
@@ -2675,22 +2670,8 @@ class DefinicionTareaPreventivaService {
             include: { operarios: { select: { id: true } } },
         });
         if (tareasSeleccionadas.length !== dto.tareaIds.length) {
-            console.log("[preventivas][reordenar-borrador-dia] tareas no validas", {
-                esperadas: dto.tareaIds.length,
-                encontradas: tareasSeleccionadas.length,
-                encontradasIds: tareasSeleccionadas.map((tarea) => tarea.id),
-            });
             throw new Error("Algunas tareas no pertenecen a ese día del borrador o no son válidas.");
         }
-        console.log("[preventivas][reordenar-borrador-dia] tareas seleccionadas", {
-            tareas: tareasSeleccionadas.map((tarea) => ({
-                id: tarea.id,
-                fechaInicio: tarea.fechaInicio.toISOString(),
-                fechaFin: tarea.fechaFin.toISOString(),
-                duracionMinutos: tarea.duracionMinutos,
-                operariosIds: tarea.operarios.map((item) => item.id),
-            })),
-        });
         const tareasPorId = new Map(tareasSeleccionadas.map((tarea) => [tarea.id, tarea]));
         const seleccionOrdenada = dto.tareaIds.map((id) => {
             const tarea = tareasPorId.get(id);
@@ -2723,11 +2704,6 @@ class DefinicionTareaPreventivaService {
             tareas: tareasSeleccionadas,
             ventanasTrabajo,
         });
-        console.log("[preventivas][reordenar-borrador-dia] ventanas", {
-            horario,
-            ventanasTrabajo,
-            ventanasReordenamiento,
-        });
         const primeraVentana = ventanasReordenamiento[0] ?? ventanasTrabajo[0];
         if (!primeraVentana) {
             throw new Error("No hay ventanas disponibles para reordenar las tareas del día.");
@@ -2740,32 +2716,20 @@ class DefinicionTareaPreventivaService {
                 tarea,
                 horario,
             });
-            console.log("[preventivas][reordenar-borrador-dia] tarea iteracion", {
-                tareaId: tarea.id,
-                cursor: cursor.toISOString(),
-                fechaInicioActual: tarea.fechaInicio.toISOString(),
-                fechaFinActual: tarea.fechaFin.toISOString(),
-                duracionLaboral: duracion,
-            });
-            const segmentos = intentarDistribuirDuracionEnVentanas({
+            const segmentos = intentarDistribuirDuracionReordenamiento({
                 fecha: dto.fecha,
                 ventanas: ventanasReordenamiento,
                 inicioCursor: cursor,
                 duracionMinutos: duracion,
+                horario,
             }) ??
-                distribuirDuracionEnVentanas({
+                distribuirDuracionReordenamiento({
                     fecha: dto.fecha,
                     ventanas: ventanasTrabajo,
                     inicioCursor: cursor,
                     duracionMinutos: duracion,
+                    horario,
                 });
-            console.log("[preventivas][reordenar-borrador-dia] segmentos calculados", {
-                tareaId: tarea.id,
-                segmentos: segmentos.map((segmento) => ({
-                    fechaInicio: segmento.fechaInicio.toISOString(),
-                    fechaFin: segmento.fechaFin.toISOString(),
-                })),
-            });
             const fechaInicio = segmentos[0]?.fechaInicio;
             const fechaFin = segmentos[segmentos.length - 1]?.fechaFin;
             if (!fechaInicio || !fechaFin) {
@@ -2812,10 +2776,26 @@ class DefinicionTareaPreventivaService {
                             fechaFin: { gt: segmento.fechaInicio },
                             operarios: { some: { id: { in: operariosIds } } },
                         },
-                        select: { id: true },
+                        select: {
+                            id: true,
+                            descripcion: true,
+                            fechaInicio: true,
+                            fechaFin: true,
+                            operarios: {
+                                where: { id: { in: operariosIds } },
+                                select: {
+                                    id: true,
+                                    usuario: { select: { nombre: true } },
+                                },
+                            },
+                        },
                     });
                     if (solape) {
-                        throw new Error("No se pudo reordenar porque una de las tareas quedaría solapada con otra agenda del borrador.");
+                        throw new Error(construirMensajeSolapeReordenamiento({
+                            tareaActual: tarea,
+                            tareaSolapada: solape,
+                            segmentoIntentado: segmento,
+                        }));
                     }
                 }
             }
@@ -2827,20 +2807,6 @@ class DefinicionTareaPreventivaService {
             }
             cursor = fechaFin;
         }
-        console.log("[preventivas][reordenar-borrador-dia] resumen cambios", {
-            actualizaciones: actualizaciones.map((item) => ({
-                id: item.id,
-                fechaInicio: item.fechaInicio.toISOString(),
-                fechaFin: item.fechaFin.toISOString(),
-            })),
-            recreaciones: recreaciones.map((item) => ({
-                originalId: item.original.id,
-                segmentos: item.segmentos.map((segmento) => ({
-                    fechaInicio: segmento.fechaInicio.toISOString(),
-                    fechaFin: segmento.fechaFin.toISOString(),
-                })),
-            })),
-        });
         await this.prisma.$transaction(async (tx) => {
             for (const item of actualizaciones) {
                 await tx.tarea.update({
@@ -3859,59 +3825,59 @@ function construirVentanasTrabajoDia(horario) {
     }
     return ventanas.filter((ventana) => ventana.f > ventana.i);
 }
-function distribuirDuracionEnVentanas(params) {
-    const { fecha, ventanas, inicioCursor, duracionMinutos } = params;
-    let restante = Math.max(1, Math.round(duracionMinutos));
-    let cursorMin = (0, schedulerUtils_1.toMinOfDay)(inicioCursor);
-    const segmentos = [];
-    for (const ventana of ventanas) {
-        if (restante <= 0)
-            break;
+function distribuirDuracionReordenamiento(params) {
+    const { fecha, ventanas, inicioCursor, duracionMinutos, horario } = params;
+    const duracion = Math.max(1, Math.round(duracionMinutos));
+    const cursorMin = (0, schedulerUtils_1.toMinOfDay)(inicioCursor);
+    const ventanasOrdenadas = (0, schedulerUtils_1.mergeIntervalos)(ventanas).sort((a, b) => (a.i - b.i) || (a.f - b.f));
+    for (let index = 0; index < ventanasOrdenadas.length; index += 1) {
+        const ventana = ventanasOrdenadas[index];
         const inicioSegmento = Math.max(cursorMin, ventana.i);
         if (inicioSegmento >= ventana.f)
             continue;
-        const disponible = ventana.f - inicioSegmento;
-        const usados = Math.min(disponible, restante);
-        const finSegmento = inicioSegmento + usados;
-        segmentos.push({
-            fechaInicio: (0, schedulerUtils_1.toDateAtMin)(fecha, inicioSegmento),
-            fechaFin: (0, schedulerUtils_1.toDateAtMin)(fecha, finSegmento),
-        });
-        restante -= usados;
-        cursorMin = finSegmento;
+        const disponibleActual = ventana.f - inicioSegmento;
+        if (disponibleActual >= duracion) {
+            return [
+                {
+                    fechaInicio: (0, schedulerUtils_1.toDateAtMin)(fecha, inicioSegmento),
+                    fechaFin: (0, schedulerUtils_1.toDateAtMin)(fecha, inicioSegmento + duracion),
+                },
+            ];
+        }
+        const siguienteVentana = ventanasOrdenadas[index + 1];
+        const puedeCruzarAlmuerzo = horario.descansoStartMin != null &&
+            horario.descansoEndMin != null &&
+            ventana.f === horario.descansoStartMin &&
+            siguienteVentana?.i === horario.descansoEndMin;
+        if (!puedeCruzarAlmuerzo)
+            continue;
+        const restante = duracion - disponibleActual;
+        const disponibleSiguiente = (siguienteVentana?.f ?? 0) - (siguienteVentana?.i ?? 0);
+        if (restante <= 0 || !siguienteVentana || disponibleSiguiente < restante)
+            continue;
+        return [
+            {
+                fechaInicio: (0, schedulerUtils_1.toDateAtMin)(fecha, inicioSegmento),
+                fechaFin: (0, schedulerUtils_1.toDateAtMin)(fecha, ventana.f),
+            },
+            {
+                fechaInicio: (0, schedulerUtils_1.toDateAtMin)(fecha, siguienteVentana.i),
+                fechaFin: (0, schedulerUtils_1.toDateAtMin)(fecha, siguienteVentana.i + restante),
+            },
+        ];
     }
-    if (restante > 0 || segmentos.length === 0) {
-        console.log("[preventivas][reordenar-borrador-dia] distribuir fallo", {
-            fecha: fecha.toISOString(),
-            inicioCursor: inicioCursor.toISOString(),
-            duracionMinutos,
-            restante,
-            cursorMin,
-            ventanas,
-            segmentos: segmentos.map((segmento) => ({
-                fechaInicio: segmento.fechaInicio.toISOString(),
-                fechaFin: segmento.fechaFin.toISOString(),
-            })),
-        });
-        throw new Error("No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día.");
-    }
-    return segmentos;
+    throw new Error("No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día.");
 }
-function intentarDistribuirDuracionEnVentanas(params) {
+function intentarDistribuirDuracionReordenamiento(params) {
     if (!params.ventanas.length)
         return null;
     try {
-        return distribuirDuracionEnVentanas(params);
+        return distribuirDuracionReordenamiento(params);
     }
     catch (error) {
         if (error instanceof Error &&
             error.message ===
                 "No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día.") {
-            console.log("[preventivas][reordenar-borrador-dia] fallback jornada completa", {
-                inicioCursor: params.inicioCursor.toISOString(),
-                duracionMinutos: params.duracionMinutos,
-                ventanas: params.ventanas,
-            });
             return null;
         }
         throw error;
@@ -3949,7 +3915,7 @@ function construirVentanasOcupadasReordenamiento(params) {
             }
         }
     }
-    return ocupadas.sort((a, b) => (a.i - b.i) || (a.f - b.f));
+    return (0, schedulerUtils_1.mergeIntervalos)(ocupadas).sort((a, b) => (a.i - b.i) || (a.f - b.f));
 }
 function buildTareaBorradorCreateData(original, fechaInicio, fechaFin) {
     const duracionMinutos = Math.max(1, Math.round((+fechaFin - +fechaInicio) / 60000));
@@ -4098,6 +4064,20 @@ async function getOperarioNombre(prisma, operarioId) {
     });
     return op?.usuario?.nombre ?? `Operario ${idStr}`;
 }
+function construirMensajeSolapeReordenamiento(params) {
+    const { tareaActual, tareaSolapada, segmentoIntentado } = params;
+    const inicioSolape = new Date(Math.max(segmentoIntentado.fechaInicio.getTime(), tareaSolapada.fechaInicio.getTime()));
+    const finSolape = new Date(Math.min(segmentoIntentado.fechaFin.getTime(), tareaSolapada.fechaFin.getTime()));
+    const nombresOperarios = Array.from(new Set(tareaSolapada.operarios
+        .map((operario) => operario.usuario?.nombre?.trim() || `Operario ${operario.id}`)
+        .filter(Boolean)));
+    const operariosTexto = nombresOperarios.length <= 1
+        ? nombresOperarios[0] ?? "seleccionado"
+        : nombresOperarios.join(", ");
+    const tareaActualTexto = tareaActual.descripcion?.trim() || `tarea ${tareaActual.id}`;
+    const tareaSolapadaTexto = tareaSolapada.descripcion?.trim() || `tarea ${tareaSolapada.id}`;
+    return `No se pudo reordenar la tarea "${tareaActualTexto}" porque se solapa en la agenda de ${operariosTexto} con "${tareaSolapadaTexto}" entre ${formatHoraLocal(inicioSolape)} y ${formatHoraLocal(finSolape)} del ${formatFechaLocal(inicioSolape)}.`;
+}
 async function construirMensajeSinDisponibilidadOperarios(prisma, operariosIds) {
     const nombres = await Promise.all(operariosIds.map((operarioId) => getOperarioNombre(prisma, operarioId)));
     const nombresUnicos = Array.from(new Set(nombres.map((nombre) => nombre.trim()).filter(Boolean)));
@@ -4105,6 +4085,12 @@ async function construirMensajeSinDisponibilidadOperarios(prisma, operariosIds) 
         return `El operario ${nombresUnicos[0] ?? "seleccionado"} no tiene disponibilidad para ese día.`;
     }
     return `Los operarios ${nombresUnicos.join(", ")} no tienen disponibilidad para ese día.`;
+}
+function formatHoraLocal(fecha) {
+    return `${String(fecha.getHours()).padStart(2, "0")}:${String(fecha.getMinutes()).padStart(2, "0")}`;
+}
+function formatFechaLocal(fecha) {
+    return `${String(fecha.getDate()).padStart(2, "0")}/${String(fecha.getMonth() + 1).padStart(2, "0")}/${fecha.getFullYear()}`;
 }
 function pickDaysByFrecuencia(days, def) {
     switch (def.frecuencia) {

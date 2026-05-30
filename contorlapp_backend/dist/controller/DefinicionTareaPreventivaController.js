@@ -166,11 +166,6 @@ class DefinicionTareaPreventivaController {
         this.reordenarTareasDiaBorrador = async (req, res) => {
             const conjuntoId = req.params.nit;
             const svc = new DefinicionTareaPreventivaService_1.DefinicionTareaPreventivaService(prisma_1.prisma);
-            console.log("[preventivas][reordenar-borrador-dia] request", {
-                conjuntoId,
-                fecha: req.body?.fecha,
-                tareaIds: req.body?.tareaIds,
-            });
             const out = await svc.reordenarTareasBorradorDia({
                 conjuntoId,
                 fecha: req.body?.fecha,

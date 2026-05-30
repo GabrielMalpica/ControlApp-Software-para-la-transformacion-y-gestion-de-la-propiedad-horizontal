@@ -6498,16 +6498,58 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
   final Set<int> _excluidasExpandidaIds = <int>{};
   bool _reordenandoDia = false;
 
+  Future<void> _mostrarDialogoErrorReordenamiento(String mensaje) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('No se pudo reordenar el día'),
+        content: SingleChildScrollView(child: Text(mensaje)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _mostrarErrorReordenamiento(String mensaje) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) {
+      _mostrarDialogoErrorReordenamiento(mensaje);
+      return;
+    }
+
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 8),
+          backgroundColor: const Color(0xFF8D2C21),
+          action: SnackBarAction(
+            label: 'Ver',
+            textColor: Colors.white,
+            onPressed: () => _mostrarDialogoErrorReordenamiento(mensaje),
+          ),
+          content: InkWell(
+            onTap: () => _mostrarDialogoErrorReordenamiento(mensaje),
+            child: const Text(
+              'No se pudo reordenar el día. Toca para ver el detalle.',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     final fecha = widget.weekStart.add(Duration(days: widget.dayIndex));
     final tareasDia = widget.tareasSemana.where((t) {
-      final d = t.fechaInicio.toLocal();
-      return d.year == fecha.year &&
-          d.month == fecha.month &&
-          d.day == fecha.day;
-    }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
-    final tareasDiaCompletas = widget.tareasSemanaCompletas.where((t) {
       final d = t.fechaInicio.toLocal();
       return d.year == fecha.year &&
           d.month == fecha.month &&
@@ -6611,30 +6653,13 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                         final nuevas = [...tareasDia];
                         final item = nuevas.removeAt(oldIndex);
                         nuevas.insert(newIndex, item);
-                        final visiblesIds = nuevas.map((item) => item.id).toSet();
-                        final merged = <TareaModel>[];
-                        var visibleIndex = 0;
-                        for (final tarea in tareasDiaCompletas) {
-                          if (visiblesIds.contains(tarea.id)) {
-                            merged.add(nuevas[visibleIndex]);
-                            visibleIndex += 1;
-                          } else {
-                            merged.add(tarea);
-                          }
-                        }
                         setState(() => _reordenandoDia = true);
                         try {
-                          await widget.onReordenarTareasDia(fecha, merged);
+                          await widget.onReordenarTareasDia(fecha, nuevas);
                         } catch (e) {
+                          final mensaje = AppError.messageOf(e);
                           if (context.mounted) {
-                            AppFeedback.showFromSnackBar(
-                              context,
-                              SnackBar(
-                                content: Text(
-                                  'No se pudo reordenar el día: $e',
-                                ),
-                              ),
-                            );
+                            _mostrarErrorReordenamiento(mensaje);
                           }
                         } finally {
                           if (mounted) setState(() => _reordenandoDia = false);

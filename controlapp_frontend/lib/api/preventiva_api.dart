@@ -228,8 +228,9 @@ class DefinicionPreventivaApi {
       body: {'fecha': fecha.toIso8601String(), 'tareaIds': tareaIds},
     );
     if (resp.statusCode != 200) {
-      throw Exception(
-        'Error reordenando tareas del día: ${resp.statusCode} ${resp.body}',
+      _throwCrudApiError(
+        resp,
+        fallback: 'No se pudo reordenar las tareas del día.',
       );
     }
   }
