@@ -3627,7 +3627,10 @@ export class DefinicionTareaPreventivaService {
     }> = [];
     let cursor = new Date(primerInicio);
     for (const tarea of ordenadas) {
-      const duracion = Math.max(1, tarea.duracionMinutos ?? 1);
+      const duracion = calcularDuracionLaboralReordenamiento({
+        tarea,
+        horario,
+      });
       const segmentos = distribuirDuracionEnVentanas({
         fecha: dto.fecha,
         ventanas: ventanasTrabajo,
@@ -5035,6 +5038,29 @@ function distribuirDuracionEnVentanas(params: {
   }
 
   return segmentos;
+}
+
+function calcularDuracionLaboralReordenamiento(params: {
+  tarea: { fechaInicio: Date; fechaFin: Date; duracionMinutos?: number | null };
+  horario: HorarioDia;
+}): number {
+  const { tarea, horario } = params;
+  const inicioMin = toMinOfDay(tarea.fechaInicio);
+  const finMin = toMinOfDay(tarea.fechaFin);
+  const duracionRango = Math.max(1, finMin - inicioMin);
+
+  const minutosDescanso = buildBloqueosPorDescanso(horario).reduce((acc, bloqueo) => {
+    const solapeInicio = Math.max(inicioMin, bloqueo.startMin);
+    const solapeFin = Math.min(finMin, bloqueo.endMin);
+    return acc + Math.max(0, solapeFin - solapeInicio);
+  }, 0);
+
+  const duracionLaboral = duracionRango - minutosDescanso;
+  if (duracionLaboral > 0) {
+    return duracionLaboral;
+  }
+
+  return Math.max(1, tarea.duracionMinutos ?? 1);
 }
 
 function buildTareaBorradorCreateData(

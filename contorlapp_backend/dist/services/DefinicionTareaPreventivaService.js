@@ -2701,7 +2701,10 @@ class DefinicionTareaPreventivaService {
         const recreaciones = [];
         let cursor = new Date(primerInicio);
         for (const tarea of ordenadas) {
-            const duracion = Math.max(1, tarea.duracionMinutos ?? 1);
+            const duracion = calcularDuracionLaboralReordenamiento({
+                tarea,
+                horario,
+            });
             const segmentos = distribuirDuracionEnVentanas({
                 fecha: dto.fecha,
                 ventanas: ventanasTrabajo,
@@ -3807,6 +3810,22 @@ function distribuirDuracionEnVentanas(params) {
         throw new Error("No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día.");
     }
     return segmentos;
+}
+function calcularDuracionLaboralReordenamiento(params) {
+    const { tarea, horario } = params;
+    const inicioMin = (0, schedulerUtils_1.toMinOfDay)(tarea.fechaInicio);
+    const finMin = (0, schedulerUtils_1.toMinOfDay)(tarea.fechaFin);
+    const duracionRango = Math.max(1, finMin - inicioMin);
+    const minutosDescanso = buildBloqueosPorDescanso(horario).reduce((acc, bloqueo) => {
+        const solapeInicio = Math.max(inicioMin, bloqueo.startMin);
+        const solapeFin = Math.min(finMin, bloqueo.endMin);
+        return acc + Math.max(0, solapeFin - solapeInicio);
+    }, 0);
+    const duracionLaboral = duracionRango - minutosDescanso;
+    if (duracionLaboral > 0) {
+        return duracionLaboral;
+    }
+    return Math.max(1, tarea.duracionMinutos ?? 1);
 }
 function buildTareaBorradorCreateData(original, fechaInicio, fechaFin) {
     const duracionMinutos = Math.max(1, Math.round((+fechaFin - +fechaInicio) / 60000));

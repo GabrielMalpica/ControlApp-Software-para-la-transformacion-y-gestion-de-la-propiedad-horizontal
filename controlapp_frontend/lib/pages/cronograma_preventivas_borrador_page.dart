@@ -332,6 +332,15 @@ class _CronogramaPreventivasBorradorPageState
     }).toList();
   }
 
+  List<TareaModel> _tareasSemanaCompletas(DateTime semanaBase) {
+    return _tareasMes.where((t) {
+      final start = _startOfWeekMonday(semanaBase);
+      final end = start.add(const Duration(days: 7));
+      final dt = t.fechaInicio.toLocal();
+      return !dt.isBefore(start) && dt.isBefore(end);
+    }).toList();
+  }
+
   List<TareaModel> get _tareasFiltradas =>
       _tareasMes.where(_pasaFiltros).toList();
 
@@ -4602,6 +4611,7 @@ class _CronogramaPreventivasBorradorPageState
   Widget _buildAgendaSemanal() {
     final weekStart = _startOfWeekMonday(_semanaBase);
     final tareas = _tareasSemana(_semanaBase);
+    final tareasCompletas = _tareasSemanaCompletas(_semanaBase);
     final resumenSemana = _calcularResumenHorasSemana(weekStart, tareas);
     final resumenOperarios = _calcularResumenHorasSemanaPorOperario(
       weekStart,
@@ -4694,6 +4704,7 @@ class _CronogramaPreventivasBorradorPageState
             onVerExcluidasMesChanged: (value) =>
                 setState(() => _sidebarVerExcluidasMes = value),
             tareasSemana: tareas,
+            tareasSemanaCompletas: tareasCompletas,
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
             excluidasMes: _excluidasMes,
             excluirPorFecha: _excluidasPorFecha,
@@ -6431,6 +6442,7 @@ class _SidebarAgendaDia extends StatefulWidget {
   final ValueChanged<int> onDayIndexChanged;
   final ValueChanged<bool> onVerExcluidasMesChanged;
   final List<TareaModel> tareasSemana;
+  final List<TareaModel> tareasSemanaCompletas;
   final void Function(TareaModel t) onTapTarea;
   final List<PreventivaExcluidaBorradorModel> excluidasMes;
   final List<PreventivaExcluidaBorradorModel> Function(DateTime fecha)
@@ -6462,6 +6474,7 @@ class _SidebarAgendaDia extends StatefulWidget {
     required this.onDayIndexChanged,
     required this.onVerExcluidasMesChanged,
     required this.tareasSemana,
+    required this.tareasSemanaCompletas,
     required this.onTapTarea,
     required this.excluidasMes,
     required this.excluirPorFecha,
@@ -6489,6 +6502,12 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
   Widget build(BuildContext context) {
     final fecha = widget.weekStart.add(Duration(days: widget.dayIndex));
     final tareasDia = widget.tareasSemana.where((t) {
+      final d = t.fechaInicio.toLocal();
+      return d.year == fecha.year &&
+          d.month == fecha.month &&
+          d.day == fecha.day;
+    }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+    final tareasDiaCompletas = widget.tareasSemanaCompletas.where((t) {
       final d = t.fechaInicio.toLocal();
       return d.year == fecha.year &&
           d.month == fecha.month &&
@@ -6592,9 +6611,20 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                         final nuevas = [...tareasDia];
                         final item = nuevas.removeAt(oldIndex);
                         nuevas.insert(newIndex, item);
+                        final visiblesIds = nuevas.map((item) => item.id).toSet();
+                        final merged = <TareaModel>[];
+                        var visibleIndex = 0;
+                        for (final tarea in tareasDiaCompletas) {
+                          if (visiblesIds.contains(tarea.id)) {
+                            merged.add(nuevas[visibleIndex]);
+                            visibleIndex += 1;
+                          } else {
+                            merged.add(tarea);
+                          }
+                        }
                         setState(() => _reordenandoDia = true);
                         try {
-                          await widget.onReordenarTareasDia(fecha, nuevas);
+                          await widget.onReordenarTareasDia(fecha, merged);
                         } catch (e) {
                           if (context.mounted) {
                             AppFeedback.showFromSnackBar(
