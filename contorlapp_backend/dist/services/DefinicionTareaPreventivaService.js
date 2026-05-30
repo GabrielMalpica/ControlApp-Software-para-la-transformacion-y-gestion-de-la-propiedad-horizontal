@@ -144,6 +144,46 @@ class DefinicionTareaPreventivaService {
         }
         return sid;
     }
+    validarProgramacionFrecuencia(params) {
+        const { frecuencia, diaSemanaProgramado, diaMesProgramado, fechasProgramadasJson, } = params;
+        if (frecuencia === client_1.Frecuencia.SEMANAL && !diaSemanaProgramado) {
+            throw new Error("Las preventivas semanales deben tener un día programado.");
+        }
+        if (frecuencia === client_1.Frecuencia.MENSUAL && !diaMesProgramado) {
+            throw new Error("Las preventivas mensuales deben tener un día del mes programado.");
+        }
+        if ((frecuencia === client_1.Frecuencia.BIMESTRAL ||
+            frecuencia === client_1.Frecuencia.TRIMESTRAL ||
+            frecuencia === client_1.Frecuencia.SEMESTRAL ||
+            frecuencia === client_1.Frecuencia.ANUAL) &&
+            !(fechasProgramadasJson?.length)) {
+            throw new Error("Esta frecuencia requiere al menos una fecha programada seleccionada desde el calendario.");
+        }
+        const requeridas = this.fechasRequeridasPorFrecuencia(frecuencia);
+        if (requeridas != null) {
+            const actuales = fechasProgramadasJson?.length ?? 0;
+            if (actuales < requeridas) {
+                throw new Error(`Faltan ${requeridas - actuales} fecha(s) para completar la frecuencia ${frecuencia}.`);
+            }
+            if (actuales > requeridas) {
+                throw new Error(`No puedes registrar más de ${requeridas} fecha(s) para la frecuencia ${frecuencia}.`);
+            }
+        }
+    }
+    fechasRequeridasPorFrecuencia(frecuencia) {
+        switch (frecuencia) {
+            case client_1.Frecuencia.BIMESTRAL:
+                return 2;
+            case client_1.Frecuencia.TRIMESTRAL:
+                return 3;
+            case client_1.Frecuencia.SEMESTRAL:
+                return 2;
+            case client_1.Frecuencia.ANUAL:
+                return 1;
+            default:
+                return null;
+        }
+    }
     validarVentanaPublicacion(params) {
         const { anio, mes, diasAnticipacion = 7, ahora = new Date() } = params;
         const inicioPeriodo = new Date(anio, mes - 1, 1, 0, 0, 0, 0);
@@ -799,6 +839,7 @@ class DefinicionTareaPreventivaService {
      * ======================= */
     async crear(payload) {
         const dto = DefinicionTareaPreventiva_1.CrearDefinicionPreventivaDTO.parse(payload);
+        this.validarProgramacionFrecuencia(dto);
         const supervisorIdResuelto = dto.supervisorId != null
             ? await this.resolverSupervisorId(dto.supervisorId)
             : null;
@@ -815,6 +856,9 @@ class DefinicionTareaPreventivaService {
             prioridad: dto.prioridad ?? 2,
             diaSemanaProgramado: dto.diaSemanaProgramado ?? null,
             diaMesProgramado: dto.diaMesProgramado ?? null,
+            fechasProgramadasJson: dto.fechasProgramadasJson
+                ? dto.fechasProgramadasJson
+                : undefined,
             duracionMinutosFija,
             diasParaCompletar: dto.diasParaCompletar ?? null,
             rendimientoTiempoBase: dto.rendimientoTiempoBase ?? "POR_MINUTO",
@@ -899,6 +943,28 @@ class DefinicionTareaPreventivaService {
         if (!def || def.conjuntoId !== conjuntoId) {
             throw new Error("Definición no encontrada para este conjunto.");
         }
+        const actual = await this.prisma.definicionTareaPreventiva.findUnique({
+            where: { id },
+            select: {
+                frecuencia: true,
+                diaSemanaProgramado: true,
+                diaMesProgramado: true,
+                fechasProgramadasJson: true,
+            },
+        });
+        if (!actual) {
+            throw new Error("Definición no encontrada para este conjunto.");
+        }
+        this.validarProgramacionFrecuencia({
+            frecuencia: dto.frecuencia ?? actual.frecuencia,
+            diaSemanaProgramado: dto.diaSemanaProgramado === undefined
+                ? actual.diaSemanaProgramado
+                : dto.diaSemanaProgramado,
+            diaMesProgramado: dto.diaMesProgramado === undefined ? actual.diaMesProgramado : dto.diaMesProgramado,
+            fechasProgramadasJson: dto.fechasProgramadasJson === undefined
+                ? (actual.fechasProgramadasJson ?? null)
+                : dto.fechasProgramadasJson,
+        });
         // recalcular duración si vienen campos
         const durMinFija = dto.duracionMinutosFija === undefined &&
             dto.duracionHorasFija === undefined
@@ -931,6 +997,9 @@ class DefinicionTareaPreventivaService {
                     : new client_1.Prisma.Decimal(dto.rendimientoBase),
             diaSemanaProgramado: dto.diaSemanaProgramado ?? undefined,
             diaMesProgramado: dto.diaMesProgramado ?? undefined,
+            fechasProgramadasJson: dto.fechasProgramadasJson === undefined
+                ? undefined
+                : dto.fechasProgramadasJson,
             duracionMinutosFija: durMinFija,
             diasParaCompletar: dto.diasParaCompletar === undefined
                 ? undefined
@@ -3903,13 +3972,75 @@ function pickDaysByFrecuencia(days, def) {
             const target = diaSemanaToJsDay(dia);
             return days.filter((d) => d.getDay() === target);
         }
+        case client_1.Frecuencia.QUINCENAL: {
+            const ancla = construirFechaAnclaFrecuencia(def);
+            return days.filter((d) => diferenciaDiasCalendario(ancla, d) % 14 === 0);
+        }
         case client_1.Frecuencia.MENSUAL: {
-            const dd = def.diaMesProgramado ?? 1;
-            return days.filter((d) => d.getDate() === dd);
+            return filtrarPorIntervaloMensual(days, def, 1);
+        }
+        case client_1.Frecuencia.BIMESTRAL: {
+            return filtrarPorFechasExplicitas(days, def);
+        }
+        case client_1.Frecuencia.TRIMESTRAL: {
+            return filtrarPorFechasExplicitas(days, def);
+        }
+        case client_1.Frecuencia.SEMESTRAL: {
+            return filtrarPorFechasExplicitas(days, def);
+        }
+        case client_1.Frecuencia.ANUAL: {
+            return filtrarPorFechasExplicitas(days, def);
         }
         default:
             return days;
     }
+}
+function filtrarPorIntervaloMensual(days, def, intervaloMeses) {
+    if (!days.length)
+        return [];
+    const ancla = construirFechaAnclaFrecuencia(def);
+    const diaObjetivo = Math.max(1, Math.min(31, Number(def.diaMesProgramado ?? ancla.getDate() ?? 1)));
+    return days.filter((d) => {
+        if (mesesEntre(ancla, d) % intervaloMeses !== 0)
+            return false;
+        return d.getDate() === ajustarDiaMes(d.getFullYear(), d.getMonth(), diaObjetivo);
+    });
+}
+function filtrarPorFechasExplicitas(days, def) {
+    const fechas = normalizarFechasProgramadas(def.fechasProgramadasJson);
+    if (!fechas.length)
+        return [];
+    const claves = new Set(fechas.map((fecha) => `${fecha.getMonth() + 1}-${fecha.getDate()}`));
+    return days.filter((d) => claves.has(`${d.getMonth() + 1}-${d.getDate()}`));
+}
+function construirFechaAnclaFrecuencia(def) {
+    const base = def.creadoEn instanceof Date ? def.creadoEn : new Date(def.creadoEn ?? Date.now());
+    const diaObjetivo = Math.max(1, Math.min(31, Number(def.diaMesProgramado ?? base.getDate() ?? 1)));
+    return new Date(base.getFullYear(), base.getMonth(), ajustarDiaMes(base.getFullYear(), base.getMonth(), diaObjetivo));
+}
+function normalizarFechasProgramadas(value) {
+    if (!Array.isArray(value))
+        return [];
+    return value
+        .map((item) => {
+        const raw = typeof item === "string" ? item : item?.toString();
+        if (!raw)
+            return null;
+        const parsed = new Date(`${raw}T00:00:00`);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    })
+        .filter((item) => item instanceof Date);
+}
+function ajustarDiaMes(anio, mesIndex, dia) {
+    return Math.min(dia, new Date(anio, mesIndex + 1, 0).getDate());
+}
+function mesesEntre(a, b) {
+    return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+}
+function diferenciaDiasCalendario(a, b) {
+    const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+    const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+    return Math.round((utcB - utcA) / 86400000);
 }
 function diaSemanaToJsDay(d) {
     switch (d) {

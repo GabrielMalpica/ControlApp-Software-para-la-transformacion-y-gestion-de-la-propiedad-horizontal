@@ -535,7 +535,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   bool _tareaTieneOperario(TareaModel t, String nombreOperario) {
-    return _nombresOperarios(t).contains(nombreOperario);
+    final buscado = nombreOperario.trim().toLowerCase();
+    return _nombresOperarios(t).any(
+      (nombre) => nombre.trim().toLowerCase() == buscado,
+    );
   }
 
   List<TareaModel> _tareasSemanaResumenOperarios(DateTime semanaBase) {

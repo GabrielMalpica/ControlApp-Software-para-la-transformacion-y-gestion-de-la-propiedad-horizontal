@@ -9,6 +9,7 @@ exports.nextPickupDayInclusive = nextPickupDayInclusive;
 exports.calcularVentanaPrestamoLogistico = calcularVentanaPrestamoLogistico;
 exports.validarMaquinariaDisponibleEnVentana = validarMaquinariaDisponibleEnVentana;
 exports.crearReservasMaquinariaParaTarea = crearReservasMaquinariaParaTarea;
+const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
 const elementoHierarchy_1 = require("../utils/elementoHierarchy");
 const AsignarAConjuntoDTO = zod_1.z.object({
@@ -180,6 +181,8 @@ class MaquinariaService {
                 frecuencia: true,
                 diaSemanaProgramado: true,
                 diaMesProgramado: true,
+                fechasProgramadasJson: true,
+                creadoEn: true,
                 diasParaCompletar: true,
                 conjuntoId: true,
                 conjunto: { select: { nombre: true } },
@@ -231,17 +234,8 @@ class MaquinariaService {
             };
             const cursor = new Date(desde.getFullYear(), desde.getMonth(), 1);
             const finMes = new Date(hasta.getFullYear(), hasta.getMonth(), 0);
-            if (def.diaMesProgramado != null) {
-                const day = Math.max(1, Math.min(31, def.diaMesProgramado));
-                const fecha = new Date(cursor.getFullYear(), cursor.getMonth(), day);
+            for (const fecha of pickReservasDefinicionMes(def, cursor, finMes)) {
                 pushReserva(fecha);
-            }
-            else if (def.diaSemanaProgramado != null) {
-                const target = diaSemanaToJs[def.diaSemanaProgramado];
-                for (let d = new Date(cursor); d <= finMes; d = addDaysLocal(d, 1)) {
-                    if (d.getDay() == target)
-                        pushReserva(d);
-                }
             }
             return items;
         });
@@ -318,6 +312,100 @@ class MaquinariaService {
     }
 }
 exports.MaquinariaService = MaquinariaService;
+function pickReservasDefinicionMes(def, inicioMes, finMes) {
+    const fechas = [];
+    for (let d = new Date(inicioMes); d <= finMes; d = addDaysLocal(d, 1)) {
+        if (coincideFrecuenciaDefinicionEnFecha(def, d)) {
+            fechas.push(new Date(d));
+        }
+    }
+    return fechas;
+}
+function coincideFrecuenciaDefinicionEnFecha(def, fecha) {
+    switch (def.frecuencia) {
+        case client_1.Frecuencia.DIARIA:
+            return true;
+        case client_1.Frecuencia.SEMANAL: {
+            if (def.diaSemanaProgramado == null)
+                return false;
+            return fecha.getDay() === diaSemanaToJsValue(def.diaSemanaProgramado);
+        }
+        case client_1.Frecuencia.QUINCENAL: {
+            const ancla = fechaAnclaDefinicion(def);
+            return diferenciaDiasCalendario(ancla, fecha) % 14 === 0;
+        }
+        case client_1.Frecuencia.MENSUAL:
+            return coincideFrecuenciaMensual(def, fecha, 1);
+        case client_1.Frecuencia.BIMESTRAL:
+            return coincideFrecuenciaExplicita(def, fecha);
+        case client_1.Frecuencia.TRIMESTRAL:
+            return coincideFrecuenciaExplicita(def, fecha);
+        case client_1.Frecuencia.SEMESTRAL:
+            return coincideFrecuenciaExplicita(def, fecha);
+        case client_1.Frecuencia.ANUAL:
+            return coincideFrecuenciaExplicita(def, fecha);
+        default:
+            return false;
+    }
+}
+function coincideFrecuenciaExplicita(def, fecha) {
+    const fechas = normalizarFechasProgramadas(def.fechasProgramadasJson);
+    return fechas.some((item) => item.getMonth() === fecha.getMonth() && item.getDate() === fecha.getDate());
+}
+function diaSemanaToJsValue(dia) {
+    switch (dia) {
+        case client_1.DiaSemana.LUNES:
+            return 1;
+        case client_1.DiaSemana.MARTES:
+            return 2;
+        case client_1.DiaSemana.MIERCOLES:
+            return 3;
+        case client_1.DiaSemana.JUEVES:
+            return 4;
+        case client_1.DiaSemana.VIERNES:
+            return 5;
+        case client_1.DiaSemana.SABADO:
+            return 6;
+        case client_1.DiaSemana.DOMINGO:
+            return 0;
+    }
+}
+function coincideFrecuenciaMensual(def, fecha, intervaloMeses) {
+    const ancla = fechaAnclaDefinicion(def);
+    if (mesesEntre(ancla, fecha) % intervaloMeses !== 0)
+        return false;
+    const diaObjetivo = Math.max(1, Math.min(31, Number(def.diaMesProgramado ?? ancla.getDate() ?? 1)));
+    return fecha.getDate() === ajustarDiaMes(fecha.getFullYear(), fecha.getMonth(), diaObjetivo);
+}
+function fechaAnclaDefinicion(def) {
+    const base = def.creadoEn instanceof Date ? def.creadoEn : new Date(def.creadoEn ?? Date.now());
+    const diaObjetivo = Math.max(1, Math.min(31, Number(def.diaMesProgramado ?? base.getDate() ?? 1)));
+    return new Date(base.getFullYear(), base.getMonth(), ajustarDiaMes(base.getFullYear(), base.getMonth(), diaObjetivo));
+}
+function ajustarDiaMes(anio, mesIndex, dia) {
+    return Math.min(dia, new Date(anio, mesIndex + 1, 0).getDate());
+}
+function mesesEntre(a, b) {
+    return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+}
+function diferenciaDiasCalendario(a, b) {
+    const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+    const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+    return Math.round((utcB - utcA) / 86400000);
+}
+function normalizarFechasProgramadas(value) {
+    if (!Array.isArray(value))
+        return [];
+    return value
+        .map((item) => {
+        const raw = typeof item === "string" ? item : item?.toString();
+        if (!raw)
+            return null;
+        const parsed = new Date(`${raw}T00:00:00`);
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+    })
+        .filter((item) => item instanceof Date);
+}
 function startOfDayLocal(date) {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
 }

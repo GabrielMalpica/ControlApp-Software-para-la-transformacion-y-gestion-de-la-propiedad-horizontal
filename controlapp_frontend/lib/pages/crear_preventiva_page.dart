@@ -28,6 +28,33 @@ import 'package:flutter_application_1/service/app_feedback.dart';
 
 enum SnackType { info, success, error }
 
+const List<String> _frecuenciasPreventivas = [
+  'DIARIA',
+  'SEMANAL',
+  'MENSUAL',
+  'BIMESTRAL',
+  'TRIMESTRAL',
+  'SEMESTRAL',
+  'ANUAL',
+];
+
+const List<String> _diasSemanaOpciones = [
+  'LUNES',
+  'MARTES',
+  'MIERCOLES',
+  'JUEVES',
+  'VIERNES',
+  'SABADO',
+  'DOMINGO',
+];
+
+const Map<String, int> _fechasRequeridasPorFrecuencia = {
+  'BIMESTRAL': 2,
+  'TRIMESTRAL': 3,
+  'SEMESTRAL': 2,
+  'ANUAL': 1,
+};
+
 class CrearEditarPreventivaPage extends StatefulWidget {
   final String nit;
   final Conjunto conjunto;
@@ -85,9 +112,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   final List<_MaquinariaPlanRow> _maquinariaPlanRows = [];
   final List<_HerramientaPlanRow> _herramientasPlanRows = [];
 
-  String? _frecuencia; // DIARIA | SEMANAL | MENSUAL
-  String? _diaSemanaProgramado;
+  String? _frecuencia;
+  final Set<String> _diasSemanaProgramados = <String>{};
   int? _diaMesProgramado;
+  final List<DateTime> _fechasProgramadas = [];
 
   final List<String> _operariosSeleccionadosCedulas = [];
   Usuario? _supervisorResponsable;
@@ -101,6 +129,44 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   List<UbicacionConElementos> get _ubicaciones => widget.conjunto.ubicaciones;
   List<Usuario> get _operarios => widget.conjunto.operarios;
+
+  bool get _usaSelectorMultipleSemanal =>
+      widget.existente == null && _frecuencia == 'SEMANAL';
+
+  String? get _diaSemanaProgramadoActual {
+    if (_diasSemanaProgramados.isEmpty) return null;
+    for (final dia in _diasSemanaOpciones) {
+      if (_diasSemanaProgramados.contains(dia)) return dia;
+    }
+    return _diasSemanaProgramados.first;
+  }
+
+  bool get _frecuenciaUsaDiaMes => _frecuencia == 'MENSUAL';
+
+  bool get _frecuenciaUsaFechasExplicitas =>
+      const {'BIMESTRAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'}
+          .contains(_frecuencia);
+
+  int? get _fechasRequeridasFrecuencia =>
+      _frecuencia == null ? null : _fechasRequeridasPorFrecuencia[_frecuencia!];
+
+  List<String> get _diasSemanaSeleccionadosOrdenados =>
+      _diasSemanaOpciones
+          .where((dia) => _diasSemanaProgramados.contains(dia))
+          .toList();
+
+  String _fmtFechaProgramada(DateTime fecha) => DateFormat('yyyy-MM-dd').format(fecha);
+
+  int get _fechasProgramadasRestantes {
+    final requeridas = _fechasRequeridasFrecuencia;
+    if (requeridas == null) return 0;
+    return requeridas - _fechasProgramadas.length;
+  }
+
+  String _mensajeFechasFrecuenciaExacta() {
+    final requeridas = _fechasRequeridasFrecuencia ?? 0;
+    return 'Debes seleccionar exactamente $requeridas fecha${requeridas == 1 ? '' : 's'} para la frecuencia ${_frecuencia ?? ''}.';
+  }
 
   // =========================================================
   // ✅ NUEVO: Disponibilidad de maquinaria
@@ -126,7 +192,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     final now = DateTime.now();
     final base = DateTime(now.year, now.month, now.day);
 
-    if (_frecuencia == 'SEMANAL' && _diaSemanaProgramado != null) {
+    if (_frecuencia == 'SEMANAL' && _diasSemanaProgramados.isNotEmpty) {
       const map = {
         'LUNES': 1,
         'MARTES': 2,
@@ -136,25 +202,90 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         'SABADO': 6,
         'DOMINGO': 7,
       };
-      final target = map[_diaSemanaProgramado!] ?? 1;
-      final today = base.weekday; // 1..7
-      var delta = target - today;
-      if (delta < 0) delta += 7;
-      if (delta == 0) delta = 7; // "próximo", no "hoy"
-      return base.add(Duration(days: delta));
+      var mejorFecha = base.add(const Duration(days: 7));
+      for (final dia in _diasSemanaSeleccionadosOrdenados) {
+        final target = map[dia] ?? 1;
+        final today = base.weekday;
+        var delta = target - today;
+        if (delta < 0) delta += 7;
+        if (delta == 0) delta = 7;
+        final candidata = base.add(Duration(days: delta));
+        if (candidata.isBefore(mejorFecha)) {
+          mejorFecha = candidata;
+        }
+      }
+      return mejorFecha;
     }
 
-    if (_frecuencia == 'MENSUAL' && _diaMesProgramado != null) {
-      final y = base.year;
-      final m = base.month;
-      final day = _diaMesProgramado!.clamp(1, 28); // evita reventar por 31
-      var dt = DateTime(y, m, day);
-      if (!dt.isAfter(base)) dt = DateTime(y, m + 1, day);
+    if (_frecuenciaUsaFechasExplicitas && _fechasProgramadas.isNotEmpty) {
+      final hoy = DateTime(base.year, base.month, base.day);
+      final ordenadas = [..._fechasProgramadas]..sort((a, b) => a.compareTo(b));
+      for (final fecha in ordenadas) {
+        final candidata = DateTime(hoy.year, fecha.month, fecha.day);
+        if (candidata.isAfter(hoy)) return candidata;
+      }
+      final primera = ordenadas.first;
+      return DateTime(hoy.year + 1, primera.month, primera.day);
+    }
+
+    if (_frecuenciaUsaDiaMes && _diaMesProgramado != null) {
+      final intervaloMeses = switch (_frecuencia) {
+        'MENSUAL' => 1,
+        'BIMESTRAL' => 2,
+        'TRIMESTRAL' => 3,
+        'SEMESTRAL' => 6,
+        'ANUAL' => 12,
+        _ => 1,
+      };
+      final day = _diaMesProgramado!.clamp(1, 28);
+      var dt = DateTime(base.year, base.month, day);
+      while (!dt.isAfter(base)) {
+        dt = DateTime(dt.year, dt.month + intervaloMeses, day);
+      }
       return dt;
     }
 
     // DIARIA o fallback
     return base.add(const Duration(days: 1));
+  }
+
+  Future<void> _agregarFechaProgramada() async {
+    final requeridas = _fechasRequeridasFrecuencia;
+    if (requeridas != null && _fechasProgramadas.length >= requeridas) {
+      _snack(
+        'No puedes agregar más fechas. ${_mensajeFechasFrecuenciaExacta()}',
+        type: SnackType.error,
+      );
+      return;
+    }
+
+    final ahora = DateTime.now();
+    final seleccionada = await showDatePicker(
+      context: context,
+      initialDate: _fechasProgramadas.isNotEmpty ? _fechasProgramadas.last : ahora,
+      firstDate: DateTime(ahora.year - 1),
+      lastDate: DateTime(ahora.year + 10),
+    );
+    if (seleccionada == null) return;
+
+    final normalizada = DateTime(
+      seleccionada.year,
+      seleccionada.month,
+      seleccionada.day,
+    );
+
+    setState(() {
+      final existe = _fechasProgramadas.any(
+        (item) =>
+            item.year == normalizada.year &&
+            item.month == normalizada.month &&
+            item.day == normalizada.day,
+      );
+      if (!existe) {
+        _fechasProgramadas.add(normalizada);
+        _fechasProgramadas.sort((a, b) => a.compareTo(b));
+      }
+    });
   }
 
   Future<void> _consultarDisponibilidadMaquinaria() async {
@@ -818,8 +949,18 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       _frecuencia = existente.frecuencia;
       _unidadCalculo = existente.unidadCalculo;
 
-      _diaSemanaProgramado = existente.diaSemanaProgramado;
+      _diasSemanaProgramados
+        ..clear()
+        ..addAll(
+          existente.diaSemanaProgramado == null ||
+                  existente.diaSemanaProgramado!.isEmpty
+              ? const <String>[]
+              : [existente.diaSemanaProgramado!],
+        );
       _diaMesProgramado = existente.diaMesProgramado;
+      _fechasProgramadas
+        ..clear()
+        ..addAll(existente.fechasProgramadas);
 
       if (existente.duracionMinutosFija != null) {
         _usaRendimiento = false;
@@ -930,7 +1071,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       }
       _frecuencia = 'MENSUAL';
       _diaMesProgramado = 1;
-      _diaSemanaProgramado = 'LUNES';
+      _diasSemanaProgramados
+        ..clear()
+        ..add('LUNES');
+      _fechasProgramadas.clear();
       _prioridadCtrl.text = '2';
       _usaRendimiento = true;
       _rendimientoTiempoBase = 'POR_MINUTO';
@@ -940,14 +1084,21 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     }
 
     if (_frecuencia == 'SEMANAL') {
-      _diaSemanaProgramado ??= 'LUNES';
+      if (_diasSemanaProgramados.isEmpty) {
+        _diasSemanaProgramados.add('LUNES');
+      }
       _diaMesProgramado = null;
-    } else if (_frecuencia == 'MENSUAL') {
+      _fechasProgramadas.clear();
+    } else if (_frecuenciaUsaDiaMes) {
       _diaMesProgramado ??= 1;
-      _diaSemanaProgramado = null;
+      _diasSemanaProgramados.clear();
+      if (!_frecuenciaUsaFechasExplicitas) {
+        _fechasProgramadas.clear();
+      }
     } else {
-      _diaSemanaProgramado = null;
+      _diasSemanaProgramados.clear();
       _diaMesProgramado = null;
+      _fechasProgramadas.clear();
     }
   }
 
@@ -1132,17 +1283,42 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       return;
     }
 
-    if (_frecuencia == 'SEMANAL' &&
-        (_diaSemanaProgramado == null || _diaSemanaProgramado!.isEmpty)) {
-      _snack('Selecciona el día de la semana');
+    if (_frecuencia == 'SEMANAL' && _diasSemanaProgramados.isEmpty) {
+      _snack(
+        _usaSelectorMultipleSemanal
+            ? 'Selecciona al menos un día de la semana'
+            : 'Selecciona el día de la semana',
+      );
       return;
     }
 
-    if (_frecuencia == 'MENSUAL' &&
+    if (_frecuenciaUsaDiaMes &&
         (_diaMesProgramado == null ||
             _diaMesProgramado! < 1 ||
             _diaMesProgramado! > 31)) {
       _snack('Selecciona el día del mes (1–31)');
+      return;
+    }
+
+    if (_frecuenciaUsaFechasExplicitas) {
+      final requeridas = _fechasRequeridasFrecuencia ?? 0;
+      if (_fechasProgramadas.length < requeridas) {
+        final faltan = requeridas - _fechasProgramadas.length;
+        _snack(
+          'Faltan $faltan fecha${faltan == 1 ? '' : 's'} para completar la frecuencia ${_frecuencia!}.',
+        );
+        return;
+      }
+      if (_fechasProgramadas.length > requeridas) {
+        _snack(
+          'No puedes guardar más de $requeridas fecha${requeridas == 1 ? '' : 's'} para la frecuencia ${_frecuencia!}.',
+        );
+        return;
+      }
+    }
+
+    if (_frecuenciaUsaFechasExplicitas && _fechasProgramadas.isEmpty) {
+      _snack('Agrega al menos una fecha programada en el calendario');
       return;
     }
 
@@ -1258,43 +1434,60 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       if (d != null && d > 1) diasParaCompletar = d;
     }
 
-    final req = DefinicionPreventivaRequest(
-      ubicacionId: _ubicacionSeleccionada!.id,
-      elementoId: _elementoSeleccionado!.id,
-      descripcion: _descripcionCtrl.text.trim(),
-      frecuencia: _frecuencia!,
-      prioridad: prioridad,
-      diaSemanaProgramado: _frecuencia == 'SEMANAL'
-          ? _diaSemanaProgramado
-          : null,
-      diaMesProgramado: _frecuencia == 'MENSUAL' ? _diaMesProgramado : null,
-      unidadCalculo: unidadCalculo,
-      areaNumerica: cantidad,
-      rendimientoBase: rendimiento,
-      duracionMinutosFija: duracionMinFija,
-      rendimientoTiempoBase: _usaRendimiento ? _rendimientoTiempoBase : null,
+    final diasSemanaSeleccionados = _diasSemanaSeleccionadosOrdenados;
 
-      diasParaCompletar: diasParaCompletar,
+    DefinicionPreventivaRequest buildRequest({String? diaSemanaProgramado}) {
+      return DefinicionPreventivaRequest(
+        ubicacionId: _ubicacionSeleccionada!.id,
+        elementoId: _elementoSeleccionado!.id,
+        descripcion: _descripcionCtrl.text.trim(),
+        frecuencia: _frecuencia!,
+        prioridad: prioridad,
+        diaSemanaProgramado:
+            _frecuencia == 'SEMANAL' ? diaSemanaProgramado : null,
+        diaMesProgramado: _frecuenciaUsaDiaMes ? _diaMesProgramado : null,
+        fechasProgramadasJson: _frecuenciaUsaFechasExplicitas
+            ? _fechasProgramadas.map(_fmtFechaProgramada).toList()
+            : null,
+        unidadCalculo: unidadCalculo,
+        areaNumerica: cantidad,
+        rendimientoBase: rendimiento,
+        duracionMinutosFija: duracionMinFija,
+        rendimientoTiempoBase: _usaRendimiento ? _rendimientoTiempoBase : null,
+        diasParaCompletar: diasParaCompletar,
+        insumoPrincipalId: _insumoPrincipalId,
+        consumoPrincipalPorUnidad: consumoPrincipal,
+        insumosPlan: insumosPlanRequests.isNotEmpty ? insumosPlanRequests : null,
+        maquinariaPlan: maquinariaPlanRequests.isNotEmpty
+            ? maquinariaPlanRequests
+            : null,
+        herramientasPlan: herramientasPlanRequests.isNotEmpty
+            ? herramientasPlanRequests
+            : null,
+        operariosIds: operariosIdsInt,
+        responsableSugeridoId: responsableId,
+        supervisorId: supervisorId,
+        activo: _activo,
+      );
+    }
 
-      insumoPrincipalId: _insumoPrincipalId,
-      consumoPrincipalPorUnidad: consumoPrincipal,
-      insumosPlan: insumosPlanRequests.isNotEmpty ? insumosPlanRequests : null,
-      maquinariaPlan: maquinariaPlanRequests.isNotEmpty
-          ? maquinariaPlanRequests
+    final req = buildRequest(
+      diaSemanaProgramado:
+          _frecuencia == 'SEMANAL' && diasSemanaSeleccionados.isNotEmpty
+          ? diasSemanaSeleccionados.first
           : null,
-      herramientasPlan: herramientasPlanRequests.isNotEmpty
-          ? herramientasPlanRequests
-          : null,
-      operariosIds: operariosIdsInt,
-      responsableSugeridoId: responsableId,
-      supervisorId: supervisorId,
-      activo: _activo,
     );
 
     setState(() => _guardando = true);
     try {
       if (widget.existente == null) {
-        await _api.crear(widget.nit, req);
+        if (_frecuencia == 'SEMANAL' && diasSemanaSeleccionados.length > 1) {
+          for (final dia in diasSemanaSeleccionados) {
+            await _api.crear(widget.nit, buildRequest(diaSemanaProgramado: dia));
+          }
+        } else {
+          await _api.crear(widget.nit, req);
+        }
       } else {
         await _api.editar(widget.nit, widget.existente!.id, req);
       }
@@ -1977,7 +2170,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         border: OutlineInputBorder(),
                       ),
                       initialValue: _frecuencia,
-                      items: const ['DIARIA', 'SEMANAL', 'MENSUAL']
+                      items: _frecuenciasPreventivas
                           .map(
                             (f) => DropdownMenuItem(value: f, child: Text(f)),
                           )
@@ -1985,16 +2178,21 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       onChanged: (v) {
                         setState(() {
                           _frecuencia = v;
-                          if (_frecuencia != 'SEMANAL')
-                            _diaSemanaProgramado = null;
-                          if (_frecuencia != 'MENSUAL')
+                          if (_frecuencia != 'SEMANAL') {
+                            _diasSemanaProgramados.clear();
+                          }
+                          if (!_frecuenciaUsaDiaMes) {
                             _diaMesProgramado = null;
+                          }
+                          if (!_frecuenciaUsaFechasExplicitas) {
+                            _fechasProgramadas.clear();
+                          }
 
                           if (_frecuencia == 'SEMANAL' &&
-                              _diaSemanaProgramado == null) {
-                            _diaSemanaProgramado = 'LUNES';
+                              _diasSemanaProgramados.isEmpty) {
+                            _diasSemanaProgramados.add('LUNES');
                           }
-                          if (_frecuencia == 'MENSUAL' &&
+                          if (_frecuenciaUsaDiaMes &&
                               _diaMesProgramado == null) {
                             _diaMesProgramado = 1;
                           }
@@ -2005,40 +2203,89 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     ),
                     const SizedBox(height: 12),
 
-                    if (_frecuencia == 'SEMANAL') ...[
+                    if (_frecuencia == 'SEMANAL' && _usaSelectorMultipleSemanal) ...[
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Días de la semana',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _diasSemanaOpciones.map((dia) {
+                            final selected = _diasSemanaProgramados.contains(dia);
+                            return ChoiceChip(
+                              label: Text(
+                                dia,
+                                style: TextStyle(
+                                  color: selected ? Colors.white : Colors.black87,
+                                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                                ),
+                              ),
+                              selected: selected,
+                              showCheckmark: true,
+                              selectedColor: AppTheme.primary,
+                              backgroundColor: Colors.grey.shade200,
+                              side: BorderSide(
+                                color: selected
+                                    ? AppTheme.primary
+                                    : Colors.grey.shade400,
+                                width: selected ? 2 : 1,
+                              ),
+                              onSelected: (value) {
+                                setState(() {
+                                  if (value) {
+                                    _diasSemanaProgramados.add(dia);
+                                  } else {
+                                    _diasSemanaProgramados.remove(dia);
+                                  }
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Cada día seleccionado se guardará como una preventiva semanal independiente.',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ] else if (_frecuencia == 'SEMANAL') ...[
                       DropdownButtonFormField<String>(
                         key: ValueKey<String>(
-                          'diaSemana_${_diaSemanaProgramado ?? 'none'}',
+                          'diaSemana_${_diaSemanaProgramadoActual ?? 'none'}',
                         ),
                         decoration: const InputDecoration(
                           labelText: 'Día de la semana',
                           border: OutlineInputBorder(),
                         ),
-                        initialValue: _diaSemanaProgramado,
-                        items:
-                            const [
-                                  'LUNES',
-                                  'MARTES',
-                                  'MIERCOLES',
-                                  'JUEVES',
-                                  'VIERNES',
-                                  'SABADO',
-                                  'DOMINGO',
-                                ]
-                                .map(
-                                  (d) => DropdownMenuItem(
-                                    value: d,
-                                    child: Text(d),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (v) =>
-                            setState(() => _diaSemanaProgramado = v),
+                        initialValue: _diaSemanaProgramadoActual,
+                        items: _diasSemanaOpciones
+                            .map(
+                              (d) => DropdownMenuItem(
+                                value: d,
+                                child: Text(d),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() {
+                          _diasSemanaProgramados
+                            ..clear()
+                            ..addAll(v == null ? const <String>[] : [v]);
+                        }),
                       ),
                       const SizedBox(height: 12),
                     ],
 
-                    if (_frecuencia == 'MENSUAL') ...[
+                    if (_frecuenciaUsaDiaMes) ...[
                       DropdownButtonFormField<int>(
                         key: ValueKey<String>(
                           'diaMes_${_diaMesProgramado ?? 'none'}',
@@ -2055,6 +2302,86 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                             )
                             .toList(),
                         onChanged: (v) => setState(() => _diaMesProgramado = v),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_frecuencia != 'MENSUAL')
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'La recurrencia toma como referencia el mes en que se crea esta preventiva.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    if (_frecuenciaUsaFechasExplicitas) ...[
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Fechas programadas',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _mensajeFechasFrecuenciaExacta(),
+                          style: Theme.of(context).textTheme.bodySmall,
+                          textAlign: TextAlign.left,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          onPressed: _agregarFechaProgramada,
+                          icon: const Icon(Icons.calendar_month_outlined),
+                          label: const Text('Agregar fecha'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_fechasProgramadas.isEmpty)
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Aún no hay fechas seleccionadas.',
+                          ),
+                        )
+                      else
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Wrap(
+                            alignment: WrapAlignment.start,
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: _fechasProgramadas.map((fecha) {
+                              return InputChip(
+                                label: Text(_fmtFechaProgramada(fecha)),
+                                onDeleted: () {
+                                  setState(() {
+                                    _fechasProgramadas.removeWhere(
+                                      (item) =>
+                                          item.year == fecha.year &&
+                                          item.month == fecha.month &&
+                                          item.day == fecha.day,
+                                    );
+                                  });
+                                },
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _fechasProgramadasRestantes > 0
+                              ? 'Faltan $_fechasProgramadasRestantes fecha${_fechasProgramadasRestantes == 1 ? '' : 's'} por seleccionar.'
+                              : 'Cantidad de fechas completada para esta frecuencia.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ),
                       const SizedBox(height: 12),
                     ],

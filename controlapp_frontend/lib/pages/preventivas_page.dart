@@ -35,6 +35,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
   String _filtroFrecuencia = 'TODAS';
   String _filtroUbicacion = 'TODAS';
   String _filtroEstado = 'TODAS';
+  String _filtroOperario = 'TODOS';
   String _ordenActual = 'PRIORIDAD_ASC';
 
   @override
@@ -152,6 +153,17 @@ class _PreventivasPageState extends State<PreventivasPage> {
     return nombres;
   }
 
+  List<String> _operariosDisponibles() {
+    final nombres = _items
+        .expand(_operariosDePreventiva)
+        .map((nombre) => nombre.trim())
+        .where((nombre) => nombre.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+    return nombres;
+  }
+
   Color _colorFrecuencia(String frecuencia) {
     switch (frecuencia) {
       case 'DIARIA':
@@ -160,6 +172,14 @@ class _PreventivasPageState extends State<PreventivasPage> {
         return Colors.blue;
       case 'MENSUAL':
         return Colors.purple;
+      case 'BIMESTRAL':
+        return Colors.indigo;
+      case 'TRIMESTRAL':
+        return Colors.teal;
+      case 'SEMESTRAL':
+        return Colors.orange;
+      case 'ANUAL':
+        return Colors.brown;
       default:
         return Colors.grey;
     }
@@ -210,6 +230,14 @@ class _PreventivasPageState extends State<PreventivasPage> {
       }
       if (_filtroEstado == 'ACTIVAS' && !def.activo) return false;
       if (_filtroEstado == 'INACTIVAS' && def.activo) return false;
+      if (_filtroOperario != 'TODOS') {
+        final operarios = _operariosDePreventiva(def)
+            .map((nombre) => nombre.trim().toLowerCase())
+            .where((nombre) => nombre.isNotEmpty);
+        if (!operarios.contains(_filtroOperario.trim().toLowerCase())) {
+          return false;
+        }
+      }
       return true;
     }).toList();
 
@@ -260,6 +288,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
         _filtroFrecuencia != 'TODAS' ||
         _filtroUbicacion != 'TODAS' ||
         _filtroEstado != 'TODAS' ||
+        _filtroOperario != 'TODOS' ||
         _ordenActual != 'PRIORIDAD_ASC';
   }
 
@@ -270,6 +299,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
       _filtroFrecuencia = 'TODAS';
       _filtroUbicacion = 'TODAS';
       _filtroEstado = 'TODAS';
+      _filtroOperario = 'TODOS';
       _ordenActual = 'PRIORIDAD_ASC';
     });
   }
@@ -279,6 +309,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
         (_conjunto?.ubicaciones.map((u) => u.nombre).toSet().toList() ??
               <String>[])
           ..sort();
+    final operarios = _operariosDisponibles();
 
     return Card(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -346,7 +377,16 @@ class _PreventivasPageState extends State<PreventivasPage> {
                       labelText: 'Frecuencia',
                       border: OutlineInputBorder(),
                     ),
-                    items: const ['TODAS', 'DIARIA', 'SEMANAL', 'MENSUAL']
+                    items: const [
+                      'TODAS',
+                      'DIARIA',
+                      'SEMANAL',
+                      'MENSUAL',
+                      'BIMESTRAL',
+                      'TRIMESTRAL',
+                      'SEMESTRAL',
+                      'ANUAL',
+                    ]
                         .map(
                           (item) => DropdownMenuItem(
                             value: item,
@@ -386,6 +426,32 @@ class _PreventivasPageState extends State<PreventivasPage> {
                     onChanged: (value) {
                       if (value == null) return;
                       setState(() => _filtroEstado = value);
+                    },
+                  ),
+                ),
+                SizedBox(
+                  width: 220,
+                  child: DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: _filtroOperario,
+                    decoration: const InputDecoration(
+                      labelText: 'Operario',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: ['TODOS', ...operarios]
+                        .map(
+                          (item) => DropdownMenuItem(
+                            value: item,
+                            child: Text(
+                              item == 'TODOS' ? 'Todos' : item,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _filtroOperario = value);
                     },
                   ),
                 ),
@@ -513,9 +579,36 @@ class _PreventivasPageState extends State<PreventivasPage> {
   }
 
   Future<void> _generarCronogramaBorradorYVer() async {
-    final ahora = DateTime.now();
-    final anio = ahora.year;
-    final mes = ahora.month;
+    final destino = await showDialog<DateTime>(
+      context: context,
+      builder: (_) {
+        final ahora = DateTime.now();
+        final siguiente = DateTime(ahora.year, ahora.month + 1, 1);
+        return AlertDialog(
+          title: const Text('Generar borrador'),
+          content: const Text('¿Quieres generar el cronograma del mes actual o del mes siguiente?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(DateTime(ahora.year, ahora.month, 1)),
+              child: const Text('Mes actual'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(siguiente),
+              child: const Text('Mes siguiente'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (destino == null) return;
+
+    final anio = destino.year;
+    final mes = destino.month;
 
     setState(() => _generando = true);
     try {

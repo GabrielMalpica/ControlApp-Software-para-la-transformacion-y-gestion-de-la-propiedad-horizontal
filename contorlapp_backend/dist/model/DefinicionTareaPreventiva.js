@@ -32,6 +32,7 @@ exports.CrearDefinicionPreventivaDTO = zod_1.z
     // programación específica
     diaSemanaProgramado: zod_1.z.nativeEnum(client_1.DiaSemana).optional().nullable(),
     diaMesProgramado: zod_1.z.number().int().min(1).max(31).optional().nullable(),
+    fechasProgramadasJson: zod_1.z.array(zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
     // A) rendimiento/área
     unidadCalculo: zod_1.z.nativeEnum(client_1.UnidadCalculo).optional().nullable(),
     areaNumerica: zod_1.z.coerce.number().min(0).optional(),
@@ -72,6 +73,10 @@ exports.EditarDefinicionPreventivaDTO = zod_1.z.object({
     prioridad: zod_1.z.number().int().min(1).max(3).optional(),
     diaSemanaProgramado: zod_1.z.nativeEnum(client_1.DiaSemana).optional().nullable(),
     diaMesProgramado: zod_1.z.number().int().min(1).max(31).optional().nullable(),
+    fechasProgramadasJson: zod_1.z
+        .array(zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
+        .optional()
+        .nullable(),
     unidadCalculo: zod_1.z.nativeEnum(client_1.UnidadCalculo).optional().nullable(),
     areaNumerica: zod_1.z.coerce.number().min(0).optional().nullable(),
     rendimientoBase: zod_1.z.coerce.number().min(0).optional().nullable(),
@@ -172,6 +177,7 @@ exports.definicionPreventivaPublicSelect = {
     prioridad: true,
     diaSemanaProgramado: true,
     diaMesProgramado: true,
+    fechasProgramadasJson: true,
     unidadCalculo: true,
     areaNumerica: true,
     rendimientoBase: true,

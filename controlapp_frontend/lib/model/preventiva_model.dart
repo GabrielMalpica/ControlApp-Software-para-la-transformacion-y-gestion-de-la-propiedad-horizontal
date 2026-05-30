@@ -122,6 +122,7 @@ class DefinicionPreventiva {
 
   final String? diaSemanaProgramado;
   final int? diaMesProgramado;
+  final List<DateTime> fechasProgramadas;
 
   final String? unidadCalculo;
   final double? areaNumerica;
@@ -164,6 +165,7 @@ class DefinicionPreventiva {
     required this.prioridad,
     this.diaSemanaProgramado,
     this.diaMesProgramado,
+    this.fechasProgramadas = const [],
     this.unidadCalculo,
     this.areaNumerica,
     this.rendimientoBase,
@@ -218,6 +220,10 @@ class DefinicionPreventiva {
       // programación
       diaSemanaProgramado: json['diaSemanaProgramado']?.toString(),
       diaMesProgramado: _toInt(json['diaMesProgramado']),
+      fechasProgramadas: ((json['fechasProgramadasJson'] as List?) ?? const [])
+          .map((e) => DateTime.tryParse(e.toString()))
+          .whereType<DateTime>()
+          .toList(),
 
       unidadCalculo: json['unidadCalculo']?.toString(),
       areaNumerica: _toDouble(json['areaNumerica']),
@@ -322,6 +328,7 @@ class DefinicionPreventivaRequest {
 
   final String? diaSemanaProgramado;
   final int? diaMesProgramado;
+  final List<String>? fechasProgramadasJson;
 
   final String? unidadCalculo;
   final double? areaNumerica;
@@ -359,6 +366,7 @@ class DefinicionPreventivaRequest {
     required this.prioridad,
     this.diaSemanaProgramado,
     this.diaMesProgramado,
+    this.fechasProgramadasJson,
     this.unidadCalculo,
     this.areaNumerica,
     this.rendimientoBase,
@@ -390,6 +398,8 @@ class DefinicionPreventivaRequest {
     // programación
     if (diaSemanaProgramado != null) 'diaSemanaProgramado': diaSemanaProgramado,
     if (diaMesProgramado != null) 'diaMesProgramado': diaMesProgramado,
+    if (fechasProgramadasJson != null && fechasProgramadasJson!.isNotEmpty)
+      'fechasProgramadasJson': fechasProgramadasJson,
 
     // cálculo por rendimiento
     if (unidadCalculo != null) 'unidadCalculo': unidadCalculo,

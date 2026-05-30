@@ -16,6 +16,7 @@ export interface DefinicionTareaPreventivaDominio {
 
   diaSemanaProgramado?: DiaSemana | null;
   diaMesProgramado?: number | null;
+  fechasProgramadasJson?: string[] | null;
 
   unidadCalculo?: UnidadCalculo | null;
   areaNumerica?: number | null;
@@ -93,6 +94,7 @@ export const CrearDefinicionPreventivaDTO = z
     // programación específica
     diaSemanaProgramado: z.nativeEnum(DiaSemana).optional().nullable(),
     diaMesProgramado: z.number().int().min(1).max(31).optional().nullable(),
+    fechasProgramadasJson: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
 
     // A) rendimiento/área
     unidadCalculo: z.nativeEnum(UnidadCalculo).optional().nullable(),
@@ -152,6 +154,10 @@ export const EditarDefinicionPreventivaDTO = z.object({
 
   diaSemanaProgramado: z.nativeEnum(DiaSemana).optional().nullable(),
   diaMesProgramado: z.number().int().min(1).max(31).optional().nullable(),
+  fechasProgramadasJson: z
+    .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
+    .optional()
+    .nullable(),
 
   unidadCalculo: z.nativeEnum(UnidadCalculo).optional().nullable(),
   areaNumerica: z.coerce.number().min(0).optional().nullable(),
@@ -281,6 +287,7 @@ export const definicionPreventivaPublicSelect = {
 
   diaSemanaProgramado: true,
   diaMesProgramado: true,
+  fechasProgramadasJson: true,
 
   unidadCalculo: true,
   areaNumerica: true,

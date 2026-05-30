@@ -113,6 +113,8 @@ class _GestionPermisosPageState extends State<GestionPermisosPage> {
       scrollDirection: Axis.horizontal,
       child: DataTable(
         columnSpacing: 18,
+        dataRowMinHeight: 72,
+        dataRowMaxHeight: 88,
         headingRowColor: WidgetStatePropertyAll(
           AppTheme.primary.withValues(alpha: 0.08),
         ),
@@ -128,8 +130,8 @@ class _GestionPermisosPageState extends State<GestionPermisosPage> {
                   SizedBox(
                     width: 260,
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
                           item.label,

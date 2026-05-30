@@ -1815,6 +1815,14 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             return 'QUINCENAL';
           case 'MENSUAL':
             return 'MENSUAL';
+          case 'BIMESTRAL':
+            return 'BIMESTRAL';
+          case 'TRIMESTRAL':
+            return 'TRIMESTRAL';
+          case 'SEMESTRAL':
+            return 'SEMESTRAL';
+          case 'ANUAL':
+            return 'ANUAL';
           default:
             return (raw ?? '-').trim().isEmpty ? '-' : (raw ?? '-').trim();
         }

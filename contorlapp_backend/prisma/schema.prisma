@@ -1017,6 +1017,7 @@ model DefinicionTareaPreventiva {
   prioridad           Int        @default(2)
   diaSemanaProgramado DiaSemana?
   diaMesProgramado    Int?
+  fechasProgramadasJson Json?
 
   // Duración planificada
   unidadCalculo         UnidadCalculo?
