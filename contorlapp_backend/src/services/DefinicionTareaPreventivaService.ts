@@ -3591,42 +3591,12 @@ export class DefinicionTareaPreventivaService {
       throw new Error("Algunas tareas no pertenecen a ese día del borrador o no son válidas.");
     }
 
-    const tareasDia = await this.prisma.tarea.findMany({
-      where: {
-        conjuntoId: dto.conjuntoId,
-        borrador: true,
-        tipo: TipoTarea.PREVENTIVA,
-        estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
-        NOT: {
-          estado: "NO_COMPLETADA" as any,
-          reprogramada: true,
-          reprogramadaPorTareaId: { not: null },
-        },
-        fechaInicio: { gte: inicioDia, lte: finDia },
-      },
-      include: { operarios: { select: { id: true } } },
-      orderBy: { fechaInicio: "asc" },
-    });
-
     const tareasPorId = new Map(tareasSeleccionadas.map((tarea) => [tarea.id, tarea]));
     const seleccionOrdenada = dto.tareaIds.map((id) => {
       const tarea = tareasPorId.get(id);
       if (!tarea) throw new Error("No se pudo resolver una tarea para reordenar.");
       return tarea;
     });
-    const idsSeleccionados = new Set(dto.tareaIds);
-    let indiceSeleccion = 0;
-    const ordenadas = tareasDia.map((tarea) => {
-      if (!idsSeleccionados.has(tarea.id)) return tarea;
-      const reemplazo = seleccionOrdenada[indiceSeleccion];
-      indiceSeleccion += 1;
-      if (!reemplazo) {
-        throw new Error("No se pudo reconstruir el orden completo del día.");
-      }
-      return reemplazo;
-    });
-    const idsDia = tareasDia.map((tarea) => tarea.id);
-
     const horarioDia = await this.prisma.conjuntoHorario.findFirst({
       where: { conjuntoId: dto.conjuntoId, dia: dateToDiaSemana(dto.fecha) },
       select: {
@@ -3651,7 +3621,7 @@ export class DefinicionTareaPreventivaService {
     };
     const ventanasTrabajo = construirVentanasTrabajoDia(horario);
     const ventanasReordenamiento = construirVentanasOcupadasReordenamiento({
-      tareas: tareasDia,
+      tareas: tareasSeleccionadas,
       ventanasTrabajo,
     });
     const primeraVentana = ventanasReordenamiento[0] ?? ventanasTrabajo[0];
@@ -3661,11 +3631,11 @@ export class DefinicionTareaPreventivaService {
 
     const actualizaciones: Array<{ id: number; fechaInicio: Date; fechaFin: Date }> = [];
     const recreaciones: Array<{
-      original: (typeof tareasDia)[number];
+      original: (typeof tareasSeleccionadas)[number];
       segmentos: Array<{ fechaInicio: Date; fechaFin: Date }>;
     }> = [];
     let cursor = toDateAtMin(dto.fecha, primeraVentana.i);
-    for (const tarea of ordenadas) {
+    for (const tarea of seleccionOrdenada) {
       const duracion = calcularDuracionLaboralReordenamiento({
         tarea,
         horario,
@@ -3724,7 +3694,7 @@ export class DefinicionTareaPreventivaService {
             where: {
               conjuntoId: dto.conjuntoId,
               borrador: true,
-              id: { notIn: idsDia },
+              id: { notIn: dto.tareaIds },
               estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
               NOT: {
                 estado: "NO_COMPLETADA" as any,

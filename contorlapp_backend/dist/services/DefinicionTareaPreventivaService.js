@@ -2672,22 +2672,6 @@ class DefinicionTareaPreventivaService {
         if (tareasSeleccionadas.length !== dto.tareaIds.length) {
             throw new Error("Algunas tareas no pertenecen a ese día del borrador o no son válidas.");
         }
-        const tareasDia = await this.prisma.tarea.findMany({
-            where: {
-                conjuntoId: dto.conjuntoId,
-                borrador: true,
-                tipo: client_1.TipoTarea.PREVENTIVA,
-                estado: { notIn: ["PENDIENTE_REPROGRAMACION"] },
-                NOT: {
-                    estado: "NO_COMPLETADA",
-                    reprogramada: true,
-                    reprogramadaPorTareaId: { not: null },
-                },
-                fechaInicio: { gte: inicioDia, lte: finDia },
-            },
-            include: { operarios: { select: { id: true } } },
-            orderBy: { fechaInicio: "asc" },
-        });
         const tareasPorId = new Map(tareasSeleccionadas.map((tarea) => [tarea.id, tarea]));
         const seleccionOrdenada = dto.tareaIds.map((id) => {
             const tarea = tareasPorId.get(id);
@@ -2695,19 +2679,6 @@ class DefinicionTareaPreventivaService {
                 throw new Error("No se pudo resolver una tarea para reordenar.");
             return tarea;
         });
-        const idsSeleccionados = new Set(dto.tareaIds);
-        let indiceSeleccion = 0;
-        const ordenadas = tareasDia.map((tarea) => {
-            if (!idsSeleccionados.has(tarea.id))
-                return tarea;
-            const reemplazo = seleccionOrdenada[indiceSeleccion];
-            indiceSeleccion += 1;
-            if (!reemplazo) {
-                throw new Error("No se pudo reconstruir el orden completo del día.");
-            }
-            return reemplazo;
-        });
-        const idsDia = tareasDia.map((tarea) => tarea.id);
         const horarioDia = await this.prisma.conjuntoHorario.findFirst({
             where: { conjuntoId: dto.conjuntoId, dia: dateToDiaSemana(dto.fecha) },
             select: {
@@ -2730,7 +2701,7 @@ class DefinicionTareaPreventivaService {
         };
         const ventanasTrabajo = construirVentanasTrabajoDia(horario);
         const ventanasReordenamiento = construirVentanasOcupadasReordenamiento({
-            tareas: tareasDia,
+            tareas: tareasSeleccionadas,
             ventanasTrabajo,
         });
         const primeraVentana = ventanasReordenamiento[0] ?? ventanasTrabajo[0];
@@ -2740,7 +2711,7 @@ class DefinicionTareaPreventivaService {
         const actualizaciones = [];
         const recreaciones = [];
         let cursor = (0, schedulerUtils_1.toDateAtMin)(dto.fecha, primeraVentana.i);
-        for (const tarea of ordenadas) {
+        for (const tarea of seleccionOrdenada) {
             const duracion = calcularDuracionLaboralReordenamiento({
                 tarea,
                 horario,
@@ -2788,7 +2759,7 @@ class DefinicionTareaPreventivaService {
                         where: {
                             conjuntoId: dto.conjuntoId,
                             borrador: true,
-                            id: { notIn: idsDia },
+                            id: { notIn: dto.tareaIds },
                             estado: { notIn: ["PENDIENTE_REPROGRAMACION"] },
                             NOT: {
                                 estado: "NO_COMPLETADA",
