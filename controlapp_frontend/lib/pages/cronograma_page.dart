@@ -113,6 +113,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       !_loading;
 
   bool get _canViewCronograma =>
+      _rolActual == 'gerente' ||
       PermissionService.instance.can('cronograma.ver');
 
   @override

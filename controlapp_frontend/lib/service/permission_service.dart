@@ -9,6 +9,9 @@ class PermissionService {
   static String normalize(String value) => value.trim().toLowerCase();
 
   bool can(String permission) {
+    final role = normalize(_session.getRolSync() ?? '');
+    if (role == 'gerente') return true;
+
     final wanted = normalize(permission);
     final current = _session.getPermissionsSync().map(normalize).toSet();
     return current.contains(wanted);

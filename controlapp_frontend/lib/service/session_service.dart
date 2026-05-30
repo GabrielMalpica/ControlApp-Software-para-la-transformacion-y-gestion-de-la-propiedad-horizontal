@@ -125,6 +125,8 @@ class SessionService {
     return _memRol;
   }
 
+  String? getRolSync() => _memRol;
+
   List<String> getPermissionsSync() =>
       List<String>.from(_memPermissions ?? const []);
 
