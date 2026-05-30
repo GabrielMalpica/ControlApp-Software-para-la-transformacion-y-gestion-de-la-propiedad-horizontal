@@ -2651,6 +2651,11 @@ class DefinicionTareaPreventivaService {
     }
     async reordenarTareasBorradorDia(payload) {
         const dto = ReordenarTareasDiaBorradorDTO.parse(payload);
+        console.log("[preventivas][reordenar-borrador-dia] inicio", {
+            conjuntoId: dto.conjuntoId,
+            fecha: dto.fecha.toISOString(),
+            tareaIds: dto.tareaIds,
+        });
         const inicioDia = new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 0, 0, 0, 0);
         const finDia = new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 23, 59, 59, 999);
         const tareasSeleccionadas = await this.prisma.tarea.findMany({
@@ -2670,8 +2675,22 @@ class DefinicionTareaPreventivaService {
             include: { operarios: { select: { id: true } } },
         });
         if (tareasSeleccionadas.length !== dto.tareaIds.length) {
+            console.log("[preventivas][reordenar-borrador-dia] tareas no validas", {
+                esperadas: dto.tareaIds.length,
+                encontradas: tareasSeleccionadas.length,
+                encontradasIds: tareasSeleccionadas.map((tarea) => tarea.id),
+            });
             throw new Error("Algunas tareas no pertenecen a ese día del borrador o no son válidas.");
         }
+        console.log("[preventivas][reordenar-borrador-dia] tareas seleccionadas", {
+            tareas: tareasSeleccionadas.map((tarea) => ({
+                id: tarea.id,
+                fechaInicio: tarea.fechaInicio.toISOString(),
+                fechaFin: tarea.fechaFin.toISOString(),
+                duracionMinutos: tarea.duracionMinutos,
+                operariosIds: tarea.operarios.map((item) => item.id),
+            })),
+        });
         const tareasPorId = new Map(tareasSeleccionadas.map((tarea) => [tarea.id, tarea]));
         const seleccionOrdenada = dto.tareaIds.map((id) => {
             const tarea = tareasPorId.get(id);
@@ -2704,6 +2723,11 @@ class DefinicionTareaPreventivaService {
             tareas: tareasSeleccionadas,
             ventanasTrabajo,
         });
+        console.log("[preventivas][reordenar-borrador-dia] ventanas", {
+            horario,
+            ventanasTrabajo,
+            ventanasReordenamiento,
+        });
         const primeraVentana = ventanasReordenamiento[0] ?? ventanasTrabajo[0];
         if (!primeraVentana) {
             throw new Error("No hay ventanas disponibles para reordenar las tareas del día.");
@@ -2715,6 +2739,13 @@ class DefinicionTareaPreventivaService {
             const duracion = calcularDuracionLaboralReordenamiento({
                 tarea,
                 horario,
+            });
+            console.log("[preventivas][reordenar-borrador-dia] tarea iteracion", {
+                tareaId: tarea.id,
+                cursor: cursor.toISOString(),
+                fechaInicioActual: tarea.fechaInicio.toISOString(),
+                fechaFinActual: tarea.fechaFin.toISOString(),
+                duracionLaboral: duracion,
             });
             const segmentos = intentarDistribuirDuracionEnVentanas({
                 fecha: dto.fecha,
@@ -2728,6 +2759,13 @@ class DefinicionTareaPreventivaService {
                     inicioCursor: cursor,
                     duracionMinutos: duracion,
                 });
+            console.log("[preventivas][reordenar-borrador-dia] segmentos calculados", {
+                tareaId: tarea.id,
+                segmentos: segmentos.map((segmento) => ({
+                    fechaInicio: segmento.fechaInicio.toISOString(),
+                    fechaFin: segmento.fechaFin.toISOString(),
+                })),
+            });
             const fechaInicio = segmentos[0]?.fechaInicio;
             const fechaFin = segmentos[segmentos.length - 1]?.fechaFin;
             if (!fechaInicio || !fechaFin) {
@@ -2789,6 +2827,20 @@ class DefinicionTareaPreventivaService {
             }
             cursor = fechaFin;
         }
+        console.log("[preventivas][reordenar-borrador-dia] resumen cambios", {
+            actualizaciones: actualizaciones.map((item) => ({
+                id: item.id,
+                fechaInicio: item.fechaInicio.toISOString(),
+                fechaFin: item.fechaFin.toISOString(),
+            })),
+            recreaciones: recreaciones.map((item) => ({
+                originalId: item.original.id,
+                segmentos: item.segmentos.map((segmento) => ({
+                    fechaInicio: segmento.fechaInicio.toISOString(),
+                    fechaFin: segmento.fechaFin.toISOString(),
+                })),
+            })),
+        });
         await this.prisma.$transaction(async (tx) => {
             for (const item of actualizaciones) {
                 await tx.tarea.update({
@@ -3829,6 +3881,18 @@ function distribuirDuracionEnVentanas(params) {
         cursorMin = finSegmento;
     }
     if (restante > 0 || segmentos.length === 0) {
+        console.log("[preventivas][reordenar-borrador-dia] distribuir fallo", {
+            fecha: fecha.toISOString(),
+            inicioCursor: inicioCursor.toISOString(),
+            duracionMinutos,
+            restante,
+            cursorMin,
+            ventanas,
+            segmentos: segmentos.map((segmento) => ({
+                fechaInicio: segmento.fechaInicio.toISOString(),
+                fechaFin: segmento.fechaFin.toISOString(),
+            })),
+        });
         throw new Error("No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día.");
     }
     return segmentos;
@@ -3843,6 +3907,11 @@ function intentarDistribuirDuracionEnVentanas(params) {
         if (error instanceof Error &&
             error.message ===
                 "No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día.") {
+            console.log("[preventivas][reordenar-borrador-dia] fallback jornada completa", {
+                inicioCursor: params.inicioCursor.toISOString(),
+                duracionMinutos: params.duracionMinutos,
+                ventanas: params.ventanas,
+            });
             return null;
         }
         throw error;
