@@ -3570,7 +3570,7 @@ export class DefinicionTareaPreventivaService {
       999,
     );
 
-    const tareas = await this.prisma.tarea.findMany({
+    const tareasSeleccionadas = await this.prisma.tarea.findMany({
       where: {
         id: { in: dto.tareaIds },
         conjuntoId: dto.conjuntoId,
@@ -3581,18 +3581,41 @@ export class DefinicionTareaPreventivaService {
       include: { operarios: { select: { id: true } } },
     });
 
-    if (tareas.length !== dto.tareaIds.length) {
+    if (tareasSeleccionadas.length !== dto.tareaIds.length) {
       throw new Error("Algunas tareas no pertenecen a ese día del borrador o no son válidas.");
     }
 
-    const tareasPorId = new Map(tareas.map((tarea) => [tarea.id, tarea]));
-    const ordenadas = dto.tareaIds.map((id) => {
+    const tareasDia = await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: dto.conjuntoId,
+        borrador: true,
+        tipo: TipoTarea.PREVENTIVA,
+        fechaInicio: { gte: inicioDia, lte: finDia },
+      },
+      include: { operarios: { select: { id: true } } },
+      orderBy: { fechaInicio: "asc" },
+    });
+
+    const tareasPorId = new Map(tareasSeleccionadas.map((tarea) => [tarea.id, tarea]));
+    const seleccionOrdenada = dto.tareaIds.map((id) => {
       const tarea = tareasPorId.get(id);
       if (!tarea) throw new Error("No se pudo resolver una tarea para reordenar.");
       return tarea;
     });
+    const idsSeleccionados = new Set(dto.tareaIds);
+    let indiceSeleccion = 0;
+    const ordenadas = tareasDia.map((tarea) => {
+      if (!idsSeleccionados.has(tarea.id)) return tarea;
+      const reemplazo = seleccionOrdenada[indiceSeleccion];
+      indiceSeleccion += 1;
+      if (!reemplazo) {
+        throw new Error("No se pudo reconstruir el orden completo del día.");
+      }
+      return reemplazo;
+    });
+    const idsDia = tareasDia.map((tarea) => tarea.id);
 
-    const primerInicio = [...tareas]
+    const primerInicio = [...tareasDia]
       .sort((a, b) => a.fechaInicio.getTime() - b.fechaInicio.getTime())[0]
       .fechaInicio;
 
@@ -3622,7 +3645,7 @@ export class DefinicionTareaPreventivaService {
 
     const actualizaciones: Array<{ id: number; fechaInicio: Date; fechaFin: Date }> = [];
     const recreaciones: Array<{
-      original: (typeof tareas)[number];
+      original: (typeof tareasDia)[number];
       segmentos: Array<{ fechaInicio: Date; fechaFin: Date }>;
     }> = [];
     let cursor = new Date(primerInicio);
@@ -3683,7 +3706,7 @@ export class DefinicionTareaPreventivaService {
             where: {
               conjuntoId: dto.conjuntoId,
               borrador: true,
-              id: { notIn: dto.tareaIds },
+              id: { notIn: idsDia },
               estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
               fechaInicio: { lt: segmento.fechaFin },
               fechaFin: { gt: segmento.fechaInicio },

@@ -2653,7 +2653,7 @@ class DefinicionTareaPreventivaService {
         const dto = ReordenarTareasDiaBorradorDTO.parse(payload);
         const inicioDia = new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 0, 0, 0, 0);
         const finDia = new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 23, 59, 59, 999);
-        const tareas = await this.prisma.tarea.findMany({
+        const tareasSeleccionadas = await this.prisma.tarea.findMany({
             where: {
                 id: { in: dto.tareaIds },
                 conjuntoId: dto.conjuntoId,
@@ -2663,17 +2663,40 @@ class DefinicionTareaPreventivaService {
             },
             include: { operarios: { select: { id: true } } },
         });
-        if (tareas.length !== dto.tareaIds.length) {
+        if (tareasSeleccionadas.length !== dto.tareaIds.length) {
             throw new Error("Algunas tareas no pertenecen a ese día del borrador o no son válidas.");
         }
-        const tareasPorId = new Map(tareas.map((tarea) => [tarea.id, tarea]));
-        const ordenadas = dto.tareaIds.map((id) => {
+        const tareasDia = await this.prisma.tarea.findMany({
+            where: {
+                conjuntoId: dto.conjuntoId,
+                borrador: true,
+                tipo: client_1.TipoTarea.PREVENTIVA,
+                fechaInicio: { gte: inicioDia, lte: finDia },
+            },
+            include: { operarios: { select: { id: true } } },
+            orderBy: { fechaInicio: "asc" },
+        });
+        const tareasPorId = new Map(tareasSeleccionadas.map((tarea) => [tarea.id, tarea]));
+        const seleccionOrdenada = dto.tareaIds.map((id) => {
             const tarea = tareasPorId.get(id);
             if (!tarea)
                 throw new Error("No se pudo resolver una tarea para reordenar.");
             return tarea;
         });
-        const primerInicio = [...tareas]
+        const idsSeleccionados = new Set(dto.tareaIds);
+        let indiceSeleccion = 0;
+        const ordenadas = tareasDia.map((tarea) => {
+            if (!idsSeleccionados.has(tarea.id))
+                return tarea;
+            const reemplazo = seleccionOrdenada[indiceSeleccion];
+            indiceSeleccion += 1;
+            if (!reemplazo) {
+                throw new Error("No se pudo reconstruir el orden completo del día.");
+            }
+            return reemplazo;
+        });
+        const idsDia = tareasDia.map((tarea) => tarea.id);
+        const primerInicio = [...tareasDia]
             .sort((a, b) => a.fechaInicio.getTime() - b.fechaInicio.getTime())[0]
             .fechaInicio;
         const horarioDia = await this.prisma.conjuntoHorario.findFirst({
@@ -2746,7 +2769,7 @@ class DefinicionTareaPreventivaService {
                         where: {
                             conjuntoId: dto.conjuntoId,
                             borrador: true,
-                            id: { notIn: dto.tareaIds },
+                            id: { notIn: idsDia },
                             estado: { notIn: ["PENDIENTE_REPROGRAMACION"] },
                             fechaInicio: { lt: segmento.fechaFin },
                             fechaFin: { gt: segmento.fechaInicio },
