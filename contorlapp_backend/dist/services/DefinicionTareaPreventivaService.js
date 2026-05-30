@@ -2716,14 +2716,18 @@ class DefinicionTareaPreventivaService {
                 tarea,
                 horario,
             });
-            const segmentos = distribuirDuracionEnVentanas({
+            const segmentos = intentarDistribuirDuracionEnVentanas({
                 fecha: dto.fecha,
-                ventanas: ventanasReordenamiento.length
-                    ? ventanasReordenamiento
-                    : ventanasTrabajo,
+                ventanas: ventanasReordenamiento,
                 inicioCursor: cursor,
                 duracionMinutos: duracion,
-            });
+            }) ??
+                distribuirDuracionEnVentanas({
+                    fecha: dto.fecha,
+                    ventanas: ventanasTrabajo,
+                    inicioCursor: cursor,
+                    duracionMinutos: duracion,
+                });
             const fechaInicio = segmentos[0]?.fechaInicio;
             const fechaFin = segmentos[segmentos.length - 1]?.fechaFin;
             if (!fechaInicio || !fechaFin) {
@@ -3828,6 +3832,21 @@ function distribuirDuracionEnVentanas(params) {
         throw new Error("No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día.");
     }
     return segmentos;
+}
+function intentarDistribuirDuracionEnVentanas(params) {
+    if (!params.ventanas.length)
+        return null;
+    try {
+        return distribuirDuracionEnVentanas(params);
+    }
+    catch (error) {
+        if (error instanceof Error &&
+            error.message ===
+                "No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día.") {
+            return null;
+        }
+        throw error;
+    }
 }
 function calcularDuracionLaboralReordenamiento(params) {
     const { tarea, horario } = params;
