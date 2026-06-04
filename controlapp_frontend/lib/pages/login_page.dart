@@ -6,7 +6,6 @@ import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_router.dart';
 import 'package:flutter_application_1/service/notificaciones_center.dart';
-import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/animated_fade_slide.dart';
 import 'package:flutter_application_1/widgets/password_dialogs.dart';
@@ -25,8 +24,6 @@ class _LoginPageState extends State<LoginPage> {
   final _correoCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _authApi = AuthApi();
-  final _session = SessionService();
-
   bool _loading = false;
   String? _error;
 
@@ -51,13 +48,6 @@ class _LoginPageState extends State<LoginPage> {
         contrasena: _passCtrl.text,
       );
 
-      await _session.saveSession(
-        token: resp.token,
-        rol: resp.user.rol,
-        correo: resp.user.correo,
-        nombre: resp.user.nombre,
-        userId: resp.user.id,
-      );
       unawaited(NotificacionesCenter.instance.start());
       _goByRol(resp.user.rol);
     } catch (e) {
