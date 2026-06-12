@@ -422,20 +422,19 @@ class DefinicionPreventivaRequest {
     if (consumoPrincipalPorUnidad != null)
       'consumoPrincipalPorUnidad': consumoPrincipalPorUnidad,
 
-    if (insumosPlan != null && insumosPlan!.isNotEmpty)
+    if (insumosPlan != null)
       'insumosPlanJson': insumosPlan!.map((e) => e.toJson()).toList(),
 
-    if (maquinariaPlan != null && maquinariaPlan!.isNotEmpty)
+    if (maquinariaPlan != null)
       'maquinariaPlanJson': maquinariaPlan!.map((e) => e.toJson()).toList(),
 
-    if (herramientasPlan != null && herramientasPlan!.isNotEmpty)
+    if (herramientasPlan != null)
       'herramientasPlanJson': herramientasPlan!.map((e) => e.toJson()).toList(),
 
     if (responsableSugeridoId != null)
       'responsableSugeridoId': responsableSugeridoId,
     if (supervisorId != null) 'supervisorId': supervisorId,
-    if (operariosIds != null && operariosIds!.isNotEmpty)
-      'operariosIds': operariosIds,
+    if (operariosIds != null) 'operariosIds': operariosIds,
     if (activo != null) 'activo': activo,
   };
 }

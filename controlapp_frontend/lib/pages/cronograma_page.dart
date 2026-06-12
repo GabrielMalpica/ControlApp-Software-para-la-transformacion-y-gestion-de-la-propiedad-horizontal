@@ -714,11 +714,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Borrar cronograma publicado'),
-        content: Text(
-          '¿Seguro que deseas borrar todas las tareas publicadas del conjunto ${widget.nit}? Esta accion no se puede deshacer.',
-        ),
+        builder: (_) => AlertDialog(
+          title: const Text('Borrar cronograma publicado'),
+          content: Text(
+          '¿Seguro que deseas borrar las tareas publicadas de ${DateFormat.MMMM('es').format(_inicioMes)} de $_anioActual para el conjunto ${widget.nit}? Esta accion no se puede deshacer.',
+          ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -741,6 +741,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
     try {
       final res = await _cronogramaApi.eliminarCronogramaPublicado(
         nit: widget.nit,
+        anio: _anioActual,
+        mes: _mesActual,
       );
       if (!mounted) return;
       final eliminadas = res['eliminadas'];
@@ -750,7 +752,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
           content: Text(
             eliminadas is num
                 ? 'Cronograma eliminado. Tareas borradas: ${eliminadas.toInt()}.'
-                : 'Cronograma eliminado correctamente.',
+                : 'Cronograma del mes eliminado correctamente.',
           ),
         ),
       );

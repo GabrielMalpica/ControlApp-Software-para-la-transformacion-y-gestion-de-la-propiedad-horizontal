@@ -130,8 +130,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   List<UbicacionConElementos> get _ubicaciones => widget.conjunto.ubicaciones;
   List<Usuario> get _operarios => widget.conjunto.operarios;
 
-  bool get _usaSelectorMultipleSemanal =>
-      widget.existente == null && _frecuencia == 'SEMANAL';
+  bool get _usaSelectorMultipleSemanal => _frecuencia == 'SEMANAL';
 
   String? get _diaSemanaProgramadoActual {
     if (_diasSemanaProgramados.isEmpty) return null;
@@ -1092,9 +1091,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     } else if (_frecuenciaUsaDiaMes) {
       _diaMesProgramado ??= 1;
       _diasSemanaProgramados.clear();
-      if (!_frecuenciaUsaFechasExplicitas) {
-        _fechasProgramadas.clear();
-      }
+      _fechasProgramadas.clear();
+    } else if (_frecuenciaUsaFechasExplicitas) {
+      _diasSemanaProgramados.clear();
+      _diaMesProgramado = null;
     } else {
       _diasSemanaProgramados.clear();
       _diaMesProgramado = null;
@@ -1457,13 +1457,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         diasParaCompletar: diasParaCompletar,
         insumoPrincipalId: _insumoPrincipalId,
         consumoPrincipalPorUnidad: consumoPrincipal,
-        insumosPlan: insumosPlanRequests.isNotEmpty ? insumosPlanRequests : null,
-        maquinariaPlan: maquinariaPlanRequests.isNotEmpty
-            ? maquinariaPlanRequests
-            : null,
-        herramientasPlan: herramientasPlanRequests.isNotEmpty
-            ? herramientasPlanRequests
-            : null,
+        insumosPlan: insumosPlanRequests,
+        maquinariaPlan: maquinariaPlanRequests,
+        herramientasPlan: herramientasPlanRequests,
         operariosIds: operariosIdsInt,
         responsableSugeridoId: responsableId,
         supervisorId: supervisorId,
@@ -1480,14 +1476,26 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
     setState(() => _guardando = true);
     try {
-      if (widget.existente == null) {
-        if (_frecuencia == 'SEMANAL' && diasSemanaSeleccionados.length > 1) {
+      if (_frecuencia == 'SEMANAL' && diasSemanaSeleccionados.length > 1) {
+        final diaPrincipal = diasSemanaSeleccionados.first;
+
+        if (widget.existente == null) {
           for (final dia in diasSemanaSeleccionados) {
             await _api.crear(widget.nit, buildRequest(diaSemanaProgramado: dia));
           }
         } else {
-          await _api.crear(widget.nit, req);
+          await _api.editar(
+            widget.nit,
+            widget.existente!.id,
+            buildRequest(diaSemanaProgramado: diaPrincipal),
+          );
+
+          for (final dia in diasSemanaSeleccionados.skip(1)) {
+            await _api.crear(widget.nit, buildRequest(diaSemanaProgramado: dia));
+          }
         }
+      } else if (widget.existente == null) {
+        await _api.crear(widget.nit, req);
       } else {
         await _api.editar(widget.nit, widget.existente!.id, req);
       }
@@ -2251,10 +2259,12 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Align(
+                      Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Cada día seleccionado se guardará como una preventiva semanal independiente.',
+                          widget.existente == null
+                              ? 'Cada día seleccionado se guardará como una preventiva semanal independiente.'
+                              : 'Se actualizará esta preventiva con el primer día elegido y se crearán preventivas adicionales para los demás días.',
                         ),
                       ),
                       const SizedBox(height: 12),

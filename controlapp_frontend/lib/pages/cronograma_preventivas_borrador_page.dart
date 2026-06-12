@@ -2452,18 +2452,18 @@ class _CronogramaPreventivasBorradorPageState
     required DateTime nuevoInicio,
     required DateTime nuevoFin,
   }) async {
-    await _preventivaApi.editarBloqueBorrador(
+    final actualizada = await _preventivaApi.editarBloqueBorrador(
       nit: widget.nit,
       tareaId: tarea.id,
       fechaInicio: nuevoInicio,
       fechaFin: nuevoFin,
     );
     if (!mounted) return;
+    _aplicarTareaActualizadaEnMemoria(actualizada);
     AppFeedback.showFromSnackBar(
       context,
       const SnackBar(content: Text('Tarea movida en el cronograma.')),
     );
-    await _cargarDatos();
   }
 
   Future<void> _agendarBloqueExcluidaEnSemana({
@@ -2627,6 +2627,24 @@ class _CronogramaPreventivasBorradorPageState
         ),
       );
     }
+  }
+
+  void _aplicarTareaActualizadaEnMemoria(TareaModel tareaActualizada) {
+    setState(() {
+      final index = _tareasMes.indexWhere((item) => item.id == tareaActualizada.id);
+      if (index == -1) {
+        _tareasMes = [..._tareasMes, tareaActualizada];
+      } else {
+        _tareasMes = [..._tareasMes]..[index] = tareaActualizada;
+      }
+      _tareasMes.sort((a, b) {
+        final byFecha = a.fechaInicio.compareTo(b.fechaInicio);
+        if (byFecha != 0) return byFecha;
+        return a.id.compareTo(b.id);
+      });
+      _reconstruirFiltrosDisponibles();
+      _recalcularResumenDias();
+    });
   }
 
   bool _hayFiltrosActivos() {

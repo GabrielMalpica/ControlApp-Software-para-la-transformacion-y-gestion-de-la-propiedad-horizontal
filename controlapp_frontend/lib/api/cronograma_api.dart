@@ -110,10 +110,16 @@ class CronogramaApi {
 
   Future<Map<String, dynamic>> eliminarCronogramaPublicado({
     required String nit,
+    required int anio,
+    required int mes,
   }) async {
-    final resp = await _client.delete(
+    final uri = Uri.parse(
       '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/publicado',
+    ).replace(
+      queryParameters: {'anio': anio.toString(), 'mes': mes.toString()},
     );
+
+    final resp = await _client.delete(uri.toString());
 
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
       throw Exception(

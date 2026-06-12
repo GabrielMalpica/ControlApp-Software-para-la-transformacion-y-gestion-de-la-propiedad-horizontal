@@ -121,7 +121,9 @@ export class CronogramaController {
     try {
       const conjuntoId = resolveConjuntoId(req);
       const service = new CronogramaService(prisma, conjuntoId);
-      const out = await service.eliminarCronogramaPublicado();
+      const anio = Number(req.query.anio ?? req.body?.anio);
+      const mes = Number(req.query.mes ?? req.body?.mes);
+      const out = await service.eliminarCronogramaPublicado({ anio, mes });
       res.json(out);
     } catch (err) {
       next(err);

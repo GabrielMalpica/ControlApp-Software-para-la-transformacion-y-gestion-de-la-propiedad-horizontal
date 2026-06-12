@@ -30,6 +30,11 @@ const CronoMesDTO = z.object({
   borrador: z.boolean().optional(), // undefined = todos, true = solo borrador, false = solo operativo
 });
 
+const EliminarCronogramaPublicadoDTO = z.object({
+  anio: z.number().int().min(2000).max(2100),
+  mes: z.number().int().min(1).max(12),
+});
+
 const SugerirDTO = z.object({
   fechaInicio: z.coerce.date(),
   fechaFin: z.coerce.date(),
@@ -208,11 +213,17 @@ export class CronogramaService {
     );
   }
 
-  async eliminarCronogramaPublicado() {
+  async eliminarCronogramaPublicado(payload: unknown) {
+    const { anio, mes } = EliminarCronogramaPublicadoDTO.parse(payload);
+    const inicioMes = new Date(anio, mes - 1, 1, 0, 0, 0, 0);
+    const finMes = new Date(anio, mes, 0, 23, 59, 59, 999);
+
     const tareas = await this.prisma.tarea.findMany({
       where: {
         conjuntoId: this.conjuntoId,
         borrador: false,
+        fechaFin: { gte: inicioMes },
+        fechaInicio: { lte: finMes },
       },
       select: { id: true, estado: true },
       orderBy: [{ fechaInicio: "desc" }, { id: "desc" }],

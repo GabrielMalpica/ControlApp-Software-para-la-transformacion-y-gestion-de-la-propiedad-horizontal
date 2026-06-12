@@ -3067,20 +3067,24 @@ export class DefinicionTareaPreventivaService {
     }
 
     if (fechaInicio && fechaFin && operariosIdsFinal.length) {
-      for (const opId of operariosIdsFinal) {
-        const haySolape = await existeSolapeParaOperario(this.prisma, {
-          conjuntoId,
-          operarioId: opId,
-          fechaInicio,
-          fechaFin,
-          soloBorrador: true,
-          excluirTareaId: tareaId,
-        });
+      const solapes = await Promise.all(
+        operariosIdsFinal.map(async (opId) => ({
+          opId,
+          haySolape: await existeSolapeParaOperario(this.prisma, {
+            conjuntoId,
+            operarioId: opId,
+            fechaInicio,
+            fechaFin,
+            soloBorrador: true,
+            excluirTareaId: tareaId,
+          }),
+        })),
+      );
 
-        if (haySolape) {
-          const nombre = await getOperarioNombre(this.prisma, opId);
-          throw new Error(`Solape de agenda con operario ${nombre}`);
-        }
+      const conflicto = solapes.find((item) => item.haySolape);
+      if (conflicto) {
+        const nombre = await getOperarioNombre(this.prisma, conflicto.opId);
+        throw new Error(`Solape de agenda con operario ${nombre}`);
       }
     }
 

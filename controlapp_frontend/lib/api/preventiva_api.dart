@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter_application_1/model/maquinaria_model.dart';
 import 'package:flutter_application_1/model/preventiva_excluida_borrador_model.dart';
+import 'package:flutter_application_1/model/tarea_model.dart';
 
 import '../model/preventiva_model.dart';
 import '../service/api_client.dart';
@@ -195,7 +196,7 @@ class DefinicionPreventivaApi {
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
   }
 
-  Future<void> editarBloqueBorrador({
+  Future<TareaModel> editarBloqueBorrador({
     required String nit,
     required int tareaId,
     DateTime? fechaInicio,
@@ -216,6 +217,8 @@ class DefinicionPreventivaApi {
         'Error reprogramando preventiva reemplazada: ${resp.statusCode} ${resp.body}',
       );
     }
+
+    return TareaModel.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
   }
 
   Future<void> reordenarTareasDiaBorrador({
