@@ -2635,7 +2635,46 @@ class _CronogramaPreventivasBorradorPageState
       if (index == -1) {
         _tareasMes = [..._tareasMes, tareaActualizada];
       } else {
-        _tareasMes = [..._tareasMes]..[index] = tareaActualizada;
+        final anterior = _tareasMes[index];
+        _tareasMes = [..._tareasMes]
+          ..[index] = anterior.copyWith(
+            descripcion: tareaActualizada.descripcion,
+            fechaInicio: tareaActualizada.fechaInicio,
+            fechaFin: tareaActualizada.fechaFin,
+            duracionMinutos: tareaActualizada.duracionMinutos,
+            estado: tareaActualizada.estado,
+            borrador: tareaActualizada.borrador,
+            prioridad: tareaActualizada.prioridad,
+            tipo: tareaActualizada.tipo,
+            frecuencia: tareaActualizada.frecuencia,
+            conjuntoId: tareaActualizada.conjuntoId,
+            conjuntoNombre: tareaActualizada.conjuntoNombre,
+            supervisorId: tareaActualizada.supervisorId,
+            ubicacionId: tareaActualizada.ubicacionId,
+            elementoId: tareaActualizada.elementoId,
+            operariosIds: tareaActualizada.operariosIds,
+            operariosNombres: tareaActualizada.operariosNombres,
+            supervisorNombre: tareaActualizada.supervisorNombre,
+            ubicacionNombre: tareaActualizada.ubicacionNombre,
+            elementoNombre: tareaActualizada.elementoNombre,
+            tiempoEstimadoHoras: tareaActualizada.tiempoEstimadoHoras,
+            insumoPrincipalNombre: tareaActualizada.insumoPrincipalNombre,
+            consumoPrincipalPorUnidad:
+                tareaActualizada.consumoPrincipalPorUnidad,
+            consumoTotalEstimado: tareaActualizada.consumoTotalEstimado,
+            evidencias: tareaActualizada.evidencias,
+            insumosUsados: tareaActualizada.insumosUsados,
+            observaciones: tareaActualizada.observaciones,
+            observacionesRechazo: tareaActualizada.observacionesRechazo,
+            herramientasAsignadas: tareaActualizada.herramientasAsignadas,
+            maquinariasAsignadas: tareaActualizada.maquinariasAsignadas,
+            insumosProgramados: tareaActualizada.insumosProgramados,
+            insumoPrincipalUnidad: tareaActualizada.insumoPrincipalUnidad,
+            reprogramada: tareaActualizada.reprogramada,
+            reprogramadaEn: tareaActualizada.reprogramadaEn,
+            reprogramadaMotivo: tareaActualizada.reprogramadaMotivo,
+            reprogramadaPorTareaId: tareaActualizada.reprogramadaPorTareaId,
+          );
       }
       _tareasMes.sort((a, b) {
         final byFecha = a.fechaInicio.compareTo(b.fechaInicio);

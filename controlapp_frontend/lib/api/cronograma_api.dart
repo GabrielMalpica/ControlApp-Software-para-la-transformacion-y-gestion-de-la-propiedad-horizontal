@@ -119,7 +119,10 @@ class CronogramaApi {
       queryParameters: {'anio': anio.toString(), 'mes': mes.toString()},
     );
 
-    final resp = await _client.delete(uri.toString());
+    final resp = await _client.delete(
+      uri.toString(),
+      body: {'anio': anio, 'mes': mes},
+    );
 
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
       throw Exception(

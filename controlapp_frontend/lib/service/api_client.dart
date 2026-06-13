@@ -64,8 +64,12 @@ class ApiClient {
     );
   }
 
-  Future<http.Response> delete(String urlOrPath) async {
+  Future<http.Response> delete(String urlOrPath, {Object? body}) async {
     final uri = _uri(urlOrPath);
-    return http.delete(uri, headers: await _headers());
+    return http.delete(
+      uri,
+      headers: await _headers(),
+      body: body != null ? jsonEncode(body) : null,
+    );
   }
 }

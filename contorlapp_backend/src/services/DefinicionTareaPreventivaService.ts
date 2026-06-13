@@ -248,6 +248,13 @@ const ReasignarOperarioExcluidaDTO = z.object({
   aplicarADefinicion: z.boolean().optional().default(false),
 });
 
+const tareaBorradorDetalleInclude = {
+  operarios: { include: { usuario: true } },
+  ubicacion: true,
+  elemento: { include: elementoParentChainInclude },
+  supervisor: { include: { usuario: true } },
+} satisfies Prisma.TareaInclude;
+
 const DividirExcluidaManualDTO = z.object({
   conjuntoId: z.string().min(3),
   excluidaId: z.number().int().positive(),
@@ -2184,6 +2191,30 @@ export class DefinicionTareaPreventivaService {
       );
 
       for (const diaBase of diasValidos) {
+        const minutosEstimados =
+          calcularMinutosEstimados({
+            cantidad:
+              def.areaNumerica != null ? Number(def.areaNumerica) : undefined,
+            rendimiento:
+              def.rendimientoBase != null
+                ? Number(def.rendimientoBase)
+                : undefined,
+            duracionMinutosFija: (def as any).duracionMinutosFija ?? undefined,
+            rendimientoTiempoBase:
+              (def as any).rendimientoTiempoBase ?? "POR_HORA",
+          }) ??
+          ((def as any).duracionMinutosFija != null
+            ? Number((def as any).duracionMinutosFija)
+            : null) ??
+          ((def as any).duracionHorasFija != null
+            ? Math.max(
+                1,
+                Math.round(Number((def as any).duracionHorasFija) * 60),
+              )
+            : null) ??
+          null;
+        const durMinTotal = minutosEstimados ?? tamanoBloqueMinutos;
+
         const diaProgramable = findNextValidDay({
           start: diaBase,
           periodoAnio,
@@ -2214,7 +2245,7 @@ export class DefinicionTareaPreventivaService {
                 periodoMes,
                 defId: def.id,
                 fechaObjetivo: diaBase,
-                duracionMinutos: Math.max(1, tamanoBloqueMinutos),
+                duracionMinutos: Math.max(1, durMinTotal),
                 motivoTipo: "FESTIVO_OMITIDO",
                 motivoMensaje: mensaje,
                 metadataJson: {
@@ -2243,31 +2274,6 @@ export class DefinicionTareaPreventivaService {
         }
 
         // ✅ Duración REAL
-        const minutosEstimados =
-          calcularMinutosEstimados({
-            cantidad:
-              def.areaNumerica != null ? Number(def.areaNumerica) : undefined,
-            rendimiento:
-              def.rendimientoBase != null
-                ? Number(def.rendimientoBase)
-                : undefined,
-            duracionMinutosFija: (def as any).duracionMinutosFija ?? undefined,
-            rendimientoTiempoBase:
-              (def as any).rendimientoTiempoBase ?? "POR_HORA",
-          }) ??
-          ((def as any).duracionMinutosFija != null
-            ? Number((def as any).duracionMinutosFija)
-            : null) ??
-          ((def as any).duracionHorasFija != null
-            ? Math.max(
-                1,
-                Math.round(Number((def as any).duracionHorasFija) * 60),
-              )
-            : null) ??
-          null;
-
-        const durMinTotal = minutosEstimados ?? tamanoBloqueMinutos;
-
         // ✅ diasParaCompletar: divide minutos en N días
         const diasParaCompletar = Math.max(
           1,
@@ -3121,6 +3127,7 @@ export class DefinicionTareaPreventivaService {
 
     return this.prisma.tarea.update({
       where: { id: tareaId },
+      include: tareaBorradorDetalleInclude,
       data: {
         descripcion: dto.descripcion ?? undefined,
         fechaInicio,
@@ -4606,12 +4613,7 @@ export class DefinicionTareaPreventivaService {
         periodoMes: mes,
         tipo: TipoTarea.PREVENTIVA,
       },
-      include: {
-        operarios: { include: { usuario: true } },
-        ubicacion: true,
-        elemento: { include: elementoParentChainInclude },
-        supervisor: { include: { usuario: true } },
-      },
+      include: tareaBorradorDetalleInclude,
       orderBy: [{ grupoPlanId: "asc" }, { bloqueIndex: "asc" }, { id: "asc" }],
     });
   }
