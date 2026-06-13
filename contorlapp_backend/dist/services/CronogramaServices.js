@@ -25,8 +25,8 @@ const CronoMesDTO = zod_1.z.object({
     borrador: zod_1.z.boolean().optional(), // undefined = todos, true = solo borrador, false = solo operativo
 });
 const EliminarCronogramaPublicadoDTO = zod_1.z.object({
-    anio: zod_1.z.number().int().min(2000).max(2100),
-    mes: zod_1.z.number().int().min(1).max(12),
+    anio: zod_1.z.coerce.number().int().min(2000).max(2100),
+    mes: zod_1.z.coerce.number().int().min(1).max(12),
 });
 const SugerirDTO = zod_1.z.object({
     fechaInicio: zod_1.z.coerce.date(),
@@ -173,10 +173,20 @@ class CronogramaService {
             where: {
                 conjuntoId: this.conjuntoId,
                 borrador: false,
-                fechaFin: { gte: inicioMes },
-                fechaInicio: { lte: finMes },
+                OR: [
+                    {
+                        periodoAnio: anio,
+                        periodoMes: mes,
+                    },
+                    {
+                        periodoAnio: null,
+                        periodoMes: null,
+                        fechaFin: { gte: inicioMes },
+                        fechaInicio: { lte: finMes },
+                    },
+                ],
             },
-            select: { id: true, estado: true },
+            select: { id: true, estado: true, periodoAnio: true, periodoMes: true },
             orderBy: [{ fechaInicio: "desc" }, { id: "desc" }],
         });
         if (!tareas.length) {

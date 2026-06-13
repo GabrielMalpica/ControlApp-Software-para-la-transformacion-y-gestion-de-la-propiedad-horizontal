@@ -31,8 +31,8 @@ const CronoMesDTO = z.object({
 });
 
 const EliminarCronogramaPublicadoDTO = z.object({
-  anio: z.number().int().min(2000).max(2100),
-  mes: z.number().int().min(1).max(12),
+  anio: z.coerce.number().int().min(2000).max(2100),
+  mes: z.coerce.number().int().min(1).max(12),
 });
 
 const SugerirDTO = z.object({
@@ -222,10 +222,20 @@ export class CronogramaService {
       where: {
         conjuntoId: this.conjuntoId,
         borrador: false,
-        fechaFin: { gte: inicioMes },
-        fechaInicio: { lte: finMes },
+        OR: [
+          {
+            periodoAnio: anio,
+            periodoMes: mes,
+          },
+          {
+            periodoAnio: null,
+            periodoMes: null,
+            fechaFin: { gte: inicioMes },
+            fechaInicio: { lte: finMes },
+          },
+        ],
       },
-      select: { id: true, estado: true },
+      select: { id: true, estado: true, periodoAnio: true, periodoMes: true },
       orderBy: [{ fechaInicio: "desc" }, { id: "desc" }],
     });
 
