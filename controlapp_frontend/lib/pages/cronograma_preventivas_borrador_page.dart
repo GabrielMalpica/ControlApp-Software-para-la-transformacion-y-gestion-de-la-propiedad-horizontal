@@ -83,6 +83,7 @@ class _CronogramaPreventivasBorradorPageState
   late DateTime _semanaBase;
   int _sidebarDiaIndex = 0;
   bool _sidebarVerExcluidasMes = false;
+  bool _sidebarResumenColapsado = false;
 
   bool _mostrarFiltrosMensual = false;
   int _escalaSemanalMinutos = 60;
@@ -4736,10 +4737,18 @@ class _CronogramaPreventivasBorradorPageState
 
     return Row(
       children: [
-        Expanded(
-          flex: 3,
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          width: _sidebarResumenColapsado ? 76 : 320,
           child: _SidebarSimple(
             title: 'Resumen',
+            collapsed: _sidebarResumenColapsado,
+            onToggle: () {
+              setState(() {
+                _sidebarResumenColapsado = !_sidebarResumenColapsado;
+              });
+            },
             items: [
               'Tareas semana: ${tareas.length}',
               'Tareas mes: ${_tareasFiltradas.length}',
@@ -5411,9 +5420,14 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     return out;
   }
 
-  int _snapToQuarter(int minutes) {
+  int _snapToGridNearest(int minutes) {
     final snap = widget.scaleMinutes <= 15 ? widget.scaleMinutes : _snapMinutes;
     return ((minutes / snap).round()) * snap;
+  }
+
+  int _snapToGridForward(int minutes) {
+    final snap = widget.scaleMinutes <= 15 ? widget.scaleMinutes : _snapMinutes;
+    return ((minutes + snap - 1) ~/ snap) * snap;
   }
 
   List<_MinuteRange> _rangosDisponiblesDia(int dayIndex) {
@@ -5526,8 +5540,17 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
         .where((range) => range.tareaId != excluirTareaId)
         .toList();
 
-    var start = _snapToQuarter(desiredMinuteOfDay);
+    var start = _snapToGridNearest(desiredMinuteOfDay);
+    if (start < inicioJornada) {
+      start = _snapToGridForward(inicioJornada);
+    }
+
+    var guard = 0;
     while (start + duracion <= finJornada) {
+      if (guard++ > 500) {
+        return null;
+      }
+
       if (!_cabeCompletaEnRangoDisponible(
         startMinute: start,
         duracionMinutos: duracion,
@@ -5538,11 +5561,13 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
           orElse: () => const _MinuteRange(start: -1, end: -1),
         );
         if (siguienteRango.start < 0) return null;
-        start = _snapToQuarter(
+        final nextStart = _snapToGridForward(
           start < siguienteRango.start
               ? siguienteRango.start
               : siguienteRango.end,
         );
+        if (nextStart <= start) return null;
+        start = nextStart;
         continue;
       }
 
@@ -5550,7 +5575,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       for (final range in spans) {
         final overlaps = start < range.end && (start + duracion) > range.start;
         if (overlaps) {
-          start = _snapToQuarter(range.end);
+          final nextStart = _snapToGridForward(range.end);
+          if (nextStart <= start) return null;
+          start = nextStart;
           ajustado = true;
           break;
         }
@@ -6469,8 +6496,16 @@ class _SidebarSimple extends StatelessWidget {
   final String title;
   final List<String> items;
   final Widget? child;
+  final bool collapsed;
+  final VoidCallback? onToggle;
 
-  const _SidebarSimple({required this.title, required this.items, this.child});
+  const _SidebarSimple({
+    required this.title,
+    required this.items,
+    this.child,
+    this.collapsed = false,
+    this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -6485,42 +6520,72 @@ class _SidebarSimple extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
+                Row(
+                  children: [
+                    if (!collapsed)
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      )
+                    else
+                      const Expanded(
+                        child: Text(
+                          'Filtros',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    IconButton(
+                      tooltip: collapsed ? 'Expandir filtros' : 'Colapsar filtros',
+                      onPressed: onToggle,
+                      icon: Icon(
+                        collapsed
+                            ? Icons.keyboard_double_arrow_right_rounded
+                            : Icons.keyboard_double_arrow_left_rounded,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 10),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ...items.map(
-                          (s) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Text(
-                              '• $s',
-                              style: const TextStyle(fontSize: 12),
+                if (collapsed)
+                  const Expanded(child: SizedBox.shrink())
+                else
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ...items.map(
+                            (s) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                '• $s',
+                                style: const TextStyle(fontSize: 12),
+                              ),
                             ),
                           ),
-                        ),
-                        if (child != null) ...[const Divider(), child!],
-                        const SizedBox(height: 12),
-                        Text(
-                          'Tip: aquí metes filtros (supervisor, operario, ubicación) sin tocar la agenda.',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade700,
+                          if (child != null) ...[const Divider(), child!],
+                          const SizedBox(height: 12),
+                          Text(
+                            'Tip: aquí metes filtros (supervisor, operario, ubicación) sin tocar la agenda.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade700,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
             ),
           );
         },

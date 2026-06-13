@@ -83,6 +83,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   _VistaCronograma _vista = _VistaCronograma.mensual;
   late DateTime _semanaBase;
   int _escalaSemanalMinutos = 60;
+  bool _sidebarResumenColapsado = false;
 
   bool _mostrarFiltrosMensual = false;
 
@@ -2926,10 +2927,18 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     return Row(
       children: [
-        Expanded(
-          flex: 4,
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          width: _sidebarResumenColapsado ? 76 : 340,
           child: _SidebarSimple(
             title: 'Resumen',
+            collapsed: _sidebarResumenColapsado,
+            onToggle: () {
+              setState(() {
+                _sidebarResumenColapsado = !_sidebarResumenColapsado;
+              });
+            },
             items: [
               'Tareas semana: ${tareas.length}',
               'Tareas mes: ${_tareasFiltradas.length}',
@@ -4125,8 +4134,16 @@ class _SidebarSimple extends StatelessWidget {
   final String title;
   final List<String> items;
   final Widget? child;
+  final bool collapsed;
+  final VoidCallback? onToggle;
 
-  const _SidebarSimple({required this.title, required this.items, this.child});
+  const _SidebarSimple({
+    required this.title,
+    required this.items,
+    this.child,
+    this.collapsed = false,
+    this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -4141,34 +4158,53 @@ class _SidebarSimple extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        collapsed ? 'Filtros' : title,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: collapsed ? 'Expandir filtros' : 'Colapsar filtros',
+                      onPressed: onToggle,
+                      icon: Icon(
+                        collapsed
+                            ? Icons.keyboard_double_arrow_right_rounded
+                            : Icons.keyboard_double_arrow_left_rounded,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 10),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ...items.map(
-                          (s) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Text(
-                              '- $s',
-                              style: const TextStyle(fontSize: 12),
+                if (collapsed)
+                  const Expanded(child: SizedBox.shrink())
+                else
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ...items.map(
+                            (s) => Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                '- $s',
+                                style: const TextStyle(fontSize: 12),
+                              ),
                             ),
                           ),
-                        ),
-                        if (child != null) ...[const Divider(), child!],
-                      ],
+                          if (child != null) ...[const Divider(), child!],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
             ),
           );
         },
