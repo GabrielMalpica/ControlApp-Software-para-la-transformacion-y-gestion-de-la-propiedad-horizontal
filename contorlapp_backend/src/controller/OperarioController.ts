@@ -27,8 +27,30 @@ const CompletarBody = z.object({
       })
     )
     .optional()
-    .default([]),
+  .default([]),
 });
+
+function getOperarioIdFromReq(req: any): number {
+  const raw = String(req.user?.sub ?? '').trim();
+  const operarioId = Number(raw);
+
+  if (!Number.isInteger(operarioId) || operarioId <= 0) {
+    const error: any = new Error('No se pudo identificar el operario autenticado.');
+    error.status = 401;
+    throw error;
+  }
+
+  return operarioId;
+}
+
+function assertOperarioMatchesSession(req: any, operarioId: number) {
+  const authOperarioId = getOperarioIdFromReq(req);
+  if (authOperarioId !== operarioId) {
+    const error: any = new Error('No tiene autorizacion para operar sobre tareas de otro operario.');
+    error.status = 403;
+    throw error;
+  }
+}
 
 export class OperarioController {
 
@@ -36,6 +58,7 @@ export class OperarioController {
   asignarTarea: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
+      assertOperarioMatchesSession(req, operarioId);
       const { tareaId }   = AsignarBody.parse(req.body);
 
       const service = new OperarioService(prisma, operarioId);
@@ -48,6 +71,7 @@ export class OperarioController {
   iniciarTarea: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
+      assertOperarioMatchesSession(req, operarioId);
       const { tareaId }    = TareaIdParam.parse(req.params);
 
       const service = new OperarioService(prisma, operarioId);
@@ -60,6 +84,7 @@ export class OperarioController {
   marcarComoCompletada: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
+      assertOperarioMatchesSession(req, operarioId);
       const body = CompletarBody.parse(req.body);
 
       // 1) Resolver inventario del conjunto de la tarea
@@ -93,6 +118,7 @@ export class OperarioController {
   cerrarTareaConEvidencias: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
+      assertOperarioMatchesSession(req, operarioId);
       const { tareaId } = TareaIdParam.parse(req.params);
       const inicio = Date.now();
 
@@ -136,6 +162,7 @@ export class OperarioController {
   marcarComoNoCompletada: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
+      assertOperarioMatchesSession(req, operarioId);
       const { tareaId }    = TareaIdParam.parse(req.params);
 
       const service = new OperarioService(prisma, operarioId);
@@ -148,6 +175,7 @@ export class OperarioController {
   tareasDelDia: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
+      assertOperarioMatchesSession(req, operarioId);
       const { fecha }      = FechaQuery.parse(req.query);
 
       const service = new OperarioService(prisma, operarioId);
@@ -160,6 +188,7 @@ export class OperarioController {
   listarTareas: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
+      assertOperarioMatchesSession(req, operarioId);
       const service = new OperarioService(prisma, operarioId);
       const list = await service.listarTareas();
       res.json(list);
@@ -170,6 +199,7 @@ export class OperarioController {
   horasRestantesEnSemana: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
+      assertOperarioMatchesSession(req, operarioId);
       const { fecha }      = FechaQuery.parse(req.query);
 
       const service = new OperarioService(prisma, operarioId);
@@ -182,6 +212,7 @@ export class OperarioController {
   resumenDeHoras: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
+      assertOperarioMatchesSession(req, operarioId);
       const { fecha }      = FechaQuery.parse(req.query);
 
       const service = new OperarioService(prisma, operarioId);

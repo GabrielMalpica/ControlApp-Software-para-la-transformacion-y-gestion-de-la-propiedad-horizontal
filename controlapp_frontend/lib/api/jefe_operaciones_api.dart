@@ -190,10 +190,7 @@ class JefeOperacionesApi {
 
     final uri = Uri.parse(url);
     final req = http.MultipartRequest('POST', uri);
-
-    // ✅ Copia headers de tu ApiClient si usas token
-    // (ajusta esto a tu ApiClient real)
-    // req.headers.addAll(_client.defaultHeaders);
+    req.headers.addAll(await _authHeaders());
 
     req.fields['accion'] = accion;
     if (observacionesRechazo != null &&

@@ -24,12 +24,31 @@ const CompletarBody = zod_1.z.object({
         .optional()
         .default([]),
 });
+function getOperarioIdFromReq(req) {
+    const raw = String(req.user?.sub ?? '').trim();
+    const operarioId = Number(raw);
+    if (!Number.isInteger(operarioId) || operarioId <= 0) {
+        const error = new Error('No se pudo identificar el operario autenticado.');
+        error.status = 401;
+        throw error;
+    }
+    return operarioId;
+}
+function assertOperarioMatchesSession(req, operarioId) {
+    const authOperarioId = getOperarioIdFromReq(req);
+    if (authOperarioId !== operarioId) {
+        const error = new Error('No tiene autorizacion para operar sobre tareas de otro operario.');
+        error.status = 403;
+        throw error;
+    }
+}
 class OperarioController {
     constructor() {
         // POST /operarios/:operarioId/tareas/asignar
         this.asignarTarea = async (req, res, next) => {
             try {
                 const { operarioId } = OperarioIdParam.parse(req.params);
+                assertOperarioMatchesSession(req, operarioId);
                 const { tareaId } = AsignarBody.parse(req.body);
                 const service = new OperarioServices_1.OperarioService(prisma_1.prisma, operarioId);
                 await service.asignarTarea({ tareaId });
@@ -43,6 +62,7 @@ class OperarioController {
         this.iniciarTarea = async (req, res, next) => {
             try {
                 const { operarioId } = OperarioIdParam.parse(req.params);
+                assertOperarioMatchesSession(req, operarioId);
                 const { tareaId } = TareaIdParam.parse(req.params);
                 const service = new OperarioServices_1.OperarioService(prisma_1.prisma, operarioId);
                 await service.iniciarTarea({ tareaId });
@@ -56,6 +76,7 @@ class OperarioController {
         this.marcarComoCompletada = async (req, res, next) => {
             try {
                 const { operarioId } = OperarioIdParam.parse(req.params);
+                assertOperarioMatchesSession(req, operarioId);
                 const body = CompletarBody.parse(req.body);
                 // 1) Resolver inventario del conjunto de la tarea
                 const tarea = await prisma_1.prisma.tarea.findUnique({
@@ -90,6 +111,7 @@ class OperarioController {
         this.cerrarTareaConEvidencias = async (req, res, next) => {
             try {
                 const { operarioId } = OperarioIdParam.parse(req.params);
+                assertOperarioMatchesSession(req, operarioId);
                 const { tareaId } = TareaIdParam.parse(req.params);
                 const inicio = Date.now();
                 const tarea = await prisma_1.prisma.tarea.findUnique({
@@ -120,6 +142,7 @@ class OperarioController {
         this.marcarComoNoCompletada = async (req, res, next) => {
             try {
                 const { operarioId } = OperarioIdParam.parse(req.params);
+                assertOperarioMatchesSession(req, operarioId);
                 const { tareaId } = TareaIdParam.parse(req.params);
                 const service = new OperarioServices_1.OperarioService(prisma_1.prisma, operarioId);
                 await service.marcarComoNoCompletada({ tareaId });
@@ -133,6 +156,7 @@ class OperarioController {
         this.tareasDelDia = async (req, res, next) => {
             try {
                 const { operarioId } = OperarioIdParam.parse(req.params);
+                assertOperarioMatchesSession(req, operarioId);
                 const { fecha } = FechaQuery.parse(req.query);
                 const service = new OperarioServices_1.OperarioService(prisma_1.prisma, operarioId);
                 const tareas = await service.tareasDelDia({ fecha });
@@ -146,6 +170,7 @@ class OperarioController {
         this.listarTareas = async (req, res, next) => {
             try {
                 const { operarioId } = OperarioIdParam.parse(req.params);
+                assertOperarioMatchesSession(req, operarioId);
                 const service = new OperarioServices_1.OperarioService(prisma_1.prisma, operarioId);
                 const list = await service.listarTareas();
                 res.json(list);
@@ -158,6 +183,7 @@ class OperarioController {
         this.horasRestantesEnSemana = async (req, res, next) => {
             try {
                 const { operarioId } = OperarioIdParam.parse(req.params);
+                assertOperarioMatchesSession(req, operarioId);
                 const { fecha } = FechaQuery.parse(req.query);
                 const service = new OperarioServices_1.OperarioService(prisma_1.prisma, operarioId);
                 const horas = await service.horasRestantesEnSemana({ fecha });
@@ -171,6 +197,7 @@ class OperarioController {
         this.resumenDeHoras = async (req, res, next) => {
             try {
                 const { operarioId } = OperarioIdParam.parse(req.params);
+                assertOperarioMatchesSession(req, operarioId);
                 const { fecha } = FechaQuery.parse(req.query);
                 const service = new OperarioServices_1.OperarioService(prisma_1.prisma, operarioId);
                 const resumen = await service.resumenDeHoras({ fecha });
