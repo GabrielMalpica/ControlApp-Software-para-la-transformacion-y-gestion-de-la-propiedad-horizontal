@@ -76,7 +76,7 @@ class PlanEsperanzaController {
                 const { id } = DiagnosticoIdParam.parse(req.params);
                 const body = zod_1.z
                     .object({
-                    valoracion: zod_1.z.number().min(0).max(5).optional().nullable(),
+                    valoracion: zod_1.z.coerce.number().min(0).max(5).optional().nullable(),
                     observaciones: zod_1.z.string().optional().nullable(),
                 })
                     .parse(req.body);

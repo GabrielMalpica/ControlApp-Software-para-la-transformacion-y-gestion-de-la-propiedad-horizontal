@@ -81,7 +81,7 @@ export class PlanEsperanzaController {
       const { id } = DiagnosticoIdParam.parse(req.params);
       const body = z
         .object({
-          valoracion: z.number().min(0).max(5).optional().nullable(),
+          valoracion: z.coerce.number().min(0).max(5).optional().nullable(),
           observaciones: z.string().optional().nullable(),
         })
         .parse(req.body);

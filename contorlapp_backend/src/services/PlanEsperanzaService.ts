@@ -26,7 +26,7 @@ type DiagnosticoInfo = {
 
 type TimelineEntry = {
   planId: number;
-  fechaInicio: Date;
+  fecha: Date;
   urlFoto: string | null;
   valoracion: number | null;
   observaciones: string | null;
@@ -418,7 +418,7 @@ export class PlanEsperanzaService {
         }
         areasMap.get(d.elementoId)!.entradas.push({
           planId: plan.id,
-          fechaInicio: plan.fechaInicio,
+          fecha: plan.fechaInicio,
           urlFoto: d.urlFoto,
           valoracion: d.valoracion,
           observaciones: d.observaciones,

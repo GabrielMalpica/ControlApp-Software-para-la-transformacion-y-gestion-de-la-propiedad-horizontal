@@ -304,7 +304,7 @@ class PlanEsperanzaService {
                 }
                 areasMap.get(d.elementoId).entradas.push({
                     planId: plan.id,
-                    fechaInicio: plan.fechaInicio,
+                    fecha: plan.fechaInicio,
                     urlFoto: d.urlFoto,
                     valoracion: d.valoracion,
                     observaciones: d.observaciones,

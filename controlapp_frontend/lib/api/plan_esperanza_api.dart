@@ -77,7 +77,9 @@ class PlanEsperanzaApi {
       throw Exception(AppError.fromResponseBody(resp.body,
           fallback: 'No se pudo cargar el plan activo.'));
     }
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    final decoded = jsonDecode(resp.body);
+    if (decoded == null) return null;
+    final data = decoded as Map<String, dynamic>;
     if (data.isEmpty || data['id'] == null) return null;
     return PlanEsperanzaActivo.fromJson(data);
   }
