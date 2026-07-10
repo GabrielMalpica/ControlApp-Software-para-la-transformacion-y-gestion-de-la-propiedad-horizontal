@@ -17,6 +17,7 @@ import 'agenda_herramientas_page.dart';
 import 'inventario_page.dart';
 import 'cronograma_page.dart';
 import 'cronograma_impresion_page.dart';
+import 'plan_esperanza_page.dart';
 import 'reportes_page.dart';
 import 'gerente/compromisos_page.dart';
 import 'gerente/compromisos_por_conjunto_page.dart';
@@ -225,14 +226,14 @@ class _SupervisorPageState extends State<SupervisorPage> {
     final nombreConjunto = conjunto.nombre;
     final sections = <_SupervisorSection>[
       _SupervisorSection('Operacion diaria', [
-        if (_can('cronograma.correctivas_programar') && _can('cronograma.ver'))
+        if (_can('plan_esperanza.acceso'))
           _SupervisorTile(
-            'Programar correctiva',
-            Icons.emergency_rounded,
-            Colors.red,
+            'Plan Esperanza',
+            Icons.health_and_safety,
+            AppTheme.primary,
             () {
               if (!_requiereConjuntoOrWarn()) return;
-              _go(CronogramaPage(nit: nit));
+              _go(PlanEsperanzaPage(nit: nit, nombreConjunto: nombreConjunto));
             },
           ),
         if (_can('tareas.ver'))

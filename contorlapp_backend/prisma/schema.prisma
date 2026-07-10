@@ -364,12 +364,12 @@ model ConfiguracionLaboral {
  */
 
 model Usuario {
-  id              String   @id
-  nombre          String
-  correo          String   @unique
-  contrasena      String
-  rol             String
-  activo          Boolean  @default(true)
+  id         String  @id
+  nombre     String
+  correo     String  @unique
+  contrasena String
+  rol        String
+  activo     Boolean @default(true)
 
   telefono        BigInt
   fechaNacimiento DateTime
@@ -385,14 +385,14 @@ model Usuario {
   tallaCalzado    TallaCalzado?
   tipoContrato    TipoContrato?
 
-  jornadaLaboral  JornadaLaboral?
-  patronJornada   PatronJornada?
+  jornadaLaboral JornadaLaboral?
+  patronJornada  PatronJornada?
 
-  gerente         Gerente?
-  jefeOperaciones JefeOperaciones?
-  supervisor      Supervisor?
-  operario        Operario?
-  administrador   Administrador?
+  gerente            Gerente?
+  jefeOperaciones    JefeOperaciones?
+  supervisor         Supervisor?
+  operario           Operario?
+  administrador      Administrador?
   compromisosCreados CompromisoConjunto[] @relation("CompromisoCreadoPor")
 }
 
@@ -437,14 +437,14 @@ model Empresa {
 }
 
 model PermisoRol {
-  id         Int      @id @default(autoincrement())
-  empresaId  String
-  empresa    Empresa  @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
-  rol        Rol
-  permiso    String
-  permitido  Boolean
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        Int      @id @default(autoincrement())
+  empresaId String
+  empresa   Empresa  @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
+  rol       Rol
+  permiso   String
+  permitido Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([empresaId, rol, permiso])
   @@index([empresaId, rol])
@@ -517,11 +517,11 @@ model Operario {
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
   empresaId String
 
-  definicionesPreventivas DefinicionTareaPreventiva[] @relation("DefinicionOperarios")
+  definicionesPreventivas DefinicionTareaPreventiva[]     @relation("DefinicionOperarios")
   maquinariaConjuntos     MaquinariaConjunto[]
   usoMaquinarias          UsoMaquinaria[]
   usoHerramientas         UsoHerramienta[]
-  disponibilidadPeriodos OperarioDisponibilidadPeriodo[]
+  disponibilidadPeriodos  OperarioDisponibilidadPeriodo[]
 
   @@map("Operario")
 }
@@ -535,9 +535,9 @@ model OperarioDisponibilidadPeriodo {
   fechaInicio DateTime
   fechaFin    DateTime?
 
-  trabajaDomingo  Boolean   @default(false)
-  diaDescanso     DiaSemana?
-  observaciones   String?
+  trabajaDomingo Boolean    @default(false)
+  diaDescanso    DiaSemana?
+  observaciones  String?
 
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
@@ -564,13 +564,13 @@ model Conjunto {
   empresa   Empresa? @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
   empresaId String?
 
-  fechaInicioContrato DateTime?
-  fechaFinContrato    DateTime?
-  activo              Boolean        @default(true)
-  tipoServicio        TipoServicio[]
-  valorMensual        Decimal?       @db.Decimal(14, 2)
-  consignasEspeciales String[]       @default([])
-  valorAgregado       String[]       @default([])
+  fechaInicioContrato       DateTime?
+  fechaFinContrato          DateTime?
+  activo                    Boolean        @default(true)
+  tipoServicio              TipoServicio[]
+  valorMensual              Decimal?       @db.Decimal(14, 2)
+  consignasEspeciales       String[]       @default([])
+  valorAgregado             String[]       @default([])
   mapaConjuntoNombreArchivo String?
   mapaConjuntoMimeType      String?
   mapaConjuntoBytes         Bytes?
@@ -597,8 +597,12 @@ model Conjunto {
   maquinarias               Maquinaria[]
   herramientasStock         ConjuntoHerramientaStock[]
   solicitudHerramientas     SolicitudHerramienta[]
-   prestamosHerramientas     PrestamoHerramientaConjunto[]
-  compromisos              CompromisoConjunto[]
+  prestamosHerramientas     PrestamoHerramientaConjunto[]
+  compromisos               CompromisoConjunto[]
+
+  // Plan Esperanza
+  planEsperanzaConfig PlanEsperanzaConfig?
+  planesEsperanza     PlanEsperanza[]
 }
 
 model CompromisoConjunto {
@@ -608,12 +612,12 @@ model CompromisoConjunto {
   conjuntoId String
 
   titulo     String
-  completado Boolean  @default(false)
+  completado Boolean @default(false)
 
   creadoPor   Usuario? @relation("CompromisoCreadoPor", fields: [creadoPorId], references: [id], onDelete: SetNull)
   creadoPorId String?
 
-  creadaEn     DateTime @default(now())
+  creadaEn      DateTime @default(now())
   actualizadaEn DateTime @updatedAt
 
   @@index([conjuntoId, completado])
@@ -671,6 +675,7 @@ model Elemento {
   tareas                    Tarea[]
   solicitudesTareas         SolicitudTarea[]
   DefinicionTareaPreventiva DefinicionTareaPreventiva[]
+  diagnosticosPlanEsperanza DiagnosticoArea[]
 
   @@index([ubicacionId, padreId])
   @@map("Elemento")
@@ -704,9 +709,9 @@ model Insumo {
 }
 
 model Herramienta {
-  id     Int    @id @default(autoincrement())
-  nombre String
-  unidad String @default("UNIDAD")
+  id        Int                  @id @default(autoincrement())
+  nombre    String
+  unidad    String               @default("UNIDAD")
   categoria CategoriaHerramienta @default(OTROS)
 
   modoControl  ModoControlHerramienta @default(PRESTAMO)
@@ -735,7 +740,7 @@ model EmpresaHerramientaStock {
   herramienta   Herramienta @relation(fields: [herramientaId], references: [id], onDelete: Cascade)
   herramientaId Int
 
-  cantidad Decimal @db.Decimal(14, 4)
+  cantidad Decimal           @db.Decimal(14, 4)
   estado   EstadoHerramienta @default(OPERATIVA)
 
   actualizadoEn DateTime @updatedAt
@@ -783,10 +788,10 @@ model PrestamoHerramientaConjunto {
   cantidad Decimal           @db.Decimal(14, 4)
   estado   EstadoHerramienta @default(OPERATIVA)
 
-  fechaInicio             DateTime @default(now())
+  fechaInicio             DateTime  @default(now())
   fechaFin                DateTime?
   fechaDevolucionEstimada DateTime?
-  actualizadoEn           DateTime @updatedAt
+  actualizadoEn           DateTime  @updatedAt
 
   @@index([conjuntoId, estado])
   @@index([conjuntoId, fechaFin])
@@ -1012,11 +1017,11 @@ model DefinicionTareaPreventiva {
   elemento    Elemento  @relation(fields: [elementoId], references: [id])
   elementoId  Int
 
-  descripcion         String
-  frecuencia          Frecuencia
-  prioridad           Int        @default(2)
-  diaSemanaProgramado DiaSemana?
-  diaMesProgramado    Int?
+  descripcion           String
+  frecuencia            Frecuencia
+  prioridad             Int        @default(2)
+  diaSemanaProgramado   DiaSemana?
+  diaMesProgramado      Int?
   fechasProgramadasJson Json?
 
   // Duración planificada
@@ -1141,39 +1146,39 @@ model Tarea {
 model PreventivaExcluidaBorrador {
   id Int @id @default(autoincrement())
 
-  conjuntoId String
+  conjuntoId  String
   periodoAnio Int
-  periodoMes Int
+  periodoMes  Int
 
-  defId Int?
-  origenTareaId Int?
+  defId             Int?
+  origenTareaId     Int?
   tareaProgramadaId Int?
 
-  descripcion String
-  frecuencia Frecuencia?
-  prioridad Int @default(2)
+  descripcion     String
+  frecuencia      Frecuencia?
+  prioridad       Int         @default(2)
   duracionMinutos Int
 
   fechaObjetivo DateTime
 
-  ubicacionId Int
+  ubicacionId     Int
   ubicacionNombre String?
-  elementoId Int
-  elementoNombre String?
+  elementoId      Int
+  elementoNombre  String?
 
-  supervisorId String?
+  supervisorId     String?
   supervisorNombre String?
-  operariosIds String[] @default([])
+  operariosIds     String[] @default([])
   operariosNombres String[] @default([])
 
-  motivoTipo String
+  motivoTipo    String
   motivoMensaje String?
-  estado String @default("PENDIENTE")
-  metadataJson Json?
+  estado        String  @default("PENDIENTE")
+  metadataJson  Json?
 
-  creadaEn DateTime @default(now())
-  actualizadaEn DateTime @updatedAt
-  resueltaEn DateTime?
+  creadaEn      DateTime  @default(now())
+  actualizadaEn DateTime  @updatedAt
+  resueltaEn    DateTime?
 
   @@index([conjuntoId, periodoAnio, periodoMes], map: "PEB_periodo_idx")
   @@index([conjuntoId, periodoAnio, periodoMes, fechaObjetivo], map: "PEB_periodo_fecha_idx")
@@ -1184,17 +1189,17 @@ model PreventivaExcluidaBorrador {
 model PreventivaBorradorEvento {
   id Int @id @default(autoincrement())
 
-  conjuntoId String
+  conjuntoId  String
   periodoAnio Int
-  periodoMes Int
+  periodoMes  Int
 
-  tareaId Int?
-  excluidaId Int?
-  tipo String
-  detalle String?
+  tareaId      Int?
+  excluidaId   Int?
+  tipo         String
+  detalle      String?
   metadataJson Json?
 
-  actorId String?
+  actorId  String?
   actorRol String?
 
   creadoEn DateTime @default(now())
@@ -1362,4 +1367,51 @@ model Festivo {
   nombre   String?
   pais     String   @default("CO")
   creadoEn DateTime @default(now())
+}
+
+/**
+ * =========================================
+ * MODELOS - PLAN ESPERANZA
+ * =========================================
+ */
+
+model PlanEsperanzaConfig {
+  id             Int      @id @default(autoincrement())
+  conjunto       Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
+  conjuntoId     String   @unique
+  intervaloMeses Int      @default(6)
+  actualizadoEn  DateTime @updatedAt
+
+  @@map("PlanEsperanzaConfig")
+}
+
+model PlanEsperanza {
+  id           Int               @id @default(autoincrement())
+  conjunto     Conjunto          @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
+  conjuntoId   String
+  fechaInicio  DateTime          @default(now())
+  fechaFin     DateTime?
+  completado   Boolean           @default(false)
+  creadoEn     DateTime          @default(now())
+  diagnosticos DiagnosticoArea[]
+
+  @@index([conjuntoId, completado])
+  @@index([conjuntoId, fechaInicio])
+  @@map("PlanEsperanza")
+}
+
+model DiagnosticoArea {
+  id              Int           @id @default(autoincrement())
+  planEsperanza   PlanEsperanza @relation(fields: [planEsperanzaId], references: [id], onDelete: Cascade)
+  planEsperanzaId Int
+  elemento        Elemento      @relation(fields: [elementoId], references: [id])
+  elementoId      Int
+  urlFoto         String?
+  valoracion      Float?
+  observaciones   String?
+  creadoEn        DateTime      @default(now())
+
+  @@unique([planEsperanzaId, elementoId])
+  @@index([elementoId])
+  @@map("DiagnosticoArea")
 }

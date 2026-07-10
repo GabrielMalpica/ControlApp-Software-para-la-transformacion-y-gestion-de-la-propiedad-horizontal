@@ -43,6 +43,7 @@ import '../solicitudes_page.dart';
 import '../cronograma_page.dart';
 import '../cronograma_impresion_page.dart';
 import '../crear_cronograma_page.dart';
+import '../plan_esperanza_page.dart';
 import 'crear_conjunto_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -585,10 +586,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
     final sections = <_TileSection>[
       _TileSection("Operacion diaria", [
         _Tile(
-          "Programar correctiva",
-          Icons.emergency_rounded,
-          Colors.red,
-          () => _abrirYRecargar(CronogramaPage(nit: nit)),
+          "Plan Esperanza",
+          Icons.health_and_safety,
+          AppTheme.primary,
+          () => _abrirYRecargar(PlanEsperanzaPage(nit: nit, nombreConjunto: nombreConjunto)),
         ),
         _Tile("Tareas", Icons.assignment, AppTheme.green, () {
           _abrirYRecargar(TareasPage(nit: nit));

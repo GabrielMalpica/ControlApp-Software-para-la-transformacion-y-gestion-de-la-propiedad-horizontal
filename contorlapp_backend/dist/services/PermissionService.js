@@ -144,6 +144,20 @@ const PERMISSION_CATALOG = [
         label: "Ver cumpleanos",
         description: "Permite ver el banner y la pantalla de cumpleanos.",
     },
+    {
+        key: "plan_esperanza.acceso",
+        module: "plan_esperanza",
+        moduleLabel: "Plan Esperanza",
+        label: "Acceder a Plan Esperanza",
+        description: "Permite ver, iniciar y completar diagnosticos del Plan Esperanza.",
+    },
+    {
+        key: "plan_esperanza.configurar",
+        module: "plan_esperanza",
+        moduleLabel: "Plan Esperanza",
+        label: "Configurar periodicidad",
+        description: "Permite cambiar el intervalo de meses del Plan Esperanza.",
+    },
 ];
 const ALL_PERMISSION_KEYS = new Set(PERMISSION_CATALOG.map((item) => item.key));
 const DEFAULT_PERMISSIONS_BY_ROLE = {
@@ -189,6 +203,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE = {
         "compromisos.gestionar",
         "compromisos.globales_ver",
         "reportes.ver",
+        "plan_esperanza.acceso",
     ]),
     [client_1.Rol.operario]: new Set([
         "tareas.ver",
