@@ -9,6 +9,7 @@ import 'package:flutter_application_1/model/tarea_model.dart';
 import '../model/preventiva_model.dart';
 import '../service/api_client.dart';
 import '../service/app_constants.dart';
+import '../service/api_exception.dart';
 
 class DefinicionPreventivaApi {
   final ApiClient _client = ApiClient();
@@ -27,7 +28,7 @@ class DefinicionPreventivaApi {
       reason = body['reason']?.toString();
     }
 
-    throw ApiError(
+    throw ApiException(
       statusCode: resp.statusCode as int,
       message: friendly,
       reason: reason,
@@ -213,8 +214,10 @@ class DefinicionPreventivaApi {
       body: body,
     );
     if (resp.statusCode != 200) {
-      throw Exception(
-        'Error reprogramando preventiva reemplazada: ${resp.statusCode} ${resp.body}',
+      _throwCrudApiError(
+        resp,
+        fallback:
+            'No se pudo mover la preventiva. Revisa la maquinaria y el rango seleccionado.',
       );
     }
 
@@ -534,7 +537,7 @@ class DefinicionPreventivaApi {
       reason = body['reason']?.toString();
     }
 
-    throw ApiError(
+    throw ApiException(
       statusCode: resp.statusCode,
       message: friendly,
       reason: reason,
@@ -627,23 +630,6 @@ int _parseIntFlexible(dynamic value) {
   if (value is int) return value;
   if (value is num) return value.toInt();
   return int.tryParse('${value ?? 0}') ?? 0;
-}
-
-class ApiError implements Exception {
-  final int statusCode;
-  final String message; // mensaje amigable
-  final String? reason; // code: MAQUINARIA_NO_DISPONIBLE, etc
-  final dynamic details; // json completo (para admin/debug)
-
-  ApiError({
-    required this.statusCode,
-    required this.message,
-    this.reason,
-    this.details,
-  });
-
-  @override
-  String toString() => 'ApiError($statusCode): $message';
 }
 
 String _friendlyMessageFromBody(

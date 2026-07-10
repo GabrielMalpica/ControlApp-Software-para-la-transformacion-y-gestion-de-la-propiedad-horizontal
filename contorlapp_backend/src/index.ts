@@ -55,6 +55,7 @@ type ClientErrorPayload = {
   message: string;
   error: string;
   code?: string;
+  reason?: string;
   details?: unknown;
 };
 
@@ -217,6 +218,27 @@ function sendError(
 /* ----------------------- middleware de error (tipado) --------------------- */
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   console.error("Error:", err);
+
+  if (
+    err &&
+    typeof err === "object" &&
+    (err as any).ok === false &&
+    typeof (err as any).message === "string"
+  ) {
+    const status =
+      typeof (err as any).status === "number"
+        ? Number((err as any).status)
+        : inferStatusFromMessage(String((err as any).message));
+
+    res.status(status).json({
+      ...(err as Record<string, unknown>),
+      error:
+        typeof (err as any).error === "string"
+          ? (err as any).error
+          : String((err as any).message),
+    });
+    return;
+  }
 
   if (err instanceof ZodError || err?.name === "ZodError") {
     const issues = Array.isArray(err?.issues)

@@ -174,6 +174,21 @@ function sendError(res, status, message, extra = {}) {
 /* ----------------------- middleware de error (tipado) --------------------- */
 const errorHandler = (err, _req, res, _next) => {
     console.error("Error:", err);
+    if (err &&
+        typeof err === "object" &&
+        err.ok === false &&
+        typeof err.message === "string") {
+        const status = typeof err.status === "number"
+            ? Number(err.status)
+            : inferStatusFromMessage(String(err.message));
+        res.status(status).json({
+            ...err,
+            error: typeof err.error === "string"
+                ? err.error
+                : String(err.message),
+        });
+        return;
+    }
     if (err instanceof zod_1.ZodError || err?.name === "ZodError") {
         const issues = Array.isArray(err?.issues)
             ? err.issues

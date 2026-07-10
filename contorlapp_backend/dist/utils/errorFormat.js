@@ -8,44 +8,51 @@ function buildMaquinariaNoDisponibleError(params) {
         : `La maquinaria #${maquinariaId} no está disponible`;
     // ejemplos legibles (máx 4)
     const ejemplos = conflictos.slice(0, 4).map((c) => {
-        const desc = c.ocupadoPor.descripcion ?? "Tarea sin descripción";
+        const desc = c.ocupadoPor.descripcion ?? "Tarea sin descripcion";
         return {
             tareaSolicitada: {
-                tareaId: c.tareaId,
-                descripcion: c.tareaDescripcion ?? "Tarea sin descripción",
+                tareaId: c.tareaSolicitada.tareaId,
+                descripcion: c.tareaSolicitada.descripcion,
             },
-            entrega: c.rangoSolicitado.entrega,
-            recogida: c.rangoSolicitado.recogida,
+            entrega: c.tareaSolicitada.entrega,
+            recogida: c.tareaSolicitada.recogida,
+            tipoSolape: c.tipoSolape,
             ocupadaPor: {
                 conjuntoId: c.ocupadoPor.conjuntoId,
+                conjuntoNombre: c.ocupadoPor.conjuntoNombre ?? null,
                 tareaId: c.ocupadoPor.tareaId,
                 descripcion: desc,
-                desde: c.ocupadoPor.ini,
-                hasta: c.ocupadoPor.fin,
+                estado: c.ocupadoPor.estado ?? null,
+                desde: c.ocupadoPor.reservaInicio,
+                hasta: c.ocupadoPor.reservaFin,
             },
+            motivo: c.motivo,
+            sugerencia: c.sugerencia ?? null,
         };
     });
     const primerConflicto = conflictos[0];
     const tareaSolicitadaLabel = primerConflicto
-        ? `La tarea "${(primerConflicto.tareaDescripcion ?? "Tarea sin descripción").trim()}" (#${primerConflicto.tareaId})`
+        ? `La tarea "${primerConflicto.tareaSolicitada.descripcion.trim()}" (#${primerConflicto.tareaSolicitada.tareaId})`
         : "Una tarea del cronograma";
     const tareaOcupanteLabel = primerConflicto
-        ? `la tarea "${(primerConflicto.ocupadoPor.descripcion ?? "Tarea sin descripción").trim()}" (#${primerConflicto.ocupadoPor.tareaId})`
+        ? `la tarea "${(primerConflicto.ocupadoPor.descripcion ?? "Tarea sin descripcion").trim()}" (#${primerConflicto.ocupadoPor.tareaId})`
         : "otra tarea";
     const message = `${titulo}. ${tareaSolicitadaLabel} tiene agenda cruzada con ${tareaOcupanteLabel}. ` +
-        `Se detectaron ${conflictos.length} conflicto(s) de reserva/uso. Revisa esa tarea antes de publicar.`;
-    const userHint = "Tip: revisa la tarea reportada, abre la agenda de maquinaria y ajusta fechas, bloque o máquina asignada.";
+        `Se detectaron ${conflictos.length} conflicto(s) de reserva/uso. Revisa el detalle para ajustar la maquina o reprogramar la tarea.`;
+    const userHint = "Tip: revisa la tarea reportada, abre la agenda de maquinaria y compara uso real vs ventana de reserva antes de mover o publicar.";
     return {
+        status: 409,
         ok: false,
+        title: titulo,
         reason: "MAQUINARIA_NO_DISPONIBLE",
         message,
         userHint,
         resumen: {
             maquinariaId,
+            maquinaNombre: maquinaNombre ?? null,
             conflictosCount: conflictos.length,
             ejemplos,
         },
-        // 👇 esto lo dejas para debug/soporte (frontend puede ocultarlo)
         conflictos,
     };
 }

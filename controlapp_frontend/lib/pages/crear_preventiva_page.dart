@@ -23,6 +23,7 @@ import 'cronograma_preventivas_borrador_page.dart';
 import '../widgets/searchable_select_field.dart';
 
 import '../service/theme.dart';
+import '../service/api_exception.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -1505,7 +1506,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       if (!mounted) return;
 
       // ✅ Si el backend ya manda {ok:false, reason, message, ...}
-      if (e is ApiError) {
+      if (e is ApiException) {
         // mensaje amigable
         if (e.reason == 'MAQUINARIA_NO_DISPONIBLE') {
           await _showMaquinariaNoDisponibleDialog(e);
@@ -1593,7 +1594,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     );
   }
 
-  Future<void> _showMaquinariaNoDisponibleDialog(ApiError e) async {
+  Future<void> _showMaquinariaNoDisponibleDialog(ApiException e) async {
     // e.details puede ser Map o String
     Map<String, dynamic>? body;
     try {

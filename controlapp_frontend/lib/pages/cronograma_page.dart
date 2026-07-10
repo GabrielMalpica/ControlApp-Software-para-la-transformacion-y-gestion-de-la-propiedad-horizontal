@@ -15,6 +15,7 @@ import '../api/cronograma_api.dart';
 import '../api/tarea_api.dart';
 import '../model/tarea_model.dart';
 import '../service/app_error.dart';
+import '../service/api_exception.dart';
 import '../service/permission_service.dart';
 import '../service/session_service.dart';
 import '../service/tarea_cierre_service.dart';
@@ -22,6 +23,7 @@ import '../service/theme.dart';
 import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
 import '../widgets/section_card.dart';
+import '../widgets/maquinaria_conflict_dialog.dart';
 import 'crear_tarea_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -903,6 +905,14 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     final resp = await _tareaApi.editarTareaConRespuesta(tarea.id, req);
     if (resp['ok'] == false) {
+      if ((resp['reason'] ?? '').toString().toUpperCase() ==
+          'MAQUINARIA_NO_DISPONIBLE') {
+        throw ApiException.fromMap(
+          resp.cast<String, dynamic>(),
+          statusCode: 409,
+          fallback: 'La maquinaria no está disponible para ese movimiento.',
+        );
+      }
       throw Exception(
         (resp['message'] ?? 'No se pudo mover la correctiva.').toString(),
       );
@@ -3982,9 +3992,21 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       );
     } catch (e) {
       if (!mounted) return;
+      if (hasMaquinariaConflictDetails(e)) {
+        await showMaquinariaConflictDialog(
+          context,
+          e,
+          fallbackTitle: 'Conflicto de maquinaria al mover la tarea',
+        );
+        return;
+      }
       AppFeedback.showFromSnackBar(
         context,
-        SnackBar(content: Text('No se pudo mover la correctiva: $e')),
+        SnackBar(
+          content: Text(
+            'No se pudo mover la correctiva: ${AppError.messageOf(e)}',
+          ),
+        ),
       );
     } finally {
       if (mounted) {

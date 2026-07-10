@@ -4,6 +4,7 @@ import 'dart:convert';
 import '../service/api_client.dart';
 import '../service/app_error.dart';
 import '../service/app_constants.dart';
+import '../service/api_exception.dart';
 import '../model/cronograma_actividad_informe_model.dart';
 import '../model/tarea_model.dart';
 
@@ -100,8 +101,11 @@ class CronogramaApi {
     final resp = await _client.post(uri.toString());
 
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw Exception(
-        'Error publicando cronograma: ${resp.statusCode} ${resp.body}',
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback:
+            'No se pudo publicar el cronograma. Revisa la agenda de maquinaria y vuelve a intentarlo.',
       );
     }
 

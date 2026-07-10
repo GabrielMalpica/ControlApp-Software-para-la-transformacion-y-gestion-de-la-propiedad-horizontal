@@ -16,6 +16,7 @@ import '../service/app_error.dart';
 import '../service/theme.dart';
 import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
+import '../widgets/maquinaria_conflict_dialog.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -2599,10 +2600,20 @@ class _CronogramaPreventivasBorradorPageState
       await _cargarDatos();
     } catch (e) {
       if (!mounted) return;
+      if (hasMaquinariaConflictDetails(e)) {
+        await showMaquinariaConflictDialog(
+          context,
+          e,
+          fallbackTitle: 'Conflicto de maquinaria al publicar',
+        );
+        return;
+      }
       AppFeedback.showFromSnackBar(
         context,
         SnackBar(
-          content: Text('Error publicando cronograma: $e'),
+          content: Text(
+            'Error publicando cronograma: ${AppError.messageOf(e)}',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -5654,6 +5665,14 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       }
     } catch (e) {
       if (!mounted) return;
+      if (hasMaquinariaConflictDetails(e)) {
+        await showMaquinariaConflictDialog(
+          context,
+          e,
+          fallbackTitle: 'Conflicto de maquinaria al mover la tarea',
+        );
+        return;
+      }
       final operariosNombres =
           dragged.tarea?.operariosNombres ??
           dragged.excluida?.operariosNombres ??

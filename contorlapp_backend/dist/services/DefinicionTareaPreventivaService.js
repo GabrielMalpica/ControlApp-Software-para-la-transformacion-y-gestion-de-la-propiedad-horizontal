@@ -2190,6 +2190,7 @@ class DefinicionTareaPreventivaService {
                 borrador: true,
                 tipo: true,
                 descripcion: true,
+                grupoPlanId: true,
                 maquinariaPlanJson: true,
             },
         });
@@ -2265,14 +2266,17 @@ class DefinicionTareaPreventivaService {
                     fechaInicioUso: fechaInicio,
                     fechaFinUso: fechaFin,
                     excluirTareaId: tareaId,
+                    excluirGrupoPlanId: tarea.grupoPlanId ?? undefined,
                 });
                 if (disponibilidad.ok) {
-                    const ocupadas = disponibilidad.ocupadas ?? [];
-                    const conflicto = ocupadas.find((item) => maqIds.includes(item.maquinariaId));
-                    if (conflicto) {
-                        const maquina = conflicto.maquinaNombre ?? `Maquinaria #${conflicto.maquinariaId}`;
-                        const conjunto = conflicto.conjuntoNombre ?? conflicto.conjuntoId ?? "otro conjunto";
-                        throw new Error(`No se pudo mover la tarea '${tarea.descripcion}' por agenda de maquinaria. ${maquina} entra en conflicto con ${conflicto.descripcion ?? "otra preventiva"} del conjunto ${conjunto}.`);
+                    const conflictos = (disponibilidad.conflictos ?? []).filter((item) => maqIds.includes(item.maquinariaId));
+                    if (conflictos.length) {
+                        const primero = conflictos[0];
+                        throw (0, errorFormat_1.buildMaquinariaNoDisponibleError)({
+                            maquinariaId: primero.maquinariaId,
+                            maquinaNombre: primero.maquinaNombre ?? undefined,
+                            conflictos,
+                        });
                     }
                 }
             }
@@ -3250,7 +3254,7 @@ class DefinicionTareaPreventivaService {
      * MAQUINARIA DISPONIBLE
      * ======================= */
     async listarMaquinariaDisponible(params) {
-        const { conjuntoId, fechaInicioUso, fechaFinUso, excluirTareaId } = params;
+        const { conjuntoId, fechaInicioUso, fechaFinUso, excluirTareaId, excluirGrupoPlanId, } = params;
         if (!(fechaInicioUso instanceof Date) || isNaN(+fechaInicioUso)) {
             return { ok: false, reason: "FECHA_INICIO_INVALIDA" };
         }
@@ -3315,9 +3319,11 @@ class DefinicionTareaPreventivaService {
                         id: true,
                         conjuntoId: true,
                         descripcion: true,
+                        estado: true,
                         fechaInicio: true,
                         fechaFin: true,
                         borrador: true,
+                        grupoPlanId: true,
                     },
                 },
             },
@@ -3347,6 +3353,7 @@ class DefinicionTareaPreventivaService {
                 id: true,
                 conjuntoId: true,
                 descripcion: true,
+                estado: true,
                 fechaInicio: true,
                 fechaFin: true,
                 grupoPlanId: true,
@@ -3387,12 +3394,19 @@ class DefinicionTareaPreventivaService {
         }
         const ocupadasBorrador = [];
         for (const g of gruposBorrador.values()) {
+            if (excluirGrupoPlanId && g.key === `G:${excluirGrupoPlanId}`)
+                continue;
             const rangoBorrador = this.calcularRangoReserva({
                 fechaInicioUso: g.usoIni,
                 fechaFinUso: g.usoFin,
                 diasEntregaRecogida,
             });
             if (!overlaps(iniReserva, finReserva, rangoBorrador.iniReserva, rangoBorrador.finReserva)) {
+                continue;
+            }
+            const mismoConjunto = (g.conjuntoId ?? null) === conjuntoId;
+            const solapeUsoReal = overlaps(fechaInicioUso, fechaFinUso, g.usoIni, g.usoFin);
+            if (mismoConjunto && !solapeUsoReal) {
                 continue;
             }
             const desc = (g.descripcion ?? "Preventiva en borrador").trim();
@@ -3403,7 +3417,10 @@ class DefinicionTareaPreventivaService {
                     fin: rangoBorrador.finReserva,
                     tareaId: g.tareaIdRepresentante,
                     conjuntoId: g.conjuntoId ?? null,
+                    estado: client_1.EstadoTarea.ASIGNADA,
                     descripcion: `[BORRADOR] ${desc}`,
+                    usoInicio: g.usoIni,
+                    usoFin: g.usoFin,
                     fuente: "BORRADOR_PREVENTIVA",
                 });
             }
@@ -3415,17 +3432,21 @@ class DefinicionTareaPreventivaService {
                 fin: o.fechaFin ?? OPEN_END_FAR_FUTURE,
                 tareaId: o.tareaId,
                 conjuntoId: o.tarea?.conjuntoId ?? null,
+                estado: o.tarea?.estado ?? null,
                 descripcion: o.tarea?.borrador
                     ? `[BORRADOR] ${(o.tarea?.descripcion ?? "Tarea en borrador").trim()}`
                     : o.tarea?.descripcion ?? null,
+                usoInicio: o.tarea?.fechaInicio ?? o.fechaInicio,
+                usoFin: o.tarea?.fechaFin ?? (o.fechaFin ?? OPEN_END_FAR_FUTURE),
                 fuente: "RESERVA_PUBLICADA",
             })),
             ...ocupadasBorrador,
         ];
         const nombrePorId = new Map([...propias, ...empresa].map((maquina) => [maquina.id, maquina.nombre]));
-        const conjuntoIds = Array.from(new Set(ocupadasDetalle
+        const conjuntoIds = Array.from(new Set([conjuntoId]
+            .concat(ocupadasDetalle
             .map((item) => item.conjuntoId)
-            .filter((item) => !!item && item.trim().length > 0)));
+            .filter((item) => !!item && item.trim().length > 0))));
         const conjuntos = conjuntoIds.length
             ? await this.prisma.conjunto.findMany({
                 where: { nit: { in: conjuntoIds } },
@@ -3437,6 +3458,52 @@ class DefinicionTareaPreventivaService {
             ...item,
             maquinaNombre: nombrePorId.get(item.maquinariaId) ?? null,
             conjuntoNombre: item.conjuntoId == null ? null : (conjuntoNombrePorId.get(item.conjuntoId) ?? null),
+        }));
+        const descripcionSolicitada = excluirTareaId != null
+            ? ((await this.prisma.tarea.findUnique({
+                where: { id: excluirTareaId },
+                select: { descripcion: true },
+            }))?.descripcion ?? "Tarea reprogramada")
+            : "Tarea solicitada";
+        const conflictos = ocupadasDetalleConNombre.map((item) => buildConflictoMaquinariaDetalle({
+            maquinariaId: item.maquinariaId,
+            maquinaNombre: item.maquinaNombre,
+            tareaSolicitada: {
+                tareaId: excluirTareaId ?? 0,
+                descripcion: (descripcionSolicitada ?? "Tarea solicitada").trim() || "Tarea solicitada",
+                conjuntoId,
+                conjuntoNombre: conjuntoNombrePorId.get(conjuntoId) ?? null,
+                estado: client_1.EstadoTarea.ASIGNADA,
+                usoInicio: fechaInicioUso,
+                usoFin: fechaFinUso,
+                reservaInicio: iniReserva,
+                reservaFin: finReserva,
+                entregaDia,
+                recogidaDia,
+            },
+            ocupadoPor: {
+                usoId: 0,
+                tareaId: item.tareaId,
+                conjuntoId: item.conjuntoId,
+                conjuntoNombre: item.conjuntoNombre,
+                estado: item.estado,
+                descripcion: item.descripcion,
+                fuente: item.fuente,
+                usoInicio: item.usoInicio,
+                usoFin: item.usoFin,
+                reservaInicio: item.ini,
+                reservaFin: item.fin,
+            },
+            tipoSolape: item.fuente === "BORRADOR_PREVENTIVA"
+                ? "BORRADOR_INTERNO"
+                : (item.conjuntoId ?? null) === conjuntoId
+                    ? "USO_REAL"
+                    : "RESERVA_LOGISTICA",
+            motivo: item.fuente === "BORRADOR_PREVENTIVA"
+                ? "La maquina ya esta planificada en otro bloque preventivo que cruza este rango."
+                : (item.conjuntoId ?? null) === conjuntoId
+                    ? "Se solapa el uso real de la maquina dentro del mismo conjunto."
+                    : "La ventana de reserva logistica de la maquina ya esta ocupada por otra tarea.",
         }));
         const ocupadasSet = new Set(ocupadasDetalleConNombre.map((o) => o.maquinariaId));
         const propiasDisponibles = propias
@@ -3481,7 +3548,10 @@ class DefinicionTareaPreventivaService {
                     tareaId: item.tareaId,
                     conjuntoId: item.conjuntoId,
                     conjuntoNombre: item.conjuntoNombre,
+                    estado: item.estado,
                     descripcion: item.descripcion,
+                    usoInicio: item.usoInicio,
+                    usoFin: item.usoFin,
                     ini: item.ini,
                     fin: item.fin,
                     fuente: item.fuente,
@@ -3502,6 +3572,7 @@ class DefinicionTareaPreventivaService {
             empresaDisponibles,
             ocupadas: ocupadasDetalleConNombre,
             catalogo,
+            conflictos,
         };
     }
     async eliminarBloqueBorrador(conjuntoId, tareaId) {
@@ -3665,25 +3736,37 @@ class DefinicionTareaPreventivaService {
                 for (const maquinariaId of a.maqIds) {
                     if (!maqSetB.has(maquinariaId))
                         continue;
-                    conflictosInternos.push({
-                        tareaId: a.tareaIdRepresentante,
-                        tareaDescripcion: a.descripcion,
+                    conflictosInternos.push(buildConflictoMaquinariaDetalle({
                         maquinariaId,
-                        rangoSolicitado: {
-                            ini: a.iniReserva.toISOString(),
-                            fin: a.finReserva.toISOString(),
-                            entrega: sameDayKey(a.entregaDia),
-                            recogida: sameDayKey(a.recogidaDia),
+                        tareaSolicitada: {
+                            tareaId: a.tareaIdRepresentante,
+                            descripcion: (a.descripcion ?? "Preventiva en borrador").trim(),
+                            conjuntoId,
+                            conjuntoNombre: null,
+                            estado: client_1.EstadoTarea.ASIGNADA,
+                            usoInicio: a.usoIni,
+                            usoFin: a.usoFin,
+                            reservaInicio: a.iniReserva,
+                            reservaFin: a.finReserva,
+                            entregaDia: a.entregaDia,
+                            recogidaDia: a.recogidaDia,
                         },
                         ocupadoPor: {
                             usoId: 0,
                             tareaId: b.tareaIdRepresentante,
                             conjuntoId,
+                            conjuntoNombre: null,
+                            estado: client_1.EstadoTarea.ASIGNADA,
                             descripcion: `[BORRADOR] ${(b.descripcion ?? "Preventiva en borrador").trim()}`,
-                            ini: b.iniReserva.toISOString(),
-                            fin: b.finReserva.toISOString(),
+                            fuente: "BORRADOR_PREVENTIVA",
+                            usoInicio: b.usoIni,
+                            usoFin: b.usoFin,
+                            reservaInicio: b.iniReserva,
+                            reservaFin: b.finReserva,
                         },
-                    });
+                        tipoSolape: "BORRADOR_INTERNO",
+                        motivo: "La maquina ya esta planificada en otro bloque preventivo del mismo borrador y ambos usos reales se cruzan.",
+                    }));
                 }
             }
         }
@@ -3709,6 +3792,7 @@ class DefinicionTareaPreventivaService {
                         id: true,
                         conjuntoId: true,
                         descripcion: true,
+                        estado: true,
                         fechaInicio: true,
                         fechaFin: true,
                         borrador: true,
@@ -3743,27 +3827,41 @@ class DefinicionTareaPreventivaService {
                         if (!solapeUsoReal)
                             continue;
                     }
-                    conflictos.push({
-                        tareaId: p.tareaIdRepresentante,
-                        tareaDescripcion: p.descripcion,
+                    conflictos.push(buildConflictoMaquinariaDetalle({
                         maquinariaId,
-                        rangoSolicitado: {
-                            ini: p.iniReserva.toISOString(),
-                            fin: p.finReserva.toISOString(),
-                            entrega: sameDayKey(p.entregaDia),
-                            recogida: sameDayKey(p.recogidaDia),
+                        tareaSolicitada: {
+                            tareaId: p.tareaIdRepresentante,
+                            descripcion: (p.descripcion ?? "Preventiva en borrador").trim(),
+                            conjuntoId,
+                            conjuntoNombre: null,
+                            estado: client_1.EstadoTarea.ASIGNADA,
+                            usoInicio: p.usoIni,
+                            usoFin: p.usoFin,
+                            reservaInicio: p.iniReserva,
+                            reservaFin: p.finReserva,
+                            entregaDia: p.entregaDia,
+                            recogidaDia: p.recogidaDia,
                         },
                         ocupadoPor: {
                             usoId: u.id,
                             tareaId: u.tareaId,
                             conjuntoId: u.tarea?.conjuntoId ?? null,
+                            conjuntoNombre: null,
+                            estado: u.tarea?.estado ?? null,
                             descripcion: u.tarea?.borrador
                                 ? `[BORRADOR] ${(u.tarea?.descripcion ?? "Tarea en borrador").trim()}`
                                 : u.tarea?.descripcion ?? null,
-                            ini: u.fechaInicio.toISOString(),
-                            fin: (u.fechaFin ?? OPEN_END_FAR_FUTURE).toISOString(),
+                            fuente: u.tarea?.borrador ? "BORRADOR_PUBLICADO" : "RESERVA_PUBLICADA",
+                            usoInicio: u.tarea?.fechaInicio ?? u.fechaInicio,
+                            usoFin: u.tarea?.fechaFin ?? (u.fechaFin ?? OPEN_END_FAR_FUTURE),
+                            reservaInicio: u.fechaInicio,
+                            reservaFin: u.fechaFin ?? OPEN_END_FAR_FUTURE,
                         },
-                    });
+                        tipoSolape: mismoConjunto ? "USO_REAL" : "RESERVA_LOGISTICA",
+                        motivo: mismoConjunto
+                            ? "Se solapa el uso real de la maquina con otra tarea del mismo conjunto."
+                            : "La ventana de reserva logistica de la maquina ya esta ocupada por otra tarea.",
+                    }));
                     break;
                 }
             }
@@ -3775,12 +3873,38 @@ class DefinicionTareaPreventivaService {
                 select: { id: true, nombre: true },
             });
             const nombrePorId = new Map(maqs.map((m) => [m.id, m.nombre]));
-            const first = conflictos[0];
+            const conjuntoIds = Array.from(new Set(conflictos
+                .flatMap((c) => [c.tareaSolicitada.conjuntoId, c.ocupadoPor.conjuntoId])
+                .filter((item) => !!item)));
+            const conjuntos = conjuntoIds.length
+                ? await this.prisma.conjunto.findMany({
+                    where: { nit: { in: conjuntoIds } },
+                    select: { nit: true, nombre: true },
+                })
+                : [];
+            const conjuntoNombrePorId = new Map(conjuntos.map((item) => [item.nit, item.nombre]));
+            const conflictosEnriquecidos = conflictos.map((item) => ({
+                ...item,
+                maquinaNombre: nombrePorId.get(item.maquinariaId) ?? item.maquinaNombre ?? null,
+                tareaSolicitada: {
+                    ...item.tareaSolicitada,
+                    conjuntoNombre: item.tareaSolicitada.conjuntoId == null
+                        ? null
+                        : (conjuntoNombrePorId.get(item.tareaSolicitada.conjuntoId) ?? null),
+                },
+                ocupadoPor: {
+                    ...item.ocupadoPor,
+                    conjuntoNombre: item.ocupadoPor.conjuntoId == null
+                        ? null
+                        : (conjuntoNombrePorId.get(item.ocupadoPor.conjuntoId) ?? null),
+                },
+            }));
+            const first = conflictosEnriquecidos[0];
             const maquinaNombre = nombrePorId.get(first.maquinariaId);
             throw (0, errorFormat_1.buildMaquinariaNoDisponibleError)({
                 maquinariaId: first.maquinariaId,
                 maquinaNombre,
-                conflictos,
+                conflictos: conflictosEnriquecidos,
             });
         }
         // 5) Crear reservas (1 por grupo x máquina)
@@ -4169,6 +4293,80 @@ function formatHoraLocal(fecha) {
 }
 function formatFechaLocal(fecha) {
     return `${String(fecha.getDate()).padStart(2, "0")}/${String(fecha.getMonth() + 1).padStart(2, "0")}/${fecha.getFullYear()}`;
+}
+function sameDayKeyLocal(fecha) {
+    return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
+}
+function buildSugerenciaConflictoMaquinaria(params) {
+    const { tipoSolape, tareaSolicitada, ocupadoPor } = params;
+    const duracionMs = Math.max(60000, tareaSolicitada.usoFin.getTime() - tareaSolicitada.usoInicio.getTime());
+    const baseFin = tipoSolape === "RESERVA_LOGISTICA"
+        ? ocupadoPor.reservaFin
+        : ocupadoPor.usoFin;
+    if (baseFin.getFullYear() >= 2099) {
+        return {
+            libreDesde: null,
+            inicioUsoSugerido: null,
+            finUsoSugerido: null,
+            nota: "La reserva ocupante no tiene fecha de cierre registrada. Revisa y cierra esa reserva antes de reprogramar.",
+        };
+    }
+    const inicioUsoSugerido = new Date(baseFin.getTime() + 60000);
+    const finUsoSugerido = new Date(inicioUsoSugerido.getTime() + duracionMs);
+    return {
+        libreDesde: baseFin.toISOString(),
+        inicioUsoSugerido: inicioUsoSugerido.toISOString(),
+        finUsoSugerido: finUsoSugerido.toISOString(),
+        nota: tipoSolape === "RESERVA_LOGISTICA"
+            ? "Este es el primer reintento despues de que termina la reserva ocupante. Debe validarse nuevamente contra toda la agenda."
+            : "Este es el primer reintento despues de que termina el uso real ocupante. Debe validarse nuevamente contra toda la agenda.",
+    };
+}
+function buildConflictoMaquinariaDetalle(params) {
+    const { maquinariaId, maquinaNombre, tareaSolicitada, ocupadoPor, tipoSolape, motivo } = params;
+    return {
+        maquinariaId,
+        maquinaNombre: maquinaNombre ?? null,
+        tareaSolicitada: {
+            tareaId: tareaSolicitada.tareaId,
+            descripcion: tareaSolicitada.descripcion,
+            conjuntoId: tareaSolicitada.conjuntoId,
+            conjuntoNombre: tareaSolicitada.conjuntoNombre ?? null,
+            estado: tareaSolicitada.estado ?? null,
+            usoInicio: tareaSolicitada.usoInicio.toISOString(),
+            usoFin: tareaSolicitada.usoFin.toISOString(),
+            reservaInicio: tareaSolicitada.reservaInicio.toISOString(),
+            reservaFin: tareaSolicitada.reservaFin.toISOString(),
+            entrega: sameDayKeyLocal(tareaSolicitada.entregaDia),
+            recogida: sameDayKeyLocal(tareaSolicitada.recogidaDia),
+        },
+        ocupadoPor: {
+            usoId: ocupadoPor.usoId,
+            tareaId: ocupadoPor.tareaId,
+            conjuntoId: ocupadoPor.conjuntoId,
+            conjuntoNombre: ocupadoPor.conjuntoNombre ?? null,
+            estado: ocupadoPor.estado ?? null,
+            descripcion: ocupadoPor.descripcion,
+            fuente: ocupadoPor.fuente,
+            usoInicio: ocupadoPor.usoInicio.toISOString(),
+            usoFin: ocupadoPor.usoFin.toISOString(),
+            reservaInicio: ocupadoPor.reservaInicio.toISOString(),
+            reservaFin: ocupadoPor.reservaFin.toISOString(),
+        },
+        tipoSolape,
+        motivo,
+        sugerencia: buildSugerenciaConflictoMaquinaria({
+            tipoSolape,
+            tareaSolicitada: {
+                usoInicio: tareaSolicitada.usoInicio,
+                usoFin: tareaSolicitada.usoFin,
+            },
+            ocupadoPor: {
+                usoFin: ocupadoPor.usoFin,
+                reservaFin: ocupadoPor.reservaFin,
+            },
+        }),
+    };
 }
 function pickDaysByFrecuencia(days, def) {
     switch (def.frecuencia) {

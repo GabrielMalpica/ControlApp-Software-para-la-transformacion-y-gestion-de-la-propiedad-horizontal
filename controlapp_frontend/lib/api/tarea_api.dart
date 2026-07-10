@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../service/api_client.dart';
 import '../service/app_constants.dart';
+import '../service/api_exception.dart';
 import '../service/session_service.dart';
 import '../service/upload_media_type.dart';
 
@@ -121,7 +122,11 @@ class TareaApi {
     );
 
     if (resp.statusCode != 200) {
-      throw Exception('Error al editar tarea: ${resp.body}');
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudo actualizar la tarea.',
+      );
     }
   }
 
@@ -143,7 +148,11 @@ class TareaApi {
     if (data.containsKey('ok')) return data;
     if (resp.statusCode == 200) return data;
 
-    throw Exception('Error al editar tarea: ${resp.body}');
+    throw ApiException.fromResponse(
+      statusCode: resp.statusCode,
+      body: resp.body,
+      fallback: 'No se pudo actualizar la tarea.',
+    );
   }
 
   Future<void> eliminarTarea(int id) async {
