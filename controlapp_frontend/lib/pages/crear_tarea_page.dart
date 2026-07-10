@@ -10,6 +10,7 @@ import '../api/herramienta_api.dart';
 import '../model/conjunto_model.dart';
 import '../model/herramienta_model.dart';
 import '../model/maquinaria_model.dart';
+import '../model/tarea_model.dart';
 import '../service/app_constants.dart';
 import '../service/app_router.dart';
 import '../service/theme.dart';
@@ -22,14 +23,65 @@ import 'package:flutter_application_1/service/app_feedback.dart';
 
 class CrearTareaPage extends StatefulWidget {
   final String nit;
+  final DateTime? initialStart;
+  final int? initialDurationMinutes;
 
-  const CrearTareaPage({super.key, required this.nit});
+  const CrearTareaPage({
+    super.key,
+    required this.nit,
+    this.initialStart,
+    this.initialDurationMinutes,
+  });
 
   @override
   State<CrearTareaPage> createState() => _CrearTareaPageState();
 }
 
 class _CrearTareaPageState extends State<CrearTareaPage> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.background,
+      appBar: AppBar(
+        backgroundColor: AppTheme.primary,
+        title: const Text(
+          'Crear tarea correctiva',
+          style: TextStyle(color: Colors.white),
+        ),
+      ),
+      body: CorrectivaSchedulerForm(
+        nit: widget.nit,
+        initialStart: widget.initialStart,
+        initialDurationMinutes: widget.initialDurationMinutes,
+      ),
+    );
+  }
+}
+
+class CorrectivaSchedulerForm extends StatefulWidget {
+  final String nit;
+  final DateTime? initialStart;
+  final int? initialDurationMinutes;
+  final bool embedded;
+  final Future<void> Function()? onCreated;
+  final TareaModel? existingTask;
+
+  const CorrectivaSchedulerForm({
+    super.key,
+    required this.nit,
+    this.initialStart,
+    this.initialDurationMinutes,
+    this.embedded = false,
+    this.onCreated,
+    this.existingTask,
+  });
+
+  @override
+  State<CorrectivaSchedulerForm> createState() =>
+      _CorrectivaSchedulerFormState();
+}
+
+class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
   final _formKey = GlobalKey<FormState>();
 
   // APIs
@@ -86,6 +138,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
   @override
   void initState() {
     super.initState();
+    _aplicarProgramacionInicial();
     _cargarInicial();
   }
 
@@ -156,7 +209,9 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
       if (!mounted) return;
       setState(() {
-        _conjuntos = conjuntos;
+        _conjuntos = widget.embedded && seleccionado != null
+            ? [seleccionado]
+            : conjuntos;
         _supervisores = supervisores;
         _maquinariaDisponible = maquinariaDisp;
         _cargandoInicial = false;
@@ -191,11 +246,95 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
 
       _maquinariaSeleccionadaIds.clear();
       _herramientasSeleccionadas.clear();
-      _supervisorId = null;
+      if (widget.existingTask == null) {
+        _supervisorId = null;
+      }
     });
+
+    final existing = widget.existingTask;
+    if (existing != null) {
+      _operariosSeleccionadosIds
+        ..clear()
+        ..addAll(existing.operariosIds);
+      _supervisorId = existing.supervisorId;
+      final ubicacion = conjunto.ubicaciones
+          .where((u) => u.id == existing.ubicacionId)
+          .toList();
+      if (ubicacion.isNotEmpty) {
+        _ubicacionSeleccionada = ubicacion.first;
+        _elementos = _ubicacionSeleccionada!.elementosHoja;
+        final elemento = _elementos
+            .where((e) => e.id == existing.elementoId)
+            .toList();
+        if (elemento.isNotEmpty) {
+          _elementoSeleccionado = elemento.first;
+        }
+      }
+      _maquinariaSeleccionadaIds
+        ..clear()
+        ..addAll(existing.maquinariasAsignadas.map((m) => m.maquinariaId));
+      _herramientasSeleccionadas
+        ..clear()
+        ..addEntries(
+          existing.herramientasAsignadas.map(
+            (h) => MapEntry(h.herramientaId, h.cantidad),
+          ),
+        );
+    }
 
     _cargarLimiteSemana(conjunto.nit);
     _cargarHerramientasConjunto(conjunto.nit);
+  }
+
+  void _aplicarProgramacionInicial() {
+    final existing = widget.existingTask;
+    if (existing != null) {
+      _descripcionCtrl.text = existing.descripcion;
+      _duracionCtrl.text = existing.duracionMinutos.toString();
+      _observacionesCtrl.text = existing.observaciones ?? '';
+      fechaInicio = DateTime(
+        existing.fechaInicio.year,
+        existing.fechaInicio.month,
+        existing.fechaInicio.day,
+      );
+      fechaFin = DateTime(
+        existing.fechaFin.year,
+        existing.fechaFin.month,
+        existing.fechaFin.day,
+      );
+      _horaInicio = TimeOfDay(
+        hour: existing.fechaInicio.hour,
+        minute: existing.fechaInicio.minute,
+      );
+      _prioridad = existing.prioridad;
+      _supervisorId = existing.supervisorId;
+      _operariosSeleccionadosIds
+        ..clear()
+        ..addAll(existing.operariosIds);
+      _maquinariaSeleccionadaIds
+        ..clear()
+        ..addAll(existing.maquinariasAsignadas.map((m) => m.maquinariaId));
+      _herramientasSeleccionadas
+        ..clear()
+        ..addEntries(
+          existing.herramientasAsignadas.map(
+            (h) => MapEntry(h.herramientaId, h.cantidad),
+          ),
+        );
+      return;
+    }
+
+    final inicio = widget.initialStart;
+    if (inicio != null) {
+      fechaInicio = DateTime(inicio.year, inicio.month, inicio.day);
+      fechaFin = DateTime(inicio.year, inicio.month, inicio.day);
+      _horaInicio = TimeOfDay(hour: inicio.hour, minute: inicio.minute);
+    }
+
+    final duracion = widget.initialDurationMinutes;
+    if (duracion != null && duracion > 0) {
+      _duracionCtrl.text = duracion.toString();
+    }
   }
 
   Future<void> _cargarHerramientasConjunto(String conjuntoNit) async {
@@ -433,10 +572,11 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
             final filtered = _herramientasDisponibles.where((h) {
               final q = query.trim().toLowerCase();
               if (q.isEmpty) return true;
-              return [h.nombre, h.unidad, h.categoria.label]
-                  .join(' ')
-                  .toLowerCase()
-                  .contains(q);
+              return [
+                h.nombre,
+                h.unidad,
+                h.categoria.label,
+              ].join(' ').toLowerCase().contains(q);
             }).toList();
 
             return AlertDialog(
@@ -478,8 +618,9 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
                             trailing: SizedBox(
                               width: 96,
                               child: TextFormField(
-                                initialValue:
-                                    actual != null ? actual.toString() : '',
+                                initialValue: actual != null
+                                    ? actual.toString()
+                                    : '',
                                 keyboardType:
                                     const TextInputType.numberWithOptions(
                                       decimal: true,
@@ -733,11 +874,34 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
   Future<void> _onSuccess() async {
     if (!mounted) return;
 
+    if (widget.embedded) {
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            widget.existingTask == null
+                ? 'Tarea correctiva creada correctamente.'
+                : 'Tarea correctiva actualizada correctamente.',
+          ),
+        ),
+      );
+      if (widget.onCreated != null) {
+        await widget.onCreated!.call();
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+      return;
+    }
+
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Éxito'),
-        content: const Text('Tarea correctiva creada correctamente.'),
+        content: Text(
+          widget.existingTask == null
+              ? 'Tarea correctiva creada correctamente.'
+              : 'Tarea correctiva actualizada correctamente.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
@@ -748,6 +912,10 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     );
 
     if (!mounted) return;
+    if (widget.onCreated != null) {
+      await widget.onCreated!.call();
+      if (!mounted) return;
+    }
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop(true);
       return;
@@ -1596,7 +1764,7 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
     setState(() => _guardando = true);
 
     try {
-        final req = TareaRequest(
+      final req = TareaRequest(
         descripcion: _descripcionCtrl.text.trim(),
         fechaInicio: inicio,
         fechaFin: fin,
@@ -1608,19 +1776,28 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
         operariosIds: _operariosSeleccionadosIds,
         prioridad: _prioridad,
         tipo: "CORRECTIVA",
-          observaciones: _observacionesCtrl.text.trim().isEmpty
-              ? null
-              : _observacionesCtrl.text.trim(),
-          maquinariaIds: _maquinariaSeleccionadaIds,
-          herramientas: _herramientasSeleccionadas.entries
-              .map(
-                (e) => {
-                  'herramientaId': e.key,
-                  'cantidad': e.value,
-                },
-              )
-              .toList(),
+        observaciones: _observacionesCtrl.text.trim().isEmpty
+            ? null
+            : _observacionesCtrl.text.trim(),
+        maquinariaIds: _maquinariaSeleccionadaIds,
+        herramientas: _herramientasSeleccionadas.entries
+            .map((e) => {'herramientaId': e.key, 'cantidad': e.value})
+            .toList(),
+      );
+
+      if (widget.existingTask != null) {
+        final editResp = await _tareaApi.editarTareaConRespuesta(
+          widget.existingTask!.id,
+          req,
         );
+        if (!mounted) return;
+        if (editResp['ok'] == false) {
+          await _mostrarErrorBackend(editResp);
+          return;
+        }
+        await _onSuccess();
+        return;
+      }
 
       final resp = await _tareaApi.crearTarea(req);
       if (!mounted) return;
@@ -1693,12 +1870,12 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
               conjuntoId: req.conjuntoId,
               supervisorId: req.supervisorId,
               operariosIds: req.operariosIds,
-                prioridad: req.prioridad,
-                tipo: req.tipo,
-                observaciones: req.observaciones,
-                maquinariaIds: req.maquinariaIds,
-                herramientas: req.herramientas,
-              );
+              prioridad: req.prioridad,
+              tipo: req.tipo,
+              observaciones: req.observaciones,
+              maquinariaIds: req.maquinariaIds,
+              herramientas: req.herramientas,
+            );
 
             final resp2 = await _tareaApi.crearTarea(req2);
             if (!mounted) return;
@@ -2004,351 +2181,354 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
   @override
   Widget build(BuildContext context) {
     if (_cargandoInicial) {
-      return Scaffold(
-        backgroundColor: AppTheme.background,
-        appBar: AppBar(
-          backgroundColor: AppTheme.primary,
-          title: const Text(
-            "Crear tarea correctiva",
-            style: TextStyle(color: Colors.white),
-          ),
-        ),
-        body: const Center(child: CircularProgressIndicator()),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: AppTheme.primary,
-        title: const Text(
-          "Crear tarea correctiva",
-          style: TextStyle(color: Colors.white),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SectionCard(
-                title: '1. Dónde se realizará',
-                subtitle:
-                    'Selecciona el conjunto, la ubicación y el elemento antes de programar la correctiva.',
-                child: Column(
-                  children: [
-                    FormField<String>(
-                      initialValue: _conjuntoSeleccionado?.nit,
-                      validator: (v) =>
-                          v == null ? 'Seleccione un conjunto' : null,
-                      builder: (field) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SearchableSelectField<String>(
-                              label: 'Conjunto',
-                              value: field.value,
-                              prefixIcon: const Icon(Icons.apartment_rounded),
-                              searchHint: 'Buscar conjunto o NIT',
-                              options: _conjuntos
-                                  .map(
-                                    (c) => SearchableSelectOption<String>(
-                                      value: c.nit,
-                                      label: c.nombre,
-                                      subtitle: 'NIT: ${c.nit}',
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (value) {
-                                field.didChange(value);
-                                if (value == null) return;
-                                final c = _conjuntos.firstWhere(
-                                  (x) => x.nit == value,
-                                );
-                                _refrescarDatosConjunto(c);
-                              },
-                            ),
-                            if (field.hasError) ...[
-                              const SizedBox(height: 6),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                                child: Text(
-                                  field.errorText!,
-                                  style: TextStyle(
-                                    color: Theme.of(context).colorScheme.error,
-                                    fontSize: 12,
+    final form = Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SectionCard(
+            title: '1. Dónde se realizará',
+            subtitle: widget.embedded
+                ? 'Selecciona la ubicación y el elemento antes de programar la correctiva.'
+                : 'Selecciona el conjunto, la ubicación y el elemento antes de programar la correctiva.',
+            child: Column(
+              children: [
+                if (!widget.embedded) ...[
+                  FormField<String>(
+                    initialValue: _conjuntoSeleccionado?.nit,
+                    validator: (v) =>
+                        v == null ? 'Seleccione un conjunto' : null,
+                    builder: (field) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SearchableSelectField<String>(
+                            label: 'Conjunto',
+                            value: field.value,
+                            prefixIcon: const Icon(Icons.apartment_rounded),
+                            searchHint: 'Buscar conjunto o NIT',
+                            options: _conjuntos
+                                .map(
+                                  (c) => SearchableSelectOption<String>(
+                                    value: c.nit,
+                                    label: c.nombre,
+                                    subtitle: 'NIT: ${c.nit}',
                                   ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              field.didChange(value);
+                              if (value == null) return;
+                              final c = _conjuntos.firstWhere(
+                                (x) => x.nit == value,
+                              );
+                              _refrescarDatosConjunto(c);
+                            },
+                          ),
+                          if (field.hasError) ...[
+                            const SizedBox(height: 6),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              child: Text(
+                                field.errorText!,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                  fontSize: 12,
                                 ),
                               ),
-                            ],
+                            ),
                           ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<int>(
-                      initialValue: _ubicacionSeleccionada?.id,
-                      decoration: const InputDecoration(labelText: 'Ubicación'),
-                      items: _ubicaciones
-                          .map(
-                            (u) => DropdownMenuItem(
-                              value: u.id,
-                              child: Text(u.nombre),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        final u = _ubicaciones.firstWhere((x) => x.id == value);
-                        setState(() {
-                          _ubicacionSeleccionada = u;
-                          _elementos = u.elementosHoja;
-                          _elementoSeleccionado = null;
-                        });
-                      },
-                      validator: (v) =>
-                          v == null ? 'Seleccione una ubicación' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<int>(
-                      initialValue: _elementoSeleccionado?.id,
-                      decoration: const InputDecoration(labelText: 'Area final'),
-                      items: _elementos
-                          .map(
-                            (e) => DropdownMenuItem(
-                              value: e.id,
-                              child: Text(e.nombre),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        final el = _elementos.firstWhere((x) => x.id == value);
-                        setState(() => _elementoSeleccionado = el);
-                      },
-                      validator: (v) =>
-                          v == null ? 'Seleccione un area final' : null,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              SectionCard(
-                title: '2. Qué se va a hacer',
-                subtitle:
-                    'Define la descripcion, prioridad, horario y observaciones de la tarea.',
-                child: Column(
-                  children: [
-                    TextFormField(
-                      controller: _descripcionCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Descripción de la tarea',
-                      ),
-                      maxLines: 2,
-                      validator: (v) => v == null || v.trim().isEmpty
-                          ? 'Ingrese una descripción'
-                          : null,
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<int>(
-                      initialValue: _prioridad,
-                      decoration: const InputDecoration(labelText: 'Prioridad'),
-                      items: const [
-                        DropdownMenuItem(value: 1, child: Text("1 - Alta")),
-                        DropdownMenuItem(value: 2, child: Text("2 - Media")),
-                        DropdownMenuItem(value: 3, child: Text("3 - Baja")),
-                      ],
-                      onChanged: (v) => setState(() => _prioridad = v ?? 2),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: _seleccionarFechaInicio,
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: "Fecha inicio",
-                                border: OutlineInputBorder(),
-                              ),
-                              child: Text(
-                                fechaInicio == null
-                                    ? "Seleccionar"
-                                    : "${fechaInicio!.day}/${fechaInicio!.month}/${fechaInicio!.year}",
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: InkWell(
-                            onTap: _seleccionarFechaFin,
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: "Fecha fin",
-                                border: OutlineInputBorder(),
-                              ),
-                              child: Text(
-                                fechaFin == null
-                                    ? "Seleccionar"
-                                    : "${fechaFin!.day}/${fechaFin!.month}/${fechaFin!.year}",
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    InkWell(
-                      onTap: _seleccionarHoraInicio,
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: "Hora de inicio",
-                          border: OutlineInputBorder(),
-                        ),
-                        child: Text(
-                          _horaInicio == null
-                              ? "Seleccionar"
-                              : _horaInicio!.format(context),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _duracionCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: "Duración estimada (minutos)",
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) {
-                          return 'Ingrese duración en minutos';
-                        }
-                        final m = int.tryParse(v.trim());
-                        if (m == null || m <= 0) return 'Minutos inválidos';
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _observacionesCtrl,
-                      decoration: const InputDecoration(
-                        labelText: "Observaciones (opcional)",
-                      ),
-                      maxLines: 3,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              SectionCard(
-                title: '3. Quiénes la ejecutan',
-                subtitle:
-                    'Asigna operarios y, si aplica, un supervisor responsable para el seguimiento.',
-                child: Column(
-                  children: [
-                    InkWell(
-                      onTap: _mostrarSelectorOperarios,
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: "Operarios",
-                          border: OutlineInputBorder(),
-                        ),
-                        child: Text(
-                          _operariosSeleccionadosIds.isEmpty
-                              ? "Seleccionar operario(s)"
-                              : "${_operariosSeleccionadosIds.length} operario(s) seleccionado(s)",
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      initialValue: _supervisorId,
-                      decoration: const InputDecoration(
-                        labelText: 'Supervisor (opcional)',
-                      ),
-                      items: _supervisores
-                          .map((s) {
-                            final id = s.cedula.trim();
-                            if (id.isEmpty) return null;
-                            return DropdownMenuItem(
-                              value: id,
-                              child: Text(s.nombre),
-                            );
-                          })
-                          .whereType<DropdownMenuItem<String>>()
-                          .toList(),
-                      onChanged: (value) =>
-                          setState(() => _supervisorId = value),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              SectionCard(
-                title: '4. Con qué maquinaria',
-                subtitle:
-                    'Relaciona la maquinaria necesaria para evitar olvidos en la ejecucion.',
-                child: InkWell(
-                  onTap: _mostrarSelectorMaquinaria,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: "Maquinaria a prestar (opcional)",
-                      border: OutlineInputBorder(),
-                    ),
-                    child: Text(
-                      _maquinariaSeleccionadaIds.isEmpty
-                          ? "Sin maquinaria asociada"
-                          : "${_maquinariaSeleccionadaIds.length} máquina(s) seleccionada(s)",
-                    ),
+                        ],
+                      );
+                    },
                   ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              SectionCard(
-                title: '5. Con qué herramientas',
-                subtitle:
-                    'Selecciona cantidades disponibles del conjunto o de la empresa para esta correctiva.',
-                child: InkWell(
-                  onTap: _mostrarSelectorHerramientas,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Herramientas (opcional)',
-                      border: OutlineInputBorder(),
-                    ),
-                    child: Text(
-                      _herramientasSeleccionadas.isEmpty
-                          ? 'Sin herramientas asociadas'
-                          : '${_herramientasSeleccionadas.length} herramienta(s) seleccionada(s)',
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-              ElevatedButton.icon(
-                onPressed: _guardando ? null : _guardarTarea,
-                icon: _guardando
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
+                  const SizedBox(height: 16),
+                ],
+                DropdownButtonFormField<int>(
+                  initialValue: _ubicacionSeleccionada?.id,
+                  decoration: const InputDecoration(labelText: 'Ubicación'),
+                  items: _ubicaciones
+                      .map(
+                        (u) => DropdownMenuItem(
+                          value: u.id,
+                          child: Text(u.nombre),
                         ),
                       )
-                    : const Icon(Icons.save),
-                label: Text(_guardando ? "Guardando..." : "Guardar"),
-                style: AppTheme.saveButtonStyle,
-              ),
-            ],
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    final u = _ubicaciones.firstWhere((x) => x.id == value);
+                    setState(() {
+                      _ubicacionSeleccionada = u;
+                      _elementos = u.elementosHoja;
+                      _elementoSeleccionado = null;
+                    });
+                  },
+                  validator: (v) =>
+                      v == null ? 'Seleccione una ubicación' : null,
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int>(
+                  initialValue: _elementoSeleccionado?.id,
+                  decoration: const InputDecoration(labelText: 'Area final'),
+                  items: _elementos
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e.id,
+                          child: Text(e.nombre),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    final el = _elementos.firstWhere((x) => x.id == value);
+                    setState(() => _elementoSeleccionado = el);
+                  },
+                  validator: (v) =>
+                      v == null ? 'Seleccione un area final' : null,
+                ),
+              ],
+            ),
           ),
-        ),
+          const SizedBox(height: 24),
+          SectionCard(
+            title: '2. Qué se va a hacer',
+            subtitle:
+                'Define la descripcion, prioridad, horario y observaciones de la tarea.',
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: _descripcionCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Descripción de la tarea',
+                  ),
+                  maxLines: 2,
+                  validator: (v) => v == null || v.trim().isEmpty
+                      ? 'Ingrese una descripción'
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int>(
+                  initialValue: _prioridad,
+                  decoration: const InputDecoration(labelText: 'Prioridad'),
+                  items: const [
+                    DropdownMenuItem(value: 1, child: Text("1 - Alta")),
+                    DropdownMenuItem(value: 2, child: Text("2 - Media")),
+                    DropdownMenuItem(value: 3, child: Text("3 - Baja")),
+                  ],
+                  onChanged: (v) => setState(() => _prioridad = v ?? 2),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: _seleccionarFechaInicio,
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: "Fecha inicio",
+                            border: OutlineInputBorder(),
+                          ),
+                          child: Text(
+                            fechaInicio == null
+                                ? "Seleccionar"
+                                : "${fechaInicio!.day}/${fechaInicio!.month}/${fechaInicio!.year}",
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: InkWell(
+                        onTap: _seleccionarFechaFin,
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: "Fecha fin",
+                            border: OutlineInputBorder(),
+                          ),
+                          child: Text(
+                            fechaFin == null
+                                ? "Seleccionar"
+                                : "${fechaFin!.day}/${fechaFin!.month}/${fechaFin!.year}",
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                InkWell(
+                  onTap: _seleccionarHoraInicio,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: "Hora de inicio",
+                      border: OutlineInputBorder(),
+                    ),
+                    child: Text(
+                      _horaInicio == null
+                          ? "Seleccionar"
+                          : _horaInicio!.format(context),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _duracionCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: "Duración estimada (minutos)",
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Ingrese duración en minutos';
+                    }
+                    final m = int.tryParse(v.trim());
+                    if (m == null || m <= 0) return 'Minutos inválidos';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _observacionesCtrl,
+                  decoration: const InputDecoration(
+                    labelText: "Observaciones (opcional)",
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          SectionCard(
+            title: '3. Quiénes la ejecutan',
+            subtitle:
+                'Asigna operarios y, si aplica, un supervisor responsable para el seguimiento.',
+            child: Column(
+              children: [
+                InkWell(
+                  onTap: _mostrarSelectorOperarios,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: "Operarios",
+                      border: OutlineInputBorder(),
+                    ),
+                    child: Text(
+                      _operariosSeleccionadosIds.isEmpty
+                          ? "Seleccionar operario(s)"
+                          : "${_operariosSeleccionadosIds.length} operario(s) seleccionado(s)",
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: _supervisorId,
+                  decoration: const InputDecoration(
+                    labelText: 'Supervisor (opcional)',
+                  ),
+                  items: _supervisores
+                      .map((s) {
+                        final id = s.cedula.trim();
+                        if (id.isEmpty) return null;
+                        return DropdownMenuItem(
+                          value: id,
+                          child: Text(s.nombre),
+                        );
+                      })
+                      .whereType<DropdownMenuItem<String>>()
+                      .toList(),
+                  onChanged: (value) => setState(() => _supervisorId = value),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          if (widget.existingTask == null) ...[
+            SectionCard(
+              title: '4. Con qué maquinaria',
+              subtitle:
+                  'Relaciona la maquinaria necesaria para evitar olvidos en la ejecucion.',
+              child: InkWell(
+                onTap: _mostrarSelectorMaquinaria,
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: "Maquinaria a prestar (opcional)",
+                    border: OutlineInputBorder(),
+                  ),
+                  child: Text(
+                    _maquinariaSeleccionadaIds.isEmpty
+                        ? "Sin maquinaria asociada"
+                        : "${_maquinariaSeleccionadaIds.length} máquina(s) seleccionada(s)",
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SectionCard(
+              title: '5. Con qué herramientas',
+              subtitle:
+                  'Selecciona cantidades disponibles del conjunto o de la empresa para esta correctiva.',
+              child: InkWell(
+                onTap: _mostrarSelectorHerramientas,
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Herramientas (opcional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  child: Text(
+                    _herramientasSeleccionadas.isEmpty
+                        ? 'Sin herramientas asociadas'
+                        : '${_herramientasSeleccionadas.length} herramienta(s) seleccionada(s)',
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ] else
+            const SizedBox(height: 32),
+          ElevatedButton.icon(
+            onPressed: _guardando ? null : _guardarTarea,
+            icon: _guardando
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.save),
+            label: Text(
+              _guardando
+                  ? "Guardando..."
+                  : widget.existingTask == null
+                  ? "Guardar"
+                  : "Guardar cambios",
+            ),
+            style: AppTheme.saveButtonStyle,
+          ),
+          if (widget.embedded) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _guardando
+                  ? null
+                  : () => Navigator.of(context).maybePop(),
+              icon: const Icon(Icons.close_rounded),
+              label: const Text('Cancelar'),
+            ),
+          ],
+        ],
       ),
+    );
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: form,
     );
   }
 }

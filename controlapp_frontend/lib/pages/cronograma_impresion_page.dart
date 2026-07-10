@@ -9,6 +9,23 @@ import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:intl/intl.dart';
 
+class _PreviewAgendaBlock {
+  final DateTime inicio;
+  final DateTime fin;
+  final TareaModel? tarea;
+
+  const _PreviewAgendaBlock.task({
+    required this.inicio,
+    required this.fin,
+    required this.tarea,
+  });
+
+  const _PreviewAgendaBlock.gap({required this.inicio, required this.fin})
+    : tarea = null;
+
+  bool get isGap => tarea == null;
+}
+
 class CronogramaImpresionPage extends StatefulWidget {
   final String nit;
 
@@ -66,6 +83,167 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
 
   String _toYmd(DateTime d) {
     return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
+  int? _parseHoraMin(String? raw) {
+    final value = raw?.trim() ?? '';
+    if (value.isEmpty) return null;
+    final parts = value.split(':');
+    if (parts.length < 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return hour * 60 + minute;
+  }
+
+  int _ajustarHoraPosterior(int referenciaMin, int candidatoMin) {
+    var ajustado = candidatoMin;
+    while (ajustado <= referenciaMin && ajustado + (12 * 60) <= (24 * 60)) {
+      ajustado += 12 * 60;
+    }
+    return ajustado;
+  }
+
+  String _normalizarDia(String raw) {
+    var out = raw.trim().toUpperCase();
+    const replacements = {'_': '', '-': '', ' ': ''};
+    replacements.forEach((from, to) => out = out.replaceAll(from, to));
+    return out;
+  }
+
+  int? _weekdayDesdeDiaHorario(String? rawDia) {
+    if (rawDia == null) return null;
+    switch (_normalizarDia(rawDia)) {
+      case 'LUNES':
+      case 'MONDAY':
+        return DateTime.monday;
+      case 'MARTES':
+      case 'TUESDAY':
+        return DateTime.tuesday;
+      case 'MIERCOLES':
+      case 'WEDNESDAY':
+        return DateTime.wednesday;
+      case 'JUEVES':
+      case 'THURSDAY':
+        return DateTime.thursday;
+      case 'VIERNES':
+      case 'FRIDAY':
+        return DateTime.friday;
+      case 'SABADO':
+      case 'SATURDAY':
+        return DateTime.saturday;
+      case 'DOMINGO':
+      case 'SUNDAY':
+        return DateTime.sunday;
+      default:
+        return null;
+    }
+  }
+
+  HorarioConjunto? _horarioDelDia(DateTime dia) {
+    for (final horario in _horariosConjunto) {
+      if (_weekdayDesdeDiaHorario(horario.dia) == dia.weekday) {
+        return horario;
+      }
+    }
+    return null;
+  }
+
+  String _formatearDuracionDisponible(Duration duration) {
+    final horas = duration.inHours;
+    final minutos = duration.inMinutes % 60;
+    if (horas <= 0) return '$minutos min disponibles';
+    if (minutos == 0) return '$horas h disponibles';
+    return '$horas h $minutos min disponibles';
+  }
+
+  List<_PreviewAgendaBlock> _bloquesPreviewDia(
+    DateTime dia,
+    List<TareaModel> tareasDia,
+    bool esFestivo,
+    bool esFueraDePeriodo,
+  ) {
+    final bloques = tareasDia
+        .map(
+          (t) => _PreviewAgendaBlock.task(
+            inicio: t.fechaInicio.toLocal(),
+            fin: t.fechaFin.toLocal(),
+            tarea: t,
+          ),
+        )
+        .toList()
+      ..sort((a, b) => a.inicio.compareTo(b.inicio));
+
+    if (esFestivo || esFueraDePeriodo) return bloques;
+
+    final horario = _horarioDelDia(dia);
+    if (horario == null) return bloques;
+
+    final aperturaRaw = _parseHoraMin(horario.horaApertura);
+    final cierreRaw = _parseHoraMin(horario.horaCierre);
+    if (aperturaRaw == null || cierreRaw == null) return bloques;
+
+    final apertura = aperturaRaw;
+    final cierre = _ajustarHoraPosterior(aperturaRaw, cierreRaw);
+    final descansoInicioRaw = _parseHoraMin(horario.descansoInicio);
+    final descansoFinRaw = _parseHoraMin(horario.descansoFin);
+    final descansoInicio = descansoInicioRaw == null
+        ? null
+        : _ajustarHoraPosterior(apertura, descansoInicioRaw);
+    final descansoFin = descansoInicio == null || descansoFinRaw == null
+        ? null
+        : _ajustarHoraPosterior(descansoInicio, descansoFinRaw);
+
+    final segmentos = <(DateTime, DateTime)>[
+      (
+        DateTime(dia.year, dia.month, dia.day).add(Duration(minutes: apertura)),
+        DateTime(dia.year, dia.month, dia.day).add(
+          Duration(minutes: descansoInicio ?? cierre),
+        ),
+      ),
+      if (descansoInicio != null && descansoFin != null && descansoFin > descansoInicio)
+        (
+          DateTime(dia.year, dia.month, dia.day).add(Duration(minutes: descansoFin)),
+          DateTime(dia.year, dia.month, dia.day).add(Duration(minutes: cierre)),
+        ),
+    ];
+
+    for (final segmento in segmentos) {
+      final inicio = segmento.$1;
+      final fin = segmento.$2;
+      if (!fin.isAfter(inicio)) continue;
+
+      final tareasSegmento = tareasDia
+          .map(
+            (t) => (
+              tarea: t,
+              inicio: t.fechaInicio.toLocal().isAfter(inicio)
+                  ? t.fechaInicio.toLocal()
+                  : inicio,
+              fin: t.fechaFin.toLocal().isBefore(fin) ? t.fechaFin.toLocal() : fin,
+            ),
+          )
+          .where((item) => item.fin.isAfter(item.inicio))
+          .toList()
+        ..sort((a, b) => a.inicio.compareTo(b.inicio));
+
+      var cursor = inicio;
+      for (final item in tareasSegmento) {
+        if (item.inicio.isAfter(cursor)) {
+          bloques.add(_PreviewAgendaBlock.gap(inicio: cursor, fin: item.inicio));
+        }
+        if (item.fin.isAfter(cursor)) {
+          cursor = item.fin;
+        }
+      }
+      if (fin.isAfter(cursor)) {
+        bloques.add(_PreviewAgendaBlock.gap(inicio: cursor, fin: fin));
+      }
+    }
+
+    bloques.sort((a, b) => a.inicio.compareTo(b.inicio));
+    return bloques;
   }
 
   List<int> get _aniosDisponibles {
@@ -212,7 +390,9 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
     final tareasImpresion = _alcance == 'MES'
         ? _tareasOperarioMes
         : _tareasPreviewSemana;
-    if (tareasImpresion.isEmpty) {
+    final puedeImprimirHuecosSemana =
+        _alcance == 'SEMANA' && _horariosConjunto.isNotEmpty;
+    if (tareasImpresion.isEmpty && !puedeImprimirHuecosSemana) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -477,10 +657,6 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                   );
                 }).toList(),
               )
-            else if (tareas.isEmpty)
-              const Text(
-                'No hay tareas para ese operario en la semana seleccionada.',
-              )
             else
               LayoutBuilder(
                 builder: (context, constraints) {
@@ -501,6 +677,15 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                           }).toList()..sort(
                             (a, b) => a.fechaInicio.compareTo(b.fechaInicio),
                           );
+                      final esFestivo = _festivosYmd.contains(_toYmd(dia));
+                      final esFueraDePeriodo =
+                          dia.year != _anio || dia.month != _mes;
+                      final bloquesDia = _bloquesPreviewDia(
+                        dia,
+                        tareasDia,
+                        esFestivo,
+                        esFueraDePeriodo,
+                      );
 
                       return Container(
                         width: cardWidth,
@@ -509,9 +694,15 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                         ),
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
+                          color: esFueraDePeriodo
+                              ? const Color(0xFFFFEBEE)
+                              : Colors.grey.shade50,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300),
+                          border: Border.all(
+                            color: esFueraDePeriodo
+                                ? const Color(0xFFE53935)
+                                : Colors.grey.shade300,
+                          ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -524,66 +715,156 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            if (tareasDia.isEmpty)
+                            if (esFueraDePeriodo)
+                              Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFCDD2),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: const Color(0xFFE53935),
+                                  ),
+                                ),
+                                child: Text(
+                                  dia.isBefore(DateTime(_anio, _mes, 1))
+                                      ? 'Día del mes anterior'
+                                      : 'Día del mes siguiente',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFFB71C1C),
+                                  ),
+                                ),
+                              )
+                            else if (esFestivo)
+                              Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFFEBEE),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: const Color(0xFFE53935),
+                                  ),
+                                ),
+                                child: Text(
+                                  _festivoNombrePorYmd[_toYmd(dia)]?.trim().isNotEmpty == true
+                                      ? 'Festivo: ${_festivoNombrePorYmd[_toYmd(dia)]!.trim()}'
+                                      : 'Festivo - no se programan tareas',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFFB71C1C),
+                                  ),
+                                ),
+                              ),
+                            if (bloquesDia.isEmpty)
                               Text(
-                                'Sin tareas',
+                                esFestivo ? 'No se programan tareas.' : 'Sin tareas',
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: Colors.grey.shade600,
                                 ),
                               )
                             else
-                              ...tareasDia.map(
-                                (t) => Container(
+                              ...bloquesDia.map(
+                                (bloque) => Container(
                                   width: double.infinity,
                                   margin: const EdgeInsets.only(bottom: 8),
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    color: AppTheme.primary.withValues(
-                                      alpha: 0.08,
-                                    ),
+                                    color: bloque.isGap
+                                        ? const Color(0xFFFFF3E0)
+                                        : AppTheme.primary.withValues(alpha: 0.08),
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                      color: AppTheme.primary.withValues(
-                                        alpha: 0.20,
-                                      ),
+                                      color: bloque.isGap
+                                          ? const Color(0xFFFB8C00)
+                                          : AppTheme.primary.withValues(alpha: 0.20),
                                     ),
                                   ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        t.descripcion,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
+                                  child: bloque.isGap
+                                      ? Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Hueco para correctiva',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFFE65100),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              '${DateFormat('HH:mm').format(bloque.inicio)} - ${DateFormat('HH:mm').format(bloque.fin)}',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.grey.shade800,
+                                              ),
+                                            ),
+                                            Text(
+                                              _formatearDuracionDisponible(
+                                                bloque.fin.difference(bloque.inicio),
+                                              ),
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                color: Color(0xFFBF6000),
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : Builder(
+                                          builder: (context) {
+                                            final t = bloque.tarea!;
+                                            final ubicacion =
+                                                (t.ubicacionNombre ?? '').trim();
+                                            final elemento =
+                                                (t.elementoNombre ?? '').trim();
+
+                                            return Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  t.descripcion,
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 3),
+                                                Text(
+                                                  '${DateFormat('HH:mm').format(t.fechaInicio.toLocal())} - ${DateFormat('HH:mm').format(t.fechaFin.toLocal())}',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: Colors.grey.shade700,
+                                                  ),
+                                                ),
+                                                if (ubicacion.isNotEmpty)
+                                                  Text(
+                                                    'Ubicación: $ubicacion',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color: Colors.grey.shade700,
+                                                    ),
+                                                  ),
+                                                if (elemento.isNotEmpty)
+                                                  Text(
+                                                    'Elemento: $elemento',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color: Colors.grey.shade700,
+                                                    ),
+                                                  ),
+                                              ],
+                                            );
+                                          },
                                         ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '${DateFormat('HH:mm').format(t.fechaInicio.toLocal())} - ${DateFormat('HH:mm').format(t.fechaFin.toLocal())}',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: Colors.grey.shade700,
-                                        ),
-                                      ),
-                                      if ((t.ubicacionNombre ?? '')
-                                          .trim()
-                                          .isNotEmpty)
-                                        Text(
-                                          t.ubicacionNombre!.trim(),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.grey.shade700,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
                                 ),
                               ),
                           ],

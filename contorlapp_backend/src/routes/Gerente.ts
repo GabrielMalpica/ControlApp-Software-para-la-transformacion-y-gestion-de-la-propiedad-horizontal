@@ -82,17 +82,22 @@ router.delete(
 );
 
 /* Tareas */
-router.post("/tareas", authRequired, requirePermission("tareas.crear"), ctrl.asignarTarea);
+router.post(
+  "/tareas",
+  authRequired,
+  requirePermission("tareas.crear", "cronograma.correctivas_programar"),
+  ctrl.asignarTarea,
+);
 router.post(
   "/tareas/reemplazo",
   authRequired,
-  requirePermission("tareas.crear"),
+  requirePermission("tareas.crear", "cronograma.correctivas_programar"),
   ctrl.asignarTareaConReemplazo,
 );
 router.patch(
   "/tareas/:tareaId",
   authRequired,
-  requirePermission("tareas.crear"),
+  requirePermission("tareas.crear", "cronograma.correctivas_programar"),
   ctrl.editarTarea,
 );
 router.get(

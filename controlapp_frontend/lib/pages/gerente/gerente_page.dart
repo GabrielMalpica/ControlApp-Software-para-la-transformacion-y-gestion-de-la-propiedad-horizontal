@@ -39,7 +39,6 @@ import '../../service/theme.dart';
 import '../inventario_page.dart';
 import 'crear_usuario_page.dart';
 import 'lista_usuarios_page.dart';
-import '../crear_tarea_page.dart';
 import '../solicitudes_page.dart';
 import '../cronograma_page.dart';
 import '../cronograma_impresion_page.dart';
@@ -499,7 +498,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
       case _QuickAction.tareaCrear:
         if (!_requiereConjuntoOrWarn()) return;
-        await go(CrearTareaPage(nit: nit!));
+        await go(CronogramaPage(nit: nit!));
         return;
 
       case _QuickAction.solicitudInsumo:
@@ -586,10 +585,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
     final sections = <_TileSection>[
       _TileSection("Operacion diaria", [
         _Tile(
-          "Crear tarea correctiva",
+          "Programar correctiva",
           Icons.emergency_rounded,
           Colors.red,
-          () => _abrirYRecargar(CrearTareaPage(nit: nit)),
+          () => _abrirYRecargar(CronogramaPage(nit: nit)),
         ),
         _Tile("Tareas", Icons.assignment, AppTheme.green, () {
           _abrirYRecargar(TareasPage(nit: nit));

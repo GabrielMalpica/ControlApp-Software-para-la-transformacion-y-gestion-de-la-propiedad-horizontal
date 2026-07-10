@@ -3569,17 +3569,112 @@ export class GerenteService {
     const dto = EditarTareaDTO.parse(payload);
     const data: Prisma.TareaUpdateInput = {};
 
-    const tareaAntes =
-      dto.operariosIds !== undefined
-        ? await this.prisma.tarea.findUnique({
-            where: { id: tareaId },
-            select: {
-              descripcion: true,
-              conjuntoId: true,
-              operarios: { select: { id: true } },
-            },
-          })
-        : null;
+    const tareaAntes = await this.prisma.tarea.findUnique({
+      where: { id: tareaId },
+      select: {
+        id: true,
+        descripcion: true,
+        conjuntoId: true,
+        fechaInicio: true,
+        fechaFin: true,
+        duracionMinutos: true,
+        prioridad: true,
+        tipo: true,
+        ubicacionId: true,
+        elementoId: true,
+        observaciones: true,
+        supervisorId: true,
+        operarios: { select: { id: true } },
+      },
+    });
+
+    if (!tareaAntes) {
+      return {
+        ok: false,
+        reason: "TAREA_NO_ENCONTRADA",
+        message: "La tarea que intentas editar no existe.",
+      };
+    }
+
+    const mergedInicio = dto.fechaInicio ?? tareaAntes.fechaInicio;
+    const mergedFin = dto.fechaFin ?? tareaAntes.fechaFin;
+    const mergedDuracion =
+      dto.duracionMinutos ??
+      (dto.duracionHoras
+        ? Math.max(1, Math.round(dto.duracionHoras * 60))
+        : tareaAntes.duracionMinutos);
+    const mergedConjuntoId = dto.conjuntoId ?? tareaAntes.conjuntoId;
+    const mergedTipo = String(dto.tipo ?? tareaAntes.tipo ?? "CORRECTIVA").toUpperCase();
+    const mergedOperariosIds =
+      dto.operariosIds?.map((id) => id.toString()) ??
+      tareaAntes.operarios.map((o) => o.id.toString());
+
+    const duracionCalculada = mergedFin
+      ? Math.max(1, Math.round((mergedFin.getTime() - mergedInicio.getTime()) / 60000))
+      : mergedDuracion;
+    const finValidado = mergedFin ?? new Date(mergedInicio.getTime() + duracionCalculada * 60000);
+
+    if (mergedTipo === "CORRECTIVA") {
+      const noLaborable = await this.validarFechaLaborable(mergedInicio);
+      if (noLaborable) return noLaborable;
+
+      if (mergedOperariosIds.length) {
+        const disponibilidad = await validarOperariosDisponiblesEnFecha({
+          prisma: this.prisma,
+          fecha: mergedInicio,
+          operariosIds: mergedOperariosIds,
+        });
+        if (!disponibilidad.ok) {
+          return {
+            ok: false,
+            reason: "OPERARIO_NO_DISPONIBLE",
+            message: `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
+          };
+        }
+      }
+
+      if (mergedConjuntoId && mergedOperariosIds.length) {
+        const limite = await validarLimiteSemanalOperarios({
+          prisma: this.prisma,
+          conjuntoId: mergedConjuntoId,
+          operariosIds: mergedOperariosIds,
+          fechaInicio: mergedInicio,
+          duracionMinutos: duracionCalculada,
+          excluirTareaId: tareaId,
+        });
+        if (!limite.ok) {
+          return {
+            ok: false,
+            reason: "LIMITE_SEMANAL_SUPERADO",
+            message: `Los operarios ${limite.excedidos.join(", ")} superan su limite semanal con esta tarea.`,
+          };
+        }
+      }
+
+      if (mergedConjuntoId && mergedOperariosIds.length) {
+        const choqueOperario = await this.prisma.tarea.findFirst({
+          where: {
+            id: { not: tareaId },
+            conjuntoId: mergedConjuntoId,
+            borrador: false,
+            estado: { notIn: ESTADOS_NO_BLOQUEAN_AGENDA as any },
+            fechaInicio: { lt: finValidado },
+            fechaFin: { gt: mergedInicio },
+            operarios: { some: { id: { in: mergedOperariosIds } } },
+          },
+          select: { id: true },
+        });
+
+        if (choqueOperario) {
+          return {
+            ok: false,
+            reason: "HAY_SOLAPE_CON_TAREAS_EXISTENTES",
+            message:
+              "Ese horario ya esta ocupado por otra tarea del operario seleccionado.",
+          };
+        }
+      }
+    }
 
     if (dto.descripcion !== undefined) data.descripcion = dto.descripcion;
     if (dto.fechaInicio !== undefined)
@@ -3587,12 +3682,15 @@ export class GerenteService {
     if (dto.fechaFin !== undefined) data.fechaFin = dto.fechaFin as any;
     if (dto.duracionMinutos !== undefined)
       data.duracionMinutos = dto.duracionMinutos;
+    if (dto.prioridad !== undefined) data.prioridad = dto.prioridad;
+    if (dto.tipo !== undefined) data.tipo = dto.tipo as any;
     if (dto.estado !== undefined) data.estado = dto.estado as any;
     if (dto.evidencias !== undefined) data.evidencias = dto.evidencias as any;
     if (dto.insumosUsados !== undefined)
       data.insumosUsados = dto.insumosUsados as any;
     if (dto.observacionesRechazo !== undefined)
       data.observacionesRechazo = dto.observacionesRechazo;
+    if (dto.observaciones !== undefined) data.observaciones = dto.observaciones;
 
     // supervisorId ahora se guarda como String en la relaciÃƒÂ³n
     if (dto.supervisorId !== undefined) {
@@ -3656,7 +3754,7 @@ export class GerenteService {
       }
     }
 
-    return updated;
+    return { ok: true, tarea: updated };
   }
 
   async listarTareasPorConjunto(conjuntoId: string) {

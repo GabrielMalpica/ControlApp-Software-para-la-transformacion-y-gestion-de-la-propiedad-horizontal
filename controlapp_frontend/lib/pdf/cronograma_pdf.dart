@@ -168,6 +168,38 @@ class _TaskPlacement {
   });
 }
 
+class _AgendaBlockLite {
+  final int startMin;
+  final int endMin;
+  final _TareaLite? tarea;
+
+  const _AgendaBlockLite.task(this.tarea, this.startMin, this.endMin)
+    : assert(tarea != null);
+
+  const _AgendaBlockLite.gap({required this.startMin, required this.endMin})
+    : tarea = null;
+
+  bool get isGap => tarea == null;
+}
+
+class _DayAgendaLite {
+  final DateTime dia;
+  final bool esFestivo;
+  final bool esFueraDePeriodo;
+  final bool esMesAnterior;
+  final String? festivoNombre;
+  final List<_AgendaBlockLite> bloques;
+
+  const _DayAgendaLite({
+    required this.dia,
+    required this.esFestivo,
+    required this.esFueraDePeriodo,
+    required this.esMesAnterior,
+    required this.festivoNombre,
+    required this.bloques,
+  });
+}
+
 Future<void> imprimirCronogramaOperario(Map<String, dynamic> data) async {
   final fontRegular = pw.Font.ttf(
     await rootBundle.load('assets/fonts/Roboto-Regular.ttf'),
@@ -220,6 +252,10 @@ Future<void> imprimirCronogramaOperario(Map<String, dynamic> data) async {
           .map(_TareaLite.fromJson)
           .toList()
         ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+  final horarios = ((data['horariosConjunto'] as List?) ?? const [])
+      .map((e) => e is Map ? _HorarioLite.tryParse(e.cast<String, dynamic>()) : null)
+      .whereType<_HorarioLite>()
+      .toList();
   final festivos = ((data['festivos'] as List?) ?? const [])
       .map((e) => e.toString())
       .toSet();
@@ -246,27 +282,43 @@ Future<void> imprimirCronogramaOperario(Map<String, dynamic> data) async {
       return !fecha.isBefore(currentWeekStart) &&
           !fecha.isAfter(currentWeekEnd);
     }).toList();
-
-    doc.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(10),
-        theme: theme,
-        build: (context) => _buildWeeklyCronogramaPage(
-          logoImage: logoImage,
-          conjunto: conjunto,
-          operario: operario,
-          mesAnioTxt: mesAnioTxt,
-          alcance: alcance,
-          semanaDelMes: weekNumber,
-          weekStart: currentWeekStart,
-          weekEnd: currentWeekEnd,
-          tareas: tareasSemana,
-          festivos: festivos,
-          festivoNombrePorYmd: festivoNombrePorYmd,
-        ),
-      ),
+    final agendaSemanal = _buildWeekAgenda(
+      tareas: tareasSemana,
+      horarios: horarios,
+      weekStart: currentWeekStart,
+      periodoAnio: anio,
+      periodoMes: mes,
+      festivos: festivos,
+      festivoNombrePorYmd: festivoNombrePorYmd,
     );
+    final pageCount = _weeklyPageCount(agendaSemanal);
+
+    for (var pageIndex = 0; pageIndex < pageCount; pageIndex++) {
+      final isLastPage = pageIndex == pageCount - 1;
+      doc.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4.landscape,
+          margin: const pw.EdgeInsets.fromLTRB(8, 6, 8, 8),
+          theme: theme,
+          build: (context) => _buildWeeklyCronogramaPage(
+            logoImage: logoImage,
+            conjunto: conjunto,
+            operario: operario,
+            mesAnioTxt: mesAnioTxt,
+            periodoAnio: anio,
+            periodoMes: mes,
+            alcance: alcance,
+            semanaDelMes: weekNumber,
+            weekStart: currentWeekStart,
+            weekEnd: currentWeekEnd,
+            agendaSemanal: agendaSemanal,
+            pageIndex: pageIndex,
+            totalPages: pageCount,
+            showSignature: isLastPage,
+          ),
+        ),
+      );
+    }
   }
 
   final Uint8List bytes = await doc.save();
@@ -302,13 +354,16 @@ pw.Widget _buildWeeklyCronogramaPage({
   required String conjunto,
   required String operario,
   required String mesAnioTxt,
+  required int periodoAnio,
+  required int periodoMes,
   required String alcance,
   required int semanaDelMes,
   required DateTime weekStart,
   required DateTime weekEnd,
-  required List<_TareaLite> tareas,
-  required Set<String> festivos,
-  required Map<String, String> festivoNombrePorYmd,
+  required List<_DayAgendaLite> agendaSemanal,
+  required int pageIndex,
+  required int totalPages,
+  required bool showSignature,
 }) {
   return pw.Column(
     crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -322,18 +377,20 @@ pw.Widget _buildWeeklyCronogramaPage({
         semanaDelMes: semanaDelMes,
         weekStart: weekStart,
         weekEnd: weekEnd,
+        pageIndex: pageIndex,
+        totalPages: totalPages,
       ),
-      pw.SizedBox(height: 10),
+      pw.SizedBox(height: 4),
       pw.Expanded(
         child: _buildPreviewLikePdf(
-          tareas: tareas,
-          weekStart: weekStart,
-          festivos: festivos,
-          festivoNombrePorYmd: festivoNombrePorYmd,
+          agendaSemanal: agendaSemanal,
+          pageIndex: pageIndex,
         ),
       ),
-      pw.SizedBox(height: 12),
-      _buildSignatureRow(),
+      if (showSignature) ...[
+        pw.SizedBox(height: 6),
+        _buildSignatureRow(),
+      ],
     ],
   );
 }
@@ -347,6 +404,8 @@ pw.Widget _buildCronogramaHeader({
   required int semanaDelMes,
   required DateTime weekStart,
   required DateTime weekEnd,
+  required int pageIndex,
+  required int totalPages,
 }) {
   final rangoSemana =
       '${DateFormat('dd/MM').format(weekStart)} - ${DateFormat('dd/MM').format(weekEnd)}';
@@ -355,8 +414,8 @@ pw.Widget _buildCronogramaHeader({
       : 'Cronograma de $mesAnioTxt - Semana $semanaDelMes';
 
   return pw.Container(
-    margin: const pw.EdgeInsets.only(bottom: 14),
-    padding: const pw.EdgeInsets.only(bottom: 10),
+    margin: const pw.EdgeInsets.only(bottom: 4),
+    padding: const pw.EdgeInsets.only(bottom: 4),
     decoration: const pw.BoxDecoration(
       border: pw.Border(
         bottom: pw.BorderSide(color: PdfColors.grey400, width: 0.8),
@@ -383,6 +442,13 @@ pw.Widget _buildCronogramaHeader({
                 'Operario: $operario',
                 style: const pw.TextStyle(fontSize: 10),
               ),
+              if (totalPages > 1) ...[
+                pw.SizedBox(height: 2),
+                pw.Text(
+                  'Parte ${pageIndex + 1} de $totalPages',
+                  style: const pw.TextStyle(fontSize: 9),
+                ),
+              ],
             ],
           ),
         ),
@@ -422,53 +488,72 @@ Future<Uint8List> _loadCronogramaLogoBytes() async {
 }
 
 pw.Widget _buildPreviewLikePdf({
-  required List<_TareaLite> tareas,
-  required DateTime weekStart,
-  required Set<String> festivos,
-  required Map<String, String> festivoNombrePorYmd,
+  required List<_DayAgendaLite> agendaSemanal,
+  required int pageIndex,
 }) {
-  final dias = List.generate(6, (i) => weekStart.add(Duration(days: i)));
-  final maxTareasEnUnDia = dias
-      .map(
-        (dia) => tareas.where((t) {
-          final d = t.fechaInicio.toLocal();
-          return d.year == dia.year && d.month == dia.month && d.day == dia.day;
-        }).length,
-      )
+  final bloquesMaximosPorDiaSemana = agendaSemanal
+      .map((dia) => dia.bloques.length)
       .fold<int>(0, math.max);
+  final bloquesTotalesSemana = agendaSemanal.fold<int>(
+    0,
+    (acc, dia) => acc + dia.bloques.length,
+  );
 
-  final veryDense = maxTareasEnUnDia >= 10;
-  final compact = maxTareasEnUnDia >= 7;
-  final dayPadding = veryDense ? 4.0 : (compact ? 6.0 : 8.0);
-  final taskPadding = veryDense ? 3.0 : (compact ? 4.0 : 6.0);
-  final titleFont = veryDense ? 7.0 : (compact ? 8.0 : 9.0);
-  final bodyFont = veryDense ? 6.3 : (compact ? 7.0 : 8.0);
-  final blockSpacing = veryDense ? 3.0 : 6.0;
-  final lineSpacing = veryDense ? 1.0 : 2.0;
+  final sparse =
+      bloquesMaximosPorDiaSemana <= 2 && bloquesTotalesSemana <= 10;
+  final medium =
+      !sparse && bloquesMaximosPorDiaSemana <= 3 && bloquesTotalesSemana <= 16;
+  final veryDense = bloquesMaximosPorDiaSemana >= 6;
+  final compact = !sparse && !medium && bloquesMaximosPorDiaSemana >= 4;
+  final dayPadding = (sparse
+          ? 8.0
+          : (medium ? 6.0 : (veryDense ? 3.0 : (compact ? 4.0 : 6.0)))) *
+      1.38;
+  final taskPadding = (sparse
+          ? 6.0
+          : (medium ? 5.0 : (veryDense ? 2.0 : (compact ? 3.0 : 4.0)))) *
+      1.38;
+  final titleFont = (sparse
+          ? 9.2
+          : (medium ? 8.4 : (veryDense ? 6.4 : (compact ? 7.2 : 8.0)))) *
+      1.38;
+  final bodyFont = (sparse
+          ? 8.2
+          : (medium ? 7.4 : (veryDense ? 5.8 : (compact ? 6.4 : 7.0)))) *
+      1.38;
+  final blockSpacing = (sparse
+          ? 8.0
+          : (medium ? 6.0 : (veryDense ? 2.0 : 4.0))) *
+      1.38;
+  final lineSpacing = (sparse ? 2.0 : 1.0) * 1.38;
 
   return pw.Row(
     crossAxisAlignment: pw.CrossAxisAlignment.start,
-    children: dias.asMap().entries.map((entry) {
-      final dia = entry.value;
-      final ymd = _toYmd(dia);
-      final esFestivo = festivos.contains(ymd);
-      final festivoNombre = festivoNombrePorYmd[ymd]?.trim();
-      final tareasDia = tareas.where((t) {
-        final d = t.fechaInicio.toLocal();
-        return d.year == dia.year && d.month == dia.month && d.day == dia.day;
-      }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+    children: agendaSemanal.asMap().entries.map((entry) {
+      final diaAgenda = entry.value;
+      final dia = diaAgenda.dia;
+      final esFestivo = diaAgenda.esFestivo;
+      final esFueraDePeriodo = diaAgenda.esFueraDePeriodo;
+      final festivoNombre = diaAgenda.festivoNombre;
+      final bloquesDia = _sliceAgendaBlocks(diaAgenda.bloques, pageIndex);
 
       return pw.Expanded(
         child: pw.Container(
           margin: pw.EdgeInsets.only(
-            right: entry.key == dias.length - 1 ? 0 : 8,
+            right: entry.key == agendaSemanal.length - 1 ? 0 : 8,
           ),
           padding: pw.EdgeInsets.all(dayPadding),
           decoration: pw.BoxDecoration(
-            color: esFestivo ? PdfColor.fromHex('#FFEBEE') : PdfColors.grey100,
+            color: esFueraDePeriodo
+                ? PdfColor.fromHex('#FFEBEE')
+                : esFestivo
+                ? PdfColor.fromHex('#FFEBEE')
+                : PdfColors.grey100,
             borderRadius: pw.BorderRadius.circular(10),
             border: pw.Border.all(
-              color: esFestivo
+              color: esFueraDePeriodo
+                  ? PdfColor.fromHex('#E53935')
+                  : esFestivo
                   ? PdfColor.fromHex('#E53935')
                   : PdfColors.grey400,
               width: 0.8,
@@ -480,14 +565,26 @@ pw.Widget _buildPreviewLikePdf({
               pw.Text(
                 DateFormat('EEEE dd/MM', 'es').format(dia),
                 style: pw.TextStyle(
-                  fontSize: compact ? 9 : 10,
+                  fontSize: compact ? 8 : 9,
                   fontWeight: pw.FontWeight.bold,
-                  color: esFestivo
+                  color: esFueraDePeriodo || esFestivo
                       ? PdfColor.fromHex('#B71C1C')
                       : PdfColors.black,
                 ),
               ),
-              if (esFestivo) ...[
+              if (esFueraDePeriodo) ...[
+                pw.SizedBox(height: lineSpacing),
+                pw.Text(
+                  diaAgenda.esMesAnterior
+                      ? 'Dia del mes anterior'
+                      : 'Dia del mes siguiente',
+                  style: pw.TextStyle(
+                    fontSize: bodyFont,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#B71C1C'),
+                  ),
+                ),
+              ] else if (esFestivo) ...[
                 pw.SizedBox(height: lineSpacing),
                 pw.Text(
                   festivoNombre?.isNotEmpty == true
@@ -501,7 +598,7 @@ pw.Widget _buildPreviewLikePdf({
                 ),
               ],
               pw.SizedBox(height: blockSpacing),
-              if (tareasDia.isEmpty)
+              if (bloquesDia.isEmpty)
                 pw.Text(
                   esFestivo ? 'No se programan tareas.' : 'Sin tareas',
                   style: pw.TextStyle(
@@ -512,13 +609,48 @@ pw.Widget _buildPreviewLikePdf({
                   ),
                 )
               else
-                ...tareasDia.map((t) {
+                ...bloquesDia.map((bloque) {
+                  if (bloque.isGap) {
+                    final duracion = _fmtDuracionRango(bloque.startMin, bloque.endMin);
+                    return pw.Container(
+                      width: double.infinity,
+                      margin: pw.EdgeInsets.only(bottom: blockSpacing),
+                      padding: pw.EdgeInsets.all(taskPadding),
+                      decoration: pw.BoxDecoration(
+                        color: PdfColor.fromHex('#FFF3E0'),
+                        borderRadius: pw.BorderRadius.circular(8),
+                        border: pw.Border.all(
+                          color: PdfColor.fromHex('#FB8C00'),
+                          width: 0.9,
+                        ),
+                      ),
+                      child: pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+                        children: [
+                          pw.Text(
+                            'Hueco para correctiva',
+                            style: pw.TextStyle(
+                              fontSize: sparse ? titleFont : bodyFont - 0.2,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColor.fromHex('#E65100'),
+                            ),
+                          ),
+                          pw.SizedBox(height: lineSpacing),
+                          pw.Text(
+                            '${_fmtHHmmFromMinutes(bloque.startMin)} - ${_fmtHHmmFromMinutes(bloque.endMin)}  |  $duracion',
+                            style: pw.TextStyle(
+                              fontSize: sparse ? bodyFont : bodyFont - 0.3,
+                              color: PdfColor.fromHex('#BF6000'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  final t = bloque.tarea!;
                   final ubic = (t.ubicacionNombre ?? '').trim();
                   final elem = (t.elementoNombre ?? '').trim();
-                  final area = [
-                    if (ubic.isNotEmpty) ubic,
-                    if (elem.isNotEmpty) elem,
-                  ].join(' - ');
 
                   return pw.Container(
                     width: double.infinity,
@@ -539,7 +671,6 @@ pw.Widget _buildPreviewLikePdf({
                           t.descripcion.trim().isEmpty
                               ? 'Sin descripción'
                               : t.descripcion.trim(),
-                          maxLines: veryDense ? 1 : 2,
                           style: pw.TextStyle(
                             fontSize: titleFont,
                             fontWeight: pw.FontWeight.bold,
@@ -550,11 +681,17 @@ pw.Widget _buildPreviewLikePdf({
                           '${DateFormat('HH:mm').format(t.fechaInicio)} - ${DateFormat('HH:mm').format(t.fechaFin)}',
                           style: pw.TextStyle(fontSize: bodyFont),
                         ),
-                        if (area.isNotEmpty) ...[
+                        if (ubic.isNotEmpty) ...[
                           pw.SizedBox(height: lineSpacing),
                           pw.Text(
-                            area,
-                            maxLines: veryDense ? 1 : 2,
+                            'Ubicación: $ubic',
+                            style: pw.TextStyle(fontSize: bodyFont),
+                          ),
+                        ],
+                        if (elem.isNotEmpty) ...[
+                          pw.SizedBox(height: lineSpacing),
+                          pw.Text(
+                            'Elemento: $elem',
                             style: pw.TextStyle(fontSize: bodyFont),
                           ),
                         ],
@@ -568,6 +705,146 @@ pw.Widget _buildPreviewLikePdf({
       );
     }).toList(),
   );
+}
+
+const int _maxAgendaBlocksPerPage = 5;
+
+List<_DayAgendaLite> _buildWeekAgenda({
+  required List<_TareaLite> tareas,
+  required List<_HorarioLite> horarios,
+  required DateTime weekStart,
+  required int periodoAnio,
+  required int periodoMes,
+  required Set<String> festivos,
+  required Map<String, String> festivoNombrePorYmd,
+}) {
+  final dias = List.generate(6, (i) => weekStart.add(Duration(days: i)));
+  return dias.map((dia) {
+    final ymd = _toYmd(dia);
+    final esFestivo = festivos.contains(ymd);
+    final esFueraDePeriodo = dia.year != periodoAnio || dia.month != periodoMes;
+    final tareasDia = tareas.where((t) {
+      final d = t.fechaInicio.toLocal();
+      return d.year == dia.year && d.month == dia.month && d.day == dia.day;
+    }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+
+    return _DayAgendaLite(
+      dia: dia,
+      esFestivo: esFestivo,
+      esFueraDePeriodo: esFueraDePeriodo,
+      esMesAnterior: dia.isBefore(DateTime(periodoAnio, periodoMes, 1)),
+      festivoNombre: festivoNombrePorYmd[ymd]?.trim(),
+      bloques: _buildAgendaBlocksLite(
+        dia: dia,
+        tareasDia: tareasDia,
+        horarios: horarios,
+        esFestivo: esFestivo,
+        esFueraDePeriodo: esFueraDePeriodo,
+      ),
+    );
+  }).toList();
+}
+
+int _weeklyPageCount(List<_DayAgendaLite> agendaSemanal) {
+  final maxBlocks = agendaSemanal
+      .map((dia) => dia.bloques.length)
+      .fold<int>(0, math.max);
+  return math.max(1, (maxBlocks / _maxAgendaBlocksPerPage).ceil());
+}
+
+List<_AgendaBlockLite> _sliceAgendaBlocks(
+  List<_AgendaBlockLite> bloques,
+  int pageIndex,
+) {
+  final start = pageIndex * _maxAgendaBlocksPerPage;
+  if (start >= bloques.length) return const [];
+  final end = math.min(bloques.length, start + _maxAgendaBlocksPerPage);
+  return bloques.sublist(start, end);
+}
+
+List<_AgendaBlockLite> _buildAgendaBlocksLite({
+  required DateTime dia,
+  required List<_TareaLite> tareasDia,
+  required List<_HorarioLite> horarios,
+  required bool esFestivo,
+  required bool esFueraDePeriodo,
+}) {
+  final bloques = tareasDia
+      .map(
+        (t) => _AgendaBlockLite.task(
+          t,
+          _minutesOfDay(t.fechaInicio),
+          math.max(_minutesOfDay(t.fechaInicio) + 1, _minutesOfDay(t.fechaFin)),
+        ),
+      )
+      .toList();
+
+  if (esFestivo || esFueraDePeriodo) {
+    bloques.sort((a, b) => a.startMin.compareTo(b.startMin));
+    return bloques;
+  }
+
+  _HorarioLite? horario;
+  for (final item in horarios) {
+    if (item.weekday == dia.weekday) {
+      horario = item;
+      break;
+    }
+  }
+  if (horario == null) {
+    bloques.sort((a, b) => a.startMin.compareTo(b.startMin));
+    return bloques;
+  }
+
+  final segmentos = <(int, int)>[
+    (horario.aperturaMin, horario.descansoInicioMin ?? horario.cierreMin),
+    if (horario.descansoInicioMin != null && horario.descansoFinMin != null)
+      (horario.descansoFinMin!, horario.cierreMin),
+  ];
+
+  for (final segmento in segmentos) {
+    final inicio = segmento.$1;
+    final fin = segmento.$2;
+    if (fin <= inicio) continue;
+
+    final tareasSegmento = tareasDia
+        .map(
+          (t) => (
+            t: t,
+            inicio: math.max(_minutesOfDay(t.fechaInicio), inicio),
+            fin: math.min(
+              math.max(_minutesOfDay(t.fechaInicio) + 1, _minutesOfDay(t.fechaFin)),
+              fin,
+            ),
+          ),
+        )
+        .where((item) => item.fin > item.inicio)
+        .toList()
+      ..sort((a, b) => a.inicio.compareTo(b.inicio));
+
+    var cursor = inicio;
+    for (final item in tareasSegmento) {
+      if (item.inicio > cursor) {
+        bloques.add(_AgendaBlockLite.gap(startMin: cursor, endMin: item.inicio));
+      }
+      cursor = math.max(cursor, item.fin);
+    }
+    if (cursor < fin) {
+      bloques.add(_AgendaBlockLite.gap(startMin: cursor, endMin: fin));
+    }
+  }
+
+  bloques.sort((a, b) => a.startMin.compareTo(b.startMin));
+  return bloques;
+}
+
+String _fmtDuracionRango(int inicioMin, int finMin) {
+  final total = math.max(0, finMin - inicioMin);
+  final horas = total ~/ 60;
+  final minutos = total % 60;
+  if (horas <= 0) return '$minutos min disponibles';
+  if (minutos == 0) return '$horas h disponibles';
+  return '$horas h $minutos min disponibles';
 }
 
 PdfColor _pdfTaskColor(_TareaLite tarea) {

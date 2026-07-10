@@ -41,9 +41,9 @@ router.get("/compromisos", auth_middleware_1.authRequired, (0, permission_middle
 router.patch("/compromisos/:id", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("compromisos.gestionar"), compromisosCtrl.actualizar);
 router.delete("/compromisos/:id", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("compromisos.gestionar"), compromisosCtrl.eliminar);
 /* Tareas */
-router.post("/tareas", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("tareas.crear"), ctrl.asignarTarea);
-router.post("/tareas/reemplazo", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("tareas.crear"), ctrl.asignarTareaConReemplazo);
-router.patch("/tareas/:tareaId", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("tareas.crear"), ctrl.editarTarea);
+router.post("/tareas", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("tareas.crear", "cronograma.correctivas_programar"), ctrl.asignarTarea);
+router.post("/tareas/reemplazo", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("tareas.crear", "cronograma.correctivas_programar"), ctrl.asignarTareaConReemplazo);
+router.patch("/tareas/:tareaId", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("tareas.crear", "cronograma.correctivas_programar"), ctrl.editarTarea);
 router.get("/conjuntos/:conjuntoId/tareas", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("tareas.ver"), ctrl.listarTareasPorConjunto);
 /* Eliminaciones con reglas */
 router.delete("/administradores/:adminId", ctrl.eliminarAdministrador);

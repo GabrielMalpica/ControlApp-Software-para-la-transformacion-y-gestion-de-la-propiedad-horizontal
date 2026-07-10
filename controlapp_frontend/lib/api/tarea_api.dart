@@ -125,6 +125,27 @@ class TareaApi {
     }
   }
 
+  Future<Map<String, dynamic>> editarTareaConRespuesta(
+    int id,
+    TareaRequest req,
+  ) async {
+    final resp = await _client.patch(
+      '${AppConstants.gerenteBase}/tareas/$id',
+      body: req.toJson(),
+    );
+
+    Map<String, dynamic> data = {};
+    if (resp.body.isNotEmpty) {
+      final decoded = jsonDecode(resp.body);
+      if (decoded is Map<String, dynamic>) data = decoded;
+    }
+
+    if (data.containsKey('ok')) return data;
+    if (resp.statusCode == 200) return data;
+
+    throw Exception('Error al editar tarea: ${resp.body}');
+  }
+
   Future<void> eliminarTarea(int id) async {
     final resp = await _client.delete('${AppConstants.gerenteBase}/tareas/$id');
 

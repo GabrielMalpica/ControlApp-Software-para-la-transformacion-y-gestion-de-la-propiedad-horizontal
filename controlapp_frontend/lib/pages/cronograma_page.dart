@@ -12,6 +12,7 @@ import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
 
 import '../api/cronograma_api.dart';
+import '../api/tarea_api.dart';
 import '../model/tarea_model.dart';
 import '../service/app_error.dart';
 import '../service/permission_service.dart';
@@ -21,10 +22,14 @@ import '../service/theme.dart';
 import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
 import '../widgets/section_card.dart';
+import 'crear_tarea_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
 enum _VistaCronograma { mensual, semanal, informe }
+
+final ValueNotifier<bool> _weekCorrectivaDragActiveNotifier =
+    ValueNotifier<bool>(false);
 
 class CronogramaPage extends StatefulWidget {
   final String nit;
@@ -44,6 +49,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   final _cronogramaApi = CronogramaApi();
   final _festivoApi = FestivoApi();
   final _conjuntoApi = ConjuntoApi();
+  final _tareaApi = TareaApi();
   final ScrollController _mensualHCtrl = ScrollController();
 
   // ✅ para cerrar desde cronograma
@@ -116,6 +122,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
   bool get _canViewCronograma =>
       _rolActual == 'gerente' ||
       PermissionService.instance.can('cronograma.ver');
+
+  bool get _canScheduleCorrectivasInCronograma =>
+      !widget.soloLectura &&
+      (_rolActual == 'gerente' ||
+          PermissionService.instance.can('cronograma.correctivas_programar'));
 
   @override
   void initState() {
@@ -538,9 +549,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   bool _tareaTieneOperario(TareaModel t, String nombreOperario) {
     final buscado = nombreOperario.trim().toLowerCase();
-    return _nombresOperarios(t).any(
-      (nombre) => nombre.trim().toLowerCase() == buscado,
-    );
+    return _nombresOperarios(
+      t,
+    ).any((nombre) => nombre.trim().toLowerCase() == buscado);
   }
 
   List<TareaModel> _tareasSemanaResumenOperarios(DateTime semanaBase) {
@@ -710,16 +721,212 @@ class _CronogramaPageState extends State<CronogramaPage> {
     }
   }
 
+  Future<void> _abrirProgramarCorrectivaModal(DateTime inicio) async {
+    if (!_canScheduleCorrectivasInCronograma || !mounted) return;
+
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (modalContext) {
+        final keyboardBottom = MediaQuery.of(modalContext).viewInsets.bottom;
+        final height = MediaQuery.of(modalContext).size.height;
+        return Padding(
+          padding: EdgeInsets.only(bottom: keyboardBottom),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 980,
+                maxHeight: height * 0.94,
+              ),
+              child: Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFFDECEC),
+                        border: Border(
+                          bottom: BorderSide(color: Color(0xFFF6C8C8)),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Nueva correctiva en cronograma',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFFA61E1E),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Inicio sugerido: ${DateFormat("EEEE d MMMM, HH:mm", "es").format(inicio)}',
+                                  style: TextStyle(
+                                    color: Colors.red.shade900,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Cerrar',
+                            onPressed: () => Navigator.of(modalContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: CorrectivaSchedulerForm(
+                        nit: widget.nit,
+                        embedded: true,
+                        initialStart: inicio,
+                        initialDurationMinutes: 60,
+                        onCreated: _cargarDatos,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _abrirEditarCorrectivaModal(TareaModel tarea) async {
+    if (!_canScheduleCorrectivasInCronograma || !mounted) return;
+
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (modalContext) {
+        final keyboardBottom = MediaQuery.of(modalContext).viewInsets.bottom;
+        final height = MediaQuery.of(modalContext).size.height;
+        return Padding(
+          padding: EdgeInsets.only(bottom: keyboardBottom),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 980,
+                maxHeight: height * 0.94,
+              ),
+              child: Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFFDECEC),
+                        border: Border(
+                          bottom: BorderSide(color: Color(0xFFF6C8C8)),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Editar correctiva',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFFA61E1E),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Cerrar',
+                            onPressed: () => Navigator.of(modalContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: CorrectivaSchedulerForm(
+                        nit: widget.nit,
+                        embedded: true,
+                        existingTask: tarea,
+                        onCreated: _cargarDatos,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _moverCorrectivaDesdeCronograma({
+    required TareaModel tarea,
+    required DateTime nuevoInicio,
+    required DateTime nuevoFin,
+  }) async {
+    final req = TareaRequest(
+      descripcion: tarea.descripcion,
+      fechaInicio: nuevoInicio,
+      fechaFin: nuevoFin,
+      duracionMinutos: nuevoFin.difference(nuevoInicio).inMinutes,
+      prioridad: tarea.prioridad,
+      tipo: 'CORRECTIVA',
+      ubicacionId: tarea.ubicacionId,
+      elementoId: tarea.elementoId,
+      conjuntoId: tarea.conjuntoId ?? widget.nit,
+      supervisorId: tarea.supervisorId,
+      operariosIds: tarea.operariosIds,
+      observaciones: tarea.observaciones,
+    );
+
+    final resp = await _tareaApi.editarTareaConRespuesta(tarea.id, req);
+    if (resp['ok'] == false) {
+      throw Exception(
+        (resp['message'] ?? 'No se pudo mover la correctiva.').toString(),
+      );
+    }
+
+    if (!mounted) return;
+    await _cargarDatos();
+    if (!mounted) return;
+    AppFeedback.showFromSnackBar(
+      context,
+      const SnackBar(content: Text('Correctiva reprogramada correctamente.')),
+    );
+  }
+
   Future<void> _eliminarCronogramaPublicado() async {
     if (!_puedeEliminarCronogramaPublicado) return;
 
     final ok = await showDialog<bool>(
       context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Borrar cronograma publicado'),
-          content: Text(
+      builder: (_) => AlertDialog(
+        title: const Text('Borrar cronograma publicado'),
+        content: Text(
           '¿Seguro que deseas borrar las tareas publicadas de ${DateFormat.MMMM('es').format(_inicioMes)} de $_anioActual para el conjunto ${widget.nit}? Esta accion no se puede deshacer.',
-          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -2048,6 +2255,24 @@ class _CronogramaPageState extends State<CronogramaPage> {
                                   ),
                                 ),
                               ],
+                              if ((t.tipo ?? '').trim().toUpperCase() ==
+                                      'CORRECTIVA' &&
+                                  _canScheduleCorrectivasInCronograma) ...[
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () async {
+                                      Navigator.pop(context);
+                                      await _abrirEditarCorrectivaModal(t);
+                                    },
+                                    icon: const Icon(
+                                      Icons.edit_calendar_rounded,
+                                    ),
+                                    label: const Text('Editar correctiva'),
+                                  ),
+                                ),
+                              ],
                               const SizedBox(height: 16),
                             ],
                           ),
@@ -2919,6 +3144,12 @@ class _CronogramaPageState extends State<CronogramaPage> {
               esFestivo: _esFestivo,
               nombreFestivo: _nombreFestivo,
               onTapTarea: (t) => _mostrarDetalleTarea(t, context),
+              onTapEmptySlot: _canScheduleCorrectivasInCronograma
+                  ? _abrirProgramarCorrectivaModal
+                  : null,
+              onMoveCorrectiva: _canScheduleCorrectivasInCronograma
+                  ? _moverCorrectivaDesdeCronograma
+                  : null,
             ),
           ),
         ],
@@ -2943,6 +3174,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
               'Tareas semana: ${tareas.length}',
               'Tareas mes: ${_tareasFiltradas.length}',
               _resumenHorario,
+              if (_canScheduleCorrectivasInCronograma)
+                'Clic en una franja libre para programar correctivas',
             ],
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -2976,6 +3209,12 @@ class _CronogramaPageState extends State<CronogramaPage> {
             esFestivo: _esFestivo,
             nombreFestivo: _nombreFestivo,
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
+            onTapEmptySlot: _canScheduleCorrectivasInCronograma
+                ? _abrirProgramarCorrectivaModal
+                : null,
+            onMoveCorrectiva: _canScheduleCorrectivasInCronograma
+                ? _moverCorrectivaDesdeCronograma
+                : null,
           ),
         ),
         const SizedBox(width: 10),
@@ -3286,6 +3525,13 @@ class _WeekScheduleView extends StatefulWidget {
   final bool Function(DateTime d) esFestivo;
   final String? Function(DateTime d) nombreFestivo;
   final void Function(TareaModel t) onTapTarea;
+  final void Function(DateTime inicio)? onTapEmptySlot;
+  final Future<void> Function({
+    required TareaModel tarea,
+    required DateTime nuevoInicio,
+    required DateTime nuevoFin,
+  })?
+  onMoveCorrectiva;
 
   const _WeekScheduleView({
     required this.weekStart,
@@ -3299,6 +3545,8 @@ class _WeekScheduleView extends StatefulWidget {
     required this.esFestivo,
     required this.nombreFestivo,
     required this.onTapTarea,
+    this.onTapEmptySlot,
+    this.onMoveCorrectiva,
   });
 
   @override
@@ -3339,12 +3587,23 @@ class _WeekTaskPlacement {
   });
 }
 
+class _DraggedWeekTask {
+  final TareaModel tarea;
+  final int duracionMinutos;
+
+  const _DraggedWeekTask({required this.tarea, required this.duracionMinutos});
+}
+
 class _WeekScheduleViewState extends State<_WeekScheduleView> {
   final ScrollController _headerHCtrl = ScrollController();
   final ScrollController _hCtrl = ScrollController();
   final ScrollController _vCtrl = ScrollController();
   bool _syncingHeader = false;
   bool _syncingBody = false;
+  bool _moviendoCorrectiva = false;
+  final Map<int, List<_MinuteRange>> _occupiedRangesByDay = {};
+  List<_WeekTaskPlacement> _taskPlacementsCache = const [];
+  String _taskPlacementsSignature = '';
 
   static const double anchoHora = 56;
   static const double altoHeader = 44;
@@ -3365,6 +3624,65 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   int get _horaInicio => widget.horaInicio;
   int get _horaFin => widget.horaFin;
   int get _horasVisible => (_horaFin - _horaInicio).clamp(1, 24);
+
+  String _buildTasksSignature() {
+    final buffer = StringBuffer(
+      '${widget.weekStart.toIso8601String()}|${widget.scaleMinutes}|',
+    );
+    for (final tarea in widget.tareas) {
+      buffer
+        ..write(tarea.id)
+        ..write(':')
+        ..write(tarea.fechaInicio.millisecondsSinceEpoch)
+        ..write(':')
+        ..write(tarea.fechaFin.millisecondsSinceEpoch)
+        ..write(';');
+    }
+    return buffer.toString();
+  }
+
+  void _rebuildDerivedWeekDataIfNeeded() {
+    final signature = _buildTasksSignature();
+    if (signature == _taskPlacementsSignature) return;
+    _taskPlacementsSignature = signature;
+    _taskPlacementsCache = _buildTaskPlacements();
+    _occupiedRangesByDay
+      ..clear()
+      ..addAll(_buildOccupiedRangesByDay());
+  }
+
+  Map<int, List<_MinuteRange>> _buildOccupiedRangesByDay() {
+    final out = <int, List<_MinuteRange>>{};
+    for (final item in widget.tareas) {
+      final ini = item.fechaInicio.toLocal();
+      final fin = item.fechaFin.toLocal();
+      final day = _dayIndex(ini);
+      if (day < 0 || day > 6) continue;
+      out
+          .putIfAbsent(day, () => <_MinuteRange>[])
+          .add(
+            _MinuteRange(
+              tareaId: item.id,
+              start: ini.hour * 60 + ini.minute,
+              end: fin.hour * 60 + fin.minute,
+            ),
+          );
+    }
+    for (final ranges in out.values) {
+      ranges.sort((a, b) => a.start.compareTo(b.start));
+    }
+    return out;
+  }
+
+  int _snapToGridNearest(int minutes) {
+    final snap = widget.scaleMinutes <= 15 ? widget.scaleMinutes : 30;
+    return ((minutes / snap).round()) * snap;
+  }
+
+  int _snapToGridForward(int minutes) {
+    final snap = widget.scaleMinutes <= 15 ? widget.scaleMinutes : 30;
+    return ((minutes + snap - 1) ~/ snap) * snap;
+  }
 
   _MinuteRange? _descansoDia(int dayIndex) {
     final fecha = DateTime(
@@ -3401,6 +3719,313 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   int _minutesFromStart(DateTime d) {
     final start = DateTime(d.year, d.month, d.day, _horaInicio);
     return d.difference(start).inMinutes;
+  }
+
+  List<_MinuteRange> _rangosProgramablesDia(int dayIndex) {
+    final fecha = DateTime(
+      widget.weekStart.year,
+      widget.weekStart.month,
+      widget.weekStart.day,
+    ).add(Duration(days: dayIndex));
+
+    for (final horario in widget.horariosConjunto) {
+      if (weekdayFromScheduleDay(horario.dia) != fecha.weekday) continue;
+
+      final apertura = parseHourToTimeOfDay(horario.horaApertura);
+      final cierre = parseHourToTimeOfDay(horario.horaCierre);
+      if (apertura == null || cierre == null) return const [];
+
+      final inicio = timeOfDayToMinutes(apertura);
+      final fin = timeOfDayToMinutes(cierre);
+      if (fin <= inicio) return const [];
+
+      final descanso = _descansoDia(dayIndex);
+      if (descanso == null || descanso.end <= descanso.start) {
+        return [_MinuteRange(start: inicio, end: fin)];
+      }
+
+      final rangos = <_MinuteRange>[];
+      if (descanso.start > inicio) {
+        rangos.add(_MinuteRange(start: inicio, end: descanso.start));
+      }
+      if (descanso.end < fin) {
+        rangos.add(_MinuteRange(start: descanso.end, end: fin));
+      }
+      return rangos;
+    }
+
+    return const [];
+  }
+
+  bool _cabeCompletaEnRangoDisponible({
+    required int startMinute,
+    required int duracionMinutos,
+    required List<_MinuteRange> rangosDisponibles,
+  }) {
+    final endMinute = startMinute + duracionMinutos;
+    return rangosDisponibles.any(
+      (rango) => startMinute >= rango.start && endMinute <= rango.end,
+    );
+  }
+
+  int? _resolverInicioLibreEnDia({
+    required int duracionMinutos,
+    int? excluirTareaId,
+    required int dayIndex,
+    required int desiredMinuteOfDay,
+  }) {
+    final rangosDisponibles = _rangosProgramablesDia(dayIndex);
+    if (rangosDisponibles.isEmpty) return null;
+
+    final inicioJornada = rangosDisponibles.first.start;
+    final finJornada = rangosDisponibles.last.end;
+    if (desiredMinuteOfDay < inicioJornada ||
+        desiredMinuteOfDay >= finJornada) {
+      return null;
+    }
+
+    final spans = (_occupiedRangesByDay[dayIndex] ?? const <_MinuteRange>[])
+        .where((range) => range.tareaId != excluirTareaId)
+        .toList();
+
+    var start = _snapToGridNearest(desiredMinuteOfDay);
+    if (start < inicioJornada) start = _snapToGridForward(inicioJornada);
+
+    var guard = 0;
+    while (start + duracionMinutos <= finJornada) {
+      if (guard++ > 500) return null;
+
+      if (!_cabeCompletaEnRangoDisponible(
+        startMinute: start,
+        duracionMinutos: duracionMinutos,
+        rangosDisponibles: rangosDisponibles,
+      )) {
+        final siguienteRango = rangosDisponibles.firstWhere(
+          (rango) => start < rango.start || start < rango.end,
+          orElse: () => const _MinuteRange(start: -1, end: -1),
+        );
+        if (siguienteRango.start < 0) return null;
+        final nextStart = _snapToGridForward(
+          start < siguienteRango.start
+              ? siguienteRango.start
+              : siguienteRango.end,
+        );
+        if (nextStart <= start) return null;
+        start = nextStart;
+        continue;
+      }
+
+      var ajustado = false;
+      for (final range in spans) {
+        final overlaps =
+            start < range.end && (start + duracionMinutos) > range.start;
+        if (overlaps) {
+          final nextStart = _snapToGridForward(range.end);
+          if (nextStart <= start) return null;
+          start = nextStart;
+          ajustado = true;
+          break;
+        }
+      }
+      if (!ajustado) return start;
+    }
+    return null;
+  }
+
+  DateTime? _resolverInicioDesdeTap({
+    required int dayIndex,
+    required double localDy,
+  }) {
+    final rangos = _rangosProgramablesDia(dayIndex);
+    if (rangos.isEmpty) return null;
+
+    final minutoBase = (_horaInicio * 60) + (localDy / pxPorMin).round();
+    final snap = widget.scaleMinutes <= 15 ? 15 : widget.scaleMinutes;
+    var minuto = ((minutoBase / snap).round()) * snap;
+
+    _MinuteRange? rangoActual;
+    for (final rango in rangos) {
+      if (minuto >= rango.start && minuto < rango.end) {
+        rangoActual = rango;
+        break;
+      }
+    }
+
+    rangoActual ??= rangos.firstWhere(
+      (rango) => minuto < rango.end,
+      orElse: () => rangos.last,
+    );
+
+    if (minuto < rangoActual.start) minuto = rangoActual.start;
+    if (minuto >= rangoActual.end) {
+      minuto = (rangoActual.end - snap).clamp(
+        rangoActual.start,
+        rangoActual.end,
+      );
+    }
+
+    final fecha = DateTime(
+      widget.weekStart.year,
+      widget.weekStart.month,
+      widget.weekStart.day,
+    ).add(Duration(days: dayIndex));
+
+    return DateTime(
+      fecha.year,
+      fecha.month,
+      fecha.day,
+      minuto ~/ 60,
+      minuto % 60,
+    );
+  }
+
+  Future<void> _handleTapEnHueco({
+    required BuildContext context,
+    required TapUpDetails details,
+    required int dayIndex,
+    required double localTop,
+  }) async {
+    final inicio = _resolverInicioDesdeTap(
+      dayIndex: dayIndex,
+      localDy: localTop,
+    );
+    if (inicio == null || widget.onTapEmptySlot == null) return;
+
+    final overlay = Overlay.of(context).context.findRenderObject();
+    if (overlay is! RenderBox) {
+      widget.onTapEmptySlot!(inicio);
+      return;
+    }
+
+    final relative = RelativeRect.fromRect(
+      Rect.fromPoints(details.globalPosition, details.globalPosition),
+      Offset.zero & overlay.size,
+    );
+
+    final action = await showMenu<String>(
+      context: context,
+      position: relative,
+      items: const [
+        PopupMenuItem<String>(
+          value: 'crear',
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.build_circle_outlined),
+            title: Text('Crear correctiva'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+    );
+
+    if (action == 'crear') {
+      widget.onTapEmptySlot!(inicio);
+    }
+  }
+
+  Future<void> _intentarMoverCorrectivaSemana({
+    required _DraggedWeekTask dragged,
+    required int dayIndex,
+    required double localDy,
+  }) async {
+    if (_moviendoCorrectiva || widget.onMoveCorrectiva == null) return;
+
+    final targetDay = widget.weekStart.add(Duration(days: dayIndex));
+    if (widget.esFestivo(targetDay)) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text('No puedes mover correctivas a un día festivo.'),
+        ),
+      );
+      return;
+    }
+
+    final minuteFromGrid = (localDy / pxPorMin).round();
+    final minuteOfDay = (_horaInicio * 60) + minuteFromGrid;
+    final startMinute = _resolverInicioLibreEnDia(
+      duracionMinutos: dragged.duracionMinutos,
+      excluirTareaId: dragged.tarea.id,
+      dayIndex: dayIndex,
+      desiredMinuteOfDay: minuteOfDay,
+    );
+
+    if (startMinute == null) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text(
+            'Ese movimiento no es válido por horario, descanso o falta de hueco disponible.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final nuevoInicio = DateTime(
+      targetDay.year,
+      targetDay.month,
+      targetDay.day,
+      startMinute ~/ 60,
+      startMinute % 60,
+    );
+    final nuevoFin = nuevoInicio.add(
+      Duration(minutes: dragged.duracionMinutos),
+    );
+
+    setState(() => _moviendoCorrectiva = true);
+    try {
+      await widget.onMoveCorrectiva!(
+        tarea: dragged.tarea,
+        nuevoInicio: nuevoInicio,
+        nuevoFin: nuevoFin,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text('No se pudo mover la correctiva: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _moviendoCorrectiva = false);
+      }
+    }
+  }
+
+  List<Widget> _buildTapTargets(BuildContext context, double colWidth) {
+    if (widget.onTapEmptySlot == null) return const [];
+
+    final widgets = <Widget>[];
+    for (int dayIndex = 0; dayIndex < 7; dayIndex++) {
+      final rangos = _rangosProgramablesDia(dayIndex);
+      for (final rango in rangos) {
+        final top = (rango.start - (_horaInicio * 60)) * pxPorMin;
+        final height = (rango.end - rango.start) * pxPorMin;
+        widgets.add(
+          Positioned(
+            left: anchoHora + dayIndex * colWidth,
+            width: colWidth,
+            top: top,
+            height: height,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTapUp: (details) => _handleTapEnHueco(
+                context: context,
+                details: details,
+                dayIndex: dayIndex,
+                localTop: top + details.localPosition.dy,
+              ),
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: Container(color: Colors.transparent),
+              ),
+            ),
+          ),
+        );
+      }
+    }
+    return widgets;
   }
 
   int _dayIndex(DateTime d) {
@@ -3600,7 +4225,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   Widget build(BuildContext context) {
     final hours = _horasVisible;
     final heightGrid = (hours * 60) * pxPorMin;
-    final taskPlacements = _buildTaskPlacements();
+    _rebuildDerivedWeekDataIfNeeded();
+    final taskPlacements = _taskPlacementsCache;
 
     final bg = Colors.white;
     final line = Colors.grey.shade300;
@@ -3797,6 +4423,21 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   ),
                                 );
                               }),
+                              ValueListenableBuilder<bool>(
+                                valueListenable:
+                                    _weekCorrectivaDragActiveNotifier,
+                                builder: (context, dragActivo, _) {
+                                  if (dragActivo) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Stack(
+                                    children: _buildTapTargets(
+                                      context,
+                                      colWidth,
+                                    ),
+                                  );
+                                },
+                              ),
                               ...taskPlacements.map((placement) {
                                 final t = placement.tarea;
                                 final ini = placement.inicio;
@@ -3826,6 +4467,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 final horaFinGrupo = DateFormat(
                                   'HH:mm',
                                 ).format(placement.groupEnd);
+                                final esCorrectiva =
+                                    (t.tipo ?? '').trim().toUpperCase() ==
+                                    'CORRECTIVA';
 
                                 if (placement.groupSize > 1) {
                                   if (placement.orderInGroup != 0) {
@@ -3994,77 +4638,167 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                     ((durMin <= 0 ? 1 : durMin) * pxPorMin)
                                         .clamp(18.0, 9999.0);
 
+                                final card = GestureDetector(
+                                  onTap: () => widget.onTapTarea(t),
+                                  child: Container(
+                                    clipBehavior: Clip.hardEdge,
+                                    padding: EdgeInsets.fromLTRB(
+                                      6,
+                                      height < 30 ? 1 : (height < 42 ? 3 : 8),
+                                      6,
+                                      height < 30 ? 1 : (height < 42 ? 3 : 8),
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: fill,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: border,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: LayoutBuilder(
+                                      builder: (context, box) {
+                                        final h = box.maxHeight;
+                                        final tiny = h < 26;
+                                        final compact = h < 54;
+
+                                        return Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Tooltip(
+                                              message: t.descripcion,
+                                              waitDuration: const Duration(
+                                                milliseconds: 250,
+                                              ),
+                                              child: Text(
+                                                t.descripcion,
+                                                maxLines: compact ? 1 : 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: text,
+                                                  fontSize: tiny
+                                                      ? 8
+                                                      : (compact ? 10 : 12),
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                            if (!compact) ...[
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                '$horaIni - $horaFinStr',
+                                                style: TextStyle(
+                                                  color: subtext,
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                );
+
+                                final draggableCard =
+                                    esCorrectiva &&
+                                        widget.onMoveCorrectiva != null
+                                    ? LongPressDraggable<_DraggedWeekTask>(
+                                        data: _DraggedWeekTask(
+                                          tarea: t,
+                                          duracionMinutos: durMin <= 0
+                                              ? 1
+                                              : durMin,
+                                        ),
+                                        maxSimultaneousDrags:
+                                            _moviendoCorrectiva ? 0 : 1,
+                                        onDragStarted: () {
+                                          _weekCorrectivaDragActiveNotifier
+                                                  .value =
+                                              true;
+                                        },
+                                        onDragEnd: (_) {
+                                          _weekCorrectivaDragActiveNotifier
+                                                  .value =
+                                              false;
+                                        },
+                                        onDraggableCanceled: (_, __) {
+                                          _weekCorrectivaDragActiveNotifier
+                                                  .value =
+                                              false;
+                                        },
+                                        feedback: Material(
+                                          color: Colors.transparent,
+                                          child: SizedBox(
+                                            width: fullWidth,
+                                            child: card,
+                                          ),
+                                        ),
+                                        childWhenDragging: Opacity(
+                                          opacity: 0.35,
+                                          child: card,
+                                        ),
+                                        child: card,
+                                      )
+                                    : card;
+
                                 return Positioned(
                                   left: left,
                                   top: top,
                                   width: fullWidth,
                                   height: height,
-                                  child: GestureDetector(
-                                    onTap: () => widget.onTapTarea(t),
-                                    child: Container(
-                                      clipBehavior: Clip.hardEdge,
-                                      padding: EdgeInsets.fromLTRB(
-                                        6,
-                                        height < 30 ? 1 : (height < 42 ? 3 : 8),
-                                        6,
-                                        height < 30 ? 1 : (height < 42 ? 3 : 8),
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: fill,
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(
-                                          color: border,
-                                          width: 1,
-                                        ),
-                                      ),
-                                      child: LayoutBuilder(
-                                        builder: (context, box) {
-                                          final h = box.maxHeight;
-                                          final tiny = h < 26;
-                                          final compact = h < 54;
-
-                                          return Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Tooltip(
-                                                message: t.descripcion,
-                                                waitDuration: const Duration(
-                                                  milliseconds: 250,
-                                                ),
-                                                child: Text(
-                                                  t.descripcion,
-                                                  maxLines: compact ? 1 : 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    color: text,
-                                                    fontSize: tiny
-                                                        ? 8
-                                                        : (compact ? 10 : 12),
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ),
-                                              if (!compact) ...[
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  '$horaIni - $horaFinStr',
-                                                  style: TextStyle(
-                                                    color: subtext,
-                                                    fontSize: 10,
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ),
+                                  child: draggableCard,
                                 );
                               }),
+                              ValueListenableBuilder<bool>(
+                                valueListenable:
+                                    _weekCorrectivaDragActiveNotifier,
+                                builder: (context, dragActivo, _) {
+                                  if (!dragActivo ||
+                                      widget.onMoveCorrectiva == null) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Stack(
+                                    children: List.generate(7, (dayIndex) {
+                                      return Positioned(
+                                        left: anchoHora + dayIndex * colWidth,
+                                        top: 0,
+                                        width: colWidth,
+                                        height: heightGrid,
+                                        child: Builder(
+                                          builder: (targetContext) {
+                                            return DragTarget<_DraggedWeekTask>(
+                                              onWillAcceptWithDetails:
+                                                  (details) {
+                                                    return !_moviendoCorrectiva;
+                                                  },
+                                              onAcceptWithDetails: (details) async {
+                                                final box =
+                                                    targetContext
+                                                            .findRenderObject()
+                                                        as RenderBox?;
+                                                final local = box
+                                                    ?.globalToLocal(
+                                                      details.offset,
+                                                    );
+                                                await _intentarMoverCorrectivaSemana(
+                                                  dragged: details.data,
+                                                  dayIndex: dayIndex,
+                                                  localDy: local?.dy ?? 0,
+                                                );
+                                              },
+                                              builder: (context, _, __) =>
+                                                  const SizedBox.expand(),
+                                            );
+                                          },
+                                        ),
+                                      );
+                                    }),
+                                  );
+                                },
+                              ),
                             ],
                           ),
                         ),
@@ -4171,7 +4905,9 @@ class _SidebarSimple extends StatelessWidget {
                       ),
                     ),
                     IconButton(
-                      tooltip: collapsed ? 'Expandir filtros' : 'Colapsar filtros',
+                      tooltip: collapsed
+                          ? 'Expandir filtros'
+                          : 'Colapsar filtros',
                       onPressed: onToggle,
                       icon: Icon(
                         collapsed
@@ -4204,7 +4940,7 @@ class _SidebarSimple extends StatelessWidget {
                       ),
                     ),
                   ),
-                ],
+              ],
             ),
           );
         },
@@ -4352,10 +5088,11 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
 }
 
 class _MinuteRange {
+  final int? tareaId;
   final int start;
   final int end;
 
-  const _MinuteRange({required this.start, required this.end});
+  const _MinuteRange({this.tareaId, required this.start, required this.end});
 }
 
 class _SemanaHorasResumen {

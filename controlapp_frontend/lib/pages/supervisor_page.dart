@@ -14,7 +14,6 @@ import '../service/theme.dart';
 import 'solicitudes_page.dart';
 import 'agenda_maquinaria_page.dart';
 import 'agenda_herramientas_page.dart';
-import 'crear_tarea_page.dart';
 import 'inventario_page.dart';
 import 'cronograma_page.dart';
 import 'cronograma_impresion_page.dart';
@@ -226,14 +225,14 @@ class _SupervisorPageState extends State<SupervisorPage> {
     final nombreConjunto = conjunto.nombre;
     final sections = <_SupervisorSection>[
       _SupervisorSection('Operacion diaria', [
-        if (_can('tareas.crear'))
+        if (_can('cronograma.correctivas_programar') && _can('cronograma.ver'))
           _SupervisorTile(
-            'Crear correctiva',
+            'Programar correctiva',
             Icons.emergency_rounded,
             Colors.red,
             () {
               if (!_requiereConjuntoOrWarn()) return;
-              _go(CrearTareaPage(nit: nit));
+              _go(CronogramaPage(nit: nit));
             },
           ),
         if (_can('tareas.ver'))

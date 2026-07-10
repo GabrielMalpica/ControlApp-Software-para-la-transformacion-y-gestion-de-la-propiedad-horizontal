@@ -78,6 +78,14 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: "Permite borrar las tareas publicadas del cronograma.",
   },
   {
+    key: "cronograma.correctivas_programar",
+    module: "cronograma",
+    moduleLabel: "Cronogramas",
+    label: "Programar correctivas en cronograma",
+    description:
+      "Permite crear y programar tareas correctivas directamente desde la vista semanal del cronograma.",
+  },
+  {
     key: "solicitudes.ver",
     module: "solicitudes",
     moduleLabel: "Solicitudes",
@@ -184,6 +192,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "tareas.cerrar",
     "cronograma.ver",
     "cronograma.imprimir",
+    "cronograma.correctivas_programar",
     "solicitudes.ver",
     "inventario.ver",
     "maquinaria.ver",
