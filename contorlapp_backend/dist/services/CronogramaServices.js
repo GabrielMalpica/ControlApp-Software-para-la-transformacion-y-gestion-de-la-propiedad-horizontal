@@ -99,6 +99,18 @@ class CronogramaService {
             },
         });
     }
+    async existeCronogramaPreventivoPublicado(anio, mes) {
+        const total = await this.prisma.tarea.count({
+            where: {
+                conjuntoId: this.conjuntoId,
+                periodoAnio: anio,
+                periodoMes: mes,
+                borrador: false,
+                tipo: client_1.TipoTarea.PREVENTIVA,
+            },
+        });
+        return total > 0;
+    }
     async eliminarTareaPublicada(id) {
         await this.prisma.$transaction(async (tx) => {
             await tx.maquinariaConjunto.updateMany({
@@ -184,6 +196,10 @@ class CronogramaService {
     async listarExcluidasStandby(payload) {
         const dto = ExcluidasStandbyDTO.parse(payload);
         await this.limpiarExcluidasDeMesesAnteriores(dto.anio, dto.mes);
+        const hayPublicado = await this.existeCronogramaPreventivoPublicado(dto.anio, dto.mes);
+        if (!hayPublicado) {
+            return [];
+        }
         const inicioDia = dto.fecha
             ? new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 0, 0, 0, 0)
             : null;

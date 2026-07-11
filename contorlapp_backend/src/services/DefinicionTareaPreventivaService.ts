@@ -308,6 +308,24 @@ export class DefinicionTareaPreventivaService {
     });
   }
 
+  private async existeBorradorPreventivoMes(params: {
+    conjuntoId: string;
+    anio: number;
+    mes: number;
+  }) {
+    const { conjuntoId, anio, mes } = params;
+    const total = await this.prisma.tarea.count({
+      where: {
+        conjuntoId,
+        periodoAnio: anio,
+        periodoMes: mes,
+        borrador: true,
+        tipo: TipoTarea.PREVENTIVA,
+      },
+    });
+    return total > 0;
+  }
+
   private async resolverSupervisorId(supervisorId: number): Promise<string> {
     const sid = supervisorId.toString();
 
@@ -4023,6 +4041,14 @@ export class DefinicionTareaPreventivaService {
       anio: dto.anio,
       mes: dto.mes,
     });
+    const hayBorrador = await this.existeBorradorPreventivoMes({
+      conjuntoId: dto.conjuntoId,
+      anio: dto.anio,
+      mes: dto.mes,
+    });
+    if (!hayBorrador) {
+      return [];
+    }
     const inicioDia = dto.fecha
       ? new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 0, 0, 0, 0)
       : null;

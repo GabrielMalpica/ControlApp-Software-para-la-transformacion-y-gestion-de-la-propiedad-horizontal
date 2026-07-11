@@ -1,5 +1,5 @@
 // src/services/CronogramaService.ts
-import { EstadoTarea, type PrismaClient } from "@prisma/client";
+import { EstadoTarea, TipoTarea, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { isFestivoDate } from "../utils/schedulerUtils";
 import {
@@ -118,6 +118,19 @@ export class CronogramaService {
     });
   }
 
+  private async existeCronogramaPreventivoPublicado(anio: number, mes: number) {
+    const total = await this.prisma.tarea.count({
+      where: {
+        conjuntoId: this.conjuntoId,
+        periodoAnio: anio,
+        periodoMes: mes,
+        borrador: false,
+        tipo: TipoTarea.PREVENTIVA,
+      },
+    });
+    return total > 0;
+  }
+
   private async eliminarTareaPublicada(id: number) {
     await this.prisma.$transaction(async (tx) => {
       await tx.maquinariaConjunto.updateMany({
@@ -234,6 +247,10 @@ export class CronogramaService {
   async listarExcluidasStandby(payload: unknown) {
     const dto = ExcluidasStandbyDTO.parse(payload);
     await this.limpiarExcluidasDeMesesAnteriores(dto.anio, dto.mes);
+    const hayPublicado = await this.existeCronogramaPreventivoPublicado(dto.anio, dto.mes);
+    if (!hayPublicado) {
+      return [];
+    }
     const inicioDia = dto.fecha
       ? new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 0, 0, 0, 0)
       : null;
