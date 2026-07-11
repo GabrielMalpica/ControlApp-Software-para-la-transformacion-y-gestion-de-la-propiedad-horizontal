@@ -33,38 +33,57 @@ class PlanEsperanzaApi {
   Future<PlanEsperanzaConfig> obtenerConfig(String nit) async {
     final resp = await _client.get('$_base/conjuntos/$nit/config');
     if (resp.statusCode != 200) {
-      throw Exception(AppError.fromResponseBody(resp.body,
-          fallback: 'No se pudo cargar la configuracion.'));
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo cargar la configuracion.',
+        ),
+      );
     }
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     return PlanEsperanzaConfig.fromJson(data);
   }
 
   Future<PlanEsperanzaConfig> actualizarConfig(
-      String nit, int intervaloMeses) async {
-    final resp = await _client.put('$_base/conjuntos/$nit/config',
-        body: {'intervaloMeses': intervaloMeses});
+    String nit,
+    int intervaloMeses,
+  ) async {
+    final resp = await _client.put(
+      '$_base/conjuntos/$nit/config',
+      body: {'intervaloMeses': intervaloMeses},
+    );
     if (resp.statusCode != 200) {
-      throw Exception(AppError.fromResponseBody(resp.body,
-          fallback: 'No se pudo actualizar la configuracion.'));
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo actualizar la configuracion.',
+        ),
+      );
     }
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     return PlanEsperanzaConfig.fromJson(data);
   }
 
-  Future<PlanEsperanzaActivo> iniciarPlan(String nit,
-      {bool mantenerEvidencias = false, int? planAnteriorId}) async {
-    final body = <String, dynamic>{
-      'mantenerEvidencias': mantenerEvidencias,
-    };
+  Future<PlanEsperanzaActivo> iniciarPlan(
+    String nit, {
+    bool mantenerEvidencias = false,
+    int? planAnteriorId,
+  }) async {
+    final body = <String, dynamic>{'mantenerEvidencias': mantenerEvidencias};
     if (planAnteriorId != null) {
       body['planAnteriorId'] = planAnteriorId;
     }
-    final resp =
-        await _client.post('$_base/conjuntos/$nit/iniciar', body: body);
+    final resp = await _client.post(
+      '$_base/conjuntos/$nit/iniciar',
+      body: body,
+    );
     if (resp.statusCode != 201) {
-      throw Exception(AppError.fromResponseBody(resp.body,
-          fallback: 'No se pudo iniciar el plan.'));
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo iniciar el plan.',
+        ),
+      );
     }
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     return PlanEsperanzaActivo.fromJson(data);
@@ -74,8 +93,12 @@ class PlanEsperanzaApi {
     final resp = await _client.get('$_base/conjuntos/$nit/plan-activo');
     if (resp.statusCode == 404) return null;
     if (resp.statusCode != 200) {
-      throw Exception(AppError.fromResponseBody(resp.body,
-          fallback: 'No se pudo cargar el plan activo.'));
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo cargar el plan activo.',
+        ),
+      );
     }
     final decoded = jsonDecode(resp.body);
     if (decoded == null) return null;
@@ -87,8 +110,12 @@ class PlanEsperanzaApi {
   Future<List<PlanResumen>> listarPlanes(String nit) async {
     final resp = await _client.get('$_base/conjuntos/$nit/planes');
     if (resp.statusCode != 200) {
-      throw Exception(AppError.fromResponseBody(resp.body,
-          fallback: 'No se pudieron cargar los planes.'));
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudieron cargar los planes.',
+        ),
+      );
     }
     final data = jsonDecode(resp.body) as List<dynamic>;
     return data
@@ -117,19 +144,23 @@ class PlanEsperanzaApi {
 
       if (kIsWeb) {
         if (foto.bytes != null) {
-          request.files.add(http.MultipartFile.fromBytes(
-            'foto',
-            foto.bytes!,
-            filename: foto.name,
-          ));
+          request.files.add(
+            http.MultipartFile.fromBytes(
+              'foto',
+              foto.bytes!,
+              filename: foto.name,
+            ),
+          );
         }
       } else {
         if (foto.path != null) {
-          request.files.add(await http.MultipartFile.fromPath(
-            'foto',
-            foto.path!,
-            filename: foto.name,
-          ));
+          request.files.add(
+            await http.MultipartFile.fromPath(
+              'foto',
+              foto.path!,
+              filename: foto.name,
+            ),
+          );
         }
       }
 
@@ -137,8 +168,12 @@ class PlanEsperanzaApi {
       final resp = await http.Response.fromStream(streamed);
 
       if (resp.statusCode != 200) {
-        throw Exception(AppError.fromResponseBody(resp.body,
-            fallback: 'No se pudo guardar el diagnostico.'));
+        throw Exception(
+          AppError.fromResponseBody(
+            resp.body,
+            fallback: 'No se pudo guardar el diagnostico.',
+          ),
+        );
       }
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
       return DiagnosticoAreaModel.fromJson(data);
@@ -146,11 +181,17 @@ class PlanEsperanzaApi {
       final body = <String, dynamic>{};
       if (valoracion != null) body['valoracion'] = valoracion;
       if (observaciones != null) body['observaciones'] = observaciones;
-      final resp = await _client.put('$_base/diagnosticos/$diagnosticoId',
-          body: body);
+      final resp = await _client.put(
+        '$_base/diagnosticos/$diagnosticoId',
+        body: body,
+      );
       if (resp.statusCode != 200) {
-        throw Exception(AppError.fromResponseBody(resp.body,
-            fallback: 'No se pudo guardar el diagnostico.'));
+        throw Exception(
+          AppError.fromResponseBody(
+            resp.body,
+            fallback: 'No se pudo guardar el diagnostico.',
+          ),
+        );
       }
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
       return DiagnosticoAreaModel.fromJson(data);
@@ -160,38 +201,64 @@ class PlanEsperanzaApi {
   Future<void> finalizarPlan(int planId) async {
     final resp = await _client.post('$_base/planes/$planId/finalizar');
     if (resp.statusCode != 200) {
-      throw Exception(AppError.fromResponseBody(resp.body,
-          fallback: 'No se pudo finalizar el plan.'));
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo finalizar el plan.',
+        ),
+      );
     }
   }
 
   Future<InformeResponse> obtenerInforme(int planId) async {
     final resp = await _client.get('$_base/planes/$planId/informe');
     if (resp.statusCode != 200) {
-      throw Exception(AppError.fromResponseBody(resp.body,
-          fallback: 'No se pudo cargar el informe.'));
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo cargar el informe.',
+        ),
+      );
     }
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     return InformeResponse.fromJson(data);
   }
 
-  Future<HistoricoResponse> obtenerHistorico(String nit) async {
-    final resp = await _client.get('$_base/conjuntos/$nit/historico');
+  Future<HistoricoResponse> obtenerHistorico(
+    String nit, {
+    List<int>? planIds,
+  }) async {
+    final query = planIds != null && planIds.isNotEmpty
+        ? '?planIds=${planIds.join(',')}'
+        : '';
+    final resp = await _client.get('$_base/conjuntos/$nit/historico$query');
     if (resp.statusCode != 200) {
-      throw Exception(AppError.fromResponseBody(resp.body,
-          fallback: 'No se pudo cargar el historico.'));
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo cargar el historico.',
+        ),
+      );
     }
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     return HistoricoResponse.fromJson(data);
   }
 
-  Future<PlanEsperanzaActivo> reiniciarPlan(String nit,
-      {bool mantenerEvidencias = false}) async {
-    final resp = await _client.post('$_base/conjuntos/$nit/reiniciar',
-        body: {'mantenerEvidencias': mantenerEvidencias});
+  Future<PlanEsperanzaActivo> reiniciarPlan(
+    String nit, {
+    bool mantenerEvidencias = false,
+  }) async {
+    final resp = await _client.post(
+      '$_base/conjuntos/$nit/reiniciar',
+      body: {'mantenerEvidencias': mantenerEvidencias},
+    );
     if (resp.statusCode != 200) {
-      throw Exception(AppError.fromResponseBody(resp.body,
-          fallback: 'No se pudo reiniciar el plan.'));
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo reiniciar el plan.',
+        ),
+      );
     }
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     return PlanEsperanzaActivo.fromJson(data);
@@ -200,8 +267,12 @@ class PlanEsperanzaApi {
   Future<ZonasNuevasCheck> verificarZonasNuevas(String nit) async {
     final resp = await _client.get('$_base/conjuntos/$nit/verificar-zonas');
     if (resp.statusCode != 200) {
-      throw Exception(AppError.fromResponseBody(resp.body,
-          fallback: 'No se pudieron verificar las zonas.'));
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudieron verificar las zonas.',
+        ),
+      );
     }
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     return ZonasNuevasCheck.fromJson(data);

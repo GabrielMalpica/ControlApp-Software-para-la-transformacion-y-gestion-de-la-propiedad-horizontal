@@ -142,7 +142,14 @@ class PlanEsperanzaController {
         this.obtenerHistorico = async (req, res, next) => {
             try {
                 const { nit } = NitParam.parse(req.params);
-                const historico = await service.obtenerHistorico(nit);
+                const { planIds } = zod_1.z
+                    .object({ planIds: zod_1.z.string().optional() })
+                    .parse(req.query);
+                const selectedPlanIds = planIds
+                    ?.split(",")
+                    .map((id) => Number(id.trim()))
+                    .filter((id) => Number.isInteger(id) && id > 0);
+                const historico = await service.obtenerHistorico(nit, selectedPlanIds?.length ? selectedPlanIds : undefined);
                 res.json(historico);
             }
             catch (err) {

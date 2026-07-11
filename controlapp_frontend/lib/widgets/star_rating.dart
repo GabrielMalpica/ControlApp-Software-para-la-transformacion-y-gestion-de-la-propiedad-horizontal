@@ -27,7 +27,9 @@ class StarRating extends StatelessWidget {
         ...List.generate(fullStars, (_) => _star(Icons.star, filledColor)),
         if (hasHalf) _star(Icons.star_half, filledColor),
         ...List.generate(
-            emptyStars > 0 ? emptyStars : 0, (_) => _star(Icons.star_border, emptyColor)),
+          emptyStars > 0 ? emptyStars : 0,
+          (_) => _star(Icons.star_border, emptyColor),
+        ),
         const SizedBox(width: 4),
         Text(
           rating.toStringAsFixed(1),
@@ -49,10 +51,12 @@ class StarRating extends StatelessWidget {
 class StarRatingInput extends StatefulWidget {
   final double initialRating;
   final ValueChanged<double> onChanged;
+  final double itemSize;
 
   const StarRatingInput({
     super.key,
     this.initialRating = 0,
+    this.itemSize = 34,
     required this.onChanged,
   });
 
@@ -62,95 +66,56 @@ class StarRatingInput extends StatefulWidget {
 
 class _StarRatingInputState extends State<StarRatingInput> {
   late double _rating;
-  late TextEditingController _textController;
 
   @override
   void initState() {
     super.initState();
     _rating = widget.initialRating;
-    _textController = TextEditingController(
-      text: widget.initialRating > 0
-          ? widget.initialRating.toStringAsFixed(1)
-          : '',
-    );
-  }
-
-  @override
-  void dispose() {
-    _textController.dispose();
-    super.dispose();
   }
 
   void _setRating(double r) {
-    final clamped = r.clamp(0.0, 5.0).roundToDouble();
+    final clamped = r.clamp(1.0, 5.0).roundToDouble();
     setState(() {
       _rating = clamped;
-      _textController.text =
-          clamped > 0 ? clamped.toStringAsFixed(1) : '';
     });
     widget.onChanged(clamped);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
       children: [
-        Row(
-          children: [
-            for (int i = 1; i <= 5; i++)
-              GestureDetector(
-                onTap: () => _setRating(i.toDouble()),
-                child: Icon(
-                  i <= _rating.round()
-                      ? Icons.star
-                      : i <= _rating.ceil() && _rating - (i - 1) > 0
-                          ? Icons.star_half
-                          : Icons.star_border,
-                  size: 36,
-                  color: i <= _rating.round()
-                      ? Colors.amber
-                      : i <= _rating.ceil() && _rating - (i - 1) > 0
-                          ? Colors.amber
-                          : Colors.grey.shade400,
+        for (int i = 1; i <= 5; i++)
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _setRating(i.toDouble()),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              width: widget.itemSize,
+              height: widget.itemSize,
+              decoration: BoxDecoration(
+                color: i <= _rating
+                    ? Colors.amber.withValues(alpha: 0.16)
+                    : Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: i <= _rating ? Colors.amber : Colors.grey.shade300,
                 ),
               ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 80,
-              child: TextField(
-                controller: _textController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  hintText: '0.0',
-                  isDense: true,
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                  border: OutlineInputBorder(),
+              child: Center(
+                child: Text(
+                  '$i',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: i <= _rating
+                        ? Colors.amber.shade800
+                        : Colors.grey.shade600,
+                  ),
                 ),
-                style: const TextStyle(fontSize: 14),
-                onSubmitted: (value) {
-                  final parsed = double.tryParse(value);
-                  if (parsed != null) {
-                    _setRating(parsed);
-                  }
-                },
               ),
-            ),
-          ],
-        ),
-        if (_rating > 0)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Slider(
-              value: _rating,
-              min: 0,
-              max: 5,
-              divisions: 50,
-              label: _rating.toStringAsFixed(1),
-              onChanged: _setRating,
             ),
           ),
       ],

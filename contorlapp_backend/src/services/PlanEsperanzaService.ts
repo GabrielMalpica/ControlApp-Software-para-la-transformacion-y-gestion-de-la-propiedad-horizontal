@@ -373,11 +373,14 @@ export class PlanEsperanzaService {
     };
   }
 
-  async obtenerHistorico(conjuntoId: string) {
+  async obtenerHistorico(conjuntoId: string, planIds?: number[]) {
     const hojas = await obtenerElementosHoja(this.prisma, conjuntoId);
 
     const planes = await this.prisma.planEsperanza.findMany({
-      where: { conjuntoId },
+      where: {
+        conjuntoId,
+        ...(planIds?.length ? { id: { in: planIds } } : {}),
+      },
       orderBy: { fechaInicio: "asc" },
       include: {
         diagnosticos: {

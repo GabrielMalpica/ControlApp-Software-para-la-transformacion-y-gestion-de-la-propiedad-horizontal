@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_application_1/api/plan_esperanza_api.dart';
 import 'package:flutter_application_1/model/plan_esperanza_model.dart';
+import 'package:flutter_application_1/pdf/pdf_actions.dart';
+import 'package:flutter_application_1/pdf/plan_esperanza_pdf.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/theme.dart';
@@ -16,11 +18,7 @@ class PlanEsperanzaPage extends StatefulWidget {
   final String nit;
   final String? nombreConjunto;
 
-  const PlanEsperanzaPage({
-    super.key,
-    required this.nit,
-    this.nombreConjunto,
-  });
+  const PlanEsperanzaPage({super.key, required this.nit, this.nombreConjunto});
 
   @override
   State<PlanEsperanzaPage> createState() => _PlanEsperanzaPageState();
@@ -37,10 +35,9 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
 
   PlanEsperanzaActivo? _planActivo;
   PlanEsperanzaConfig? _config;
-  InformeResponse? _informe;
   HistoricoResponse? _historico;
   List<PlanResumen> _allPlanes = [];
-  int? _selectedPlanInfoId;
+  final Set<int> _selectedHistoricoPlanIds = {};
 
   final Map<int, double> _editValoraciones = {};
   final Map<int, String> _editObservaciones = {};
@@ -73,7 +70,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
         _config = config;
         _planActivo = planActivo;
         _allPlanes = [];
-        _informe = null;
+        _historico = null;
+        _selectedHistoricoPlanIds.clear();
         _loadingPlan = false;
       });
     } catch (e) {
@@ -85,37 +83,54 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
     }
   }
 
-  Future<void> _loadInforme(int planId) async {
+  Future<InformeResponse?> _loadInforme(int planId) async {
     try {
       final informe = await _api.obtenerInforme(planId);
-      if (!mounted) return;
-      setState(() => _informe = informe);
+      if (!mounted) return null;
+      return informe;
     } catch (e) {
-      if (!mounted) return;
-      AppFeedback.showError(context,
-          message: AppError.messageOf(e,
-              fallback: 'No se pudo cargar el informe.'));
+      if (!mounted) return null;
+      AppFeedback.showError(
+        context,
+        message: AppError.messageOf(
+          e,
+          fallback: 'No se pudo cargar el informe.',
+        ),
+      );
     }
+    return null;
   }
 
-  Future<void> _loadHistorico() async {
+  Future<void> _loadHistorico({List<int>? planIds}) async {
     try {
-      final historico = await _api.obtenerHistorico(widget.nit);
+      final historico = await _api.obtenerHistorico(
+        widget.nit,
+        planIds: planIds,
+      );
       if (!mounted) return;
       setState(() => _historico = historico);
     } catch (e) {
       if (!mounted) return;
-      AppFeedback.showError(context,
-          message: AppError.messageOf(e,
-              fallback: 'No se pudo cargar el historico.'));
+      AppFeedback.showError(
+        context,
+        message: AppError.messageOf(
+          e,
+          fallback: 'No se pudo cargar el historico.',
+        ),
+      );
     }
   }
 
   void _onTabChanged() {
     if (_tabController.index == 1 && _allPlanes.isEmpty) {
       _loadAllPlanes();
-    } else if (_tabController.index == 2 && _historico == null) {
-      _loadHistorico();
+    } else if (_tabController.index == 2) {
+      if (_allPlanes.isEmpty) {
+        _loadAllPlanes();
+      }
+      if (_historico == null) {
+        _loadHistorico();
+      }
     }
   }
 
@@ -125,16 +140,19 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
       if (!mounted) return;
       setState(() {
         _allPlanes = planes;
-        if (planes.isNotEmpty && _selectedPlanInfoId == null) {
-          _selectedPlanInfoId = planes.first.id;
-          _loadInforme(planes.first.id);
+        if (_selectedHistoricoPlanIds.isEmpty && planes.isNotEmpty) {
+          _selectedHistoricoPlanIds.addAll(planes.take(3).map((p) => p.id));
         }
       });
     } catch (e) {
       if (!mounted) return;
-      AppFeedback.showError(context,
-          message: AppError.messageOf(e,
-              fallback: 'No se pudieron cargar los planes.'));
+      AppFeedback.showError(
+        context,
+        message: AppError.messageOf(
+          e,
+          fallback: 'No se pudieron cargar los planes.',
+        ),
+      );
     }
   }
 
@@ -152,7 +170,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
         ),
         content: const Text(
           'Se iniciara un nuevo Plan Esperanza con todas las areas '
-          'finales del conjunto. ¿Desea continuar?'),
+          'finales del conjunto. ¿Desea continuar?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -163,7 +182,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
             style: FilledButton.styleFrom(
               backgroundColor: AppTheme.primary,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('Iniciar'),
           ),
@@ -181,7 +201,6 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
       _editFotos.clear();
       setState(() {
         _planActivo = plan;
-        _informe = null;
         _historico = null;
         _saving = false;
       });
@@ -189,9 +208,10 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      AppFeedback.showError(context,
-          message: AppError.messageOf(e,
-              fallback: 'No se pudo iniciar el plan.'));
+      AppFeedback.showError(
+        context,
+        message: AppError.messageOf(e, fallback: 'No se pudo iniciar el plan.'),
+      );
     }
   }
 
@@ -209,8 +229,9 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
           ],
         ),
         content: const Text(
-          '¿Esta seguro de finalizar este plan? Ya no podra '
-          'editar los diagnosticos.'),
+          'Se guardaran las calificaciones, observaciones y fotos pendientes. '
+          'Luego ya no podra editar los diagnosticos.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -221,7 +242,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
             style: FilledButton.styleFrom(
               backgroundColor: AppTheme.green,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('Finalizar'),
           ),
@@ -232,6 +254,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
 
     setState(() => _saving = true);
     try {
+      await _guardarCambiosPendientes();
       await _api.finalizarPlan(_planActivo!.id);
       if (!mounted) return;
       await _loadAll();
@@ -239,24 +262,31 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      AppFeedback.showError(context,
-          message: AppError.messageOf(e,
-              fallback: 'No se pudo finalizar el plan.'));
+      AppFeedback.showError(
+        context,
+        message: AppError.messageOf(
+          e,
+          fallback: 'No se pudo finalizar el plan.',
+        ),
+      );
     }
   }
 
   Future<void> _reiniciarPlan() async {
     final check = await _api.verificarZonasNuevas(widget.nit);
+    if (!mounted) return;
 
     final opcion = await showDialog<String>(
       context: context,
       builder: (ctx) {
         final mensaje = check.hayZonasNuevas
             ? 'Se han agregado ${check.zonasActuales - check.zonasExistentes} '
-                'zona(s) nueva(s). ¿Que desea hacer con las evidencias actuales?'
+                  'zona(s) nueva(s). ¿Que desea hacer con las evidencias actuales?'
             : '¿Que desea hacer con las evidencias actuales?';
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Row(
             children: [
               Icon(Icons.refresh, color: Colors.orange, size: 28),
@@ -275,7 +305,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
               style: FilledButton.styleFrom(
                 backgroundColor: AppTheme.primary,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               child: const Text('Mantener evidencias'),
             ),
@@ -283,7 +314,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.orange,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               onPressed: () => Navigator.pop(ctx, 'nuevas'),
               child: const Text('Tomar nuevas'),
@@ -296,15 +328,16 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
 
     setState(() => _saving = true);
     try {
-      final plan = await _api.reiniciarPlan(widget.nit,
-          mantenerEvidencias: opcion == 'mantener');
+      final plan = await _api.reiniciarPlan(
+        widget.nit,
+        mantenerEvidencias: opcion == 'mantener',
+      );
       if (!mounted) return;
       _editValoraciones.clear();
       _editObservaciones.clear();
       _editFotos.clear();
       setState(() {
         _planActivo = plan;
-        _informe = null;
         _historico = null;
         _saving = false;
       });
@@ -312,45 +345,54 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      AppFeedback.showError(context,
-          message: AppError.messageOf(e,
-              fallback: 'No se pudo reiniciar el plan.'));
+      AppFeedback.showError(
+        context,
+        message: AppError.messageOf(
+          e,
+          fallback: 'No se pudo reiniciar el plan.',
+        ),
+      );
     }
   }
 
-  Future<void> _guardarDiagnostico(DiagnosticoAreaModel diag) async {
-    final valoracion = _editValoraciones[diag.id];
-    final observaciones = _editObservaciones[diag.id];
-    final foto = _editFotos[diag.id];
+  Future<void> _guardarCambiosPendientes() async {
+    final plan = _planActivo;
+    if (plan == null) return;
 
-    if (valoracion == null && observaciones == null && foto == null) {
-      AppFeedback.showInfo(context, message: 'No hay cambios para guardar.');
-      return;
-    }
+    final updatedDiagnosticos = <DiagnosticoAreaModel>[];
+    for (final diag in plan.diagnosticos) {
+      final valoracion = _editValoraciones[diag.id];
+      final observaciones = _editObservaciones[diag.id];
+      final foto = _editFotos[diag.id];
 
-    setState(() => _saving = true);
-    try {
+      if (valoracion == null && observaciones == null && foto == null) {
+        updatedDiagnosticos.add(diag);
+        continue;
+      }
+
       final updated = await _api.guardarDiagnostico(
         diag.id,
         valoracion: valoracion,
         observaciones: observaciones,
         foto: foto,
       );
-      if (!mounted) return;
-      setState(() {
-        _editValoraciones.remove(diag.id);
-        _editObservaciones.remove(diag.id);
-        _editFotos.remove(diag.id);
-        _planActivo = _planActivo!.copyWithDiagnostico(updated);
-        _saving = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      AppFeedback.showError(context,
-          message: AppError.messageOf(e,
-              fallback: 'No se pudo guardar el diagnostico.'));
+      updatedDiagnosticos.add(updated);
     }
+
+    _editValoraciones.clear();
+    _editObservaciones.clear();
+    _editFotos.clear();
+    if (!mounted) return;
+    setState(() {
+      _planActivo = PlanEsperanzaActivo(
+        id: plan.id,
+        conjuntoId: plan.conjuntoId,
+        fechaInicio: plan.fechaInicio,
+        fechaFin: plan.fechaFin,
+        completado: plan.completado,
+        diagnosticos: updatedDiagnosticos,
+      );
+    });
   }
 
   Future<void> _tomarFoto(DiagnosticoAreaModel diag) async {
@@ -366,15 +408,18 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 40, height: 4,
+                width: 40,
+                height: 4,
                 decoration: BoxDecoration(
                   color: Colors.grey.shade300,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
               const SizedBox(height: 20),
-              const Text('Agregar foto',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              const Text(
+                'Agregar foto',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
               const SizedBox(height: 20),
               ListTile(
                 leading: CircleAvatar(
@@ -438,7 +483,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Cada cuantos meses se debe realizar el Plan Esperanza?'),
+              'Cada cuantos meses se debe realizar el Plan Esperanza?',
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
@@ -447,7 +493,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
                 labelText: 'Meses',
                 suffixText: 'meses',
                 border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 filled: true,
                 fillColor: AppTheme.surfaceSoft,
               ),
@@ -463,8 +510,10 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
             onPressed: () {
               final v = int.tryParse(controller.text);
               if (v == null || v < 1 || v > 60) {
-                AppFeedback.showError(ctx,
-                    message: 'Ingrese un valor entre 1 y 60.');
+                AppFeedback.showError(
+                  ctx,
+                  message: 'Ingrese un valor entre 1 y 60.',
+                );
                 return;
               }
               Navigator.pop(ctx, v);
@@ -472,7 +521,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
             style: FilledButton.styleFrom(
               backgroundColor: AppTheme.primary,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('Guardar'),
           ),
@@ -483,11 +533,17 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
     if (result != null && mounted) {
       try {
         final config = await _api.actualizarConfig(widget.nit, result);
+        if (!mounted) return;
         setState(() => _config = config);
       } catch (e) {
-        AppFeedback.showError(context,
-            message: AppError.messageOf(e,
-                fallback: 'No se pudo actualizar la configuracion.'));
+        if (!mounted) return;
+        AppFeedback.showError(
+          context,
+          message: AppError.messageOf(
+            e,
+            fallback: 'No se pudo actualizar la configuracion.',
+          ),
+        );
       }
     }
   }
@@ -524,8 +580,10 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
               indicatorWeight: 3,
               labelColor: Colors.white,
               unselectedLabelColor: Colors.white60,
-              labelStyle:
-                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              labelStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
               unselectedLabelStyle: const TextStyle(fontSize: 13),
               tabs: const [
                 Tab(icon: Icon(Icons.edit_note, size: 22), text: 'Diagnostico'),
@@ -539,42 +597,46 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
       body: _loadingPlan
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.cloud_off,
-                            size: 64, color: Colors.red.shade200),
-                        const SizedBox(height: 16),
-                        Text(_error!,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                color: Colors.grey.shade700, fontSize: 15)),
-                        const SizedBox(height: 24),
-                        FilledButton.icon(
-                          onPressed: _loadAll,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('Reintentar'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppTheme.primary,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : TabBarView(
-                  controller: _tabController,
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildDiagnosticoTab(),
-                    _buildInformeTab(),
-                    _buildHistoricoTab(),
+                    Icon(Icons.cloud_off, size: 64, color: Colors.red.shade200),
+                    const SizedBox(height: 16),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton.icon(
+                      onPressed: _loadAll,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Reintentar'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.primary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
+              ),
+            )
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildDiagnosticoTab(),
+                _buildInformeTab(),
+                _buildHistoricoTab(),
+              ],
+            ),
       floatingActionButton: _planActivo != null && !_planActivo!.completado
           ? FloatingActionButton.extended(
               onPressed: _saving ? null : _finalizarPlan,
@@ -583,7 +645,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
               backgroundColor: AppTheme.green,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
+                borderRadius: BorderRadius.circular(16),
+              ),
             )
           : null,
     );
@@ -607,34 +670,48 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
                   color: AppTheme.primary.withValues(alpha: 0.08),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.health_and_safety,
-                    size: 64, color: AppTheme.primary.withValues(alpha: 0.4)),
+                child: Icon(
+                  Icons.health_and_safety,
+                  size: 64,
+                  color: AppTheme.primary.withValues(alpha: 0.4),
+                ),
               ),
               const SizedBox(height: 24),
-              const Text('No hay un Plan Esperanza activo',
-                  style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w700,
-                      color: AppTheme.text)),
+              const Text(
+                'No hay un Plan Esperanza activo',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.text,
+                ),
+              ),
               const SizedBox(height: 8),
               Text(
                 'Inicie uno nuevo para comenzar los diagnosticos '
                 'de todas las areas del conjunto.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 14, color: Colors.grey.shade600)),
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              ),
               const SizedBox(height: 32),
               FilledButton.icon(
                 onPressed: _saving ? null : _iniciarPlan,
                 icon: const Icon(Icons.play_arrow, size: 22),
-                label: Text(_saving ? 'Iniciando...' : 'Empezar Plan Esperanza',
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600)),
+                label: Text(
+                  _saving ? 'Iniciando...' : 'Empezar Plan Esperanza',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 style: FilledButton.styleFrom(
                   backgroundColor: AppTheme.primary,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 16,
+                  ),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
               ),
             ],
@@ -654,17 +731,23 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
                 color: AppTheme.green.withValues(alpha: 0.08),
                 shape: BoxShape.circle,
               ),
-              child:
-                  const Icon(Icons.check_circle, size: 64, color: AppTheme.green),
+              child: const Icon(
+                Icons.check_circle,
+                size: 64,
+                color: AppTheme.green,
+              ),
             ),
             const SizedBox(height: 24),
-            Text('Plan completado',
-                style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w700)),
+            Text(
+              'Plan completado',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 4),
-            Text(_planActivo!.fechaFin != null
-                ? 'Finalizado el ${_formatDate(_planActivo!.fechaFin)}'
-                : ''),
+            Text(
+              _planActivo!.fechaFin != null
+                  ? 'Finalizado el ${_formatDate(_planActivo!.fechaFin)}'
+                  : '',
+            ),
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _iniciarPlan,
@@ -673,7 +756,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
               style: FilledButton.styleFrom(
                 backgroundColor: AppTheme.green,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],
@@ -683,8 +767,9 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
 
     final diagnosticos = _planActivo!.diagnosticos;
     final agrupado = _agruparDiagnosticos(diagnosticos);
-    final totalGuardados =
-        diagnosticos.where((d) => d.valoracion != null).length;
+    final totalGuardados = diagnosticos
+        .where((d) => d.valoracion != null)
+        .length;
 
     return Column(
       children: [
@@ -697,7 +782,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
         Expanded(
           child: diagnosticos.isEmpty
               ? const Center(
-                  child: Text('No hay areas diagnosticadas en este plan.'))
+                  child: Text('No hay areas diagnosticadas en este plan.'),
+                )
               : ListView(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
                   children: [
@@ -705,8 +791,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
                       _UbicacionHeader(
                         nombre: ubic.key,
                         total: _totalEnUbicacion(ubic.value),
-                        completadas:
-                            _completadasEnUbicacion(ubic.value),
+                        completadas: _completadasEnUbicacion(ubic.value),
                       ),
                       for (final subz in ubic.value.entries) ...[
                         _SubzonaHeader(nombre: subz.key),
@@ -718,11 +803,10 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
                             editFoto: _editFotos[diag.id],
                             saving: _saving,
                             onTomarFoto: () => _tomarFoto(diag),
-                            onValoracionChanged: (v) => setState(
-                                () => _editValoraciones[diag.id] = v),
-                            onObservacionesChanged: (v) => setState(
-                                () => _editObservaciones[diag.id] = v),
-                            onGuardar: () => _guardarDiagnostico(diag),
+                            onValoracionChanged: (v) =>
+                                setState(() => _editValoraciones[diag.id] = v),
+                            onObservacionesChanged: (v) =>
+                                setState(() => _editObservaciones[diag.id] = v),
                           ),
                       ],
                     ],
@@ -734,7 +818,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
   }
 
   Map<String, Map<String, List<DiagnosticoAreaModel>>> _agruparDiagnosticos(
-      List<DiagnosticoAreaModel> diagnosticos) {
+    List<DiagnosticoAreaModel> diagnosticos,
+  ) {
     final map = <String, Map<String, List<DiagnosticoAreaModel>>>{};
     for (final d in diagnosticos) {
       final uName = d.ubicacionNombre;
@@ -746,15 +831,17 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
     return map;
   }
 
-  int _totalEnUbicacion(
-      Map<String, List<DiagnosticoAreaModel>> subzonas) {
+  int _totalEnUbicacion(Map<String, List<DiagnosticoAreaModel>> subzonas) {
     return subzonas.values.fold(0, (s, l) => s + l.length);
   }
 
   int _completadasEnUbicacion(
-      Map<String, List<DiagnosticoAreaModel>> subzonas) {
+    Map<String, List<DiagnosticoAreaModel>> subzonas,
+  ) {
     return subzonas.values.fold(
-        0, (s, l) => s + l.where((d) => d.valoracion != null).length);
+      0,
+      (s, l) => s + l.where((d) => d.valoracion != null).length,
+    );
   }
 
   // ──────────────────────────────────────────────
@@ -769,13 +856,15 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
           children: [
             Icon(Icons.description, size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 16),
-            Text('No hay planes registrados',
-                style: TextStyle(
-                    fontSize: 16, color: Colors.grey.shade600)),
+            Text(
+              'No hay planes registrados',
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+            ),
             const SizedBox(height: 8),
-            Text('Inicie un Plan Esperanza para ver informes.',
-                style: TextStyle(
-                    fontSize: 13, color: Colors.grey.shade500)),
+            Text(
+              'Inicie un Plan Esperanza para ver informes.',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+            ),
           ],
         ),
       );
@@ -785,123 +874,56 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
       return const Center(child: CircularProgressIndicator());
     }
 
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppTheme.surface,
-            border: Border(
-                bottom: BorderSide(color: Colors.grey.shade200)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.description, color: AppTheme.primary, size: 20),
-                  const SizedBox(width: 6),
-                  const Text('Seleccione un plan',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 14)),
-                  const Spacer(),
-                  if (_informe != null)
-                    IconButton(
-                      icon: Icon(Icons.picture_as_pdf,
-                          color: Colors.red.shade400, size: 22),
-                      tooltip: 'Descargar PDF',
-                      onPressed: () {
-                        AppFeedback.showInfo(context,
-                            message: 'PDF disponible proximamente.');
-                      },
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: _allPlanes.map((p) {
-                    final selected = _selectedPlanInfoId == p.id;
-                    final color = p.completado
-                        ? AppTheme.green
-                        : AppTheme.primary;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        selected: selected,
-                        label: Text(
-                          _formatDate(p.fechaInicio),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: selected ? Colors.white : color,
-                            fontWeight: selected
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                          ),
-                        ),
-                        avatar: Icon(Icons.circle,
-                            size: 8,
-                            color: selected ? Colors.white : color),
-                        selectedColor: color,
-                        checkmarkColor: Colors.white,
-                        backgroundColor: color.withValues(alpha: 0.1),
-                        side: BorderSide.none,
-                        onSelected: (_) {
-                          setState(() {
-                            _selectedPlanInfoId = p.id;
-                            _informe = null;
-                          });
-                          _loadInforme(p.id);
-                        },
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: _informe == null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(strokeWidth: 2),
-                      const SizedBox(height: 12),
-                      Text('Cargando informe...',
-                          style: TextStyle(
-                              fontSize: 13, color: Colors.grey.shade500)),
-                    ],
-                  ),
-                )
-              : _informe!.ubicaciones.isEmpty
-                  ? Center(
-                      child: Text('No hay datos en este informe.',
-                          style: TextStyle(color: Colors.grey.shade500)))
-                  : ListView(
-                      padding: const EdgeInsets.all(12),
-                      children: [
-                        for (final ubic in _informe!.ubicaciones) ...[
-                          _UbicacionHeader(
-                            nombre: ubic.ubicacionNombre,
-                            total: ubic.subzonas.fold<int>(
-                                0, (s, sz) => s + sz.areas.length),
-                            completadas: ubic.subzonas.fold<int>(0,
-                                (s, sz) => s + sz.areas.where((a) => a.valoracion != null).length),
-                          ),
-                          for (final subz in ubic.subzonas) ...[
-                            _SubzonaHeader(nombre: subz.subzonaNombre),
-                            for (final area in subz.areas)
-                              _AreaInformeCard(area: area),
-                          ],
-                        ],
-                      ],
-                    ),
-        ),
-      ],
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+      itemCount: _allPlanes.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final plan = _allPlanes[index];
+        final color = plan.completado ? AppTheme.green : Colors.orange;
+        return _PlanInformeTile(
+          plan: plan,
+          color: color,
+          onTap: () => _abrirInforme(plan),
+        );
+      },
     );
+  }
+
+  Future<void> _abrirInforme(PlanResumen plan) async {
+    setState(() => _saving = true);
+    final informe = await _loadInforme(plan.id);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (informe == null) return;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: _InformeDialog(
+          informe: informe,
+          onPdf: () => _descargarInformePdf(informe),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _descargarInformePdf(InformeResponse informe) async {
+    try {
+      final bytes = await buildPlanEsperanzaInformePdf(informe);
+      await openOrDownloadPdf(
+        bytes,
+        'plan_esperanza_${_fileDate(informe.fechaInicio)}.pdf',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showError(
+        context,
+        message: AppError.messageOf(e, fallback: 'No se pudo generar el PDF.'),
+      );
+    }
   }
 
   // ──────────────────────────────────────────────
@@ -917,13 +939,14 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
             const CircularProgressIndicator(),
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _loadHistorico,
+              onPressed: () => _loadHistorico(),
               icon: const Icon(Icons.refresh),
               label: const Text('Cargar historico'),
               style: FilledButton.styleFrom(
                 backgroundColor: AppTheme.primary,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],
@@ -938,8 +961,10 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
           children: [
             Icon(Icons.history, size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 16),
-            Text('Aun no hay planes registrados.',
-                style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
+            Text(
+              'Aun no hay planes registrados.',
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+            ),
           ],
         ),
       );
@@ -947,98 +972,52 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
 
     final historico = _historico!;
 
+    final planesSeleccionables = _allPlanes.isNotEmpty
+        ? _allPlanes
+        : historico.planes;
+
     return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppTheme.surfaceSoft,
-            border: Border(
-                bottom: BorderSide(color: Colors.grey.shade200)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.history, color: AppTheme.primary, size: 20),
-                  const SizedBox(width: 6),
-                  const Text('Linea de tiempo',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 14)),
-                  const Spacer(),
-                  IconButton(
-                    icon: Icon(Icons.picture_as_pdf,
-                        color: Colors.red.shade400, size: 22),
-                    tooltip: 'Descargar PDF',
-                    onPressed: () {
-                      AppFeedback.showInfo(context,
-                          message: 'PDF disponible proximamente.');
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    ...historico.planes.map((p) {
-                      final activo = _planActivo != null &&
-                          _planActivo!.id == p.id;
-                      final color = p.completado
-                          ? AppTheme.green
-                          : activo
-                              ? AppTheme.primary
-                              : Colors.orange;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Chip(
-                          avatar: Icon(Icons.circle, size: 10, color: color),
-                          label: Text(
-                            _formatDate(p.fechaInicio),
-                            style: const TextStyle(fontSize: 11),
-                          ),
-                          backgroundColor: color.withValues(alpha: 0.1),
-                          side: BorderSide.none,
-                          materialTapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      );
-                    }),
-                  ],
-                ),
-              ),
-            ],
-          ),
+        _HistoricoSelector(
+          planes: planesSeleccionables,
+          selectedIds: _selectedHistoricoPlanIds,
+          onChanged: (ids) {
+            setState(() {
+              _selectedHistoricoPlanIds
+                ..clear()
+                ..addAll(ids);
+            });
+          },
+          onGenerar: _selectedHistoricoPlanIds.isEmpty
+              ? null
+              : () =>
+                    _loadHistorico(planIds: _selectedHistoricoPlanIds.toList()),
+          onPdf: historico.planes.isEmpty
+              ? null
+              : () => _descargarHistoricoPdf(historico),
         ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(12),
-            children: [
-              for (final ubic in historico.ubicaciones) ...[
-                _UbicacionHeader(
-                  nombre: ubic.ubicacionNombre,
-                  total: ubic.subzonas.fold<int>(
-                      0, (s, sz) => s + sz.areas.length),
-                  completadas: ubic.subzonas.fold<int>(
-                      0, (s, sz) => s + sz.areas.where((a) => a.entradas.any((e) => e.valoracion != null)).length),
-                ),
-                for (final subz in ubic.subzonas) ...[
-                  _SubzonaHeader(nombre: subz.subzonaNombre),
-                  for (final area in subz.areas)
-                    _AreaHistoricoCard(
-                      area: area,
-                      planes: historico.planes,
-                    ),
-                ],
-              ],
-            ],
-          ),
-        ),
+        Expanded(child: _HistoricoDetalle(historico: historico)),
       ],
     );
+  }
+
+  Future<void> _descargarHistoricoPdf(HistoricoResponse historico) async {
+    try {
+      final bytes = await buildPlanEsperanzaHistoricoPdf(
+        historico,
+        conjuntoNombre: widget.nombreConjunto ?? 'Plan Esperanza',
+      );
+      await openOrDownloadPdf(
+        bytes,
+        'historico_plan_esperanza_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showError(
+        context,
+        message: AppError.messageOf(e, fallback: 'No se pudo generar el PDF.'),
+      );
+    }
   }
 
   static String _formatDate(DateTime? dt) {
@@ -1046,6 +1025,11 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
     return '${dt.day.toString().padLeft(2, '0')}/'
         '${dt.month.toString().padLeft(2, '0')}/'
         '${dt.year}';
+  }
+
+  static String _fileDate(DateTime dt) {
+    return '${dt.year}${dt.month.toString().padLeft(2, '0')}'
+        '${dt.day.toString().padLeft(2, '0')}';
   }
 
   static ImageProvider _imageProvider(dynamic foto) {
@@ -1056,12 +1040,292 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
     if (foto is String && foto.isNotEmpty) return NetworkImage(foto);
     return const AssetImage('');
   }
-
 }
 
 // ──────────────────────────────────────────────
 // STATELESS WIDGETS
 // ──────────────────────────────────────────────
+
+class _PlanInformeTile extends StatelessWidget {
+  final PlanResumen plan;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _PlanInformeTile({
+    required this.plan,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: color.withValues(alpha: 0.12),
+                child: Icon(Icons.description, color: color, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Informe ${_PlanEsperanzaPageState._formatDate(plan.fechaInicio)}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.text,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${plan.totalAreas} areas - ${plan.completado ? "Finalizado" : "Activo"}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Colors.grey.shade400),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InformeDialog extends StatelessWidget {
+  final InformeResponse informe;
+  final VoidCallback onPdf;
+
+  const _InformeDialog({required this.informe, required this.onPdf});
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 920, maxHeight: 720),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+            child: Row(
+              children: [
+                Icon(Icons.description, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Informe ${_PlanEsperanzaPageState._formatDate(informe.fechaInicio)}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Guardar PDF',
+                  icon: Icon(Icons.picture_as_pdf, color: Colors.red.shade400),
+                  onPressed: onPdf,
+                ),
+                IconButton(
+                  tooltip: 'Cerrar',
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(child: _InformeDetalle(informe: informe)),
+        ],
+      ),
+    );
+  }
+}
+
+class _InformeDetalle extends StatelessWidget {
+  final InformeResponse informe;
+
+  const _InformeDetalle({required this.informe});
+
+  @override
+  Widget build(BuildContext context) {
+    if (informe.ubicaciones.isEmpty) {
+      return Center(
+        child: Text(
+          'No hay datos en este informe.',
+          style: TextStyle(color: Colors.grey.shade500),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        for (final ubic in informe.ubicaciones) ...[
+          _UbicacionHeader(
+            nombre: ubic.ubicacionNombre,
+            total: ubic.subzonas.fold<int>(0, (s, sz) => s + sz.areas.length),
+            completadas: ubic.subzonas.fold<int>(
+              0,
+              (s, sz) => s + sz.areas.where((a) => a.valoracion != null).length,
+            ),
+          ),
+          for (final subz in ubic.subzonas) ...[
+            _SubzonaHeader(nombre: subz.subzonaNombre),
+            for (final area in subz.areas) _AreaInformeCard(area: area),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+class _HistoricoSelector extends StatelessWidget {
+  final List<PlanResumen> planes;
+  final Set<int> selectedIds;
+  final ValueChanged<Set<int>> onChanged;
+  final VoidCallback? onGenerar;
+  final VoidCallback? onPdf;
+
+  const _HistoricoSelector({
+    required this.planes,
+    required this.selectedIds,
+    required this.onChanged,
+    required this.onGenerar,
+    required this.onPdf,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceSoft,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.history, color: AppTheme.primary, size: 20),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${selectedIds.length} plan(es) seleccionados',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: Icon(
+                  Icons.picture_as_pdf,
+                  color: onPdf == null
+                      ? Colors.grey.shade400
+                      : Colors.red.shade400,
+                  size: 22,
+                ),
+                tooltip: 'Guardar PDF',
+                onPressed: onPdf,
+              ),
+              FilledButton.icon(
+                onPressed: onGenerar,
+                icon: const Icon(Icons.tune, size: 16),
+                label: const Text('Generar'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final plan in planes)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      selected: selectedIds.contains(plan.id),
+                      label: Text(
+                        _PlanEsperanzaPageState._formatDate(plan.fechaInicio),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      onSelected: (selected) {
+                        final next = Set<int>.from(selectedIds);
+                        if (selected) {
+                          next.add(plan.id);
+                        } else {
+                          next.remove(plan.id);
+                        }
+                        onChanged(next);
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoricoDetalle extends StatelessWidget {
+  final HistoricoResponse historico;
+
+  const _HistoricoDetalle({required this.historico});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        for (final ubic in historico.ubicaciones) ...[
+          _UbicacionHeader(
+            nombre: ubic.ubicacionNombre,
+            total: ubic.subzonas.fold<int>(0, (s, sz) => s + sz.areas.length),
+            completadas: ubic.subzonas.fold<int>(
+              0,
+              (s, sz) =>
+                  s +
+                  sz.areas.where((a) {
+                    return a.entradas.any((e) => e.valoracion != null);
+                  }).length,
+            ),
+          ),
+          for (final subz in ubic.subzonas) ...[
+            _SubzonaHeader(nombre: subz.subzonaNombre),
+            for (final area in subz.areas)
+              _AreaHistoricoCard(area: area, planes: historico.planes),
+          ],
+        ],
+      ],
+    );
+  }
+}
 
 class _InfoBar extends StatelessWidget {
   final DateTime fechaInicio;
@@ -1093,19 +1357,34 @@ class _InfoBar extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.calendar_today, size: 14, color: Colors.grey.shade600),
+                    Icon(
+                      Icons.calendar_today,
+                      size: 14,
+                      color: Colors.grey.shade600,
+                    ),
                     const SizedBox(width: 6),
-                    Text(_PlanEsperanzaPageState._formatDate(fechaInicio),
-                        style: TextStyle(
-                            fontSize: 13, color: Colors.grey.shade700)),
+                    Text(
+                      _PlanEsperanzaPageState._formatDate(fechaInicio),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
                     const SizedBox(width: 16),
-                    Icon(Icons.check_circle_outline, size: 14, color: AppTheme.green),
+                    Icon(
+                      Icons.check_circle_outline,
+                      size: 14,
+                      color: AppTheme.green,
+                    ),
                     const SizedBox(width: 4),
-                    Text('$completadas/$totalAreas',
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.green)),
+                    Text(
+                      '$completadas/$totalAreas',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.green,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -1115,9 +1394,10 @@ class _InfoBar extends StatelessWidget {
                     value: progreso,
                     backgroundColor: Colors.grey.shade200,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                        completadas == totalAreas && totalAreas > 0
-                            ? AppTheme.green
-                            : AppTheme.primary),
+                      completadas == totalAreas && totalAreas > 0
+                          ? AppTheme.green
+                          : AppTheme.primary,
+                    ),
                     minHeight: 4,
                   ),
                 ),
@@ -1167,15 +1447,18 @@ class _UbicacionHeader extends StatelessWidget {
               color: AppTheme.primary.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(8),
             ),
-            child:
-                Icon(Icons.location_on, size: 18, color: AppTheme.primary),
+            child: Icon(Icons.location_on, size: 18, color: AppTheme.primary),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(nombre,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w700, fontSize: 15,
-                    color: AppTheme.text)),
+            child: Text(
+              nombre,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+                color: AppTheme.text,
+              ),
+            ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1185,13 +1468,16 @@ class _UbicacionHeader extends StatelessWidget {
                   : Colors.grey.shade100,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text('$completadas/$total',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: completadas == total && total > 0
-                        ? AppTheme.green
-                        : Colors.grey.shade600)),
+            child: Text(
+              '$completadas/$total',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: completadas == total && total > 0
+                    ? AppTheme.green
+                    : Colors.grey.shade600,
+              ),
+            ),
           ),
         ],
       ),
@@ -1209,14 +1495,20 @@ class _SubzonaHeader extends StatelessWidget {
       padding: const EdgeInsets.only(left: 20, top: 8, bottom: 4),
       child: Row(
         children: [
-          Icon(Icons.subdirectory_arrow_right,
-              size: 18, color: Colors.grey.shade400),
+          Icon(
+            Icons.subdirectory_arrow_right,
+            size: 18,
+            color: Colors.grey.shade400,
+          ),
           const SizedBox(width: 4),
-          Text(nombre,
-              style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                  color: Colors.grey.shade700)),
+          Text(
+            nombre,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              color: Colors.grey.shade700,
+            ),
+          ),
         ],
       ),
     );
@@ -1232,7 +1524,6 @@ class _DiagnosticoCard extends StatelessWidget {
   final VoidCallback onTomarFoto;
   final ValueChanged<double> onValoracionChanged;
   final ValueChanged<String> onObservacionesChanged;
-  final VoidCallback onGuardar;
 
   const _DiagnosticoCard({
     required this.diagnostico,
@@ -1243,14 +1534,12 @@ class _DiagnosticoCard extends StatelessWidget {
     required this.onTomarFoto,
     required this.onValoracionChanged,
     required this.onObservacionesChanged,
-    required this.onGuardar,
   });
 
   @override
   Widget build(BuildContext context) {
-    final tieneCambios = editValoracion != null ||
-        editObservaciones != null ||
-        editFoto != null;
+    final tieneCambios =
+        editValoracion != null || editObservaciones != null || editFoto != null;
     final fotoActual = editFoto ?? diagnostico.urlFoto;
 
     return Card(
@@ -1274,32 +1563,42 @@ class _DiagnosticoCard extends StatelessWidget {
                     color: AppTheme.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Icon(Icons.crop_square,
-                      size: 14, color: AppTheme.primary),
+                  child: Icon(
+                    Icons.crop_square,
+                    size: 14,
+                    color: AppTheme.primary,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     diagnostico.elementoNombre,
                     style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 14,
-                        color: AppTheme.text),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: AppTheme.text,
+                    ),
                   ),
                 ),
                 if (tieneCambios)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.amber.shade50,
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(color: Colors.amber.shade200),
                     ),
-                    child: const Text('Sin guardar',
-                        style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.amber)),
+                    child: const Text(
+                      'Pendiente',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.amber,
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -1326,7 +1625,8 @@ class _DiagnosticoCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(9),
                             child: Image(
                               image: _PlanEsperanzaPageState._imageProvider(
-                                  fotoActual),
+                                fotoActual,
+                              ),
                               fit: BoxFit.cover,
                               width: 88,
                               height: 88,
@@ -1344,23 +1644,31 @@ class _DiagnosticoCard extends StatelessWidget {
                       FilledButton.tonalIcon(
                         onPressed: saving ? null : onTomarFoto,
                         icon: Icon(
-                            fotoActual != null ? Icons.swap_horiz : Icons.camera_alt,
-                            size: 16),
+                          fotoActual != null
+                              ? Icons.swap_horiz
+                              : Icons.camera_alt,
+                          size: 16,
+                        ),
                         label: Text(
-                            fotoActual != null ? 'Cambiar' : 'Agregar foto',
-                            style: const TextStyle(fontSize: 12)),
+                          fotoActual != null ? 'Cambiar' : 'Agregar foto',
+                          style: const TextStyle(fontSize: 12),
+                        ),
                         style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           backgroundColor: AppTheme.surfaceSoft,
                           foregroundColor: AppTheme.primary,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 8),
                       StarRatingInput(
-                        initialRating: diagnostico.valoracion ?? 0,
+                        initialRating:
+                            editValoracion ?? diagnostico.valoracion ?? 0,
                         onChanged: onValoracionChanged,
                       ),
                     ],
@@ -1376,8 +1684,10 @@ class _DiagnosticoCard extends StatelessWidget {
                 hintText: 'Agregar observaciones...',
                 hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
                 isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                   borderSide: BorderSide(color: Colors.grey.shade300),
@@ -1395,39 +1705,44 @@ class _DiagnosticoCard extends StatelessWidget {
               ),
               maxLines: 2,
               style: const TextStyle(fontSize: 13),
-              controller: TextEditingController(
-                text: editObservaciones ?? diagnostico.observaciones ?? '',
-              )..selection = TextSelection.fromPosition(
-                  TextPosition(
-                      offset:
-                          (editObservaciones ?? diagnostico.observaciones ?? '')
-                              .length)),
+              controller:
+                  TextEditingController(
+                      text:
+                          editObservaciones ?? diagnostico.observaciones ?? '',
+                    )
+                    ..selection = TextSelection.fromPosition(
+                      TextPosition(
+                        offset:
+                            (editObservaciones ??
+                                    diagnostico.observaciones ??
+                                    '')
+                                .length,
+                      ),
+                    ),
               onChanged: onObservacionesChanged,
             ),
-            const SizedBox(height: 10),
-
-            // Guardar
-            Align(
-              alignment: Alignment.centerRight,
-              child: AnimatedOpacity(
-                opacity: tieneCambios ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 200),
-                child: FilledButton.icon(
-                  onPressed: (saving || !tieneCambios) ? null : onGuardar,
-                  icon: const Icon(Icons.save, size: 18),
-                  label: Text(saving ? 'Guardando...' : 'Guardar'),
-                  style: FilledButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                    backgroundColor: AppTheme.primary,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
-                    textStyle: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600),
+            if (tieneCambios) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 14,
+                    color: Colors.amber.shade800,
                   ),
-                ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Se guardara al finalizar el plan.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -1440,15 +1755,16 @@ class _DiagnosticoCard extends StatelessWidget {
       children: [
         Icon(Icons.add_a_photo, size: 28, color: Colors.grey.shade300),
         const SizedBox(height: 4),
-        Text('Foto',
-            style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
+        Text(
+          'Foto',
+          style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
+        ),
       ],
     );
   }
 
   void _showFotoDialog(BuildContext context, dynamic foto) {
-    final provider =
-        _PlanEsperanzaPageState._imageProvider(foto);
+    final provider = _PlanEsperanzaPageState._imageProvider(foto);
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -1498,9 +1814,13 @@ class _AreaInformeCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(area.elementoNombre,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 14)),
+                Text(
+                  area.elementoNombre,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 if (area.valoracion != null)
                   StarRating(rating: area.valoracion!, starSize: 16),
@@ -1508,21 +1828,28 @@ class _AreaInformeCard extends StatelessWidget {
                     area.observaciones!.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text(area.observaciones!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade600)),
+                    child: Text(
+                      area.observaciones!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
                   ),
               ],
             ),
           ),
           if (area.valoracion != null)
-            Text(area.valoracion!.toStringAsFixed(1),
-                style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.primary)),
+            Text(
+              area.valoracion!.toStringAsFixed(1),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.primary,
+              ),
+            ),
         ],
       ),
     );
@@ -1560,10 +1887,7 @@ class _AreaHistoricoCard extends StatefulWidget {
   final AreaHistorico area;
   final List<PlanResumen> planes;
 
-  const _AreaHistoricoCard({
-    required this.area,
-    required this.planes,
-  });
+  const _AreaHistoricoCard({required this.area, required this.planes});
 
   @override
   State<_AreaHistoricoCard> createState() => _AreaHistoricoCardState();
@@ -1625,16 +1949,26 @@ class _AreaHistoricoCardState extends State<_AreaHistoricoCard> {
                     width: 40,
                     height: 40,
                     child: ultima.urlFoto != null
-                        ? Image.network(ultima.urlFoto!,
+                        ? Image.network(
+                            ultima.urlFoto!,
                             fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => Container(
-                                color: Colors.grey.shade100,
-                                child: Icon(Icons.image_not_supported,
-                                    size: 20, color: Colors.grey.shade300)))
+                              color: Colors.grey.shade100,
+                              child: Icon(
+                                Icons.image_not_supported,
+                                size: 20,
+                                color: Colors.grey.shade300,
+                              ),
+                            ),
+                          )
                         : Container(
                             color: Colors.grey.shade50,
-                            child: Icon(Icons.image_not_supported,
-                                size: 20, color: Colors.grey.shade300)),
+                            child: Icon(
+                              Icons.image_not_supported,
+                              size: 20,
+                              color: Colors.grey.shade300,
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1642,35 +1976,46 @@ class _AreaHistoricoCardState extends State<_AreaHistoricoCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(widget.area.elementoNombre,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 14)),
+                      Text(
+                        widget.area.elementoNombre,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
                       const SizedBox(height: 2),
                       Text(
                         '${entradas.length} evaluacion(es) · ${_PlanEsperanzaPageState._formatDate(entradas.first.fecha)} → ${_PlanEsperanzaPageState._formatDate(entradas.last.fecha)}',
                         style: TextStyle(
-                            fontSize: 11, color: Colors.grey.shade500),
+                          fontSize: 11,
+                          color: Colors.grey.shade500,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                Text('$tendencia ',
-                    style: TextStyle(
-                        fontSize: 18, color: tendenciaColor)),
+                Text(
+                  '$tendencia ',
+                  style: TextStyle(fontSize: 18, color: tendenciaColor),
+                ),
                 if (diff != null)
                   Text(
                     '${diff >= 0 ? '+' : ''}${diff.toStringAsFixed(1)}',
                     style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: tendenciaColor),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: tendenciaColor,
+                    ),
                   ),
                 const SizedBox(width: 4),
                 AnimatedRotation(
                   turns: _expandido ? 0.5 : 0,
                   duration: const Duration(milliseconds: 200),
-                  child: Icon(Icons.expand_more,
-                      color: Colors.grey.shade500, size: 22),
+                  child: Icon(
+                    Icons.expand_more,
+                    color: Colors.grey.shade500,
+                    size: 22,
+                  ),
                 ),
               ],
             ),
@@ -1712,15 +2057,15 @@ class _AreaHistoricoCardState extends State<_AreaHistoricoCard> {
         children: [
           Row(
             children: [
-              Icon(Icons.calendar_today,
-                  size: 11, color: AppTheme.primary),
+              Icon(Icons.calendar_today, size: 11, color: AppTheme.primary),
               const SizedBox(width: 4),
               Text(
                 _PlanEsperanzaPageState._formatDate(entry.fecha),
                 style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.primary),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.primary,
+                ),
               ),
             ],
           ),
@@ -1737,42 +2082,25 @@ class _AreaHistoricoCardState extends State<_AreaHistoricoCard> {
                   width: 140,
                   height: 80,
                   color: Colors.grey.shade200,
-                  child: Icon(Icons.broken_image,
-                      color: Colors.grey.shade400),
+                  child: Icon(Icons.broken_image, color: Colors.grey.shade400),
                 ),
               ),
             ),
           const SizedBox(height: 6),
           if (entry.valoracion != null)
             StarRating(rating: entry.valoracion!, starSize: 14),
-          if (entry.observaciones != null &&
-              entry.observaciones!.isNotEmpty)
+          if (entry.observaciones != null && entry.observaciones!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text(entry.observaciones!,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 11, color: Colors.grey.shade600)),
+              child: Text(
+                entry.observaciones!,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+              ),
             ),
         ],
       ),
-    );
-  }
-}
-
-extension on PlanEsperanzaActivo {
-  PlanEsperanzaActivo copyWithDiagnostico(DiagnosticoAreaModel updated) {
-    return PlanEsperanzaActivo(
-      id: id,
-      conjuntoId: conjuntoId,
-      fechaInicio: fechaInicio,
-      fechaFin: fechaFin,
-      completado: completado,
-      diagnosticos: diagnosticos.map((d) {
-        if (d.id == updated.id) return updated;
-        return d;
-      }).toList(),
     );
   }
 }
