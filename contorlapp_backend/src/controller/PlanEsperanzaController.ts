@@ -6,6 +6,22 @@ import { PlanEsperanzaService } from "../services/PlanEsperanzaService";
 
 const service = new PlanEsperanzaService(prisma);
 
+function safeFileSegment(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+}
+
+function fileDate(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
 const NitParam = z.object({ nit: z.string().min(1) });
 const PlanIdParam = z.object({ id: z.coerce.number().int().positive() });
 const DiagnosticoIdParam = z.object({
@@ -100,12 +116,17 @@ export class PlanEsperanzaController {
           select: { nombre: true },
         });
         conjuntoNombre = conjunto?.nombre ?? "Conjunto";
+        const extension = file.originalname?.includes(".")
+          ? file.originalname.substring(file.originalname.lastIndexOf("."))
+          : ".jpg";
+        const areaNombre = safeFileSegment(diagnostico.elementoNombre || "area");
+        const fechaArchivo = fileDate(new Date());
 
         const result = await service.guardarDiagnostico(id, {
           valoracion: body.valoracion,
           observaciones: body.observaciones,
           filePath: file.path,
-          fileName: `area_${diagnostico.elementoId}_${Date.now()}${file.originalname ? file.originalname.substring(file.originalname.lastIndexOf(".")) : ".jpg"}`,
+          fileName: `${areaNombre || "area"}_${fechaArchivo}${extension}`,
           mimeType: file.mimetype,
           conjuntoNombre,
         });

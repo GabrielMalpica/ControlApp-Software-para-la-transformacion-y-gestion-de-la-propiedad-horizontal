@@ -5,6 +5,20 @@ const zod_1 = require("zod");
 const prisma_1 = require("../db/prisma");
 const PlanEsperanzaService_1 = require("../services/PlanEsperanzaService");
 const service = new PlanEsperanzaService_1.PlanEsperanzaService(prisma_1.prisma);
+function safeFileSegment(value) {
+    return value
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .toLowerCase();
+}
+function fileDate(date) {
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, "0");
+    const day = `${date.getDate()}`.padStart(2, "0");
+    return `${year}${month}${day}`;
+}
 const NitParam = zod_1.z.object({ nit: zod_1.z.string().min(1) });
 const PlanIdParam = zod_1.z.object({ id: zod_1.z.coerce.number().int().positive() });
 const DiagnosticoIdParam = zod_1.z.object({
@@ -93,11 +107,16 @@ class PlanEsperanzaController {
                         select: { nombre: true },
                     });
                     conjuntoNombre = conjunto?.nombre ?? "Conjunto";
+                    const extension = file.originalname?.includes(".")
+                        ? file.originalname.substring(file.originalname.lastIndexOf("."))
+                        : ".jpg";
+                    const areaNombre = safeFileSegment(diagnostico.elementoNombre || "area");
+                    const fechaArchivo = fileDate(new Date());
                     const result = await service.guardarDiagnostico(id, {
                         valoracion: body.valoracion,
                         observaciones: body.observaciones,
                         filePath: file.path,
-                        fileName: `area_${diagnostico.elementoId}_${Date.now()}${file.originalname ? file.originalname.substring(file.originalname.lastIndexOf(".")) : ".jpg"}`,
+                        fileName: `${areaNombre || "area"}_${fechaArchivo}${extension}`,
                         mimeType: file.mimetype,
                         conjuntoNombre,
                     });

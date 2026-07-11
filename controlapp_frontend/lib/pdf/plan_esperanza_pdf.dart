@@ -1,7 +1,9 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/model/plan_esperanza_model.dart';
+import 'package:flutter_application_1/utils/evidence_utils.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 Future<Uint8List> buildPlanEsperanzaInformePdf(InformeResponse informe) async {
   final fontRegular = pw.Font.ttf(
@@ -10,6 +12,16 @@ Future<Uint8List> buildPlanEsperanzaInformePdf(InformeResponse informe) async {
   final fontBold = pw.Font.ttf(
     await rootBundle.load('assets/fonts/Roboto-Bold.ttf'),
   );
+  final logoBytes = await _loadPlanEsperanzaLogoBytes();
+  final logoImage = pw.MemoryImage(logoBytes);
+  final evidenceImageByRaw = await _preloadEvidenceImages(
+    informe.ubicaciones
+        .expand((u) => u.subzonas)
+        .expand((s) => s.areas)
+        .map((a) => a.urlFoto)
+        .whereType<String>(),
+  );
+
   final doc = pw.Document();
 
   doc.addPage(
@@ -19,20 +31,24 @@ Future<Uint8List> buildPlanEsperanzaInformePdf(InformeResponse informe) async {
       theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
       header: (_) => _header(
         'Informe Plan Esperanza',
-        '${informe.conjuntoNombre} - ${_formatDate(informe.fechaInicio)}',
+        subtitulo: _formatDate(informe.fechaInicio),
+        detallePrincipal: informe.conjuntoNombre,
+        detalleSecundario: 'NIT: ${informe.conjuntoNit}',
+        logoImage: logoImage,
       ),
       build: (_) => [
-        _summaryRow([
-          'NIT: ${informe.conjuntoNit}',
-          'Estado: ${informe.completado ? "Finalizado" : "Activo"}',
-          'Fin: ${_formatDate(informe.fechaFin)}',
-        ]),
+        if (informe.fechaFin != null)
+          pw.Text(
+            'Fecha de cierre: ${_formatDate(informe.fechaFin)}',
+            style: const pw.TextStyle(fontSize: 9),
+          ),
         pw.SizedBox(height: 12),
         for (final ubic in informe.ubicaciones) ...[
           _sectionTitle(ubic.ubicacionNombre),
           for (final subz in ubic.subzonas) ...[
             _subTitle(subz.subzonaNombre),
-            for (final area in subz.areas) _areaInforme(area),
+            for (final area in subz.areas)
+              _areaInforme(area, evidenceImageByRaw[area.urlFoto ?? '']),
           ],
         ],
       ],
@@ -52,6 +68,20 @@ Future<Uint8List> buildPlanEsperanzaHistoricoPdf(
   final fontBold = pw.Font.ttf(
     await rootBundle.load('assets/fonts/Roboto-Bold.ttf'),
   );
+  final logoBytes = await _loadPlanEsperanzaLogoBytes();
+  final logoImage = pw.MemoryImage(logoBytes);
+  final evidenceImageByRaw = await _preloadEvidenceImages(
+    historico.ubicaciones
+        .expand((u) => u.subzonas)
+        .expand((s) => s.areas)
+        .expand((a) => a.entradas)
+        .map((e) => e.urlFoto)
+        .whereType<String>(),
+  );
+  final fechasPlanes = historico.planes
+      .map((p) => _formatDate(p.fechaInicio))
+      .join(', ');
+
   final doc = pw.Document();
 
   doc.addPage(
@@ -61,20 +91,21 @@ Future<Uint8List> buildPlanEsperanzaHistoricoPdf(
       theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
       header: (_) => _header(
         'Historico Plan Esperanza',
-        '$conjuntoNombre - ${historico.planes.length} plan(es)',
+        detallePrincipal: conjuntoNombre,
+        detalleSecundario: '${historico.planes.length} plan(es)',
+        detalleTerciario: fechasPlanes.isEmpty
+            ? null
+            : 'Planes mostrados: $fechasPlanes',
+        logoImage: logoImage,
       ),
       build: (_) => [
-        _summaryRow(
-          historico.planes
-              .map((p) => '${_formatDate(p.fechaInicio)} (${p.totalAreas})')
-              .toList(),
-        ),
         pw.SizedBox(height: 12),
         for (final ubic in historico.ubicaciones) ...[
           _sectionTitle(ubic.ubicacionNombre),
           for (final subz in ubic.subzonas) ...[
             _subTitle(subz.subzonaNombre),
-            for (final area in subz.areas) _areaHistorico(area),
+            for (final area in subz.areas)
+              _areaHistorico(area, evidenceImageByRaw),
           ],
         ],
       ],
@@ -84,37 +115,74 @@ Future<Uint8List> buildPlanEsperanzaHistoricoPdf(
   return doc.save();
 }
 
-pw.Widget _header(String title, String subtitle) {
+pw.Widget _header(
+  String title, {
+  String? subtitulo,
+  required String detallePrincipal,
+  String? detalleSecundario,
+  String? detalleTerciario,
+  required pw.MemoryImage logoImage,
+}) {
   return pw.Column(
-    crossAxisAlignment: pw.CrossAxisAlignment.start,
     children: [
-      pw.Text(
-        title,
-        style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold),
+      pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Expanded(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  title,
+                  style: pw.TextStyle(
+                    fontSize: 15,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                if (subtitulo != null)
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(top: 2),
+                    child: pw.Text(
+                      subtitulo,
+                      style: const pw.TextStyle(fontSize: 9),
+                    ),
+                  ),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  detallePrincipal,
+                  style: pw.TextStyle(
+                    fontSize: 11,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                if (detalleSecundario != null)
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(top: 2),
+                    child: pw.Text(
+                      detalleSecundario,
+                      style: const pw.TextStyle(fontSize: 9),
+                    ),
+                  ),
+                if (detalleTerciario != null)
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.only(top: 2),
+                    child: pw.Text(
+                      detalleTerciario,
+                      style: const pw.TextStyle(fontSize: 9),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          pw.SizedBox(width: 12),
+          pw.SizedBox(
+            height: 58,
+            child: pw.Image(logoImage, fit: pw.BoxFit.contain),
+          ),
+        ],
       ),
-      pw.Text(subtitle, style: const pw.TextStyle(fontSize: 10)),
       pw.SizedBox(height: 8),
       pw.Divider(),
-    ],
-  );
-}
-
-pw.Widget _summaryRow(List<String> items) {
-  if (items.isEmpty) return pw.SizedBox.shrink();
-  return pw.Wrap(
-    spacing: 6,
-    runSpacing: 6,
-    children: [
-      for (final item in items)
-        pw.Container(
-          padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: pw.BoxDecoration(
-            color: PdfColors.grey100,
-            border: pw.Border.all(color: PdfColors.grey300),
-            borderRadius: pw.BorderRadius.circular(6),
-          ),
-          child: pw.Text(item, style: const pw.TextStyle(fontSize: 8)),
-        ),
     ],
   );
 }
@@ -124,10 +192,17 @@ pw.Widget _sectionTitle(String text) {
     width: double.infinity,
     margin: const pw.EdgeInsets.only(top: 8, bottom: 4),
     padding: const pw.EdgeInsets.all(8),
-    decoration: const pw.BoxDecoration(color: PdfColors.blue50),
+    decoration: pw.BoxDecoration(
+      color: PdfColor.fromHex('#E6F4EC'),
+      borderRadius: pw.BorderRadius.circular(6),
+    ),
     child: pw.Text(
       text,
-      style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+      style: pw.TextStyle(
+        fontSize: 11,
+        fontWeight: pw.FontWeight.bold,
+        color: PdfColor.fromHex('#0C6B43'),
+      ),
     ),
   );
 }
@@ -142,7 +217,7 @@ pw.Widget _subTitle(String text) {
   );
 }
 
-pw.Widget _areaInforme(AreaInforme area) {
+pw.Widget _areaInforme(AreaInforme area, pw.ImageProvider? foto) {
   return _box([
     _bold(area.elementoNombre),
     pw.SizedBox(height: 3),
@@ -155,18 +230,17 @@ pw.Widget _areaInforme(AreaInforme area) {
         'Observaciones: ${area.observaciones}',
         style: const pw.TextStyle(fontSize: 9),
       ),
-    if ((area.urlFoto ?? '').isNotEmpty)
-      pw.UrlLink(
-        destination: area.urlFoto!,
-        child: pw.Text(
-          'Foto: ${area.urlFoto}',
-          style: const pw.TextStyle(fontSize: 8, color: PdfColors.blue),
-        ),
-      ),
+    if (foto != null) ...[
+      pw.SizedBox(height: 6),
+      _fotoPdf(foto),
+    ],
   ]);
 }
 
-pw.Widget _areaHistorico(AreaHistorico area) {
+pw.Widget _areaHistorico(
+  AreaHistorico area,
+  Map<String, pw.ImageProvider?> evidenceImageByRaw,
+) {
   return _box([
     _bold(area.elementoNombre),
     pw.SizedBox(height: 4),
@@ -185,18 +259,30 @@ pw.Widget _areaHistorico(AreaHistorico area) {
                 'Observaciones: ${entry.observaciones}',
                 style: const pw.TextStyle(fontSize: 9),
               ),
-            if ((entry.urlFoto ?? '').isNotEmpty)
-              pw.UrlLink(
-                destination: entry.urlFoto!,
-                child: pw.Text(
-                  'Foto: ${entry.urlFoto}',
-                  style: const pw.TextStyle(fontSize: 8, color: PdfColors.blue),
-                ),
-              ),
+            if (evidenceImageByRaw[entry.urlFoto ?? ''] != null) ...[
+              pw.SizedBox(height: 6),
+              _fotoPdf(evidenceImageByRaw[entry.urlFoto ?? '']!),
+            ],
           ],
         ),
       ),
   ]);
+}
+
+pw.Widget _fotoPdf(pw.ImageProvider image) {
+  return pw.Container(
+    width: 140,
+    height: 100,
+    decoration: pw.BoxDecoration(
+      border: pw.Border.all(color: PdfColors.grey300),
+      borderRadius: pw.BorderRadius.circular(6),
+    ),
+    child: pw.ClipRRect(
+      horizontalRadius: 6,
+      verticalRadius: 6,
+      child: pw.Image(image, fit: pw.BoxFit.cover),
+    ),
+  );
 }
 
 pw.Widget _box(List<pw.Widget> children) {
@@ -231,4 +317,56 @@ String _formatDate(DateTime? dt) {
   return '${dt.day.toString().padLeft(2, '0')}/'
       '${dt.month.toString().padLeft(2, '0')}/'
       '${dt.year}';
+}
+
+Future<pw.ImageProvider?> _loadEvidenceImage(
+  String raw,
+  Map<String, pw.ImageProvider> imageCache,
+) async {
+  for (final url in _pdfEvidenceUrlCandidates(raw)) {
+    if (imageCache.containsKey(url)) return imageCache[url];
+    try {
+      final image = await networkImage(url);
+      imageCache[url] = image;
+      return image;
+    } catch (_) {
+      // sigue con el siguiente candidato
+    }
+  }
+  return null;
+}
+
+Future<Uint8List> _loadPlanEsperanzaLogoBytes() async {
+  final logo = await rootBundle.load('assets/logo_cronograma.png');
+  return logo.buffer.asUint8List();
+}
+
+Future<Map<String, pw.ImageProvider?>> _preloadEvidenceImages(
+  Iterable<String> raws,
+) async {
+  final uniqueRaws = raws
+      .map((raw) => raw.trim())
+      .where((raw) => raw.isNotEmpty)
+      .toSet()
+      .toList();
+  final imageCache = <String, pw.ImageProvider>{};
+  final entries = await Future.wait(
+    uniqueRaws.map((raw) async => MapEntry(raw, await _loadEvidenceImage(raw, imageCache))),
+  );
+  return Map<String, pw.ImageProvider?>.fromEntries(entries);
+}
+
+List<String> _pdfEvidenceUrlCandidates(String raw) {
+  final driveId = extractDriveId(raw);
+  if (driveId != null) {
+    return <String>[
+      'https://drive.google.com/thumbnail?id=$driveId&sz=w1200',
+      'https://lh3.googleusercontent.com/d/$driveId=w1200',
+      'https://drive.usercontent.google.com/download?id=$driveId&export=view',
+    ];
+  }
+
+  final urls = evidenceUrlCandidates(raw);
+  if (urls.length <= 3) return urls;
+  return urls.take(3).toList();
 }

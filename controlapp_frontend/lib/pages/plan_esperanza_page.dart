@@ -9,6 +9,7 @@ import 'package:flutter_application_1/pdf/plan_esperanza_pdf.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/utils/evidence_utils.dart';
 import 'package:flutter_application_1/utils/pickers/camera_capture_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
@@ -913,9 +914,10 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
   Future<void> _descargarInformePdf(InformeResponse informe) async {
     try {
       final bytes = await buildPlanEsperanzaInformePdf(informe);
+      final conjunto = _safeFileSegment(informe.conjuntoNombre);
       await openOrDownloadPdf(
         bytes,
-        'plan_esperanza_${_fileDate(informe.fechaInicio)}.pdf',
+        'plan_esperanza_${conjunto.isEmpty ? 'conjunto' : conjunto}_${_fileDate(informe.fechaInicio)}.pdf',
       );
     } catch (e) {
       if (!mounted) return;
@@ -1032,13 +1034,55 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
         '${dt.day.toString().padLeft(2, '0')}';
   }
 
+  static String _safeFileSegment(String value) {
+    return value
+        .toLowerCase()
+        .trim()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+  }
+
   static ImageProvider _imageProvider(dynamic foto) {
     if (foto is SelectedUploadFile) {
       if (foto.hasPath) return FileImage(File(foto.path!));
       if (foto.hasBytes) return MemoryImage(foto.bytes!);
     }
-    if (foto is String && foto.isNotEmpty) return NetworkImage(foto);
+    if (foto is String) {
+      final urls = evidenceUrlCandidates(foto);
+      if (urls.isNotEmpty) return NetworkImage(urls.first);
+    }
     return const AssetImage('');
+  }
+
+  static Widget _buildPhotoWidget(
+    dynamic foto, {
+    required Widget fallback,
+    required BoxFit fit,
+    double? width,
+    double? height,
+  }) {
+    if (foto is SelectedUploadFile) {
+      return Image(
+        image: _imageProvider(foto),
+        fit: fit,
+        width: width,
+        height: height,
+        errorBuilder: (_, __, ___) => fallback,
+      );
+    }
+
+    if (foto is String && foto.trim().isNotEmpty) {
+      return _CandidateNetworkImage(
+        urls: evidenceUrlCandidates(foto),
+        fit: fit,
+        width: width,
+        height: height,
+        fallback: fallback,
+      );
+    }
+
+    return fallback;
   }
 }
 
@@ -1620,20 +1664,18 @@ class _DiagnosticoCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: Colors.grey.shade200),
                     ),
-                    child: fotoActual != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(9),
-                            child: Image(
-                              image: _PlanEsperanzaPageState._imageProvider(
-                                fotoActual,
-                              ),
-                              fit: BoxFit.cover,
-                              width: 88,
-                              height: 88,
-                              errorBuilder: (_, __, ___) => _fotoPlaceholder(),
-                            ),
-                          )
-                        : _fotoPlaceholder(),
+                     child: fotoActual != null
+                         ? ClipRRect(
+                             borderRadius: BorderRadius.circular(9),
+                             child: _PlanEsperanzaPageState._buildPhotoWidget(
+                               fotoActual,
+                               fallback: _fotoPlaceholder(),
+                               fit: BoxFit.cover,
+                               width: 88,
+                               height: 88,
+                             ),
+                           )
+                         : _fotoPlaceholder(),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1764,7 +1806,6 @@ class _DiagnosticoCard extends StatelessWidget {
   }
 
   void _showFotoDialog(BuildContext context, dynamic foto) {
-    final provider = _PlanEsperanzaPageState._imageProvider(foto);
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -1773,7 +1814,21 @@ class _DiagnosticoCard extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: InteractiveViewer(
-            child: Image(image: provider, fit: BoxFit.contain),
+            child: Container(
+              color: Colors.black,
+              constraints: const BoxConstraints(minHeight: 240, minWidth: 240),
+              child: _PlanEsperanzaPageState._buildPhotoWidget(
+                foto,
+                fallback: Center(
+                  child: Icon(
+                    Icons.image_not_supported,
+                    color: Colors.white.withValues(alpha: 0.7),
+                    size: 52,
+                  ),
+                ),
+                fit: BoxFit.contain,
+              ),
+            ),
           ),
         ),
       ),
@@ -1795,19 +1850,24 @@ class _AreaInformeCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Row(
-        children: [
-          ClipRounded(
-            size: 56,
-            child: area.urlFoto != null
-                ? Image.network(
-                    area.urlFoto!,
-                    width: 56,
-                    height: 56,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _noImage(),
-                  )
-                : _noImage(),
+        child: Row(
+          children: [
+          GestureDetector(
+            onTap: area.urlFoto != null
+                ? () => _showStaticPhotoDialog(context, area.urlFoto!)
+                : null,
+            child: ClipRounded(
+              size: 56,
+              child: area.urlFoto != null
+                  ? _PlanEsperanzaPageState._buildPhotoWidget(
+                      area.urlFoto!,
+                      fallback: _noImage(),
+                      fit: BoxFit.cover,
+                      width: 56,
+                      height: 56,
+                    )
+                  : _noImage(),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1866,6 +1926,36 @@ class _AreaInformeCard extends StatelessWidget {
       child: Icon(Icons.image_not_supported, color: Colors.grey.shade300),
     );
   }
+
+  void _showStaticPhotoDialog(BuildContext context, String fotoUrl) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: InteractiveViewer(
+            child: Container(
+              color: Colors.black,
+              constraints: const BoxConstraints(minHeight: 240, minWidth: 240),
+              child: _PlanEsperanzaPageState._buildPhotoWidget(
+                fotoUrl,
+                fallback: Center(
+                  child: Icon(
+                    Icons.image_not_supported,
+                    color: Colors.white.withValues(alpha: 0.7),
+                    size: 52,
+                  ),
+                ),
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class ClipRounded extends StatelessWidget {
@@ -1879,6 +1969,42 @@ class ClipRounded extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: SizedBox(width: size, height: size, child: child),
+    );
+  }
+}
+
+class _CandidateNetworkImage extends StatelessWidget {
+  final List<String> urls;
+  final BoxFit fit;
+  final Widget fallback;
+  final double? width;
+  final double? height;
+
+  const _CandidateNetworkImage({
+    required this.urls,
+    required this.fit,
+    required this.fallback,
+    this.width,
+    this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanUrls = urls.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    return _buildFromIndex(cleanUrls, 0);
+  }
+
+  Widget _buildFromIndex(List<String> cleanUrls, int index) {
+    if (cleanUrls.isEmpty || index >= cleanUrls.length) {
+      return fallback;
+    }
+
+    return Image.network(
+      cleanUrls[index],
+      width: width,
+      height: height,
+      fit: fit,
+      errorBuilder: (_, __, ___) => _buildFromIndex(cleanUrls, index + 1),
     );
   }
 }
@@ -1949,26 +2075,17 @@ class _AreaHistoricoCardState extends State<_AreaHistoricoCard> {
                     width: 40,
                     height: 40,
                     child: ultima.urlFoto != null
-                        ? Image.network(
-                            ultima.urlFoto!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
-                              color: Colors.grey.shade100,
-                              child: Icon(
-                                Icons.image_not_supported,
-                                size: 20,
-                                color: Colors.grey.shade300,
-                              ),
+                        ? GestureDetector(
+                            onTap: () => _showPhotoDialog(ultima.urlFoto!),
+                            child: _PlanEsperanzaPageState._buildPhotoWidget(
+                              ultima.urlFoto!,
+                              fallback: _imageFallback(),
+                              fit: BoxFit.cover,
+                              width: 40,
+                              height: 40,
                             ),
                           )
-                        : Container(
-                            color: Colors.grey.shade50,
-                            child: Icon(
-                              Icons.image_not_supported,
-                              size: 20,
-                              color: Colors.grey.shade300,
-                            ),
-                          ),
+                        : _imageFallback(),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -2071,18 +2188,21 @@ class _AreaHistoricoCardState extends State<_AreaHistoricoCard> {
           ),
           const SizedBox(height: 6),
           if (entry.urlFoto != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.network(
-                entry.urlFoto!,
-                width: 140,
-                height: 80,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
+            GestureDetector(
+              onTap: () => _showPhotoDialog(entry.urlFoto!),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: _PlanEsperanzaPageState._buildPhotoWidget(
+                  entry.urlFoto!,
+                  fallback: Container(
+                    width: 140,
+                    height: 80,
+                    color: Colors.grey.shade200,
+                    child: Icon(Icons.broken_image, color: Colors.grey.shade400),
+                  ),
+                  fit: BoxFit.cover,
                   width: 140,
                   height: 80,
-                  color: Colors.grey.shade200,
-                  child: Icon(Icons.broken_image, color: Colors.grey.shade400),
                 ),
               ),
             ),
@@ -2100,6 +2220,47 @@ class _AreaHistoricoCardState extends State<_AreaHistoricoCard> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _imageFallback() {
+    return Container(
+      color: Colors.grey.shade100,
+      child: Icon(
+        Icons.image_not_supported,
+        size: 20,
+        color: Colors.grey.shade300,
+      ),
+    );
+  }
+
+  void _showPhotoDialog(String fotoUrl) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: InteractiveViewer(
+            child: Container(
+              color: Colors.black,
+              constraints: const BoxConstraints(minHeight: 240, minWidth: 240),
+              child: _PlanEsperanzaPageState._buildPhotoWidget(
+                fotoUrl,
+                fallback: Center(
+                  child: Icon(
+                    Icons.image_not_supported,
+                    color: Colors.white.withValues(alpha: 0.7),
+                    size: 52,
+                  ),
+                ),
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
