@@ -2892,18 +2892,6 @@ export class GerenteService {
       }
 
       const requiereConfirmacion = tiposDecision.some((x) => x !== "AUTO");
-      const requiereMotivoConfirmacion =
-        requiereConfirmacion &&
-        tareasReemplazar.some((t) => (t.prioridad ?? 2) <= 2);
-      if (requiereMotivoConfirmacion && !motivoUsuario) {
-        return {
-          ok: false,
-          reason: "MOTIVO_REQUERIDO",
-          message:
-            "Debe indicar un motivo para confirmar reemplazos de prioridad 1 o 2.",
-        };
-      }
-
       if (requiereConfirmacion && !accionReemplazadas) {
         return {
           ok: false,

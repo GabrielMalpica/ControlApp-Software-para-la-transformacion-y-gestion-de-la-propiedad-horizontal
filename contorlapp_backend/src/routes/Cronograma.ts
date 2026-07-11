@@ -35,6 +35,12 @@ router.get(
   requirePermission("cronograma.excluidas_ver"),
   controller.listarExcluidasStandby,
 );
+router.post(
+  "/conjuntos/:nit/cronograma/excluidas-standby/:id/programar-correctiva",
+  authRequired,
+  requirePermission("cronograma.correctivas_programar"),
+  controller.programarExcluidaComoCorrectiva,
+);
 router.delete(
   "/conjuntos/:nit/cronograma/publicado",
   authRequired,

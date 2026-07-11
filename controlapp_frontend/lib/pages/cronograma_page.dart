@@ -35,6 +35,8 @@ enum _SidebarAgendaModo { agenda, excluidas }
 
 final ValueNotifier<bool> _weekCorrectivaDragActiveNotifier =
     ValueNotifier<bool>(false);
+final ValueNotifier<bool> _weekExcluidaDragActiveNotifier =
+    ValueNotifier<bool>(false);
 
 class CronogramaPage extends StatefulWidget {
   final String nit;
@@ -98,6 +100,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   bool _sidebarResumenColapsado = false;
   int _sidebarDiaIndex = 0;
   _SidebarAgendaModo _sidebarAgendaModo = _SidebarAgendaModo.agenda;
+  bool _sidebarVerExcluidasMes = false;
 
   bool _mostrarFiltrosMensual = false;
 
@@ -150,8 +153,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     _initMes();
     _semanaBase = DateTime(_anioActual, _mesActual, 1);
-    _cargarSesion();
-    _cargarDatos();
+    _cargarSesion().then((_) {
+      if (!mounted) return;
+      _cargarDatos();
+    });
   }
 
   Future<void> _cargarSesion() async {
@@ -3228,6 +3233,114 @@ class _CronogramaPageState extends State<CronogramaPage> {
     );
   }
 
+  Future<String?> _pedirMotivoReemplazoOpcional() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reemplazar preventiva'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Puedes registrar un motivo de reemplazo si quieres dejar trazabilidad en el reporte.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Motivo opcional',
+                hintText: 'Ej. urgencia operacional o daño correctivo',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(null),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  Future<void> _programarExcluidaComoCorrectiva({
+    required PreventivaExcluidaBorradorModel excluida,
+    required DateTime nuevoInicio,
+    required DateTime nuevoFin,
+    TareaModel? tareaReemplazo,
+  }) async {
+    int? reemplazarTareaId;
+    String? motivoReemplazo;
+
+    if (tareaReemplazo != null) {
+      final confirmar = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Reemplazar preventiva publicada'),
+          content: Text(
+            'La excluida "${excluida.descripcion}" se programará como correctiva sobre la preventiva "${tareaReemplazo.descripcion}". La preventiva quedará en no completada. ¿Deseas continuar?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Reemplazar'),
+            ),
+          ],
+        ),
+      );
+      if (confirmar != true || !mounted) return;
+
+      motivoReemplazo = await _pedirMotivoReemplazoOpcional();
+      if (!mounted) return;
+      if (motivoReemplazo == null) return;
+      reemplazarTareaId = tareaReemplazo.id;
+    }
+
+    final resp = await _cronogramaApi.programarExcluidaComoCorrectiva(
+      nit: widget.nit,
+      excluidaId: excluida.id,
+      fechaInicio: nuevoInicio,
+      fechaFin: nuevoFin,
+      reemplazarTareaId: reemplazarTareaId,
+      motivoReemplazo: motivoReemplazo,
+    );
+
+    if (resp['ok'] == false) {
+      throw Exception(
+        (resp['message'] ?? 'No se pudo programar la excluida como correctiva.')
+            .toString(),
+      );
+    }
+
+    await _cargarDatos();
+    if (!mounted) return;
+    AppFeedback.showFromSnackBar(
+      context,
+      SnackBar(
+        content: Text(
+          reemplazarTareaId != null
+              ? 'Excluida programada como correctiva y preventiva reemplazada.'
+              : 'Excluida programada como correctiva correctamente.',
+        ),
+      ),
+    );
+  }
+
   Widget _buildAgendaSemanal() {
     final weekStart = _startOfWeekMonday(_semanaBase);
     final tareas = _tareasSemana(_semanaBase);
@@ -3271,6 +3384,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
                   : null,
               onMoveCorrectiva: _canScheduleCorrectivasInCronograma
                   ? _moverCorrectivaDesdeCronograma
+                  : null,
+              onProgramExcluidaComoCorrectiva: _canViewExcluidasStandby
+                  ? _programarExcluidaComoCorrectiva
                   : null,
             ),
           ),
@@ -3337,6 +3453,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
             onMoveCorrectiva: _canScheduleCorrectivasInCronograma
                 ? _moverCorrectivaDesdeCronograma
                 : null,
+            onProgramExcluidaComoCorrectiva: _canViewExcluidasStandby
+                ? _programarExcluidaComoCorrectiva
+                : null,
           ),
         ),
         const SizedBox(width: 10),
@@ -3350,6 +3469,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
             onModoChanged: _canViewExcluidasStandby
                 ? (value) => setState(() => _sidebarAgendaModo = value)
                 : null,
+            verExcluidasMes: _sidebarVerExcluidasMes,
+            onVerExcluidasMesChanged: (value) =>
+                setState(() => _sidebarVerExcluidasMes = value),
             tareasSemana: tareas,
             excluidasMes: _excluidasFiltradas,
             excluirPorFecha: _excluidasPorFecha,
@@ -3665,6 +3787,13 @@ class _WeekScheduleView extends StatefulWidget {
     required DateTime nuevoFin,
   })?
   onMoveCorrectiva;
+  final Future<void> Function({
+    required PreventivaExcluidaBorradorModel excluida,
+    required DateTime nuevoInicio,
+    required DateTime nuevoFin,
+    TareaModel? tareaReemplazo,
+  })?
+  onProgramExcluidaComoCorrectiva;
 
   const _WeekScheduleView({
     required this.weekStart,
@@ -3680,6 +3809,7 @@ class _WeekScheduleView extends StatefulWidget {
     required this.onTapTarea,
     this.onTapEmptySlot,
     this.onMoveCorrectiva,
+    this.onProgramExcluidaComoCorrectiva,
   });
 
   @override
@@ -3726,6 +3856,14 @@ class _DraggedWeekTask {
 
   const _DraggedWeekTask({required this.tarea, required this.duracionMinutos});
 }
+
+class _DraggedWeekExcluida {
+  final PreventivaExcluidaBorradorModel excluida;
+
+  const _DraggedWeekExcluida({required this.excluida});
+}
+
+enum _ExcluidaDropState { none, allowed, blocked }
 
 class _WeekScheduleViewState extends State<_WeekScheduleView> {
   final ScrollController _headerHCtrl = ScrollController();
@@ -4138,6 +4276,98 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     }
   }
 
+  Future<void> _intentarProgramarExcluidaEnHueco({
+    required _DraggedWeekExcluida dragged,
+    required int dayIndex,
+    required double localDy,
+  }) async {
+    if (widget.onProgramExcluidaComoCorrectiva == null) return;
+
+    final targetDay = widget.weekStart.add(Duration(days: dayIndex));
+    if (widget.esFestivo(targetDay)) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text('No puedes programar correctivas desde excluidas en un día festivo.'),
+        ),
+      );
+      return;
+    }
+
+    final minuteFromGrid = (localDy / pxPorMin).round();
+    final minuteOfDay = (_horaInicio * 60) + minuteFromGrid;
+    final startMinute = _resolverInicioLibreEnDia(
+      duracionMinutos: dragged.excluida.duracionMinutos,
+      dayIndex: dayIndex,
+      desiredMinuteOfDay: minuteOfDay,
+    );
+
+    if (startMinute == null) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text('No hay un hueco libre válido para programar esta excluida como correctiva.'),
+        ),
+      );
+      return;
+    }
+
+    final nuevoInicio = DateTime(
+      targetDay.year,
+      targetDay.month,
+      targetDay.day,
+      startMinute ~/ 60,
+      startMinute % 60,
+    );
+    final nuevoFin = nuevoInicio.add(Duration(minutes: dragged.excluida.duracionMinutos));
+
+    await widget.onProgramExcluidaComoCorrectiva!(
+      excluida: dragged.excluida,
+      nuevoInicio: nuevoInicio,
+      nuevoFin: nuevoFin,
+    );
+  }
+
+  Future<void> _intentarProgramarExcluidaSobreTarea({
+    required _DraggedWeekExcluida dragged,
+    required TareaModel tareaObjetivo,
+  }) async {
+    if (widget.onProgramExcluidaComoCorrectiva == null) return;
+    final tipo = (tareaObjetivo.tipo ?? '').trim().toUpperCase();
+    if (tipo != 'PREVENTIVA') {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text('Solo puedes soltar una excluida sobre una preventiva publicada.'),
+        ),
+      );
+      return;
+    }
+    if (!_puedeReemplazarPreventiva(
+      prioridadCorrectiva: dragged.excluida.prioridad,
+      prioridadPreventiva: tareaObjetivo.prioridad,
+    )) {
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            'Una excluida P${dragged.excluida.prioridad} no puede reemplazar una preventiva P${tareaObjetivo.prioridad}.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final nuevoInicio = tareaObjetivo.fechaInicio.toLocal();
+    final nuevoFin = nuevoInicio.add(Duration(minutes: dragged.excluida.duracionMinutos));
+    await widget.onProgramExcluidaComoCorrectiva!(
+      excluida: dragged.excluida,
+      nuevoInicio: nuevoInicio,
+      nuevoFin: nuevoFin,
+      tareaReemplazo: tareaObjetivo,
+    );
+  }
+
   List<Widget> _buildTapTargets(BuildContext context, double colWidth) {
     if (widget.onTapEmptySlot == null) return const [];
 
@@ -4171,6 +4401,64 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       }
     }
     return widgets;
+  }
+
+  List<Widget> _buildExcluidaDropTargets(double colWidth) {
+    if (widget.onProgramExcluidaComoCorrectiva == null) return const [];
+
+    final widgets = <Widget>[];
+    for (int dayIndex = 0; dayIndex < 7; dayIndex++) {
+      final rangos = _rangosProgramablesDia(dayIndex);
+      for (final rango in rangos) {
+        final top = (rango.start - (_horaInicio * 60)) * pxPorMin;
+        final height = (rango.end - rango.start) * pxPorMin;
+        widgets.add(
+          Positioned(
+            left: anchoHora + dayIndex * colWidth,
+            width: colWidth,
+            top: top,
+            height: height,
+            child: Builder(
+              builder: (targetContext) {
+                return DragTarget<_DraggedWeekExcluida>(
+                  onWillAcceptWithDetails: (_) => true,
+                  onAcceptWithDetails: (details) async {
+                    final box = targetContext.findRenderObject() as RenderBox?;
+                    final local = box?.globalToLocal(details.offset);
+                    await _intentarProgramarExcluidaEnHueco(
+                      dragged: details.data,
+                      dayIndex: dayIndex,
+                      localDy: (local?.dy ?? 0) + top,
+                    );
+                  },
+                  builder: (context, candidateData, rejectedData) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    decoration: BoxDecoration(
+                      color: candidateData.isNotEmpty
+                          ? Colors.orange.withValues(alpha: 0.08)
+                          : Colors.transparent,
+                      border: candidateData.isNotEmpty
+                          ? Border.all(color: Colors.orange.withValues(alpha: 0.4), width: 1.2)
+                          : null,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      }
+    }
+    return widgets;
+  }
+
+  bool _puedeReemplazarPreventiva({
+    required int prioridadCorrectiva,
+    required int prioridadPreventiva,
+  }) {
+    if (prioridadCorrectiva <= 1) return true;
+    if (prioridadCorrectiva == 2) return prioridadPreventiva >= 2;
+    return prioridadPreventiva >= 3;
   }
 
   int _dayIndex(DateTime d) {
@@ -4572,14 +4860,29 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 valueListenable:
                                     _weekCorrectivaDragActiveNotifier,
                                 builder: (context, dragActivo, _) {
-                                  if (dragActivo) {
-                                    return const SizedBox.shrink();
-                                  }
+                                  return ValueListenableBuilder<bool>(
+                                    valueListenable:
+                                        _weekExcluidaDragActiveNotifier,
+                                    builder: (context, dragExcluidaActiva, _) {
+                                      if (dragActivo || dragExcluidaActiva) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return Stack(
+                                        children: _buildTapTargets(
+                                          context,
+                                          colWidth,
+                                        ),
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                              ValueListenableBuilder<bool>(
+                                valueListenable: _weekExcluidaDragActiveNotifier,
+                                builder: (context, dragActivo, _) {
+                                  if (!dragActivo) return const SizedBox.shrink();
                                   return Stack(
-                                    children: _buildTapTargets(
-                                      context,
-                                      colWidth,
-                                    ),
+                                    children: _buildExcluidaDropTargets(colWidth),
                                   );
                                 },
                               ),
@@ -4894,7 +5197,64 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   top: top,
                                   width: fullWidth,
                                   height: height,
-                                  child: draggableCard,
+                                  child: DragTarget<_DraggedWeekExcluida>(
+                                    onWillAcceptWithDetails: (details) {
+                                      return widget.onProgramExcluidaComoCorrectiva != null &&
+                                          (t.tipo ?? '').trim().toUpperCase() == 'PREVENTIVA' &&
+                                          _puedeReemplazarPreventiva(
+                                            prioridadCorrectiva: details.data.excluida.prioridad,
+                                            prioridadPreventiva: t.prioridad,
+                                          );
+                                    },
+                                    onAcceptWithDetails: (details) async {
+                                      await _intentarProgramarExcluidaSobreTarea(
+                                        dragged: details.data,
+                                        tareaObjetivo: t,
+                                      );
+                                    },
+                                    builder: (context, candidateData, rejectedData) {
+                                      var dropState = _ExcluidaDropState.none;
+                                      if (candidateData.isNotEmpty) {
+                                        final dragged = candidateData.first;
+                                        if (dragged == null) {
+                                          dropState = _ExcluidaDropState.blocked;
+                                        } else {
+                                        final allow = _puedeReemplazarPreventiva(
+                                          prioridadCorrectiva:
+                                              dragged.excluida.prioridad,
+                                          prioridadPreventiva: t.prioridad,
+                                        );
+                                        dropState = allow
+                                            ? _ExcluidaDropState.allowed
+                                            : _ExcluidaDropState.blocked;
+                                        }
+                                      } else if (rejectedData.isNotEmpty) {
+                                        dropState = _ExcluidaDropState.blocked;
+                                      }
+                                      if (dropState == _ExcluidaDropState.none) {
+                                        return draggableCard;
+                                      }
+                                      final borderColor =
+                                          dropState == _ExcluidaDropState.allowed
+                                          ? Colors.green.shade700
+                                          : Colors.red.shade700;
+                                      final overlayColor =
+                                          dropState == _ExcluidaDropState.allowed
+                                          ? Colors.green.withValues(alpha: 0.14)
+                                          : Colors.red.withValues(alpha: 0.14);
+                                      return Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: borderColor,
+                                            width: 2,
+                                          ),
+                                          color: overlayColor,
+                                        ),
+                                        child: draggableCard,
+                                      );
+                                    },
+                                  ),
                                 );
                               }),
                               ValueListenableBuilder<bool>(
@@ -5100,6 +5460,8 @@ class _SidebarAgendaDia extends StatelessWidget {
   final ValueChanged<int> onDayIndexChanged;
   final _SidebarAgendaModo modo;
   final ValueChanged<_SidebarAgendaModo>? onModoChanged;
+  final bool verExcluidasMes;
+  final ValueChanged<bool> onVerExcluidasMesChanged;
   final List<TareaModel> tareasSemana;
   final List<PreventivaExcluidaBorradorModel> excluidasMes;
   final List<PreventivaExcluidaBorradorModel> Function(DateTime fecha)
@@ -5113,6 +5475,8 @@ class _SidebarAgendaDia extends StatelessWidget {
     required this.onDayIndexChanged,
     required this.modo,
     required this.onModoChanged,
+    required this.verExcluidasMes,
+    required this.onVerExcluidasMesChanged,
     required this.tareasSemana,
     required this.excluidasMes,
     required this.excluirPorFecha,
@@ -5130,6 +5494,7 @@ class _SidebarAgendaDia extends StatelessWidget {
           d.day == fecha.day;
     }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
     final excluidasDia = excluirPorFecha(fecha);
+    final excluidas = verExcluidasMes ? excluidasMes : excluidasDia;
 
     Widget buildTarea(TareaModel t) {
       final ini = t.fechaInicio.toLocal();
@@ -5169,7 +5534,7 @@ class _SidebarAgendaDia extends StatelessWidget {
       final operarios = item.operariosNombres.isEmpty
           ? 'Sin operario sugerido'
           : item.operariosNombres.join(', ');
-      return InkWell(
+      final card = InkWell(
         onTap: onTapExcluida == null ? null : () => onTapExcluida!(item),
         child: Container(
           padding: const EdgeInsets.all(10),
@@ -5199,9 +5564,29 @@ class _SidebarAgendaDia extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
               ),
+              const SizedBox(height: 6),
+              Text(
+                'Mantén presionado y arrastra para programarla como correctiva.',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.orange.shade900,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
+      );
+
+      return LongPressDraggable<_DraggedWeekExcluida>(
+        data: _DraggedWeekExcluida(excluida: item),
+        maxSimultaneousDrags: 1,
+        onDragStarted: () => _weekExcluidaDragActiveNotifier.value = true,
+        onDragEnd: (_) => _weekExcluidaDragActiveNotifier.value = false,
+        onDraggableCanceled: (_, __) => _weekExcluidaDragActiveNotifier.value = false,
+        feedback: Material(color: Colors.transparent, child: SizedBox(width: 280, child: card)),
+        childWhenDragging: Opacity(opacity: 0.35, child: card),
+        child: card,
       );
     }
 
@@ -5260,6 +5645,18 @@ class _SidebarAgendaDia extends StatelessWidget {
                 onSelectionChanged: (value) => onModoChanged!(value.first),
               ),
             ],
+            if (modo == _SidebarAgendaModo.excluidas) ...[
+              const SizedBox(height: 6),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment<bool>(value: false, label: Text('Dia')),
+                  ButtonSegment<bool>(value: true, label: Text('Mes')),
+                ],
+                selected: {verExcluidasMes},
+                onSelectionChanged: (value) =>
+                    onVerExcluidasMesChanged(value.first),
+              ),
+            ],
             const SizedBox(height: 6),
             Text(
               DateFormat('EEEE dd MMMM', 'es').format(fecha),
@@ -5287,18 +5684,18 @@ class _SidebarAgendaDia extends StatelessWidget {
                             separatorBuilder: (_, __) => const SizedBox(height: 8),
                             itemBuilder: (context, i) => buildTarea(tareasDia[i]),
                           ))
-                  : (excluidasDia.isEmpty
+                  : (excluidas.isEmpty
                         ? const Center(
                             child: Text(
-                              'No hay excluidas en standby para este día.',
+                              'No hay excluidas en standby para esta vista.',
                               style: TextStyle(fontSize: 12),
                               textAlign: TextAlign.center,
                             ),
                           )
                         : ListView.separated(
-                            itemCount: excluidasDia.length,
+                            itemCount: excluidas.length,
                             separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, i) => buildExcluida(excluidasDia[i]),
+                            itemBuilder: (context, i) => buildExcluida(excluidas[i]),
                           )),
             ),
           ],

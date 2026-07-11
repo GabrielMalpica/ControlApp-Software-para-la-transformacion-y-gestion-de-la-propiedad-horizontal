@@ -131,6 +131,21 @@ export class CronogramaController {
     }
   };
 
+  programarExcluidaComoCorrectiva: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const excluidaId = Number(req.params.id);
+      const service = new CronogramaService(prisma, conjuntoId);
+      const out = await service.programarExcluidaComoCorrectiva({
+        excluidaId,
+        ...req.body,
+      });
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   eliminarCronogramaPublicado: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);

@@ -235,6 +235,29 @@ class CronogramaApi {
         .toList();
   }
 
+  Future<Map<String, dynamic>> programarExcluidaComoCorrectiva({
+    required String nit,
+    required int excluidaId,
+    required DateTime fechaInicio,
+    required DateTime fechaFin,
+    int? reemplazarTareaId,
+    String? motivoReemplazo,
+  }) async {
+    final resp = await _client.post(
+      '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/excluidas-standby/$excluidaId/programar-correctiva',
+      body: {
+        'fechaInicio': fechaInicio.toIso8601String(),
+        'fechaFin': fechaFin.toIso8601String(),
+        if (reemplazarTareaId != null) 'reemplazarTareaId': reemplazarTareaId,
+        if (motivoReemplazo != null && motivoReemplazo.trim().isNotEmpty)
+          'motivoReemplazo': motivoReemplazo.trim(),
+      },
+    );
+
+    if (resp.body.trim().isEmpty) return <String, dynamic>{};
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
   Future<List<Map<String, dynamic>>> sugerirOperarios({
     required String nit,
     required DateTime inicio,
