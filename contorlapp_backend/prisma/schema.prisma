@@ -1379,7 +1379,7 @@ model PlanEsperanzaConfig {
   id             Int      @id @default(autoincrement())
   conjunto       Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
   conjuntoId     String   @unique
-  intervaloMeses Int      @default(6)
+  intervaloMeses Int      @default(3)
   actualizadoEn  DateTime @updatedAt
 
   @@map("PlanEsperanzaConfig")
@@ -1409,6 +1409,7 @@ model DiagnosticoArea {
   urlFoto         String?
   valoracion      Float?
   observaciones   String?
+  checklist       Json?
   creadoEn        DateTime      @default(now())
 
   @@unique([planEsperanzaId, elementoId])

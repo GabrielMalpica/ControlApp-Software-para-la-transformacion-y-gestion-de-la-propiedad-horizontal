@@ -1,6 +1,11 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "../db/prisma";
 import { uploadPlanEsperanzaFoto } from "../utils/drive_plan_esperanza";
+
+type ChecklistItem = {
+  texto: string;
+  completado: boolean;
+};
 
 type ElementoHoja = {
   id: number;
@@ -21,6 +26,7 @@ type DiagnosticoInfo = {
   urlFoto: string | null;
   valoracion: number | null;
   observaciones: string | null;
+  checklist: ChecklistItem[];
   creadoEn: Date;
 };
 
@@ -30,7 +36,24 @@ type TimelineEntry = {
   urlFoto: string | null;
   valoracion: number | null;
   observaciones: string | null;
+  checklist: ChecklistItem[];
 };
+
+function normalizeChecklistItem(item: unknown): ChecklistItem | null {
+  if (!item || typeof item !== "object") return null;
+  const rawTexto = (item as { texto?: unknown }).texto;
+  const texto = typeof rawTexto === "string" ? rawTexto.trim() : "";
+  if (!texto) return null;
+  return {
+    texto,
+    completado: Boolean((item as { completado?: unknown }).completado),
+  };
+}
+
+function parseChecklist(value: Prisma.JsonValue | null | undefined): ChecklistItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(normalizeChecklistItem).filter((item): item is ChecklistItem => item != null);
+}
 
 function obtenerElementosHoja(prisma: PrismaClient, conjuntoId: string) {
   return prisma.$queryRaw<ElementoHoja[]>`
@@ -65,7 +88,7 @@ export class PlanEsperanzaService {
     });
     if (!config) {
       config = await this.prisma.planEsperanzaConfig.create({
-        data: { conjuntoId },
+        data: { conjuntoId, intervaloMeses: 3 },
       });
     }
     return config;
@@ -99,6 +122,7 @@ export class PlanEsperanzaService {
       urlFoto?: string | null;
       valoracion?: number | null;
       observaciones?: string | null;
+      checklist?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
     }[] = [];
 
     if (mantenerEvidencias && planAnteriorId) {
@@ -117,13 +141,23 @@ export class PlanEsperanzaService {
           urlFoto: anterior?.urlFoto ?? null,
           valoracion: anterior?.valoracion ?? null,
           observaciones: anterior?.observaciones ?? null,
+          checklist: anterior?.checklist ?? Prisma.JsonNull,
         });
       }
     } else {
+      const ultimoPlanFinalizado = await this.prisma.planEsperanza.findFirst({
+        where: { conjuntoId, completado: true },
+        orderBy: { fechaInicio: "desc" },
+        include: { diagnosticos: true },
+      });
+      const checklistAnterior = new Map(
+        (ultimoPlanFinalizado?.diagnosticos ?? []).map((d) => [d.elementoId, d.checklist])
+      );
       for (const hoja of hojas) {
         diagnosticosData.push({
           planEsperanzaId: plan.id,
           elementoId: hoja.id,
+          checklist: checklistAnterior.get(hoja.id) ?? Prisma.JsonNull,
         });
       }
     }
@@ -170,6 +204,7 @@ export class PlanEsperanzaService {
       urlFoto: d.urlFoto,
       valoracion: d.valoracion,
       observaciones: d.observaciones,
+      checklist: parseChecklist(d.checklist),
       creadoEn: d.creadoEn,
     }));
 
@@ -226,6 +261,7 @@ export class PlanEsperanzaService {
       urlFoto: d.urlFoto,
       valoracion: d.valoracion,
       observaciones: d.observaciones,
+      checklist: parseChecklist(d.checklist),
     };
   }
 
@@ -234,6 +270,7 @@ export class PlanEsperanzaService {
     data: {
       valoracion?: number | null;
       observaciones?: string | null;
+      checklist?: ChecklistItem[] | null;
       filePath?: string | null;
       fileName?: string | null;
       mimeType?: string | null;
@@ -243,6 +280,7 @@ export class PlanEsperanzaService {
     const updateData: {
       valoracion?: number | null;
       observaciones?: string | null;
+      checklist?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
       urlFoto?: string | null;
     } = {};
 
@@ -258,6 +296,12 @@ export class PlanEsperanzaService {
 
     if (data.observaciones !== undefined) {
       updateData.observaciones = data.observaciones;
+    }
+
+    if (data.checklist !== undefined) {
+      updateData.checklist = !data.checklist || data.checklist.length == 0
+        ? Prisma.JsonNull
+        : (data.checklist as Prisma.InputJsonValue);
     }
 
     if (data.filePath && data.fileName && data.mimeType && data.conjuntoNombre) {
@@ -327,6 +371,7 @@ export class PlanEsperanzaService {
               urlFoto: string | null;
               valoracion: number | null;
               observaciones: string | null;
+              checklist: ChecklistItem[];
             }>;
           }
         >;
@@ -353,6 +398,7 @@ export class PlanEsperanzaService {
         urlFoto: d.urlFoto,
         valoracion: d.valoracion,
         observaciones: d.observaciones,
+        checklist: parseChecklist(d.checklist),
       });
     }
 
@@ -425,6 +471,7 @@ export class PlanEsperanzaService {
           urlFoto: d.urlFoto,
           valoracion: d.valoracion,
           observaciones: d.observaciones,
+          checklist: parseChecklist(d.checklist),
         });
       }
     }
@@ -540,6 +587,7 @@ export class PlanEsperanzaService {
       urlFoto: d.urlFoto,
       valoracion: d.valoracion,
       observaciones: d.observaciones,
+      checklist: parseChecklist(d.checklist),
     }));
   }
 }

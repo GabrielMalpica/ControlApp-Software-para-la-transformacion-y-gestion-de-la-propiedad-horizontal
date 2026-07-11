@@ -42,6 +42,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
 
   final Map<int, double> _editValoraciones = {};
   final Map<int, String> _editObservaciones = {};
+  final Map<int, List<ChecklistItem>> _editChecklist = {};
   final Map<int, SelectedUploadFile?> _editFotos = {};
 
   @override
@@ -199,6 +200,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
       if (!mounted) return;
       _editValoraciones.clear();
       _editObservaciones.clear();
+      _editChecklist.clear();
       _editFotos.clear();
       setState(() {
         _planActivo = plan;
@@ -336,6 +338,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
       if (!mounted) return;
       _editValoraciones.clear();
       _editObservaciones.clear();
+      _editChecklist.clear();
       _editFotos.clear();
       setState(() {
         _planActivo = plan;
@@ -364,9 +367,13 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
     for (final diag in plan.diagnosticos) {
       final valoracion = _editValoraciones[diag.id];
       final observaciones = _editObservaciones[diag.id];
+      final checklist = _editChecklist[diag.id];
       final foto = _editFotos[diag.id];
 
-      if (valoracion == null && observaciones == null && foto == null) {
+      if (valoracion == null &&
+          observaciones == null &&
+          checklist == null &&
+          foto == null) {
         updatedDiagnosticos.add(diag);
         continue;
       }
@@ -375,6 +382,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
         diag.id,
         valoracion: valoracion,
         observaciones: observaciones,
+        checklist: checklist,
         foto: foto,
       );
       updatedDiagnosticos.add(updated);
@@ -382,6 +390,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
 
     _editValoraciones.clear();
     _editObservaciones.clear();
+    _editChecklist.clear();
     _editFotos.clear();
     if (!mounted) return;
     setState(() {
@@ -464,9 +473,46 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
     }
   }
 
+  Future<void> _agregarChecklist(DiagnosticoAreaModel diag) async {
+    final controller = TextEditingController();
+    final texto = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Agregar pendiente'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 300,
+          decoration: const InputDecoration(
+            hintText: 'Ej: Reparar pintura, ajustar puerta... ',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.primary),
+            child: const Text('Agregar'),
+          ),
+        ],
+      ),
+    );
+    if (texto == null || texto.trim().isEmpty || !mounted) return;
+
+    final actuales = List<ChecklistItem>.from(
+      _editChecklist[diag.id] ?? diag.checklist,
+    );
+    actuales.add(ChecklistItem(texto: texto.trim(), completado: false));
+    setState(() => _editChecklist[diag.id] = actuales);
+  }
+
   Future<void> _showConfigDialog() async {
-    final controller = TextEditingController(
-      text: (_config?.intervaloMeses ?? 6).toString(),
+      final controller = TextEditingController(
+      text: (_config?.intervaloMeses ?? 3).toString(),
     );
     final result = await showDialog<int>(
       context: context,
@@ -801,6 +847,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
                             diagnostico: diag,
                             editValoracion: _editValoraciones[diag.id],
                             editObservaciones: _editObservaciones[diag.id],
+                            editChecklist: _editChecklist[diag.id],
                             editFoto: _editFotos[diag.id],
                             saving: _saving,
                             onTomarFoto: () => _tomarFoto(diag),
@@ -808,6 +855,10 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
                                 setState(() => _editValoraciones[diag.id] = v),
                             onObservacionesChanged: (v) =>
                                 setState(() => _editObservaciones[diag.id] = v),
+                            onChecklistChanged: (items) => setState(
+                              () => _editChecklist[diag.id] = items,
+                            ),
+                            onAddChecklist: () => _agregarChecklist(diag),
                           ),
                       ],
                     ],
@@ -1563,28 +1614,38 @@ class _DiagnosticoCard extends StatelessWidget {
   final DiagnosticoAreaModel diagnostico;
   final double? editValoracion;
   final String? editObservaciones;
+  final List<ChecklistItem>? editChecklist;
   final SelectedUploadFile? editFoto;
   final bool saving;
   final VoidCallback onTomarFoto;
   final ValueChanged<double> onValoracionChanged;
   final ValueChanged<String> onObservacionesChanged;
+  final ValueChanged<List<ChecklistItem>> onChecklistChanged;
+  final VoidCallback onAddChecklist;
 
   const _DiagnosticoCard({
     required this.diagnostico,
     this.editValoracion,
     this.editObservaciones,
+    this.editChecklist,
     this.editFoto,
     required this.saving,
     required this.onTomarFoto,
     required this.onValoracionChanged,
     required this.onObservacionesChanged,
+    required this.onChecklistChanged,
+    required this.onAddChecklist,
   });
 
   @override
   Widget build(BuildContext context) {
     final tieneCambios =
-        editValoracion != null || editObservaciones != null || editFoto != null;
+        editValoracion != null ||
+        editObservaciones != null ||
+        editChecklist != null ||
+        editFoto != null;
     final fotoActual = editFoto ?? diagnostico.urlFoto;
+    final checklistActual = editChecklist ?? diagnostico.checklist;
 
     return Card(
       margin: const EdgeInsets.only(left: 36, bottom: 8),
@@ -1763,6 +1824,12 @@ class _DiagnosticoCard extends StatelessWidget {
                     ),
               onChanged: onObservacionesChanged,
             ),
+            const SizedBox(height: 12),
+            _ChecklistEditor(
+              items: checklistActual,
+              onChanged: onChecklistChanged,
+              onAdd: onAddChecklist,
+            ),
             if (tieneCambios) ...[
               const SizedBox(height: 8),
               Row(
@@ -1836,6 +1903,130 @@ class _DiagnosticoCard extends StatelessWidget {
   }
 }
 
+class _ChecklistEditor extends StatelessWidget {
+  final List<ChecklistItem> items;
+  final ValueChanged<List<ChecklistItem>> onChanged;
+  final VoidCallback onAdd;
+
+  const _ChecklistEditor({
+    required this.items,
+    required this.onChanged,
+    required this.onAdd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceSoft,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Checklist de pendientes',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: onAdd,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Agregar'),
+                style: TextButton.styleFrom(foregroundColor: AppTheme.primary),
+              ),
+            ],
+          ),
+          if (items.isEmpty)
+            Text(
+              'No hay pendientes registrados.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            )
+          else
+            ...List.generate(items.length, (index) {
+              final item = items[index];
+              return Row(
+                children: [
+                  Checkbox(
+                    value: item.completado,
+                    activeColor: AppTheme.primary,
+                    onChanged: (value) {
+                      final next = List<ChecklistItem>.from(items);
+                      next[index] = item.copyWith(completado: value ?? false);
+                      onChanged(next);
+                    },
+                  ),
+                  Expanded(
+                    child: Text(
+                      item.texto,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade800,
+                        decoration: item.completado
+                            ? TextDecoration.lineThrough
+                            : TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      final next = List<ChecklistItem>.from(items)..removeAt(index);
+                      onChanged(next);
+                    },
+                    icon: Icon(
+                      Icons.close,
+                      size: 18,
+                      color: Colors.grey.shade500,
+                    ),
+                  ),
+                ],
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChecklistSummary extends StatelessWidget {
+  final List<ChecklistItem> items;
+  final TextStyle? style;
+
+  const _ChecklistSummary({required this.items, this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 6),
+        Text(
+          'Checklist',
+          style: style?.copyWith(fontWeight: FontWeight.w700) ??
+              const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 4),
+        for (final item in items)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Text(
+              '${item.completado ? '[x]' : '[ ]'} ${item.texto}',
+              style: style ??
+                  TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _AreaInformeCard extends StatelessWidget {
   final AreaInforme area;
   const _AreaInformeCard({required this.area});
@@ -1898,6 +2089,7 @@ class _AreaInformeCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                _ChecklistSummary(items: area.checklist),
               ],
             ),
           ),
@@ -2219,6 +2411,10 @@ class _AreaHistoricoCardState extends State<_AreaHistoricoCard> {
                 style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
               ),
             ),
+          _ChecklistSummary(
+            items: entry.checklist,
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
         ],
       ),
     );

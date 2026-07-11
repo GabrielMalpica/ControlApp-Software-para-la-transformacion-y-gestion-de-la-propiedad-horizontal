@@ -22,6 +22,19 @@ function fileDate(date: Date) {
   return `${year}${month}${day}`;
 }
 
+const ChecklistItemSchema = z.object({
+  texto: z.string().trim().min(1).max(300),
+  completado: z.boolean().optional().default(false),
+});
+
+function parseChecklistInput(value: unknown) {
+  if (value == null || value == "") return undefined;
+  if (typeof value === "string") {
+    return z.array(ChecklistItemSchema).parse(JSON.parse(value));
+  }
+  return z.array(ChecklistItemSchema).parse(value);
+}
+
 const NitParam = z.object({ nit: z.string().min(1) });
 const PlanIdParam = z.object({ id: z.coerce.number().int().positive() });
 const DiagnosticoIdParam = z.object({
@@ -101,6 +114,7 @@ export class PlanEsperanzaController {
           observaciones: z.string().optional().nullable(),
         })
         .parse(req.body);
+      const checklist = parseChecklistInput(req.body.checklist);
 
       const file = req.file;
       let conjuntoNombre: string | undefined;
@@ -125,6 +139,7 @@ export class PlanEsperanzaController {
         const result = await service.guardarDiagnostico(id, {
           valoracion: body.valoracion,
           observaciones: body.observaciones,
+          checklist,
           filePath: file.path,
           fileName: `${areaNombre || "area"}_${fechaArchivo}${extension}`,
           mimeType: file.mimetype,
@@ -135,6 +150,7 @@ export class PlanEsperanzaController {
         const result = await service.guardarDiagnostico(id, {
           valoracion: body.valoracion,
           observaciones: body.observaciones,
+          checklist,
         });
         res.json(result);
       }

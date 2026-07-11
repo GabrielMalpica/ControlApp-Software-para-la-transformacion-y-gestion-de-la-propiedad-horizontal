@@ -19,6 +19,18 @@ function fileDate(date) {
     const day = `${date.getDate()}`.padStart(2, "0");
     return `${year}${month}${day}`;
 }
+const ChecklistItemSchema = zod_1.z.object({
+    texto: zod_1.z.string().trim().min(1).max(300),
+    completado: zod_1.z.boolean().optional().default(false),
+});
+function parseChecklistInput(value) {
+    if (value == null || value == "")
+        return undefined;
+    if (typeof value === "string") {
+        return zod_1.z.array(ChecklistItemSchema).parse(JSON.parse(value));
+    }
+    return zod_1.z.array(ChecklistItemSchema).parse(value);
+}
 const NitParam = zod_1.z.object({ nit: zod_1.z.string().min(1) });
 const PlanIdParam = zod_1.z.object({ id: zod_1.z.coerce.number().int().positive() });
 const DiagnosticoIdParam = zod_1.z.object({
@@ -94,6 +106,7 @@ class PlanEsperanzaController {
                     observaciones: zod_1.z.string().optional().nullable(),
                 })
                     .parse(req.body);
+                const checklist = parseChecklistInput(req.body.checklist);
                 const file = req.file;
                 let conjuntoNombre;
                 if (file) {
@@ -115,6 +128,7 @@ class PlanEsperanzaController {
                     const result = await service.guardarDiagnostico(id, {
                         valoracion: body.valoracion,
                         observaciones: body.observaciones,
+                        checklist,
                         filePath: file.path,
                         fileName: `${areaNombre || "area"}_${fechaArchivo}${extension}`,
                         mimeType: file.mimetype,
@@ -126,6 +140,7 @@ class PlanEsperanzaController {
                     const result = await service.guardarDiagnostico(id, {
                         valoracion: body.valoracion,
                         observaciones: body.observaciones,
+                        checklist,
                     });
                     res.json(result);
                 }

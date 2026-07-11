@@ -127,6 +127,7 @@ class PlanEsperanzaApi {
     int diagnosticoId, {
     double? valoracion,
     String? observaciones,
+    List<ChecklistItem>? checklist,
     SelectedUploadFile? foto,
   }) async {
     if (foto != null) {
@@ -140,6 +141,11 @@ class PlanEsperanzaApi {
       }
       if (observaciones != null) {
         request.fields['observaciones'] = observaciones;
+      }
+      if (checklist != null) {
+        request.fields['checklist'] = jsonEncode(
+          checklist.map((item) => item.toJson()).toList(),
+        );
       }
 
       if (kIsWeb) {
@@ -181,6 +187,9 @@ class PlanEsperanzaApi {
       final body = <String, dynamic>{};
       if (valoracion != null) body['valoracion'] = valoracion;
       if (observaciones != null) body['observaciones'] = observaciones;
+      if (checklist != null) {
+        body['checklist'] = checklist.map((item) => item.toJson()).toList();
+      }
       final resp = await _client.put(
         '$_base/diagnosticos/$diagnosticoId',
         body: body,

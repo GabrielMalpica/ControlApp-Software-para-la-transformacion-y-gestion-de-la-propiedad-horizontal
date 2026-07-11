@@ -1,3 +1,28 @@
+class ChecklistItem {
+  final String texto;
+  final bool completado;
+
+  const ChecklistItem({required this.texto, required this.completado});
+
+  factory ChecklistItem.fromJson(Map<String, dynamic> json) {
+    return ChecklistItem(
+      texto: json['texto']?.toString() ?? '',
+      completado: json['completado'] as bool? ?? false,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'texto': texto, 'completado': completado};
+  }
+
+  ChecklistItem copyWith({String? texto, bool? completado}) {
+    return ChecklistItem(
+      texto: texto ?? this.texto,
+      completado: completado ?? this.completado,
+    );
+  }
+}
+
 class PlanEsperanzaConfig {
   final int id;
   final String conjuntoId;
@@ -13,7 +38,7 @@ class PlanEsperanzaConfig {
     return PlanEsperanzaConfig(
       id: json['id'] as int? ?? 0,
       conjuntoId: json['conjuntoId']?.toString() ?? '',
-      intervaloMeses: json['intervaloMeses'] as int? ?? 6,
+      intervaloMeses: json['intervaloMeses'] as int? ?? 3,
     );
   }
 }
@@ -28,6 +53,7 @@ class DiagnosticoAreaModel {
   final String? urlFoto;
   final double? valoracion;
   final String? observaciones;
+  final List<ChecklistItem> checklist;
   final DateTime? creadoEn;
 
   const DiagnosticoAreaModel({
@@ -40,6 +66,7 @@ class DiagnosticoAreaModel {
     this.urlFoto,
     this.valoracion,
     this.observaciones,
+    this.checklist = const [],
     this.creadoEn,
   });
 
@@ -54,6 +81,9 @@ class DiagnosticoAreaModel {
       urlFoto: json['urlFoto']?.toString(),
       valoracion: (json['valoracion'] as num?)?.toDouble(),
       observaciones: json['observaciones']?.toString(),
+      checklist: (json['checklist'] as List<dynamic>? ?? [])
+          .map((item) => ChecklistItem.fromJson(item as Map<String, dynamic>))
+          .toList(),
       creadoEn: json['creadoEn'] != null
           ? DateTime.tryParse(json['creadoEn'].toString())
           : null,
@@ -129,6 +159,7 @@ class TimelineEntry {
   final String? urlFoto;
   final double? valoracion;
   final String? observaciones;
+  final List<ChecklistItem> checklist;
 
   const TimelineEntry({
     required this.planId,
@@ -136,6 +167,7 @@ class TimelineEntry {
     this.urlFoto,
     this.valoracion,
     this.observaciones,
+    this.checklist = const [],
   });
 
   factory TimelineEntry.fromJson(Map<String, dynamic> json) {
@@ -145,6 +177,9 @@ class TimelineEntry {
       urlFoto: json['urlFoto']?.toString(),
       valoracion: (json['valoracion'] as num?)?.toDouble(),
       observaciones: json['observaciones']?.toString(),
+      checklist: (json['checklist'] as List<dynamic>? ?? [])
+          .map((item) => ChecklistItem.fromJson(item as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
@@ -236,6 +271,7 @@ class AreaInforme {
   final String? urlFoto;
   final double? valoracion;
   final String? observaciones;
+  final List<ChecklistItem> checklist;
 
   const AreaInforme({
     required this.elementoId,
@@ -243,6 +279,7 @@ class AreaInforme {
     this.urlFoto,
     this.valoracion,
     this.observaciones,
+    this.checklist = const [],
   });
 
   factory AreaInforme.fromJson(Map<String, dynamic> json) {
@@ -252,6 +289,9 @@ class AreaInforme {
       urlFoto: json['urlFoto']?.toString(),
       valoracion: (json['valoracion'] as num?)?.toDouble(),
       observaciones: json['observaciones']?.toString(),
+      checklist: (json['checklist'] as List<dynamic>? ?? [])
+          .map((item) => ChecklistItem.fromJson(item as Map<String, dynamic>))
+          .toList(),
     );
   }
 }

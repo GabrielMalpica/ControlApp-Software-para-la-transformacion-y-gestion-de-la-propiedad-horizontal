@@ -1,8 +1,26 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PlanEsperanzaService = void 0;
+const client_1 = require("@prisma/client");
 const prisma_1 = require("../db/prisma");
 const drive_plan_esperanza_1 = require("../utils/drive_plan_esperanza");
+function normalizeChecklistItem(item) {
+    if (!item || typeof item !== "object")
+        return null;
+    const rawTexto = item.texto;
+    const texto = typeof rawTexto === "string" ? rawTexto.trim() : "";
+    if (!texto)
+        return null;
+    return {
+        texto,
+        completado: Boolean(item.completado),
+    };
+}
+function parseChecklist(value) {
+    if (!Array.isArray(value))
+        return [];
+    return value.map(normalizeChecklistItem).filter((item) => item != null);
+}
 function obtenerElementosHoja(prisma, conjuntoId) {
     return prisma.$queryRaw `
     SELECT
@@ -32,7 +50,7 @@ class PlanEsperanzaService {
         });
         if (!config) {
             config = await this.prisma.planEsperanzaConfig.create({
-                data: { conjuntoId },
+                data: { conjuntoId, intervaloMeses: 3 },
             });
         }
         return config;
@@ -66,14 +84,22 @@ class PlanEsperanzaService {
                     urlFoto: anterior?.urlFoto ?? null,
                     valoracion: anterior?.valoracion ?? null,
                     observaciones: anterior?.observaciones ?? null,
+                    checklist: anterior?.checklist ?? client_1.Prisma.JsonNull,
                 });
             }
         }
         else {
+            const ultimoPlanFinalizado = await this.prisma.planEsperanza.findFirst({
+                where: { conjuntoId, completado: true },
+                orderBy: { fechaInicio: "desc" },
+                include: { diagnosticos: true },
+            });
+            const checklistAnterior = new Map((ultimoPlanFinalizado?.diagnosticos ?? []).map((d) => [d.elementoId, d.checklist]));
             for (const hoja of hojas) {
                 diagnosticosData.push({
                     planEsperanzaId: plan.id,
                     elementoId: hoja.id,
+                    checklist: checklistAnterior.get(hoja.id) ?? client_1.Prisma.JsonNull,
                 });
             }
         }
@@ -116,6 +142,7 @@ class PlanEsperanzaService {
             urlFoto: d.urlFoto,
             valoracion: d.valoracion,
             observaciones: d.observaciones,
+            checklist: parseChecklist(d.checklist),
             creadoEn: d.creadoEn,
         }));
         return {
@@ -169,6 +196,7 @@ class PlanEsperanzaService {
             urlFoto: d.urlFoto,
             valoracion: d.valoracion,
             observaciones: d.observaciones,
+            checklist: parseChecklist(d.checklist),
         };
     }
     async guardarDiagnostico(diagnosticoId, data) {
@@ -184,6 +212,11 @@ class PlanEsperanzaService {
         }
         if (data.observaciones !== undefined) {
             updateData.observaciones = data.observaciones;
+        }
+        if (data.checklist !== undefined) {
+            updateData.checklist = !data.checklist || data.checklist.length == 0
+                ? client_1.Prisma.JsonNull
+                : data.checklist;
         }
         if (data.filePath && data.fileName && data.mimeType && data.conjuntoNombre) {
             const url = await (0, drive_plan_esperanza_1.uploadPlanEsperanzaFoto)({
@@ -253,6 +286,7 @@ class PlanEsperanzaService {
                 urlFoto: d.urlFoto,
                 valoracion: d.valoracion,
                 observaciones: d.observaciones,
+                checklist: parseChecklist(d.checklist),
             });
         }
         return {
@@ -311,6 +345,7 @@ class PlanEsperanzaService {
                     urlFoto: d.urlFoto,
                     valoracion: d.valoracion,
                     observaciones: d.observaciones,
+                    checklist: parseChecklist(d.checklist),
                 });
             }
         }
@@ -398,6 +433,7 @@ class PlanEsperanzaService {
             urlFoto: d.urlFoto,
             valoracion: d.valoracion,
             observaciones: d.observaciones,
+            checklist: parseChecklist(d.checklist),
         }));
     }
 }
