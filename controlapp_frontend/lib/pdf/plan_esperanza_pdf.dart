@@ -312,9 +312,7 @@ pw.Widget _imageCell(pw.ImageProvider? image) {
 
 String _checklistText(List<ChecklistItem> items) {
   if (items.isEmpty) return '-';
-  return items
-      .map((item) => '${item.completado ? '[x]' : '[ ]'} ${item.texto}')
-      .join('\n');
+  return items.map((item) => '• ${item.texto}').join('\n');
 }
 
 String _safeText(String? value) {

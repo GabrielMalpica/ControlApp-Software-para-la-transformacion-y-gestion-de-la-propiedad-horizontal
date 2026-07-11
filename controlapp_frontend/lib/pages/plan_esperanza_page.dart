@@ -1953,14 +1953,14 @@ class _ChecklistEditor extends StatelessWidget {
               final item = items[index];
               return Row(
                 children: [
-                  Checkbox(
-                    value: item.completado,
-                    activeColor: AppTheme.primary,
-                    onChanged: (value) {
-                      final next = List<ChecklistItem>.from(items);
-                      next[index] = item.copyWith(completado: value ?? false);
-                      onChanged(next);
-                    },
+                  Container(
+                    width: 22,
+                    alignment: Alignment.centerLeft,
+                    child: Icon(
+                      Icons.format_list_bulleted_rounded,
+                      size: 16,
+                      color: AppTheme.primary,
+                    ),
                   ),
                   Expanded(
                     child: Text(
@@ -1968,9 +1968,6 @@ class _ChecklistEditor extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade800,
-                        decoration: item.completado
-                            ? TextDecoration.lineThrough
-                            : TextDecoration.none,
                       ),
                     ),
                   ),
@@ -2017,7 +2014,7 @@ class _ChecklistSummary extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 2),
             child: Text(
-              '${item.completado ? '[x]' : '[ ]'} ${item.texto}',
+              '• ${item.texto}',
               style: style ??
                   TextStyle(fontSize: 12, color: Colors.grey.shade700),
             ),

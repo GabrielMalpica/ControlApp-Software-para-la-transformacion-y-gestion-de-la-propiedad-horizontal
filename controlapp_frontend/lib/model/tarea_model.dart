@@ -109,6 +109,7 @@ class TareaModel {
   final int prioridad;
 
   final List<String> operariosNombres;
+  final List<String> operariosCargos;
   final String? supervisorNombre;
   final String? ubicacionNombre;
   final String? elementoNombre;
@@ -154,6 +155,7 @@ class TareaModel {
     required this.elementoId,
     this.operariosIds = const [],
     this.operariosNombres = const [],
+    this.operariosCargos = const [],
     this.supervisorNombre,
     this.ubicacionNombre,
     this.elementoNombre,
@@ -195,6 +197,7 @@ class TareaModel {
     // --- Operarios: soportar formato plano y anidado ---
     List<String> opIds = [];
     List<String> opNombres = [];
+    List<String> opCargos = [];
 
     if (json['operariosIds'] != null) {
       opIds = (json['operariosIds'] as List? ?? [])
@@ -204,11 +207,23 @@ class TareaModel {
       opNombres = (json['operariosNombres'] as List? ?? [])
           .map((e) => e.toString())
           .toList();
+      opCargos = (json['operariosCargos'] as List? ?? [])
+          .map((e) => e.toString())
+          .toList();
     } else if (json['operarios'] != null) {
       final ops = (json['operarios'] as List? ?? []);
       opIds = ops.map((e) => e['id'].toString()).toList();
       opNombres = ops
           .map((e) => (e['usuario']?['nombre'] ?? '').toString())
+          .toList();
+      opCargos = ops
+          .map(
+            (e) => _formatOperarioFunciones(
+              (e['funciones'] as List? ?? const [])
+                  .map((item) => item.toString())
+                  .toList(),
+            ),
+          )
           .toList();
     }
 
@@ -320,6 +335,7 @@ class TareaModel {
       elementoId: elementoId,
       operariosIds: opIds,
       operariosNombres: opNombres,
+      operariosCargos: opCargos,
       prioridad: prioridad,
       supervisorNombre: supervisorNombre,
       ubicacionNombre: ubicacionNombre,
@@ -363,6 +379,7 @@ class TareaModel {
     'operariosIds': operariosIds, // ✅ List<String>
     'prioridad': prioridad,
     'operariosNombres': operariosNombres,
+    'operariosCargos': operariosCargos,
     'supervisorNombre': supervisorNombre,
     'ubicacionNombre': ubicacionNombre,
     'elementoNombre': elementoNombre,
@@ -408,6 +425,7 @@ class TareaModel {
     List<String>? operariosIds,
 
     List<String>? operariosNombres,
+    List<String>? operariosCargos,
     String? supervisorNombre,
     String? ubicacionNombre,
     String? elementoNombre,
@@ -447,6 +465,7 @@ class TareaModel {
       elementoId: elementoId ?? this.elementoId,
       operariosIds: operariosIds ?? this.operariosIds,
       operariosNombres: operariosNombres ?? this.operariosNombres,
+      operariosCargos: operariosCargos ?? this.operariosCargos,
       supervisorNombre: supervisorNombre ?? this.supervisorNombre,
       ubicacionNombre: ubicacionNombre ?? this.ubicacionNombre,
       elementoNombre: elementoNombre ?? this.elementoNombre,
@@ -474,6 +493,31 @@ class TareaModel {
           reprogramadaPorTareaId ?? this.reprogramadaPorTareaId,
     );
   }
+}
+
+String _formatOperarioFunciones(List<String> funciones) {
+  final labels = funciones
+      .map((item) => item.trim().toUpperCase())
+      .where((item) => item.isNotEmpty)
+      .map((item) {
+        switch (item) {
+          case 'TODERO':
+            return 'Todero';
+          case 'ASEO':
+            return 'Servicios generales';
+          case 'SALVAVIDAS':
+            return 'Salvavidas';
+          default:
+            final lower = item.toLowerCase();
+            return lower.isEmpty
+                ? ''
+                : '${lower[0].toUpperCase()}${lower.substring(1)}';
+        }
+      })
+      .where((item) => item.isNotEmpty)
+      .toSet()
+      .toList();
+  return labels.join(' / ');
 }
 
 String? _elementoRutaDesdeJson(dynamic raw) {

@@ -24,6 +24,11 @@ const CronoMesDTO = zod_1.z.object({
     mes: zod_1.z.number().int().min(1).max(12),
     borrador: zod_1.z.boolean().optional(), // undefined = todos, true = solo borrador, false = solo operativo
 });
+const ExcluidasStandbyDTO = zod_1.z.object({
+    anio: zod_1.z.number().int().min(2000).max(2100),
+    mes: zod_1.z.number().int().min(1).max(12),
+    fecha: zod_1.z.coerce.date().optional(),
+});
 const EliminarCronogramaPublicadoDTO = zod_1.z.object({
     anio: zod_1.z.coerce.number().int().min(2000).max(2100),
     mes: zod_1.z.coerce.number().int().min(1).max(12),
@@ -82,6 +87,17 @@ class CronogramaService {
     constructor(prisma, conjuntoId) {
         this.prisma = prisma;
         this.conjuntoId = conjuntoId;
+    }
+    async limpiarExcluidasDeMesesAnteriores(anio, mes) {
+        await this.prisma.preventivaExcluidaBorrador.deleteMany({
+            where: {
+                conjuntoId: this.conjuntoId,
+                OR: [
+                    { periodoAnio: { lt: anio } },
+                    { periodoAnio: anio, periodoMes: { lt: mes } },
+                ],
+            },
+        });
     }
     async eliminarTareaPublicada(id) {
         await this.prisma.$transaction(async (tx) => {
@@ -164,6 +180,32 @@ class CronogramaService {
             rows.set(actividad, row);
         }
         return Array.from(rows.values()).sort((a, b) => a.actividad.localeCompare(b.actividad));
+    }
+    async listarExcluidasStandby(payload) {
+        const dto = ExcluidasStandbyDTO.parse(payload);
+        await this.limpiarExcluidasDeMesesAnteriores(dto.anio, dto.mes);
+        const inicioDia = dto.fecha
+            ? new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 0, 0, 0, 0)
+            : null;
+        const finDia = dto.fecha
+            ? new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 23, 59, 59, 999)
+            : null;
+        return this.prisma.preventivaExcluidaBorrador.findMany({
+            where: {
+                conjuntoId: this.conjuntoId,
+                periodoAnio: dto.anio,
+                periodoMes: dto.mes,
+                estado: "PENDIENTE",
+                ...(inicioDia && finDia
+                    ? { fechaObjetivo: { gte: inicioDia, lte: finDia } }
+                    : {}),
+            },
+            orderBy: [
+                { prioridad: "asc" },
+                { fechaObjetivo: "asc" },
+                { id: "asc" },
+            ],
+        });
     }
     async eliminarCronogramaPublicado(payload) {
         const { anio, mes } = EliminarCronogramaPublicadoDTO.parse(payload);

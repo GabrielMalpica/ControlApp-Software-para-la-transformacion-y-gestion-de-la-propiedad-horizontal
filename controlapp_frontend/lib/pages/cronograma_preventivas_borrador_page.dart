@@ -346,8 +346,11 @@ class _CronogramaPreventivasBorradorPageState
   List<TareaModel> get _tareasFiltradas =>
       _tareasMes.where(_pasaFiltros).toList();
 
+  List<PreventivaExcluidaBorradorModel> get _excluidasFiltradas =>
+      _excluidasMes.where(_pasaFiltrosExcluida).toList();
+
   List<PreventivaExcluidaBorradorModel> _excluidasPorFecha(DateTime fecha) {
-    return _excluidasMes.where((item) {
+    return _excluidasFiltradas.where((item) {
       final d = item.fechaObjetivo;
       return d.year == fecha.year &&
           d.month == fecha.month &&
@@ -395,6 +398,39 @@ class _CronogramaPreventivasBorradorPageState
     }
 
     return true;
+  }
+
+  bool _pasaFiltrosExcluida(PreventivaExcluidaBorradorModel item) {
+    if (_filtroOperario != 'TODOS' &&
+        !item.operariosNombres.any((name) => name.trim() == _filtroOperario)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  List<String> _operariosConCargo(TareaModel tarea) {
+    final items = <String>[];
+    for (var i = 0; i < tarea.operariosNombres.length; i++) {
+      final nombre = tarea.operariosNombres[i].trim();
+      if (nombre.isEmpty) continue;
+      final cargo =
+          i < tarea.operariosCargos.length ? tarea.operariosCargos[i].trim() : '';
+      items.add(cargo.isEmpty ? nombre : '$nombre ($cargo)');
+    }
+    return items;
+  }
+
+  List<MapEntry<String, String>> _operariosConCargoEntries(TareaModel tarea) {
+    final items = <MapEntry<String, String>>[];
+    for (var i = 0; i < tarea.operariosNombres.length; i++) {
+      final nombre = tarea.operariosNombres[i].trim();
+      if (nombre.isEmpty) continue;
+      final cargo =
+          i < tarea.operariosCargos.length ? tarea.operariosCargos[i].trim() : '';
+      items.add(MapEntry(nombre, cargo));
+    }
+    return items;
   }
 
   String? _nombreUbicacion(TareaModel t) => t.ubicacionNombre;
@@ -788,10 +824,7 @@ class _CronogramaPreventivasBorradorPageState
       final rangosPorOperario = <String, List<_MinuteRange>>{};
 
       for (final t in tareas) {
-        final operarios = t.operariosNombres
-            .map((name) => name.trim())
-            .where((name) => name.isNotEmpty)
-            .toSet();
+        final operarios = _operariosConCargoEntries(t).toSet();
         if (operarios.isEmpty) continue;
 
         final inicioOriginal = t.fechaInicio.toLocal();
@@ -817,8 +850,9 @@ class _CronogramaPreventivasBorradorPageState
           if (finClip <= inicioClip) continue;
 
           for (final operario in operarios) {
+            final key = '${operario.key}|${operario.value}';
             rangosPorOperario
-                .putIfAbsent(operario, () => <_MinuteRange>[])
+                .putIfAbsent(key, () => <_MinuteRange>[])
                 .add(_MinuteRange(start: inicioClip, end: finClip));
           }
         }
@@ -839,7 +873,10 @@ class _CronogramaPreventivasBorradorPageState
     final lista = ocupadasPorOperario.entries
         .map(
           (entry) => _OperarioSemanaResumen(
-            nombre: entry.key,
+            nombre: entry.key.split('|').first,
+            cargo: entry.key.contains('|')
+                ? entry.key.substring(entry.key.indexOf('|') + 1)
+                : '',
             disponiblesMin: disponiblesMin,
             ocupadasMin: entry.value,
           ),
@@ -941,7 +978,9 @@ class _CronogramaPreventivasBorradorPageState
                               children: [
                                 Expanded(
                                   child: Text(
-                                    item.nombre,
+                                    item.cargo.isEmpty
+                                        ? item.nombre
+                                        : '${item.nombre} (${item.cargo})',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
@@ -4816,7 +4855,7 @@ class _CronogramaPreventivasBorradorPageState
             tareasSemana: tareas,
             tareasSemanaCompletas: tareasCompletas,
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
-            excluidasMes: _excluidasMes,
+            excluidasMes: _excluidasFiltradas,
             excluirPorFecha: _excluidasPorFecha,
             onReordenarTareasDia: _reordenarTareasDia,
             onEliminarTarea: _eliminarTareaBorrador,
@@ -4995,7 +5034,7 @@ class _CronogramaPreventivasBorradorPageState
     );
     final horasPorTrabajador = _resumenHorasAgrupadas(
       _tareasFiltradas,
-      (tarea) => tarea.operariosNombres,
+      _operariosConCargo,
     );
 
     DataColumn col(String label) => DataColumn(label: Text(label));
@@ -7284,11 +7323,13 @@ class _SemanaHorasResumen {
 
 class _OperarioSemanaResumen {
   final String nombre;
+  final String cargo;
   final int disponiblesMin;
   final int ocupadasMin;
 
   const _OperarioSemanaResumen({
     required this.nombre,
+    required this.cargo,
     required this.disponiblesMin,
     required this.ocupadasMin,
   });

@@ -104,6 +104,20 @@ class CronogramaController {
                 next(err);
             }
         };
+        this.listarExcluidasStandby = async (req, res, next) => {
+            try {
+                const conjuntoId = resolveConjuntoId(req);
+                const anio = Number(req.query.anio);
+                const mes = Number(req.query.mes);
+                const fecha = req.query.fecha ? new Date(String(req.query.fecha)) : undefined;
+                const service = new CronogramaServices_1.CronogramaService(prisma_1.prisma, conjuntoId);
+                const out = await service.listarExcluidasStandby({ anio, mes, fecha });
+                res.json(out);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
         this.eliminarCronogramaPublicado = async (req, res, next) => {
             try {
                 const conjuntoId = resolveConjuntoId(req);

@@ -30,6 +30,12 @@ const CronoMesDTO = z.object({
   borrador: z.boolean().optional(), // undefined = todos, true = solo borrador, false = solo operativo
 });
 
+const ExcluidasStandbyDTO = z.object({
+  anio: z.number().int().min(2000).max(2100),
+  mes: z.number().int().min(1).max(12),
+  fecha: z.coerce.date().optional(),
+});
+
 const EliminarCronogramaPublicadoDTO = z.object({
   anio: z.coerce.number().int().min(2000).max(2100),
   mes: z.coerce.number().int().min(1).max(12),
@@ -99,6 +105,18 @@ function dateKeyLocal(d: Date) {
 
 export class CronogramaService {
   constructor(private prisma: PrismaClient, private conjuntoId: string) {}
+
+  private async limpiarExcluidasDeMesesAnteriores(anio: number, mes: number) {
+    await this.prisma.preventivaExcluidaBorrador.deleteMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        OR: [
+          { periodoAnio: { lt: anio } },
+          { periodoAnio: anio, periodoMes: { lt: mes } },
+        ],
+      },
+    });
+  }
 
   private async eliminarTareaPublicada(id: number) {
     await this.prisma.$transaction(async (tx) => {
@@ -211,6 +229,34 @@ export class CronogramaService {
     return Array.from(rows.values()).sort((a, b) =>
       a.actividad.localeCompare(b.actividad),
     );
+  }
+
+  async listarExcluidasStandby(payload: unknown) {
+    const dto = ExcluidasStandbyDTO.parse(payload);
+    await this.limpiarExcluidasDeMesesAnteriores(dto.anio, dto.mes);
+    const inicioDia = dto.fecha
+      ? new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 0, 0, 0, 0)
+      : null;
+    const finDia = dto.fecha
+      ? new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 23, 59, 59, 999)
+      : null;
+
+    return this.prisma.preventivaExcluidaBorrador.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        periodoAnio: dto.anio,
+        periodoMes: dto.mes,
+        estado: "PENDIENTE",
+        ...(inicioDia && finDia
+          ? { fechaObjetivo: { gte: inicioDia, lte: finDia } }
+          : {}),
+      },
+      orderBy: [
+        { prioridad: "asc" },
+        { fechaObjetivo: "asc" },
+        { id: "asc" },
+      ],
+    });
   }
 
   async eliminarCronogramaPublicado(payload: unknown) {

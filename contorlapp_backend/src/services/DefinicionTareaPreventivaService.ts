@@ -291,6 +291,23 @@ const ReordenarTareasDiaBorradorDTO = z.object({
 export class DefinicionTareaPreventivaService {
   constructor(private prisma: PrismaClient) {}
 
+  private async limpiarExcluidasDeMesesAnteriores(params: {
+    conjuntoId: string;
+    anio: number;
+    mes: number;
+  }) {
+    const { conjuntoId, anio, mes } = params;
+    await this.prisma.preventivaExcluidaBorrador.deleteMany({
+      where: {
+        conjuntoId,
+        OR: [
+          { periodoAnio: { lt: anio } },
+          { periodoAnio: anio, periodoMes: { lt: mes } },
+        ],
+      },
+    });
+  }
+
   private async resolverSupervisorId(supervisorId: number): Promise<string> {
     const sid = supervisorId.toString();
 
@@ -1891,6 +1908,8 @@ export class DefinicionTareaPreventivaService {
   }) {
     const { conjuntoId, anio, mes } = params;
 
+    await this.limpiarExcluidasDeMesesAnteriores({ conjuntoId, anio, mes });
+
     this.validarVentanaPublicacion({ anio, mes, diasAnticipacion: 7 });
 
     const borradores = await this.prisma.tarea.findMany({
@@ -1961,15 +1980,11 @@ export class DefinicionTareaPreventivaService {
       data: { borrador: false },
     });
 
-    const excluidasEliminadas = await this.prisma.preventivaExcluidaBorrador.deleteMany({
-      where: { conjuntoId, periodoAnio: anio, periodoMes: mes },
-    });
-
     return {
       ok: true,
       publicadas: borradores.length,
       reservas: reservasResp?.creadas ?? 0,
-      excluidasDescartadas: excluidasEliminadas.count,
+      excluidasDescartadas: 0,
     };
   }
 
@@ -2002,6 +2017,12 @@ export class DefinicionTareaPreventivaService {
       incluirPublicadasEnAgenda = true,
       confirmacionesReemplazo = [],
     } = params;
+
+    await this.limpiarExcluidasDeMesesAnteriores({
+      conjuntoId,
+      anio: periodoAnio,
+      mes: periodoMes,
+    });
 
     const novedades: NovedadCronograma[] = [];
     const confirmacionesMap = new Map<
@@ -3997,6 +4018,11 @@ export class DefinicionTareaPreventivaService {
 
   async listarExcluidasBorrador(payload: unknown) {
     const dto = ListarExcluidasBorradorDTO.parse(payload);
+    await this.limpiarExcluidasDeMesesAnteriores({
+      conjuntoId: dto.conjuntoId,
+      anio: dto.anio,
+      mes: dto.mes,
+    });
     const inicioDia = dto.fecha
       ? new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 0, 0, 0, 0)
       : null;

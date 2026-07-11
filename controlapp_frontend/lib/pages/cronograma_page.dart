@@ -12,6 +12,7 @@ import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
 
 import '../api/cronograma_api.dart';
+import '../model/preventiva_excluida_borrador_model.dart';
 import '../api/tarea_api.dart';
 import '../model/tarea_model.dart';
 import '../service/app_error.dart';
@@ -29,6 +30,8 @@ import 'crear_tarea_page.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 
 enum _VistaCronograma { mensual, semanal, informe }
+
+enum _SidebarAgendaModo { agenda, excluidas }
 
 final ValueNotifier<bool> _weekCorrectivaDragActiveNotifier =
     ValueNotifier<bool>(false);
@@ -74,6 +77,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   /// Todas las tareas PUBLICADAS (preventivas + correctivas) del mes
   List<TareaModel> _tareasMes = [];
+  List<PreventivaExcluidaBorradorModel> _excluidasMes = [];
   List<CronogramaActividadInformeModel> _informeActividad = [];
   List<TareaModel> _tareasFiltradasCache = [];
   List<_FilaCrono> _filasCronoMensualCache = [];
@@ -92,6 +96,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
   late DateTime _semanaBase;
   int _escalaSemanalMinutos = 60;
   bool _sidebarResumenColapsado = false;
+  int _sidebarDiaIndex = 0;
+  _SidebarAgendaModo _sidebarAgendaModo = _SidebarAgendaModo.agenda;
 
   bool _mostrarFiltrosMensual = false;
 
@@ -129,6 +135,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
       !widget.soloLectura &&
       (_rolActual == 'gerente' ||
           PermissionService.instance.can('cronograma.correctivas_programar'));
+
+  bool get _canViewExcluidasStandby =>
+      _rolActual == 'gerente' ||
+      PermissionService.instance.can('cronograma.excluidas_ver');
 
   @override
   void initState() {
@@ -356,6 +366,18 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   List<TareaModel> get _tareasFiltradas => _tareasFiltradasCache;
 
+  List<PreventivaExcluidaBorradorModel> get _excluidasFiltradas =>
+      _excluidasMes.where(_pasaFiltrosExcluida).toList();
+
+  List<PreventivaExcluidaBorradorModel> _excluidasPorFecha(DateTime fecha) {
+    return _excluidasFiltradas.where((item) {
+      final d = item.fechaObjetivo;
+      return d.year == fecha.year &&
+          d.month == fecha.month &&
+          d.day == fecha.day;
+    }).toList();
+  }
+
   void _recalcularColeccionesDerivadas() {
     _tareasFiltradasCache = _tareasMes.where(_pasaFiltros).toList();
     _filasCronoMensualCache = _construirFilasCronoMensual(
@@ -405,6 +427,15 @@ class _CronogramaPageState extends State<CronogramaPage> {
     return true;
   }
 
+  bool _pasaFiltrosExcluida(PreventivaExcluidaBorradorModel item) {
+    if (_filtroOperario != 'TODOS' &&
+        !item.operariosNombres.any((name) => name.trim() == _filtroOperario)) {
+      return false;
+    }
+
+    return true;
+  }
+
   bool _pasaFiltrosResumenOperarios(TareaModel t) {
     if (_esCanceladaPorReemplazo(t)) return false;
 
@@ -434,6 +465,30 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   String? _nombreUbicacion(TareaModel t) => t.ubicacionNombre;
   String? _nombreObjeto(TareaModel t) => t.elementoNombre;
+
+  List<String> _operariosConCargo(TareaModel tarea) {
+    final items = <String>[];
+    for (var i = 0; i < tarea.operariosNombres.length; i++) {
+      final nombre = tarea.operariosNombres[i].trim();
+      if (nombre.isEmpty) continue;
+      final cargo =
+          i < tarea.operariosCargos.length ? tarea.operariosCargos[i].trim() : '';
+      items.add(cargo.isEmpty ? nombre : '$nombre ($cargo)');
+    }
+    return items;
+  }
+
+  List<MapEntry<String, String>> _operariosConCargoEntries(TareaModel tarea) {
+    final items = <MapEntry<String, String>>[];
+    for (var i = 0; i < tarea.operariosNombres.length; i++) {
+      final nombre = tarea.operariosNombres[i].trim();
+      if (nombre.isEmpty) continue;
+      final cargo =
+          i < tarea.operariosCargos.length ? tarea.operariosCargos[i].trim() : '';
+      items.add(MapEntry(nombre, cargo));
+    }
+    return items;
+  }
 
   final Set<String> _detalleCamposVisibles = {
     'id',
@@ -648,6 +703,13 @@ class _CronogramaPageState extends State<CronogramaPage> {
       final horariosFuture = _conjuntoApi
           .obtenerHorariosConjunto(widget.nit)
           .catchError((_) => <HorarioConjunto>[]);
+      final excluidasFuture = _canViewExcluidasStandby
+          ? _cronogramaApi.listarExcluidasStandby(
+              nit: widget.nit,
+              anio: _anioActual,
+              mes: _mesActual,
+            )
+          : Future.value(const <PreventivaExcluidaBorradorModel>[]);
 
       final results = await Future.wait([
         _cronogramaApi.cronogramaMensual(
@@ -672,6 +734,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
           mes: _mesActual,
           borrador: false,
         ),
+        excluidasFuture,
       ]);
 
       final prev = results[0] as List<TareaModel>;
@@ -679,6 +742,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       final festivos = results[2] as List<FestivoItem>;
       final horarios = results[3] as List<HorarioConjunto>;
       final informe = results[4] as List<CronogramaActividadInformeModel>;
+      final excluidas = results[5] as List<PreventivaExcluidaBorradorModel>;
 
       // unir y quitar duplicados por id (por si backend repite algo)
       final Map<int, TareaModel> porId = {};
@@ -707,6 +771,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
       setState(() {
         _tareasMes = filtradas;
+        _excluidasMes = excluidas;
         _informeActividad = informe;
         _reconstruirFiltrosDisponibles();
         _recalcularColeccionesDerivadas();
@@ -2884,10 +2949,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       final rangosPorOperario = <String, List<_MinuteRange>>{};
 
       for (final t in tareas) {
-        final operarios = t.operariosNombres
-            .map((name) => name.trim())
-            .where((name) => name.isNotEmpty)
-            .toSet();
+        final operarios = _operariosConCargoEntries(t).toSet();
         if (operarios.isEmpty) continue;
 
         final inicioOriginal = t.fechaInicio.toLocal();
@@ -2914,8 +2976,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
           if (finClip <= inicioClip) continue;
 
           for (final operario in operarios) {
+            final key = '${operario.key}|${operario.value}';
             rangosPorOperario
-                .putIfAbsent(operario, () => <_MinuteRange>[])
+                .putIfAbsent(key, () => <_MinuteRange>[])
                 .add(_MinuteRange(start: inicioClip, end: finClip));
           }
         }
@@ -2936,7 +2999,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final lista = ocupadasPorOperario.entries
         .map(
           (entry) => _OperarioSemanaResumen(
-            nombre: entry.key,
+            nombre: entry.key.split('|').first,
+            cargo: entry.key.contains('|')
+                ? entry.key.substring(entry.key.indexOf('|') + 1)
+                : '',
             disponiblesMin: disponiblesMin,
             ocupadasMin: entry.value,
           ),
@@ -3059,7 +3125,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    item.nombre,
+                                    item.cargo.isEmpty
+                                        ? item.nombre
+                                        : '${item.nombre} (${item.cargo})',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
@@ -3112,6 +3180,50 @@ class _CronogramaPageState extends State<CronogramaPage> {
               ],
             ),
         ],
+      ),
+    );
+  }
+
+  void _mostrarDetalleExcluidaStandby(
+    PreventivaExcluidaBorradorModel item,
+    BuildContext context,
+  ) {
+    final operarios = item.operariosNombres.isEmpty
+        ? 'Sin operario sugerido'
+        : item.operariosNombres.join(', ');
+    final motivo = item.motivoMensaje ?? item.motivoTipo;
+
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.descripcion,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 12),
+              Text('Fecha objetivo: ${DateFormat('dd/MM/yyyy', 'es').format(item.fechaObjetivo)}'),
+              Text('Duración: ${item.duracionLabel}'),
+              Text('Ubicación: ${item.ubicacionNombre ?? '—'}'),
+              Text('Elemento: ${item.elementoNombre ?? '—'}'),
+              Text('Operarios: $operarios'),
+              Text('Motivo: $motivo'),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cerrar'),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -3232,8 +3344,19 @@ class _CronogramaPageState extends State<CronogramaPage> {
           flex: 4,
           child: _SidebarAgendaDia(
             weekStart: weekStart,
+            dayIndex: _sidebarDiaIndex,
+            onDayIndexChanged: (value) => setState(() => _sidebarDiaIndex = value),
+            modo: _sidebarAgendaModo,
+            onModoChanged: _canViewExcluidasStandby
+                ? (value) => setState(() => _sidebarAgendaModo = value)
+                : null,
             tareasSemana: tareas,
+            excluidasMes: _excluidasFiltradas,
+            excluirPorFecha: _excluidasPorFecha,
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
+            onTapExcluida: _canViewExcluidasStandby
+                ? (item) => _mostrarDetalleExcluidaStandby(item, context)
+                : null,
           ),
         ),
       ],
@@ -3401,7 +3524,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
     );
     final horasPorTrabajador = _resumenHorasAgrupadas(
       _tareasFiltradas,
-      (tarea) => tarea.operariosNombres,
+      _operariosConCargo,
     );
 
     DataColumn col(String label) => DataColumn(label: Text(label));
@@ -4971,33 +5094,116 @@ class _SidebarSimple extends StatelessWidget {
   }
 }
 
-class _SidebarAgendaDia extends StatefulWidget {
+class _SidebarAgendaDia extends StatelessWidget {
   final DateTime weekStart;
+  final int dayIndex;
+  final ValueChanged<int> onDayIndexChanged;
+  final _SidebarAgendaModo modo;
+  final ValueChanged<_SidebarAgendaModo>? onModoChanged;
   final List<TareaModel> tareasSemana;
+  final List<PreventivaExcluidaBorradorModel> excluidasMes;
+  final List<PreventivaExcluidaBorradorModel> Function(DateTime fecha)
+  excluirPorFecha;
   final void Function(TareaModel t) onTapTarea;
+  final void Function(PreventivaExcluidaBorradorModel item)? onTapExcluida;
 
   const _SidebarAgendaDia({
     required this.weekStart,
+    required this.dayIndex,
+    required this.onDayIndexChanged,
+    required this.modo,
+    required this.onModoChanged,
     required this.tareasSemana,
+    required this.excluidasMes,
+    required this.excluirPorFecha,
     required this.onTapTarea,
+    required this.onTapExcluida,
   });
 
   @override
-  State<_SidebarAgendaDia> createState() => _SidebarAgendaDiaState();
-}
-
-class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
-  int _diaIndex = 0;
-
-  @override
   Widget build(BuildContext context) {
-    final fecha = widget.weekStart.add(Duration(days: _diaIndex));
-    final tareasDia = widget.tareasSemana.where((t) {
+    final fecha = weekStart.add(Duration(days: dayIndex));
+    final tareasDia = tareasSemana.where((t) {
       final d = t.fechaInicio.toLocal();
       return d.year == fecha.year &&
           d.month == fecha.month &&
           d.day == fecha.day;
     }).toList()..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
+    final excluidasDia = excluirPorFecha(fecha);
+
+    Widget buildTarea(TareaModel t) {
+      final ini = t.fechaInicio.toLocal();
+      final fin = t.fechaFin.toLocal();
+      return InkWell(
+        onTap: () => onTapTarea(t),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: AppTheme.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppTheme.primary.withValues(alpha: 0.25),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                t.descripcion,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                "${DateFormat('HH:mm').format(ini)} - ${DateFormat('HH:mm').format(fin)}",
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget buildExcluida(PreventivaExcluidaBorradorModel item) {
+      final operarios = item.operariosNombres.isEmpty
+          ? 'Sin operario sugerido'
+          : item.operariosNombres.join(', ');
+      return InkWell(
+        onTap: onTapExcluida == null ? null : () => onTapExcluida!(item),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.orange.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.orange.withValues(alpha: 0.22)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.descripcion,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'P${item.prioridad} • ${item.duracionLabel}',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                operarios,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Card(
       color: Colors.white,
@@ -5010,98 +5216,91 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
           children: [
             Row(
               children: [
-                const Text(
-                  'Agenda',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                Text(
+                  modo == _SidebarAgendaModo.agenda ? 'Agenda' : 'Excluidas',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 ),
                 const Spacer(),
                 DropdownButton<int>(
-                  value: _diaIndex,
+                  value: dayIndex,
                   items: List.generate(7, (i) {
-                    final d = widget.weekStart.add(Duration(days: i));
+                    final d = weekStart.add(Duration(days: i));
                     final label = [
-                      "Lun",
-                      "Mar",
-                      "Mié",
-                      "Jue",
-                      "Vie",
-                      "Sáb",
-                      "Dom",
+                      'Lun',
+                      'Mar',
+                      'Mié',
+                      'Jue',
+                      'Vie',
+                      'Sáb',
+                      'Dom',
                     ][i];
-                    return DropdownMenuItem(
-                      value: i,
-                      child: Text("$label ${d.day}"),
-                    );
+                    return DropdownMenuItem(value: i, child: Text('$label ${d.day}'));
                   }),
                   onChanged: (v) {
                     if (v == null) return;
-                    setState(() => _diaIndex = v);
+                    onDayIndexChanged(v);
                   },
                 ),
               ],
             ),
+            if (onModoChanged != null) ...[
+              const SizedBox(height: 6),
+              SegmentedButton<_SidebarAgendaModo>(
+                segments: const [
+                  ButtonSegment<_SidebarAgendaModo>(
+                    value: _SidebarAgendaModo.agenda,
+                    label: Text('Agenda'),
+                  ),
+                  ButtonSegment<_SidebarAgendaModo>(
+                    value: _SidebarAgendaModo.excluidas,
+                    label: Text('Excluidas'),
+                  ),
+                ],
+                selected: {modo},
+                onSelectionChanged: (value) => onModoChanged!(value.first),
+              ),
+            ],
             const SizedBox(height: 6),
             Text(
-              DateFormat("EEEE dd MMMM", "es").format(fecha),
+              DateFormat('EEEE dd MMMM', 'es').format(fecha),
               style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
             ),
-            const Divider(height: 18),
-            if (tareasDia.isEmpty)
-              const Expanded(
-                child: Center(
-                  child: Text(
-                    'Sin tareas este día',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ),
-              )
-            else
-              Expanded(
-                child: ListView.separated(
-                  itemCount: tareasDia.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (context, i) {
-                    final t = tareasDia[i];
-                    final ini = t.fechaInicio.toLocal();
-                    final fin = t.fechaFin.toLocal();
-                    return InkWell(
-                      onTap: () => widget.onTapTarea(t),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: AppTheme.primary.withValues(alpha: 0.25),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              t.descripcion,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              "${DateFormat('HH:mm').format(ini)} - ${DateFormat('HH:mm').format(fin)}",
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey.shade700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
+            if (modo == _SidebarAgendaModo.excluidas) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Standby del día: ${excluidasDia.length} • mes: ${excluidasMes.length}',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
               ),
+            ],
+            const Divider(height: 18),
+            Expanded(
+              child: modo == _SidebarAgendaModo.agenda
+                  ? (tareasDia.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'Sin tareas este día',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: tareasDia.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
+                            itemBuilder: (context, i) => buildTarea(tareasDia[i]),
+                          ))
+                  : (excluidasDia.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No hay excluidas en standby para este día.',
+                              style: TextStyle(fontSize: 12),
+                              textAlign: TextAlign.center,
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: excluidasDia.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
+                            itemBuilder: (context, i) => buildExcluida(excluidasDia[i]),
+                          )),
+            ),
           ],
         ),
       ),
@@ -5144,11 +5343,13 @@ class _SemanaHorasResumen {
 
 class _OperarioSemanaResumen {
   final String nombre;
+  final String cargo;
   final int disponiblesMin;
   final int ocupadasMin;
 
   const _OperarioSemanaResumen({
     required this.nombre,
+    required this.cargo,
     required this.disponiblesMin,
     required this.ocupadasMin,
   });

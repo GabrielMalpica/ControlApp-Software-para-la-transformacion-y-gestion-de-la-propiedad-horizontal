@@ -6,6 +6,7 @@ import '../service/app_error.dart';
 import '../service/app_constants.dart';
 import '../service/api_exception.dart';
 import '../model/cronograma_actividad_informe_model.dart';
+import '../model/preventiva_excluida_borrador_model.dart';
 import '../model/tarea_model.dart';
 
 class CronogramaApi {
@@ -191,6 +192,43 @@ class CronogramaApi {
     return data
         .map(
           (e) => CronogramaActividadInformeModel.fromJson(
+            e as Map<String, dynamic>,
+          ),
+        )
+        .toList();
+  }
+
+  Future<List<PreventivaExcluidaBorradorModel>> listarExcluidasStandby({
+    required String nit,
+    required int anio,
+    required int mes,
+    DateTime? fecha,
+  }) async {
+    final uri =
+        Uri.parse(
+          '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/excluidas-standby',
+        ).replace(
+          queryParameters: {
+            'anio': '$anio',
+            'mes': '$mes',
+            if (fecha != null) 'fecha': fecha.toIso8601String(),
+          },
+        );
+
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudieron cargar las tareas excluidas en standby.',
+        ),
+      );
+    }
+
+    final data = jsonDecode(resp.body) as List<dynamic>;
+    return data
+        .map(
+          (e) => PreventivaExcluidaBorradorModel.fromJson(
             e as Map<String, dynamic>,
           ),
         )

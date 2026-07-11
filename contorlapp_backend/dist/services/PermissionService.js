@@ -75,6 +75,13 @@ const PERMISSION_CATALOG = [
         description: "Permite crear y programar tareas correctivas directamente desde la vista semanal del cronograma.",
     },
     {
+        key: "cronograma.excluidas_ver",
+        module: "cronograma",
+        moduleLabel: "Cronogramas",
+        label: "Ver excluidas en cronograma",
+        description: "Permite consultar las preventivas excluidas en standby desde la agenda semanal del cronograma.",
+    },
+    {
         key: "solicitudes.ver",
         module: "solicitudes",
         moduleLabel: "Solicitudes",

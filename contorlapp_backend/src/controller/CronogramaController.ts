@@ -117,6 +117,20 @@ export class CronogramaController {
     }
   };
 
+  listarExcluidasStandby: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const anio = Number(req.query.anio);
+      const mes = Number(req.query.mes);
+      const fecha = req.query.fecha ? new Date(String(req.query.fecha)) : undefined;
+      const service = new CronogramaService(prisma, conjuntoId);
+      const out = await service.listarExcluidasStandby({ anio, mes, fecha });
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   eliminarCronogramaPublicado: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);

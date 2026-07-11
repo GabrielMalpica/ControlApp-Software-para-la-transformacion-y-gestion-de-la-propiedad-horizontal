@@ -113,6 +113,18 @@ class DefinicionTareaPreventivaService {
     constructor(prisma) {
         this.prisma = prisma;
     }
+    async limpiarExcluidasDeMesesAnteriores(params) {
+        const { conjuntoId, anio, mes } = params;
+        await this.prisma.preventivaExcluidaBorrador.deleteMany({
+            where: {
+                conjuntoId,
+                OR: [
+                    { periodoAnio: { lt: anio } },
+                    { periodoAnio: anio, periodoMes: { lt: mes } },
+                ],
+            },
+        });
+    }
     async resolverSupervisorId(supervisorId) {
         const sid = supervisorId.toString();
         const supervisor = await this.prisma.supervisor.findUnique({
@@ -1312,6 +1324,7 @@ class DefinicionTareaPreventivaService {
     }
     async publicarCronograma(params) {
         const { conjuntoId, anio, mes } = params;
+        await this.limpiarExcluidasDeMesesAnteriores({ conjuntoId, anio, mes });
         this.validarVentanaPublicacion({ anio, mes, diasAnticipacion: 7 });
         const borradores = await this.prisma.tarea.findMany({
             where: {
@@ -1373,14 +1386,11 @@ class DefinicionTareaPreventivaService {
             },
             data: { borrador: false },
         });
-        const excluidasEliminadas = await this.prisma.preventivaExcluidaBorrador.deleteMany({
-            where: { conjuntoId, periodoAnio: anio, periodoMes: mes },
-        });
         return {
             ok: true,
             publicadas: borradores.length,
             reservas: reservasResp?.creadas ?? 0,
-            excluidasDescartadas: excluidasEliminadas.count,
+            excluidasDescartadas: 0,
         };
     }
     /**
@@ -1388,6 +1398,11 @@ class DefinicionTareaPreventivaService {
      */
     async generarBorradorMensual(params) {
         const { conjuntoId, periodoAnio, periodoMes, tamanoBloqueMinutos = 60, paisFestivos = "CO", incluirPublicadasEnAgenda = true, confirmacionesReemplazo = [], } = params;
+        await this.limpiarExcluidasDeMesesAnteriores({
+            conjuntoId,
+            anio: periodoAnio,
+            mes: periodoMes,
+        });
         const novedades = [];
         const confirmacionesMap = new Map();
         const keyConfirmacion = (defId, fecha, prioridadSolicitante, prioridadObjetivo) => `${defId}|${fecha}|${prioridadSolicitante}|${prioridadObjetivo}`;
@@ -3027,6 +3042,11 @@ class DefinicionTareaPreventivaService {
     }
     async listarExcluidasBorrador(payload) {
         const dto = DefinicionTareaPreventiva_1.ListarExcluidasBorradorDTO.parse(payload);
+        await this.limpiarExcluidasDeMesesAnteriores({
+            conjuntoId: dto.conjuntoId,
+            anio: dto.anio,
+            mes: dto.mes,
+        });
         const inicioDia = dto.fecha
             ? new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 0, 0, 0, 0)
             : null;

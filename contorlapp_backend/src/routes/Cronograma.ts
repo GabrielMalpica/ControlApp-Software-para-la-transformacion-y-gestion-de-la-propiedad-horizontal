@@ -29,6 +29,12 @@ router.get(
   requirePermission("cronograma.ver"),
   controller.informeMensualActividad,
 );
+router.get(
+  "/conjuntos/:nit/cronograma/excluidas-standby",
+  authRequired,
+  requirePermission("cronograma.excluidas_ver"),
+  controller.listarExcluidasStandby,
+);
 router.delete(
   "/conjuntos/:nit/cronograma/publicado",
   authRequired,
