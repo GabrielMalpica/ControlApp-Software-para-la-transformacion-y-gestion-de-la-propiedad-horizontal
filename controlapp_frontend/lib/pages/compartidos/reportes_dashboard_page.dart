@@ -2873,7 +2873,16 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            _kpiTile('Creados', r.total.toString(), Icons.assignment_outlined),
+            _kpiTile(
+              'Gestionados',
+              r.total.toString(),
+              Icons.dashboard_outlined,
+            ),
+            _kpiTile(
+              'Creados periodo',
+              r.creadosPeriodo.toString(),
+              Icons.assignment_outlined,
+            ),
             _kpiTile(
               'Abiertos',
               r.abiertos.toString(),
@@ -2885,6 +2894,12 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               r.cerrados.toString(),
               Icons.task_alt_outlined,
               accentColor: Colors.teal.shade600,
+            ),
+            _kpiTile(
+              'Cerrados periodo',
+              r.cerradosPeriodo.toString(),
+              Icons.event_available_outlined,
+              accentColor: Colors.teal.shade400,
             ),
             _kpiTile(
               'Verdes',

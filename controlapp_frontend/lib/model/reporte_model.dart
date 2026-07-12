@@ -303,6 +303,8 @@ class ReporteCompromisosDashboard {
 
 class ReporteCompromisosResumen {
   final int total;
+  final int creadosPeriodo;
+  final int cerradosPeriodo;
   final int abiertos;
   final int cerrados;
   final int verdes;
@@ -315,6 +317,8 @@ class ReporteCompromisosResumen {
 
   const ReporteCompromisosResumen({
     required this.total,
+    required this.creadosPeriodo,
+    required this.cerradosPeriodo,
     required this.abiertos,
     required this.cerrados,
     required this.verdes,
@@ -329,6 +333,8 @@ class ReporteCompromisosResumen {
   factory ReporteCompromisosResumen.fromJson(Map<String, dynamic> json) {
     return ReporteCompromisosResumen(
       total: _toIntValue(json['total']),
+      creadosPeriodo: _toIntValue(json['creadosPeriodo']),
+      cerradosPeriodo: _toIntValue(json['cerradosPeriodo']),
       abiertos: _toIntValue(json['abiertos']),
       cerrados: _toIntValue(json['cerrados']),
       verdes: _toIntValue(json['verdes']),

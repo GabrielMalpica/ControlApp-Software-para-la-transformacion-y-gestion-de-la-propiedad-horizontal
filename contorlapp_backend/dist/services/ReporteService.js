@@ -741,7 +741,8 @@ class ReporteService {
         const items = await this.prisma.compromisoConjunto.findMany({
             where: {
                 ...(conjuntoId ? { conjuntoId } : {}),
-                creadaEn: { gte: desde, lte: hasta },
+                creadaEn: { lte: hasta },
+                OR: [{ cerradaEn: null }, { cerradaEn: { gte: desde } }],
             },
             orderBy: [{ creadaEn: "asc" }, { id: "asc" }],
             select: {
@@ -773,11 +774,16 @@ class ReporteService {
         let totalDiasAbiertos = 0;
         let cerradosConFecha = 0;
         let abiertos = 0;
+        let creadosPeriodo = 0;
+        let cerradosPeriodo = 0;
         const topConjuntosMap = new Map();
         const criticos = [];
         for (const item of items) {
             const ans = buildCompromisoAns(item);
             porAns[ans.ansEstado] += 1;
+            if (item.creadaEn >= desde && item.creadaEn <= hasta) {
+                creadosPeriodo += 1;
+            }
             const createdDay = dayKey(item.creadaEn);
             if (createdSeries[createdDay] != null)
                 createdSeries[createdDay] += 1;
@@ -787,8 +793,10 @@ class ReporteService {
                     totalDiasCierre += diffDaysFloor(item.creadaEn, item.cerradaEn);
                     cerradosConFecha += 1;
                     const closedDay = dayKey(item.cerradaEn);
-                    if (closedSeries[closedDay] != null)
+                    if (closedSeries[closedDay] != null) {
                         closedSeries[closedDay] += 1;
+                        cerradosPeriodo += 1;
+                    }
                 }
             }
             else {
@@ -865,6 +873,8 @@ class ReporteService {
             ok: true,
             resumen: {
                 total,
+                creadosPeriodo,
+                cerradosPeriodo,
                 abiertos: porEstado.abiertos,
                 cerrados: porEstado.cerrados,
                 verdes: porAns.verde,
