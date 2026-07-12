@@ -3050,6 +3050,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       series: <CircularSeries<_ChartSliceDatum, String>>[
         DoughnutSeries<_ChartSliceDatum, String>(
           dataSource: rows,
+          animationDuration: 0,
           xValueMapper: (d, _) => d.label,
           yValueMapper: (d, _) => d.value,
           pointColorMapper: (d, _) => d.color,
@@ -3135,6 +3136,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             series: <CartesianSeries<_CompromisoSerieDatum, String>>[
               ColumnSeries<_CompromisoSerieDatum, String>(
                 dataSource: chartData,
+                animationDuration: 0,
                 xValueMapper: (d, _) => d.label,
                 yValueMapper: (d, _) => d.created,
                 color: AppTheme.primary.withValues(alpha: 0.75),
@@ -3144,6 +3146,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               ),
               LineSeries<_CompromisoSerieDatum, String>(
                 dataSource: chartData,
+                animationDuration: 0,
                 xValueMapper: (d, _) => d.label,
                 yValueMapper: (d, _) => d.closed,
                 color: Colors.teal.shade600,
@@ -3411,6 +3414,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       series: <CircularSeries<_ChartSliceDatum, String>>[
         DoughnutSeries<_ChartSliceDatum, String>(
           dataSource: data,
+          animationDuration: 0,
           xValueMapper: (d, _) => d.label,
           yValueMapper: (d, _) => d.value,
           pointColorMapper: (d, _) => d.color,
@@ -3588,6 +3592,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             series: <CartesianSeries<_OperationalTrendDatum, String>>[
               AreaSeries<_OperationalTrendDatum, String>(
                 dataSource: data,
+                animationDuration: 0,
                 xValueMapper: (d, _) => d.label,
                 yValueMapper: (d, _) => d.backlog,
                 color: Colors.orange.shade500.withValues(alpha: 0.14),
@@ -3597,6 +3602,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               ),
               SplineSeries<_OperationalTrendDatum, String>(
                 dataSource: data,
+                animationDuration: 0,
                 xValueMapper: (d, _) => d.label,
                 yValueMapper: (d, _) => d.assignedAccum,
                 color: AppTheme.primary,
@@ -3605,6 +3611,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               ),
               SplineSeries<_OperationalTrendDatum, String>(
                 dataSource: data,
+                animationDuration: 0,
                 xValueMapper: (d, _) => d.label,
                 yValueMapper: (d, _) => d.resolvedAccum,
                 color: Colors.teal.shade600,
@@ -3613,6 +3620,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               ),
               ScatterSeries<_OperationalTrendDatum, String>(
                 dataSource: data.where((d) => d.hasIncident).toList(),
+                animationDuration: 0,
                 xValueMapper: (d, _) => d.label,
                 yValueMapper: (d, _) => d.incidents,
                 color: Colors.red.shade400,
@@ -3709,6 +3717,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       series: <CartesianSeries<_TrendDatum, String>>[
         SplineAreaSeries<_TrendDatum, String>(
           dataSource: data,
+          animationDuration: 0,
           xValueMapper: (d, _) => d.label,
           yValueMapper: (d, _) => d.value,
           gradient: LinearGradient(
@@ -4648,6 +4657,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           series: <CircularSeries<_ChartSliceDatum, String>>[
             DoughnutSeries<_ChartSliceDatum, String>(
               dataSource: data,
+              animationDuration: 0,
               xValueMapper: (_ChartSliceDatum d, _) => d.label,
               yValueMapper: (_ChartSliceDatum d, _) => d.value,
               pointColorMapper: (_ChartSliceDatum d, _) => d.color,
@@ -4696,6 +4706,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       series: <CircularSeries<_ChartSliceDatum, String>>[
         DoughnutSeries<_ChartSliceDatum, String>(
           dataSource: data,
+          animationDuration: 0,
           xValueMapper: (d, _) => d.label,
           yValueMapper: (d, _) => d.value,
           pointColorMapper: (d, _) => d.color,
