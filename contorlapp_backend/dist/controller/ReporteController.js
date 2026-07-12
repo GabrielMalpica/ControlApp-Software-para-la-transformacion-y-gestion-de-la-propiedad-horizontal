@@ -87,6 +87,19 @@ class ReporteController {
                 next(err);
             }
         };
+        // GET /reporte/compromisos?desde=&hasta=&conjuntoId?
+        this.compromisosDashboard = async (req, res, next) => {
+            const inicio = Date.now();
+            try {
+                const q = RangoConConjuntoOpcionalQuery.parse(req.query);
+                const out = await service.compromisosDashboard(q);
+                logPerf("Reporte compromisos", inicio, await detalleConjunto(q.conjuntoId));
+                res.json(out);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
         // GET /reporte/por-conjunto?desde=&hasta=
         this.resumenPorConjunto = async (req, res, next) => {
             const inicio = Date.now();

@@ -79,6 +79,19 @@ class ReporteApi {
     return SerieDiariaPorEstado.fromJson(j);
   }
 
+  Future<ReporteCompromisosDashboard> compromisosDashboard({
+    required DateTime desde,
+    required DateTime hasta,
+    String? conjuntoId,
+  }) async {
+    final j = await _getJson('/compromisos', {
+      'desde': desde.toIso8601String(),
+      'hasta': hasta.toIso8601String(),
+      'conjuntoId': conjuntoId,
+    });
+    return ReporteCompromisosDashboard.fromJson(j);
+  }
+
   Future<List<ResumenConjuntoRow>> resumenPorConjunto({
     required DateTime desde,
     required DateTime hasta,

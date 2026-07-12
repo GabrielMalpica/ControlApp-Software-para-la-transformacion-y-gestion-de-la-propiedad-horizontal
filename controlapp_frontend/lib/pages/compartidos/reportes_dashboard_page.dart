@@ -56,6 +56,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
 
   ReporteKpis? _kpis;
   SerieDiariaPorEstado? _serie;
+  ReporteCompromisosDashboard? _compromisosReporte;
   List<ResumenConjuntoRow> _porConjunto = [];
   List<ResumenOperarioRow> _porOperario = [];
   List<InsumoUsoRow> _insumos = [];
@@ -211,6 +212,11 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         hasta: _hasta,
         conjuntoId: _esReporteGeneral ? null : conjuntoId,
       );
+      final compromisos = await _api.compromisosDashboard(
+        desde: _desde,
+        hasta: _hasta,
+        conjuntoId: _esReporteGeneral ? null : conjuntoId,
+      );
 
       final porConjunto = await _api.resumenPorConjunto(
         desde: _desde,
@@ -258,6 +264,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       setState(() {
         _kpis = kpis;
         _serie = serie;
+        _compromisosReporte = compromisos;
         _porConjunto = porConjuntoFiltrado;
         _porOperario = porOperario;
         _insumos = insumos;
@@ -2412,6 +2419,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         ? <Tab>[const Tab(text: 'Resumen'), const Tab(text: 'Tipos')]
         : <Tab>[
             const Tab(text: 'Resumen'),
+            const Tab(text: 'Compromisos'),
             const Tab(text: 'Operarios'),
             const Tab(text: 'Insumos'),
             const Tab(text: 'Maq/Herr'),
@@ -2422,6 +2430,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         ? <Widget>[_tabResumen(), _tabTipos()]
         : <Widget>[
             _tabResumen(),
+            _tabCompromisos(),
             _tabOperarios(),
             _tabInsumos(),
             _tabMaqHerr(),
@@ -2828,6 +2837,460 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     return ThemeData.estimateBrightnessForColor(base) == Brightness.dark
         ? Colors.white
         : Colors.black87;
+  }
+
+  Color _compromisoAnsColor(String estado) {
+    switch (estado.trim().toLowerCase()) {
+      case 'verde':
+        return const Color(0xFF2E7D32);
+      case 'naranja':
+        return const Color(0xFFEF6C00);
+      case 'rojo':
+        return const Color(0xFFC62828);
+      case 'cerrado':
+        return Colors.blueGrey;
+      default:
+        return AppTheme.primary;
+    }
+  }
+
+  String _formatOneDecimal(double value) {
+    if (value == value.roundToDouble()) return value.toStringAsFixed(0);
+    return value.toStringAsFixed(1);
+  }
+
+  Widget _tabCompromisos() {
+    final data = _compromisosReporte;
+    if (data == null) return const Center(child: Text('Sin datos'));
+
+    final r = data.resumen;
+    final totalAns = data.porAns.values.fold<int>(0, (a, b) => a + b);
+
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _kpiTile('Creados', r.total.toString(), Icons.assignment_outlined),
+            _kpiTile(
+              'Abiertos',
+              r.abiertos.toString(),
+              Icons.timelapse_rounded,
+              accentColor: Colors.orange.shade700,
+            ),
+            _kpiTile(
+              'Cerrados',
+              r.cerrados.toString(),
+              Icons.task_alt_outlined,
+              accentColor: Colors.teal.shade600,
+            ),
+            _kpiTile(
+              'Verdes',
+              r.verdes.toString(),
+              Icons.flag_outlined,
+              accentColor: _compromisoAnsColor('verde'),
+            ),
+            _kpiTile(
+              'Naranjas',
+              r.naranjas.toString(),
+              Icons.flag_outlined,
+              accentColor: _compromisoAnsColor('naranja'),
+            ),
+            _kpiTile(
+              'Rojos',
+              r.rojos.toString(),
+              Icons.flag_outlined,
+              accentColor: _compromisoAnsColor('rojo'),
+            ),
+            _kpiTile(
+              '% Cumplimiento',
+              '${r.porcentajeCumplimiento}%',
+              Icons.verified_outlined,
+              accentColor: Colors.green.shade700,
+            ),
+            _kpiTile(
+              'Prom. cierre',
+              '${_formatOneDecimal(r.promedioDiasCierre)} dias',
+              Icons.av_timer_outlined,
+              accentColor: AppTheme.primary,
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sectionTitle('Salud ANS de compromisos'),
+                  const SizedBox(height: 8),
+                  _card(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final compact = constraints.maxWidth < 760;
+                        final stats = Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _miniTextPill(
+                              'ANS sano',
+                              '${r.porcentajeAnsSaludable}%',
+                            ),
+                            const SizedBox(height: 10),
+                            _miniTextPill(
+                              'Prom. dias abiertos',
+                              '${_formatOneDecimal(r.promedioDiasAbiertos)}',
+                            ),
+                            const SizedBox(height: 10),
+                            _miniTextPill('Items evaluados', totalAns.toString()),
+                            const SizedBox(height: 14),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _legendChip(
+                                  'Verdes ${r.verdes}',
+                                  _compromisoAnsColor('verde'),
+                                ),
+                                _legendChip(
+                                  'Naranjas ${r.naranjas}',
+                                  _compromisoAnsColor('naranja'),
+                                ),
+                                _legendChip(
+                                  'Rojos ${r.rojos}',
+                                  _compromisoAnsColor('rojo'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        );
+
+                        if (compact) {
+                          return Column(
+                            children: [
+                              SizedBox(
+                                height: 240,
+                                child: _compromisosAnsChart(data),
+                              ),
+                              const SizedBox(height: 12),
+                              stats,
+                            ],
+                          );
+                        }
+
+                        return SizedBox(
+                          height: 260,
+                          child: Row(
+                            children: [
+                              Expanded(child: _compromisosAnsChart(data)),
+                              const SizedBox(width: 12),
+                              SizedBox(width: 180, child: stats),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        _sectionTitle('Flujo del periodo'),
+        const SizedBox(height: 8),
+        _card(child: SizedBox(height: 280, child: _compromisosSerieChart(data))),
+        const SizedBox(height: 14),
+        if (_esReporteGeneral) ...[
+          _sectionTitle('Conjuntos con mayor carga de compromisos'),
+          const SizedBox(height: 8),
+          _compromisosTopConjuntosCard(data),
+          const SizedBox(height: 14),
+        ],
+        _sectionTitle('Compromisos criticos abiertos'),
+        const SizedBox(height: 8),
+        _compromisosCriticosCard(data),
+      ],
+    );
+  }
+
+  Widget _compromisosAnsChart(ReporteCompromisosDashboard data) {
+    final rows = <_ChartSliceDatum>[
+      _ChartSliceDatum(
+        label: 'Verdes',
+        value: data.resumen.verdes.toDouble(),
+        color: _compromisoAnsColor('verde'),
+      ),
+      _ChartSliceDatum(
+        label: 'Naranjas',
+        value: data.resumen.naranjas.toDouble(),
+        color: _compromisoAnsColor('naranja'),
+      ),
+      _ChartSliceDatum(
+        label: 'Rojos',
+        value: data.resumen.rojos.toDouble(),
+        color: _compromisoAnsColor('rojo'),
+      ),
+      _ChartSliceDatum(
+        label: 'Cerrados',
+        value: data.resumen.cerrados.toDouble(),
+        color: _compromisoAnsColor('cerrado'),
+      ),
+    ].where((e) => e.value > 0).toList();
+
+    final total = rows.fold<double>(0, (a, b) => a + b.value);
+    if (total <= 0) return const Center(child: Text('Sin compromisos en el rango'));
+
+    return SfCircularChart(
+      margin: EdgeInsets.zero,
+      tooltipBehavior: TooltipBehavior(enable: true),
+      series: <CircularSeries<_ChartSliceDatum, String>>[
+        DoughnutSeries<_ChartSliceDatum, String>(
+          dataSource: rows,
+          xValueMapper: (d, _) => d.label,
+          yValueMapper: (d, _) => d.value,
+          pointColorMapper: (d, _) => d.color,
+          innerRadius: '60%',
+          radius: '88%',
+          dataLabelSettings: const DataLabelSettings(
+            isVisible: true,
+            labelPosition: ChartDataLabelPosition.outside,
+            textStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+          ),
+          dataLabelMapper: (d, _) {
+            final pct = total <= 0 ? 0 : (d.value / total) * 100;
+            return pct >= 8 ? '${pct.toStringAsFixed(0)}%' : '';
+          },
+        ),
+      ],
+      annotations: <CircularChartAnnotation>[
+        CircularChartAnnotation(
+          widget: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                data.resumen.total.toString(),
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              ),
+              const Text(
+                'creados',
+                style: TextStyle(fontSize: 11, color: Colors.black54),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _compromisosSerieChart(ReporteCompromisosDashboard data) {
+    final days = data.serie.days.length <= 30
+        ? data.serie.days
+        : data.serie.days.sublist(data.serie.days.length - 30);
+    if (days.isEmpty) return const Center(child: Text('Sin serie para mostrar'));
+
+    final chartData = <_CompromisoSerieDatum>[];
+    double maxY = 0;
+    for (final day in days) {
+      final dt = DateTime.tryParse(day)?.toLocal();
+      final label = dt == null ? day : '${dt.day}/${dt.month}';
+      final created = (data.serie.created[day] ?? 0).toDouble();
+      final closed = (data.serie.closed[day] ?? 0).toDouble();
+      chartData.add(
+        _CompromisoSerieDatum(label: label, created: created, closed: closed),
+      );
+      maxY = math.max(maxY, math.max(created, closed));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          children: [
+            _legendChip('Creados', AppTheme.primary),
+            _legendChip('Cerrados', Colors.teal.shade600),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: SfCartesianChart(
+            margin: EdgeInsets.zero,
+            plotAreaBorderWidth: 0,
+            tooltipBehavior: TooltipBehavior(enable: true, shared: true),
+            primaryXAxis: CategoryAxis(
+              majorGridLines: const MajorGridLines(width: 0),
+              interval: math.max(1, (days.length / 6).floor()).toDouble(),
+            ),
+            primaryYAxis: NumericAxis(
+              minimum: 0,
+              maximum: maxY <= 0 ? 5 : (maxY * 1.2),
+              axisLine: const AxisLine(width: 0),
+              majorTickLines: const MajorTickLines(size: 0),
+            ),
+            series: <CartesianSeries<_CompromisoSerieDatum, String>>[
+              ColumnSeries<_CompromisoSerieDatum, String>(
+                dataSource: chartData,
+                xValueMapper: (d, _) => d.label,
+                yValueMapper: (d, _) => d.created,
+                color: AppTheme.primary.withValues(alpha: 0.75),
+                width: 0.6,
+                spacing: 0.1,
+                name: 'Creados',
+              ),
+              LineSeries<_CompromisoSerieDatum, String>(
+                dataSource: chartData,
+                xValueMapper: (d, _) => d.label,
+                yValueMapper: (d, _) => d.closed,
+                color: Colors.teal.shade600,
+                width: 3,
+                markerSettings: const MarkerSettings(isVisible: true),
+                name: 'Cerrados',
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _compromisosTopConjuntosCard(ReporteCompromisosDashboard data) {
+    if (data.topConjuntos.isEmpty) {
+      return const _EmptyCard(text: 'Sin datos por conjunto para el rango seleccionado.');
+    }
+
+    return _card(
+      child: Column(
+        children: data.topConjuntos.map((row) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.black12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    row.conjuntoNombre.isEmpty ? row.nit : row.conjuntoNombre,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'NIT: ${row.nit}',
+                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _miniPill('Total', row.total),
+                      _miniPill('Abiertos', row.abiertos),
+                      _miniPill('Cerrados', row.cerrados),
+                      _miniPill('Rojos', row.rojos),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _compromisosCriticosCard(ReporteCompromisosDashboard data) {
+    if (data.criticos.isEmpty) {
+      return const _EmptyCard(text: 'No hay compromisos criticos abiertos en este rango.');
+    }
+
+    final df = DateFormat('dd/MM/yyyy', 'es');
+    return _card(
+      child: Column(
+        children: data.criticos.map((item) {
+          final conjuntoTxt = _esReporteGeneral
+              ? (item.conjuntoNombre.isEmpty ? item.conjuntoNit : item.conjuntoNombre)
+              : 'Compromiso del conjunto';
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7F7),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFF2B8B5)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: _compromisoAnsColor(item.ansEstado).withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.priority_high_rounded,
+                          color: _compromisoAnsColor(item.ansEstado),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.titulo,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              conjuntoTxt,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _miniTextPill('ANS', item.ansLabel),
+                      _miniTextPill('Dias abierto', item.diasAbierto.toString()),
+                      _miniTextPill('Creado', df.format(item.creadaEn)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
   }
 
   Widget _kpiTile(
@@ -5002,6 +5465,18 @@ class _TrendDatum {
   final double value;
 
   const _TrendDatum({required this.label, required this.value});
+}
+
+class _CompromisoSerieDatum {
+  final String label;
+  final double created;
+  final double closed;
+
+  const _CompromisoSerieDatum({
+    required this.label,
+    required this.created,
+    required this.closed,
+  });
 }
 
 class _OperationalTrendDatum {

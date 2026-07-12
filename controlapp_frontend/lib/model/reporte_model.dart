@@ -115,6 +115,11 @@ List<String> _toEvidenceUrls(dynamic raw) {
   return out.toList();
 }
 
+int _toIntValue(dynamic v) => (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
+
+double _toDoubleValue(dynamic v) =>
+    (v is num) ? v.toDouble() : double.tryParse('$v') ?? 0.0;
+
 class ReporteKpis {
   final bool ok;
   final int total;
@@ -227,6 +232,218 @@ class SerieDiariaPorEstado {
       ok: json['ok'] == true,
       days: days,
       series: out,
+    );
+  }
+}
+
+class ReporteCompromisosDashboard {
+  final bool ok;
+  final ReporteCompromisosResumen resumen;
+  final Map<String, int> porAns;
+  final Map<String, int> porEstado;
+  final ReporteCompromisosSerie serie;
+  final List<ReporteCompromisoConjuntoRow> topConjuntos;
+  final List<ReporteCompromisoCriticoRow> criticos;
+
+  const ReporteCompromisosDashboard({
+    required this.ok,
+    required this.resumen,
+    required this.porAns,
+    required this.porEstado,
+    required this.serie,
+    required this.topConjuntos,
+    required this.criticos,
+  });
+
+  factory ReporteCompromisosDashboard.fromJson(Map<String, dynamic> json) {
+    Map<String, int> parseIntMap(dynamic raw) {
+      final out = <String, int>{};
+      if (raw is Map) {
+        raw.forEach((k, v) => out[k.toString()] = _toIntValue(v));
+      }
+      return out;
+    }
+
+    final topRaw = (json['topConjuntos'] is List)
+        ? (json['topConjuntos'] as List)
+        : const <dynamic>[];
+    final criticosRaw = (json['criticos'] is List)
+        ? (json['criticos'] as List)
+        : const <dynamic>[];
+
+    return ReporteCompromisosDashboard(
+      ok: json['ok'] == true,
+      resumen: ReporteCompromisosResumen.fromJson(
+        (json['resumen'] as Map?)?.cast<String, dynamic>() ?? {},
+      ),
+      porAns: parseIntMap(json['porAns']),
+      porEstado: parseIntMap(json['porEstado']),
+      serie: ReporteCompromisosSerie.fromJson(
+        (json['serie'] as Map?)?.cast<String, dynamic>() ?? {},
+      ),
+      topConjuntos: topRaw
+          .whereType<Map>()
+          .map(
+            (e) => ReporteCompromisoConjuntoRow.fromJson(
+              e.cast<String, dynamic>(),
+            ),
+          )
+          .toList(),
+      criticos: criticosRaw
+          .whereType<Map>()
+          .map(
+            (e) => ReporteCompromisoCriticoRow.fromJson(
+              e.cast<String, dynamic>(),
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class ReporteCompromisosResumen {
+  final int total;
+  final int abiertos;
+  final int cerrados;
+  final int verdes;
+  final int naranjas;
+  final int rojos;
+  final double promedioDiasCierre;
+  final double promedioDiasAbiertos;
+  final int porcentajeCumplimiento;
+  final int porcentajeAnsSaludable;
+
+  const ReporteCompromisosResumen({
+    required this.total,
+    required this.abiertos,
+    required this.cerrados,
+    required this.verdes,
+    required this.naranjas,
+    required this.rojos,
+    required this.promedioDiasCierre,
+    required this.promedioDiasAbiertos,
+    required this.porcentajeCumplimiento,
+    required this.porcentajeAnsSaludable,
+  });
+
+  factory ReporteCompromisosResumen.fromJson(Map<String, dynamic> json) {
+    return ReporteCompromisosResumen(
+      total: _toIntValue(json['total']),
+      abiertos: _toIntValue(json['abiertos']),
+      cerrados: _toIntValue(json['cerrados']),
+      verdes: _toIntValue(json['verdes']),
+      naranjas: _toIntValue(json['naranjas']),
+      rojos: _toIntValue(json['rojos']),
+      promedioDiasCierre: _toDoubleValue(json['promedioDiasCierre']),
+      promedioDiasAbiertos: _toDoubleValue(json['promedioDiasAbiertos']),
+      porcentajeCumplimiento: _toIntValue(json['porcentajeCumplimiento']),
+      porcentajeAnsSaludable: _toIntValue(json['porcentajeAnsSaludable']),
+    );
+  }
+}
+
+class ReporteCompromisosSerie {
+  final List<String> days;
+  final Map<String, int> created;
+  final Map<String, int> closed;
+
+  const ReporteCompromisosSerie({
+    required this.days,
+    required this.created,
+    required this.closed,
+  });
+
+  factory ReporteCompromisosSerie.fromJson(Map<String, dynamic> json) {
+    Map<String, int> parseIntMap(dynamic raw) {
+      final out = <String, int>{};
+      if (raw is Map) {
+        raw.forEach((k, v) => out[k.toString()] = _toIntValue(v));
+      }
+      return out;
+    }
+
+    return ReporteCompromisosSerie(
+      days: (json['days'] is List)
+          ? (json['days'] as List).map((e) => e.toString()).toList()
+          : const <String>[],
+      created: parseIntMap(json['created']),
+      closed: parseIntMap(json['closed']),
+    );
+  }
+}
+
+class ReporteCompromisoConjuntoRow {
+  final String conjuntoId;
+  final String conjuntoNombre;
+  final String nit;
+  final int total;
+  final int abiertos;
+  final int cerrados;
+  final int verdes;
+  final int naranjas;
+  final int rojos;
+
+  const ReporteCompromisoConjuntoRow({
+    required this.conjuntoId,
+    required this.conjuntoNombre,
+    required this.nit,
+    required this.total,
+    required this.abiertos,
+    required this.cerrados,
+    required this.verdes,
+    required this.naranjas,
+    required this.rojos,
+  });
+
+  factory ReporteCompromisoConjuntoRow.fromJson(Map<String, dynamic> json) {
+    return ReporteCompromisoConjuntoRow(
+      conjuntoId: (json['conjuntoId'] ?? '').toString(),
+      conjuntoNombre: (json['conjuntoNombre'] ?? '').toString(),
+      nit: (json['nit'] ?? '').toString(),
+      total: _toIntValue(json['total']),
+      abiertos: _toIntValue(json['abiertos']),
+      cerrados: _toIntValue(json['cerrados']),
+      verdes: _toIntValue(json['verdes']),
+      naranjas: _toIntValue(json['naranjas']),
+      rojos: _toIntValue(json['rojos']),
+    );
+  }
+}
+
+class ReporteCompromisoCriticoRow {
+  final int id;
+  final String titulo;
+  final String conjuntoId;
+  final String conjuntoNombre;
+  final String conjuntoNit;
+  final int diasAbierto;
+  final DateTime creadaEn;
+  final String ansEstado;
+  final String ansLabel;
+
+  const ReporteCompromisoCriticoRow({
+    required this.id,
+    required this.titulo,
+    required this.conjuntoId,
+    required this.conjuntoNombre,
+    required this.conjuntoNit,
+    required this.diasAbierto,
+    required this.creadaEn,
+    required this.ansEstado,
+    required this.ansLabel,
+  });
+
+  factory ReporteCompromisoCriticoRow.fromJson(Map<String, dynamic> json) {
+    return ReporteCompromisoCriticoRow(
+      id: _toIntValue(json['id']),
+      titulo: (json['titulo'] ?? '').toString(),
+      conjuntoId: (json['conjuntoId'] ?? '').toString(),
+      conjuntoNombre: (json['conjuntoNombre'] ?? '').toString(),
+      conjuntoNit: (json['conjuntoNit'] ?? '').toString(),
+      diasAbierto: _toIntValue(json['diasAbierto']),
+      creadaEn: _dt(json['creadaEn']),
+      ansEstado: (json['ansEstado'] ?? '').toString(),
+      ansLabel: (json['ansLabel'] ?? '').toString(),
     );
   }
 }

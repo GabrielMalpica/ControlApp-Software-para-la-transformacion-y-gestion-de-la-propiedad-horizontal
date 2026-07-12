@@ -108,6 +108,19 @@ export class ReporteController {
     }
   };
 
+  // GET /reporte/compromisos?desde=&hasta=&conjuntoId?
+  compromisosDashboard: RequestHandler = async (req, res, next) => {
+    const inicio = Date.now();
+    try {
+      const q = RangoConConjuntoOpcionalQuery.parse(req.query);
+      const out = await service.compromisosDashboard(q);
+      logPerf("Reporte compromisos", inicio, await detalleConjunto(q.conjuntoId));
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   // GET /reporte/por-conjunto?desde=&hasta=
   resumenPorConjunto: RequestHandler = async (req, res, next) => {
     const inicio = Date.now();

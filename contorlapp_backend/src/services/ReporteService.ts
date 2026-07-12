@@ -129,6 +129,10 @@ function weekdayNameEsFromIsoDate(isoDate: string) {
   return WEEKDAY_NAMES_ES[d.getDay()] ?? "desconocido";
 }
 
+function diffDaysFloor(from: Date, to: Date) {
+  return Math.max(0, Math.floor((to.getTime() - from.getTime()) / 86400000));
+}
+
 type PlanInsumoItem = {
   insumoId: number;
   consumoPorUnidad: number;
@@ -163,6 +167,62 @@ type ConjuntoAgg = {
   ubicaciones: Map<number, UbicacionAgg>;
   insumos: Map<string, InsumoAgg>;
 };
+
+type CompromisoAnsEstado = "verde" | "naranja" | "rojo" | "cerrado";
+
+type CompromisoReporteRow = {
+  id: number;
+  titulo: string;
+  completado: boolean;
+  creadaEn: Date;
+  cerradaEn: Date | null;
+  conjuntoId: string;
+  conjunto: {
+    nombre: string;
+    nit: string;
+  } | null;
+};
+
+function buildCompromisoAns(
+  compromiso: Pick<CompromisoReporteRow, "completado" | "creadaEn">,
+  referenceDate = new Date(),
+): {
+  ansEstado: CompromisoAnsEstado;
+  ansLabel: string;
+  diasAbierto: number;
+} {
+  const diasAbierto = diffDaysFloor(compromiso.creadaEn, referenceDate);
+
+  if (compromiso.completado) {
+    return {
+      ansEstado: "cerrado",
+      ansLabel: "Cerrado",
+      diasAbierto,
+    };
+  }
+
+  if (diasAbierto <= 7) {
+    return {
+      ansEstado: "verde",
+      ansLabel: "ANS en tiempo",
+      diasAbierto,
+    };
+  }
+
+  if (diasAbierto <= 21) {
+    return {
+      ansEstado: "naranja",
+      ansLabel: "ANS en seguimiento",
+      diasAbierto,
+    };
+  }
+
+  return {
+    ansEstado: "rojo",
+    ansLabel: "ANS critico",
+    diasAbierto,
+  };
+}
 
 function toNumberSafe(v: unknown): number {
   if (v == null) return 0;
@@ -938,6 +998,197 @@ export class ReporteService {
 
     data.sort((a, b) => b.total - a.total);
     return { ok: true, data };
+  }
+
+  async compromisosDashboard(payload: unknown) {
+    const { desde, hasta, conjuntoId } =
+      RangoConConjuntoOpcionalDTO.parse(payload);
+
+    const items = await this.prisma.compromisoConjunto.findMany({
+      where: {
+        ...(conjuntoId ? { conjuntoId } : {}),
+        creadaEn: { gte: desde, lte: hasta },
+      },
+      orderBy: [{ creadaEn: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        titulo: true,
+        completado: true,
+        creadaEn: true,
+        cerradaEn: true,
+        conjuntoId: true,
+        conjunto: {
+          select: {
+            nombre: true,
+            nit: true,
+          },
+        },
+      },
+    });
+
+    const days = buildDayRange(desde, hasta);
+    const createdSeries = Object.fromEntries(days.map((d) => [d, 0])) as Record<
+      string,
+      number
+    >;
+    const closedSeries = Object.fromEntries(days.map((d) => [d, 0])) as Record<
+      string,
+      number
+    >;
+
+    const porAns: Record<CompromisoAnsEstado, number> = {
+      verde: 0,
+      naranja: 0,
+      rojo: 0,
+      cerrado: 0,
+    };
+    const porEstado = { abiertos: 0, cerrados: 0 };
+
+    let totalDiasCierre = 0;
+    let totalDiasAbiertos = 0;
+    let cerradosConFecha = 0;
+    let abiertos = 0;
+
+    const topConjuntosMap = new Map<
+      string,
+      {
+        conjuntoId: string;
+        conjuntoNombre: string;
+        nit: string;
+        total: number;
+        abiertos: number;
+        cerrados: number;
+        verdes: number;
+        naranjas: number;
+        rojos: number;
+      }
+    >();
+
+    const criticos: Array<{
+      id: number;
+      titulo: string;
+      conjuntoId: string;
+      conjuntoNombre: string;
+      conjuntoNit: string;
+      diasAbierto: number;
+      creadaEn: Date;
+      ansEstado: CompromisoAnsEstado;
+      ansLabel: string;
+    }> = [];
+
+    for (const item of items) {
+      const ans = buildCompromisoAns(item);
+      porAns[ans.ansEstado] += 1;
+
+      const createdDay = dayKey(item.creadaEn);
+      if (createdSeries[createdDay] != null) createdSeries[createdDay] += 1;
+
+      if (item.completado) {
+        porEstado.cerrados += 1;
+        if (item.cerradaEn) {
+          totalDiasCierre += diffDaysFloor(item.creadaEn, item.cerradaEn);
+          cerradosConFecha += 1;
+          const closedDay = dayKey(item.cerradaEn);
+          if (closedSeries[closedDay] != null) closedSeries[closedDay] += 1;
+        }
+      } else {
+        porEstado.abiertos += 1;
+        abiertos += 1;
+        totalDiasAbiertos += ans.diasAbierto;
+        if (ans.ansEstado === "rojo") {
+          criticos.push({
+            id: item.id,
+            titulo: item.titulo,
+            conjuntoId: item.conjuntoId,
+            conjuntoNombre: item.conjunto?.nombre ?? item.conjuntoId,
+            conjuntoNit: item.conjunto?.nit ?? item.conjuntoId,
+            diasAbierto: ans.diasAbierto,
+            creadaEn: item.creadaEn,
+            ansEstado: ans.ansEstado,
+            ansLabel: ans.ansLabel,
+          });
+        }
+      }
+
+      const topKey = item.conjuntoId;
+      if (!topConjuntosMap.has(topKey)) {
+        topConjuntosMap.set(topKey, {
+          conjuntoId: item.conjuntoId,
+          conjuntoNombre: item.conjunto?.nombre ?? item.conjuntoId,
+          nit: item.conjunto?.nit ?? item.conjuntoId,
+          total: 0,
+          abiertos: 0,
+          cerrados: 0,
+          verdes: 0,
+          naranjas: 0,
+          rojos: 0,
+        });
+      }
+
+      const row = topConjuntosMap.get(topKey)!;
+      row.total += 1;
+      if (item.completado) {
+        row.cerrados += 1;
+      } else {
+        row.abiertos += 1;
+        if (ans.ansEstado === "verde") row.verdes += 1;
+        if (ans.ansEstado === "naranja") row.naranjas += 1;
+        if (ans.ansEstado === "rojo") row.rojos += 1;
+      }
+    }
+
+    const total = items.length;
+    const promedioDiasCierre =
+      cerradosConFecha > 0
+        ? Number((totalDiasCierre / cerradosConFecha).toFixed(1))
+        : 0;
+    const promedioDiasAbiertos =
+      abiertos > 0 ? Number((totalDiasAbiertos / abiertos).toFixed(1)) : 0;
+    const porcentajeCumplimiento =
+      total > 0 ? Math.round((porEstado.cerrados / total) * 100) : 0;
+    const porcentajeAnsSaludable =
+      porEstado.abiertos > 0
+        ? Math.round((porAns.verde / porEstado.abiertos) * 100)
+        : 0;
+
+    const topConjuntos = Array.from(topConjuntosMap.values())
+      .sort((a, b) => {
+        const abiertosDiff = b.abiertos - a.abiertos;
+        if (abiertosDiff !== 0) return abiertosDiff;
+        return b.total - a.total;
+      })
+      .slice(0, 8);
+
+    criticos.sort((a, b) => {
+      const diasDiff = b.diasAbierto - a.diasAbierto;
+      if (diasDiff !== 0) return diasDiff;
+      return a.creadaEn.getTime() - b.creadaEn.getTime();
+    });
+
+    return {
+      ok: true,
+      resumen: {
+        total,
+        abiertos: porEstado.abiertos,
+        cerrados: porEstado.cerrados,
+        verdes: porAns.verde,
+        naranjas: porAns.naranja,
+        rojos: porAns.rojo,
+        promedioDiasCierre,
+        promedioDiasAbiertos,
+        porcentajeCumplimiento,
+        porcentajeAnsSaludable,
+      },
+      porAns,
+      porEstado,
+      serie: {
+        days,
+        created: createdSeries,
+        closed: closedSeries,
+      },
+      topConjuntos,
+      criticos: criticos.slice(0, 6),
+    };
   }
 
   // =========================================================

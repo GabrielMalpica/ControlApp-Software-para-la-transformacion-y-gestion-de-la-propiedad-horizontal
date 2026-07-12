@@ -12,6 +12,7 @@ router.use((0, permission_middleware_1.requirePermission)("reportes.ver"));
 // DASHBOARD
 router.get("/kpis", c.kpis);
 router.get("/serie-diaria", c.serieDiariaPorEstado);
+router.get("/compromisos", c.compromisosDashboard);
 router.get("/por-conjunto", c.resumenPorConjunto);
 router.get("/por-operario", c.resumenPorOperario);
 router.get("/duracion-promedio", c.duracionPromedioPorEstado);
