@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:flutter_application_1/api/gerente_api.dart';
+import 'package:flutter_application_1/model/compromiso_model.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/theme.dart';
 
@@ -20,6 +21,7 @@ class _CompromisosPorConjuntoPageState
   String _query = '';
   String? _error;
   List<_CompromisoConjuntoGroup> _groups = [];
+  _CompromisoFilter _filter = _CompromisoFilter.todos;
 
   @override
   void initState() {
@@ -37,8 +39,9 @@ class _CompromisosPorConjuntoPageState
       final byConjunto = <String, _CompromisoConjuntoGroup>{};
 
       for (final item in raw) {
-        final compromiso = _CompromisoResumen.fromJson(item);
-        final nit = (item['conjuntoNit'] ?? item['conjuntoId'] ?? '').toString();
+        final compromiso = CompromisoModel.fromJson(item);
+        final nit = (item['conjuntoNit'] ?? item['conjuntoId'] ?? '')
+            .toString();
         final nombre = (item['conjuntoNombre'] ?? 'Conjunto $nit').toString();
         byConjunto.putIfAbsent(
           nit,
@@ -68,18 +71,47 @@ class _CompromisosPorConjuntoPageState
     }
   }
 
+  bool _matchesFilter(CompromisoModel item) {
+    switch (_filter) {
+      case _CompromisoFilter.todos:
+        return true;
+      case _CompromisoFilter.abiertos:
+        return !item.completado;
+      case _CompromisoFilter.criticos:
+        return !item.completado && item.ansColor == 'red';
+      case _CompromisoFilter.verdes:
+        return !item.completado && item.ansColor == 'green';
+      case _CompromisoFilter.naranjas:
+        return !item.completado && item.ansColor == 'orange';
+      case _CompromisoFilter.rojos:
+        return !item.completado && item.ansColor == 'red';
+      case _CompromisoFilter.cerrados:
+        return item.completado;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final filtered = _groups.where((group) {
-      final q = _query.trim().toLowerCase();
-      if (q.isEmpty) return true;
-      final haystack = [
-        group.nombre,
-        group.nit,
-        ...group.items.map((item) => item.titulo),
-      ].join(' ').toLowerCase();
-      return haystack.contains(q);
-    }).toList();
+    final filtered = _groups
+        .map(
+          (group) => _CompromisoConjuntoGroup(
+            nit: group.nit,
+            nombre: group.nombre,
+            items: group.items.where(_matchesFilter).toList(),
+          ),
+        )
+        .where((group) => group.items.isNotEmpty)
+        .where((group) {
+          final q = _query.trim().toLowerCase();
+          if (q.isEmpty) return true;
+          final haystack = [
+            group.nombre,
+            group.nit,
+            ...group.items.map((item) => item.titulo),
+          ].join(' ').toLowerCase();
+          return haystack.contains(q);
+        })
+        .toList();
 
     return Scaffold(
       backgroundColor: AppTheme.background,
@@ -88,7 +120,10 @@ class _CompromisosPorConjuntoPageState
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
         actions: [
-          IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
+          IconButton(
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh),
+          ),
         ],
       ),
       body: _loading
@@ -99,13 +134,75 @@ class _CompromisosPorConjuntoPageState
               children: [
                 Padding(
                   padding: const EdgeInsets.all(16),
-                  child: TextField(
-                    decoration: const InputDecoration(
-                      labelText: 'Buscar conjunto o compromiso',
-                      hintText: 'Nombre del conjunto, NIT o compromiso',
-                      prefixIcon: Icon(Icons.search_rounded),
-                    ),
-                    onChanged: (value) => setState(() => _query = value),
+                  child: Column(
+                    children: [
+                      TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'Buscar conjunto o compromiso',
+                          hintText: 'Nombre del conjunto, NIT o compromiso',
+                          prefixIcon: Icon(Icons.search_rounded),
+                        ),
+                        onChanged: (value) => setState(() => _query = value),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 40,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: [
+                            _FilterChipButton(
+                              label: 'Todos',
+                              selected: _filter == _CompromisoFilter.todos,
+                              onTap: () => setState(
+                                () => _filter = _CompromisoFilter.todos,
+                              ),
+                            ),
+                            _FilterChipButton(
+                              label: 'Abiertos',
+                              selected: _filter == _CompromisoFilter.abiertos,
+                              onTap: () => setState(
+                                () => _filter = _CompromisoFilter.abiertos,
+                              ),
+                            ),
+                            _FilterChipButton(
+                              label: 'Criticos',
+                              selected: _filter == _CompromisoFilter.criticos,
+                              onTap: () => setState(
+                                () => _filter = _CompromisoFilter.criticos,
+                              ),
+                            ),
+                            _FilterChipButton(
+                              label: 'Verdes',
+                              selected: _filter == _CompromisoFilter.verdes,
+                              onTap: () => setState(
+                                () => _filter = _CompromisoFilter.verdes,
+                              ),
+                            ),
+                            _FilterChipButton(
+                              label: 'Naranjas',
+                              selected: _filter == _CompromisoFilter.naranjas,
+                              onTap: () => setState(
+                                () => _filter = _CompromisoFilter.naranjas,
+                              ),
+                            ),
+                            _FilterChipButton(
+                              label: 'Rojos',
+                              selected: _filter == _CompromisoFilter.rojos,
+                              onTap: () => setState(
+                                () => _filter = _CompromisoFilter.rojos,
+                              ),
+                            ),
+                            _FilterChipButton(
+                              label: 'Cerrados',
+                              selected: _filter == _CompromisoFilter.cerrados,
+                              onTap: () => setState(
+                                () => _filter = _CompromisoFilter.cerrados,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 Expanded(
@@ -119,7 +216,8 @@ class _CompromisosPorConjuntoPageState
                       : ListView.separated(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                           itemCount: filtered.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
                           itemBuilder: (context, index) {
                             final group = filtered[index];
                             return _ConjuntoCompromisoCard(group: group);
@@ -136,6 +234,19 @@ class _ConjuntoCompromisoCard extends StatelessWidget {
   const _ConjuntoCompromisoCard({required this.group});
 
   final _CompromisoConjuntoGroup group;
+
+  Color _ansColor(String color) {
+    switch (color) {
+      case 'green':
+        return const Color(0xFF2E7D32);
+      case 'orange':
+        return const Color(0xFFEF6C00);
+      case 'red':
+        return const Color(0xFFC62828);
+      default:
+        return Colors.blueGrey;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -192,6 +303,21 @@ class _ConjuntoCompromisoCard extends StatelessWidget {
                     value: group.completedCount.toString(),
                     color: Colors.green,
                   ),
+                  _CountPill(
+                    label: 'Verdes',
+                    value: group.greenCount.toString(),
+                    color: const Color(0xFF2E7D32),
+                  ),
+                  _CountPill(
+                    label: 'Naranjas',
+                    value: group.orangeCount.toString(),
+                    color: const Color(0xFFEF6C00),
+                  ),
+                  _CountPill(
+                    label: 'Rojos',
+                    value: group.redCount.toString(),
+                    color: const Color(0xFFC62828),
+                  ),
                 ],
               ),
             ],
@@ -212,14 +338,51 @@ class _ConjuntoCompromisoCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      item.titulo,
-                      style: TextStyle(
-                        color: item.completado ? Colors.black54 : Colors.black87,
-                        decoration: item.completado
-                            ? TextDecoration.lineThrough
-                            : TextDecoration.none,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.titulo,
+                          style: TextStyle(
+                            color: item.completado
+                                ? Colors.black54
+                                : Colors.black87,
+                            decoration: item.completado
+                                ? TextDecoration.lineThrough
+                                : TextDecoration.none,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _MetaChip(
+                              icon: Icons.person_outline,
+                              label: item.autorLabel,
+                            ),
+                            _MetaChip(
+                              icon: Icons.schedule_rounded,
+                              label: item.antiguedadLabel,
+                            ),
+                            _MetaChip(
+                              icon: Icons.event_available_outlined,
+                              label: item.fechaCreacionLabel,
+                            ),
+                            _MetaChip(
+                              icon: item.completado
+                                  ? Icons.task_alt_outlined
+                                  : Icons.timelapse_rounded,
+                              label: item.fechaCierreLabel,
+                            ),
+                            _MetaChip(
+                              icon: Icons.flag_outlined,
+                              label: item.ansLabel,
+                              color: _ansColor(item.ansColor),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -268,22 +431,101 @@ class _CompromisoConjuntoGroup {
 
   final String nit;
   final String nombre;
-  final List<_CompromisoResumen> items;
+  final List<CompromisoModel> items;
 
   int get pendingCount => items.where((item) => !item.completado).length;
   int get completedCount => items.where((item) => item.completado).length;
+  int get greenCount => items
+      .where((item) => !item.completado && item.ansColor == 'green')
+      .length;
+  int get orangeCount => items
+      .where((item) => !item.completado && item.ansColor == 'orange')
+      .length;
+  int get redCount =>
+      items.where((item) => !item.completado && item.ansColor == 'red').length;
 }
 
-class _CompromisoResumen {
-  const _CompromisoResumen({required this.titulo, required this.completado});
+enum _CompromisoFilter {
+  todos,
+  abiertos,
+  criticos,
+  verdes,
+  naranjas,
+  rojos,
+  cerrados,
+}
 
-  final String titulo;
-  final bool completado;
+class _FilterChipButton extends StatelessWidget {
+  const _FilterChipButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
-  factory _CompromisoResumen.fromJson(Map<String, dynamic> json) {
-    return _CompromisoResumen(
-      titulo: (json['titulo'] ?? '').toString(),
-      completado: json['completado'] == true,
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? AppTheme.primary : Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? AppTheme.primary : Colors.black12,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : Colors.black87,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({required this.icon, required this.label, this.color});
+
+  final IconData icon;
+  final String label;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final chipColor = color ?? Colors.blueGrey;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: chipColor.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: chipColor),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: chipColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

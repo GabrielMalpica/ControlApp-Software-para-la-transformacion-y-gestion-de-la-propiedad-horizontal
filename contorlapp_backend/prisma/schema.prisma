@@ -618,6 +618,7 @@ model CompromisoConjunto {
   creadoPorId String?
 
   creadaEn      DateTime @default(now())
+  cerradaEn     DateTime?
   actualizadaEn DateTime @updatedAt
 
   @@index([conjuntoId, completado])

@@ -10,8 +10,73 @@ class CompromisoConjuntoService {
     constructor(prisma) {
         this.prisma = prisma;
     }
+    buildAns(compromiso) {
+        if (compromiso.completado) {
+            return {
+                ansEstado: "cerrado",
+                ansColor: "neutral",
+                ansLabel: "Cerrado",
+            };
+        }
+        const msAbierto = Date.now() - compromiso.creadaEn.getTime();
+        const diasAbierto = Math.max(0, Math.floor(msAbierto / (1000 * 60 * 60 * 24)));
+        if (diasAbierto <= 7) {
+            return {
+                ansEstado: "verde",
+                ansColor: "green",
+                ansLabel: "ANS en tiempo",
+            };
+        }
+        if (diasAbierto <= 21) {
+            return {
+                ansEstado: "naranja",
+                ansColor: "orange",
+                ansLabel: "ANS en seguimiento",
+            };
+        }
+        return {
+            ansEstado: "rojo",
+            ansColor: "red",
+            ansLabel: "ANS critico",
+        };
+    }
+    formatRol(rol) {
+        const normalized = String(rol ?? "").trim().toLowerCase();
+        if (normalized == "jefe_operaciones")
+            return "Jefe de operaciones";
+        if (normalized == "administrador")
+            return "Administrador";
+        if (normalized == "supervisor")
+            return "Supervisor";
+        if (normalized == "operario")
+            return "Operario";
+        if (normalized == "gerente")
+            return "Gerente";
+        return normalized ? normalized[0].toUpperCase() + normalized.slice(1) : null;
+    }
+    serializeCompromiso(item) {
+        const ans = this.buildAns(item);
+        return {
+            id: item.id,
+            conjuntoId: item.conjuntoId,
+            titulo: item.titulo,
+            completado: item.completado,
+            creadaEn: item.creadaEn,
+            cerradaEn: item.cerradaEn,
+            actualizadaEn: item.actualizadaEn,
+            creadoPorId: item.creadoPorId,
+            creadoPorNombre: item.creadoPor?.nombre ?? null,
+            creadoPorRol: this.formatRol(item.creadoPor?.rol),
+            diasAbierto: Math.max(0, Math.floor((Date.now() - item.creadaEn.getTime()) / (1000 * 60 * 60 * 24))),
+            ansEstado: ans.ansEstado,
+            ansColor: ans.ansColor,
+            ansLabel: ans.ansLabel,
+            conjuntoNombre: item.conjunto?.nombre ?? item.conjuntoId,
+            conjuntoNit: item.conjunto?.nit ?? item.conjuntoId,
+        };
+    }
     async listarPorConjunto(conjuntoId) {
-        return this.prisma.compromisoConjunto.findMany({
+        const items = await this.prisma.compromisoConjunto.findMany({
             where: { conjuntoId },
             orderBy: [{ completado: "asc" }, { creadaEn: "desc" }],
             select: {
@@ -20,10 +85,18 @@ class CompromisoConjuntoService {
                 titulo: true,
                 completado: true,
                 creadaEn: true,
+                cerradaEn: true,
                 actualizadaEn: true,
                 creadoPorId: true,
+                creadoPor: {
+                    select: {
+                        nombre: true,
+                        rol: true,
+                    },
+                },
             },
         });
+        return items.map((item) => this.serializeCompromiso(item));
     }
     async listarGlobal() {
         const items = await this.prisma.compromisoConjunto.findMany({
@@ -38,27 +111,26 @@ class CompromisoConjuntoService {
                 titulo: true,
                 completado: true,
                 creadaEn: true,
+                cerradaEn: true,
                 actualizadaEn: true,
+                creadoPorId: true,
+                creadoPor: {
+                    select: {
+                        nombre: true,
+                        rol: true,
+                    },
+                },
                 conjunto: { select: { nit: true, nombre: true } },
             },
         });
-        return items.map((item) => ({
-            id: item.id,
-            conjuntoId: item.conjuntoId,
-            titulo: item.titulo,
-            completado: item.completado,
-            creadaEn: item.creadaEn,
-            actualizadaEn: item.actualizadaEn,
-            conjuntoNombre: item.conjunto?.nombre ?? item.conjuntoId,
-            conjuntoNit: item.conjunto?.nit ?? item.conjuntoId,
-        }));
+        return items.map((item) => this.serializeCompromiso(item));
     }
     async crear(input) {
         const titulo = input.titulo.trim();
         if (!titulo) {
             throw makeHttpError(400, "El compromiso no puede estar vacio");
         }
-        return this.prisma.compromisoConjunto.create({
+        const created = await this.prisma.compromisoConjunto.create({
             data: {
                 conjuntoId: input.conjuntoId,
                 titulo,
@@ -70,10 +142,18 @@ class CompromisoConjuntoService {
                 titulo: true,
                 completado: true,
                 creadaEn: true,
+                cerradaEn: true,
                 actualizadaEn: true,
                 creadoPorId: true,
+                creadoPor: {
+                    select: {
+                        nombre: true,
+                        rol: true,
+                    },
+                },
             },
         });
+        return this.serializeCompromiso(created);
     }
     async actualizar(id, data) {
         const current = await this.prisma.compromisoConjunto.findUnique({ where: { id } });
@@ -90,8 +170,14 @@ class CompromisoConjuntoService {
         }
         if (typeof data.completado === "boolean") {
             payload.completado = data.completado;
+            if (data.completado && !current.completado) {
+                payload.cerradaEn = new Date();
+            }
+            if (!data.completado && current.completado) {
+                payload.cerradaEn = null;
+            }
         }
-        return this.prisma.compromisoConjunto.update({
+        const updated = await this.prisma.compromisoConjunto.update({
             where: { id },
             data: payload,
             select: {
@@ -100,10 +186,18 @@ class CompromisoConjuntoService {
                 titulo: true,
                 completado: true,
                 creadaEn: true,
+                cerradaEn: true,
                 actualizadaEn: true,
                 creadoPorId: true,
+                creadoPor: {
+                    select: {
+                        nombre: true,
+                        rol: true,
+                    },
+                },
             },
         });
+        return this.serializeCompromiso(updated);
     }
     async eliminar(id) {
         const current = await this.prisma.compromisoConjunto.findUnique({ where: { id } });
