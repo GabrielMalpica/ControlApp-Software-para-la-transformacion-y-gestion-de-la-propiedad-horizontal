@@ -8,6 +8,7 @@ const ROLE_ORDER = [
     client_1.Rol.jefe_operaciones,
     client_1.Rol.supervisor,
     client_1.Rol.operario,
+    client_1.Rol.residente,
 ];
 const MANAGED_ROLE_ORDER = ROLE_ORDER.filter((rol) => rol !== client_1.Rol.gerente);
 const PERMISSION_CATALOG = [
@@ -103,6 +104,13 @@ const PERMISSION_CATALOG = [
         description: "Permite consultar la agenda y disponibilidad de maquinaria.",
     },
     {
+        key: "maquinaria.asignar",
+        module: "maquinaria",
+        moduleLabel: "Maquinaria",
+        label: "Asignar maquinaria al cronograma",
+        description: "Permite asignar y liberar máquinas concretas sobre las necesidades del cronograma.",
+    },
+    {
         key: "herramientas.ver",
         module: "herramientas",
         moduleLabel: "Herramientas",
@@ -152,6 +160,41 @@ const PERMISSION_CATALOG = [
         description: "Permite ver el banner y la pantalla de cumpleanos.",
     },
     {
+        key: "residentes.ver",
+        module: "residentes",
+        moduleLabel: "Residentes",
+        label: "Ver residentes",
+        description: "Permite consultar y listar residentes por conjunto.",
+    },
+    {
+        key: "residentes.crear",
+        module: "residentes",
+        moduleLabel: "Residentes",
+        label: "Crear residentes manualmente",
+        description: "Permite registrar residentes individuales y generar su acceso inicial.",
+    },
+    {
+        key: "residentes.editar",
+        module: "residentes",
+        moduleLabel: "Residentes",
+        label: "Editar residentes",
+        description: "Permite actualizar datos y estado de residentes existentes.",
+    },
+    {
+        key: "residentes.eliminar",
+        module: "residentes",
+        moduleLabel: "Residentes",
+        label: "Eliminar residentes",
+        description: "Permite eliminar residentes y sus credenciales asociadas.",
+    },
+    {
+        key: "residentes.cargar_masivo",
+        module: "residentes",
+        moduleLabel: "Residentes",
+        label: "Cargar residentes masivamente",
+        description: "Permite importar residentes desde archivos Excel o CSV y generar reportes de fallos.",
+    },
+    {
         key: "plan_esperanza.acceso",
         module: "plan_esperanza",
         moduleLabel: "Plan Esperanza",
@@ -170,6 +213,7 @@ const ALL_PERMISSION_KEYS = new Set(PERMISSION_CATALOG.map((item) => item.key));
 const DEFAULT_PERMISSIONS_BY_ROLE = {
     [client_1.Rol.gerente]: new Set(PERMISSION_CATALOG.map((item) => item.key)),
     [client_1.Rol.administrador]: new Set([
+        "residentes.ver",
         "cronograma.ver",
         "inventario.ver",
         "mapa_areas.ver",
@@ -177,6 +221,10 @@ const DEFAULT_PERMISSIONS_BY_ROLE = {
         "compromisos.gestionar",
         "reportes.ver",
         "cumpleanos.ver",
+        "residentes.crear",
+        "residentes.editar",
+        "residentes.eliminar",
+        "residentes.cargar_masivo",
     ]),
     [client_1.Rol.jefe_operaciones]: new Set([
         "tareas.ver",
@@ -187,6 +235,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE = {
         "solicitudes.ver",
         "inventario.ver",
         "maquinaria.ver",
+        "maquinaria.asignar",
         "herramientas.ver",
         "mapa_areas.ver",
         "compromisos.ver",
@@ -219,6 +268,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE = {
         "mapa_areas.ver",
         "cumpleanos.ver",
     ]),
+    [client_1.Rol.residente]: new Set([]),
 };
 function normalizeRole(value) {
     const role = String(value ?? "").trim().toLowerCase();
@@ -310,6 +360,15 @@ class PermissionService {
                 });
                 return hasText(conjunto?.empresaId)
                     ? conjunto.empresaId.trim()
+                    : this.resolveFallbackEmpresaId();
+            }
+            case client_1.Rol.residente: {
+                const residente = await this.prisma.residente.findUnique({
+                    where: { id: userId },
+                    select: { conjunto: { select: { empresaId: true } } },
+                });
+                return hasText(residente?.conjunto?.empresaId)
+                    ? residente.conjunto.empresaId.trim()
                     : this.resolveFallbackEmpresaId();
             }
         }

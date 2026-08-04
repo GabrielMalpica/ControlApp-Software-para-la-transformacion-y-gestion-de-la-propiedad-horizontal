@@ -159,6 +159,84 @@ export class GerenteController {
     }
   };
 
+  crearResidenteManual: RequestHandler = async (req, res, next) => {
+    try {
+      const actorUserId = req.user?.sub;
+      if (!actorUserId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      const out = await service.crearResidenteManual(actorUserId, req.body);
+      res.status(201).json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  cargarResidentesMasivo: RequestHandler = async (req, res, next) => {
+    try {
+      const actorUserId = req.user?.sub;
+      if (!actorUserId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      const out = await service.cargarResidentesMasivo(actorUserId, req.body, req.file);
+      res.status(201).json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  listarResidentes: RequestHandler = async (req, res, next) => {
+    try {
+      const actorUserId = req.user?.sub;
+      if (!actorUserId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      const out = await service.listarResidentes(actorUserId, req.query);
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  editarResidente: RequestHandler = async (req, res, next) => {
+    try {
+      const actorUserId = req.user?.sub;
+      if (!actorUserId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      const residenteId = String(req.params.residenteId ?? "").trim();
+      const out = await service.editarResidente(actorUserId, residenteId, req.body);
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  eliminarResidenteGestion: RequestHandler = async (req, res, next) => {
+    try {
+      const actorUserId = req.user?.sub;
+      if (!actorUserId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      const residenteId = String(req.params.residenteId ?? "").trim();
+      const conjuntoId = String(req.query.conjuntoId ?? "").trim();
+      const out = await service.eliminarResidenteGestion(actorUserId, residenteId, conjuntoId);
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   // â”€â”€ Roles / Perfiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   asignarGerente: RequestHandler = async (req, res, next) => {
     try {
@@ -230,6 +308,38 @@ export class GerenteController {
     try {
       const out = await service.crearConjunto(req.body);
       res.status(201).json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  cargarConjuntoMasivo: RequestHandler = async (req, res, next) => {
+    try {
+      const actorUserId = req.user?.sub;
+      if (!actorUserId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      const out = await service.cargarConjuntoMasivo(actorUserId, req.file);
+      res.status(out.creado ? 201 : 422).json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  descargarPlantillaConjunto: RequestHandler = async (_req, res, next) => {
+    try {
+      const buffer = service.generarPlantillaConjunto();
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader(
+        "Content-Disposition",
+        'attachment; filename="plantilla_conjunto.xlsx"',
+      );
+      res.status(200).send(buffer);
     } catch (err) {
       next(err);
     }

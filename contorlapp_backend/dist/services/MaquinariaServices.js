@@ -7,17 +7,17 @@ exports.isDeliveryPickupDay = isDeliveryPickupDay;
 exports.prevDeliveryDayInclusive = prevDeliveryDayInclusive;
 exports.nextPickupDayInclusive = nextPickupDayInclusive;
 exports.calcularVentanaPrestamoLogistico = calcularVentanaPrestamoLogistico;
-exports.validarMaquinariaDisponibleEnVentana = validarMaquinariaDisponibleEnVentana;
-exports.crearReservasMaquinariaParaTarea = crearReservasMaquinariaParaTarea;
 const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
 const elementoHierarchy_1 = require("../utils/elementoHierarchy");
+const maquinariaNecesidades_1 = require("../utils/maquinariaNecesidades");
+const reservaMaquinaria_1 = require("../utils/reservaMaquinaria");
 const AsignarAConjuntoDTO = zod_1.z.object({
     conjuntoId: zod_1.z.string().min(3),
     responsableId: zod_1.z.string().optional(), // ✅ Operario.id es String en tu schema
     diasPrestamo: zod_1.z.number().int().positive().default(7),
 });
-const DELIVERY_PICKUP_DOW = new Set([1, 3, 6]); // Lun, Mie, Sab
+const DELIVERY_PICKUP_DOW = reservaMaquinaria_1.DIAS_ENTREGA_RECOGIDA;
 class MaquinariaService {
     constructor(prisma, maquinariaId) {
         this.prisma = prisma;
@@ -148,13 +148,6 @@ class MaquinariaService {
             },
             orderBy: [{ fechaInicio: "asc" }],
         });
-        const getMaqIds = (json) => {
-            if (!Array.isArray(json))
-                return [];
-            return json
-                .map((x) => Number(x?.maquinariaId))
-                .filter((n) => Number.isFinite(n) && n > 0);
-        };
         const borradores = await this.prisma.tarea.findMany({
             where: {
                 borrador: true,
@@ -200,7 +193,7 @@ class MaquinariaService {
             DOMINGO: 0,
         };
         const definicionReservas = definiciones.flatMap((def) => {
-            const maqIds = new Set(getMaqIds(def.maquinariaPlanJson));
+            const maqIds = new Set((0, maquinariaNecesidades_1.parseMaquinariaIdsComprometidos)(def.maquinariaPlanJson));
             if (!maqIds.has(maquinariaId))
                 return [];
             const items = [];
@@ -268,7 +261,7 @@ class MaquinariaService {
                     fuente: u.tarea?.borrador == true ? "BORRADOR" : "PUBLICADA",
                 })),
                 ...borradores
-                    .filter((t) => getMaqIds(t.maquinariaPlanJson).includes(maquinariaId))
+                    .filter((t) => (0, maquinariaNecesidades_1.parseMaquinariaIdsComprometidos)(t.maquinariaPlanJson).includes(maquinariaId))
                     .map((t) => ({
                     id: -t.id,
                     fechaInicio: t.fechaInicio,
@@ -456,62 +449,4 @@ function calcularVentanaPrestamoLogistico(fechaInicioUso, fechaFinUso) {
     const inicioPrestamo = startOfDayLocal(diaEntrega);
     const finPrestamoExclusivo = addDaysLocal(diaRecogida, 1); // 00:00 día siguiente
     return { inicioPrestamo, finPrestamoExclusivo, diaEntrega, diaRecogida };
-}
-async function validarMaquinariaDisponibleEnVentana(params) {
-    const { prisma, maquinariaIds, ventanaInicio, ventanaFinExclusivo, ignorarTareaIds = [], } = params;
-    if (!maquinariaIds.length)
-        return { ok: true };
-    const usos = await prisma.usoMaquinaria.findMany({
-        where: {
-            maquinariaId: { in: maquinariaIds },
-            // overlap: (usoInicio < ventanaFin) AND (usoFin > ventanaInicio)
-            fechaInicio: { lt: ventanaFinExclusivo },
-            OR: [
-                { fechaFin: null }, // abierto => ocupa
-                { fechaFin: { gt: ventanaInicio } },
-            ],
-            ...(ignorarTareaIds.length
-                ? { NOT: { tareaId: { in: ignorarTareaIds } } }
-                : {}),
-        },
-        select: {
-            id: true,
-            maquinariaId: true,
-            tareaId: true,
-            fechaInicio: true,
-            fechaFin: true,
-        },
-    });
-    if (!usos.length)
-        return { ok: true };
-    return {
-        ok: false,
-        conflictos: usos.map((u) => ({
-            maquinariaId: u.maquinariaId,
-            usoId: u.id,
-            tareaId: u.tareaId,
-            inicio: u.fechaInicio,
-            fin: u.fechaFin,
-        })),
-    };
-}
-async function crearReservasMaquinariaParaTarea(params) {
-    const { tx, tareaId, maquinariaIds, fechaInicioUso, fechaFinUso } = params;
-    if (!maquinariaIds.length)
-        return;
-    const { inicioPrestamo, finPrestamoExclusivo, diaEntrega, diaRecogida } = calcularVentanaPrestamoLogistico(fechaInicioUso, fechaFinUso);
-    const obs = params.observacion ??
-        `Reserva logística: entrega ${diaEntrega.toISOString().slice(0, 10)} / recogida ${diaRecogida.toISOString().slice(0, 10)}`;
-    // 1 registro por máquina
-    for (const maqId of maquinariaIds) {
-        await tx.usoMaquinaria.create({
-            data: {
-                tareaId,
-                maquinariaId: maqId,
-                fechaInicio: inicioPrestamo,
-                fechaFin: finPrestamoExclusivo, // ✅ fin exclusivo (00:00 día siguiente a recogida)
-                observacion: obs,
-            },
-        });
-    }
 }

@@ -7,6 +7,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const node_cron_1 = __importDefault(require("node-cron"));
 const client_1 = require("@prisma/client");
 const DefinicionTareaPreventivaService_1 = require("../services/DefinicionTareaPreventivaService");
+const CronogramaServices_1 = require("../services/CronogramaServices");
 const prisma = new client_1.PrismaClient();
 const service = new DefinicionTareaPreventivaService_1.DefinicionTareaPreventivaService(prisma);
 // === OPCIÓN A: 1er día de cada mes a MEDIANOCHE (00:00) Bogotá ===
@@ -31,6 +32,15 @@ node_cron_1.default.schedule("0 0 1 * *", async () => {
         catch (e) {
             console.error(`[CRON] Error en ${c.nit}:`, e?.message ?? e);
         }
+    }
+    // Las tareas excluidas solo son visibles durante su propio mes: al entrar el
+    // nuevo periodo se purgan las de meses anteriores en todos los conjuntos.
+    try {
+        const eliminadas = await (0, CronogramaServices_1.purgarExcluidasDeMesesAnteriores)(prisma, { anio, mes });
+        console.log(`[CRON] Excluidas de meses anteriores eliminadas: ${eliminadas}`);
+    }
+    catch (e) {
+        console.error("[CRON] Error purgando excluidas de meses anteriores:", e?.message ?? e);
     }
     console.log(`[CRON] Listo ${anio}-${mes}`);
 }, { timezone: "America/Bogota" });

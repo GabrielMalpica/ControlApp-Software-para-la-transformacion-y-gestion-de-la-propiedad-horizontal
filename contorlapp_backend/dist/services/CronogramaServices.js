@@ -1,12 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CronogramaService = void 0;
+exports.purgarExcluidasDeMesesAnteriores = purgarExcluidasDeMesesAnteriores;
 // src/services/CronogramaService.ts
 const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
 const schedulerUtils_1 = require("../utils/schedulerUtils");
 const elementoHierarchy_1 = require("../utils/elementoHierarchy");
 const operarioAvailability_1 = require("../utils/operarioAvailability");
+const Auditoria_1 = require("../model/Auditoria");
+const AuditoriaService_1 = require("./AuditoriaService");
 const GerenteServices_1 = require("./GerenteServices");
 // DTOs locales de filtros para este servicio
 const OperarioIdDTO = zod_1.z.object({ operarioId: zod_1.z.number().int().positive() });
@@ -34,8 +37,27 @@ const ProgramarExcluidaComoCorrectivaDTO = zod_1.z.object({
     excluidaId: zod_1.z.number().int().positive(),
     fechaInicio: zod_1.z.coerce.date(),
     fechaFin: zod_1.z.coerce.date().optional(),
+    // `reemplazarTareaId` se conserva por compatibilidad; `reemplazarTareaIds` permite
+    // desplazar varias tareas hasta liberar el espacio necesario.
     reemplazarTareaId: zod_1.z.number().int().positive().optional(),
-    motivoReemplazo: zod_1.z.string().trim().optional(),
+    reemplazarTareaIds: zod_1.z.array(zod_1.z.number().int().positive()).min(1).optional(),
+    accionReemplazadas: zod_1.z.enum(["REPROGRAMAR", "CANCELAR"]).optional(),
+    // El motor de reemplazo exige entre 3 y 500 caracteres: validarlo aqui evita
+    // que la operacion falle en silencio mas abajo.
+    motivoReemplazo: zod_1.z.string().trim().min(3).max(500).optional(),
+});
+const OpcionesReemplazoExcluidaDTO = zod_1.z.object({
+    excluidaId: zod_1.z.coerce.number().int().positive(),
+    fecha: zod_1.z.coerce.date(),
+});
+const ReasignarOperarioExcluidaPublicadaDTO = zod_1.z.object({
+    excluidaId: zod_1.z.coerce.number().int().positive(),
+    nuevoOperarioId: zod_1.z.coerce.string().min(1),
+    motivo: zod_1.z.string().trim().max(500).optional(),
+});
+const InformeExcluidasDTO = zod_1.z.object({
+    anio: zod_1.z.coerce.number().int().min(2000).max(2100),
+    mes: zod_1.z.coerce.number().int().min(1).max(12),
 });
 const EliminarCronogramaPublicadoDTO = zod_1.z.object({
     anio: zod_1.z.coerce.number().int().min(2000).max(2100),
@@ -62,6 +84,30 @@ const TareasPorFiltroDTO = zod_1.z
         (Boolean(d.fechaInicio) && Boolean(d.fechaFin)));
 }, { message: "Debe enviar fechaExacta o un rango (fechaInicio y fechaFin)." });
 const ESTADOS_NO_CRONOGRAMA = ["PENDIENTE_REPROGRAMACION"];
+/** Acepta el campo singular antiguo y el plural nuevo, sin duplicar ids. */
+function normalizarIdsReemplazo(dto) {
+    const ids = [
+        ...(dto.reemplazarTareaIds ?? []),
+        ...(dto.reemplazarTareaId != null ? [dto.reemplazarTareaId] : []),
+    ];
+    return Array.from(new Set(ids));
+}
+function metadataComoObjeto(value) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+        return value;
+    }
+    return {};
+}
+/** El descanso solo bloquea si queda estrictamente dentro de la jornada. */
+function bloqueosPorDescanso(horario) {
+    const inicio = horario.descansoStartMin;
+    const fin = horario.descansoEndMin;
+    if (inicio == null || fin == null)
+        return [];
+    if (!(horario.startMin < inicio && inicio < fin && fin < horario.endMin))
+        return [];
+    return [{ startMin: inicio, endMin: fin, reason: "DESCANSO" }];
+}
 /** Util: sumar minutos a una fecha (sin mutar la original) */
 function addMinutes(d, minutes) {
     return new Date(d.getTime() + minutes * 60 * 1000);
@@ -91,20 +137,35 @@ function dateKeyLocal(d) {
     const day = String(d.getDate()).padStart(2, "0");
     return `${y}-${m}-${day}`;
 }
+/**
+ * Borra las tareas excluidas de periodos anteriores al indicado.
+ * Sin `conjuntoId` aplica a todos los conjuntos: es lo que usa el cron mensual.
+ */
+async function purgarExcluidasDeMesesAnteriores(prisma, params) {
+    const { conjuntoId, anio, mes } = params;
+    const { count } = await prisma.preventivaExcluidaBorrador.deleteMany({
+        where: {
+            ...(conjuntoId ? { conjuntoId } : {}),
+            OR: [
+                { periodoAnio: { lt: anio } },
+                { periodoAnio: anio, periodoMes: { lt: mes } },
+            ],
+        },
+    });
+    return count;
+}
 class CronogramaService {
-    constructor(prisma, conjuntoId) {
+    constructor(prisma, conjuntoId, actor) {
         this.prisma = prisma;
         this.conjuntoId = conjuntoId;
+        this.actor = actor;
+        this.auditoria = new AuditoriaService_1.AuditoriaService(prisma);
     }
     async limpiarExcluidasDeMesesAnteriores(anio, mes) {
-        await this.prisma.preventivaExcluidaBorrador.deleteMany({
-            where: {
-                conjuntoId: this.conjuntoId,
-                OR: [
-                    { periodoAnio: { lt: anio } },
-                    { periodoAnio: anio, periodoMes: { lt: mes } },
-                ],
-            },
+        await purgarExcluidasDeMesesAnteriores(this.prisma, {
+            conjuntoId: this.conjuntoId,
+            anio,
+            mes,
         });
     }
     async existeCronogramaPreventivoPublicado(anio, mes) {
@@ -233,30 +294,28 @@ class CronogramaService {
     }
     async programarExcluidaComoCorrectiva(payload) {
         const dto = ProgramarExcluidaComoCorrectivaDTO.parse(payload);
-        const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
-            where: { id: dto.excluidaId },
-            select: {
-                id: true,
-                conjuntoId: true,
-                periodoAnio: true,
-                periodoMes: true,
-                estado: true,
-                descripcion: true,
-                prioridad: true,
-                duracionMinutos: true,
-                ubicacionId: true,
-                elementoId: true,
-                supervisorId: true,
-                operariosIds: true,
-            },
-        });
-        if (!excluida || excluida.conjuntoId !== this.conjuntoId) {
-            throw new Error("La tarea excluida no existe para este conjunto.");
-        }
-        if (excluida.estado !== "PENDIENTE") {
-            throw new Error("La tarea excluida ya no esta disponible para programar.");
-        }
+        const excluida = await this.cargarExcluidaPendiente(dto.excluidaId);
+        const idsAReemplazar = normalizarIdsReemplazo(dto);
         const fechaFin = dto.fechaFin ?? new Date(dto.fechaInicio.getTime() + excluida.duracionMinutos * 60000);
+        // Snapshot previo: una vez ejecutado el reemplazo las tareas quedan canceladas o
+        // reprogramadas, y el informe necesita saber que habia antes.
+        const tareasDesplazadas = idsAReemplazar.length
+            ? await this.prisma.tarea.findMany({
+                where: { id: { in: idsAReemplazar }, conjuntoId: this.conjuntoId },
+                select: {
+                    id: true,
+                    descripcion: true,
+                    fechaInicio: true,
+                    fechaFin: true,
+                    prioridad: true,
+                    operarios: { select: { usuario: { select: { nombre: true } } } },
+                },
+                orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
+            })
+            : [];
+        if (idsAReemplazar.length && tareasDesplazadas.length !== idsAReemplazar.length) {
+            throw new Error("Alguna de las tareas a reemplazar no existe o no pertenece a este conjunto.");
+        }
         const gerenteService = new GerenteServices_1.GerenteService(this.prisma);
         const tareaPayload = {
             descripcion: excluida.descripcion,
@@ -271,11 +330,12 @@ class CronogramaService {
             supervisorId: excluida.supervisorId ?? undefined,
             operariosIds: excluida.operariosIds,
         };
-        const out = dto.reemplazarTareaId
+        const accionReemplazadas = dto.accionReemplazadas ?? "CANCELAR";
+        const out = idsAReemplazar.length
             ? await gerenteService.asignarTareaConReemplazoV2({
                 tarea: tareaPayload,
-                reemplazarIds: [dto.reemplazarTareaId],
-                accionReemplazadas: "CANCELAR",
+                reemplazarIds: idsAReemplazar,
+                accionReemplazadas,
                 motivoReemplazo: dto.motivoReemplazo,
             })
             : await gerenteService.asignarTarea(tareaPayload);
@@ -283,39 +343,439 @@ class CronogramaService {
             return out;
         }
         const createdTaskId = Number(out?.createdCorrectivaId ?? out?.createdId ?? out?.tareaId ?? 0);
-        await this.prisma.preventivaExcluidaBorrador.update({
-            where: { id: excluida.id },
-            data: {
-                estado: "AGENDADA",
-                tareaProgramadaId: createdTaskId > 0 ? createdTaskId : null,
-                resueltaEn: new Date(),
-            },
-        });
-        await this.prisma.preventivaBorradorEvento.create({
-            data: {
+        const tareaProgramadaId = createdTaskId > 0 ? createdTaskId : null;
+        const reprogramadasIds = Array.isArray(out?.reprogramadasIds)
+            ? out.reprogramadasIds
+            : [];
+        const detalleDesplazadas = tareasDesplazadas.map((tarea) => ({
+            id: tarea.id,
+            descripcion: tarea.descripcion,
+            fechaInicio: tarea.fechaInicio.toISOString(),
+            fechaFin: tarea.fechaFin.toISOString(),
+            prioridad: tarea.prioridad,
+            operariosNombres: tarea.operarios
+                .map((operario) => operario.usuario?.nombre ?? "")
+                .filter((nombre) => nombre.trim().length > 0),
+            accion: reprogramadasIds.includes(tarea.id) ? "REPROGRAMADA" : "CANCELADA",
+        }));
+        const detalle = idsAReemplazar.length
+            ? `La tarea excluida '${excluida.descripcion}' se programo como correctiva desplazando ${idsAReemplazar.length} tarea(s).`
+            : `La tarea excluida '${excluida.descripcion}' se programo como correctiva en un hueco libre.`;
+        const metadataJson = {
+            tipoDestino: "CORRECTIVA",
+            // Se mantiene el campo singular para no romper lectores antiguos del evento.
+            reemplazarTareaId: idsAReemplazar[0] ?? null,
+            reemplazarTareaIds: idsAReemplazar,
+            accionReemplazadas,
+            tareasReemplazadas: detalleDesplazadas,
+            reprogramadasIds,
+            canceladasIds: Array.isArray(out?.canceladasIds) ? out.canceladasIds : [],
+            motivoReemplazo: dto.motivoReemplazo ?? null,
+            fechaInicio: dto.fechaInicio.toISOString(),
+            fechaFin: fechaFin.toISOString(),
+        };
+        await this.prisma.$transaction(async (tx) => {
+            await tx.preventivaExcluidaBorrador.update({
+                where: { id: excluida.id },
+                data: {
+                    estado: "AGENDADA",
+                    tareaProgramadaId,
+                    resueltaEn: new Date(),
+                },
+            });
+            await tx.preventivaBorradorEvento.create({
+                data: {
+                    conjuntoId: excluida.conjuntoId,
+                    periodoAnio: excluida.periodoAnio,
+                    periodoMes: excluida.periodoMes,
+                    tipo: idsAReemplazar.length
+                        ? "EXCLUIDA_CORRECTIVA_REEMPLAZO"
+                        : "EXCLUIDA_CORRECTIVA_AGENDADA",
+                    detalle,
+                    excluidaId: excluida.id,
+                    tareaId: tareaProgramadaId,
+                    actorId: this.actor?.id ?? null,
+                    actorRol: this.actor?.rol ?? null,
+                    metadataJson,
+                },
+            });
+            await new AuditoriaService_1.AuditoriaService(tx).registrar({
+                modulo: Auditoria_1.ModuloAuditoria.EXCLUIDA,
+                entidad: Auditoria_1.EntidadAuditoria.EXCLUIDA_BORRADOR,
+                entidadId: excluida.id,
+                accion: Auditoria_1.AccionAuditoria.PROGRAMAR_CORRECTIVA,
                 conjuntoId: excluida.conjuntoId,
+                actor: this.actor,
+                descripcion: detalle,
                 periodoAnio: excluida.periodoAnio,
                 periodoMes: excluida.periodoMes,
-                tipo: dto.reemplazarTareaId ? "EXCLUIDA_CORRECTIVA_REEMPLAZO" : "EXCLUIDA_CORRECTIVA_AGENDADA",
-                detalle: dto.reemplazarTareaId
-                    ? `La tarea excluida '${excluida.descripcion}' se programo como correctiva reemplazando una preventiva.`
-                    : `La tarea excluida '${excluida.descripcion}' se programo como correctiva en un hueco libre.`,
-                excluidaId: excluida.id,
-                tareaId: createdTaskId > 0 ? createdTaskId : null,
-                metadataJson: {
-                    tipoDestino: "CORRECTIVA",
-                    reemplazarTareaId: dto.reemplazarTareaId ?? null,
-                    motivoReemplazo: dto.motivoReemplazo ?? null,
-                    fechaInicio: dto.fechaInicio.toISOString(),
-                    fechaFin: fechaFin.toISOString(),
-                },
-            },
+                metadataJson,
+            });
+            if (detalleDesplazadas.length) {
+                await new AuditoriaService_1.AuditoriaService(tx).registrarLote(detalleDesplazadas.map((tarea) => ({
+                    modulo: Auditoria_1.ModuloAuditoria.TAREA,
+                    entidad: Auditoria_1.EntidadAuditoria.TAREA,
+                    entidadId: tarea.id,
+                    accion: Auditoria_1.AccionAuditoria.REEMPLAZAR,
+                    conjuntoId: excluida.conjuntoId,
+                    actor: this.actor,
+                    descripcion: `Tarea ${tarea.accion.toLowerCase()} para dar espacio a la excluida '${excluida.descripcion}'.`,
+                    periodoAnio: excluida.periodoAnio,
+                    periodoMes: excluida.periodoMes,
+                    datosAntes: {
+                        fechaInicio: tarea.fechaInicio,
+                        fechaFin: tarea.fechaFin,
+                        prioridad: tarea.prioridad,
+                    },
+                    metadataJson: {
+                        excluidaId: excluida.id,
+                        correctivaId: tareaProgramadaId,
+                        accion: tarea.accion,
+                        motivoReemplazo: dto.motivoReemplazo ?? null,
+                    },
+                })));
+            }
         });
         return {
             ...out,
             excluidaId: excluida.id,
-            createdCorrectivaId: createdTaskId > 0 ? createdTaskId : out?.createdCorrectivaId ?? null,
+            createdCorrectivaId: tareaProgramadaId ?? out?.createdCorrectivaId ?? null,
+            tareasDesplazadas: detalleDesplazadas,
         };
+    }
+    /**
+     * Tareas publicadas del dia que podrian desplazarse para dar espacio a una excluida,
+     * con la combinacion minima (menor prioridad primero) que libera los minutos necesarios.
+     */
+    async listarOpcionesReemplazoExcluida(payload) {
+        const dto = OpcionesReemplazoExcluidaDTO.parse(payload);
+        const excluida = await this.cargarExcluidaPendiente(dto.excluidaId);
+        const inicioDia = new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 0, 0, 0, 0);
+        const finDia = new Date(dto.fecha.getFullYear(), dto.fecha.getMonth(), dto.fecha.getDate(), 23, 59, 59, 999);
+        const tareas = await this.prisma.tarea.findMany({
+            where: {
+                conjuntoId: this.conjuntoId,
+                borrador: false,
+                fechaInicio: { lte: finDia },
+                fechaFin: { gte: inicioDia },
+                estado: { notIn: ESTADOS_NO_CRONOGRAMA },
+                ...(excluida.operariosIds.length
+                    ? { operarios: { some: { id: { in: excluida.operariosIds } } } }
+                    : {}),
+            },
+            select: {
+                id: true,
+                descripcion: true,
+                fechaInicio: true,
+                fechaFin: true,
+                duracionMinutos: true,
+                prioridad: true,
+                tipo: true,
+                operarios: { select: { id: true, usuario: { select: { nombre: true } } } },
+            },
+            orderBy: [{ prioridad: "desc" }, { fechaInicio: "asc" }, { id: "asc" }],
+        });
+        const horario = await this.obtenerHorarioDia(dto.fecha);
+        const minutosLibresActuales = horario
+            ? this.calcularMinutosLibres(horario, tareas)
+            : 0;
+        const opciones = tareas.map((tarea) => ({
+            tareaId: tarea.id,
+            descripcion: tarea.descripcion,
+            fechaInicio: tarea.fechaInicio,
+            fechaFin: tarea.fechaFin,
+            prioridad: tarea.prioridad,
+            tipo: tarea.tipo,
+            minutosQueLibera: tarea.duracionMinutos,
+            operariosNombres: tarea.operarios
+                .map((operario) => operario.usuario?.nombre ?? "")
+                .filter((nombre) => nombre.trim().length > 0),
+        }));
+        const faltante = Math.max(0, excluida.duracionMinutos - minutosLibresActuales);
+        const combinacionMinima = [];
+        let acumulado = 0;
+        if (faltante > 0) {
+            for (const opcion of opciones) {
+                if (acumulado >= faltante)
+                    break;
+                combinacionMinima.push(opcion.tareaId);
+                acumulado += opcion.minutosQueLibera;
+            }
+        }
+        const alcanza = faltante === 0 || acumulado >= faltante;
+        return {
+            excluidaId: excluida.id,
+            descripcion: excluida.descripcion,
+            duracionMinutos: excluida.duracionMinutos,
+            fecha: inicioDia,
+            minutosLibresActuales,
+            minutosFaltantes: faltante,
+            opciones,
+            combinacionMinima: alcanza ? combinacionMinima : [],
+            minutosCombinacionMinima: alcanza ? acumulado : 0,
+            alcanzaConDesplazamientos: alcanza,
+        };
+    }
+    /**
+     * Cambia el operario de una tarea excluida del cronograma publicado como excepcion puntual:
+     * no toca la definicion preventiva, asi que no afecta a los periodos siguientes.
+     */
+    async reasignarOperarioExcluidaPublicada(payload) {
+        const dto = ReasignarOperarioExcluidaPublicadaDTO.parse(payload);
+        const excluida = await this.cargarExcluidaPendiente(dto.excluidaId);
+        const hayPublicado = await this.existeCronogramaPreventivoPublicado(excluida.periodoAnio, excluida.periodoMes);
+        if (!hayPublicado) {
+            throw new Error("Solo se puede reasignar el operario cuando el cronograma del periodo ya esta publicado.");
+        }
+        const nuevoOperarioId = dto.nuevoOperarioId.trim();
+        const operario = await this.prisma.operario.findUnique({
+            where: { id: nuevoOperarioId },
+            select: { id: true, usuario: { select: { nombre: true } } },
+        });
+        if (!operario) {
+            throw new Error("El operario seleccionado no existe.");
+        }
+        const disponibilidad = await (0, operarioAvailability_1.validarOperariosDisponiblesEnFecha)({
+            prisma: this.prisma,
+            fecha: excluida.fechaObjetivo,
+            operariosIds: [nuevoOperarioId],
+        });
+        if (!disponibilidad.ok) {
+            throw new Error(`${operario.usuario?.nombre ?? "El operario"} no trabaja el dia objetivo de esta tarea.`);
+        }
+        const tieneEspacio = await this.tieneVentanaLibre({
+            operarioId: nuevoOperarioId,
+            fecha: excluida.fechaObjetivo,
+            duracionMinutos: excluida.duracionMinutos,
+        });
+        if (!tieneEspacio) {
+            throw new Error(`${operario.usuario?.nombre ?? "El operario"} no tiene horas libres suficientes ese dia para asumir esta tarea.`);
+        }
+        const nombreOperario = operario.usuario?.nombre ?? null;
+        const metadataActual = metadataComoObjeto(excluida.metadataJson);
+        const excepcionOperario = {
+            operariosOriginalesIds: excluida.operariosIds,
+            operariosOriginalesNombres: excluida.operariosNombres,
+            nuevoOperarioId,
+            nuevoOperarioNombre: nombreOperario,
+            motivo: dto.motivo ?? null,
+            aplicadoEn: new Date().toISOString(),
+        };
+        const detalle = `Se asigno a ${nombreOperario ?? nuevoOperarioId} como excepcion para la tarea excluida '${excluida.descripcion}'. No cambia el plan preventivo.`;
+        const actualizada = await this.prisma.$transaction(async (tx) => {
+            const row = await tx.preventivaExcluidaBorrador.update({
+                where: { id: excluida.id },
+                data: {
+                    operariosIds: [nuevoOperarioId],
+                    operariosNombres: nombreOperario ? [nombreOperario] : [],
+                    metadataJson: {
+                        ...metadataActual,
+                        excepcionOperario,
+                    },
+                },
+            });
+            await tx.preventivaBorradorEvento.create({
+                data: {
+                    conjuntoId: excluida.conjuntoId,
+                    periodoAnio: excluida.periodoAnio,
+                    periodoMes: excluida.periodoMes,
+                    tipo: "EXCLUIDA_OPERARIO_EXCEPCION",
+                    detalle,
+                    excluidaId: excluida.id,
+                    actorId: this.actor?.id ?? null,
+                    actorRol: this.actor?.rol ?? null,
+                    metadataJson: excepcionOperario,
+                },
+            });
+            await new AuditoriaService_1.AuditoriaService(tx).registrar({
+                modulo: Auditoria_1.ModuloAuditoria.EXCLUIDA,
+                entidad: Auditoria_1.EntidadAuditoria.EXCLUIDA_BORRADOR,
+                entidadId: excluida.id,
+                accion: Auditoria_1.AccionAuditoria.REASIGNAR_OPERARIO,
+                conjuntoId: excluida.conjuntoId,
+                actor: this.actor,
+                descripcion: detalle,
+                periodoAnio: excluida.periodoAnio,
+                periodoMes: excluida.periodoMes,
+                datosAntes: {
+                    operariosIds: excluida.operariosIds,
+                    operariosNombres: excluida.operariosNombres,
+                },
+                datosDespues: {
+                    operariosIds: [nuevoOperarioId],
+                    operariosNombres: nombreOperario ? [nombreOperario] : [],
+                },
+                metadataJson: excepcionOperario,
+            });
+            return row;
+        });
+        return { ok: true, excluida: actualizada, esExcepcion: true };
+    }
+    /**
+     * Informe de excluidas del periodo: cuales se programaron despues, que tareas se
+     * desplazaron para lograrlo, que excepciones de operario se aplicaron y cuales siguen pendientes.
+     */
+    async informeExcluidasDelPeriodo(payload) {
+        const dto = InformeExcluidasDTO.parse(payload);
+        const [eventos, excluidas] = await Promise.all([
+            this.prisma.preventivaBorradorEvento.findMany({
+                where: {
+                    conjuntoId: this.conjuntoId,
+                    periodoAnio: dto.anio,
+                    periodoMes: dto.mes,
+                    tipo: {
+                        in: [
+                            "EXCLUIDA_CORRECTIVA_AGENDADA",
+                            "EXCLUIDA_CORRECTIVA_REEMPLAZO",
+                            "EXCLUIDA_OPERARIO_EXCEPCION",
+                        ],
+                    },
+                },
+                orderBy: [{ creadoEn: "asc" }, { id: "asc" }],
+            }),
+            this.prisma.preventivaExcluidaBorrador.findMany({
+                where: {
+                    conjuntoId: this.conjuntoId,
+                    periodoAnio: dto.anio,
+                    periodoMes: dto.mes,
+                },
+                orderBy: [{ prioridad: "asc" }, { fechaObjetivo: "asc" }, { id: "asc" }],
+            }),
+        ]);
+        const porId = new Map(excluidas.map((item) => [item.id, item]));
+        const nombresActores = await this.resolverNombresActores(eventos.map((evento) => evento.actorId));
+        const programadasPosteriormente = [];
+        const excepcionesOperario = [];
+        for (const evento of eventos) {
+            const excluida = evento.excluidaId != null ? porId.get(evento.excluidaId) : undefined;
+            const metadata = metadataComoObjeto(evento.metadataJson);
+            const actor = {
+                id: evento.actorId,
+                rol: evento.actorRol,
+                nombre: evento.actorId ? (nombresActores.get(evento.actorId) ?? null) : null,
+            };
+            if (evento.tipo === "EXCLUIDA_OPERARIO_EXCEPCION") {
+                excepcionesOperario.push({
+                    excluidaId: evento.excluidaId,
+                    descripcion: excluida?.descripcion ?? null,
+                    operariosOriginales: metadata.operariosOriginalesNombres ?? [],
+                    operariosNuevos: metadata.nuevoOperarioNombre
+                        ? [metadata.nuevoOperarioNombre]
+                        : [],
+                    motivo: metadata.motivo ?? null,
+                    fecha: evento.creadoEn,
+                    actor,
+                });
+                continue;
+            }
+            programadasPosteriormente.push({
+                excluidaId: evento.excluidaId,
+                descripcion: excluida?.descripcion ?? null,
+                tareaId: evento.tareaId,
+                fechaProgramada: metadata.fechaInicio ?? null,
+                fechaFinProgramada: metadata.fechaFin ?? null,
+                operariosNombres: excluida?.operariosNombres ?? [],
+                tareasDesplazadas: Array.isArray(metadata.tareasReemplazadas)
+                    ? metadata.tareasReemplazadas
+                    : [],
+                motivo: metadata.motivoReemplazo ?? null,
+                fecha: evento.creadoEn,
+                actor,
+            });
+        }
+        return {
+            anio: dto.anio,
+            mes: dto.mes,
+            programadasPosteriormente,
+            excepcionesOperario,
+            pendientes: excluidas
+                .filter((item) => item.estado === "PENDIENTE")
+                .map((item) => ({
+                excluidaId: item.id,
+                descripcion: item.descripcion,
+                frecuencia: item.frecuencia,
+                diaSemanaProgramado: item.diaSemanaProgramado,
+                prioridad: item.prioridad,
+                duracionMinutos: item.duracionMinutos,
+                fechaObjetivo: item.fechaObjetivo,
+                motivoTipo: item.motivoTipo,
+                motivoMensaje: item.motivoMensaje,
+                operariosNombres: item.operariosNombres,
+            })),
+        };
+    }
+    /* ==================== Helpers de excluidas ==================== */
+    async cargarExcluidaPendiente(excluidaId) {
+        const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
+            where: { id: excluidaId },
+        });
+        if (!excluida || excluida.conjuntoId !== this.conjuntoId) {
+            throw new Error("La tarea excluida no existe para este conjunto.");
+        }
+        if (excluida.estado !== "PENDIENTE") {
+            throw new Error("La tarea excluida ya no esta disponible para programar.");
+        }
+        return excluida;
+    }
+    async resolverNombresActores(actorIds) {
+        const ids = Array.from(new Set(actorIds.filter((id) => typeof id === "string" && id.length > 0)));
+        if (!ids.length)
+            return new Map();
+        const usuarios = await this.prisma.usuario.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, nombre: true },
+        });
+        return new Map(usuarios.map((usuario) => [usuario.id, usuario.nombre]));
+    }
+    async obtenerHorarioDia(fecha) {
+        const horario = await this.prisma.conjuntoHorario.findFirst({
+            where: { conjuntoId: this.conjuntoId, dia: (0, schedulerUtils_1.dateToDiaSemana)(fecha) },
+        });
+        if (!horario)
+            return null;
+        return {
+            startMin: (0, schedulerUtils_1.toMin)(horario.horaApertura),
+            endMin: (0, schedulerUtils_1.toMin)(horario.horaCierre),
+            descansoStartMin: horario.descansoInicio ? (0, schedulerUtils_1.toMin)(horario.descansoInicio) : null,
+            descansoEndMin: horario.descansoFin ? (0, schedulerUtils_1.toMin)(horario.descansoFin) : null,
+        };
+    }
+    calcularMinutosLibres(horario, tareas) {
+        const bloqueos = bloqueosPorDescanso(horario);
+        const ocupados = tareas.map((tarea) => ({
+            i: (0, schedulerUtils_1.toMinOfDay)(tarea.fechaInicio),
+            f: (0, schedulerUtils_1.toMinOfDay)(tarea.fechaFin),
+        }));
+        const bloqueado = (0, schedulerUtils_1.mergeIntervalos)([
+            ...ocupados,
+            ...bloqueos.map((bloqueo) => ({ i: bloqueo.startMin, f: bloqueo.endMin })),
+        ]);
+        return (0, schedulerUtils_1.freeFromOccupied)(horario.startMin, horario.endMin, bloqueado).reduce((total, libre) => total + Math.max(0, libre.f - libre.i), 0);
+    }
+    async tieneVentanaLibre(params) {
+        const horario = await this.obtenerHorarioDia(params.fecha);
+        if (!horario)
+            return false;
+        const bloqueos = bloqueosPorDescanso(horario);
+        const agenda = await (0, schedulerUtils_1.buildAgendaPorOperarioDia)({
+            prisma: this.prisma,
+            conjuntoId: this.conjuntoId,
+            fechaDia: params.fecha,
+            operariosIds: [params.operarioId],
+            incluirBorrador: false,
+            bloqueosGlobales: bloqueos,
+            excluirEstados: ["PENDIENTE_REPROGRAMACION"],
+        });
+        const ocupados = (0, schedulerUtils_1.mergeIntervalos)(agenda[params.operarioId] ?? []);
+        return ((0, schedulerUtils_1.buscarHuecoDiaConSplitEarliest)({
+            startMin: horario.startMin,
+            endMin: horario.endMin,
+            durMin: params.duracionMinutos,
+            ocupados,
+            bloqueos,
+            desiredStartMin: horario.startMin,
+            maxBloques: 3,
+        }) != null);
     }
     async eliminarCronogramaPublicado(payload) {
         const { anio, mes } = EliminarCronogramaPublicadoDTO.parse(payload);
@@ -360,6 +820,18 @@ class CronogramaService {
         if (restantes > 0) {
             throw new Error("No se pudo eliminar completamente el cronograma publicado.");
         }
+        await this.auditoria.registrar({
+            modulo: Auditoria_1.ModuloAuditoria.CRONOGRAMA,
+            entidad: Auditoria_1.EntidadAuditoria.CRONOGRAMA_PERIODO,
+            entidadId: `${this.conjuntoId}-${anio}-${mes}`,
+            accion: Auditoria_1.AccionAuditoria.ELIMINAR_CRONOGRAMA,
+            conjuntoId: this.conjuntoId,
+            actor: this.actor,
+            descripcion: `Se elimino el cronograma publicado de ${mes}/${anio} (${eliminadas} tarea(s)).`,
+            periodoAnio: anio,
+            periodoMes: mes,
+            metadataJson: { eliminadas, tareaIds },
+        });
         return { ok: true, eliminadas };
     }
     async tareasPorOperario(payload) {

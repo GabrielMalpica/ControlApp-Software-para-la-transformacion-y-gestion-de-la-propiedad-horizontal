@@ -2,7 +2,9 @@
 import { RequestHandler, Request } from "express";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
+import { AuditoriaService } from "../services/AuditoriaService";
 import { CronogramaService } from "../services/CronogramaServices"; // <- singular
+import { extraerActorAuditoriaConNombre } from "../utils/auditoria";
 
 // Schemas para params/query
 const NitSchema = z.object({ nit: z.string().min(3) });
@@ -134,12 +136,95 @@ export class CronogramaController {
   programarExcluidaComoCorrectiva: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const excluidaId = Number(req.params.id);
-      const service = new CronogramaService(prisma, conjuntoId);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      const service = new CronogramaService(prisma, conjuntoId, actor);
       const out = await service.programarExcluidaComoCorrectiva({
-        excluidaId,
         ...req.body,
+        // El id de la URL manda sobre el del body.
+        excluidaId: Number(req.params.id),
       });
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /conjuntos/:nit/cronograma/excluidas-standby/:id/opciones-reemplazo?fecha=...
+  opcionesReemplazoExcluida: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const service = new CronogramaService(prisma, conjuntoId);
+      const out = await service.listarOpcionesReemplazoExcluida({
+        excluidaId: req.params.id,
+        fecha: req.query.fecha,
+      });
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // POST /conjuntos/:nit/cronograma/excluidas-standby/:id/reasignar-operario
+  reasignarOperarioExcluidaStandby: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      const service = new CronogramaService(prisma, conjuntoId, actor);
+      const out = await service.reasignarOperarioExcluidaPublicada({
+        ...req.body,
+        excluidaId: Number(req.params.id),
+      });
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /conjuntos/:nit/cronograma/informe-excluidas?anio=&mes=
+  informeExcluidas: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const service = new CronogramaService(prisma, conjuntoId);
+      const out = await service.informeExcluidasDelPeriodo({
+        anio: req.query.anio,
+        mes: req.query.mes,
+      });
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /conjuntos/:nit/auditoria?modulo=&entidad=&entidadId=&anio=&mes=&accion=&limit=
+  listarAuditoria: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const service = new AuditoriaService(prisma);
+      const out = await service.listar(conjuntoId, req.query);
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // POST /conjuntos/:nit/auditoria/trazabilidad  { entidad, entidadIds[] }
+  trazabilidadAuditoria: RequestHandler = async (req, res, next) => {
+    try {
+      resolveConjuntoId(req);
+      const service = new AuditoriaService(prisma);
+      const out = await service.trazabilidadPorEntidad(req.body);
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /conjuntos/:nit/cronograma/informe-auditoria?anio=&mes=&modulo=
+  informeAuditoria: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const service = new AuditoriaService(prisma);
+      const out = await service.informePeriodo(conjuntoId, req.query);
       res.json(out);
     } catch (err) {
       next(err);
@@ -149,7 +234,8 @@ export class CronogramaController {
   eliminarCronogramaPublicado: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new CronogramaService(prisma, conjuntoId);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      const service = new CronogramaService(prisma, conjuntoId, actor);
       const out = await service.eliminarCronogramaPublicado({
         anio: req.query.anio ?? req.body?.anio,
         mes: req.query.mes ?? req.body?.mes,

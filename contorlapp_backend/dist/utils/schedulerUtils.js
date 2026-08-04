@@ -285,6 +285,8 @@ function buscarHuecoDiaEarliest(params) {
  * ✅ Hueco earliest desde apertura, permitiendo:
  * - 1 bloque (ideal)
  * - 2 bloques (split) para rodear descanso (ej: 12:30-13:00 + 14:00-15:10)
+ * - N bloques (maxBloques > 2) rellenando huecos consecutivos de forma greedy,
+ *   para aprovechar agendas muy fragmentadas antes de excluir la tarea.
  *
  * Se trabaja con "ocupados globales" ya merged + bloqueos por descanso.
  */
@@ -324,6 +326,27 @@ function buscarHuecoDiaConSplitEarliest(params) {
                 ];
             }
         }
+    }
+    if (maxBloques < 3)
+        return null;
+    // 3) N bloques earliest: se rellenan huecos consecutivos hasta cubrir la duracion.
+    for (let idx = 0; idx < libres.length; idx++) {
+        const plan = [];
+        let restante = durMin;
+        for (let j = idx; j < libres.length && restante > 0; j++) {
+            if (plan.length >= maxBloques)
+                break;
+            const L = libres[j];
+            const inicio = j === idx ? Math.max(L.i, desiredStartMin) : L.i;
+            const capacidad = L.f - inicio;
+            if (capacidad <= 0)
+                continue;
+            const tomar = Math.min(capacidad, restante);
+            plan.push({ i: inicio, f: inicio + tomar });
+            restante -= tomar;
+        }
+        if (restante <= 0 && plan.length > 0)
+            return plan;
     }
     return null;
 }
@@ -407,7 +430,7 @@ function solapa(a, b) {
     return a.i < b.f && b.i < a.f;
 }
 async function intentarReemplazoPorPrioridadBaja(params) {
-    const { prisma, conjuntoId, fechaDia, startMin, endMin, bloqueos, durMin, payload, prioridadesCandidatas, candidatasIdsPreferidas, marcarReemplazadasComoNoCompletadas = false, incluirBorradorEnAgenda, onEvent, } = params;
+    const { prisma, conjuntoId, fechaDia, startMin, endMin, bloqueos, durMin, payload, prioridadesCandidatas, candidatasIdsPreferidas, marcarReemplazadasComoNoCompletadas = false, incluirBorradorEnAgenda, incluirPublicadasEnAgenda, onEvent, } = params;
     const operariosIds = payload.operariosIds ?? [];
     // 1) agenda actual del día
     const agenda = operariosIds.length
@@ -465,6 +488,11 @@ async function intentarReemplazoPorPrioridadBaja(params) {
             fechaFin: { gte: ini },
             estado: { notIn: ["PENDIENTE_REPROGRAMACION"] },
             prioridad: { in: prioridadesPermitidas },
+            // Solo se desplazan tareas del mismo ambito que la que se esta ubicando:
+            // un borrador nunca debe mandar a reprogramacion una tarea ya publicada.
+            ...(payload.borrador || !incluirPublicadasEnAgenda
+                ? { borrador: true }
+                : {}),
         },
         select: {
             id: true,
@@ -656,6 +684,8 @@ async function crearTareaConBloques(prisma, fechaDia, bloques, durMinTotal, payl
                 descripcion: payload.descripcion,
                 tipo: payload.tipo,
                 frecuencia: payload.frecuencia ?? null,
+                definicionId: payload.definicionId ?? null,
+                diaSemanaProgramado: payload.diaSemanaProgramado ?? null,
                 fechaInicio,
                 fechaFin,
                 duracionMinutos: dur,

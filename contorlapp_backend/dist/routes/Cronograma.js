@@ -14,7 +14,13 @@ router.get("/conjuntos/:nit/operarios/sugerir", auth_middleware_1.authRequired, 
 router.get("/conjuntos/:nit/cronograma", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.cronogramaMensual); // lista cruda del mes
 router.get("/conjuntos/:nit/cronograma/informe-actividad", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.informeMensualActividad);
 router.get("/conjuntos/:nit/cronograma/excluidas-standby", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.excluidas_ver"), controller.listarExcluidasStandby);
+router.get("/conjuntos/:nit/cronograma/excluidas-standby/:id/opciones-reemplazo", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.excluidas_ver"), controller.opcionesReemplazoExcluida);
 router.post("/conjuntos/:nit/cronograma/excluidas-standby/:id/programar-correctiva", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.correctivas_programar"), controller.programarExcluidaComoCorrectiva);
+router.post("/conjuntos/:nit/cronograma/excluidas-standby/:id/reasignar-operario", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.correctivas_programar"), controller.reasignarOperarioExcluidaStandby);
+router.get("/conjuntos/:nit/cronograma/informe-excluidas", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.informeExcluidas);
+router.get("/conjuntos/:nit/cronograma/informe-auditoria", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.informeAuditoria);
+router.get("/conjuntos/:nit/auditoria", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.listarAuditoria);
+router.post("/conjuntos/:nit/auditoria/trazabilidad", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.trazabilidadAuditoria);
 router.delete("/conjuntos/:nit/cronograma/publicado", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente"), (0, permission_middleware_1.requirePermission)("cronograma.eliminar_publicado"), controller.eliminarCronogramaPublicado);
 router.get("/conjuntos/:nit/cronograma/mes", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.calendarioMensual); // resumen por día (para el calendario)
 // Consultas de tareas

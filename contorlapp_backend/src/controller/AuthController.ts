@@ -14,6 +14,10 @@ const CambiarContrasenaSchema = z.object({
   nuevaContrasena: z.string().min(8),
 });
 
+const CambiarContrasenaInicialSchema = z.object({
+  nuevaContrasena: z.string().min(8),
+});
+
 const CambiarContrasenaUsuarioSchema = z.object({
   nuevaContrasena: z.string().min(8),
 });
@@ -56,6 +60,21 @@ export class AuthController {
     }
   };
 
+  perfilResumen: RequestHandler = async (req, res, next) => {
+    try {
+      const userId = req.user?.sub;
+      if (!userId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      const perfil = await service.obtenerResumenPerfil(userId);
+      res.json(perfil);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   // POST /auth/cambiar-contrasena
   cambiarContrasena: RequestHandler = async (req, res, next) => {
     try {
@@ -71,6 +90,24 @@ export class AuthController {
       await service.cambiarContrasena(userId, contrasenaActual, nuevaContrasena);
 
       res.json({ ok: true, message: "Contrasena actualizada correctamente" });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  cambiarContrasenaInicial: RequestHandler = async (req, res, next) => {
+    try {
+      const userId = req.user?.sub;
+      if (!userId) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+
+      const { nuevaContrasena } = CambiarContrasenaInicialSchema.parse(req.body);
+
+      await service.cambiarContrasenaInicial(userId, nuevaContrasena);
+
+      res.json({ ok: true, message: "Contrasena inicial actualizada correctamente" });
     } catch (err) {
       next(err);
     }

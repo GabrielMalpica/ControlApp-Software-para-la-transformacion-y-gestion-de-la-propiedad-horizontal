@@ -1,5 +1,6 @@
 // src/routes/gerente.routes.ts
 import { Router } from "express";
+import multer from "multer";
 import { CompromisoConjuntoController } from "../controller/CompromisoConjuntoController";
 import { GerenteController } from "../controller/GerenteController";
 import { authRequired } from "../middlewares/auth.middleware";
@@ -9,6 +10,43 @@ import { requireRoles } from "../middlewares/role.middleware";
 const router = Router();
 const ctrl = new GerenteController();
 const compromisosCtrl = new CompromisoConjuntoController();
+const uploadResidentes = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    const mime = String(file.mimetype ?? "").toLowerCase();
+    const name = String(file.originalname ?? "").toLowerCase();
+    const isExcel =
+      mime.includes("sheet") ||
+      mime.includes("excel") ||
+      name.endsWith(".xlsx") ||
+      name.endsWith(".csv");
+
+    if (!isExcel) {
+      cb(new Error("Solo se permiten archivos Excel (.xlsx) o CSV para cargar residentes."));
+      return;
+    }
+    cb(null, true);
+  },
+});
+const uploadConjuntos = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    const mime = String(file.mimetype ?? "").toLowerCase();
+    const name = String(file.originalname ?? "").toLowerCase();
+    const isXlsx =
+      mime.includes("spreadsheetml") ||
+      mime.includes("sheet") ||
+      name.endsWith(".xlsx");
+
+    if (!isXlsx || !name.endsWith(".xlsx")) {
+      cb(new Error("Solo se permiten plantillas Excel (.xlsx) para cargar conjuntos."));
+      return;
+    }
+    cb(null, true);
+  },
+});
 
 /* Empresa */
 router.get(
@@ -32,6 +70,37 @@ router.post("/usuarios", ctrl.crearUsuario);
 router.put("/usuarios/:id", ctrl.editarUsuario);
 router.get("/usuarios", ctrl.listarUsuarios);
 router.delete("/usuarios/:id", ctrl.eliminarUsuario);
+router.post(
+  "/residentes",
+  authRequired,
+  requirePermission("residentes.crear"),
+  ctrl.crearResidenteManual,
+);
+router.get(
+  "/residentes",
+  authRequired,
+  requirePermission("residentes.ver"),
+  ctrl.listarResidentes,
+);
+router.put(
+  "/residentes/:residenteId",
+  authRequired,
+  requirePermission("residentes.editar"),
+  ctrl.editarResidente,
+);
+router.delete(
+  "/residentes/:residenteId",
+  authRequired,
+  requirePermission("residentes.eliminar"),
+  ctrl.eliminarResidenteGestion,
+);
+router.post(
+  "/residentes/carga-masiva",
+  authRequired,
+  requirePermission("residentes.cargar_masivo"),
+  uploadResidentes.single("file"),
+  ctrl.cargarResidentesMasivo,
+);
 
 /* Roles / perfiles */
 router.post("/gerentes", ctrl.asignarGerente);
@@ -43,6 +112,19 @@ router.get("/supervisores", ctrl.listarSupervisores);
 
 /* Conjuntos */
 router.post("/conjuntos", ctrl.crearConjunto);
+router.post(
+  "/conjuntos/carga-masiva",
+  authRequired,
+  requireRoles("gerente"),
+  uploadConjuntos.single("file"),
+  ctrl.cargarConjuntoMasivo,
+);
+router.get(
+  "/conjuntos/plantilla",
+  authRequired,
+  requireRoles("gerente"),
+  ctrl.descargarPlantillaConjunto,
+);
 router.patch("/conjuntos/:conjuntoId", ctrl.editarConjunto);
 router.get("/conjuntos", ctrl.listarConjuntos);        
 router.get("/conjuntos/:conjuntoId", ctrl.obtenerConjunto); 

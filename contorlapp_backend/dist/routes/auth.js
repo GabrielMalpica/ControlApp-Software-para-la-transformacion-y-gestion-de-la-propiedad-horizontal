@@ -9,6 +9,8 @@ const controller = new AuthController_1.AuthController();
 router.post("/login", controller.login);
 router.post("/recuperar-contrasena", controller.recuperarContrasena);
 router.get("/me", auth_middleware_1.authRequired, controller.me);
+router.get("/perfil-resumen", auth_middleware_1.authRequired, controller.perfilResumen);
 router.post("/cambiar-contrasena", auth_middleware_1.authRequired, controller.cambiarContrasena);
+router.post("/cambiar-contrasena-inicial", auth_middleware_1.authRequired, controller.cambiarContrasenaInicial);
 router.post("/usuarios/:userId/cambiar-contrasena", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente"), controller.cambiarContrasenaUsuario);
 exports.default = router;

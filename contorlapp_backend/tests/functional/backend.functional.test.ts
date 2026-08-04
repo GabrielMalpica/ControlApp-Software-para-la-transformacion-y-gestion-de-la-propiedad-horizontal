@@ -25,6 +25,7 @@ import { TareaService } from '../../src/services/TareaServices';
 describe('Pruebas funcionales backend', () => {
   test('PF1 - Gestión de conjuntos: crea un conjunto con estado activo', async () => {
     const prisma: any = {
+      $transaction: jest.fn(),
       conjunto: {
         create: jest.fn().mockResolvedValue({
           nit: 'C-100',
@@ -47,6 +48,7 @@ describe('Pruebas funcionales backend', () => {
       herramienta: { findMany: jest.fn().mockResolvedValue([]) },
       conjuntoHerramientaStock: { createMany: jest.fn() },
     };
+    prisma.$transaction.mockImplementation(async (cb: any) => cb(prisma));
     const service = new GerenteService(prisma);
     (service as any).resolverEmpresaNit = jest.fn().mockResolvedValue('EMP-1');
 
@@ -67,8 +69,21 @@ describe('Pruebas funcionales backend', () => {
   });
 
   test('PF2 - Gestión de conjuntos: edita información de un conjunto existente', async () => {
+    // `editarConjunto` devuelve el conjunto recargado con sus relaciones.
+    const conjuntoEditado = {
+      nit: 'C-100',
+      nombre: 'Conjunto Palmas Editado',
+      direccion: 'Nueva dirección',
+      correo: 'nuevo@test.com',
+      administrador: null,
+      operarios: [],
+      horarios: [],
+      ubicaciones: [],
+    };
+
     const prisma: any = {
       conjunto: {
+        findUnique: jest.fn().mockResolvedValue(conjuntoEditado),
         update: jest.fn().mockResolvedValue({
           nit: 'C-100',
           nombre: 'Conjunto Palmas Editado',
@@ -101,7 +116,29 @@ describe('Pruebas funcionales backend', () => {
 
   test('PF3 - Gestión de tareas: crea una tarea preventiva/correctiva con prioridad', async () => {
     const prisma: any = {
+      // Sin periodos de disponibilidad registrados: el operario no tiene restricciones.
+      operarioDisponibilidadPeriodo: { findFirst: jest.fn().mockResolvedValue(null) },
+      // Jornada abierta L-S: el horario no es lo que se prueba aqui, pero da
+      // capacidad semanal suficiente para que la validacion no bloquee.
+      conjuntoHorario: {
+        findMany: jest.fn().mockResolvedValue(
+          ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO'].map((dia) => ({
+            dia,
+            horaApertura: '00:00',
+            horaCierre: '23:59',
+            descansoInicio: null,
+            descansoFin: null,
+          })),
+        ),
+      },
+      operario: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      conjunto: { findUnique: jest.fn().mockResolvedValue(null) },
       tarea: {
+        // El operario no tiene otras tareas esa semana.
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({
           id: 1,
           descripcion: 'Revisión de bomba',

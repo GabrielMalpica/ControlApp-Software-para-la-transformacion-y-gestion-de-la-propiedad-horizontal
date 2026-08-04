@@ -10,6 +10,7 @@ import express, {
 import cors from "cors";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
+import { mensajeValidacionAmigable } from "./utils/errorFormat";
 import rutas from "./routes/Rutas";
 import { prisma } from "./db/prisma";
 import { bootstrapNotificacionesSchema } from "./services/NotificacionService";
@@ -247,18 +248,23 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
         ? err.errors
         : [];
 
+    // El detalle tecnico queda solo en el log del servidor.
+    console.error("[validacion] issues:", JSON.stringify(issues));
+
     const details = issues.map((issue: any) => ({
       field:
         Array.isArray(issue?.path) && issue.path.length > 0
           ? issue.path.join(".")
           : undefined,
-      message: fixMojibake(String(issue?.message ?? "Valor invalido.")),
+      message: fixMojibake(mensajeValidacionAmigable(issue ?? {})),
     }));
 
     const primaryMessage =
-      details.length === 1
-        ? details[0].message
-        : "Revisa la informacion ingresada.";
+      details.length === 1 && details[0].field
+        ? `${details[0].message} (campo: ${details[0].field})`
+        : details.length === 1
+          ? details[0].message
+          : "Revisa la informacion ingresada.";
 
     sendError(res, 400, primaryMessage, {
       code: "VALIDATION_ERROR",

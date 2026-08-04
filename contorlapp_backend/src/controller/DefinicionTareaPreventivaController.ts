@@ -1,19 +1,22 @@
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import { prisma } from "../db/prisma";
 import { DefinicionTareaPreventivaService } from "../services/DefinicionTareaPreventivaService";
+import { extraerActorAuditoriaConNombre } from "../utils/auditoria";
 import {
   CrearDefinicionPreventivaDTO,
   EditarDefinicionPreventivaDTO,
   GenerarCronogramaDTO,
 } from "../model/DefinicionTareaPreventiva";
 
+/**
+ * Delega en el manejador de errores central (`src/index.ts`), que es el unico
+ * que decide que se le cuenta al cliente. Antes devolvia `err.message` en crudo,
+ * lo que filtraba volcados de ZodError, detalles de Prisma y rutas internas.
+ */
 export const asyncHandler =
   (fn: (req: Request, res: Response) => Promise<any>) =>
-  (req: Request, res: Response) =>
-    fn(req, res).catch((err) => {
-      console.error(err);
-      res.status(400).json({ error: err?.message ?? "Error inesperado" });
-    });
+  (req: Request, res: Response, next: NextFunction) =>
+    fn(req, res).catch(next);
 
 export class DefinicionTareaPreventivaController {
 
@@ -25,7 +28,7 @@ export class DefinicionTareaPreventivaController {
       conjuntoId,
     });
 
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const def = await svc.crear(dto);
     res.status(201).json(def);
   };
@@ -33,7 +36,7 @@ export class DefinicionTareaPreventivaController {
   /** GET /conjuntos/:nit/preventivas */
   listar = async (req: Request, res: Response) => {
     const conjuntoId = req.params.nit;
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const defs = await svc.listarPorConjunto(conjuntoId);
     res.json(defs);
   };
@@ -45,7 +48,7 @@ export class DefinicionTareaPreventivaController {
     if (!Number.isFinite(id)) throw new Error("ID inválido");
 
     const dto = EditarDefinicionPreventivaDTO.parse(req.body);
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const def = await svc.actualizar(conjuntoId, id, dto);
     res.json(def);
   };
@@ -56,9 +59,45 @@ export class DefinicionTareaPreventivaController {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) throw new Error("ID inválido");
 
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     await svc.eliminar(conjuntoId, id);
     res.status(204).send();
+  };
+
+  /** DELETE /conjuntos/:nit/preventivas  body: { ids: number[] } */
+  eliminarVarias = async (req: Request, res: Response) => {
+    const conjuntoId = req.params.nit;
+    const svc = new DefinicionTareaPreventivaService(
+      prisma,
+      await extraerActorAuditoriaConNombre(req),
+    );
+    const out = await svc.eliminarVarias(conjuntoId, req.body);
+    res.json(out);
+  };
+
+  /** GET /conjuntos/:nit/preventivas/borrador/estado?anio=&mes= */
+  estadoBorrador = async (req: Request, res: Response) => {
+    const svc = new DefinicionTareaPreventivaService(prisma);
+    const out = await svc.estadoBorrador({
+      conjuntoId: req.params.nit,
+      anio: req.query.anio,
+      mes: req.query.mes,
+    });
+    res.json(out);
+  };
+
+  /** DELETE /conjuntos/:nit/preventivas/borrador?anio=&mes= */
+  descartarBorrador = async (req: Request, res: Response) => {
+    const svc = new DefinicionTareaPreventivaService(
+      prisma,
+      await extraerActorAuditoriaConNombre(req),
+    );
+    const out = await svc.descartarBorradorMes({
+      conjuntoId: req.params.nit,
+      anio: req.query.anio ?? req.body?.anio,
+      mes: req.query.mes ?? req.body?.mes,
+    });
+    res.json(out);
   };
 
   /** POST /conjuntos/:nit/preventivas/generar-cronograma */
@@ -69,7 +108,7 @@ export class DefinicionTareaPreventivaController {
       conjuntoId,
     });
 
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const inicio = Date.now();
     const resultado = await svc.generarCronograma(dto);
     const conjunto = await prisma.conjunto.findUnique({
@@ -110,7 +149,7 @@ export class DefinicionTareaPreventivaController {
       });
     }
 
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const result = await svc.publicarCronograma({
       conjuntoId,
       anio,
@@ -156,7 +195,7 @@ export class DefinicionTareaPreventivaController {
         ? Number(excluirTareaIdRaw)
         : undefined;
 
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
 
     const r = await svc.listarMaquinariaDisponible({
       conjuntoId,
@@ -176,7 +215,7 @@ export class DefinicionTareaPreventivaController {
   editarBorrador = async (req: Request, res: Response) => {
     const conjuntoId = req.params.nit;
     const tareaId = Number(req.params.id);
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
 
     const out = await svc.editarTareaBorrador({
       conjuntoId,
@@ -189,7 +228,7 @@ export class DefinicionTareaPreventivaController {
   /** POST /conjuntos/:nit/preventivas/borrador/tarea */
   crearBloqueBorrador = async (req: Request, res: Response) => {
     const conjuntoId = req.params.nit;
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.crearBloqueBorrador(conjuntoId, req.body);
     res.status(201).json(out);
   };
@@ -199,14 +238,14 @@ export class DefinicionTareaPreventivaController {
     const conjuntoId = req.params.nit;
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) throw new Error("ID inválido");
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.editarBloqueBorrador(conjuntoId, id, req.body);
     res.json(out);
   };
 
   reordenarTareasDiaBorrador = async (req: Request, res: Response) => {
     const conjuntoId = req.params.nit;
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.reordenarTareasBorradorDia({
       conjuntoId,
       fecha: req.body?.fecha,
@@ -220,7 +259,7 @@ export class DefinicionTareaPreventivaController {
     const conjuntoId = req.params.nit;
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) throw new Error("ID inválido");
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     await svc.eliminarBloqueBorrador(conjuntoId, id);
     res.status(204).send();
   };
@@ -239,7 +278,7 @@ export class DefinicionTareaPreventivaController {
       res.status(400).json({ error: "Parámetros anio/mes inválidos." });
       return;
     }
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.listarBorrador({ conjuntoId, anio, mes }); // método simple en el service
     res.json(out);
   };
@@ -248,14 +287,14 @@ export class DefinicionTareaPreventivaController {
     const conjuntoId = req.params.nit;
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) throw new Error("ID inválido");
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.listarOpcionesReprogramacionBorrador(conjuntoId, id);
     res.json(out);
   };
 
   listarExcluidasBorrador = async (req: Request, res: Response) => {
     const conjuntoId = req.params.nit;
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.listarExcluidasBorrador({
       conjuntoId,
       anio: Number(req.query.anio),
@@ -269,7 +308,7 @@ export class DefinicionTareaPreventivaController {
     const conjuntoId = req.params.nit;
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) throw new Error("ID inválido");
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     await svc.descartarExcluidaBorrador(conjuntoId, id);
     res.status(204).send();
   };
@@ -278,7 +317,7 @@ export class DefinicionTareaPreventivaController {
     const conjuntoId = req.params.nit;
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) throw new Error("ID inválido");
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.sugerirHuecosExcluida({
       conjuntoId,
       excluidaId: id,
@@ -294,7 +333,7 @@ export class DefinicionTareaPreventivaController {
     const conjuntoId = req.params.nit;
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) throw new Error("ID inválido");
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.agendarExcluidaBorrador({
       conjuntoId,
       excluidaId: id,
@@ -307,7 +346,7 @@ export class DefinicionTareaPreventivaController {
     const conjuntoId = req.params.nit;
     const tareaId = Number(req.params.id);
     if (!Number.isFinite(tareaId)) throw new Error("ID inválido");
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.reemplazarTareaBorradorConExcluida({
       conjuntoId,
       tareaId,
@@ -320,7 +359,7 @@ export class DefinicionTareaPreventivaController {
     const conjuntoId = req.params.nit;
     const tareaId = Number(req.params.id);
     if (!Number.isFinite(tareaId)) throw new Error("ID inválido");
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.reasignarOperarioTareaBorrador({
       conjuntoId,
       tareaId,
@@ -335,7 +374,7 @@ export class DefinicionTareaPreventivaController {
     const conjuntoId = req.params.nit;
     const excluidaId = Number(req.params.id);
     if (!Number.isFinite(excluidaId)) throw new Error("ID inválido");
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.reasignarOperarioExcluidaBorrador({
       conjuntoId,
       excluidaId,
@@ -350,7 +389,7 @@ export class DefinicionTareaPreventivaController {
     const conjuntoId = req.params.nit;
     const excluidaId = Number(req.params.id);
     if (!Number.isFinite(excluidaId)) throw new Error("ID inválido");
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.dividirExcluidaManual({
       conjuntoId,
       excluidaId,
@@ -365,7 +404,7 @@ export class DefinicionTareaPreventivaController {
     if (!Number.isFinite(excluidaId)) throw new Error("ID inválido");
     const bloqueId = String(req.params.bloqueId ?? "").trim();
     if (!bloqueId) throw new Error("Bloque inválido");
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.sugerirHuecosBloqueExcluida({
       conjuntoId,
       excluidaId,
@@ -383,7 +422,7 @@ export class DefinicionTareaPreventivaController {
     if (!Number.isFinite(excluidaId)) throw new Error("ID inválido");
     const bloqueId = String(req.params.bloqueId ?? "").trim();
     if (!bloqueId) throw new Error("Bloque inválido");
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.agendarBloqueExcluida({
       conjuntoId,
       excluidaId,
@@ -397,7 +436,7 @@ export class DefinicionTareaPreventivaController {
     const conjuntoId = req.params.nit;
     const anio = Number(req.query.anio);
     const mes = Number(req.query.mes);
-    const svc = new DefinicionTareaPreventivaService(prisma);
+    const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const out = await svc.informeMensualActividad({
       conjuntoId,
       anio,

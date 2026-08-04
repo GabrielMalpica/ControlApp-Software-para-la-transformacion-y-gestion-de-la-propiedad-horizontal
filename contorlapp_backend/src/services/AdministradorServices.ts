@@ -50,8 +50,27 @@ export class AdministradorService {
   async verConjuntos() {
     try {
       const conjuntos = await this.prisma.conjunto.findMany({
-        where: { administradorId: this.administradorId.toString() },
-        select: { nombre: true, nit: true },
+        where: { administradorId: this.administradorId.toString(), activo: true },
+        select: {
+          nombre: true,
+          nit: true,
+          direccion: true,
+          correo: true,
+          activo: true,
+          tipoServicio: true,
+          consignasEspeciales: true,
+          valorAgregado: true,
+          horarios: {
+            select: {
+              dia: true,
+              horaApertura: true,
+              horaCierre: true,
+              descansoInicio: true,
+              descansoFin: true,
+            },
+            orderBy: { dia: "asc" },
+          },
+        },
       });
       return conjuntos;
     } catch (error) {

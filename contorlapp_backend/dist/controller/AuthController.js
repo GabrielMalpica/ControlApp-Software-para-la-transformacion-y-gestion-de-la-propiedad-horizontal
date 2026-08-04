@@ -12,6 +12,9 @@ const CambiarContrasenaSchema = zod_1.z.object({
     contrasenaActual: zod_1.z.string().min(1),
     nuevaContrasena: zod_1.z.string().min(8),
 });
+const CambiarContrasenaInicialSchema = zod_1.z.object({
+    nuevaContrasena: zod_1.z.string().min(8),
+});
 const CambiarContrasenaUsuarioSchema = zod_1.z.object({
     nuevaContrasena: zod_1.z.string().min(8),
 });
@@ -49,6 +52,20 @@ class AuthController {
                 next(err);
             }
         };
+        this.perfilResumen = async (req, res, next) => {
+            try {
+                const userId = req.user?.sub;
+                if (!userId) {
+                    res.status(401).json({ message: "No autenticado" });
+                    return;
+                }
+                const perfil = await service.obtenerResumenPerfil(userId);
+                res.json(perfil);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
         // POST /auth/cambiar-contrasena
         this.cambiarContrasena = async (req, res, next) => {
             try {
@@ -60,6 +77,21 @@ class AuthController {
                 const { contrasenaActual, nuevaContrasena } = CambiarContrasenaSchema.parse(req.body);
                 await service.cambiarContrasena(userId, contrasenaActual, nuevaContrasena);
                 res.json({ ok: true, message: "Contrasena actualizada correctamente" });
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        this.cambiarContrasenaInicial = async (req, res, next) => {
+            try {
+                const userId = req.user?.sub;
+                if (!userId) {
+                    res.status(401).json({ message: "No autenticado" });
+                    return;
+                }
+                const { nuevaContrasena } = CambiarContrasenaInicialSchema.parse(req.body);
+                await service.cambiarContrasenaInicial(userId, nuevaContrasena);
+                res.json({ ok: true, message: "Contrasena inicial actualizada correctamente" });
             }
             catch (err) {
                 next(err);

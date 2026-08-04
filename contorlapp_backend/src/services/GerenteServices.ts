@@ -5,9 +5,12 @@ import {
   EstadoTarea,
   JornadaLaboral,
   PatronJornada,
+  TipoUnidadResidencial,
+  DiaSemana,
 } from "@prisma/client";
 import bcrypt from "bcrypt";
 import { Prisma } from "@prisma/client";
+import * as XLSX from "xlsx";
 
 import {
   CrearUsuarioDTO,
@@ -16,6 +19,12 @@ import {
   toUsuarioPublico,
   UsuarioPublico,
 } from "../model/Usuario";
+import {
+  AccionAuditoria,
+  EntidadAuditoria,
+  ModuloAuditoria,
+} from "../model/Auditoria";
+import { AuditoriaService } from "./AuditoriaService";
 
 import { CrearGerenteDTO } from "../model/Gerente";
 import { CrearAdministradorDTO } from "../model/Administrador";
@@ -31,10 +40,33 @@ import {
   conjuntoPublicSelect,
   CrearConjuntoDTO,
   EditarConjuntoDTO,
+  HorarioDTO,
   toConjuntoPublico,
 } from "../model/Conjunto";
+import {
+  ConjuntoFilaDTO,
+  HorarioFilaDTO,
+  HORARIOS_CONJUNTO_FALLBACK,
+  OperarioFilaDTO,
+  PLANTILLA_CONJUNTO_COLUMNAS,
+  PLANTILLA_CONJUNTO_EJEMPLOS,
+  PreventivaFilaDTO,
+  UbicacionFilaDTO,
+  type NombreHojaConjunto,
+  type OperarioFila,
+  type PreventivaFila,
+  type UbicacionFila,
+} from "../model/ConjuntoExcel";
 
 import { CrearTareaDTO, EditarTareaDTO } from "../model/Tarea";
+import {
+  CargaMasivaResidentesBodyDTO,
+  CrearResidenteManualDTO,
+  EditarResidenteDTO,
+  ListarResidentesQueryDTO,
+  type CrearResidenteManualInput,
+  residentePublicSelect,
+} from "../model/Residente";
 
 import { CrearInsumoDTO, insumoPublicSelect } from "../model/Insumo";
 
@@ -64,6 +96,16 @@ import {
   validarLimiteSemanalOperarios,
   validarOperariosDisponiblesEnFecha,
 } from "../utils/operarioAvailability";
+import { PermissionService } from "./PermissionService";
+import { DefinicionTareaPreventivaService } from "./DefinicionTareaPreventivaService";
+import {
+  mapExcelRow,
+  normalizeCell,
+  normalizeHeader,
+  normalizeLocationPart,
+  normalizedLocationKey,
+} from "../utils/excelParsing";
+import { validarProgramacionFrecuencia } from "../utils/preventivaProgramacion";
 
 export const AsignarConReemplazoDTO = z.object({
   tarea: CrearTareaDTO,
@@ -158,6 +200,44 @@ type ReemplazoPropuesta =
 
 const EMPRESA_ID_FIJA = "901191875-4";
 
+type ResidenteFilaError = {
+  fila: number;
+  cedula: string;
+  nombre: string;
+  correo: string;
+  motivo: string;
+};
+
+export type ConjuntoCargaError = {
+  fila: number;
+  seccion: NombreHojaConjunto;
+  motivo: string;
+};
+
+type OperarioImportPlan = {
+  fila: number;
+  row: OperarioFila;
+  mode: "CREATE_USER" | "CREATE_PROFILE" | "REUSE";
+  passwordHash?: string;
+};
+
+type PreventivaImportPlan = {
+  fila: number;
+  row: PreventivaFila;
+};
+
+type PrismaWriteClient = PrismaClient | Prisma.TransactionClient;
+
+type ResidentLocation = {
+  tipoUnidad: TipoUnidadResidencial;
+  sector: string | null;
+  unidad: string;
+};
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 function normalizarPatronJornada(
   jornadaLaboral: JornadaLaboral | null | undefined,
   patronJornada: PatronJornada | null | undefined,
@@ -192,7 +272,11 @@ const ESTADOS_BLOQUEADOS_PARA_REEMPLAZO = [
 ] as const;
 
 export class GerenteService {
-  constructor(private prisma: PrismaClient) {}
+  private permissionService: PermissionService;
+
+  constructor(private prisma: PrismaClient) {
+    this.permissionService = new PermissionService(prisma);
+  }
 
   private async obtenerEmpresaIdParaCambioRol(
     tx: Prisma.TransactionClient,
@@ -305,6 +389,9 @@ export class GerenteService {
       case Rol.operario:
         await tx.operario.deleteMany({ where: { id: userId } });
         break;
+      case Rol.residente:
+        await tx.residente.deleteMany({ where: { id: userId } });
+        break;
     }
 
     const empresaId = await this.obtenerEmpresaIdParaCambioRol(tx, userId);
@@ -335,6 +422,9 @@ export class GerenteService {
           },
         });
         break;
+      case Rol.residente:
+        // Residente debe crearse con datos completos, no desde cambio de rol
+        break;
     }
   }
 
@@ -356,6 +446,196 @@ export class GerenteService {
     throw new Error("No hay empresa registrada. Crea primero una empresa para poder crear/listar conjuntos.");
   }
 
+  private resolverUbicacionResidente(input: {
+    tipoUnidad?: TipoUnidadResidencial | null;
+    sector?: string | null;
+    unidad?: string | null;
+    torre?: string | null;
+    apartamento?: string | null;
+    casa?: string | null;
+  }): ResidentLocation {
+    const tipoUnidad = input.tipoUnidad ?? null;
+    const sector = normalizeLocationPart(input.sector);
+    const unidad = normalizeLocationPart(input.unidad);
+    const torre = normalizeLocationPart(input.torre);
+    const apartamento = normalizeLocationPart(input.apartamento);
+    const casa = normalizeLocationPart(input.casa);
+
+    if (tipoUnidad != null) {
+      if (!unidad) {
+        throw new Error("La unidad residencial es obligatoria");
+      }
+
+      return {
+        tipoUnidad,
+        sector: sector || null,
+        unidad,
+      };
+    }
+
+    if (casa) {
+      return {
+        tipoUnidad: TipoUnidadResidencial.CASA,
+        sector: null,
+        unidad: casa,
+      };
+    }
+
+    if (apartamento) {
+      return {
+        tipoUnidad: TipoUnidadResidencial.APARTAMENTO,
+        sector: torre || null,
+        unidad: apartamento,
+      };
+    }
+
+    throw new Error(
+      "Debes enviar tipoUnidad + unidad, o usar las columnas torre/apartamento o casa",
+    );
+  }
+
+  private async resolverConjuntoPermitido(actorUserId: string, conjuntoId: string) {
+    const [actor, conjunto] = await Promise.all([
+      this.prisma.usuario.findUnique({
+        where: { id: actorUserId },
+        select: { id: true, rol: true },
+      }),
+      this.prisma.conjunto.findUnique({
+        where: { nit: conjuntoId },
+        select: {
+          nit: true,
+          nombre: true,
+          empresaId: true,
+          administradorId: true,
+        },
+      }),
+    ]);
+
+    if (!actor) throw new Error("Usuario solicitante no encontrado");
+    if (!conjunto) throw new Error("Conjunto no encontrado");
+
+    const actorRole = String(actor.rol).trim().toLowerCase();
+    if (actorRole === Rol.gerente) {
+      return conjunto;
+    }
+
+    if (actorRole === Rol.administrador) {
+      if (conjunto.administradorId !== actorUserId) {
+        throw new Error("No puedes gestionar residentes de un conjunto que no tienes asignado");
+      }
+      return conjunto;
+    }
+
+    const actorEmpresaId = await this.permissionService.resolveEmpresaIdForUser(
+      actorUserId,
+      actor.rol,
+    );
+
+    if (!conjunto.empresaId || actorEmpresaId !== conjunto.empresaId.trim()) {
+      throw new Error("No puedes gestionar residentes de un conjunto fuera de tu empresa");
+    }
+
+    return conjunto;
+  }
+
+  private async crearUsuarioYResidente(
+    tx: Prisma.TransactionClient,
+    payload: {
+      conjuntoId: string;
+      cedula: string;
+      nombre: string;
+      correo: string;
+      telefono?: string | null;
+      location: ResidentLocation;
+    },
+  ) {
+    const cedula = payload.cedula.trim();
+    const nombre = payload.nombre.trim();
+    const correo = normalizeEmail(payload.correo);
+    const telefono = normalizeCell(payload.telefono);
+
+    const [existeId, existeCorreo, existeResidente] = await Promise.all([
+      tx.usuario.findUnique({ where: { id: cedula }, select: { id: true } }),
+      tx.usuario.findUnique({ where: { correo }, select: { id: true } }),
+      tx.residente.findUnique({ where: { id: cedula }, select: { id: true } }),
+    ]);
+
+    if (existeId || existeResidente) {
+      throw new Error("Ya existe un usuario con esa cedula");
+    }
+
+    if (existeCorreo) {
+      throw new Error("Ya existe un usuario con ese correo");
+    }
+
+    const hash = await bcrypt.hash(cedula, 10);
+    const telefonoBigInt = telefono ? BigInt(telefono.replace(/\D/g, "") || "0") : BigInt(0);
+
+    await tx.usuario.create({
+      data: {
+        id: cedula,
+        nombre,
+        correo,
+        contrasena: hash,
+        rol: Rol.residente,
+        activo: true,
+        requiereCambioContrasena: true,
+        telefono: telefonoBigInt,
+        fechaNacimiento: new Date("1900-01-01T00:00:00.000Z"),
+      },
+    });
+
+    return tx.residente.create({
+      data: {
+        id: cedula,
+        conjuntoId: payload.conjuntoId,
+        tipoUnidad: payload.location.tipoUnidad,
+        sector: payload.location.sector,
+        unidad: payload.location.unidad,
+        telefonoContacto: telefono || null,
+      },
+      select: residentePublicSelect,
+    });
+  }
+
+  private mapResidentRow(raw: Record<string, unknown>) {
+    const mapped: Record<string, string> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      mapped[normalizeHeader(key)] = normalizeCell(value);
+    }
+
+    const cedula = mapped.cedula || mapped.id || mapped.documento || mapped.identificacion || "";
+    const nombre = mapped.nombre || mapped.nombres || mapped.residente || "";
+    const correo = mapped.correo || mapped.email || mapped.correoelectronico || "";
+    const telefono = mapped.telefono || mapped.celular || mapped.movil || "";
+    const tipoUnidadRaw = mapped.tipounidad || mapped.tipo || "";
+    const sector = mapped.sector || mapped.torre || mapped.bloque || mapped.manzana || "";
+    const unidad = mapped.unidad || mapped.apartamento || mapped.apto || mapped.numero || "";
+    const casa = mapped.casa || "";
+
+    let tipoUnidad: TipoUnidadResidencial | null = null;
+    const tipoNormalized = normalizeHeader(tipoUnidadRaw);
+    if (tipoNormalized) {
+      if (tipoNormalized.includes("casa")) tipoUnidad = TipoUnidadResidencial.CASA;
+      else if (tipoNormalized.includes("apart")) tipoUnidad = TipoUnidadResidencial.APARTAMENTO;
+      else if (tipoNormalized.includes("oficina")) tipoUnidad = TipoUnidadResidencial.OFICINA;
+      else if (tipoNormalized.includes("local")) tipoUnidad = TipoUnidadResidencial.LOCAL;
+    }
+
+    return {
+      cedula,
+      nombre,
+      correo,
+      telefono,
+      tipoUnidad,
+      sector,
+      unidad,
+      torre: mapped.torre || "",
+      apartamento: mapped.apartamento || mapped.apto || "",
+      casa,
+    };
+  }
+
   private extraerAsignadorId(payload: unknown): string | null {
     if (!payload || typeof payload !== "object") return null;
     const raw = (payload as { asignadorId?: unknown }).asignadorId;
@@ -369,8 +649,22 @@ export class GerenteService {
     nodos: Array<{ nombre: string; hijos?: Array<any> }>,
     padreId: number | null = null,
   ) {
+    return this.crearArbolElementosConClient(
+      this.prisma,
+      ubicacionId,
+      nodos,
+      padreId,
+    );
+  }
+
+  private async crearArbolElementosConClient(
+    client: PrismaWriteClient,
+    ubicacionId: number,
+    nodos: Array<{ nombre: string; hijos?: Array<any> }>,
+    padreId: number | null = null,
+  ) {
     for (const nodo of nodos) {
-      const creado = await this.prisma.elemento.create({
+      const creado = await client.elemento.create({
         data: {
           nombre: nodo.nombre,
           ubicacionId,
@@ -379,7 +673,12 @@ export class GerenteService {
       });
 
       if (nodo.hijos?.length) {
-        await this.crearArbolElementos(ubicacionId, nodo.hijos, creado.id);
+        await this.crearArbolElementosConClient(
+          client,
+          ubicacionId,
+          nodo.hijos,
+          creado.id,
+        );
       }
     }
   }
@@ -793,7 +1092,12 @@ export class GerenteService {
   }
 
   async listarUsuarios(rol?: Rol): Promise<UsuarioPublico[]> {
-    const where: { rol?: Rol } = rol ? { rol } : {};
+    const where: any = {};
+    if (rol) {
+      where.rol = rol;
+    } else {
+      where.rol = { not: Rol.residente };
+    }
 
     const usuarios = await this.prisma.usuario.findMany({
       where,
@@ -804,24 +1108,279 @@ export class GerenteService {
     return usuarios.map(toUsuarioPublico);
   }
 
-  /* ===================== CONJUNTOS ===================== */
+  async crearResidenteManual(actorUserId: string, payload: unknown) {
+    const dto = CrearResidenteManualDTO.parse(payload);
+    const conjunto = await this.resolverConjuntoPermitido(actorUserId, dto.conjuntoId);
+    const location = this.resolverUbicacionResidente(dto);
 
-  async crearConjunto(payload: unknown) {
-    const dto = CrearConjuntoDTO.parse(payload);
-    const empresaId = await this.resolverEmpresaNit();
-
-    let administradorId: string | null = null;
-    if (dto.administradorId) {
-      const admin = await this.prisma.administrador.findUnique({
-        where: { id: dto.administradorId },
+    const creado = await this.prisma.$transaction(async (tx) => {
+      return this.crearUsuarioYResidente(tx, {
+        conjuntoId: conjunto.nit,
+        cedula: dto.cedula,
+        nombre: dto.nombre,
+        correo: dto.correo,
+        telefono: dto.telefono,
+        location,
       });
-      if (!admin) {
-        throw new Error("Ã¢ÂÅ’ El administrador seleccionado no existe.");
-      }
-      administradorId = dto.administradorId;
+    });
+
+    return {
+      ...creado,
+      credenciales: {
+        usuario: normalizeEmail(dto.correo),
+        contrasenaTemporal: dto.cedula.trim(),
+      },
+    };
+  }
+
+  async cargarResidentesMasivo(
+    actorUserId: string,
+    body: unknown,
+    file: Express.Multer.File | undefined,
+  ) {
+    const dto = CargaMasivaResidentesBodyDTO.parse(body);
+    const conjunto = await this.resolverConjuntoPermitido(actorUserId, dto.conjuntoId);
+
+    if (!file || !file.buffer || !file.buffer.length) {
+      throw new Error("Debes adjuntar un archivo Excel o CSV con los residentes");
     }
 
-    const creado = await this.prisma.conjunto.create({
+    const workbook = XLSX.read(file.buffer, { type: "buffer" });
+    const firstSheetName = workbook.SheetNames[0];
+    if (!firstSheetName) {
+      throw new Error("El archivo no contiene hojas para procesar");
+    }
+
+    const worksheet = workbook.Sheets[firstSheetName];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
+      defval: "",
+      raw: false,
+    });
+
+    if (rows.length === 0) {
+      throw new Error("El archivo no contiene filas de residentes para importar");
+    }
+
+    const errors: ResidenteFilaError[] = [];
+    const created: Array<{ fila: number; cedula: string; nombre: string; correo: string }> = [];
+    const seenCedulas = new Set<string>();
+    const seenCorreos = new Set<string>();
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const fila = index + 2;
+      const row = this.mapResidentRow(rows[index]);
+      const cedula = row.cedula.trim();
+      const nombre = row.nombre.trim();
+      const correo = normalizeEmail(row.correo);
+
+      const fail = (motivo: string) => {
+        errors.push({ fila, cedula, nombre, correo, motivo });
+      };
+
+      if (!cedula) {
+        fail("Falta la cedula del residente");
+        continue;
+      }
+      if (!nombre) {
+        fail("Falta el nombre del residente");
+        continue;
+      }
+      if (!correo || !z.string().email().safeParse(correo).success) {
+        fail("El correo no es valido");
+        continue;
+      }
+      if (seenCedulas.has(cedula)) {
+        fail("La cedula esta duplicada dentro del archivo");
+        continue;
+      }
+      if (seenCorreos.has(correo)) {
+        fail("El correo esta duplicado dentro del archivo");
+        continue;
+      }
+
+      let location: ResidentLocation;
+      try {
+        location = this.resolverUbicacionResidente(row);
+      } catch (error) {
+        fail(error instanceof Error ? error.message : "No se pudo interpretar la ubicacion");
+        continue;
+      }
+
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          await this.crearUsuarioYResidente(tx, {
+            conjuntoId: conjunto.nit,
+            cedula,
+            nombre,
+            correo,
+            telefono: row.telefono,
+            location,
+          });
+        });
+
+        seenCedulas.add(cedula);
+        seenCorreos.add(correo);
+        created.push({ fila, cedula, nombre, correo });
+      } catch (error) {
+        fail(error instanceof Error ? error.message : "No se pudo crear el residente");
+      }
+    }
+
+    return {
+      conjunto: {
+        nit: conjunto.nit,
+        nombre: conjunto.nombre,
+      },
+      resumen: {
+        archivo: file.originalname,
+        totalFilas: rows.length,
+        creados: created.length,
+        fallidos: errors.length,
+      },
+      creados: created,
+      errores: errors,
+      columnasEsperadas: [
+        "cedula",
+        "nombre",
+        "correo",
+        "telefono",
+        "tipoUnidad",
+        "sector",
+        "unidad",
+        "torre",
+        "apartamento",
+        "casa",
+      ],
+    };
+  }
+
+  async listarResidentes(actorUserId: string, query: unknown) {
+    const dto = ListarResidentesQueryDTO.parse(query);
+    const conjunto = await this.resolverConjuntoPermitido(actorUserId, dto.conjuntoId);
+    const search = dto.q?.trim();
+
+    return this.prisma.residente.findMany({
+      where: {
+        conjuntoId: conjunto.nit,
+        ...(search
+          ? {
+              OR: [
+                { id: { contains: search, mode: "insensitive" } },
+                { unidad: { contains: search, mode: "insensitive" } },
+                { sector: { contains: search, mode: "insensitive" } },
+                { usuario: { nombre: { contains: search, mode: "insensitive" } } },
+                { usuario: { correo: { contains: search, mode: "insensitive" } } },
+              ],
+            }
+          : {}),
+      },
+      select: residentePublicSelect,
+      orderBy: [
+        { sector: "asc" },
+        { unidad: "asc" },
+        { usuario: { nombre: "asc" } },
+      ],
+    });
+  }
+
+  async editarResidente(actorUserId: string, residenteId: string, payload: unknown) {
+    const dto = EditarResidenteDTO.parse(payload);
+    const conjunto = await this.resolverConjuntoPermitido(actorUserId, dto.conjuntoId);
+
+    const actual = await this.prisma.residente.findUnique({
+      where: { id: residenteId },
+      select: {
+        id: true,
+        conjuntoId: true,
+        tipoUnidad: true,
+        sector: true,
+        unidad: true,
+        usuario: { select: { correo: true } },
+      },
+    });
+
+    if (!actual || actual.conjuntoId !== conjunto.nit) {
+      throw new Error("Residente no encontrado en el conjunto seleccionado");
+    }
+
+    const location = this.resolverUbicacionResidente({
+      tipoUnidad: dto.tipoUnidad ?? actual.tipoUnidad,
+      sector: dto.sector ?? actual.sector,
+      unidad: dto.unidad ?? actual.unidad,
+      torre: dto.torre,
+      apartamento: dto.apartamento,
+      casa: dto.casa,
+    });
+
+    const nuevoCorreo = dto.correo ? normalizeEmail(dto.correo) : actual.usuario.correo;
+    if (nuevoCorreo !== actual.usuario.correo) {
+      const duplicado = await this.prisma.usuario.findUnique({
+        where: { correo: nuevoCorreo },
+        select: { id: true },
+      });
+      if (duplicado && duplicado.id !== residenteId) {
+        throw new Error("Ya existe un usuario con ese correo");
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.usuario.update({
+        where: { id: residenteId },
+        data: {
+          ...(dto.nombre ? { nombre: dto.nombre.trim() } : {}),
+          ...(dto.correo ? { correo: nuevoCorreo } : {}),
+          ...(dto.activo != null ? { activo: dto.activo } : {}),
+          ...(dto.telefono != null
+            ? {
+                telefono: BigInt(
+                  normalizeCell(dto.telefono).replace(/\D/g, "") || "0",
+                ),
+              }
+            : {}),
+        },
+      });
+
+      return tx.residente.update({
+        where: { id: residenteId },
+        data: {
+          conjuntoId: conjunto.nit,
+          tipoUnidad: location.tipoUnidad,
+          sector: location.sector,
+          unidad: location.unidad,
+          ...(dto.telefono != null
+            ? { telefonoContacto: normalizeCell(dto.telefono) || null }
+            : {}),
+          ...(dto.activo != null ? { activo: dto.activo } : {}),
+        },
+        select: residentePublicSelect,
+      });
+    });
+  }
+
+  async eliminarResidenteGestion(actorUserId: string, residenteId: string, conjuntoId: string) {
+    const conjunto = await this.resolverConjuntoPermitido(actorUserId, conjuntoId);
+    const actual = await this.prisma.residente.findUnique({
+      where: { id: residenteId },
+      select: { id: true, conjuntoId: true },
+    });
+
+    if (!actual || actual.conjuntoId !== conjunto.nit) {
+      throw new Error("Residente no encontrado en el conjunto seleccionado");
+    }
+
+    await this.eliminarResidente(residenteId);
+    return { ok: true };
+  }
+
+  /* ===================== CONJUNTOS ===================== */
+
+  private async crearConjuntoConEstructura(
+    client: PrismaWriteClient,
+    dto: z.infer<typeof CrearConjuntoDTO>,
+    empresaId: string,
+    administradorId: string | null,
+  ) {
+    const creado = await client.conjunto.create({
       data: {
         nit: dto.nit,
         nombre: dto.nombre,
@@ -870,22 +1429,26 @@ export class GerenteService {
 
     for (const ubicacion of dto.ubicaciones ?? []) {
       if (!ubicacion.elementos.length) continue;
-      const creada = await this.prisma.ubicacion.findFirst({
+      const creada = await client.ubicacion.findFirst({
         where: { conjuntoId: dto.nit, nombre: ubicacion.nombre },
         select: { id: true },
       });
       if (creada) {
-        await this.crearArbolElementos(creada.id, ubicacion.elementos);
+        await this.crearArbolElementosConClient(
+          client,
+          creada.id,
+          ubicacion.elementos,
+        );
       }
     }
 
-    const herramientasEmpresa = await this.prisma.herramienta.findMany({
+    const herramientasEmpresa = await client.herramienta.findMany({
       where: { empresaId },
       select: { id: true },
     });
 
     if (herramientasEmpresa.length > 0) {
-      await this.prisma.conjuntoHerramientaStock.createMany({
+      await client.conjuntoHerramientaStock.createMany({
         data: herramientasEmpresa.map((h) => ({
           conjuntoId: dto.nit,
           herramientaId: h.id,
@@ -897,6 +1460,604 @@ export class GerenteService {
     }
 
     return toConjuntoPublico(creado);
+  }
+
+  async crearConjunto(payload: unknown) {
+    const dto = CrearConjuntoDTO.parse(payload);
+    const empresaId = await this.resolverEmpresaNit();
+
+    let administradorId: string | null = null;
+    if (dto.administradorId) {
+      const admin = await this.prisma.administrador.findUnique({
+        where: { id: dto.administradorId },
+      });
+      if (!admin) {
+        throw new Error("El administrador seleccionado no existe.");
+      }
+      administradorId = dto.administradorId;
+    }
+
+    return this.prisma.$transaction((tx) =>
+      this.crearConjuntoConEstructura(tx, dto, empresaId, administradorId),
+    );
+  }
+
+  generarPlantillaConjunto(): Buffer {
+    const workbook = XLSX.utils.book_new();
+    for (const nombre of Object.keys(
+      PLANTILLA_CONJUNTO_COLUMNAS,
+    ) as NombreHojaConjunto[]) {
+      const rows = [
+        [...PLANTILLA_CONJUNTO_COLUMNAS[nombre]],
+        ...PLANTILLA_CONJUNTO_EJEMPLOS[nombre],
+      ];
+      const sheet = XLSX.utils.aoa_to_sheet(rows, { cellDates: true });
+      sheet["!cols"] = PLANTILLA_CONJUNTO_COLUMNAS[nombre].map((header) => ({
+        wch: Math.min(42, Math.max(14, header.length + 3)),
+      }));
+      for (const address of Object.keys(sheet)) {
+        if (address.startsWith("!")) continue;
+        const cell = sheet[address];
+        if (cell?.t === "d") cell.z = "yyyy-mm-dd";
+      }
+      XLSX.utils.book_append_sheet(workbook, sheet, nombre);
+    }
+    return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+  }
+
+  private obtenerHoja(
+    workbook: XLSX.WorkBook,
+    nombre: NombreHojaConjunto,
+    required = true,
+  ): XLSX.WorkSheet | null {
+    const actual = workbook.SheetNames.find(
+      (item) => normalizeHeader(item) === normalizeHeader(nombre),
+    );
+    if (!actual) {
+      if (required) throw new Error(`El archivo no contiene la hoja ${nombre}.`);
+      return null;
+    }
+    return workbook.Sheets[actual] ?? null;
+  }
+
+  private leerFilasHoja(
+    workbook: XLSX.WorkBook,
+    nombre: NombreHojaConjunto,
+    required = true,
+  ): Array<Record<string, unknown>> {
+    const sheet = this.obtenerHoja(workbook, nombre, required);
+    if (!sheet) return [];
+
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      header: 1,
+      defval: "",
+      raw: true,
+    });
+    const header = (matrix[0] ?? []).map((item) => normalizeHeader(String(item)));
+    const missing = PLANTILLA_CONJUNTO_COLUMNAS[nombre].filter(
+      (column) => !header.includes(normalizeHeader(column)),
+    );
+    if (missing.length) {
+      throw new Error(
+        `La hoja ${nombre} no contiene las columnas: ${missing.join(", ")}.`,
+      );
+    }
+
+    return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+      defval: "",
+      raw: true,
+    });
+  }
+
+  private canonicalizarFila(
+    nombre: NombreHojaConjunto,
+    row: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const normalized = mapExcelRow(row);
+    return Object.fromEntries(
+      PLANTILLA_CONJUNTO_COLUMNAS[nombre].map((column) => [
+        column,
+        normalized[normalizeHeader(column)] ?? "",
+      ]),
+    );
+  }
+
+  private motivoError(error: unknown): string {
+    if (error instanceof z.ZodError) {
+      return error.issues
+        .map((issue) => {
+          const field = issue.path.length ? `${issue.path.join(".")}: ` : "";
+          return `${field}${issue.message}`;
+        })
+        .join("; ");
+    }
+    return error instanceof Error ? error.message : "No se pudo procesar la fila";
+  }
+
+  private construirArbolUbicaciones(rows: UbicacionFila[]) {
+    const ubicaciones = new Map<
+      string,
+      { nombre: string; zonas: Map<string, { nombre: string; areas: Map<string, string> }> }
+    >();
+
+    for (const row of rows) {
+      const ubicacionKey = normalizeHeader(row.ubicacion);
+      const zonaKey = normalizeHeader(row.zona);
+      const areaKey = normalizeHeader(row.area);
+      let ubicacion = ubicaciones.get(ubicacionKey);
+      if (!ubicacion) {
+        ubicacion = { nombre: normalizeLocationPart(row.ubicacion), zonas: new Map() };
+        ubicaciones.set(ubicacionKey, ubicacion);
+      }
+      let zona = ubicacion.zonas.get(zonaKey);
+      if (!zona) {
+        zona = { nombre: normalizeLocationPart(row.zona), areas: new Map() };
+        ubicacion.zonas.set(zonaKey, zona);
+      }
+      if (!zona.areas.has(areaKey)) {
+        zona.areas.set(areaKey, normalizeLocationPart(row.area));
+      }
+    }
+
+    return [...ubicaciones.values()].map((ubicacion) => ({
+      nombre: ubicacion.nombre,
+      elementos: [...ubicacion.zonas.values()].map((zona) => ({
+        nombre: zona.nombre,
+        hijos: [...zona.areas.values()].map((area) => ({
+          nombre: area,
+          hijos: [],
+        })),
+      })),
+    }));
+  }
+
+  async cargarConjuntoMasivo(
+    _actorUserId: string,
+    file: Express.Multer.File | undefined,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new Error("Debes adjuntar la plantilla Excel del conjunto.");
+    }
+    if (!file.originalname.toLowerCase().endsWith(".xlsx")) {
+      throw new Error("La carga masiva de conjuntos solo admite archivos .xlsx.");
+    }
+
+    const workbook = XLSX.read(file.buffer, {
+      type: "buffer",
+      cellDates: true,
+    });
+    const conjuntoRows = this.leerFilasHoja(workbook, "Conjunto");
+    const horarioRows = this.leerFilasHoja(workbook, "Horarios", false);
+    const ubicacionRows = this.leerFilasHoja(workbook, "Ubicaciones");
+    const operarioRows = this.leerFilasHoja(workbook, "Operarios");
+    const preventivaRows = this.leerFilasHoja(workbook, "Preventivas");
+
+    if (conjuntoRows.length !== 1) {
+      throw new Error("La hoja Conjunto debe contener exactamente una fila de datos.");
+    }
+    if (!ubicacionRows.length) {
+      throw new Error("La hoja Ubicaciones debe contener al menos una fila.");
+    }
+    if (!operarioRows.length) {
+      throw new Error("La hoja Operarios debe contener al menos una fila.");
+    }
+    if (!preventivaRows.length) {
+      throw new Error("La hoja Preventivas debe contener al menos una fila.");
+    }
+
+    const conjuntoRow = ConjuntoFilaDTO.parse(
+      this.canonicalizarFila("Conjunto", conjuntoRows[0]),
+    );
+    const empresaId = await this.resolverEmpresaNit();
+    const duplicate = await this.prisma.conjunto.findUnique({
+      where: { nit: conjuntoRow.nit },
+      select: { nit: true },
+    });
+    if (duplicate) throw new Error("Ya existe un conjunto con ese NIT.");
+
+    let administradorId: string | null = null;
+    if (conjuntoRow.administradorCedula) {
+      const administrador = await this.prisma.administrador.findUnique({
+        where: { id: conjuntoRow.administradorCedula },
+        select: { id: true },
+      });
+      if (!administrador) {
+        throw new Error("El administrador indicado no existe.");
+      }
+      administradorId = administrador.id;
+    }
+
+    const erroresEstrictos: ConjuntoCargaError[] = [];
+    const erroresPreventivas: ConjuntoCargaError[] = [];
+    const horarios: Array<z.infer<typeof HorarioDTO>> = [];
+    const dias = new Set<DiaSemana>();
+
+    if (!horarioRows.length) {
+      horarios.push(...HORARIOS_CONJUNTO_FALLBACK.map((item) => ({ ...item })));
+    } else {
+      horarioRows.forEach((raw, index) => {
+        try {
+          const row = HorarioFilaDTO.parse(
+            this.canonicalizarFila("Horarios", raw),
+          );
+          if (dias.has(row.dia)) {
+            throw new Error(`El día ${row.dia} está repetido en la hoja`);
+          }
+          dias.add(row.dia);
+          horarios.push(HorarioDTO.parse(row));
+        } catch (error) {
+          erroresEstrictos.push({
+            fila: index + 2,
+            seccion: "Horarios",
+            motivo: this.motivoError(error),
+          });
+        }
+      });
+    }
+
+    const ubicacionesParsed: UbicacionFila[] = [];
+    ubicacionRows.forEach((raw, index) => {
+      try {
+        ubicacionesParsed.push(
+          UbicacionFilaDTO.parse(this.canonicalizarFila("Ubicaciones", raw)),
+        );
+      } catch (error) {
+        erroresEstrictos.push({
+          fila: index + 2,
+          seccion: "Ubicaciones",
+          motivo: this.motivoError(error),
+        });
+      }
+    });
+    const ubicaciones = this.construirArbolUbicaciones(ubicacionesParsed);
+    const locationKeys = new Set(
+      ubicacionesParsed.map((row) =>
+        normalizedLocationKey(row.ubicacion, row.zona, row.area),
+      ),
+    );
+
+    const operariosParsed: Array<{ fila: number; row: OperarioFila }> = [];
+    const seenCedulas = new Set<string>();
+    const seenCorreos = new Set<string>();
+    operarioRows.forEach((raw, index) => {
+      const fila = index + 2;
+      try {
+        const row = OperarioFilaDTO.parse(
+          this.canonicalizarFila("Operarios", raw),
+        );
+        if (seenCedulas.has(row.cedula)) {
+          throw new Error("La cédula está repetida en la hoja Operarios");
+        }
+        if (seenCorreos.has(row.correo)) {
+          throw new Error("El correo está repetido en la hoja Operarios");
+        }
+        seenCedulas.add(row.cedula);
+        seenCorreos.add(row.correo);
+
+        const password = row.contrasena || row.cedula;
+        CrearUsuarioDTO.parse({
+          id: row.cedula,
+          nombre: row.nombre,
+          correo: row.correo,
+          contrasena: password,
+          rol: Rol.operario,
+          telefono: row.telefono,
+          fechaNacimiento: row.fechaNacimiento,
+          jornadaLaboral: row.jornadaLaboral,
+          patronJornada: row.patronJornada,
+        });
+        CrearOperarioDTO.parse({
+          Id: row.cedula,
+          funciones: row.funciones,
+          cursoSalvamentoAcuatico: row.cursoSalvamentoAcuatico,
+          cursoAlturas: row.cursoAlturas,
+          examenIngreso: row.examenIngreso,
+          fechaIngreso: row.fechaIngreso,
+          disponibilidadPeriodos: [
+            {
+              fechaInicio: row.fechaIngreso,
+              trabajaDomingo: row.trabajaDomingo,
+              diaDescanso: row.diaDescanso,
+            },
+          ],
+        });
+        operariosParsed.push({ fila, row });
+      } catch (error) {
+        erroresEstrictos.push({
+          fila,
+          seccion: "Operarios",
+          motivo: this.motivoError(error),
+        });
+      }
+    });
+
+    const operarioPlans: OperarioImportPlan[] = [];
+    for (const item of operariosParsed) {
+      const [usuario, correoOwner] = await Promise.all([
+        this.prisma.usuario.findUnique({
+          where: { id: item.row.cedula },
+          include: { operario: { select: { id: true, empresaId: true } } },
+        }),
+        this.prisma.usuario.findUnique({
+          where: { correo: item.row.correo },
+          select: { id: true },
+        }),
+      ]);
+
+      if (correoOwner && correoOwner.id !== item.row.cedula) {
+        erroresEstrictos.push({
+          fila: item.fila,
+          seccion: "Operarios",
+          motivo: "Ya existe otro usuario con ese correo",
+        });
+        continue;
+      }
+      if (usuario && usuario.rol !== Rol.operario) {
+        erroresEstrictos.push({
+          fila: item.fila,
+          seccion: "Operarios",
+          motivo: "La cédula ya existe con un rol diferente de operario",
+        });
+        continue;
+      }
+      if (usuario?.operario && usuario.operario.empresaId !== empresaId) {
+        erroresEstrictos.push({
+          fila: item.fila,
+          seccion: "Operarios",
+          motivo: "El operario pertenece a otra empresa",
+        });
+        continue;
+      }
+
+      operarioPlans.push({
+        ...item,
+        mode: !usuario
+          ? "CREATE_USER"
+          : usuario.operario
+            ? "REUSE"
+            : "CREATE_PROFILE",
+      });
+    }
+
+    const preventivaPlans: PreventivaImportPlan[] = [];
+    const referencedExisting = new Set<string>();
+    const availableFromSheet = new Set(operarioPlans.map((item) => item.row.cedula));
+
+    for (let index = 0; index < preventivaRows.length; index += 1) {
+      const fila = index + 2;
+      try {
+        const row = PreventivaFilaDTO.parse(
+          this.canonicalizarFila("Preventivas", preventivaRows[index]),
+        );
+        validarProgramacionFrecuencia({
+          frecuencia: row.frecuencia,
+          diaSemanaProgramado: row.diaSemana ?? null,
+          diaMesProgramado: row.diaMes ?? null,
+          fechasProgramadasJson: row.fechasProgramadas,
+        });
+        if (!locationKeys.has(normalizedLocationKey(row.ubicacion, row.zona, row.area))) {
+          throw new Error("La ruta de ubicación no existe en la hoja Ubicaciones");
+        }
+
+        for (const cedula of row.operarioCedulas) {
+          if (availableFromSheet.has(cedula)) continue;
+          const existing = await this.prisma.operario.findUnique({
+            where: { id: cedula },
+            select: { id: true, empresaId: true },
+          });
+          if (!existing || existing.empresaId !== empresaId) {
+            throw new Error(`El operario ${cedula} no existe en la empresa`);
+          }
+          referencedExisting.add(existing.id);
+        }
+
+        if (row.supervisorCedula) {
+          const supervisor = await this.prisma.supervisor.findUnique({
+            where: { id: row.supervisorCedula },
+            select: { id: true, empresaId: true },
+          });
+          if (!supervisor || supervisor.empresaId !== empresaId) {
+            throw new Error("El supervisor indicado no existe en la empresa");
+          }
+        }
+        preventivaPlans.push({ fila, row });
+      } catch (error) {
+        erroresPreventivas.push({
+          fila,
+          seccion: "Preventivas",
+          motivo: this.motivoError(error),
+        });
+      }
+    }
+
+    const baseResult = {
+      conjunto: { nit: conjuntoRow.nit, nombre: conjuntoRow.nombre },
+      columnasEsperadas: PLANTILLA_CONJUNTO_COLUMNAS,
+    };
+    if (erroresEstrictos.length) {
+      return {
+        creado: false as const,
+        ...baseResult,
+        resumen: {
+          horarios: 0,
+          ubicaciones: 0,
+          operariosCreados: 0,
+          operariosReutilizados: 0,
+          preventivasTotal: preventivaRows.length,
+          preventivasCreadas: 0,
+          preventivasFallidas: preventivaRows.length,
+        },
+        errores: [...erroresEstrictos, ...erroresPreventivas],
+      };
+    }
+
+    await Promise.all(
+      operarioPlans.map(async (plan) => {
+        if (plan.mode === "CREATE_USER") {
+          plan.passwordHash = await bcrypt.hash(
+            plan.row.contrasena || plan.row.cedula,
+            10,
+          );
+        }
+      }),
+    );
+
+    const conjuntoDto = CrearConjuntoDTO.parse({
+      nit: conjuntoRow.nit,
+      nombre: conjuntoRow.nombre,
+      direccion: conjuntoRow.direccion,
+      correo: conjuntoRow.correo,
+      administradorId,
+      fechaInicioContrato: conjuntoRow.fechaInicioContrato,
+      activo: true,
+      tipoServicio: conjuntoRow.tipoServicio,
+      valorMensual: conjuntoRow.valorMensual,
+      consignasEspeciales: conjuntoRow.consignasEspeciales,
+      valorAgregado: conjuntoRow.valorAgregado,
+      horarios,
+      ubicaciones,
+    });
+
+    const allOperarios = new Set([
+      ...operarioPlans.map((item) => item.row.cedula),
+      ...referencedExisting,
+    ]);
+    await this.prisma.$transaction(async (tx) => {
+      for (const plan of operarioPlans) {
+        const row = plan.row;
+        if (plan.mode === "CREATE_USER") {
+          await tx.usuario.create({
+            data: {
+              id: row.cedula,
+              nombre: row.nombre,
+              correo: row.correo,
+              contrasena: plan.passwordHash!,
+              rol: Rol.operario,
+              activo: true,
+              requiereCambioContrasena: true,
+              telefono: BigInt(row.telefono),
+              fechaNacimiento: row.fechaNacimiento,
+              jornadaLaboral: row.jornadaLaboral,
+              patronJornada:
+                row.jornadaLaboral === JornadaLaboral.MEDIO_TIEMPO
+                  ? (row.patronJornada ?? null)
+                  : null,
+            },
+          });
+        }
+        if (plan.mode !== "REUSE") {
+          await tx.operario.create({
+            data: {
+              id: row.cedula,
+              empresaId,
+              funciones: row.funciones,
+              cursoSalvamentoAcuatico: row.cursoSalvamentoAcuatico,
+              cursoAlturas: row.cursoAlturas,
+              examenIngreso: row.examenIngreso,
+              fechaIngreso: row.fechaIngreso,
+              disponibilidadPeriodos: {
+                create: {
+                  fechaInicio: row.fechaIngreso,
+                  trabajaDomingo: row.trabajaDomingo,
+                  diaDescanso: row.diaDescanso ?? null,
+                },
+              },
+            },
+          });
+        }
+      }
+
+      await this.crearConjuntoConEstructura(
+        tx,
+        conjuntoDto,
+        empresaId,
+        administradorId,
+      );
+      if (allOperarios.size) {
+        await tx.conjunto.update({
+          where: { nit: conjuntoRow.nit },
+          data: {
+            operarios: {
+              connect: [...allOperarios].map((id) => ({ id })),
+            },
+          },
+        });
+      }
+    });
+
+    const createdLocations = await this.prisma.ubicacion.findMany({
+      where: { conjuntoId: conjuntoRow.nit },
+      select: {
+        id: true,
+        nombre: true,
+        elementos: { select: { id: true, nombre: true, padreId: true } },
+      },
+    });
+    const paths = new Map<string, { ubicacionId: number; elementoId: number }>();
+    for (const ubicacion of createdLocations) {
+      const zonas = new Map(
+        ubicacion.elementos
+          .filter((elemento) => elemento.padreId == null)
+          .map((elemento) => [elemento.id, elemento]),
+      );
+      for (const area of ubicacion.elementos.filter((elemento) => elemento.padreId != null)) {
+        const zona = zonas.get(area.padreId!);
+        if (!zona) continue;
+        paths.set(normalizedLocationKey(ubicacion.nombre, zona.nombre, area.nombre), {
+          ubicacionId: ubicacion.id,
+          elementoId: area.id,
+        });
+      }
+    }
+
+    let preventivasCreadas = 0;
+    const preventivaService = new DefinicionTareaPreventivaService(this.prisma);
+    for (const plan of preventivaPlans) {
+      try {
+        const ids = paths.get(
+          normalizedLocationKey(plan.row.ubicacion, plan.row.zona, plan.row.area),
+        );
+        if (!ids) throw new Error("No se pudo resolver la ruta creada");
+        await preventivaService.crear({
+          conjuntoId: conjuntoRow.nit,
+          ...ids,
+          descripcion: plan.row.descripcion,
+          frecuencia: plan.row.frecuencia,
+          prioridad: plan.row.prioridad,
+          diaSemanaProgramado: plan.row.diaSemana ?? null,
+          diaMesProgramado: plan.row.diaMes ?? null,
+          fechasProgramadasJson: plan.row.fechasProgramadas,
+          duracionMinutosFija: plan.row.duracionMinutos,
+          operariosIds: plan.row.operarioCedulas,
+          supervisorId: plan.row.supervisorCedula,
+          activo: true,
+        });
+        preventivasCreadas += 1;
+      } catch (error) {
+        erroresPreventivas.push({
+          fila: plan.fila,
+          seccion: "Preventivas",
+          motivo: this.motivoError(error),
+        });
+      }
+    }
+
+    return {
+      creado: true as const,
+      ...baseResult,
+      resumen: {
+        horarios: horarios.length,
+        ubicaciones: ubicaciones.length,
+        operariosCreados: operarioPlans.filter((item) => item.mode !== "REUSE").length,
+        operariosReutilizados:
+          operarioPlans.filter((item) => item.mode === "REUSE").length +
+          referencedExisting.size,
+        preventivasTotal: preventivaRows.length,
+        preventivasCreadas,
+        preventivasFallidas: preventivaRows.length - preventivasCreadas,
+      },
+      errores: erroresPreventivas,
+    };
   }
 
   async listarConjuntos() {
@@ -2417,6 +3578,22 @@ export class GerenteService {
         });
       }
 
+      await new AuditoriaService(tx).registrar({
+        modulo: ModuloAuditoria.TAREA,
+        entidad: EntidadAuditoria.TAREA,
+        entidadId: tarea.id,
+        accion: AccionAuditoria.CREAR,
+        conjuntoId: dto.conjuntoId ?? null,
+        actor: { id: asignadorId },
+        descripcion: `Se creo la tarea '${dto.descripcion}'.`,
+        datosDespues: {
+          fechaInicio: dto.fechaInicio,
+          fechaFin: dto.fechaFin,
+          tipo: dto.tipo,
+          operariosIds,
+        },
+      });
+
       return {
         ok: true,
         message: "Tarea creada correctamente",
@@ -3223,6 +4400,33 @@ export class GerenteService {
         });
       }
 
+      const auditoria = new AuditoriaService(tx);
+      await auditoria.registrar({
+        modulo: ModuloAuditoria.TAREA,
+        entidad: EntidadAuditoria.TAREA,
+        entidadId: nuevaCorrectiva.id,
+        accion: AccionAuditoria.CREAR,
+        conjuntoId: dto.conjuntoId ?? null,
+        actor: { id: asignadorId },
+        descripcion: `Se creo la correctiva '${dto.descripcion}' desplazando ${reemplazarIds.length} tarea(s).`,
+        metadataJson: { reemplazadasIds: reemplazarIds, reprogramadasIds, canceladasIds },
+      });
+      await auditoria.registrarLote(
+        reemplazarIds.map((id) => ({
+          modulo: ModuloAuditoria.TAREA,
+          entidad: EntidadAuditoria.TAREA,
+          entidadId: id,
+          accion: AccionAuditoria.REEMPLAZAR,
+          conjuntoId: dto.conjuntoId ?? null,
+          actor: { id: asignadorId },
+          descripcion: `Tarea desplazada para dar espacio a '${dto.descripcion}'.`,
+          metadataJson: {
+            correctivaId: nuevaCorrectiva.id,
+            accion: reprogramadasIds.includes(id) ? "REPROGRAMADA" : "CANCELADA",
+          },
+        })),
+      );
+
       return {
         ok: true,
         message: "Correctiva creada y reemplazos procesados.",
@@ -3974,6 +5178,17 @@ export class GerenteService {
     });
   }
 
+  async eliminarResidente(residenteId: string) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.residente.deleteMany({
+        where: { id: residenteId },
+      });
+      await tx.usuario.delete({
+        where: { id: residenteId },
+      });
+    });
+  }
+
   async eliminarUsuario(id: string): Promise<void> {
     const usuario = await this.prisma.usuario.findUnique({ where: { id } });
     if (!usuario) return;
@@ -3990,6 +5205,9 @@ export class GerenteService {
         break;
       case Rol.jefe_operaciones:
         await this.eliminarJefeOperaciones(id);
+        break;
+      case Rol.residente:
+        await this.eliminarResidente(id);
         break;
       default:
         await this.prisma.usuario.delete({ where: { id } });

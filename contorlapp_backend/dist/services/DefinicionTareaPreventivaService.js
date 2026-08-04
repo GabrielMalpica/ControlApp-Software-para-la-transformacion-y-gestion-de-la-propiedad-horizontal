@@ -3,16 +3,43 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DefinicionTareaPreventivaService = void 0;
 exports.buildBloqueosPorDescanso = buildBloqueosPorDescanso;
+exports.pickDaysByFrecuencia = pickDaysByFrecuencia;
 exports.buildBloqueosPorPatronJornada = buildBloqueosPorPatronJornada;
 exports.getLimiteMinSemanaPorOperario = getLimiteMinSemanaPorOperario;
 const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
 const DefinicionTareaPreventiva_1 = require("../model/DefinicionTareaPreventiva");
+const Auditoria_1 = require("../model/Auditoria");
+const AuditoriaService_1 = require("./AuditoriaService");
+const maquinariaNecesidades_1 = require("../utils/maquinariaNecesidades");
+const reservaMaquinaria_1 = require("../utils/reservaMaquinaria");
 const schedulerUtils_1 = require("../utils/schedulerUtils");
 const errorFormat_1 = require("../utils/errorFormat");
 const elementoHierarchy_1 = require("../utils/elementoHierarchy");
 const operarioAvailability_1 = require("../utils/operarioAvailability");
 const dayKey = (d) => (0, schedulerUtils_1.ymdLocal)(d);
+/**
+ * Tope de bloques en que la fase de rescate puede partir una tarea dentro de un mismo dia.
+ * Con 3 se cubre el caso tipico "mañana + antes del almuerzo + tarde" sin fragmentar en exceso.
+ */
+const MAX_BLOQUES_RESCATE_POR_DIA = 3;
+/**
+ * Clave de respaldo para emparejar una definicion con sus tareas de borrador
+ * cuando la fila es anterior a `Tarea.definicionId` y no lo tiene relleno.
+ */
+function claveDefinicionBorrador(def) {
+    return [
+        def.descripcion.trim(),
+        def.ubicacionId,
+        def.elementoId,
+        def.frecuencia ?? "",
+    ].join("|");
+}
+/** Minutos totales cubiertos por un plan de bloques. */
+function duracionDeBloques(bloques) {
+    return bloques.reduce((total, bloque) => total +
+        Math.max(1, Math.round((bloque.fechaFin.getTime() - bloque.fechaInicio.getTime()) / 60000)), 0);
+}
 /* =========================================================
  * DTOs internos (Zod)
  * ======================================================= */
@@ -110,8 +137,10 @@ const ReordenarTareasDiaBorradorDTO = zod_1.z.object({
  * Service
  * ======================================================= */
 class DefinicionTareaPreventivaService {
-    constructor(prisma) {
+    constructor(prisma, actor) {
         this.prisma = prisma;
+        this.actor = actor;
+        this.auditoria = new AuditoriaService_1.AuditoriaService(prisma);
     }
     async limpiarExcluidasDeMesesAnteriores(params) {
         const { conjuntoId, anio, mes } = params;
@@ -124,6 +153,152 @@ class DefinicionTareaPreventivaService {
                 ],
             },
         });
+    }
+    /**
+     * Definiciones que ya tienen presencia en el borrador del periodo, ya sea como
+     * tarea programada o como excluida. Se devuelven por id y por clave de respaldo,
+     * porque las filas creadas antes de `Tarea.definicionId` no lo tienen relleno.
+     */
+    async definicionesConBorrador(params) {
+        const { conjuntoId, periodoAnio, periodoMes } = params;
+        const [tareas, excluidas] = await Promise.all([
+            this.prisma.tarea.findMany({
+                where: {
+                    conjuntoId,
+                    borrador: true,
+                    periodoAnio,
+                    periodoMes,
+                    tipo: client_1.TipoTarea.PREVENTIVA,
+                },
+                select: {
+                    definicionId: true,
+                    descripcion: true,
+                    ubicacionId: true,
+                    elementoId: true,
+                    frecuencia: true,
+                },
+            }),
+            this.prisma.preventivaExcluidaBorrador.findMany({
+                where: { conjuntoId, periodoAnio, periodoMes },
+                select: {
+                    defId: true,
+                    descripcion: true,
+                    ubicacionId: true,
+                    elementoId: true,
+                    frecuencia: true,
+                },
+            }),
+        ]);
+        const defIds = new Set();
+        const claves = new Set();
+        for (const tarea of tareas) {
+            if (tarea.definicionId != null)
+                defIds.add(tarea.definicionId);
+            claves.add(claveDefinicionBorrador(tarea));
+        }
+        for (const excluida of excluidas) {
+            if (excluida.defId != null)
+                defIds.add(excluida.defId);
+            claves.add(claveDefinicionBorrador(excluida));
+        }
+        return { defIds, claves };
+    }
+    /**
+     * Resumen del borrador guardado de un periodo: permite decidir si hay que
+     * generarlo por primera vez y avisar de cuantas preventivas quedan sin planificar.
+     */
+    async estadoBorrador(payload) {
+        const dto = DefinicionTareaPreventiva_1.PeriodoBorradorDTO.parse(payload);
+        const { conjuntoId, anio, mes } = dto;
+        const [totalTareas, excluidasPendientes, definiciones, ultimoEvento] = await Promise.all([
+            this.prisma.tarea.count({
+                where: {
+                    conjuntoId,
+                    borrador: true,
+                    periodoAnio: anio,
+                    periodoMes: mes,
+                    tipo: client_1.TipoTarea.PREVENTIVA,
+                },
+            }),
+            this.prisma.preventivaExcluidaBorrador.count({
+                where: {
+                    conjuntoId,
+                    periodoAnio: anio,
+                    periodoMes: mes,
+                    estado: "PENDIENTE",
+                },
+            }),
+            this.prisma.definicionTareaPreventiva.findMany({
+                where: { conjuntoId, activo: true },
+                select: {
+                    id: true,
+                    descripcion: true,
+                    ubicacionId: true,
+                    elementoId: true,
+                    frecuencia: true,
+                },
+            }),
+            this.prisma.preventivaBorradorEvento.findFirst({
+                where: { conjuntoId, periodoAnio: anio, periodoMes: mes },
+                orderBy: { creadoEn: "desc" },
+                select: { creadoEn: true },
+            }),
+        ]);
+        const enBorrador = await this.definicionesConBorrador({
+            conjuntoId,
+            periodoAnio: anio,
+            periodoMes: mes,
+        });
+        const sinPlanificar = definiciones.filter((def) => !enBorrador.defIds.has(def.id) &&
+            !enBorrador.claves.has(claveDefinicionBorrador(def)));
+        return {
+            existe: totalTareas > 0 || excluidasPendientes > 0,
+            anio,
+            mes,
+            totalTareas,
+            excluidasPendientes,
+            definicionesSinPlanificar: sinPlanificar.length,
+            descripcionesSinPlanificar: sinPlanificar
+                .slice(0, 5)
+                .map((def) => def.descripcion),
+            ultimaActividad: ultimoEvento?.creadoEn ?? null,
+        };
+    }
+    /** Descarta el borrador completo de un periodo. Accion explicita y auditada. */
+    async descartarBorradorMes(payload) {
+        const dto = DefinicionTareaPreventiva_1.PeriodoBorradorDTO.parse(payload);
+        const { conjuntoId, anio, mes } = dto;
+        const eliminadas = await this.prisma.$transaction(async (tx) => {
+            const tareas = await tx.tarea.deleteMany({
+                where: {
+                    conjuntoId,
+                    borrador: true,
+                    periodoAnio: anio,
+                    periodoMes: mes,
+                    tipo: client_1.TipoTarea.PREVENTIVA,
+                },
+            });
+            await tx.preventivaExcluidaBorrador.deleteMany({
+                where: { conjuntoId, periodoAnio: anio, periodoMes: mes },
+            });
+            await tx.preventivaBorradorEvento.deleteMany({
+                where: { conjuntoId, periodoAnio: anio, periodoMes: mes },
+            });
+            return tareas.count;
+        });
+        await this.auditoria.registrar({
+            modulo: Auditoria_1.ModuloAuditoria.CRONOGRAMA,
+            entidad: Auditoria_1.EntidadAuditoria.CRONOGRAMA_PERIODO,
+            entidadId: `${conjuntoId}-${anio}-${mes}`,
+            accion: Auditoria_1.AccionAuditoria.ELIMINAR_CRONOGRAMA,
+            conjuntoId,
+            actor: this.actor,
+            descripcion: `Se descarto el borrador de ${mes}/${anio} (${eliminadas} tarea(s)).`,
+            periodoAnio: anio,
+            periodoMes: mes,
+            metadataJson: { eliminadas },
+        });
+        return { ok: true, eliminadas };
     }
     async existeBorradorPreventivoMes(params) {
         const { conjuntoId, anio, mes } = params;
@@ -139,7 +314,7 @@ class DefinicionTareaPreventivaService {
         return total > 0;
     }
     async resolverSupervisorId(supervisorId) {
-        const sid = supervisorId.toString();
+        const sid = supervisorId;
         const supervisor = await this.prisma.supervisor.findUnique({
             where: { id: sid },
             select: { id: true },
@@ -185,6 +360,9 @@ class DefinicionTareaPreventivaService {
         const { frecuencia, diaSemanaProgramado, diaMesProgramado, fechasProgramadasJson, } = params;
         if (frecuencia === client_1.Frecuencia.SEMANAL && !diaSemanaProgramado) {
             throw new Error("Las preventivas semanales deben tener un día programado.");
+        }
+        if (frecuencia === client_1.Frecuencia.QUINCENAL && !diaSemanaProgramado) {
+            throw new Error("Las preventivas quincenales deben tener un día de la semana programado.");
         }
         if (frecuencia === client_1.Frecuencia.MENSUAL && !diaMesProgramado) {
             throw new Error("Las preventivas mensuales deben tener un día del mes programado.");
@@ -310,8 +488,43 @@ class DefinicionTareaPreventivaService {
                 detalle: params.detalle,
                 tareaId: params.tareaId ?? null,
                 excluidaId: params.excluidaId ?? null,
+                actorId: this.actor?.id ?? null,
+                actorRol: this.actor?.rol ?? null,
                 metadataJson: params.metadataJson,
             },
+        });
+        if (!params.accionAuditoria)
+            return;
+        const esExcluida = params.excluidaId != null;
+        await this.auditoria.registrar({
+            modulo: esExcluida ? Auditoria_1.ModuloAuditoria.EXCLUIDA : Auditoria_1.ModuloAuditoria.TAREA,
+            entidad: esExcluida ? Auditoria_1.EntidadAuditoria.EXCLUIDA_BORRADOR : Auditoria_1.EntidadAuditoria.TAREA,
+            entidadId: (params.excluidaId ?? params.tareaId ?? 0),
+            accion: params.accionAuditoria,
+            conjuntoId: params.conjuntoId,
+            actor: this.actor,
+            origen: params.origenAuditoria,
+            descripcion: params.detalle ?? params.tipo,
+            periodoAnio: params.periodoAnio,
+            periodoMes: params.periodoMes,
+            metadataJson: params.metadataJson,
+        });
+    }
+    /** Atajo para auditar una accion sobre una tarea del cronograma. */
+    async auditarTarea(params) {
+        await this.auditoria.registrar({
+            modulo: Auditoria_1.ModuloAuditoria.TAREA,
+            entidad: Auditoria_1.EntidadAuditoria.TAREA,
+            entidadId: params.tareaId,
+            accion: params.accion,
+            conjuntoId: params.conjuntoId,
+            actor: this.actor,
+            descripcion: params.descripcion,
+            periodoAnio: params.periodoAnio ?? null,
+            periodoMes: params.periodoMes ?? null,
+            datosAntes: params.datosAntes,
+            datosDespues: params.datosDespues,
+            metadataJson: params.metadataJson,
         });
     }
     async crearExcluida(snapshot) {
@@ -325,6 +538,7 @@ class DefinicionTareaPreventivaService {
                 tareaProgramadaId: snapshot.tareaProgramadaId ?? null,
                 descripcion: snapshot.descripcion,
                 frecuencia: snapshot.frecuencia ?? null,
+                diaSemanaProgramado: snapshot.diaSemanaProgramado ?? null,
                 prioridad: snapshot.prioridad,
                 duracionMinutos: Math.max(1, snapshot.duracionMinutos),
                 fechaObjetivo: snapshot.fechaObjetivo,
@@ -346,6 +560,8 @@ class DefinicionTareaPreventivaService {
             periodoAnio: snapshot.periodoAnio,
             periodoMes: snapshot.periodoMes,
             tipo: `EXCLUIDA_${snapshot.motivoTipo}`,
+            accionAuditoria: Auditoria_1.AccionAuditoria.CREAR,
+            origenAuditoria: Auditoria_1.OrigenAuditoria.SCHEDULER,
             detalle: snapshot.motivoMensaje ?? undefined,
             excluidaId: created.id,
             tareaId: snapshot.tareaProgramadaId ?? snapshot.origenTareaId ?? null,
@@ -378,6 +594,7 @@ class DefinicionTareaPreventivaService {
             defId: def.id,
             descripcion: def.descripcion,
             frecuencia: def.frecuencia,
+            diaSemanaProgramado: def.diaSemanaProgramado ?? null,
             prioridad: Number(def.prioridad ?? 2),
             duracionMinutos: params.duracionMinutos,
             fechaObjetivo: params.fechaObjetivo,
@@ -413,8 +630,10 @@ class DefinicionTareaPreventivaService {
             periodoAnio: tarea.periodoAnio ?? tarea.fechaInicio.getFullYear(),
             periodoMes: tarea.periodoMes ?? tarea.fechaInicio.getMonth() + 1,
             origenTareaId: tarea.id,
+            defId: tarea.definicionId ?? null,
             descripcion: tarea.descripcion,
             frecuencia: tarea.frecuencia,
+            diaSemanaProgramado: tarea.diaSemanaProgramado ?? null,
             prioridad: tarea.prioridad,
             duracionMinutos: tarea.duracionMinutos,
             fechaObjetivo: tarea.fechaInicioOriginal ?? tarea.fechaInicio,
@@ -688,25 +907,35 @@ class DefinicionTareaPreventivaService {
             opciones,
         };
     }
-    async construirPlanFlexibleExcluida(params) {
-        const { conjuntoId, excluida, fechas, horariosPorDia, festivosSet, preferida, startIndex } = params;
-        if (startIndex < 0 || startIndex >= fechas.length)
+    /**
+     * Reparte `duracionMinutos` sobre los dias candidatos, en orden, tomando los huecos
+     * libres que encuentre. Es el motor comun del rescate del scheduler y de las
+     * sugerencias de division para tareas excluidas.
+     *
+     * Devuelve el plan completo o `[]` si no logra cubrir toda la duracion.
+     */
+    async construirPlanEnRango(params) {
+        const { conjuntoId, duracionMinutos, operariosIds, dias, horariosPorDia, festivosSet, preferida, maxBloquesPorDia = 3, permitirMultiDia = true, validarLimiteSemanal = false, incluirPublicadasEnAgenda = true, } = params;
+        if (duracionMinutos <= 0 || !dias.length)
             return [];
-        let restante = excluida.duracionMinutos;
+        // El tope semanal depende de la semana, por eso la cache se indexa por operario + semana.
+        const limitePorOperarioSemana = new Map();
+        let restante = duracionMinutos;
         const plan = [];
-        for (let idx = startIndex; idx < fechas.length && restante > 0; idx++) {
-            const dia = fechas[idx];
+        for (const dia of dias) {
+            if (restante <= 0)
+                break;
             const key = dayKey(dia);
             if (festivosSet.has(key))
                 continue;
             const horario = horariosPorDia.get(dateToDiaSemana(dia));
             if (!horario)
                 continue;
-            const disponibilidad = excluida.operariosIds.length
+            const disponibilidad = operariosIds.length
                 ? await (0, operarioAvailability_1.validarOperariosDisponiblesEnFecha)({
                     prisma: this.prisma,
                     fecha: dia,
-                    operariosIds: excluida.operariosIds,
+                    operariosIds,
                 })
                 : { ok: true, noDisponibles: [] };
             if (!disponibilidad.ok)
@@ -717,16 +946,16 @@ class DefinicionTareaPreventivaService {
                     prisma: this.prisma,
                     fechaDia: dia,
                     horarioDia: horario,
-                    operariosIds: excluida.operariosIds,
+                    operariosIds,
                 })),
             ];
             let ocupadosGlobal = [];
-            if (excluida.operariosIds.length) {
+            if (operariosIds.length) {
                 const agenda = await (0, schedulerUtils_1.buildAgendaPorOperarioDia)({
                     prisma: this.prisma,
                     conjuntoId,
                     fechaDia: dia,
-                    operariosIds: excluida.operariosIds,
+                    operariosIds,
                     incluirBorrador: true,
                     bloqueosGlobales: bloqueos,
                     excluirEstados: ["PENDIENTE_REPROGRAMACION"],
@@ -744,15 +973,21 @@ class DefinicionTareaPreventivaService {
                 ...bloqueos.map((bloqueo) => ({ i: bloqueo.startMin, f: bloqueo.endMin })),
             ]);
             const libres = (0, schedulerUtils_1.freeFromOccupied)(horario.startMin, horario.endMin, blocked);
-            const desiredStartMin = key === dayKey(preferida)
+            const desiredStartMin = preferida != null && key === dayKey(preferida)
                 ? Math.max(horario.startMin, (0, schedulerUtils_1.toMinOfDay)(preferida))
                 : horario.startMin;
+            const planDia = [];
+            let restanteDia = restante;
             for (const libre of libres) {
+                if (restanteDia <= 0)
+                    break;
+                if (planDia.length >= maxBloquesPorDia)
+                    break;
                 const inicioMin = Math.max(libre.i, desiredStartMin);
                 const capacidad = libre.f - inicioMin;
                 if (capacidad <= 0)
                     continue;
-                const tomar = Math.min(capacidad, restante);
+                const tomar = Math.min(capacidad, restanteDia);
                 const fechaInicio = (0, schedulerUtils_1.toDateAtMin)(dia, inicioMin);
                 const fechaFin = (0, schedulerUtils_1.toDateAtMin)(dia, inicioMin + tomar);
                 try {
@@ -760,19 +995,129 @@ class DefinicionTareaPreventivaService {
                         conjuntoId,
                         fechaInicio,
                         fechaFin,
-                        operariosIds: excluida.operariosIds,
+                        operariosIds,
                     });
                 }
                 catch {
                     continue;
                 }
-                plan.push({ fechaInicio, fechaFin });
-                restante -= tomar;
-                if (restante <= 0)
-                    break;
+                planDia.push({ fechaInicio, fechaFin });
+                restanteDia -= tomar;
             }
+            if (!planDia.length)
+                continue;
+            const minutosDia = duracionDeBloques(planDia);
+            if (validarLimiteSemanal &&
+                !(await this.cabeEnLimiteSemanal({
+                    conjuntoId,
+                    operariosIds,
+                    fechaReferencia: planDia[0].fechaInicio,
+                    minutosAdicionales: minutosDia,
+                    horariosPorDia,
+                    incluirPublicadasEnAgenda,
+                    cacheLimite: limitePorOperarioSemana,
+                }))) {
+                continue;
+            }
+            if (!permitirMultiDia) {
+                // Cada dia se evalua por separado: solo vale si cubre la duracion completa.
+                if (minutosDia >= duracionMinutos)
+                    return planDia;
+                continue;
+            }
+            plan.push(...planDia);
+            restante -= minutosDia;
         }
-        return restante <= 0 && plan.length > 1 ? plan : [];
+        return restante <= 0 ? plan : [];
+    }
+    /** Comprueba que todos los operarios sigan bajo su tope semanal tras sumar `minutosAdicionales`. */
+    async cabeEnLimiteSemanal(params) {
+        const { conjuntoId, operariosIds, fechaReferencia, minutosAdicionales, horariosPorDia, incluirPublicadasEnAgenda, cacheLimite, } = params;
+        const claveSemana = dayKey(inicioSemana(fechaReferencia));
+        for (const operarioId of operariosIds) {
+            const clave = `${operarioId}|${claveSemana}`;
+            let limite = cacheLimite?.get(clave);
+            if (limite == null) {
+                limite = await getLimiteMinSemanaPorOperario({
+                    prisma: this.prisma,
+                    conjuntoId,
+                    operarioId,
+                    horariosPorDia: horariosPorDia,
+                    fechaReferencia,
+                });
+                cacheLimite?.set(clave, limite);
+            }
+            const asignados = await minutosAsignadosEnSemana(this.prisma, conjuntoId, operarioId, fechaReferencia, incluirPublicadasEnAgenda);
+            if (asignados + minutosAdicionales > limite)
+                return false;
+        }
+        return true;
+    }
+    async construirPlanFlexibleExcluida(params) {
+        const { excluida, fechas, startIndex } = params;
+        if (startIndex < 0 || startIndex >= fechas.length)
+            return [];
+        const plan = await this.construirPlanEnRango({
+            conjuntoId: params.conjuntoId,
+            duracionMinutos: excluida.duracionMinutos,
+            operariosIds: excluida.operariosIds,
+            dias: fechas.slice(startIndex),
+            horariosPorDia: params.horariosPorDia,
+            festivosSet: params.festivosSet,
+            preferida: params.preferida,
+            maxBloquesPorDia: Number.MAX_SAFE_INTEGER,
+        });
+        // Esta variante solo aporta valor cuando el plan realmente se divide:
+        // el caso de un unico bloque ya lo cubre la busqueda de hueco simple.
+        return plan.length > 1 ? plan : [];
+    }
+    /** Crea las tareas borrador de una definicion preventiva a partir de un plan de bloques. */
+    async crearBloquesPreventivosDeDefinicion(params) {
+        const { def, conjuntoId, periodoAnio, periodoMes, prioridad, operariosIds, bloques, grupoPlanId, bloqueIndexBase, bloquesTotales, } = params;
+        const ids = [];
+        let indice = bloqueIndexBase;
+        for (const bloque of bloques) {
+            const creada = await this.prisma.tarea.create({
+                data: {
+                    descripcion: def.descripcion,
+                    fechaInicio: bloque.fechaInicio,
+                    fechaFin: bloque.fechaFin,
+                    duracionMinutos: Math.max(1, Math.round((bloque.fechaFin.getTime() - bloque.fechaInicio.getTime()) / 60000)),
+                    tipo: client_1.TipoTarea.PREVENTIVA,
+                    prioridad,
+                    estado: client_1.EstadoTarea.ASIGNADA,
+                    frecuencia: def.frecuencia,
+                    definicionId: def.id,
+                    diaSemanaProgramado: def.diaSemanaProgramado ?? null,
+                    borrador: true,
+                    periodoAnio,
+                    periodoMes,
+                    grupoPlanId,
+                    bloqueIndex: grupoPlanId ? indice : null,
+                    bloquesTotales: grupoPlanId ? bloquesTotales : null,
+                    ubicacionId: def.ubicacionId,
+                    elementoId: def.elementoId,
+                    conjuntoId,
+                    supervisorId: def.supervisorId ?? null,
+                    insumosPlanJson: def.insumosPlanJson
+                        ? def.insumosPlanJson
+                        : undefined,
+                    maquinariaPlanJson: def.maquinariaPlanJson
+                        ? def.maquinariaPlanJson
+                        : undefined,
+                    herramientasPlanJson: def.herramientasPlanJson
+                        ? def.herramientasPlanJson
+                        : undefined,
+                    operarios: operariosIds.length
+                        ? { connect: operariosIds.map((id) => ({ id })) }
+                        : undefined,
+                },
+                select: { id: true },
+            });
+            ids.push(creada.id);
+            indice++;
+        }
+        return ids;
     }
     async materializarExcluidaEnTarea(params) {
         const tareas = await this.materializarExcluidaEnBloques({
@@ -781,6 +1126,43 @@ class DefinicionTareaPreventivaService {
             bloques: [{ fechaInicio: params.fechaInicio, fechaFin: params.fechaFin }],
         });
         return tareas[0];
+    }
+    /**
+     * Los planes de insumos/maquinaria/herramientas no viajan en el snapshot de la excluida.
+     * Se recuperan de la definicion (o de la tarea de origen) para que la tarea materializada
+     * conserve los mismos recursos que habria tenido si el scheduler la hubiera podido ubicar.
+     */
+    async cargarPlanesRecursosExcluida(excluida) {
+        const vacio = {
+            insumosPlanJson: null,
+            maquinariaPlanJson: null,
+            herramientasPlanJson: null,
+        };
+        if (excluida.defId != null) {
+            const def = await this.prisma.definicionTareaPreventiva.findUnique({
+                where: { id: excluida.defId },
+                select: {
+                    insumosPlanJson: true,
+                    maquinariaPlanJson: true,
+                    herramientasPlanJson: true,
+                },
+            });
+            if (def)
+                return def;
+        }
+        if (excluida.origenTareaId != null) {
+            const tarea = await this.prisma.tarea.findUnique({
+                where: { id: excluida.origenTareaId },
+                select: {
+                    insumosPlanJson: true,
+                    maquinariaPlanJson: true,
+                    herramientasPlanJson: true,
+                },
+            });
+            if (tarea)
+                return tarea;
+        }
+        return vacio;
     }
     async materializarExcluidaEnBloques(params) {
         const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
@@ -811,6 +1193,7 @@ class DefinicionTareaPreventivaService {
         const grupoPlanId = bloquesOrdenados.length > 1
             ? `EXC-${excluida.id}-${Date.now().toString(36)}`
             : null;
+        const planes = await this.cargarPlanesRecursosExcluida(excluida);
         const created = await this.prisma.$transaction(async (tx) => {
             const creadas = [];
             for (let index = 0; index < bloquesOrdenados.length; index++) {
@@ -825,6 +1208,8 @@ class DefinicionTareaPreventivaService {
                         estado: client_1.EstadoTarea.ASIGNADA,
                         tipo: client_1.TipoTarea.PREVENTIVA,
                         frecuencia: excluida.frecuencia,
+                        definicionId: excluida.defId,
+                        diaSemanaProgramado: excluida.diaSemanaProgramado,
                         borrador: true,
                         periodoAnio: excluida.periodoAnio,
                         periodoMes: excluida.periodoMes,
@@ -835,6 +1220,9 @@ class DefinicionTareaPreventivaService {
                         elementoId: excluida.elementoId,
                         conjuntoId: params.conjuntoId,
                         supervisorId: excluida.supervisorId,
+                        insumosPlanJson: (planes.insumosPlanJson ?? undefined),
+                        maquinariaPlanJson: (planes.maquinariaPlanJson ?? undefined),
+                        herramientasPlanJson: (planes.herramientasPlanJson ?? undefined),
                         operarios: excluida.operariosIds.length
                             ? { connect: excluida.operariosIds.map((id) => ({ id })) }
                             : undefined,
@@ -859,12 +1247,32 @@ class DefinicionTareaPreventivaService {
                     detalle: `La tarea excluida '${excluida.descripcion}' fue agendada manualmente.`,
                     excluidaId: excluida.id,
                     tareaId: creadas[0]?.id ?? null,
+                    actorId: this.actor?.id ?? null,
+                    actorRol: this.actor?.rol ?? null,
                     metadataJson: {
                         bloques: bloquesOrdenados.map((bloque) => ({
                             fechaInicio: bloque.fechaInicio.toISOString(),
                             fechaFin: bloque.fechaFin.toISOString(),
                         })),
                     },
+                },
+            });
+            await new AuditoriaService_1.AuditoriaService(tx).registrar({
+                modulo: Auditoria_1.ModuloAuditoria.EXCLUIDA,
+                entidad: Auditoria_1.EntidadAuditoria.EXCLUIDA_BORRADOR,
+                entidadId: excluida.id,
+                accion: Auditoria_1.AccionAuditoria.AGENDAR_EXCLUIDA,
+                conjuntoId: params.conjuntoId,
+                actor: this.actor,
+                descripcion: `La tarea excluida '${excluida.descripcion}' fue agendada en el borrador en ${bloquesOrdenados.length} bloque(s).`,
+                periodoAnio: excluida.periodoAnio,
+                periodoMes: excluida.periodoMes,
+                metadataJson: {
+                    tareaIds: creadas.map((tarea) => tarea.id),
+                    bloques: bloquesOrdenados.map((bloque) => ({
+                        fechaInicio: bloque.fechaInicio.toISOString(),
+                        fechaFin: bloque.fechaFin.toISOString(),
+                    })),
                 },
             });
             return creadas;
@@ -930,12 +1338,12 @@ class DefinicionTareaPreventivaService {
         // Operarios: operariosIds > responsableSugeridoId
         if (dto.operariosIds?.length) {
             data.operarios = {
-                connect: dto.operariosIds.map((id) => ({ id: id.toString() })),
+                connect: dto.operariosIds.map((id) => ({ id })),
             };
         }
         else if (dto.responsableSugeridoId != null) {
             data.operarios = {
-                connect: { id: dto.responsableSugeridoId.toString() },
+                connect: { id: dto.responsableSugeridoId },
             };
         }
         return this.prisma.definicionTareaPreventiva.create({ data });
@@ -1100,6 +1508,48 @@ class DefinicionTareaPreventivaService {
         if (deleted.count === 0) {
             throw new Error("Definición no encontrada para este conjunto.");
         }
+        await this.auditoria.registrar({
+            modulo: Auditoria_1.ModuloAuditoria.PREVENTIVA,
+            entidad: Auditoria_1.EntidadAuditoria.DEFINICION_PREVENTIVA,
+            entidadId: id,
+            accion: Auditoria_1.AccionAuditoria.ELIMINAR,
+            conjuntoId,
+            actor: this.actor,
+            descripcion: "Se eliminó una definición preventiva.",
+        });
+    }
+    /** Borrado en lote: una sola transacción y una sola recarga en el cliente. */
+    async eliminarVarias(conjuntoId, payload) {
+        const dto = DefinicionTareaPreventiva_1.EliminarPreventivasLoteDTO.parse(payload);
+        const ids = Array.from(new Set(dto.ids));
+        const existentes = await this.prisma.definicionTareaPreventiva.findMany({
+            where: { id: { in: ids }, conjuntoId },
+            select: { id: true, descripcion: true },
+        });
+        if (!existentes.length) {
+            throw new Error("Ninguna de las preventivas seleccionadas pertenece a este conjunto.");
+        }
+        const idsEncontrados = existentes.map((item) => item.id);
+        const noEncontradas = ids.filter((id) => !idsEncontrados.includes(id));
+        await this.prisma.$transaction(async (tx) => {
+            await tx.definicionTareaPreventiva.deleteMany({
+                where: { id: { in: idsEncontrados }, conjuntoId },
+            });
+            await new AuditoriaService_1.AuditoriaService(tx).registrarLote(existentes.map((item) => ({
+                modulo: Auditoria_1.ModuloAuditoria.PREVENTIVA,
+                entidad: Auditoria_1.EntidadAuditoria.DEFINICION_PREVENTIVA,
+                entidadId: item.id,
+                accion: Auditoria_1.AccionAuditoria.ELIMINAR,
+                conjuntoId,
+                actor: this.actor,
+                descripcion: `Se eliminó la preventiva '${item.descripcion}' en un borrado múltiple.`,
+            })));
+        });
+        return {
+            ok: true,
+            eliminadas: idsEncontrados.length,
+            noEncontradas,
+        };
     }
     /* =========================
      * GENERACIÓN DE CRONOGRAMA
@@ -1118,6 +1568,7 @@ class DefinicionTareaPreventivaService {
             paisFestivos: "CO",
             incluirPublicadasEnAgenda: true,
             confirmacionesReemplazo: dto.confirmacionesReemplazo,
+            modo: dto.modo,
         });
         return { creadas, novedades };
     }
@@ -1182,6 +1633,8 @@ class DefinicionTareaPreventivaService {
                         estado: original.estado,
                         tipo: original.tipo,
                         frecuencia: original.frecuencia,
+                        definicionId: original.definicionId ?? null,
+                        diaSemanaProgramado: original.diaSemanaProgramado ?? null,
                         borrador: true,
                         periodoAnio: b.fechaInicio.getFullYear(),
                         periodoMes: b.fechaInicio.getMonth() + 1,
@@ -1285,6 +1738,8 @@ class DefinicionTareaPreventivaService {
                 estado: client_1.EstadoTarea.ASIGNADA,
                 tipo: client_1.TipoTarea.PREVENTIVA,
                 frecuencia: original.frecuencia,
+                definicionId: original.definicionId ?? null,
+                diaSemanaProgramado: original.diaSemanaProgramado ?? null,
                 borrador: true,
                 prioridad: original.prioridad ?? 2,
                 conjuntoId,
@@ -1385,7 +1840,7 @@ class DefinicionTareaPreventivaService {
                 maquinariaPlanJson: t.maquinariaPlanJson,
                 descripcion: t.descripcion,
             })),
-            diasEntregaRecogida: new Set([1, 3, 6]), // L, X, S
+            diasEntregaRecogida: reservaMaquinaria_1.DIAS_ENTREGA_RECOGIDA,
             excluirTareaIds: [],
             festivosSet,
         });
@@ -1399,6 +1854,22 @@ class DefinicionTareaPreventivaService {
             },
             data: { borrador: false },
         });
+        await this.auditoria.registrar({
+            modulo: Auditoria_1.ModuloAuditoria.CRONOGRAMA,
+            entidad: Auditoria_1.EntidadAuditoria.CRONOGRAMA_PERIODO,
+            entidadId: `${conjuntoId}-${anio}-${mes}`,
+            accion: Auditoria_1.AccionAuditoria.PUBLICAR,
+            conjuntoId,
+            actor: this.actor,
+            descripcion: `Se publico el cronograma preventivo de ${mes}/${anio} con ${borradores.length} tarea(s).`,
+            periodoAnio: anio,
+            periodoMes: mes,
+            metadataJson: {
+                publicadas: borradores.length,
+                reservas: reservasResp?.creadas ?? 0,
+                tareaIds: borradores.map((tarea) => tarea.id),
+            },
+        });
         return {
             ok: true,
             publicadas: borradores.length,
@@ -1410,7 +1881,7 @@ class DefinicionTareaPreventivaService {
      * Genera tareas PREVENTIVAS en modo borrador para un conjunto y mes.
      */
     async generarBorradorMensual(params) {
-        const { conjuntoId, periodoAnio, periodoMes, tamanoBloqueMinutos = 60, paisFestivos = "CO", incluirPublicadasEnAgenda = true, confirmacionesReemplazo = [], } = params;
+        const { conjuntoId, periodoAnio, periodoMes, tamanoBloqueMinutos = 60, paisFestivos = "CO", incluirPublicadasEnAgenda = true, confirmacionesReemplazo = [], modo = "RESET", } = params;
         await this.limpiarExcluidasDeMesesAnteriores({
             conjuntoId,
             anio: periodoAnio,
@@ -1486,22 +1957,29 @@ class DefinicionTareaPreventivaService {
             });
             return rows.map((r) => r.id);
         };
-        // 5️⃣ Limpiar borradores previos
-        await this.prisma.tarea.deleteMany({
-            where: {
-                conjuntoId,
-                borrador: true,
-                periodoAnio,
-                periodoMes,
-                tipo: client_1.TipoTarea.PREVENTIVA,
-            },
-        });
-        await this.prisma.preventivaExcluidaBorrador.deleteMany({
-            where: { conjuntoId, periodoAnio, periodoMes },
-        });
-        await this.prisma.preventivaBorradorEvento.deleteMany({
-            where: { conjuntoId, periodoAnio, periodoMes },
-        });
+        // 5️⃣ Borrador previo: se descarta solo en modo RESET.
+        // En CONSERVAR se respeta lo ya cuadrado a mano y mas abajo se saltan
+        // las definiciones que ya tienen tarea o excluida en el periodo.
+        const definicionesYaEnBorrador = modo === "CONSERVAR"
+            ? await this.definicionesConBorrador({ conjuntoId, periodoAnio, periodoMes })
+            : null;
+        if (modo === "RESET") {
+            await this.prisma.tarea.deleteMany({
+                where: {
+                    conjuntoId,
+                    borrador: true,
+                    periodoAnio,
+                    periodoMes,
+                    tipo: client_1.TipoTarea.PREVENTIVA,
+                },
+            });
+            await this.prisma.preventivaExcluidaBorrador.deleteMany({
+                where: { conjuntoId, periodoAnio, periodoMes },
+            });
+            await this.prisma.preventivaBorradorEvento.deleteMany({
+                where: { conjuntoId, periodoAnio, periodoMes },
+            });
+        }
         // ✅ Cache de límite semanal por operario (para no recalcular siempre)
         const limitePorOperario = new Map();
         let creadas = 0;
@@ -1525,6 +2003,12 @@ class DefinicionTareaPreventivaService {
             });
             if (yaPublicadaEstaDef > 0)
                 continue;
+            // En modo CONSERVAR, lo que ya esta en el borrador no se vuelve a planificar.
+            if (definicionesYaEnBorrador != null &&
+                (definicionesYaEnBorrador.defIds.has(def.id) ||
+                    definicionesYaEnBorrador.claves.has(claveDefinicionBorrador(def)))) {
+                continue;
+            }
             // días según frecuencia
             const diasBase = pickDaysByFrecuencia(fechasDelMes, def);
             // solo días con horario
@@ -1626,6 +2110,8 @@ class DefinicionTareaPreventivaService {
                     });
                     if (!diaParte)
                         break;
+                    // Fecha objetivo real de esta parte: la fase de rescate busca a partir de aqui.
+                    const diaObjetivoParte = new Date(diaParte);
                     let agendada = false;
                     let pendienteConfirmacion = null;
                     let diasSinCandidatasP3 = 0;
@@ -1658,16 +2144,13 @@ class DefinicionTareaPreventivaService {
                                 operariosIds,
                             })
                             : { ok: true, noDisponibles: [] };
-                        if (esFestivo || !disponibilidadOperarios.ok) {
-                            if (prioridad === 1 || prioridad === 2) {
-                                break;
-                            }
+                        // Festivo, operario no disponible o dia sin horario: se abandona la fase A
+                        // y se delega en la fase de rescate, que barre el resto del periodo.
+                        if (esFestivo || !disponibilidadOperarios.ok)
                             break;
-                        }
                         const horario = horariosPorDia.get(dateToDiaSemana(diaParte));
-                        if (!horario) {
+                        if (!horario)
                             break;
-                        }
                         // ✅ 1) Descanso
                         const bloqueosDescanso = buildBloqueosPorDescanso(horario);
                         // ✅ 2) Patrón jornada (bloqueos por operario)
@@ -1742,48 +2225,24 @@ class DefinicionTareaPreventivaService {
                                 break;
                             }
                             // ✅ crear tareas
-                            for (const b of bloquesFound) {
-                                const fechaInicio = (0, schedulerUtils_1.toDateAtMin)(diaParte, b.i);
-                                const fechaFin = (0, schedulerUtils_1.toDateAtMin)(diaParte, b.f);
-                                await this.prisma.tarea.create({
-                                    data: {
-                                        descripcion: def.descripcion,
-                                        fechaInicio,
-                                        fechaFin,
-                                        duracionMinutos: Math.max(1, b.f - b.i),
-                                        tipo: client_1.TipoTarea.PREVENTIVA,
-                                        prioridad,
-                                        estado: client_1.EstadoTarea.ASIGNADA,
-                                        frecuencia: def.frecuencia,
-                                        borrador: true,
-                                        periodoAnio,
-                                        periodoMes,
-                                        grupoPlanId,
-                                        bloqueIndex: grupoPlanId ? bloqueIndexCursor : null,
-                                        bloquesTotales: grupoPlanId ? totalBloquesEsperados : null,
-                                        ubicacionId: def.ubicacionId,
-                                        elementoId: def.elementoId,
-                                        conjuntoId,
-                                        supervisorId: def.supervisorId ?? null,
-                                        insumosPlanJson: def.insumosPlanJson
-                                            ? def.insumosPlanJson
-                                            : undefined,
-                                        maquinariaPlanJson: def.maquinariaPlanJson
-                                            ? def.maquinariaPlanJson
-                                            : undefined,
-                                        herramientasPlanJson: def.herramientasPlanJson
-                                            ? def
-                                                .herramientasPlanJson
-                                            : undefined,
-                                        operarios: operariosIds.length
-                                            ? { connect: operariosIds.map((id) => ({ id })) }
-                                            : undefined,
-                                    },
-                                });
-                                creadas++;
-                                if (grupoPlanId)
-                                    bloqueIndexCursor++;
-                            }
+                            const nuevaTareaIds = await this.crearBloquesPreventivosDeDefinicion({
+                                def,
+                                conjuntoId,
+                                periodoAnio,
+                                periodoMes,
+                                prioridad,
+                                operariosIds,
+                                bloques: bloquesFound.map((b) => ({
+                                    fechaInicio: (0, schedulerUtils_1.toDateAtMin)(diaParte, b.i),
+                                    fechaFin: (0, schedulerUtils_1.toDateAtMin)(diaParte, b.f),
+                                })),
+                                grupoPlanId,
+                                bloqueIndexBase: bloqueIndexCursor,
+                                bloquesTotales: totalBloquesEsperados,
+                            });
+                            creadas += nuevaTareaIds.length;
+                            if (grupoPlanId)
+                                bloqueIndexCursor += nuevaTareaIds.length;
                             agendada = true;
                             break;
                         }
@@ -1793,6 +2252,8 @@ class DefinicionTareaPreventivaService {
                                 descripcion: def.descripcion,
                                 tipo: client_1.TipoTarea.PREVENTIVA,
                                 frecuencia: def.frecuencia ?? null,
+                                definicionId: def.id,
+                                diaSemanaProgramado: def.diaSemanaProgramado ?? null,
                                 prioridad,
                                 supervisorId: def.supervisorId
                                     ? def.supervisorId.toString()
@@ -1981,8 +2442,129 @@ class DefinicionTareaPreventivaService {
                             }
                             break;
                         }
-                        // prioridad 3: si no cabe, se omite
+                        // prioridad 3: si no cabe en la fecha objetivo, pasa a la fase de rescate
                         break;
+                    }
+                    // ============================================================
+                    // Fase B - rescate: antes de excluir, se barren cronologicamente
+                    // los dias restantes del periodo. Como siempre se toma el dia mas
+                    // temprano que quepa, la tarea se queda en su misma semana cuando
+                    // hay sitio y solo se corre a las siguientes cuando no lo hay.
+                    // ============================================================
+                    if (!agendada) {
+                        // Se incluye el propio dia objetivo: la fase A solo intenta 1 o 2 bloques,
+                        // aqui puede partirse en mas y aprovechar huecos sueltos de ese mismo dia.
+                        const diasRescate = fechasDelMes.filter((dia) => +dia >= +diaObjetivoParte && horariosPorDia.has(dateToDiaSemana(dia)));
+                        if (diasRescate.length) {
+                            // 1) un solo dia (permitiendo partir la tarea en varios bloques dentro de ese dia)
+                            let planRescate = await this.construirPlanEnRango({
+                                conjuntoId,
+                                duracionMinutos: durMinParte,
+                                operariosIds,
+                                dias: diasRescate,
+                                horariosPorDia,
+                                festivosSet,
+                                maxBloquesPorDia: MAX_BLOQUES_RESCATE_POR_DIA,
+                                permitirMultiDia: false,
+                                validarLimiteSemanal: true,
+                                incluirPublicadasEnAgenda,
+                            });
+                            // 2) si ningun dia la aloja entera, se reparte entre varios dias
+                            if (!planRescate.length) {
+                                planRescate = await this.construirPlanEnRango({
+                                    conjuntoId,
+                                    duracionMinutos: durMinParte,
+                                    operariosIds,
+                                    dias: diasRescate,
+                                    horariosPorDia,
+                                    festivosSet,
+                                    maxBloquesPorDia: MAX_BLOQUES_RESCATE_POR_DIA,
+                                    permitirMultiDia: true,
+                                    validarLimiteSemanal: true,
+                                    incluirPublicadasEnAgenda,
+                                });
+                            }
+                            if (planRescate.length) {
+                                const nuevaTareaIds = await this.crearBloquesPreventivosDeDefinicion({
+                                    def,
+                                    conjuntoId,
+                                    periodoAnio,
+                                    periodoMes,
+                                    prioridad,
+                                    operariosIds,
+                                    bloques: planRescate,
+                                    grupoPlanId,
+                                    bloqueIndexBase: bloqueIndexCursor,
+                                    bloquesTotales: totalBloquesEsperados,
+                                });
+                                creadas += nuevaTareaIds.length;
+                                if (grupoPlanId)
+                                    bloqueIndexCursor += nuevaTareaIds.length;
+                                const claveObjetivo = dayKey(diaObjetivoParte);
+                                const fechaNueva = dayKey(planRescate[0].fechaInicio);
+                                const bloquesSerializados = planRescate.map((bloque) => ({
+                                    fechaInicio: bloque.fechaInicio.toISOString(),
+                                    fechaFin: bloque.fechaFin.toISOString(),
+                                }));
+                                const seMovioDeDia = fechaNueva !== claveObjetivo;
+                                const mensaje = seMovioDeDia
+                                    ? `No habia espacio el ${claveObjetivo}; la tarea se reubico en ${fechaNueva}${planRescate.length > 1 ? ` repartida en ${planRescate.length} bloques` : ""}.`
+                                    : `La tarea se dividio en ${planRescate.length} bloques dentro del ${claveObjetivo} para aprovechar los huecos disponibles.`;
+                                novedades.push({
+                                    tipo: "REUBICADA_EN_PERIODO",
+                                    defId: def.id,
+                                    descripcion: def.descripcion,
+                                    prioridad,
+                                    fecha: fechaNueva,
+                                    fechaObjetivo: claveObjetivo,
+                                    nuevaTareaIds,
+                                    bloques: bloquesSerializados,
+                                    mensaje,
+                                });
+                                await this.registrarEventoBorrador({
+                                    conjuntoId,
+                                    periodoAnio,
+                                    periodoMes,
+                                    tipo: "REUBICADA_EN_PERIODO",
+                                    accionAuditoria: Auditoria_1.AccionAuditoria.CREAR,
+                                    origenAuditoria: Auditoria_1.OrigenAuditoria.SCHEDULER,
+                                    detalle: mensaje,
+                                    tareaId: nuevaTareaIds[0] ?? null,
+                                    metadataJson: {
+                                        defId: def.id,
+                                        prioridad,
+                                        fechaObjetivo: claveObjetivo,
+                                        fechaNueva,
+                                        seMovioDeDia,
+                                        nuevaTareaIds,
+                                        bloques: bloquesSerializados,
+                                    },
+                                });
+                                agendada = true;
+                                diaParte = planRescate[planRescate.length - 1].fechaInicio;
+                            }
+                        }
+                    }
+                    if (!agendada && prioridad === 3) {
+                        const mensaje = "No se encontro espacio disponible en el periodo para esta tarea de prioridad 3.";
+                        novedades.push({
+                            tipo: "SIN_HUECO",
+                            defId: def.id,
+                            descripcion: def.descripcion,
+                            prioridad,
+                            fecha: dayKey(diaObjetivoParte),
+                            mensaje,
+                        });
+                        await this.crearExcluidaDesdeDefinicion({
+                            conjuntoId,
+                            periodoAnio,
+                            periodoMes,
+                            defId: def.id,
+                            fechaObjetivo: diaObjetivoParte,
+                            duracionMinutos: durMinParte,
+                            motivoTipo: "SIN_HUECO",
+                            motivoMensaje: mensaje,
+                        });
                     }
                     if (!agendada && (prioridad === 1 || prioridad === 2)) {
                         if (pendienteConfirmacion != null) {
@@ -2114,7 +2696,72 @@ class DefinicionTareaPreventivaService {
                 }
             }
         }
+        await this.auditarGeneracionBorrador({
+            conjuntoId,
+            periodoAnio,
+            periodoMes,
+            creadas,
+            novedades,
+        });
         return { creadas, novedades };
+    }
+    /**
+     * Deja constancia de quien genero el borrador y de cada tarea creada por el scheduler.
+     * Se consultan las tareas al final en vez de acumular ids durante el bucle, para cubrir
+     * tambien las que nacen por reemplazo de prioridad.
+     */
+    async auditarGeneracionBorrador(params) {
+        const { conjuntoId, periodoAnio, periodoMes, creadas, novedades } = params;
+        const excluidas = novedades.filter((novedad) => novedad.tipo === "SIN_HUECO" ||
+            novedad.tipo === "SIN_CANDIDATAS" ||
+            novedad.tipo === "REQUIERE_CONFIRMACION_REEMPLAZO" ||
+            novedad.tipo === "FESTIVO_OMITIDO").length;
+        const reubicadas = novedades.filter((novedad) => novedad.tipo === "REUBICADA_EN_PERIODO").length;
+        await this.auditoria.registrar({
+            modulo: Auditoria_1.ModuloAuditoria.CRONOGRAMA,
+            entidad: Auditoria_1.EntidadAuditoria.CRONOGRAMA_PERIODO,
+            entidadId: `${conjuntoId}-${periodoAnio}-${periodoMes}`,
+            accion: Auditoria_1.AccionAuditoria.GENERAR_BORRADOR,
+            conjuntoId,
+            actor: this.actor,
+            descripcion: `Se genero el borrador de ${periodoMes}/${periodoAnio}: ${creadas} tarea(s) creadas, ${reubicadas} reubicada(s), ${excluidas} excluida(s).`,
+            periodoAnio,
+            periodoMes,
+            metadataJson: { creadas, reubicadas, excluidas, novedades: novedades.length },
+        });
+        const tareas = await this.prisma.tarea.findMany({
+            where: {
+                conjuntoId,
+                periodoAnio,
+                periodoMes,
+                borrador: true,
+                tipo: client_1.TipoTarea.PREVENTIVA,
+            },
+            select: {
+                id: true,
+                descripcion: true,
+                fechaInicio: true,
+                fechaFin: true,
+                definicionId: true,
+            },
+        });
+        await this.auditoria.registrarLote(tareas.map((tarea) => ({
+            modulo: Auditoria_1.ModuloAuditoria.TAREA,
+            entidad: Auditoria_1.EntidadAuditoria.TAREA,
+            entidadId: tarea.id,
+            accion: Auditoria_1.AccionAuditoria.CREAR,
+            conjuntoId,
+            actor: this.actor,
+            origen: Auditoria_1.OrigenAuditoria.SCHEDULER,
+            descripcion: `El generador de cronograma creo la tarea '${tarea.descripcion}'.`,
+            periodoAnio,
+            periodoMes,
+            datosDespues: {
+                fechaInicio: tarea.fechaInicio,
+                fechaFin: tarea.fechaFin,
+                definicionId: tarea.definicionId,
+            },
+        })));
     }
     async editarTareaBorrador(payload) {
         const dto = EditarBorradorDTO.parse(payload);
@@ -2182,7 +2829,7 @@ class DefinicionTareaPreventivaService {
         }
         const anio = dto.fechaInicio.getFullYear();
         const mes = dto.fechaInicio.getMonth() + 1;
-        return this.prisma.tarea.create({
+        const creada = await this.prisma.tarea.create({
             data: {
                 descripcion: dto.descripcion,
                 fechaInicio: dto.fechaInicio,
@@ -2207,6 +2854,20 @@ class DefinicionTareaPreventivaService {
                     : undefined,
             },
         });
+        await this.auditarTarea({
+            tareaId: creada.id,
+            conjuntoId,
+            accion: Auditoria_1.AccionAuditoria.CREAR,
+            descripcion: `Se agrego manualmente la tarea '${creada.descripcion}' al borrador.`,
+            periodoAnio: anio,
+            periodoMes: mes,
+            datosDespues: {
+                fechaInicio: creada.fechaInicio,
+                fechaFin: creada.fechaFin,
+                operariosIds: dto.operariosIds ?? [],
+            },
+        });
+        return creada;
     }
     async editarBloqueBorrador(conjuntoId, tareaId, payload) {
         const dto = EditarBloqueBorradorDTO.parse(payload);
@@ -2280,14 +2941,7 @@ class DefinicionTareaPreventivaService {
             }
         }
         if (fechaInicio && fechaFin) {
-            const getMaqIds = (json) => {
-                if (!Array.isArray(json))
-                    return [];
-                return json
-                    .map((x) => Number(x?.maquinariaId))
-                    .filter((n) => Number.isFinite(n) && n > 0);
-            };
-            const maqIds = Array.from(new Set(getMaqIds(tarea.maquinariaPlanJson)));
+            const maqIds = Array.from(new Set((0, maquinariaNecesidades_1.parseMaquinariaIdsComprometidos)(tarea.maquinariaPlanJson)));
             if (maqIds.length) {
                 const disponibilidad = await this.listarMaquinariaDisponible({
                     conjuntoId,
@@ -2309,7 +2963,7 @@ class DefinicionTareaPreventivaService {
                 }
             }
         }
-        return this.prisma.tarea.update({
+        const actualizada = await this.prisma.tarea.update({
             where: { id: tareaId },
             include: tareaBorradorDetalleInclude,
             data: {
@@ -2337,6 +2991,21 @@ class DefinicionTareaPreventivaService {
                     : { set: dto.operariosIds.map((id) => ({ id: id.toString() })) },
             },
         });
+        await this.auditarTarea({
+            tareaId,
+            conjuntoId,
+            accion: Auditoria_1.AccionAuditoria.EDITAR,
+            descripcion: `Se edito la tarea '${actualizada.descripcion}' en el borrador.`,
+            periodoAnio: actualizada.periodoAnio,
+            periodoMes: actualizada.periodoMes,
+            datosDespues: {
+                fechaInicio: actualizada.fechaInicio,
+                fechaFin: actualizada.fechaFin,
+                duracionMinutos: actualizada.duracionMinutos,
+            },
+            metadataJson: { camposEnviados: Object.keys(dto) },
+        });
+        return actualizada;
     }
     async reasignarOperarioTareaBorrador(payload) {
         const dto = ReasignarOperarioBorradorDTO.parse(payload);
@@ -2406,6 +3075,18 @@ class DefinicionTareaPreventivaService {
             if (tareaObjetivo.id === dto.tareaId) {
                 tareaActualizada = actualizada;
             }
+            await this.auditarTarea({
+                tareaId: tareaObjetivo.id,
+                conjuntoId: dto.conjuntoId,
+                accion: Auditoria_1.AccionAuditoria.REASIGNAR_OPERARIO,
+                descripcion: `Se reasigno la tarea '${tarea.descripcion}' al operario ${dto.nuevoOperarioId}.`,
+                periodoAnio: tarea.periodoAnio,
+                periodoMes: tarea.periodoMes,
+                metadataJson: {
+                    nuevoOperarioId: dto.nuevoOperarioId,
+                    modoAplicacion,
+                },
+            });
         }
         let definicionActualizada = false;
         let definicionId = null;
@@ -2528,6 +3209,7 @@ class DefinicionTareaPreventivaService {
             periodoAnio: excluida.periodoAnio,
             periodoMes: excluida.periodoMes,
             tipo: "EXCLUIDA_REASIGNADA",
+            accionAuditoria: Auditoria_1.AccionAuditoria.REASIGNAR_OPERARIO,
             excluidaId: excluida.id,
             detalle: `Se reasignó el operario de la tarea excluida al operario ${nombreOperario || nuevoOperarioId}.`,
             metadataJson: {
@@ -2609,6 +3291,7 @@ class DefinicionTareaPreventivaService {
             periodoAnio: excluida.periodoAnio,
             periodoMes: excluida.periodoMes,
             tipo: "EXCLUIDA_DIVIDIDA_MANUAL",
+            accionAuditoria: Auditoria_1.AccionAuditoria.DIVIDIR,
             excluidaId: excluida.id,
             detalle: `Se dividió manualmente la tarea excluida '${excluida.descripcion}' en ${division.bloques.length} bloque(s).`,
             metadataJson: {
@@ -2704,6 +3387,8 @@ class DefinicionTareaPreventivaService {
                     estado: client_1.EstadoTarea.ASIGNADA,
                     tipo: client_1.TipoTarea.PREVENTIVA,
                     frecuencia: excluida.frecuencia,
+                    definicionId: excluida.defId,
+                    diaSemanaProgramado: excluida.diaSemanaProgramado,
                     borrador: true,
                     periodoAnio: excluida.periodoAnio,
                     periodoMes: excluida.periodoMes,
@@ -2751,6 +3436,8 @@ class DefinicionTareaPreventivaService {
                     excluidaId: excluida.id,
                     tareaId: creada.id,
                     detalle: `Se agendó el bloque ${bloque.orden} de la tarea excluida '${excluida.descripcion}'.`,
+                    actorId: this.actor?.id ?? null,
+                    actorRol: this.actor?.rol ?? null,
                     metadataJson: {
                         bloqueId: bloque.id,
                         orden: bloque.orden,
@@ -2758,6 +3445,25 @@ class DefinicionTareaPreventivaService {
                         fechaFin: fechaFin.toISOString(),
                         completaExcluida: todosAgendados,
                     },
+                },
+            });
+            await new AuditoriaService_1.AuditoriaService(tx).registrar({
+                modulo: Auditoria_1.ModuloAuditoria.EXCLUIDA,
+                entidad: Auditoria_1.EntidadAuditoria.EXCLUIDA_BORRADOR,
+                entidadId: excluida.id,
+                accion: Auditoria_1.AccionAuditoria.AGENDAR_EXCLUIDA,
+                conjuntoId: dto.conjuntoId,
+                actor: this.actor,
+                descripcion: `Se agendo el bloque ${bloque.orden} de la tarea excluida '${excluida.descripcion}'.`,
+                periodoAnio: excluida.periodoAnio,
+                periodoMes: excluida.periodoMes,
+                metadataJson: {
+                    tareaId: creada.id,
+                    bloqueId: bloque.id,
+                    orden: bloque.orden,
+                    fechaInicio: fechaInicio.toISOString(),
+                    fechaFin: fechaFin.toISOString(),
+                    completaExcluida: todosAgendados,
                 },
             });
             return creada;
@@ -3124,6 +3830,7 @@ class DefinicionTareaPreventivaService {
             periodoAnio: excluida.periodoAnio,
             periodoMes: excluida.periodoMes,
             tipo: "EXCLUIDA_DESCARTADA",
+            accionAuditoria: Auditoria_1.AccionAuditoria.DESCARTAR_EXCLUIDA,
             excluidaId: excluida.id,
             detalle: `Se descartó manualmente la tarea excluida '${excluida.descripcion}'.`,
         });
@@ -3276,6 +3983,7 @@ class DefinicionTareaPreventivaService {
             periodoAnio: excluida.periodoAnio,
             periodoMes: excluida.periodoMes,
             tipo: "REEMPLAZO_MANUAL",
+            accionAuditoria: Auditoria_1.AccionAuditoria.REEMPLAZAR,
             detalle: `Se reemplazo manualmente la tarea '${tarea.descripcion}' por '${excluida.descripcion}'.`,
             tareaId: nuevaTarea.id,
             excluidaId: excluidaGenerada?.id ?? null,
@@ -3305,8 +4013,8 @@ class DefinicionTareaPreventivaService {
         if (+fechaFinUso < +fechaInicioUso) {
             return { ok: false, reason: "RANGO_INVERTIDO" };
         }
-        const diasEntregaRecogida = new Set([1, 3, 6]); // Lunes, Miércoles, Sábado
-        const { iniReserva, finReserva, entregaDia, recogidaDia } = this.calcularRangoReserva({
+        const diasEntregaRecogida = reservaMaquinaria_1.DIAS_ENTREGA_RECOGIDA;
+        const { iniReserva, finReserva, entregaDia, recogidaDia } = (0, reservaMaquinaria_1.calcularRangoReserva)({
             fechaInicioUso,
             fechaFinUso,
             diasEntregaRecogida,
@@ -3369,13 +4077,6 @@ class DefinicionTareaPreventivaService {
                 },
             },
         });
-        const getMaqIds = (json) => {
-            if (!Array.isArray(json))
-                return [];
-            return json
-                .map((x) => Number(x?.maquinariaId))
-                .filter((n) => Number.isFinite(n) && n > 0);
-        };
         const idsInteresSet = new Set(idsInteres);
         const bufferDiasBorrador = 4; // cubre corrimiento de entrega/recogida (L/X/S)
         const inicioBusquedaBorrador = new Date(iniReserva);
@@ -3404,7 +4105,7 @@ class DefinicionTareaPreventivaService {
         });
         const gruposBorrador = new Map();
         for (const t of borradores) {
-            const maqIds = Array.from(new Set(getMaqIds(t.maquinariaPlanJson).filter((id) => idsInteresSet.has(id))));
+            const maqIds = Array.from(new Set((0, maquinariaNecesidades_1.parseMaquinariaIdsComprometidos)(t.maquinariaPlanJson).filter((id) => idsInteresSet.has(id))));
             if (!maqIds.length)
                 continue;
             const key = t.grupoPlanId ? `G:${t.grupoPlanId}` : `T:${t.id}`;
@@ -3437,7 +4138,7 @@ class DefinicionTareaPreventivaService {
         for (const g of gruposBorrador.values()) {
             if (excluirGrupoPlanId && g.key === `G:${excluirGrupoPlanId}`)
                 continue;
-            const rangoBorrador = this.calcularRangoReserva({
+            const rangoBorrador = (0, reservaMaquinaria_1.calcularRangoReserva)({
                 fechaInicioUso: g.usoIni,
                 fechaFinUso: g.usoFin,
                 diasEntregaRecogida,
@@ -3624,7 +4325,14 @@ class DefinicionTareaPreventivaService {
                 borrador: true,
                 tipo: client_1.TipoTarea.PREVENTIVA,
             },
-            select: { id: true },
+            select: {
+                id: true,
+                descripcion: true,
+                fechaInicio: true,
+                fechaFin: true,
+                periodoAnio: true,
+                periodoMes: true,
+            },
         });
         if (!tarea) {
             throw new Error("Bloque no encontrado o no es borrador preventivo.");
@@ -3633,6 +4341,18 @@ class DefinicionTareaPreventivaService {
             tareaId,
             motivoTipo: "MANUAL_ELIMINADA",
             motivoMensaje: "La tarea fue retirada manualmente del borrador.",
+        });
+        await this.auditarTarea({
+            tareaId,
+            conjuntoId,
+            accion: Auditoria_1.AccionAuditoria.ELIMINAR,
+            descripcion: `Se retiro manualmente la tarea '${tarea.descripcion}' del borrador y paso a excluidas.`,
+            periodoAnio: tarea.periodoAnio,
+            periodoMes: tarea.periodoMes,
+            datosAntes: {
+                fechaInicio: tarea.fechaInicio,
+                fechaFin: tarea.fechaFin,
+            },
         });
         await this.prisma.tarea.delete({ where: { id: tareaId } });
     }
@@ -3693,17 +4413,10 @@ class DefinicionTareaPreventivaService {
      * ======================= */
     async crearReservasPlanificadasParaTareas(params) {
         const { conjuntoId, tareas, diasEntregaRecogida, excluirTareaIds = [], festivosSet, } = params;
-        const getMaqIds = (json) => {
-            if (!Array.isArray(json))
-                return [];
-            return json
-                .map((x) => Number(x?.maquinariaId))
-                .filter((n) => Number.isFinite(n) && n > 0);
-        };
         const sameDayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         const grupos = new Map();
         for (const t of tareas) {
-            const maqIds = getMaqIds(t.maquinariaPlanJson);
+            const maqIds = (0, maquinariaNecesidades_1.parseMaquinariaIdsComprometidos)(t.maquinariaPlanJson);
             if (!maqIds.length)
                 continue;
             const key = t.grupoPlanId ? `G:${t.grupoPlanId}` : `T:${t.id}`;
@@ -3734,7 +4447,7 @@ class DefinicionTareaPreventivaService {
         }
         // 2) Armar plan
         const plan = Array.from(grupos.values()).map((g) => {
-            const { entregaDia, recogidaDia, iniReserva, finReserva } = this.calcularRangoReserva({
+            const { entregaDia, recogidaDia, iniReserva, finReserva } = (0, reservaMaquinaria_1.calcularRangoReserva)({
                 fechaInicioUso: g.usoIni,
                 fechaFinUso: g.usoFin,
                 diasEntregaRecogida,
@@ -3984,63 +4697,6 @@ class DefinicionTareaPreventivaService {
         });
         return { ok: true, creadas: creadasIds.length, ids: creadasIds };
     }
-    /* =========================
-     * Reserva: utilidades
-     * ======================= */
-    buscarDiaPermitidoAnterior(fecha, diasPermitidos, festivosSet) {
-        const atStartOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-        const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        let d = atStartOfDay(fecha);
-        d.setDate(d.getDate() - 1);
-        for (let guard = 0; guard < 62; guard++) {
-            const k = key(d);
-            const esFestivo = festivosSet?.has(k) ?? false;
-            if (diasPermitidos.has(d.getDay()) && !esFestivo)
-                return new Date(d);
-            d.setDate(d.getDate() - 1);
-        }
-        return atStartOfDay(fecha);
-    }
-    buscarDiaPermitidoPosterior(fecha, diasPermitidos, festivosSet) {
-        const atStartOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-        const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        let d = atStartOfDay(fecha);
-        d.setDate(d.getDate() + 1);
-        for (let guard = 0; guard < 62; guard++) {
-            const k = key(d);
-            const esFestivo = festivosSet?.has(k) ?? false;
-            if (diasPermitidos.has(d.getDay()) && !esFestivo)
-                return new Date(d);
-            d.setDate(d.getDate() + 1);
-        }
-        return atStartOfDay(fecha);
-    }
-    calcularRangoReserva(params) {
-        const { fechaInicioUso, fechaFinUso, diasEntregaRecogida, festivosSet } = params;
-        if (!(fechaInicioUso instanceof Date) || isNaN(+fechaInicioUso)) {
-            throw new Error("fechaInicioUso inválida");
-        }
-        if (!(fechaFinUso instanceof Date) || isNaN(+fechaFinUso)) {
-            throw new Error("fechaFinUso inválida");
-        }
-        const iniUso = +fechaInicioUso <= +fechaFinUso ? fechaInicioUso : fechaFinUso;
-        const finUso = +fechaInicioUso <= +fechaFinUso ? fechaFinUso : fechaInicioUso;
-        if (!diasEntregaRecogida || diasEntregaRecogida.size === 0) {
-            throw new Error("diasEntregaRecogida vacío");
-        }
-        const atStartOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-        const atEndOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-        const usoInicioDia = atStartOfDay(iniUso);
-        const usoFinDia = atStartOfDay(finUso);
-        const entregaDia = this.buscarDiaPermitidoAnterior(usoInicioDia, diasEntregaRecogida, festivosSet);
-        const recogidaDia = this.buscarDiaPermitidoPosterior(usoFinDia, diasEntregaRecogida, festivosSet);
-        const iniReserva = atStartOfDay(entregaDia);
-        const finReserva = atEndOfDay(recogidaDia);
-        if (+finReserva < +iniReserva) {
-            throw new Error("Rango de reserva inválido (fin < inicio)");
-        }
-        return { entregaDia, recogidaDia, iniReserva, finReserva };
-    }
 }
 exports.DefinicionTareaPreventivaService = DefinicionTareaPreventivaService;
 function enumerateDays(start, end) {
@@ -4192,6 +4848,8 @@ function buildTareaBorradorCreateData(original, fechaInicio, fechaFin) {
             : undefined,
         tipo: original.tipo,
         frecuencia: original.frecuencia,
+        definicionId: original.definicionId ?? null,
+        diaSemanaProgramado: original.diaSemanaProgramado ?? null,
         borrador: true,
         periodoAnio: fechaInicio.getFullYear(),
         periodoMes: fechaInicio.getMonth() + 1,
@@ -4419,6 +5077,14 @@ function pickDaysByFrecuencia(days, def) {
             return days.filter((d) => d.getDay() === target);
         }
         case client_1.Frecuencia.QUINCENAL: {
+            // Igual que SEMANAL pero cada dos semanas: se conservan la 1a y la 3a
+            // ocurrencia del dia elegido dentro del mes (14 dias exactos de separacion).
+            if (def.diaSemanaProgramado) {
+                const target = diaSemanaToJsDay(def.diaSemanaProgramado);
+                const ocurrencias = days.filter((d) => d.getDay() === target);
+                return ocurrencias.filter((_, index) => index % 2 === 0 && index < 4);
+            }
+            // Definiciones antiguas sin dia de semana: se mantiene el calculo por fecha ancla.
             const ancla = construirFechaAnclaFrecuencia(def);
             return days.filter((d) => diferenciaDiasCalendario(ancla, d) % 14 === 0);
         }

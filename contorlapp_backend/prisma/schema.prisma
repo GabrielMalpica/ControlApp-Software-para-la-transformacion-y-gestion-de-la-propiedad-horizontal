@@ -25,6 +25,36 @@ enum Rol {
   jefe_operaciones
   supervisor
   operario
+  residente
+}
+
+enum TipoUnidadResidencial {
+  APARTAMENTO
+  CASA
+  OFICINA
+  LOCAL
+}
+
+enum TipoPedidoApp {
+  CONJUNTO
+  RESIDENTE
+}
+
+enum EstadoPedidoInterno {
+  BORRADOR
+  PENDIENTE_PAGO
+  PAGADO
+  PENDIENTE_ENVIO
+  ENVIADO
+  RECIBIDO
+  ENTREGADO
+  CANCELADO
+}
+
+enum TipoMovimientoPuntos {
+  ACUMULACION
+  REDENCION
+  AJUSTE
 }
 
 enum EstadoCivil {
@@ -368,8 +398,9 @@ model Usuario {
   nombre     String
   correo     String  @unique
   contrasena String
-  rol        String
-  activo     Boolean @default(true)
+  rol                      String
+  activo                   Boolean @default(true)
+  requiereCambioContrasena Boolean @default(false)
 
   telefono        BigInt
   fechaNacimiento DateTime
@@ -393,7 +424,10 @@ model Usuario {
   supervisor         Supervisor?
   operario           Operario?
   administrador      Administrador?
+  residente          Residente?
   compromisosCreados CompromisoConjunto[] @relation("CompromisoCreadoPor")
+  pedidos            PedidoApp[]
+  movimientosPuntos  MovimientoPuntos[]
 }
 
 model Empresa {
@@ -599,6 +633,8 @@ model Conjunto {
   solicitudHerramientas     SolicitudHerramienta[]
   prestamosHerramientas     PrestamoHerramientaConjunto[]
   compromisos               CompromisoConjunto[]
+  residentes                Residente[]
+  pedidos                   PedidoApp[]
 
   // Plan Esperanza
   planEsperanzaConfig PlanEsperanzaConfig?
@@ -1102,6 +1138,10 @@ model Tarea {
   tipo       TipoTarea   @default(CORRECTIVA)
   frecuencia Frecuencia?
 
+  // Origen preventivo (trazabilidad hacia la definición que la generó)
+  definicionId        Int?
+  diaSemanaProgramado DiaSemana?
+
   // Planificación / cronograma
   borrador       Boolean @default(false)
   periodoAnio    Int?
@@ -1141,6 +1181,7 @@ model Tarea {
   @@index([periodoAnio, periodoMes, conjuntoId])
   @@index([grupoPlanId, bloqueIndex])
   @@index([rendimientoId])
+  @@index([definicionId], map: "Tarea_definicionId_idx")
   @@map("Tarea")
 }
 
@@ -1155,10 +1196,11 @@ model PreventivaExcluidaBorrador {
   origenTareaId     Int?
   tareaProgramadaId Int?
 
-  descripcion     String
-  frecuencia      Frecuencia?
-  prioridad       Int         @default(2)
-  duracionMinutos Int
+  descripcion         String
+  frecuencia          Frecuencia?
+  diaSemanaProgramado DiaSemana?
+  prioridad           Int         @default(2)
+  duracionMinutos     Int
 
   fechaObjetivo DateTime
 
@@ -1208,6 +1250,43 @@ model PreventivaBorradorEvento {
   @@index([conjuntoId, periodoAnio, periodoMes], map: "PBE_periodo_idx")
   @@index([conjuntoId, periodoAnio, periodoMes, tipo], map: "PBE_periodo_tipo_idx")
   @@map("PreventivaBorradorEvento")
+}
+
+/**
+ * Bitácora de auditoría transversal.
+ * `modulo`, `entidad` y `accion` son texto libre a propósito: añadir auditoría a
+ * otro módulo no debe requerir una migración.
+ */
+model AuditoriaEvento {
+  id BigInt @id @default(autoincrement())
+
+  empresaId  Int?
+  conjuntoId String?
+
+  modulo    String
+  entidad   String
+  entidadId String
+  accion    String
+
+  actorId     String?
+  actorRol    String?
+  actorNombre String?
+  origen      String  @default("USUARIO")
+
+  descripcion  String?
+  datosAntes   Json?
+  datosDespues Json?
+  metadataJson Json?
+
+  periodoAnio Int?
+  periodoMes  Int?
+
+  creadoEn DateTime @default(now())
+
+  @@index([modulo, entidad, entidadId], map: "AUD_entidad_idx")
+  @@index([conjuntoId, periodoAnio, periodoMes, modulo], map: "AUD_periodo_idx")
+  @@index([creadoEn], map: "AUD_creado_idx")
+  @@map("AuditoriaEvento")
 }
 
 /**
@@ -1368,6 +1447,101 @@ model Festivo {
   nombre   String?
   pais     String   @default("CO")
   creadoEn DateTime @default(now())
+}
+
+/**
+ * =========================================
+ * MODELOS - COMERCIO / RESIDENTES
+ * =========================================
+ */
+
+model Residente {
+  id        String               @id
+  usuario   Usuario              @relation(fields: [id], references: [id], onDelete: Cascade)
+  conjunto  Conjunto             @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
+  conjuntoId String
+
+  tipoUnidad TipoUnidadResidencial
+  sector     String?
+  unidad     String
+
+  telefonoContacto String?
+  activo           Boolean  @default(true)
+  creadoEn         DateTime @default(now())
+  actualizadoEn    DateTime @updatedAt
+
+  pedidos PedidoApp[] @relation("PedidoAppResidente")
+
+  @@index([conjuntoId])
+  @@index([conjuntoId, activo])
+  @@map("Residente")
+}
+
+model PedidoApp {
+  id        Int      @id @default(autoincrement())
+  tipo      TipoPedidoApp
+  estado    EstadoPedidoInterno @default(BORRADOR)
+  estadoWoo String?
+
+  wooOrderId String?  @unique
+  usuarioId  String
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id])
+  conjuntoId String?
+  conjunto   Conjunto? @relation(fields: [conjuntoId], references: [nit])
+
+  residenteId String?
+  residente   Residente? @relation("PedidoAppResidente", fields: [residenteId], references: [id])
+
+  total   Decimal @db.Decimal(14, 2)
+  moneda  String  @default("COP")
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  items              PedidoAppItem[]
+  movimientosPuntos  MovimientoPuntos[]
+
+  @@index([usuarioId])
+  @@index([usuarioId, estado])
+  @@index([conjuntoId, estado])
+  @@index([wooOrderId])
+  @@map("PedidoApp")
+}
+
+model PedidoAppItem {
+  id        Int       @id @default(autoincrement())
+  pedido    PedidoApp @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  pedidoId  Int
+
+  wooProductId    Int?
+  wooVariationId  Int?
+  nombreProducto  String
+  sku             String?
+  cantidad        Decimal @db.Decimal(14, 4)
+  precioUnitario  Decimal @db.Decimal(14, 2)
+  subtotal        Decimal @db.Decimal(14, 2)
+
+  @@index([pedidoId])
+  @@map("PedidoAppItem")
+}
+
+model MovimientoPuntos {
+  id        Int      @id @default(autoincrement())
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+  usuarioId String
+
+  pedido   PedidoApp? @relation(fields: [pedidoId], references: [id])
+  pedidoId Int?
+
+  tipo        TipoMovimientoPuntos
+  puntos      Int
+  descripcion String?
+
+  creadoEn DateTime @default(now())
+
+  @@index([usuarioId])
+  @@index([usuarioId, creadoEn])
+  @@map("MovimientoPuntos")
 }
 
 /**

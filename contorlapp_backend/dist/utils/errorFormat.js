@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildMaquinariaNoDisponibleError = buildMaquinariaNoDisponibleError;
+exports.mensajeValidacionAmigable = mensajeValidacionAmigable;
 function buildMaquinariaNoDisponibleError(params) {
     const { maquinariaId, conflictos, maquinaNombre } = params;
     const titulo = maquinaNombre
@@ -55,4 +56,44 @@ function buildMaquinariaNoDisponibleError(params) {
         },
         conflictos,
     };
+}
+/* ------------------------------------------------------------------ */
+/* Validacion: mensajes de usuario, nunca el volcado interno de Zod    */
+/* ------------------------------------------------------------------ */
+/**
+ * Traduce un issue de Zod a un mensaje que puede leer el usuario final.
+ *
+ * Los mensajes por defecto de Zod ("Invalid input: expected number, received
+ * null") describen la excepcion tecnica y no deben salir al cliente. Los
+ * mensajes propios (los que escribimos en `.refine()` / `{ message }`) si se
+ * conservan, porque ya estan redactados para el usuario.
+ */
+function mensajeValidacionAmigable(issue) {
+    // `custom` y `invalid_union` con mensaje propio vienen redactados por nosotros.
+    if (issue.code === "custom" && issue.message)
+        return issue.message;
+    switch (issue.code) {
+        case "invalid_type":
+            return "Falta este dato o tiene un formato que no corresponde.";
+        case "too_small":
+            return issue.minimum != null
+                ? `El valor es demasiado corto o pequeño (mínimo ${issue.minimum}).`
+                : "El valor es demasiado corto o pequeño.";
+        case "too_big":
+            return issue.maximum != null
+                ? `El valor es demasiado largo o grande (máximo ${issue.maximum}).`
+                : "El valor es demasiado largo o grande.";
+        case "invalid_value":
+        case "invalid_enum_value":
+            return "El valor seleccionado no es una opción válida.";
+        case "invalid_format":
+        case "invalid_string":
+            return "El formato de este dato no es válido.";
+        case "not_multiple_of":
+            return "El valor no es un múltiplo permitido.";
+        case "unrecognized_keys":
+            return "Se enviaron datos que no corresponden a este formulario.";
+        default:
+            return "Revisa este dato.";
+    }
 }

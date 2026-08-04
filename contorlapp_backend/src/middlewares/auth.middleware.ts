@@ -36,3 +36,23 @@ export const authRequired: RequestHandler = (req, res, next) => {
     res.status(401).json({ message: "Token inválido o expirado" });
   }
 };
+
+export const authOptional: RequestHandler = (req, _res, next) => {
+  const header = req.headers.authorization;
+
+  if (!header || !header.startsWith("Bearer ")) {
+    next();
+    return;
+  }
+
+  const token = header.replace("Bearer ", "").trim();
+
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET as string) as AuthPayload;
+    req.user = payload;
+  } catch {
+    req.user = undefined;
+  }
+
+  next();
+};

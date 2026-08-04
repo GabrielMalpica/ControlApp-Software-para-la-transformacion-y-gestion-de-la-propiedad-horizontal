@@ -9,6 +9,7 @@ const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
+const errorFormat_1 = require("./utils/errorFormat");
 const Rutas_1 = __importDefault(require("./routes/Rutas"));
 const prisma_1 = require("./db/prisma");
 const NotificacionService_1 = require("./services/NotificacionService");
@@ -195,15 +196,19 @@ const errorHandler = (err, _req, res, _next) => {
             : Array.isArray(err?.errors)
                 ? err.errors
                 : [];
+        // El detalle tecnico queda solo en el log del servidor.
+        console.error("[validacion] issues:", JSON.stringify(issues));
         const details = issues.map((issue) => ({
             field: Array.isArray(issue?.path) && issue.path.length > 0
                 ? issue.path.join(".")
                 : undefined,
-            message: fixMojibake(String(issue?.message ?? "Valor invalido.")),
+            message: fixMojibake((0, errorFormat_1.mensajeValidacionAmigable)(issue ?? {})),
         }));
-        const primaryMessage = details.length === 1
-            ? details[0].message
-            : "Revisa la informacion ingresada.";
+        const primaryMessage = details.length === 1 && details[0].field
+            ? `${details[0].message} (campo: ${details[0].field})`
+            : details.length === 1
+                ? details[0].message
+                : "Revisa la informacion ingresada.";
         sendError(res, 400, primaryMessage, {
             code: "VALIDATION_ERROR",
             details,

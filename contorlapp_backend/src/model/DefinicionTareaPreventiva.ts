@@ -1,6 +1,15 @@
 // src/model/DefinicionTareaPreventiva.ts
 import { z } from "zod";
-import { DiaSemana, Frecuencia, UnidadCalculo } from "@prisma/client";
+import {
+  DiaSemana,
+  Frecuencia,
+  TipoMaquinaria,
+  UnidadCalculo,
+} from "@prisma/client";
+
+const UsuarioIdDTO = z
+  .union([z.string().trim().min(1), z.number().int().positive()])
+  .transform((value) => String(value));
 
 /** Dominio base 1:1 (aprox) con Prisma */
 export interface DefinicionTareaPreventivaDominio {
@@ -40,9 +49,9 @@ export interface DefinicionTareaPreventivaDominio {
 
   maquinariaPlanJson?:
     | {
-        maquinariaId?: number;
-        tipo?: string;
-        cantidad?: number;
+        tipo: TipoMaquinaria;
+        cantidad: number;
+        maquinariaSugeridaId?: number | null;
       }[]
     | null;
 
@@ -68,11 +77,29 @@ const InsumoPlanItemDTO = z.object({
   consumoPorUnidad: z.coerce.number().min(0),
 });
 
-const MaquinariaPlanItemDTO = z.object({
-  maquinariaId: z.number().int().positive().optional(),
-  tipo: z.string().min(1).optional(),
-  cantidad: z.coerce.number().min(0).optional(),
-});
+/**
+ * La definicion preventiva declara la NECESIDAD de maquinaria (que tipo y cuantas),
+ * no una maquina concreta. La maquina real se asigna despues desde el cronograma
+ * de maquinaria. `maquinariaId` se sigue aceptando de entrada como sugerencia,
+ * para no romper clientes antiguos.
+ */
+/**
+ * `nullish` en los ids no es cosmético: el controller parsea el DTO y el servicio
+ * lo vuelve a parsear, así que el esquema tiene que aceptar su propia salida
+ * (donde `maquinariaSugeridaId` ya es `null`).
+ */
+const MaquinariaPlanItemDTO = z
+  .object({
+    tipo: z.nativeEnum(TipoMaquinaria),
+    cantidad: z.coerce.number().int().min(1).default(1),
+    maquinariaSugeridaId: z.number().int().positive().nullish(),
+    maquinariaId: z.number().int().positive().nullish(),
+  })
+  .transform(({ tipo, cantidad, maquinariaSugeridaId, maquinariaId }) => ({
+    tipo,
+    cantidad,
+    maquinariaSugeridaId: maquinariaSugeridaId ?? maquinariaId ?? null,
+  }));
 
 const HerramientaPlanItemDTO = z.object({
   herramientaId: z.number().int().positive(),
@@ -118,10 +145,10 @@ export const CrearDefinicionPreventivaDTO = z
     maquinariaPlanJson: z.array(MaquinariaPlanItemDTO).optional(),
     herramientasPlanJson: z.array(HerramientaPlanItemDTO).optional(),
 
-    responsableSugeridoId: z.number().int().positive().optional(),
-    operariosIds: z.array(z.number().int().positive()).optional(),
+    responsableSugeridoId: UsuarioIdDTO.optional(),
+    operariosIds: z.array(UsuarioIdDTO).optional(),
 
-    supervisorId: z.number().int().positive().optional(),
+    supervisorId: UsuarioIdDTO.optional(),
 
     activo: z.boolean().default(true),
   })
@@ -179,11 +206,16 @@ export const EditarDefinicionPreventivaDTO = z.object({
   maquinariaPlanJson: z.array(MaquinariaPlanItemDTO).optional().nullable(),
   herramientasPlanJson: z.array(HerramientaPlanItemDTO).optional().nullable(),
 
-  responsableSugeridoId: z.number().int().positive().optional().nullable(),
-  operariosIds: z.array(z.number().int().positive()).optional().nullable(),
+  responsableSugeridoId: UsuarioIdDTO.optional().nullable(),
+  operariosIds: z.array(UsuarioIdDTO).optional().nullable(),
 
-  supervisorId: z.number().int().positive().optional().nullable(),
+  supervisorId: UsuarioIdDTO.optional().nullable(),
   activo: z.boolean().optional(),
+});
+
+/** Borrado en lote de definiciones preventivas */
+export const EliminarPreventivasLoteDTO = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(200),
 });
 
 /** Filtro para listar/consultar definiciones */
@@ -217,6 +249,18 @@ export const GenerarCronogramaDTO = z.object({
     .max(12 * 60)
     .optional(),
   confirmacionesReemplazo: z.array(ConfirmacionReemplazoDTO).optional(),
+  /**
+   * RESET  = se descarta el borrador previo y se planifica todo de cero (default, contrato antiguo).
+   * CONSERVAR = se respeta el borrador ya cuadrado y solo se planifican las
+   *             definiciones que aun no tienen tarea en el periodo.
+   */
+  modo: z.enum(["RESET", "CONSERVAR"]).optional().default("RESET"),
+});
+
+export const PeriodoBorradorDTO = z.object({
+  conjuntoId: z.string().min(3),
+  anio: z.coerce.number().int().min(2000).max(2100),
+  mes: z.coerce.number().int().min(1).max(12),
 });
 
 export const ListarExcluidasBorradorDTO = z.object({

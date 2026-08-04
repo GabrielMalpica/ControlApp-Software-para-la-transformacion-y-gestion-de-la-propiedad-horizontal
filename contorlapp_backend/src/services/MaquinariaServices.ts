@@ -4,6 +4,8 @@ import {
   construirRutaElemento,
   elementoParentChainInclude,
 } from "../utils/elementoHierarchy";
+import { parseMaquinariaIdsComprometidos } from "../utils/maquinariaNecesidades";
+import { DIAS_ENTREGA_RECOGIDA } from "../utils/reservaMaquinaria";
 
 const AsignarAConjuntoDTO = z.object({
   conjuntoId: z.string().min(3),
@@ -12,7 +14,7 @@ const AsignarAConjuntoDTO = z.object({
 });
 type YMD = { y: number; m: number; d: number };
 
-const DELIVERY_PICKUP_DOW = new Set<number>([1, 3, 6]); // Lun, Mie, Sab
+const DELIVERY_PICKUP_DOW = DIAS_ENTREGA_RECOGIDA;
 
 export type ConflictoMaquinaria = {
   maquinariaId: number;
@@ -177,13 +179,6 @@ export class MaquinariaService {
       orderBy: [{ fechaInicio: "asc" }],
     });
 
-    const getMaqIds = (json: any): number[] => {
-      if (!Array.isArray(json)) return [];
-      return json
-        .map((x) => Number(x?.maquinariaId))
-        .filter((n) => Number.isFinite(n) && n > 0);
-    };
-
     const borradores = await this.prisma.tarea.findMany({
       where: {
         borrador: true,
@@ -232,7 +227,7 @@ export class MaquinariaService {
     };
 
     const definicionReservas = definiciones.flatMap((def) => {
-      const maqIds = new Set(getMaqIds(def.maquinariaPlanJson));
+      const maqIds = new Set(parseMaquinariaIdsComprometidos(def.maquinariaPlanJson));
       if (!maqIds.has(maquinariaId)) return [];
 
       const items: Array<{
@@ -311,7 +306,7 @@ export class MaquinariaService {
           fuente: u.tarea?.borrador == true ? "BORRADOR" : "PUBLICADA",
         })),
         ...borradores
-          .filter((t) => getMaqIds(t.maquinariaPlanJson).includes(maquinariaId))
+          .filter((t) => parseMaquinariaIdsComprometidos(t.maquinariaPlanJson).includes(maquinariaId))
           .map((t) => ({
             id: -t.id,
             fechaInicio: t.fechaInicio,
@@ -540,89 +535,4 @@ export function calcularVentanaPrestamoLogistico(
   const finPrestamoExclusivo = addDaysLocal(diaRecogida, 1); // 00:00 día siguiente
 
   return { inicioPrestamo, finPrestamoExclusivo, diaEntrega, diaRecogida };
-}
-
-export async function validarMaquinariaDisponibleEnVentana(params: {
-  prisma: PrismaClient;
-  maquinariaIds: number[];
-  ventanaInicio: Date; // inclusive
-  ventanaFinExclusivo: Date; // exclusivo
-  ignorarTareaIds?: number[]; // útil en reprogramaciones
-}): Promise<{ ok: true } | { ok: false; conflictos: ConflictoMaquinaria[] }> {
-  const {
-    prisma,
-    maquinariaIds,
-    ventanaInicio,
-    ventanaFinExclusivo,
-    ignorarTareaIds = [],
-  } = params;
-
-  if (!maquinariaIds.length) return { ok: true };
-
-  const usos = await prisma.usoMaquinaria.findMany({
-    where: {
-      maquinariaId: { in: maquinariaIds },
-      // overlap: (usoInicio < ventanaFin) AND (usoFin > ventanaInicio)
-      fechaInicio: { lt: ventanaFinExclusivo },
-      OR: [
-        { fechaFin: null }, // abierto => ocupa
-        { fechaFin: { gt: ventanaInicio } },
-      ],
-      ...(ignorarTareaIds.length
-        ? { NOT: { tareaId: { in: ignorarTareaIds } } }
-        : {}),
-    },
-    select: {
-      id: true,
-      maquinariaId: true,
-      tareaId: true,
-      fechaInicio: true,
-      fechaFin: true,
-    },
-  });
-
-  if (!usos.length) return { ok: true };
-
-  return {
-    ok: false,
-    conflictos: usos.map((u) => ({
-      maquinariaId: u.maquinariaId,
-      usoId: u.id,
-      tareaId: u.tareaId,
-      inicio: u.fechaInicio,
-      fin: u.fechaFin,
-    })),
-  };
-}
-
-export async function crearReservasMaquinariaParaTarea(params: {
-  tx: PrismaClient | Prisma.TransactionClient;
-  tareaId: number;
-  maquinariaIds: number[];
-  fechaInicioUso: Date;
-  fechaFinUso: Date;
-  observacion?: string;
-}): Promise<void> {
-  const { tx, tareaId, maquinariaIds, fechaInicioUso, fechaFinUso } = params;
-  if (!maquinariaIds.length) return;
-
-  const { inicioPrestamo, finPrestamoExclusivo, diaEntrega, diaRecogida } =
-    calcularVentanaPrestamoLogistico(fechaInicioUso, fechaFinUso);
-
-  const obs =
-    params.observacion ??
-    `Reserva logística: entrega ${diaEntrega.toISOString().slice(0, 10)} / recogida ${diaRecogida.toISOString().slice(0, 10)}`;
-
-  // 1 registro por máquina
-  for (const maqId of maquinariaIds) {
-    await (tx as any).usoMaquinaria.create({
-      data: {
-        tareaId,
-        maquinariaId: maqId,
-        fechaInicio: inicioPrestamo,
-        fechaFin: finPrestamoExclusivo, // ✅ fin exclusivo (00:00 día siguiente a recogida)
-        observacion: obs,
-      },
-    });
-  }
 }

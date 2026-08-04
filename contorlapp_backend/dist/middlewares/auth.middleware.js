@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.authRequired = void 0;
+exports.authOptional = exports.authRequired = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const authRequired = (req, res, next) => {
     const header = req.headers.authorization;
@@ -22,3 +22,20 @@ const authRequired = (req, res, next) => {
     }
 };
 exports.authRequired = authRequired;
+const authOptional = (req, _res, next) => {
+    const header = req.headers.authorization;
+    if (!header || !header.startsWith("Bearer ")) {
+        next();
+        return;
+    }
+    const token = header.replace("Bearer ", "").trim();
+    try {
+        const payload = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
+        req.user = payload;
+    }
+    catch {
+        req.user = undefined;
+    }
+    next();
+};
+exports.authOptional = authOptional;

@@ -13,10 +13,15 @@ router.use((0, role_middleware_1.requireRoles)("gerente"));
 router.post("/conjuntos/:nit/preventivas", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.crear));
 router.get("/conjuntos/:nit/preventivas", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.listar));
 router.patch("/conjuntos/:nit/preventivas/:id", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.actualizar));
+// ⚠️ Las rutas con segmento literal van SIEMPRE antes que `/:id`, o Express
+// las captura como si `borrador` fuese un id.
+router.delete("/conjuntos/:nit/preventivas", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.eliminarVarias));
+router.delete("/conjuntos/:nit/preventivas/borrador", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.descartarBorrador));
 router.delete("/conjuntos/:nit/preventivas/:id", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.eliminar));
 // 🔹 Borrador
 router.post("/conjuntos/:nit/preventivas/generar-cronograma", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.generarCronogramaMensual));
 router.get("/conjuntos/:nit/preventivas/borrador", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.listarBorrador));
+router.get("/conjuntos/:nit/preventivas/borrador/estado", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.estadoBorrador));
 router.post("/conjuntos/:nit/preventivas/borrador/tarea", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.crearBloqueBorrador));
 router.patch("/conjuntos/:nit/preventivas/borrador/tarea/:id", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.editarBloqueBorrador));
 router.post("/conjuntos/:nit/preventivas/borrador/tareas/reordenar-dia", (0, DefinicionTareaPreventivaController_1.asyncHandler)(ctrl.reordenarTareasDiaBorrador));

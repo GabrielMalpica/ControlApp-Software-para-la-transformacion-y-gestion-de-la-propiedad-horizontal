@@ -35,11 +35,47 @@ router.get(
   requirePermission("cronograma.excluidas_ver"),
   controller.listarExcluidasStandby,
 );
+router.get(
+  "/conjuntos/:nit/cronograma/excluidas-standby/:id/opciones-reemplazo",
+  authRequired,
+  requirePermission("cronograma.excluidas_ver"),
+  controller.opcionesReemplazoExcluida,
+);
 router.post(
   "/conjuntos/:nit/cronograma/excluidas-standby/:id/programar-correctiva",
   authRequired,
   requirePermission("cronograma.correctivas_programar"),
   controller.programarExcluidaComoCorrectiva,
+);
+router.post(
+  "/conjuntos/:nit/cronograma/excluidas-standby/:id/reasignar-operario",
+  authRequired,
+  requirePermission("cronograma.correctivas_programar"),
+  controller.reasignarOperarioExcluidaStandby,
+);
+router.get(
+  "/conjuntos/:nit/cronograma/informe-excluidas",
+  authRequired,
+  requirePermission("cronograma.ver"),
+  controller.informeExcluidas,
+);
+router.get(
+  "/conjuntos/:nit/cronograma/informe-auditoria",
+  authRequired,
+  requirePermission("cronograma.ver"),
+  controller.informeAuditoria,
+);
+router.get(
+  "/conjuntos/:nit/auditoria",
+  authRequired,
+  requirePermission("cronograma.ver"),
+  controller.listarAuditoria,
+);
+router.post(
+  "/conjuntos/:nit/auditoria/trazabilidad",
+  authRequired,
+  requirePermission("cronograma.ver"),
+  controller.trazabilidadAuditoria,
 );
 router.delete(
   "/conjuntos/:nit/cronograma/publicado",

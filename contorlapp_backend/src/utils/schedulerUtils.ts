@@ -390,6 +390,8 @@ export function buscarHuecoDiaEarliest(params: {
  * ✅ Hueco earliest desde apertura, permitiendo:
  * - 1 bloque (ideal)
  * - 2 bloques (split) para rodear descanso (ej: 12:30-13:00 + 14:00-15:10)
+ * - N bloques (maxBloques > 2) rellenando huecos consecutivos de forma greedy,
+ *   para aprovechar agendas muy fragmentadas antes de excluir la tarea.
  *
  * Se trabaja con "ocupados globales" ya merged + bloqueos por descanso.
  */
@@ -400,7 +402,7 @@ export function buscarHuecoDiaConSplitEarliest(params: {
   ocupados: Intervalo[];
   bloqueos: Bloqueo[];
   desiredStartMin?: number;
-  maxBloques?: 1 | 2;
+  maxBloques?: number;
 }): BloquePlan[] | null {
   const {
     startMin,
@@ -449,6 +451,29 @@ export function buscarHuecoDiaConSplitEarliest(params: {
         ];
       }
     }
+  }
+
+  if (maxBloques < 3) return null;
+
+  // 3) N bloques earliest: se rellenan huecos consecutivos hasta cubrir la duracion.
+  for (let idx = 0; idx < libres.length; idx++) {
+    const plan: BloquePlan[] = [];
+    let restante = durMin;
+
+    for (let j = idx; j < libres.length && restante > 0; j++) {
+      if (plan.length >= maxBloques) break;
+
+      const L = libres[j];
+      const inicio = j === idx ? Math.max(L.i, desiredStartMin) : L.i;
+      const capacidad = L.f - inicio;
+      if (capacidad <= 0) continue;
+
+      const tomar = Math.min(capacidad, restante);
+      plan.push({ i: inicio, f: inicio + tomar });
+      restante -= tomar;
+    }
+
+    if (restante <= 0 && plan.length > 0) return plan;
   }
 
   return null;
@@ -586,6 +611,10 @@ type CrearTareaPayload = {
   tipo: TipoTarea;
   frecuencia?: Frecuencia | null;
 
+  // origen preventivo (trazabilidad hacia la definicion que la genero)
+  definicionId?: number | null;
+  diaSemanaProgramado?: DiaSemana | null;
+
   prioridad: number;
   supervisorId?: string | null;
 
@@ -670,6 +699,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     candidatasIdsPreferidas,
     marcarReemplazadasComoNoCompletadas = false,
     incluirBorradorEnAgenda,
+    incluirPublicadasEnAgenda,
     onEvent,
   } = params;
 
@@ -762,6 +792,11 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       fechaFin: { gte: ini },
       estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
       prioridad: { in: prioridadesPermitidas },
+      // Solo se desplazan tareas del mismo ambito que la que se esta ubicando:
+      // un borrador nunca debe mandar a reprogramacion una tarea ya publicada.
+      ...(payload.borrador || !incluirPublicadasEnAgenda
+        ? { borrador: true }
+        : {}),
     },
     select: {
       id: true,
@@ -989,6 +1024,8 @@ async function crearTareaConBloques(
         descripcion: payload.descripcion,
         tipo: payload.tipo,
         frecuencia: payload.frecuencia ?? null,
+        definicionId: payload.definicionId ?? null,
+        diaSemanaProgramado: payload.diaSemanaProgramado ?? null,
 
         fechaInicio,
         fechaFin,

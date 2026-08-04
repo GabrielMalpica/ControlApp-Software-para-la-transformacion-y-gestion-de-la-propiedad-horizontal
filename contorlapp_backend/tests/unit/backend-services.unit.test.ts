@@ -28,6 +28,7 @@ describe('Pruebas unitarias backend', () => {
 
   test('PU1 - Servicio de conjuntos: crea un conjunto con metadatos requeridos', async () => {
     const prisma: any = {
+      $transaction: jest.fn(),
       administrador: { findUnique: jest.fn().mockResolvedValue({ id: 'admin-1' }) },
       conjunto: {
         create: jest.fn().mockResolvedValue({
@@ -51,6 +52,7 @@ describe('Pruebas unitarias backend', () => {
       conjuntoHerramientaStock: { createMany: jest.fn().mockResolvedValue({ count: 2 }) },
     };
 
+    prisma.$transaction.mockImplementation(async (cb: any) => cb(prisma));
     const service = new GerenteService(prisma);
     (service as any).resolverEmpresaNit = jest.fn().mockResolvedValue('EMP-1');
 
@@ -81,7 +83,29 @@ describe('Pruebas unitarias backend', () => {
 
   test('PU3 - Servicio de tareas: registra una tarea en un conjunto', async () => {
     const prisma: any = {
+      // Sin periodos de disponibilidad registrados: el operario no tiene restricciones.
+      operarioDisponibilidadPeriodo: { findFirst: jest.fn().mockResolvedValue(null) },
+      // Jornada abierta L-S: el horario no es lo que se prueba aqui, pero da
+      // capacidad semanal suficiente para que la validacion no bloquee.
+      conjuntoHorario: {
+        findMany: jest.fn().mockResolvedValue(
+          ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO'].map((dia) => ({
+            dia,
+            horaApertura: '00:00',
+            horaCierre: '23:59',
+            descansoInicio: null,
+            descansoFin: null,
+          })),
+        ),
+      },
+      operario: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      conjunto: { findUnique: jest.fn().mockResolvedValue(null) },
       tarea: {
+        // El operario no tiene otras tareas esa semana.
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn().mockResolvedValue({
           id: 55,
           descripcion: 'Lubricar puerta principal',

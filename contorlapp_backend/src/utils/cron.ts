@@ -2,6 +2,7 @@
 import cron from "node-cron";
 import { PrismaClient } from "@prisma/client";
 import { DefinicionTareaPreventivaService } from "../services/DefinicionTareaPreventivaService";
+import { purgarExcluidasDeMesesAnteriores } from "../services/CronogramaServices";
 
 const prisma = new PrismaClient();
 const service = new DefinicionTareaPreventivaService(prisma);
@@ -31,6 +32,15 @@ cron.schedule("0 0 1 * *", async () => {
     } catch (e: any) {
       console.error(`[CRON] Error en ${c.nit}:`, e?.message ?? e);
     }
+  }
+
+  // Las tareas excluidas solo son visibles durante su propio mes: al entrar el
+  // nuevo periodo se purgan las de meses anteriores en todos los conjuntos.
+  try {
+    const eliminadas = await purgarExcluidasDeMesesAnteriores(prisma, { anio, mes });
+    console.log(`[CRON] Excluidas de meses anteriores eliminadas: ${eliminadas}`);
+  } catch (e: any) {
+    console.error("[CRON] Error purgando excluidas de meses anteriores:", e?.message ?? e);
   }
 
   console.log(`[CRON] Listo ${anio}-${mes}`);

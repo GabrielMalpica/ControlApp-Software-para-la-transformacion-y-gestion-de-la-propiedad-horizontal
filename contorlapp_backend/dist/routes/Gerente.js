@@ -1,7 +1,11 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 // src/routes/gerente.routes.ts
 const express_1 = require("express");
+const multer_1 = __importDefault(require("multer"));
 const CompromisoConjuntoController_1 = require("../controller/CompromisoConjuntoController");
 const GerenteController_1 = require("../controller/GerenteController");
 const auth_middleware_1 = require("../middlewares/auth.middleware");
@@ -10,6 +14,39 @@ const role_middleware_1 = require("../middlewares/role.middleware");
 const router = (0, express_1.Router)();
 const ctrl = new GerenteController_1.GerenteController();
 const compromisosCtrl = new CompromisoConjuntoController_1.CompromisoConjuntoController();
+const uploadResidentes = (0, multer_1.default)({
+    storage: multer_1.default.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+    fileFilter: (_req, file, cb) => {
+        const mime = String(file.mimetype ?? "").toLowerCase();
+        const name = String(file.originalname ?? "").toLowerCase();
+        const isExcel = mime.includes("sheet") ||
+            mime.includes("excel") ||
+            name.endsWith(".xlsx") ||
+            name.endsWith(".csv");
+        if (!isExcel) {
+            cb(new Error("Solo se permiten archivos Excel (.xlsx) o CSV para cargar residentes."));
+            return;
+        }
+        cb(null, true);
+    },
+});
+const uploadConjuntos = (0, multer_1.default)({
+    storage: multer_1.default.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+    fileFilter: (_req, file, cb) => {
+        const mime = String(file.mimetype ?? "").toLowerCase();
+        const name = String(file.originalname ?? "").toLowerCase();
+        const isXlsx = mime.includes("spreadsheetml") ||
+            mime.includes("sheet") ||
+            name.endsWith(".xlsx");
+        if (!isXlsx || !name.endsWith(".xlsx")) {
+            cb(new Error("Solo se permiten plantillas Excel (.xlsx) para cargar conjuntos."));
+            return;
+        }
+        cb(null, true);
+    },
+});
 /* Empresa */
 router.get("/permisos", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente"), ctrl.obtenerCatalogoPermisos);
 router.put("/permisos", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente"), ctrl.actualizarMatrizPermisos);
@@ -20,6 +57,11 @@ router.post("/usuarios", ctrl.crearUsuario);
 router.put("/usuarios/:id", ctrl.editarUsuario);
 router.get("/usuarios", ctrl.listarUsuarios);
 router.delete("/usuarios/:id", ctrl.eliminarUsuario);
+router.post("/residentes", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("residentes.crear"), ctrl.crearResidenteManual);
+router.get("/residentes", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("residentes.ver"), ctrl.listarResidentes);
+router.put("/residentes/:residenteId", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("residentes.editar"), ctrl.editarResidente);
+router.delete("/residentes/:residenteId", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("residentes.eliminar"), ctrl.eliminarResidenteGestion);
+router.post("/residentes/carga-masiva", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("residentes.cargar_masivo"), uploadResidentes.single("file"), ctrl.cargarResidentesMasivo);
 /* Roles / perfiles */
 router.post("/gerentes", ctrl.asignarGerente);
 router.post("/administradores", ctrl.asignarAdministrador);
@@ -29,6 +71,8 @@ router.post("/operarios", ctrl.asignarOperario);
 router.get("/supervisores", ctrl.listarSupervisores);
 /* Conjuntos */
 router.post("/conjuntos", ctrl.crearConjunto);
+router.post("/conjuntos/carga-masiva", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente"), uploadConjuntos.single("file"), ctrl.cargarConjuntoMasivo);
+router.get("/conjuntos/plantilla", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente"), ctrl.descargarPlantillaConjunto);
 router.patch("/conjuntos/:conjuntoId", ctrl.editarConjunto);
 router.get("/conjuntos", ctrl.listarConjuntos);
 router.get("/conjuntos/:conjuntoId", ctrl.obtenerConjunto);

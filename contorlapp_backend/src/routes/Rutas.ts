@@ -2,6 +2,7 @@ import { Router } from "express";
 import AdministradorRoutes from "./Administradores"
 import ConjuntoRoutes from "./Conjuntos"
 import CronogramaRoutes from "./Cronograma"
+import CronogramaMaquinariaRoutes from "./CronogramaMaquinaria"
 import DefinicionPreventivaRoutes from "./DefinicionPreventiva"
 import EmpresaRoutes from "./Empresa"
 import GerenteRoutes from "./Gerente"
@@ -25,12 +26,14 @@ import AgendaRoutes from './Agenda';
 import JefeOperacionesRoutes from './JefeOperaciones'
 import NotificacionesRoutes from "./Notificaciones";
 import PlanEsperanzaRoutes from "./PlanEsperanza";
+import CommerceRoutes from "./Commerce";
 
 const rutas = Router();
 
 rutas.use('/administrador', AdministradorRoutes);
 rutas.use('/conjunto', ConjuntoRoutes);
 rutas.use('/cronograma', CronogramaRoutes);
+rutas.use('/cronograma-maquinaria', CronogramaMaquinariaRoutes);
 rutas.use('/definicion-preventiva', DefinicionPreventivaRoutes);
 rutas.use('/empresa', EmpresaRoutes);
 rutas.use('/gerente', GerenteRoutes);
@@ -54,5 +57,6 @@ rutas.use('/agenda', AgendaRoutes);
 rutas.use('/jefe-operaciones', JefeOperacionesRoutes);
 rutas.use('/notificaciones', NotificacionesRoutes);
 rutas.use('/plan-esperanza', PlanEsperanzaRoutes);
+rutas.use('/commerce', CommerceRoutes);
 
 export default rutas;

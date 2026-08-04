@@ -20,6 +20,15 @@ router.get("/conjuntos/:nit/preventivas", asyncHandler(ctrl.listar));
 
 router.patch("/conjuntos/:nit/preventivas/:id", asyncHandler(ctrl.actualizar));
 
+// ⚠️ Las rutas con segmento literal van SIEMPRE antes que `/:id`, o Express
+// las captura como si `borrador` fuese un id.
+router.delete("/conjuntos/:nit/preventivas", asyncHandler(ctrl.eliminarVarias));
+
+router.delete(
+  "/conjuntos/:nit/preventivas/borrador",
+  asyncHandler(ctrl.descartarBorrador),
+);
+
 router.delete("/conjuntos/:nit/preventivas/:id", asyncHandler(ctrl.eliminar));
 
 // 🔹 Borrador
@@ -31,6 +40,11 @@ router.post(
 router.get(
   "/conjuntos/:nit/preventivas/borrador",
   asyncHandler(ctrl.listarBorrador),
+);
+
+router.get(
+  "/conjuntos/:nit/preventivas/borrador/estado",
+  asyncHandler(ctrl.estadoBorrador),
 );
 
 router.post(

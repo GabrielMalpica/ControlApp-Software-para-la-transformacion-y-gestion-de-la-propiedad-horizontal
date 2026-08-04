@@ -1,7 +1,12 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { Rol, type PrismaClient } from "@prisma/client";
+import { EstadoPedidoInterno, Rol, type PrismaClient } from "@prisma/client";
 import { PermissionService } from "./PermissionService";
+
+const PEDIDO_COMPLETADO_STATES = [
+  EstadoPedidoInterno.RECIBIDO,
+  EstadoPedidoInterno.ENTREGADO,
+] as const;
 
 type HttpError = Error & { status: number };
 
@@ -28,6 +33,7 @@ export class AuthService {
     nombre: string;
     correo: string;
     rol: string;
+    requiereCambioContrasena: boolean;
   }) {
     const normalizedRole = this.normalizeRole(usuario.rol);
 
@@ -39,6 +45,7 @@ export class AuthService {
         rol: usuario.rol,
         empresaId: "",
         permissions: [] as string[],
+        requiereCambioContrasena: usuario.requiereCambioContrasena,
       };
     }
 
@@ -54,13 +61,14 @@ export class AuthService {
       rol: usuario.rol,
       empresaId,
       permissions,
+      requiereCambioContrasena: usuario.requiereCambioContrasena,
     };
   }
 
   async obtenerSesionUsuario(userId: string) {
     const usuario = await this.prisma.usuario.findUnique({
       where: { id: userId },
-      select: { id: true, nombre: true, correo: true, rol: true },
+      select: { id: true, nombre: true, correo: true, rol: true, requiereCambioContrasena: true },
     });
 
     if (!usuario) {
@@ -95,6 +103,7 @@ export class AuthService {
       nombre: usuario.nombre,
       correo: usuario.correo,
       rol: usuario.rol,
+      requiereCambioContrasena: usuario.requiereCambioContrasena,
     });
 
     const token = jwt.sign(
@@ -146,7 +155,45 @@ export class AuthService {
     const hash = await bcrypt.hash(nuevaContrasena, 10);
     await this.prisma.usuario.update({
       where: { id: userId },
-      data: { contrasena: hash },
+      data: {
+        contrasena: hash,
+        requiereCambioContrasena: false,
+      },
+    });
+  }
+
+  async cambiarContrasenaInicial(userId: string, nuevaContrasena: string) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        contrasena: true,
+        activo: true,
+        requiereCambioContrasena: true,
+      },
+    });
+
+    if (!usuario) throw makeHttpError(404, "Usuario no encontrado");
+    if (!usuario.activo) throw makeHttpError(403, "Usuario inactivo");
+    if (!usuario.requiereCambioContrasena) {
+      throw makeHttpError(403, "Tu cuenta no requiere cambio inicial de contrasena");
+    }
+
+    const okNuevaIgual = await bcrypt.compare(nuevaContrasena, usuario.contrasena);
+    if (okNuevaIgual) {
+      throw makeHttpError(
+        400,
+        "La nueva contrasena debe ser diferente a la temporal"
+      );
+    }
+
+    const hash = await bcrypt.hash(nuevaContrasena, 10);
+    await this.prisma.usuario.update({
+      where: { id: userId },
+      data: {
+        contrasena: hash,
+        requiereCambioContrasena: false,
+      },
     });
   }
 
@@ -236,5 +283,108 @@ export class AuthService {
     });
 
     return { ok: true, nombre: usuario.nombre };
+  }
+
+  async obtenerResumenPerfil(userId: string) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        nombre: true,
+        correo: true,
+        rol: true,
+        activo: true,
+        requiereCambioContrasena: true,
+        administrador: {
+          select: {
+            conjuntos: {
+              select: { nit: true, nombre: true },
+              orderBy: { nombre: "asc" },
+            },
+          },
+        },
+        residente: {
+          select: {
+            tipoUnidad: true,
+            sector: true,
+            unidad: true,
+            conjunto: {
+              select: { nit: true, nombre: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!usuario) {
+      throw makeHttpError(404, "Usuario no encontrado");
+    }
+
+    const [pedidoStats, puntosStats] = await Promise.all([
+      this.prisma.pedidoApp.aggregate({
+        where: { usuarioId: userId },
+        _count: { _all: true },
+        _sum: { total: true },
+      }),
+      this.prisma.movimientoPuntos.aggregate({
+        where: { usuarioId: userId },
+        _sum: { puntos: true },
+      }),
+    ]);
+
+    const pedidosCompletados = await this.prisma.pedidoApp.count({
+      where: {
+        usuarioId: userId,
+        estado: { in: [...PEDIDO_COMPLETADO_STATES] },
+      },
+    });
+
+    const comprasCompletadas = await this.prisma.pedidoApp.aggregate({
+      where: {
+        usuarioId: userId,
+        estado: { in: [...PEDIDO_COMPLETADO_STATES] },
+      },
+      _sum: { total: true },
+    });
+
+    const conjuntos = usuario.administrador?.conjuntos?.map((item) => ({
+      nit: item.nit,
+      nombre: item.nombre,
+    })) ?? [];
+
+    if (usuario.residente?.conjunto) {
+      conjuntos.push({
+        nit: usuario.residente.conjunto.nit,
+        nombre: usuario.residente.conjunto.nombre,
+      });
+    }
+
+    return {
+      user: {
+        id: usuario.id,
+        nombre: usuario.nombre,
+        correo: usuario.correo,
+        rol: usuario.rol,
+        activo: usuario.activo,
+        requiereCambioContrasena: usuario.requiereCambioContrasena,
+      },
+      residente: usuario.residente
+        ? {
+            tipoUnidad: usuario.residente.tipoUnidad,
+            sector: usuario.residente.sector,
+            unidad: usuario.residente.unidad,
+            conjunto: usuario.residente.conjunto,
+          }
+        : null,
+      conjuntos,
+      metricas: {
+        totalPedidos: pedidoStats._count._all,
+        pedidosCompletados,
+        totalCompras: Number(pedidoStats._sum.total ?? 0),
+        comprasCompletadas: Number(comprasCompletadas._sum.total ?? 0),
+        puntos: puntosStats._sum.puntos ?? 0,
+        beneficiosActivos: 0,
+      },
+    };
   }
 }

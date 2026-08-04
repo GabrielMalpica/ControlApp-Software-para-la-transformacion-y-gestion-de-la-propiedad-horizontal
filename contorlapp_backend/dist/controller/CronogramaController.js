@@ -3,7 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CronogramaController = void 0;
 const zod_1 = require("zod");
 const prisma_1 = require("../db/prisma");
+const AuditoriaService_1 = require("../services/AuditoriaService");
 const CronogramaServices_1 = require("../services/CronogramaServices"); // <- singular
+const auditoria_1 = require("../utils/auditoria");
 // Schemas para params/query
 const NitSchema = zod_1.z.object({ nit: zod_1.z.string().min(3) });
 const OperarioIdSchema = zod_1.z.object({
@@ -121,12 +123,95 @@ class CronogramaController {
         this.programarExcluidaComoCorrectiva = async (req, res, next) => {
             try {
                 const conjuntoId = resolveConjuntoId(req);
-                const excluidaId = Number(req.params.id);
-                const service = new CronogramaServices_1.CronogramaService(prisma_1.prisma, conjuntoId);
+                const actor = await (0, auditoria_1.extraerActorAuditoriaConNombre)(req);
+                const service = new CronogramaServices_1.CronogramaService(prisma_1.prisma, conjuntoId, actor);
                 const out = await service.programarExcluidaComoCorrectiva({
-                    excluidaId,
                     ...req.body,
+                    // El id de la URL manda sobre el del body.
+                    excluidaId: Number(req.params.id),
                 });
+                res.json(out);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        // GET /conjuntos/:nit/cronograma/excluidas-standby/:id/opciones-reemplazo?fecha=...
+        this.opcionesReemplazoExcluida = async (req, res, next) => {
+            try {
+                const conjuntoId = resolveConjuntoId(req);
+                const service = new CronogramaServices_1.CronogramaService(prisma_1.prisma, conjuntoId);
+                const out = await service.listarOpcionesReemplazoExcluida({
+                    excluidaId: req.params.id,
+                    fecha: req.query.fecha,
+                });
+                res.json(out);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        // POST /conjuntos/:nit/cronograma/excluidas-standby/:id/reasignar-operario
+        this.reasignarOperarioExcluidaStandby = async (req, res, next) => {
+            try {
+                const conjuntoId = resolveConjuntoId(req);
+                const actor = await (0, auditoria_1.extraerActorAuditoriaConNombre)(req);
+                const service = new CronogramaServices_1.CronogramaService(prisma_1.prisma, conjuntoId, actor);
+                const out = await service.reasignarOperarioExcluidaPublicada({
+                    ...req.body,
+                    excluidaId: Number(req.params.id),
+                });
+                res.json(out);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        // GET /conjuntos/:nit/cronograma/informe-excluidas?anio=&mes=
+        this.informeExcluidas = async (req, res, next) => {
+            try {
+                const conjuntoId = resolveConjuntoId(req);
+                const service = new CronogramaServices_1.CronogramaService(prisma_1.prisma, conjuntoId);
+                const out = await service.informeExcluidasDelPeriodo({
+                    anio: req.query.anio,
+                    mes: req.query.mes,
+                });
+                res.json(out);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        // GET /conjuntos/:nit/auditoria?modulo=&entidad=&entidadId=&anio=&mes=&accion=&limit=
+        this.listarAuditoria = async (req, res, next) => {
+            try {
+                const conjuntoId = resolveConjuntoId(req);
+                const service = new AuditoriaService_1.AuditoriaService(prisma_1.prisma);
+                const out = await service.listar(conjuntoId, req.query);
+                res.json(out);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        // POST /conjuntos/:nit/auditoria/trazabilidad  { entidad, entidadIds[] }
+        this.trazabilidadAuditoria = async (req, res, next) => {
+            try {
+                resolveConjuntoId(req);
+                const service = new AuditoriaService_1.AuditoriaService(prisma_1.prisma);
+                const out = await service.trazabilidadPorEntidad(req.body);
+                res.json(out);
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        // GET /conjuntos/:nit/cronograma/informe-auditoria?anio=&mes=&modulo=
+        this.informeAuditoria = async (req, res, next) => {
+            try {
+                const conjuntoId = resolveConjuntoId(req);
+                const service = new AuditoriaService_1.AuditoriaService(prisma_1.prisma);
+                const out = await service.informePeriodo(conjuntoId, req.query);
                 res.json(out);
             }
             catch (err) {
@@ -136,7 +221,8 @@ class CronogramaController {
         this.eliminarCronogramaPublicado = async (req, res, next) => {
             try {
                 const conjuntoId = resolveConjuntoId(req);
-                const service = new CronogramaServices_1.CronogramaService(prisma_1.prisma, conjuntoId);
+                const actor = await (0, auditoria_1.extraerActorAuditoriaConNombre)(req);
+                const service = new CronogramaServices_1.CronogramaService(prisma_1.prisma, conjuntoId, actor);
                 const out = await service.eliminarCronogramaPublicado({
                     anio: req.query.anio ?? req.body?.anio,
                     mes: req.query.mes ?? req.body?.mes,
