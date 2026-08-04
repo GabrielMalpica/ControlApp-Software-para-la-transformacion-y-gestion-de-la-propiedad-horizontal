@@ -97,6 +97,13 @@ class TareaModel {
   final String? observacionesRechazo;
   final String? tipo;
   final String? frecuencia;
+
+  /// Definicion preventiva que origino la tarea (null en correctivas y manuales).
+  final int? definicionId;
+
+  /// Dia de la semana planeado por la definicion. Puede diferir del dia real de
+  /// [fechaInicio] si el scheduler tuvo que mover la tarea.
+  final String? diaSemanaProgramado;
   final String? conjuntoId;
   final String? conjuntoNombre;
 
@@ -148,6 +155,8 @@ class TareaModel {
     this.tipo,
     this.prioridad = 2,
     this.frecuencia,
+    this.definicionId,
+    this.diaSemanaProgramado,
     this.conjuntoId,
     this.conjuntoNombre,
     this.supervisorId,
@@ -328,6 +337,10 @@ class TareaModel {
       observacionesRechazo: json['observacionesRechazo']?.toString(),
       tipo: json['tipo']?.toString(),
       frecuencia: json['frecuencia']?.toString(),
+      definicionId: json['definicionId'] is int
+          ? json['definicionId'] as int
+          : int.tryParse(json['definicionId']?.toString() ?? ''),
+      diaSemanaProgramado: json['diaSemanaProgramado']?.toString(),
       conjuntoId: json['conjuntoId']?.toString(),
       conjuntoNombre: json['conjuntoNombre']?.toString(),
       supervisorId: supervisorId,
@@ -371,6 +384,8 @@ class TareaModel {
     'observacionesRechazo': observacionesRechazo,
     'tipo': tipo,
     'frecuencia': frecuencia,
+    'definicionId': definicionId,
+    'diaSemanaProgramado': diaSemanaProgramado,
     'conjuntoId': conjuntoId,
     'conjuntoNombre': conjuntoNombre,
     'supervisorId': supervisorId, // ✅ string
@@ -412,6 +427,8 @@ class TareaModel {
     int? prioridad,
     String? tipo,
     String? frecuencia,
+    int? definicionId,
+    String? diaSemanaProgramado,
     String? conjuntoId,
     String? conjuntoNombre,
 
@@ -458,6 +475,8 @@ class TareaModel {
       prioridad: prioridad ?? this.prioridad,
       tipo: tipo ?? this.tipo,
       frecuencia: frecuencia ?? this.frecuencia,
+      definicionId: definicionId ?? this.definicionId,
+      diaSemanaProgramado: diaSemanaProgramado ?? this.diaSemanaProgramado,
       conjuntoId: conjuntoId ?? this.conjuntoId,
       conjuntoNombre: conjuntoNombre ?? this.conjuntoNombre,
       supervisorId: supervisorId ?? this.supervisorId,

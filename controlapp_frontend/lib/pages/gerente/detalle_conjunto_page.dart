@@ -51,6 +51,8 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
   final TextEditingController _direccionCtrl = TextEditingController();
   final TextEditingController _correoCtrl = TextEditingController();
   final TextEditingController _valorMensualCtrl = TextEditingController();
+  final TextEditingController _consignasCtrl = TextEditingController();
+  final TextEditingController _valorAgregadoCtrl = TextEditingController();
 
   List<Usuario> _adminsCatalogo = <Usuario>[];
   List<Usuario> _operariosCatalogo = <Usuario>[];
@@ -109,6 +111,8 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
     _direccionCtrl.text = c.direccion;
     _correoCtrl.text = c.correo;
     _valorMensualCtrl.text = c.valorMensual?.toStringAsFixed(0) ?? '';
+    _consignasCtrl.text = c.consignasEspeciales.join('\n');
+    _valorAgregadoCtrl.text = c.valorAgregado.join('\n');
 
     _activo = c.activo;
     _fechaInicioContrato = c.fechaInicioContrato;
@@ -178,6 +182,14 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
   String _valorMensualText(double? value) {
     if (value == null) return 'Sin valor';
     return '\$${value.toStringAsFixed(0)}';
+  }
+
+  List<String> _splitPorLineas(String raw) {
+    return raw
+        .split(RegExp(r'\r?\n'))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
   }
 
   void _showSnack(String text, {Color color = Colors.green}) {
@@ -277,6 +289,8 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
         administradorId: _adminSeleccionadoId,
         operariosIds: _operariosSeleccionadosIds.toList(),
         ubicaciones: _ubicacionesPayload(),
+        consignasEspeciales: _splitPorLineas(_consignasCtrl.text),
+        valorAgregado: _splitPorLineas(_valorAgregadoCtrl.text),
       );
 
       if (!mounted) return;
@@ -325,6 +339,8 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
     _direccionCtrl.dispose();
     _correoCtrl.dispose();
     _valorMensualCtrl.dispose();
+    _consignasCtrl.dispose();
+    _valorAgregadoCtrl.dispose();
     super.dispose();
   }
 
@@ -416,7 +432,8 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                 _horariosCard(c),
                 const SizedBox(height: 12),
                 _ubicacionesCard(c),
-                if (c.consignasEspeciales.isNotEmpty ||
+                if (_editMode ||
+                    c.consignasEspeciales.isNotEmpty ||
                     c.valorAgregado.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   _textosCard(c),
@@ -492,14 +509,14 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                   vertical: 5,
                 ),
                 decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.16),
+                  color: statusColor,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: statusColor.withValues(alpha: 0.5)),
+                  border: Border.all(color: Colors.white, width: 1.2),
                 ),
                 child: Text(
                   c.activo ? 'Activo' : 'Inactivo',
-                  style: TextStyle(
-                    color: statusColor,
+                  style: const TextStyle(
+                    color: Colors.white,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1238,6 +1255,29 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
   }
 
   Widget _textosCard(Conjunto c) {
+    if (_editMode) {
+      return _SectionCard(
+        icon: Icons.article_outlined,
+        title: 'Consignas y valor agregado',
+        subtitle: 'Edita o agrega un item por linea',
+        child: Column(
+          children: [
+            _inputField(
+              label: 'Consignas especiales',
+              controller: _consignasCtrl,
+              maxLines: 5,
+            ),
+            const SizedBox(height: 10),
+            _inputField(
+              label: 'Valor agregado',
+              controller: _valorAgregadoCtrl,
+              maxLines: 5,
+            ),
+          ],
+        ),
+      );
+    }
+
     return _SectionCard(
       icon: Icons.article_outlined,
       title: 'Consignas y valor agregado',
@@ -1310,11 +1350,15 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
     required String label,
     required TextEditingController controller,
     bool number = false,
+    int maxLines = 1,
   }) {
     return TextField(
       controller: controller,
+      maxLines: maxLines,
       keyboardType: number
           ? const TextInputType.numberWithOptions(decimal: true)
+          : maxLines > 1
+          ? TextInputType.multiline
           : TextInputType.text,
       decoration: InputDecoration(
         labelText: label,

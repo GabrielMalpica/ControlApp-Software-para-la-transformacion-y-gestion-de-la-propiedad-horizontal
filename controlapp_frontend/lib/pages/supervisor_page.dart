@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/auth_api.dart';
 import '../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/supervisor/supervisor_tareas_page.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
+import 'package:flutter_application_1/widgets/perfil_action.dart';
 
 import '../service/theme.dart';
 
@@ -54,6 +56,7 @@ class SupervisorPage extends StatefulWidget {
 class _SupervisorPageState extends State<SupervisorPage> {
   bool _can(String permission) => PermissionService.instance.can(permission);
 
+  final AuthApi _authApi = AuthApi();
   final GerenteApi _api = GerenteApi();
 
   List<Conjunto> _conjuntos = [];
@@ -78,7 +81,15 @@ class _SupervisorPageState extends State<SupervisorPage> {
   @override
   void initState() {
     super.initState();
+    _refreshSessionProfile();
     _cargarConjuntos();
+  }
+
+  Future<void> _refreshSessionProfile() async {
+    try {
+      await _authApi.me();
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   Future<void> _cargarConjuntos() async {
@@ -384,7 +395,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
         children: <Widget>[
           ConjuntoSelectorCard(
             conjuntoActual: conjunto,
-            conjuntos: _conjuntos,
+            conjuntos: _conjuntos.where((c) => c.activo).toList(),
             selectedNit: _conjuntoSeleccionadoNit,
             onChanged: (v) {
               if (v == null) return;
@@ -455,6 +466,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
           style: TextStyle(color: Colors.white),
         ),
         actions: [
+          const PerfilAction(),
           const NotificacionesAction(),
           const CambiarContrasenaAction(),
           IconButton(

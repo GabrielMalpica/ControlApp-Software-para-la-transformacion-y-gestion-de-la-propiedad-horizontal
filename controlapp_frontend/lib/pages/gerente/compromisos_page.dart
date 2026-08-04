@@ -465,37 +465,41 @@ class _CompromisosPageState extends State<CompromisosPage> {
                                                   spacing: 8,
                                                   runSpacing: 8,
                                                   children: [
+                                                    if (!widget.usarFlujoAdministrador) ...[
+                                                      _MetaChip(
+                                                        icon: Icons
+                                                            .schedule_rounded,
+                                                        label: item
+                                                            .antiguedadLabel,
+                                                      ),
+                                                      _MetaChip(
+                                                        icon: Icons
+                                                            .event_available_outlined,
+                                                        label: item
+                                                            .fechaCreacionLabel,
+                                                      ),
+                                                    ],
                                                     _MetaChip(
                                                       icon:
                                                           Icons.person_outline,
                                                       label: item.autorLabel,
                                                     ),
                                                     _MetaChip(
-                                                      icon: Icons
-                                                          .schedule_rounded,
-                                                      label:
-                                                          item.antiguedadLabel,
-                                                    ),
-                                                    _MetaChip(
-                                                      icon: Icons
-                                                          .event_available_outlined,
-                                                      label: item
-                                                          .fechaCreacionLabel,
-                                                    ),
-                                                    _MetaChip(
                                                       icon: item.completado
                                                           ? Icons
-                                                                .task_alt_outlined
+                                                                 .task_alt_outlined
                                                           : Icons
-                                                                .timelapse_rounded,
+                                                                 .timelapse_rounded,
                                                       label:
                                                           item.fechaCierreLabel,
                                                     ),
-                                                    _MetaChip(
-                                                      icon: Icons.flag_outlined,
-                                                      label: item.ansLabel,
-                                                      color: ansColor,
-                                                    ),
+                                                    if (!widget.usarFlujoAdministrador)
+                                                      _MetaChip(
+                                                        icon:
+                                                            Icons.flag_outlined,
+                                                        label: item.ansLabel,
+                                                        color: ansColor,
+                                                      ),
                                                   ],
                                                 ),
                                               ],

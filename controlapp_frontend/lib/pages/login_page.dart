@@ -48,8 +48,9 @@ class _LoginPageState extends State<LoginPage> {
         contrasena: _passCtrl.text,
       );
 
+      if (!mounted) return;
       unawaited(NotificacionesCenter.instance.start());
-      _goByRol(resp.user.rol);
+      AppRouter.goReplacementAfterLogin(context, resp.user);
     } catch (e) {
       setState(() {
         _error = AppError.messageOf(e, fallback: 'No se pudo iniciar sesion.');
@@ -59,10 +60,6 @@ class _LoginPageState extends State<LoginPage> {
         setState(() => _loading = false);
       }
     }
-  }
-
-  void _goByRol(String rol) {
-    AppRouter.goReplacementByRole(context, rol);
   }
 
   @override

@@ -1629,14 +1629,16 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
                           width: selected ? 2 : 1,
                         ),
                       ),
-                      child: RadioListTile<int>(
-                        value: index,
+                      child: RadioGroup<int>(
                         groupValue: selectedIndex,
                         onChanged: (value) {
                           if (value == null) return;
                           setStateDialog(() => selectedIndex = value);
                         },
-                        title: Text(label),
+                        child: RadioListTile<int>(
+                          value: index,
+                          title: Text(label),
+                        ),
                       ),
                     );
                   }),

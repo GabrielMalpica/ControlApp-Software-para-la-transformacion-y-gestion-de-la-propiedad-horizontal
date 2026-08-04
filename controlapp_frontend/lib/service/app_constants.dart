@@ -1,11 +1,15 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+
 class AppConstants {
   static const String _railwayBaseUrl =
       'https://thriving-empathy-production-2f17.up.railway.app';
-  static const String _localBaseUrl = 'http://localhost:3000';
+  static const String _localBaseUrlWebDesktop = 'http://localhost:3000';
+  static const String _localBaseUrlAndroid = 'http://10.0.2.2:3000';
 
-  // Para pruebas locales cambia a `true` y vuelve a correr Flutter.
-  // En nube/produccion dejalo en `false`.
-  static const bool _usarApiLocalEnDebug = false;
+  // Cambia a `false` solo para builds de producción (web).
+  // En local se detecta automáticamente por el host.
+  static const bool _usarApiLocalEnDebug = true;
 
   /// Cambia en build/run con:
   /// --dart-define=API_BASE_URL=https://tu-api
@@ -14,6 +18,22 @@ class AppConstants {
     defaultValue: '',
   );
 
+  static String get _localBaseUrl {
+    if (kIsWeb) return _localBaseUrlWebDesktop;
+
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return _localBaseUrlAndroid;
+      case TargetPlatform.iOS:
+      case TargetPlatform.windows:
+      case TargetPlatform.macOS:
+      case TargetPlatform.linux:
+        return _localBaseUrlWebDesktop;
+      case TargetPlatform.fuchsia:
+        return _localBaseUrlWebDesktop;
+    }
+  }
+
   /// Base URL efectiva en runtime.
   /// Si el build trae localhost pero la app NO corre en localhost (ej: producción web),
   /// forzamos Railway para evitar que apunte al backend local por error.
@@ -21,11 +41,19 @@ class AppConstants {
     final env = _apiBaseFromEnv.trim();
     if (env.isEmpty) {
       if (_usarApiLocalEnDebug) {
+        if (!kIsWeb) return _localBaseUrl;
+
         final host = Uri.base.host.toLowerCase();
         final runningOnLocalhost = host == 'localhost' || host == '127.0.0.1';
         if (runningOnLocalhost) return _localBaseUrl;
       }
       return _railwayBaseUrl;
+    }
+
+    if (!kIsWeb) {
+      return env
+          .replaceAll('localhost', '10.0.2.2')
+          .replaceAll('127.0.0.1', '10.0.2.2');
     }
 
     final host = Uri.base.host.toLowerCase();
@@ -71,4 +99,5 @@ class AppConstants {
       "$baseUrl/definicion-preventiva";
 
   static String get cronogramaBase => "$baseUrl/cronograma";
+  static String get commerceBase => "$baseUrl/commerce";
 }

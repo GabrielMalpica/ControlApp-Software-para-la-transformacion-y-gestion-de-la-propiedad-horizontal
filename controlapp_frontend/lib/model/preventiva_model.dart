@@ -1,5 +1,7 @@
 // lib/model/preventiva_model.dart
 
+import 'maquinaria_model.dart';
+
 double? _toDouble(dynamic v) {
   if (v == null) return null;
   if (v is num) return v.toDouble();
@@ -45,39 +47,40 @@ class InsumoPlanItem {
 
 /// 🔹 Plan de maquinaria asociada a la definición / tarea
 class MaquinariaPlanItem {
-  final int? maquinariaId;
   final String? tipo;
   final double? cantidad;
 
-  final String? origen; // 'CONJUNTO' | 'EMPRESA'
-  final bool?
-  preferirConjunto; // si true: intenta conjunto, si no hay -> empresa
+  /// Máquina que se venía usando. Solo preselecciona en el cronograma de
+  /// maquinaria; no reserva nada.
+  final int? maquinariaSugeridaId;
 
-  MaquinariaPlanItem({
-    this.maquinariaId,
-    this.tipo,
-    this.cantidad,
-    this.origen,
-    this.preferirConjunto,
-  });
+  MaquinariaPlanItem({this.tipo, this.cantidad, this.maquinariaSugeridaId});
 
   factory MaquinariaPlanItem.fromJson(Map<String, dynamic> json) {
     return MaquinariaPlanItem(
-      maquinariaId: _toInt(json['maquinariaId']),
-      tipo: json['tipo'] as String?,
+      tipo: json['tipo']?.toString(),
       cantidad: _toDouble(json['cantidad']),
-      origen: json['origen']?.toString(),
-      preferirConjunto: json['preferirConjunto'] as bool?,
+      maquinariaSugeridaId:
+          _toInt(json['maquinariaSugeridaId']) ?? _toInt(json['maquinariaId']),
     );
   }
 
   Map<String, dynamic> toJson() => {
-    if (maquinariaId != null) 'maquinariaId': maquinariaId,
     if (tipo != null) 'tipo': tipo,
     if (cantidad != null) 'cantidad': cantidad,
-    if (origen != null) 'origen': origen,
-    if (preferirConjunto != null) 'preferirConjunto': preferirConjunto,
+    if (maquinariaSugeridaId != null)
+      'maquinariaSugeridaId': maquinariaSugeridaId,
   };
+
+  /// Tipo tipado, si el backend envió un valor conocido.
+  TipoMaquinariaFlutter? get tipoEnum {
+    final clave = tipo?.trim().toUpperCase();
+    if (clave == null || clave.isEmpty) return null;
+    for (final valor in TipoMaquinariaFlutter.values) {
+      if (valor.name == clave) return valor;
+    }
+    return null;
+  }
 }
 
 /// ✅ Plan de herramientas asociadas a la definición / tarea
@@ -274,29 +277,25 @@ class InsumoPlanItemRequest {
   };
 }
 
+/// La definición preventiva declara la NECESIDAD de maquinaria (qué tipo y
+/// cuántas). La máquina concreta se asigna después desde el cronograma de
+/// maquinaria; aquí solo puede viajar como sugerencia.
 class MaquinariaPlanItemRequest {
-  final int maquinariaId;
-  final String? tipo;
-  final double? cantidad;
-
-  // ✅ NUEVO
-  final String? origen; // 'CONJUNTO' | 'EMPRESA'
-  final bool? preferirConjunto;
+  final TipoMaquinariaFlutter tipo;
+  final int cantidad;
+  final int? maquinariaSugeridaId;
 
   MaquinariaPlanItemRequest({
-    required this.maquinariaId,
-    this.tipo,
-    this.cantidad,
-    this.origen,
-    this.preferirConjunto,
+    required this.tipo,
+    this.cantidad = 1,
+    this.maquinariaSugeridaId,
   });
 
   Map<String, dynamic> toJson() => {
-    'maquinariaId': maquinariaId,
-    if (tipo != null) 'tipo': tipo,
-    if (cantidad != null) 'cantidad': cantidad,
-    if (origen != null) 'origen': origen,
-    if (preferirConjunto != null) 'preferirConjunto': preferirConjunto,
+    'tipo': tipo.backendValue,
+    'cantidad': cantidad,
+    if (maquinariaSugeridaId != null)
+      'maquinariaSugeridaId': maquinariaSugeridaId,
   };
 }
 

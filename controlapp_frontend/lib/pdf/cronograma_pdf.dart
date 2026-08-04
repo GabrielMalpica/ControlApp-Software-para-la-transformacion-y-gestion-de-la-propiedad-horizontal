@@ -253,7 +253,10 @@ Future<void> imprimirCronogramaOperario(Map<String, dynamic> data) async {
           .toList()
         ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
   final horarios = ((data['horariosConjunto'] as List?) ?? const [])
-      .map((e) => e is Map ? _HorarioLite.tryParse(e.cast<String, dynamic>()) : null)
+      .map(
+        (e) =>
+            e is Map ? _HorarioLite.tryParse(e.cast<String, dynamic>()) : null,
+      )
       .whereType<_HorarioLite>()
       .toList();
   final festivos = ((data['festivos'] as List?) ?? const [])
@@ -387,10 +390,7 @@ pw.Widget _buildWeeklyCronogramaPage({
           pageIndex: pageIndex,
         ),
       ),
-      if (showSignature) ...[
-        pw.SizedBox(height: 6),
-        _buildSignatureRow(),
-      ],
+      if (showSignature) ...[pw.SizedBox(height: 6), _buildSignatureRow()],
     ],
   );
 }
@@ -499,32 +499,33 @@ pw.Widget _buildPreviewLikePdf({
     (acc, dia) => acc + dia.bloques.length,
   );
 
-  final sparse =
-      bloquesMaximosPorDiaSemana <= 2 && bloquesTotalesSemana <= 10;
+  final sparse = bloquesMaximosPorDiaSemana <= 2 && bloquesTotalesSemana <= 10;
   final medium =
       !sparse && bloquesMaximosPorDiaSemana <= 3 && bloquesTotalesSemana <= 16;
   final veryDense = bloquesMaximosPorDiaSemana >= 6;
   final compact = !sparse && !medium && bloquesMaximosPorDiaSemana >= 4;
-  final dayPadding = (sparse
+  final dayPadding =
+      (sparse
           ? 8.0
           : (medium ? 6.0 : (veryDense ? 3.0 : (compact ? 4.0 : 6.0)))) *
       1.38;
-  final taskPadding = (sparse
+  final taskPadding =
+      (sparse
           ? 6.0
           : (medium ? 5.0 : (veryDense ? 2.0 : (compact ? 3.0 : 4.0)))) *
       1.38;
-  final titleFont = (sparse
+  final titleFont =
+      (sparse
           ? 9.2
           : (medium ? 8.4 : (veryDense ? 6.4 : (compact ? 7.2 : 8.0)))) *
       1.38;
-  final bodyFont = (sparse
+  final bodyFont =
+      (sparse
           ? 8.2
           : (medium ? 7.4 : (veryDense ? 5.8 : (compact ? 6.4 : 7.0)))) *
       1.38;
-  final blockSpacing = (sparse
-          ? 8.0
-          : (medium ? 6.0 : (veryDense ? 2.0 : 4.0))) *
-      1.38;
+  final blockSpacing =
+      (sparse ? 8.0 : (medium ? 6.0 : (veryDense ? 2.0 : 4.0))) * 1.38;
   final lineSpacing = (sparse ? 2.0 : 1.0) * 1.38;
 
   return pw.Row(
@@ -611,7 +612,10 @@ pw.Widget _buildPreviewLikePdf({
               else
                 ...bloquesDia.map((bloque) {
                   if (bloque.isGap) {
-                    final duracion = _fmtDuracionRango(bloque.startMin, bloque.endMin);
+                    final duracion = _fmtDuracionRango(
+                      bloque.startMin,
+                      bloque.endMin,
+                    );
                     return pw.Container(
                       width: double.infinity,
                       margin: pw.EdgeInsets.only(bottom: blockSpacing),
@@ -807,25 +811,31 @@ List<_AgendaBlockLite> _buildAgendaBlocksLite({
     final fin = segmento.$2;
     if (fin <= inicio) continue;
 
-    final tareasSegmento = tareasDia
-        .map(
-          (t) => (
-            t: t,
-            inicio: math.max(_minutesOfDay(t.fechaInicio), inicio),
-            fin: math.min(
-              math.max(_minutesOfDay(t.fechaInicio) + 1, _minutesOfDay(t.fechaFin)),
-              fin,
-            ),
-          ),
-        )
-        .where((item) => item.fin > item.inicio)
-        .toList()
-      ..sort((a, b) => a.inicio.compareTo(b.inicio));
+    final tareasSegmento =
+        tareasDia
+            .map(
+              (t) => (
+                t: t,
+                inicio: math.max(_minutesOfDay(t.fechaInicio), inicio),
+                fin: math.min(
+                  math.max(
+                    _minutesOfDay(t.fechaInicio) + 1,
+                    _minutesOfDay(t.fechaFin),
+                  ),
+                  fin,
+                ),
+              ),
+            )
+            .where((item) => item.fin > item.inicio)
+            .toList()
+          ..sort((a, b) => a.inicio.compareTo(b.inicio));
 
     var cursor = inicio;
     for (final item in tareasSegmento) {
       if (item.inicio > cursor) {
-        bloques.add(_AgendaBlockLite.gap(startMin: cursor, endMin: item.inicio));
+        bloques.add(
+          _AgendaBlockLite.gap(startMin: cursor, endMin: item.inicio),
+        );
       }
       cursor = math.max(cursor, item.fin);
     }
@@ -887,6 +897,7 @@ PdfColor _pdfTaskBorderColor(_TareaLite tarea) {
   return PdfColor.fromHex('#B9D0FF');
 }
 
+// ignore: unused_element
 pw.Widget _buildCalendarGrid({
   required List<_TareaLite> tareas,
   required List<String> dayLabels,
@@ -1261,6 +1272,7 @@ DateTime? _parseYmd(String ymd) {
   }
 }
 
+// ignore: unused_element
 _GridHorarioConfig _resolverHorarioGrid({
   required List<_HorarioLite> horarios,
   required List<_TareaLite> tareas,

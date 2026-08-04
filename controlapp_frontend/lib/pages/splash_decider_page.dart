@@ -35,7 +35,7 @@ class _SplashDeciderPageState extends State<SplashDeciderPage> {
     try {
       final me = await _authApi.me();
       if (!mounted) return;
-      AppRouter.goReplacementByRole(context, me.rol);
+      AppRouter.goReplacementAfterLogin(context, me);
       unawaited(NotificacionesCenter.instance.start());
     } catch (_) {
       NotificacionesCenter.instance.stop();

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../model/tarea_model.dart';
 import '../model/inventario_item_model.dart';
 import '../model/evidencia_adjunto_model.dart';
+import '../utils/pickers/clipboard_image_capture_bridge.dart';
 import '../utils/pickers/camera_capture_bridge.dart';
 import '../utils/pickers/selected_upload_file.dart';
 
@@ -58,12 +59,21 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
       defaultTargetPlatform == TargetPlatform.iOS;
 
   bool get _puedeTomarFoto => _esMovil;
+  bool get _puedePegarImagen => kIsWeb && ClipboardImageCapture.isSupported;
+
+  ClipboardImageDispose? _disposeClipboardListener;
+  bool _esperandoPegado = false;
 
   @override
   void initState() {
     super.initState();
     // Si hay inventario, arrancamos con una fila para facilitar
     if (widget.inventario.isNotEmpty) _rows.add(_ConsumoRow());
+    if (_puedePegarImagen) {
+      _disposeClipboardListener = ClipboardImageCapture.registerPasteListener(
+        _onClipboardImagePasted,
+      );
+    }
   }
 
   @override
@@ -72,6 +82,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
     for (final r in _rows) {
       r.qtyCtrl.dispose();
     }
+    _disposeClipboardListener?.call();
     super.dispose();
   }
 
@@ -139,6 +150,30 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
         SnackBar(content: Text('No se pudo abrir la camara: $e')),
       );
     }
+  }
+
+  void _activarPegado() {
+    setState(() => _esperandoPegado = true);
+    AppFeedback.showFromSnackBar(
+      context,
+      const SnackBar(
+        content: Text(
+          'Copia la imagen y presiona Ctrl+V dentro de esta ventana para adjuntarla.',
+        ),
+      ),
+    );
+  }
+
+  void _onClipboardImagePasted(SelectedUploadFile file) {
+    if (!mounted) return;
+    _agregarEvidencias(_evidenciasDesdeSeleccion([file]));
+    setState(() => _esperandoPegado = false);
+    AppFeedback.showFromSnackBar(
+      context,
+      const SnackBar(
+        content: Text('Imagen pegada desde el portapapeles.'),
+      ),
+    );
   }
 
   void _agregarEvidencias(List<EvidenciaAdjunto> nuevos) {
@@ -297,31 +332,52 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '📸 Evidencias de cierre',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _puedeTomarFoto
-                          ? 'Adjunta varias fotos o PDF. Si estas en celular o web, tambien puedes tomar la foto al momento.'
-                          : 'Adjunta varias fotos o PDF de evidencias para enviar al cierre.',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
+                     const Text(
+                       '📸 Evidencias de cierre',
+                       style: TextStyle(fontWeight: FontWeight.w700),
+                     ),
+                     if (_puedePegarImagen && _esperandoPegado) ...[
+                       const SizedBox(height: 8),
+                       Container(
+                         width: double.infinity,
+                         padding: const EdgeInsets.all(10),
+                         decoration: BoxDecoration(
+                           color: Colors.blue.withValues(alpha: 0.08),
+                           borderRadius: BorderRadius.circular(10),
+                           border: Border.all(
+                             color: Colors.blue.withValues(alpha: 0.22),
+                           ),
+                         ),
+                         child: const Text(
+                           'Modo pegado activo: copia la imagen y presiona Ctrl+V mientras este panel siga abierto.',
+                           style: TextStyle(fontSize: 12),
+                         ),
+                       ),
+                     ],
+                     const SizedBox(height: 8),
+                     Wrap(
+                       spacing: 8,
+                       runSpacing: 8,
+                       children: [
                         if (_puedeTomarFoto)
                           OutlinedButton.icon(
                             onPressed: _tomarFoto,
                             icon: const Icon(Icons.photo_camera),
                             label: const Text('Tomar foto'),
                           ),
-                        OutlinedButton.icon(
-                          onPressed: _pickEvidencias,
-                          icon: const Icon(Icons.attach_file),
+                         if (_puedePegarImagen)
+                           OutlinedButton.icon(
+                             onPressed: _activarPegado,
+                             icon: const Icon(Icons.content_paste_rounded),
+                             label: Text(
+                               _esperandoPegado
+                                   ? 'Esperando Ctrl+V'
+                                   : 'Pegar imagen',
+                             ),
+                           ),
+                         OutlinedButton.icon(
+                           onPressed: _pickEvidencias,
+                           icon: const Icon(Icons.attach_file),
                           label: const Text('Agregar archivos'),
                         ),
                         Padding(

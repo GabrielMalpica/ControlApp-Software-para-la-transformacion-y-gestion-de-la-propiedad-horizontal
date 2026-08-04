@@ -1,4 +1,5 @@
 // lib/pages/cronograma_preventivas_borrador_page.dart
+// ignore_for_file: curly_braces_in_flow_control_structures
 
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/conjunto_api.dart';
@@ -16,6 +17,8 @@ import '../service/app_error.dart';
 import '../service/theme.dart';
 import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
+import '../model/maquinaria_model.dart';
+import '../utils/frecuencia_utils.dart';
 import '../widgets/maquinaria_conflict_dialog.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -25,6 +28,42 @@ enum _VistaCronograma { mensual, semanal, informe }
 enum _ModoCambioOperario { soloTarea, todoBorrador, tambienDefinicion }
 
 final ValueNotifier<bool> _weekDragActiveNotifier = ValueNotifier<bool>(false);
+
+/// Acciones sobre tareas excluidas que estan en curso ("exc:12", "blq:12:b1").
+/// Vive fuera del State porque los botones se pintan en widgets hijos.
+final ValueNotifier<Set<String>> _accionesExcluidaNotifier =
+    ValueNotifier<Set<String>>(<String>{});
+
+String _claveExcluida(int excluidaId) => 'exc:$excluidaId';
+String _claveBloqueExcluida(int excluidaId, String bloqueId) =>
+    'blq:$excluidaId:$bloqueId';
+
+bool _accionEnCurso(Set<String> enCurso, String clave) =>
+    enCurso.contains(clave);
+
+void _marcarAccionExcluida(String clave, bool activa) {
+  final actual = {..._accionesExcluidaNotifier.value};
+  if (activa) {
+    actual.add(clave);
+  } else {
+    actual.remove(clave);
+  }
+  _accionesExcluidaNotifier.value = actual;
+}
+
+/// Indicador que sustituye al icono del boton mientras la accion esta en curso.
+Widget _iconoAccionExcluida({
+  required bool enCurso,
+  required IconData icono,
+  double size = 18,
+}) {
+  if (!enCurso) return Icon(icono, size: size);
+  return SizedBox(
+    width: size,
+    height: size,
+    child: const CircularProgressIndicator(strokeWidth: 2),
+  );
+}
 
 class CronogramaPreventivasBorradorPage extends StatefulWidget {
   final String nit;
@@ -118,8 +157,154 @@ class _CronogramaPreventivasBorradorPageState
     _initMes();
     _semanaBase = DateTime(_anioActual, _mesActual, 1);
 
-    // ✅ Al entrar: generar borrador -> mostrar novedades -> cargar cronograma
-    _generarYcargarAlEntrar();
+    // Al entrar NO se regenera: se abre el borrador guardado si existe, para no
+    // perder el trabajo manual. Solo se genera la primera vez del periodo.
+    _abrirBorrador();
+  }
+
+  /// Estado del borrador guardado del periodo actual (para el banner y el menú).
+  Map<String, dynamic> _estadoBorrador = const {};
+
+  /// Se activa con cualquier edición manual del borrador.
+  bool _hayCambiosManuales = false;
+
+  void _marcarCambioManual() {
+    if (!_hayCambiosManuales) _hayCambiosManuales = true;
+  }
+
+  int get _preventivasSinPlanificar =>
+      (_estadoBorrador['definicionesSinPlanificar'] as num?)?.toInt() ?? 0;
+
+  /// Abre el periodo: si ya hay borrador guardado lo carga tal cual; si no,
+  /// lo genera por primera vez.
+  Future<void> _abrirBorrador() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final estado = await _preventivaApi.estadoBorrador(
+        nit: widget.nit,
+        anio: _anioActual,
+        mes: _mesActual,
+      );
+      if (!mounted) return;
+      setState(() => _estadoBorrador = estado);
+
+      if (estado['existe'] == true) {
+        await _cargarDatos();
+        return;
+      }
+    } catch (e) {
+      // Si el estado no se puede consultar, se cae al comportamiento anterior.
+      debugPrint('No se pudo consultar el estado del borrador: $e');
+    }
+
+    await _generarYcargarAlEntrar();
+  }
+
+  Future<void> _refrescarEstadoBorrador() async {
+    try {
+      final estado = await _preventivaApi.estadoBorrador(
+        nit: widget.nit,
+        anio: _anioActual,
+        mes: _mesActual,
+      );
+      if (!mounted) return;
+      setState(() => _estadoBorrador = estado);
+    } catch (_) {
+      // Informativo: no debe romper la pantalla.
+    }
+  }
+
+  /// Incorpora al borrador las preventivas creadas después de generarlo,
+  /// sin tocar nada de lo que el usuario ya cuadró.
+  Future<void> _incorporarPreventivasNuevas() async {
+    await _generarYcargarAlEntrar(modo: 'CONSERVAR');
+  }
+
+  Future<void> _regenerarDesdeCero() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Regenerar desde cero'),
+        content: const Text(
+          'Se descartará todo el borrador actual, incluidos los cambios que hayas '
+          'hecho a mano, y se planificará el mes otra vez. ¿Continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              'Regenerar',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    _hayCambiosManuales = false;
+    await _generarYcargarAlEntrar(modo: 'RESET');
+  }
+
+  /// Confirmación al salir: el borrador vive en BD, así que "guardar" es
+  /// simplemente no descartarlo.
+  Future<bool> _confirmarSalida() async {
+    if (!_hayCambiosManuales && !_hayTareas) return true;
+
+    final decision = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Guardar el progreso del borrador?'),
+        content: const Text(
+          'Si lo guardas, al volver a entrar encontrarás el cronograma tal como lo '
+          'dejaste y podrás incorporar las preventivas que crees mientras tanto.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('CANCELAR'),
+            child: const Text('Seguir editando'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('DESCARTAR'),
+            child: const Text(
+              'Descartar borrador',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop('GUARDAR'),
+            child: const Text('Guardar progreso'),
+          ),
+        ],
+      ),
+    );
+
+    if (decision == 'GUARDAR') return true;
+    if (decision != 'DESCARTAR') return false;
+
+    try {
+      await _preventivaApi.descartarBorrador(
+        nit: widget.nit,
+        anio: _anioActual,
+        mes: _mesActual,
+      );
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+      return false;
+    }
   }
 
   void _initMes() {
@@ -414,8 +599,9 @@ class _CronogramaPreventivasBorradorPageState
     for (var i = 0; i < tarea.operariosNombres.length; i++) {
       final nombre = tarea.operariosNombres[i].trim();
       if (nombre.isEmpty) continue;
-      final cargo =
-          i < tarea.operariosCargos.length ? tarea.operariosCargos[i].trim() : '';
+      final cargo = i < tarea.operariosCargos.length
+          ? tarea.operariosCargos[i].trim()
+          : '';
       items.add(cargo.isEmpty ? nombre : '$nombre ($cargo)');
     }
     return items;
@@ -426,8 +612,9 @@ class _CronogramaPreventivasBorradorPageState
     for (var i = 0; i < tarea.operariosNombres.length; i++) {
       final nombre = tarea.operariosNombres[i].trim();
       if (nombre.isEmpty) continue;
-      final cargo =
-          i < tarea.operariosCargos.length ? tarea.operariosCargos[i].trim() : '';
+      final cargo = i < tarea.operariosCargos.length
+          ? tarea.operariosCargos[i].trim()
+          : '';
       items.add(MapEntry(nombre, cargo));
     }
     return items;
@@ -1101,15 +1288,16 @@ class _CronogramaPreventivasBorradorPageState
     });
     _confirmacionesReemplazoPorCaso.clear();
 
-    // ✅ al cambiar mes: generar + novedades + cargar
-    await _generarYcargarAlEntrar();
+    // Al cambiar de mes se abre el borrador guardado de ese periodo.
+    _hayCambiosManuales = false;
+    await _abrirBorrador();
   }
 
   /// ==============================
   /// NUEVO: Generar borrador y mostrar "novedades"
   /// (para que el cliente no quede a ciegas)
   /// ==============================
-  Future<void> _generarYcargarAlEntrar() async {
+  Future<void> _generarYcargarAlEntrar({String modo = 'RESET'}) async {
     setState(() {
       _loading = true;
       _error = null;
@@ -1127,6 +1315,7 @@ class _CronogramaPreventivasBorradorPageState
         anio: _anioActual,
         mes: _mesActual,
         confirmacionesReemplazo: _confirmacionesPeriodoActual(),
+        modo: modo,
         // tamanoBloqueMinutos: 60,
       );
 
@@ -1135,6 +1324,7 @@ class _CronogramaPreventivasBorradorPageState
 
       // 2) Cargar cronograma (como antes)
       await _cargarDatos(); // deja _loading en false al final
+      await _refrescarEstadoBorrador();
 
       // 3) Mostrar novedades:
       // - Si hay novedades, SIEMPRE mostrar (aunque ya se haya abierto antes en el periodo).
@@ -2019,6 +2209,7 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   Future<void> _eliminarTareaBorrador(TareaModel tarea) async {
+    _marcarCambioManual();
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -2090,6 +2281,26 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   Future<void> _agendarExcluida(
+    PreventivaExcluidaBorradorModel excluida,
+  ) async {
+    _marcarCambioManual();
+    final clave = _claveExcluida(excluida.id);
+    if (_accionEnCurso(_accionesExcluidaNotifier.value, clave)) return;
+    _marcarAccionExcluida(clave, true);
+    try {
+      await _buscarYAgendarExcluida(excluida);
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+    } finally {
+      _marcarAccionExcluida(clave, false);
+    }
+  }
+
+  Future<void> _buscarYAgendarExcluida(
     PreventivaExcluidaBorradorModel excluida,
   ) async {
     final sugerencias = await _preventivaApi.sugerirHuecosExcluida(
@@ -2381,6 +2592,7 @@ class _CronogramaPreventivasBorradorPageState
   Future<void> _dividirExcluidaEnHoras(
     PreventivaExcluidaBorradorModel excluida,
   ) async {
+    _marcarCambioManual();
     final minutos = await _pedirDivisionManualExcluida(excluida);
     if (minutos == null || minutos.isEmpty) return;
     await _preventivaApi.dividirExcluidaManual(
@@ -2401,6 +2613,27 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   Future<void> _agendarBloqueExcluida(
+    PreventivaExcluidaBorradorModel excluida,
+    PreventivaExcluidaBloqueModel bloque,
+  ) async {
+    _marcarCambioManual();
+    final clave = _claveBloqueExcluida(excluida.id, bloque.id);
+    if (_accionEnCurso(_accionesExcluidaNotifier.value, clave)) return;
+    _marcarAccionExcluida(clave, true);
+    try {
+      await _buscarYAgendarBloqueExcluida(excluida, bloque);
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+    } finally {
+      _marcarAccionExcluida(clave, false);
+    }
+  }
+
+  Future<void> _buscarYAgendarBloqueExcluida(
     PreventivaExcluidaBorradorModel excluida,
     PreventivaExcluidaBloqueModel bloque,
   ) async {
@@ -2475,6 +2708,7 @@ class _CronogramaPreventivasBorradorPageState
     DateTime fecha,
     List<TareaModel> tareasOrdenadas,
   ) async {
+    _marcarCambioManual();
     await _preventivaApi.reordenarTareasDiaBorrador(
       nit: widget.nit,
       fecha: fecha,
@@ -2493,6 +2727,7 @@ class _CronogramaPreventivasBorradorPageState
     required DateTime nuevoInicio,
     required DateTime nuevoFin,
   }) async {
+    _marcarCambioManual();
     final actualizada = await _preventivaApi.editarBloqueBorrador(
       nit: widget.nit,
       tareaId: tarea.id,
@@ -2507,28 +2742,79 @@ class _CronogramaPreventivasBorradorPageState
     );
   }
 
+  /// Agenda una excluida sin dividir en el hueco al que se arrastro.
+  Future<void> _agendarExcluidaEnSlot({
+    required PreventivaExcluidaBorradorModel excluida,
+    required DateTime nuevoInicio,
+    required DateTime nuevoFin,
+  }) async {
+    _marcarCambioManual();
+    final clave = _claveExcluida(excluida.id);
+    if (_accionEnCurso(_accionesExcluidaNotifier.value, clave)) return;
+    _marcarAccionExcluida(clave, true);
+    try {
+      await _preventivaApi.agendarExcluidaBorrador(
+        nit: widget.nit,
+        excluidaId: excluida.id,
+        fechaInicio: nuevoInicio,
+        fechaFin: nuevoFin,
+      );
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(content: Text('Tarea excluida agendada en la grilla.')),
+      );
+      await _cargarDatos();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+    } finally {
+      _marcarAccionExcluida(clave, false);
+    }
+  }
+
   Future<void> _agendarBloqueExcluidaEnSemana({
     required PreventivaExcluidaBorradorModel excluida,
     required PreventivaExcluidaBloqueModel bloque,
     required DateTime nuevoInicio,
     required DateTime nuevoFin,
   }) async {
-    await _preventivaApi.agendarBloqueExcluida(
-      nit: widget.nit,
-      excluidaId: excluida.id,
-      bloqueId: bloque.id,
-      fechaInicio: nuevoInicio,
-      fechaFin: nuevoFin,
-    );
-    if (!mounted) return;
-    AppFeedback.showFromSnackBar(
-      context,
-      SnackBar(content: Text('Bloque ${bloque.orden} agendado en la grilla.')),
-    );
-    await _cargarDatos();
+    _marcarCambioManual();
+    final clave = _claveBloqueExcluida(excluida.id, bloque.id);
+    if (_accionEnCurso(_accionesExcluidaNotifier.value, clave)) return;
+    _marcarAccionExcluida(clave, true);
+    try {
+      await _preventivaApi.agendarBloqueExcluida(
+        nit: widget.nit,
+        excluidaId: excluida.id,
+        bloqueId: bloque.id,
+        fechaInicio: nuevoInicio,
+        fechaFin: nuevoFin,
+      );
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text('Bloque ${bloque.orden} agendado en la grilla.'),
+        ),
+      );
+      await _cargarDatos();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+    } finally {
+      _marcarAccionExcluida(clave, false);
+    }
   }
 
   Future<void> _reemplazarTareaConExcluida(TareaModel tarea) async {
+    _marcarCambioManual();
     if (_excluidasMes.isEmpty) {
       AppFeedback.showFromSnackBar(
         context,
@@ -2682,7 +2968,9 @@ class _CronogramaPreventivasBorradorPageState
 
   void _aplicarTareaActualizadaEnMemoria(TareaModel tareaActualizada) {
     setState(() {
-      final index = _tareasMes.indexWhere((item) => item.id == tareaActualizada.id);
+      final index = _tareasMes.indexWhere(
+        (item) => item.id == tareaActualizada.id,
+      );
       if (index == -1) {
         _tareasMes = [..._tareasMes, tareaActualizada];
       } else {
@@ -3002,7 +3290,11 @@ class _CronogramaPreventivasBorradorPageState
     for (final t in _tareasFiltradas) {
       final ubic = (t.ubicacionNombre ?? 'ID ${t.ubicacionId}').trim();
       final objeto = (_nombreObjeto(t) ?? 'ID ${t.elementoId}').trim();
-      final freq = (t.frecuencia ?? '—').trim();
+      final freq = etiquetaFrecuencia(
+        t.frecuencia,
+        diaSemana: t.diaSemanaProgramado,
+        fechaReferencia: t.fechaInicio.toLocal(),
+      );
       final diag = (t.descripcion).trim();
 
       // responsable: prioriza operarios, si no supervisor
@@ -3041,7 +3333,7 @@ class _CronogramaPreventivasBorradorPageState
 
     // Ordena: frecuencia, diagnóstico, ubicación
     list.sort((a, b) {
-      final c1 = a.frecuencia.compareTo(b.frecuencia);
+      final c1 = compararPorFrecuencia(a.frecuencia, b.frecuencia);
       if (c1 != 0) return c1;
       final c2 = a.diagnostico.compareTo(b.diagnostico);
       if (c2 != 0) return c2;
@@ -3843,6 +4135,7 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   Future<void> _reasignarOperarioTarea(TareaModel tarea) async {
+    _marcarCambioManual();
     final actualIds = tarea.operariosIds.toSet();
     final seleccionado = await _seleccionarOperarioDelConjunto(
       inicio: tarea.fechaInicio,
@@ -3901,6 +4194,7 @@ class _CronogramaPreventivasBorradorPageState
   Future<void> _reasignarOperarioExcluida(
     PreventivaExcluidaBorradorModel excluida,
   ) async {
+    _marcarCambioManual();
     final actualIds = excluida.operariosIds.toSet();
     final finReferencia = excluida.fechaObjetivo.add(
       Duration(minutes: excluida.duracionMinutos),
@@ -3996,7 +4290,15 @@ class _CronogramaPreventivasBorradorPageState
                 addRow('descripcion', 'Descripción', item.descripcion);
                 addRow('estado', 'Estado', item.estado);
                 addRow('tipo', 'Tipo', 'Preventiva excluida');
-                addRow('frecuencia', 'Frecuencia', item.frecuencia ?? '—');
+                addRow(
+                  'frecuencia',
+                  'Frecuencia',
+                  etiquetaFrecuencia(
+                    item.frecuencia,
+                    diaSemana: item.diaSemanaProgramado,
+                    fechaReferencia: item.fechaObjetivo,
+                  ),
+                );
                 addRow(
                   'prioridad',
                   'Prioridad',
@@ -4107,18 +4409,39 @@ class _CronogramaPreventivasBorradorPageState
                                         ),
                                         if (!bloque.agendado) ...[
                                           const SizedBox(height: 8),
-                                          FilledButton.tonalIcon(
-                                            onPressed: () {
-                                              Navigator.pop(context);
-                                              _agendarBloqueExcluida(
-                                                item,
-                                                bloque,
+                                          ValueListenableBuilder<Set<String>>(
+                                            valueListenable:
+                                                _accionesExcluidaNotifier,
+                                            builder: (_, enCurso, __) {
+                                              final ocupado = _accionEnCurso(
+                                                enCurso,
+                                                _claveBloqueExcluida(
+                                                  item.id,
+                                                  bloque.id,
+                                                ),
+                                              );
+                                              return FilledButton.tonalIcon(
+                                                onPressed: ocupado
+                                                    ? null
+                                                    : () {
+                                                        Navigator.pop(context);
+                                                        _agendarBloqueExcluida(
+                                                          item,
+                                                          bloque,
+                                                        );
+                                                      },
+                                                icon: _iconoAccionExcluida(
+                                                  enCurso: ocupado,
+                                                  icono: Icons.search,
+                                                  size: 20,
+                                                ),
+                                                label: Text(
+                                                  ocupado
+                                                      ? 'Buscando hueco...'
+                                                      : 'Buscar hueco para este bloque',
+                                                ),
                                               );
                                             },
-                                            icon: const Icon(Icons.search),
-                                            label: const Text(
-                                              'Buscar hueco para este bloque',
-                                            ),
                                           ),
                                         ],
                                       ],
@@ -4132,13 +4455,33 @@ class _CronogramaPreventivasBorradorPageState
                                 runSpacing: 8,
                                 children: [
                                   if (!item.tieneDivisionManual)
-                                    FilledButton.tonalIcon(
-                                      onPressed: () {
-                                        Navigator.pop(context);
-                                        _agendarExcluida(item);
+                                    ValueListenableBuilder<Set<String>>(
+                                      valueListenable:
+                                          _accionesExcluidaNotifier,
+                                      builder: (_, enCurso, __) {
+                                        final ocupado = _accionEnCurso(
+                                          enCurso,
+                                          _claveExcluida(item.id),
+                                        );
+                                        return FilledButton.tonalIcon(
+                                          onPressed: ocupado
+                                              ? null
+                                              : () {
+                                                  Navigator.pop(context);
+                                                  _agendarExcluida(item);
+                                                },
+                                          icon: _iconoAccionExcluida(
+                                            enCurso: ocupado,
+                                            icono: Icons.search,
+                                            size: 20,
+                                          ),
+                                          label: Text(
+                                            ocupado
+                                                ? 'Buscando hueco...'
+                                                : 'Encontrar hueco',
+                                          ),
+                                        );
                                       },
-                                      icon: const Icon(Icons.search),
-                                      label: const Text('Encontrar hueco'),
                                     ),
                                   FilledButton.tonalIcon(
                                     onPressed: () {
@@ -4223,12 +4566,11 @@ class _CronogramaPreventivasBorradorPageState
         ? 'Sin maquinaria planificada'
         : maquinariaLista
               .map((m) {
-                String base = 'ID ${m.maquinariaId ?? '-'}';
-                if (m.tipo != null && m.tipo!.trim().isNotEmpty) {
-                  base += ' – ${m.tipo}';
-                }
-                if (m.cantidad != null) base += ' (${m.cantidad} h / unidades)';
-                return base;
+                // La preventiva declara el tipo necesario; la máquina concreta
+                // se asigna desde el cronograma de maquinaria.
+                final tipo = m.tipoEnum?.label ?? m.tipo ?? 'Sin tipo';
+                final cantidad = (m.cantidad ?? 1).round();
+                return cantidad > 1 ? '$tipo × $cantidad' : tipo;
               })
               .join('\n');
 
@@ -4254,7 +4596,15 @@ class _CronogramaPreventivasBorradorPageState
                 addRow('descripcion', 'Descripción', t.descripcion);
                 addRow('estado', 'Estado', t.estado ?? '—');
                 addRow('tipo', 'Tipo', t.tipo ?? '—');
-                addRow('frecuencia', 'Frecuencia', t.frecuencia ?? '—');
+                addRow(
+                  'frecuencia',
+                  'Frecuencia',
+                  etiquetaFrecuencia(
+                    t.frecuencia,
+                    diaSemana: t.diaSemanaProgramado,
+                    fechaReferencia: t.fechaInicio.toLocal(),
+                  ),
+                );
                 addRow('prioridad', 'Prioridad', prioridadLabel);
                 rows.add(const SizedBox(height: 8));
                 addRow('fechaInicio', 'Fecha inicio', fechaIniStr);
@@ -4455,29 +4805,72 @@ class _CronogramaPreventivasBorradorPageState
     final primary = AppTheme.primary;
     final mesNombre = DateFormat.MMMM('es').format(_inicioMes).toUpperCase();
 
-    return Scaffold(
-      backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: primary,
-        title: const Text(
-          'Cronograma preventivas (borrador)',
-          style: TextStyle(color: Colors.white),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          // ✅ refresca generando de nuevo y mostrando novedades
-          IconButton(
-            onPressed: _generarYcargarAlEntrar,
-            icon: const Icon(Icons.refresh),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final navigator = Navigator.of(context);
+        final puedeSalir = await _confirmarSalida();
+        if (puedeSalir) navigator.pop(result);
+      },
+      child: Scaffold(
+        backgroundColor: AppTheme.background,
+        appBar: AppBar(
+          backgroundColor: primary,
+          title: const Text(
+            'Cronograma preventivas (borrador)',
+            style: TextStyle(color: Colors.white),
           ),
-        ],
+          iconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            IconButton(
+              onPressed: _loading ? null : _cargarDatos,
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Recargar',
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'Opciones del borrador',
+              onSelected: (value) {
+                if (value == 'INCORPORAR') {
+                  _incorporarPreventivasNuevas();
+                } else if (value == 'REGENERAR') {
+                  _regenerarDesdeCero();
+                }
+              },
+              itemBuilder: (_) => [
+                PopupMenuItem<String>(
+                  value: 'INCORPORAR',
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.playlist_add),
+                    title: const Text('Incorporar preventivas nuevas'),
+                    subtitle: Text(
+                      _preventivasSinPlanificar > 0
+                          ? '$_preventivasSinPlanificar sin planificar'
+                          : 'Conserva lo que ya cuadraste',
+                    ),
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'REGENERAR',
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.restart_alt, color: Colors.red),
+                    title: Text('Regenerar desde cero'),
+                    subtitle: Text('Descarta los cambios manuales'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? _buildError()
+            : _buildContenido(mesNombre),
+        bottomNavigationBar: _buildBottomBar(),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? _buildError()
-          : _buildContenido(mesNombre),
-      bottomNavigationBar: _buildBottomBar(),
     );
   }
 
@@ -4496,10 +4889,62 @@ class _CronogramaPreventivasBorradorPageState
             ),
             const SizedBox(height: 12),
             ElevatedButton.icon(
-              onPressed: _generarYcargarAlEntrar,
+              onPressed: _abrirBorrador,
               icon: const Icon(Icons.refresh),
               label: const Text('Reintentar'),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Aviso de que se está trabajando sobre un borrador guardado y de cuántas
+  /// preventivas quedan por incorporar.
+  Widget _buildBannerBorrador() {
+    if (_estadoBorrador['existe'] != true) return const SizedBox.shrink();
+
+    final pendientes = _preventivasSinPlanificar;
+    final total = (_estadoBorrador['totalTareas'] as num?)?.toInt() ?? 0;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: pendientes > 0
+              ? Colors.orange.withValues(alpha: 0.10)
+              : Colors.green.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: pendientes > 0
+                ? Colors.orange.withValues(alpha: 0.35)
+                : Colors.green.withValues(alpha: 0.30),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              pendientes > 0 ? Icons.playlist_add : Icons.save_outlined,
+              size: 18,
+              color: pendientes > 0
+                  ? Colors.orange.shade900
+                  : Colors.green.shade800,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                pendientes > 0
+                    ? 'Borrador guardado · $total tarea(s). Hay $pendientes preventiva(s) sin planificar.'
+                    : 'Borrador guardado · $total tarea(s). Todas las preventivas están planificadas.',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+            if (pendientes > 0)
+              TextButton(
+                onPressed: _loading ? null : _incorporarPreventivasNuevas,
+                child: const Text('Incorporar'),
+              ),
           ],
         ),
       ),
@@ -4511,6 +4956,7 @@ class _CronogramaPreventivasBorradorPageState
       padding: const EdgeInsets.all(12),
       child: Column(
         children: [
+          _buildBannerBorrador(),
           _buildTopBar(mesNombre),
           if (_vista == _VistaCronograma.mensual)
             AnimatedCrossFade(
@@ -4777,6 +5223,7 @@ class _CronogramaPreventivasBorradorPageState
         onTapTarea: (t) => _mostrarDetalleTarea(t, context),
         onMoverTarea: _moverTareaSemana,
         onAgendarBloqueExcluida: _agendarBloqueExcluidaEnSemana,
+        onAgendarExcluidaEnSlot: _agendarExcluidaEnSlot,
         normalizarMensajeMovimiento: (error, operariosNombres) =>
             _normalizarMensajeMovimientoBorrador(
               error: error,
@@ -4834,6 +5281,7 @@ class _CronogramaPreventivasBorradorPageState
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
             onMoverTarea: _moverTareaSemana,
             onAgendarBloqueExcluida: _agendarBloqueExcluidaEnSemana,
+            onAgendarExcluidaEnSlot: _agendarExcluidaEnSlot,
             normalizarMensajeMovimiento: (error, operariosNombres) =>
                 _normalizarMensajeMovimientoBorrador(
                   error: error,
@@ -5217,6 +5665,12 @@ class _WeekScheduleView extends StatefulWidget {
     required DateTime nuevoFin,
   })
   onAgendarBloqueExcluida;
+  final Future<void> Function({
+    required PreventivaExcluidaBorradorModel excluida,
+    required DateTime nuevoInicio,
+    required DateTime nuevoFin,
+  })
+  onAgendarExcluidaEnSlot;
   final String Function(Object error, List<String> operariosNombres)
   normalizarMensajeMovimiento;
 
@@ -5234,6 +5688,7 @@ class _WeekScheduleView extends StatefulWidget {
     required this.onTapTarea,
     required this.onMoverTarea,
     required this.onAgendarBloqueExcluida,
+    required this.onAgendarExcluidaEnSlot,
     required this.normalizarMensajeMovimiento,
   });
 
@@ -5312,7 +5767,21 @@ class _DraggedWeekTask {
     );
   }
 
+  /// Excluida sin dividir: se arrastra entera a un hueco de la grilla.
+  factory _DraggedWeekTask.fromExcluida({
+    required PreventivaExcluidaBorradorModel excluida,
+  }) {
+    return _DraggedWeekTask._(
+      tarea: null,
+      excluida: excluida,
+      bloque: null,
+      duracionMinutos: excluida.duracionMinutos,
+    );
+  }
+
   bool get esBloqueExcluido => excluida != null && bloque != null;
+
+  bool get esExcluidaCompleta => excluida != null && bloque == null;
 }
 
 class _WeekScheduleViewState extends State<_WeekScheduleView> {
@@ -5692,6 +6161,12 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
         await widget.onAgendarBloqueExcluida(
           excluida: dragged.excluida!,
           bloque: dragged.bloque!,
+          nuevoInicio: nuevoInicio,
+          nuevoFin: nuevoFin,
+        );
+      } else if (dragged.esExcluidaCompleta) {
+        await widget.onAgendarExcluidaEnSlot(
+          excluida: dragged.excluida!,
           nuevoInicio: nuevoInicio,
           nuevoFin: nuevoFin,
         );
@@ -6602,7 +7077,9 @@ class _SidebarSimple extends StatelessWidget {
                         ),
                       ),
                     IconButton(
-                      tooltip: collapsed ? 'Expandir filtros' : 'Colapsar filtros',
+                      tooltip: collapsed
+                          ? 'Expandir filtros'
+                          : 'Colapsar filtros',
                       onPressed: onToggle,
                       icon: Icon(
                         collapsed
@@ -6643,7 +7120,7 @@ class _SidebarSimple extends StatelessWidget {
                       ),
                     ),
                   ),
-                ],
+              ],
             ),
           );
         },
@@ -7004,7 +7481,7 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                         item.id,
                       );
                       final bloques = item.divisionManual?.bloques ?? const [];
-                      return Padding(
+                      final tarjeta = Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Container(
                           padding: const EdgeInsets.all(10),
@@ -7100,11 +7577,32 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                 runSpacing: 6,
                                 children: [
                                   if (!item.tieneDivisionManual)
-                                    FilledButton.tonalIcon(
-                                      onPressed: () =>
-                                          widget.onAgendarExcluida(item),
-                                      icon: const Icon(Icons.search, size: 16),
-                                      label: const Text('Encontrar hueco'),
+                                    ValueListenableBuilder<Set<String>>(
+                                      valueListenable:
+                                          _accionesExcluidaNotifier,
+                                      builder: (_, enCurso, __) {
+                                        final ocupado = _accionEnCurso(
+                                          enCurso,
+                                          _claveExcluida(item.id),
+                                        );
+                                        return FilledButton.tonalIcon(
+                                          onPressed: ocupado
+                                              ? null
+                                              : () => widget.onAgendarExcluida(
+                                                  item,
+                                                ),
+                                          icon: _iconoAccionExcluida(
+                                            enCurso: ocupado,
+                                            icono: Icons.search,
+                                            size: 16,
+                                          ),
+                                          label: Text(
+                                            ocupado
+                                                ? 'Buscando...'
+                                                : 'Encontrar hueco',
+                                          ),
+                                        );
+                                      },
                                     ),
                                   FilledButton.tonalIcon(
                                     onPressed: () =>
@@ -7195,17 +7693,37 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                           ),
                                         ),
                                         if (!bloque.agendado)
-                                          TextButton.icon(
-                                            onPressed: () =>
-                                                widget.onAgendarBloqueExcluida(
-                                                  item,
-                                                  bloque,
+                                          ValueListenableBuilder<Set<String>>(
+                                            valueListenable:
+                                                _accionesExcluidaNotifier,
+                                            builder: (_, enCurso, __) {
+                                              final ocupado = _accionEnCurso(
+                                                enCurso,
+                                                _claveBloqueExcluida(
+                                                  item.id,
+                                                  bloque.id,
                                                 ),
-                                            icon: const Icon(
-                                              Icons.search,
-                                              size: 16,
-                                            ),
-                                            label: const Text('Buscar hueco'),
+                                              );
+                                              return TextButton.icon(
+                                                onPressed: ocupado
+                                                    ? null
+                                                    : () => widget
+                                                          .onAgendarBloqueExcluida(
+                                                            item,
+                                                            bloque,
+                                                          ),
+                                                icon: _iconoAccionExcluida(
+                                                  enCurso: ocupado,
+                                                  icono: Icons.search,
+                                                  size: 16,
+                                                ),
+                                                label: Text(
+                                                  ocupado
+                                                      ? 'Buscando...'
+                                                      : 'Buscar hueco',
+                                                ),
+                                              );
+                                            },
                                           ),
                                       ],
                                     ),
@@ -7242,6 +7760,32 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                             ],
                           ),
                         ),
+                      );
+
+                      // Las excluidas divididas se arrastran bloque a bloque;
+                      // las demas se pueden soltar enteras sobre la grilla.
+                      if (item.tieneDivisionManual) return tarjeta;
+
+                      return LongPressDraggable<_DraggedWeekTask>(
+                        data: _DraggedWeekTask.fromExcluida(excluida: item),
+                        onDragStarted: () {
+                          _weekDragActiveNotifier.value = true;
+                        },
+                        onDragEnd: (_) {
+                          _weekDragActiveNotifier.value = false;
+                        },
+                        onDraggableCanceled: (_, __) {
+                          _weekDragActiveNotifier.value = false;
+                        },
+                        feedback: Material(
+                          color: Colors.transparent,
+                          child: SizedBox(width: 260, child: tarjeta),
+                        ),
+                        childWhenDragging: Opacity(
+                          opacity: 0.4,
+                          child: tarjeta,
+                        ),
+                        child: tarjeta,
                       );
                     }),
                 ],

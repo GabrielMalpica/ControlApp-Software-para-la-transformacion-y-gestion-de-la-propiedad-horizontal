@@ -12,6 +12,7 @@ class SessionService {
   static const _kNombre = 'auth_nombre';
   static const _kUserId = 'auth_user_id';
   static const _kPermissions = 'auth_permissions';
+  static const _kRequirePasswordChange = 'auth_require_password_change';
 
   static const _secure = FlutterSecureStorage();
 
@@ -20,6 +21,7 @@ class SessionService {
   static String? _memUserId;
   static String? _memRol;
   static List<String>? _memPermissions;
+  static bool? _memRequirePasswordChange;
 
   Future<void> saveSession({
     required String token,
@@ -28,12 +30,14 @@ class SessionService {
     required String nombre,
     required String userId,
     List<String> permissions = const [],
+    bool requiereCambioContrasena = false,
   }) async {
     // ✅ cache inmediato
     _memToken = token;
     _memRol = rol;
     _memUserId = userId;
     _memPermissions = [...permissions];
+    _memRequirePasswordChange = requiereCambioContrasena;
 
     final permissionsJson = jsonEncode(permissions);
 
@@ -45,6 +49,7 @@ class SessionService {
       await prefs.setString(_kNombre, nombre);
       await prefs.setString(_kUserId, userId);
       await prefs.setString(_kPermissions, permissionsJson);
+      await prefs.setBool(_kRequirePasswordChange, requiereCambioContrasena);
       return;
     }
 
@@ -54,6 +59,10 @@ class SessionService {
     await _secure.write(key: _kNombre, value: nombre);
     await _secure.write(key: _kUserId, value: userId);
     await _secure.write(key: _kPermissions, value: permissionsJson);
+    await _secure.write(
+      key: _kRequirePasswordChange,
+      value: requiereCambioContrasena ? 'true' : 'false',
+    );
   }
 
   Future<void> saveProfile({
@@ -62,10 +71,12 @@ class SessionService {
     required String nombre,
     required String userId,
     List<String> permissions = const [],
+    bool requiereCambioContrasena = false,
   }) async {
     _memRol = rol;
     _memUserId = userId;
     _memPermissions = [...permissions];
+    _memRequirePasswordChange = requiereCambioContrasena;
 
     final permissionsJson = jsonEncode(permissions);
 
@@ -76,6 +87,7 @@ class SessionService {
       await prefs.setString(_kNombre, nombre);
       await prefs.setString(_kUserId, userId);
       await prefs.setString(_kPermissions, permissionsJson);
+      await prefs.setBool(_kRequirePasswordChange, requiereCambioContrasena);
       return;
     }
 
@@ -84,6 +96,39 @@ class SessionService {
     await _secure.write(key: _kNombre, value: nombre);
     await _secure.write(key: _kUserId, value: userId);
     await _secure.write(key: _kPermissions, value: permissionsJson);
+    await _secure.write(
+      key: _kRequirePasswordChange,
+      value: requiereCambioContrasena ? 'true' : 'false',
+    );
+  }
+
+  Future<bool> getRequirePasswordChange() async {
+    if (_memRequirePasswordChange != null) return _memRequirePasswordChange!;
+
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      _memRequirePasswordChange =
+          prefs.getBool(_kRequirePasswordChange) ?? false;
+      return _memRequirePasswordChange!;
+    }
+
+    final raw = await _secure.read(key: _kRequirePasswordChange);
+    _memRequirePasswordChange = raw == 'true';
+    return _memRequirePasswordChange!;
+  }
+
+  Future<void> setRequirePasswordChange(bool value) async {
+    _memRequirePasswordChange = value;
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kRequirePasswordChange, value);
+      return;
+    }
+
+    await _secure.write(
+      key: _kRequirePasswordChange,
+      value: value ? 'true' : 'false',
+    );
   }
 
   Future<String?> getToken() async {
@@ -166,6 +211,7 @@ class SessionService {
     _memRol = null;
     _memUserId = null;
     _memPermissions = null;
+    _memRequirePasswordChange = null;
 
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
@@ -175,6 +221,7 @@ class SessionService {
       await prefs.remove(_kNombre);
       await prefs.remove(_kUserId);
       await prefs.remove(_kPermissions);
+      await prefs.remove(_kRequirePasswordChange);
       return;
     }
 
@@ -184,5 +231,6 @@ class SessionService {
     await _secure.delete(key: _kNombre);
     await _secure.delete(key: _kUserId);
     await _secure.delete(key: _kPermissions);
+    await _secure.delete(key: _kRequirePasswordChange);
   }
 }

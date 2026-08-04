@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/auth_api.dart';
 import '../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
+import 'package:flutter_application_1/pages/gerente/cronograma_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
@@ -18,6 +20,7 @@ import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
+import 'package:flutter_application_1/widgets/perfil_action.dart';
 
 import '../service/theme.dart';
 import 'inventario_page.dart';
@@ -48,6 +51,7 @@ class JefeOperacionesPage extends StatefulWidget {
 }
 
 class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
+  final AuthApi _authApi = AuthApi();
   final GerenteApi _api = GerenteApi();
 
   bool _can(String permission) => PermissionService.instance.can(permission);
@@ -70,7 +74,15 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
   @override
   void initState() {
     super.initState();
+    _refreshSessionProfile();
     _cargarConjuntos();
+  }
+
+  Future<void> _refreshSessionProfile() async {
+    try {
+      await _authApi.me();
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   Future<void> _cargarConjuntos() async {
@@ -265,6 +277,22 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
               );
             },
           ),
+        if (_can('maquinaria.ver'))
+          _JefeTile(
+            'Cronograma maquinaria',
+            Icons.event_repeat,
+            AppTheme.red,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CronogramaMaquinariaPage(
+                    empresaNit: AppConstants.empresaNit,
+                  ),
+                ),
+              );
+            },
+          ),
         if (_can('herramientas.ver'))
           _JefeTile('Herramientas', Icons.handyman, Colors.orange, () {
             Navigator.push(
@@ -391,7 +419,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
         children: <Widget>[
           ConjuntoSelectorCard(
             conjuntoActual: conjunto,
-            conjuntos: _conjuntos,
+            conjuntos: _conjuntos.where((c) => c.activo).toList(),
             selectedNit: _conjuntoSeleccionadoNit,
             onChanged: (v) => setState(() => _conjuntoSeleccionadoNit = v),
           ),
@@ -459,6 +487,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
           style: TextStyle(color: Colors.white),
         ),
         actions: [
+          const PerfilAction(),
           const NotificacionesAction(),
           const CambiarContrasenaAction(),
           IconButton(

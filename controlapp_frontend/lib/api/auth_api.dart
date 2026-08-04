@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_application_1/model/auth_models.dart';
+import 'package:flutter_application_1/model/profile_models.dart';
 import 'package:flutter_application_1/service/api_client.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/session_service.dart';
@@ -42,6 +43,7 @@ class AuthApi {
       nombre: result.user.nombre,
       userId: result.user.id,
       permissions: result.user.permissions,
+      requiereCambioContrasena: result.user.requiereCambioContrasena,
     );
 
     return result;
@@ -62,8 +64,22 @@ class AuthApi {
       nombre: user.nombre,
       userId: user.id,
       permissions: user.permissions,
+      requiereCambioContrasena: user.requiereCambioContrasena,
     );
     return user;
+  }
+
+  Future<ProfileSummary> perfilResumen() async {
+    final resp = await _client.get('/auth/perfil-resumen');
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        _serverMessage(resp.body, fallback: 'No se pudo cargar el perfil.'),
+      );
+    }
+
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    return ProfileSummary.fromJson(data);
   }
 
   Future<void> cambiarContrasena({
@@ -86,6 +102,28 @@ class AuthApi {
         ),
       );
     }
+  }
+
+  Future<void> cambiarContrasenaInicial({
+    required String nuevaContrasena,
+  }) async {
+    final resp = await _client.post(
+      '/auth/cambiar-contrasena-inicial',
+      body: {
+        'nuevaContrasena': nuevaContrasena,
+      },
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        _serverMessage(
+          resp.body,
+          fallback: 'No se pudo actualizar la contrasena inicial.',
+        ),
+      );
+    }
+
+    await _session.setRequirePasswordChange(false);
   }
 
   Future<void> cambiarContrasenaUsuario({

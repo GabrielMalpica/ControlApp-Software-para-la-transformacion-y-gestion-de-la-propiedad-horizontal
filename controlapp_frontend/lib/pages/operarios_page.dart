@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
@@ -11,6 +12,7 @@ import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
+import 'package:flutter_application_1/widgets/perfil_action.dart';
 import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
 
 class OperarioDashboardPage extends StatefulWidget {
@@ -22,7 +24,22 @@ class OperarioDashboardPage extends StatefulWidget {
 }
 
 class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
+  final AuthApi _authApi = AuthApi();
+
   bool _can(String permission) => PermissionService.instance.can(permission);
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshSessionProfile();
+  }
+
+  Future<void> _refreshSessionProfile() async {
+    try {
+      await _authApi.me();
+      if (mounted) setState(() {});
+    } catch (_) {}
+  }
 
   Conjunto get _conjuntoActual => Conjunto(
     nit: widget.nit,
@@ -108,6 +125,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
           style: TextStyle(color: Colors.white),
         ),
         actions: [
+          const PerfilAction(),
           const NotificacionesAction(),
           const CambiarContrasenaAction(),
           IconButton(

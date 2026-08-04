@@ -1,10 +1,13 @@
 import 'package:flutter_application_1/service/session_service.dart';
 
+import '../api/auth_api.dart';
+
 class PermissionService {
   PermissionService._();
 
   static final PermissionService instance = PermissionService._();
   final SessionService _session = SessionService();
+  final AuthApi _authApi = AuthApi();
 
   static String normalize(String value) => value.trim().toLowerCase();
 
@@ -25,6 +28,6 @@ class PermissionService {
   }
 
   Future<void> refresh() async {
-    await _session.getPermissions();
+    await _authApi.me();
   }
 }

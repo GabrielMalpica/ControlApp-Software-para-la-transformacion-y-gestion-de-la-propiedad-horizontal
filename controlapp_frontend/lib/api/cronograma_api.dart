@@ -118,11 +118,12 @@ class CronogramaApi {
     required int anio,
     required int mes,
   }) async {
-    final uri = Uri.parse(
-      '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/publicado',
-    ).replace(
-      queryParameters: {'anio': anio.toString(), 'mes': mes.toString()},
-    );
+    final uri =
+        Uri.parse(
+          '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/publicado',
+        ).replace(
+          queryParameters: {'anio': anio.toString(), 'mes': mes.toString()},
+        );
 
     final resp = await _client.delete(
       uri.toString(),
@@ -241,6 +242,8 @@ class CronogramaApi {
     required DateTime fechaInicio,
     required DateTime fechaFin,
     int? reemplazarTareaId,
+    List<int>? reemplazarTareaIds,
+    String? accionReemplazadas,
     String? motivoReemplazo,
   }) async {
     final resp = await _client.post(
@@ -249,12 +252,94 @@ class CronogramaApi {
         'fechaInicio': fechaInicio.toIso8601String(),
         'fechaFin': fechaFin.toIso8601String(),
         if (reemplazarTareaId != null) 'reemplazarTareaId': reemplazarTareaId,
+        if (reemplazarTareaIds != null && reemplazarTareaIds.isNotEmpty)
+          'reemplazarTareaIds': reemplazarTareaIds,
+        if (accionReemplazadas != null)
+          'accionReemplazadas': accionReemplazadas,
         if (motivoReemplazo != null && motivoReemplazo.trim().isNotEmpty)
           'motivoReemplazo': motivoReemplazo.trim(),
       },
     );
 
+    if (resp.statusCode != 200) {
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudo programar la tarea excluida.',
+      );
+    }
+
     if (resp.body.trim().isEmpty) return <String, dynamic>{};
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  /// Tareas publicadas de un dia que podrian desplazarse para dar espacio a una
+  /// excluida, con la combinacion minima que libera los minutos necesarios.
+  Future<Map<String, dynamic>> opcionesReemplazoExcluida({
+    required String nit,
+    required int excluidaId,
+    required DateTime fecha,
+  }) async {
+    final uri = Uri.parse(
+      '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/excluidas-standby/$excluidaId/opciones-reemplazo',
+    ).replace(queryParameters: {'fecha': fecha.toIso8601String()});
+
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudieron cargar las tareas que se pueden desplazar.',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  /// Cambia el operario de una excluida del cronograma publicado como excepcion
+  /// puntual: no modifica la definicion preventiva ni los periodos siguientes.
+  Future<Map<String, dynamic>> reasignarOperarioExcluidaStandby({
+    required String nit,
+    required int excluidaId,
+    required String nuevoOperarioId,
+    String? motivo,
+  }) async {
+    final resp = await _client.post(
+      '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/excluidas-standby/$excluidaId/reasignar-operario',
+      body: {
+        'nuevoOperarioId': nuevoOperarioId,
+        if (motivo != null && motivo.trim().isNotEmpty) 'motivo': motivo.trim(),
+      },
+    );
+
+    if (resp.statusCode != 200) {
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudo cambiar el operario de la tarea excluida.',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  /// Informe de excluidas del periodo: programadas posteriormente (con las
+  /// tareas que se desplazaron), excepciones de operario y pendientes.
+  Future<Map<String, dynamic>> informeExcluidas({
+    required String nit,
+    required int anio,
+    required int mes,
+  }) async {
+    final uri = Uri.parse(
+      '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/informe-excluidas',
+    ).replace(queryParameters: {'anio': '$anio', 'mes': '$mes'});
+
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudo cargar el informe de tareas excluidas.',
+      );
+    }
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
   }
 

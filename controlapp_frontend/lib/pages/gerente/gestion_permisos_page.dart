@@ -56,6 +56,8 @@ class _GestionPermisosPageState extends State<GestionPermisosPage> {
         return 'Supervisor';
       case 'operario':
         return 'Operario';
+      case 'residente':
+        return 'Residente';
       default:
         return role;
     }

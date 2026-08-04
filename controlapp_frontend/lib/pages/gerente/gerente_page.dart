@@ -5,16 +5,23 @@ import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/agenda_herramientas_page.dart';
 import 'package:flutter_application_1/pages/cumpleanos_page.dart';
 import 'package:flutter_application_1/pages/agenda_maquinaria_page.dart';
+import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
 import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.dart';
 import 'package:flutter_application_1/pages/crear_herramienta_page.dart';
 import 'package:flutter_application_1/pages/festivos_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
+import 'package:flutter_application_1/pages/gerente/cronograma_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
+import 'package:flutter_application_1/pages/gerente/consignas_valor_agregado_page.dart';
 import 'package:flutter_application_1/pages/gerente/gestion_permisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
+import 'package:flutter_application_1/pages/gerente/carga_residentes_page.dart';
+import 'package:flutter_application_1/pages/gerente/carga_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_insumo_page.dart';
+import 'package:flutter_application_1/pages/gerente/crear_residente_page.dart';
+import 'package:flutter_application_1/pages/gerente/residentes_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_conjuntos_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_insumos_page.dart';
@@ -34,6 +41,7 @@ import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
+import 'package:flutter_application_1/widgets/perfil_action.dart';
 
 import '../../service/theme.dart';
 import '../inventario_page.dart';
@@ -69,10 +77,16 @@ enum _QuickAction {
   // Usuarios
   usuariosGestion,
   usuarioCrear,
+  residentesGestion,
+  residenteCrear,
+  residentesCarga,
   permisosGestion,
+  catalogoComercial,
+  catalogoInsumosEcommerce,
 
   // Conjuntos
   conjuntoCrear,
+  conjuntoCarga,
   conjuntosGestion,
 
   // Creación general
@@ -92,6 +106,7 @@ enum _QuickAction {
   // Solicitudes
   solicitudInsumo,
   agendaMaquinaria,
+  cronogramaMaquinaria,
   agendaHerramientas,
   cumpleanos,
 
@@ -305,15 +320,44 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         enabled: enabledNit,
       ),
       item(
+        _QuickAction.residentesGestion,
+        "Gestion residentes",
+        Icons.groups_2_outlined,
+        enabled: enabledNit,
+      ),
+      item(
+        _QuickAction.residenteCrear,
+        "Crear residente",
+        Icons.person_add,
+        enabled: enabledNit,
+      ),
+      item(
+        _QuickAction.residentesCarga,
+        "Carga masiva residentes",
+        Icons.upload_file,
+        enabled: enabledNit,
+      ),
+      item(
         _QuickAction.permisosGestion,
         "Gestionar permisos",
         Icons.admin_panel_settings_outlined,
+      ),
+      item(
+        _QuickAction.catalogoComercial,
+        "Catalogo ecommerce",
+        Icons.storefront,
+      ),
+      item(
+        _QuickAction.catalogoInsumosEcommerce,
+        "Catalogo insumos ecommerce",
+        Icons.inventory_2,
       ),
 
       const PopupMenuDivider(),
 
       header("Conjuntos", Icons.apartment),
       item(_QuickAction.conjuntoCrear, "Crear conjunto", Icons.add_business),
+      item(_QuickAction.conjuntoCarga, "Cargar desde Excel", Icons.upload_file),
       item(
         _QuickAction.conjuntosGestion,
         "Gestión de conjuntos",
@@ -396,6 +440,11 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         enabled: enabledNit,
       ),
       item(
+        _QuickAction.cronogramaMaquinaria,
+        "Cronograma maquinaria",
+        Icons.event_repeat,
+      ),
+      item(
         _QuickAction.agendaHerramientas,
         "Agenda herramientas",
         Icons.handyman,
@@ -454,12 +503,59 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         await go(CrearUsuarioPage(nit: nit!));
         return;
 
+      case _QuickAction.residentesGestion:
+        if (!_requiereConjuntoOrWarn()) return;
+        await go(
+          ResidentesPage(
+            conjuntoFijoNit: nit,
+            conjuntoFijoNombre: _conjuntoSeleccionado?.nombre,
+          ),
+        );
+        return;
+
+      case _QuickAction.residenteCrear:
+        if (!_requiereConjuntoOrWarn()) return;
+        await go(
+          CrearResidentePage(
+            conjuntoFijoNit: nit,
+            conjuntoFijoNombre: _conjuntoSeleccionado?.nombre,
+          ),
+        );
+        return;
+
+      case _QuickAction.residentesCarga:
+        if (!_requiereConjuntoOrWarn()) return;
+        await go(
+          CargaResidentesPage(
+            conjuntoFijoNit: nit,
+            conjuntoFijoNombre: _conjuntoSeleccionado?.nombre,
+          ),
+        );
+        return;
+
       case _QuickAction.permisosGestion:
         await go(const GestionPermisosPage());
         return;
 
+      case _QuickAction.catalogoComercial:
+        await go(const CommerceCatalogPage(title: 'Catalogo ecommerce'));
+        return;
+
+      case _QuickAction.catalogoInsumosEcommerce:
+        await go(
+          const CommerceCatalogPage(
+            title: 'Catalogo insumos ecommerce',
+            initialScope: CommerceCatalogScope.conjunto,
+          ),
+        );
+        return;
+
       case _QuickAction.conjuntoCrear:
         await go(CrearConjuntoPage(nit: AppConstants.empresaNit));
+        return;
+
+      case _QuickAction.conjuntoCarga:
+        await go(const CargaConjuntoPage());
         return;
 
       case _QuickAction.conjuntosGestion:
@@ -511,6 +607,13 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         if (!_requiereConjuntoOrWarn()) return;
         await go(
           AgendaMaquinariaGlobalExcelPage(empresaNit: AppConstants.empresaNit),
+        );
+        return;
+
+      // No depende de un conjunto: agrega las necesidades de toda la empresa.
+      case _QuickAction.cronogramaMaquinaria:
+        await go(
+          CronogramaMaquinariaPage(empresaNit: AppConstants.empresaNit),
         );
         return;
 
@@ -589,7 +692,9 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           "Plan Esperanza",
           Icons.health_and_safety,
           AppTheme.primary,
-          () => _abrirYRecargar(PlanEsperanzaPage(nit: nit, nombreConjunto: nombreConjunto)),
+          () => _abrirYRecargar(
+            PlanEsperanzaPage(nit: nit, nombreConjunto: nombreConjunto),
+          ),
         ),
         _Tile("Tareas", Icons.assignment, AppTheme.green, () {
           _abrirYRecargar(TareasPage(nit: nit));
@@ -651,6 +756,46 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           _abrirYRecargar(UsuariosConjuntoPage(conjuntoNit: nit));
         }),
         _Tile(
+          "Gestion residentes",
+          Icons.groups_2_outlined,
+          AppTheme.primaryDark,
+          () {
+            _abrirYRecargar(
+              ResidentesPage(
+                conjuntoFijoNit: nit,
+                conjuntoFijoNombre: nombreConjunto,
+              ),
+            );
+          },
+        ),
+        _Tile("Crear residente", Icons.person_add_alt_1, Colors.cyan, () {
+          _abrirYRecargar(
+            CrearResidentePage(
+              conjuntoFijoNit: nit,
+              conjuntoFijoNombre: nombreConjunto,
+            ),
+          );
+        }),
+        _Tile("Carga residentes", Icons.upload_file, Colors.blue, () {
+          _abrirYRecargar(
+            CargaResidentesPage(
+              conjuntoFijoNit: nit,
+              conjuntoFijoNombre: nombreConjunto,
+            ),
+          );
+        }),
+        _Tile(
+          "Consignas especiales",
+          Icons.fact_check_outlined,
+          AppTheme.accent,
+          () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ConsignasValorAgregadoPage(conjunto: conjunto),
+            ),
+          ),
+        ),
+        _Tile(
           "Permisos por rol",
           Icons.admin_panel_settings_outlined,
           Colors.blueGrey,
@@ -664,6 +809,11 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         }),
       ]),
       _TileSection("Analisis y control", [
+        _Tile("Catalogo ecommerce", Icons.storefront, AppTheme.primaryDark, () {
+          _abrirYRecargar(
+            const CommerceCatalogPage(title: 'Catalogo ecommerce'),
+          );
+        }),
         _Tile("Reporte conjunto", Icons.bar_chart, AppTheme.green, () {
           Navigator.push(
             context,
@@ -768,7 +918,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         children: <Widget>[
           ConjuntoSelectorCard(
             conjuntoActual: conjunto,
-            conjuntos: _conjuntos,
+            conjuntos: _conjuntos.where((c) => c.activo).toList(),
             selectedNit: _conjuntoSeleccionadoNit,
             onChanged: (v) => setState(() => _conjuntoSeleccionadoNit = v),
           ),
@@ -828,6 +978,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
         ),
         actions: [
+          const PerfilAction(),
           const NotificacionesAction(),
           const CambiarContrasenaAction(),
           IconButton(

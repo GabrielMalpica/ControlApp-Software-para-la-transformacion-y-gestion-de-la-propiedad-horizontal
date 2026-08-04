@@ -76,6 +76,9 @@ class PreventivaExcluidaBorradorModel {
   final int id;
   final String descripcion;
   final String? frecuencia;
+
+  /// Dia de la semana planeado por la definicion preventiva de origen.
+  final String? diaSemanaProgramado;
   final int prioridad;
   final int duracionMinutos;
   final DateTime fechaObjetivo;
@@ -95,6 +98,7 @@ class PreventivaExcluidaBorradorModel {
     required this.id,
     required this.descripcion,
     this.frecuencia,
+    this.diaSemanaProgramado,
     required this.prioridad,
     required this.duracionMinutos,
     required this.fechaObjetivo,
@@ -125,6 +129,7 @@ class PreventivaExcluidaBorradorModel {
       id: int.tryParse(json['id']?.toString() ?? '') ?? 0,
       descripcion: (json['descripcion'] ?? '').toString(),
       frecuencia: json['frecuencia']?.toString(),
+      diaSemanaProgramado: json['diaSemanaProgramado']?.toString(),
       prioridad: int.tryParse(json['prioridad']?.toString() ?? '') ?? 2,
       duracionMinutos:
           int.tryParse(json['duracionMinutos']?.toString() ?? '') ?? 0,

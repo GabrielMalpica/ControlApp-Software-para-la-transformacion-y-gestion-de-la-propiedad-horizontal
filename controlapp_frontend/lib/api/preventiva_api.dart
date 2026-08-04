@@ -140,6 +140,24 @@ class DefinicionPreventivaApi {
     }
   }
 
+  /// Borrado en lote de definiciones preventivas.
+  /// DELETE /definicion-preventiva/conjuntos/:nit/preventivas  body: { ids }
+  Future<Map<String, dynamic>> eliminarVarias(String nit, List<int> ids) async {
+    final resp = await _client.delete(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas',
+      body: {'ids': ids},
+    );
+
+    if (resp.statusCode != 200) {
+      _throwCrudApiError(
+        resp,
+        fallback: 'No se pudieron eliminar las preventivas seleccionadas.',
+      );
+    }
+
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
   /// Generar cronograma mensual desde las definiciones
   /// POST /definicion-preventiva/conjuntos/:nit/preventivas/generar-cronograma
   Future<Map<String, dynamic>> generarCronogramaMensual({
@@ -149,11 +167,15 @@ class DefinicionPreventivaApi {
     int? tamanoBloqueHoras,
     int? tamanoBloqueMinutos,
     List<Map<String, dynamic>>? confirmacionesReemplazo,
+    /// 'RESET' descarta el borrador previo; 'CONSERVAR' respeta lo ya cuadrado
+    /// y solo planifica las preventivas que aún no tienen tarea en el periodo.
+    String? modo,
   }) async {
     final body = <String, dynamic>{
       'conjuntoId': nit,
       'anio': anio,
       'mes': mes,
+      if (modo != null) 'modo': modo,
       if (tamanoBloqueHoras != null) 'tamanoBloqueHoras': tamanoBloqueHoras,
       if (tamanoBloqueMinutos != null)
         'tamanoBloqueMinutos': tamanoBloqueMinutos,
@@ -180,6 +202,50 @@ class DefinicionPreventivaApi {
       return _normalizarRespuestaGenerarCronograma(decoded);
     }
     return {'creadas': 0, 'novedades': []};
+  }
+
+  /// Resumen del borrador guardado del periodo.
+  /// GET /conjuntos/:nit/preventivas/borrador/estado?anio=&mes=
+  Future<Map<String, dynamic>> estadoBorrador({
+    required String nit,
+    required int anio,
+    required int mes,
+  }) async {
+    final uri =
+        Uri.parse(
+          '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/estado',
+        ).replace(queryParameters: {'anio': '$anio', 'mes': '$mes'});
+
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      _throwCrudApiError(
+        resp,
+        fallback: 'No se pudo consultar el estado del borrador.',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
+  }
+
+  /// Descarta por completo el borrador de un periodo.
+  /// DELETE /conjuntos/:nit/preventivas/borrador?anio=&mes=
+  Future<Map<String, dynamic>> descartarBorrador({
+    required String nit,
+    required int anio,
+    required int mes,
+  }) async {
+    final uri =
+        Uri.parse(
+          '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador',
+        ).replace(queryParameters: {'anio': '$anio', 'mes': '$mes'});
+
+    final resp = await _client.delete(uri.toString());
+    if (resp.statusCode != 200) {
+      _throwCrudApiError(
+        resp,
+        fallback: 'No se pudo descartar el borrador.',
+      );
+    }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
   }
 
   Future<Map<String, dynamic>> listarOpcionesReprogramacionBorrador({
@@ -319,8 +385,9 @@ class DefinicionPreventivaApi {
         );
     final resp = await _client.get(uri.toString());
     if (resp.statusCode != 200) {
-      throw Exception(
-        'Error consultando huecos: ${resp.statusCode} ${resp.body}',
+      _throwCrudApiError(
+        resp,
+        fallback: 'No se pudieron consultar los huecos disponibles.',
       );
     }
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
@@ -342,8 +409,9 @@ class DefinicionPreventivaApi {
       },
     );
     if (resp.statusCode != 200) {
-      throw Exception(
-        'Error agendando excluida: ${resp.statusCode} ${resp.body}',
+      _throwCrudApiError(
+        resp,
+        fallback: 'No se pudo agendar la tarea excluida.',
       );
     }
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
@@ -450,8 +518,9 @@ class DefinicionPreventivaApi {
         );
     final resp = await _client.get(uri.toString());
     if (resp.statusCode != 200) {
-      throw Exception(
-        'Error consultando huecos del bloque: ${resp.statusCode} ${resp.body}',
+      _throwCrudApiError(
+        resp,
+        fallback: 'No se pudieron consultar los huecos para este bloque.',
       );
     }
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
@@ -472,8 +541,9 @@ class DefinicionPreventivaApi {
       },
     );
     if (resp.statusCode != 200) {
-      throw Exception(
-        'Error agendando bloque excluido: ${resp.statusCode} ${resp.body}',
+      _throwCrudApiError(
+        resp,
+        fallback: 'No se pudo agendar el bloque de la tarea excluida.',
       );
     }
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);

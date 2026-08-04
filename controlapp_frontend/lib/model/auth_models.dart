@@ -5,6 +5,7 @@ class AuthUser {
   final String rol;
   final String empresaId;
   final List<String> permissions;
+  final bool requiereCambioContrasena;
 
   AuthUser({
     required this.id,
@@ -13,6 +14,7 @@ class AuthUser {
     required this.rol,
     this.empresaId = '',
     this.permissions = const [],
+    this.requiereCambioContrasena = false,
   });
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
@@ -25,6 +27,7 @@ class AuthUser {
       permissions: (json['permissions'] as List<dynamic>? ?? const [])
           .map((item) => item.toString())
           .toList(),
+      requiereCambioContrasena: json['requiereCambioContrasena'] == true,
     );
   }
 }

@@ -1,9 +1,13 @@
+// ignore_for_file: curly_braces_in_flow_control_structures, prefer_interpolation_to_compose_strings
+
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+
+import '../../utils/frecuencia_utils.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_application_1/api/reporte_api.dart';
 import 'package:flutter_application_1/model/reporte_model.dart';
@@ -51,8 +55,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   bool _loading = false;
   bool _generandoPdf = false;
   String? _error;
-
-  bool _captureMode = false;
 
   ReporteKpis? _kpis;
   SerieDiariaPorEstado? _serie;
@@ -381,8 +383,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       }
 
       final bullets = <String>[];
-      if (rej > 0)
+      if (rej > 0) {
         bullets.add('Rechazadas: $rej (revisar causas y evidencias).');
+      }
       if (nocomp > 0) {
         bullets.add(
           'No completadas: $nocomp (validar accesos/insumos/tiempos).',
@@ -393,9 +396,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           'No completadas por reemplazo: $noCompPorReemplazo (confirmar trazabilidad con correctivas que las reemplazaron).',
         );
       }
-      if (pend > 0)
+      if (pend > 0) {
         bullets.add('Pendientes aprobación: $pend (acelerar VoBo).');
-
+      }
       _a12Ctrl.text += bullets.isEmpty
           ? ''
           : '\n' + bullets.map((e) => '• $e').join('\n');
@@ -462,8 +465,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
 
   /// Captura charts del host offscreen (robusto)
   Future<Map<String, Uint8List>> _captureChartsForPdf() async {
-    setState(() => _captureMode = true);
-
     // 2 frames + pequeño delay para asegurar paint estable (web)
     await WidgetsBinding.instance.endOfFrame;
     await WidgetsBinding.instance.endOfFrame;
@@ -830,7 +831,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               if (data.isEmpty)
                 pw.Text('Sin datos', style: pw.TextStyle(fontSize: 9))
               else
-                pw.Table.fromTextArray(
+                pw.TableHelper.fromTextArray(
                   headers: headers,
                   data: data,
                   headerStyle: pw.TextStyle(
@@ -1214,7 +1215,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       if (mounted) {
         setState(() {
           _generandoPdf = false;
-          _captureMode = false;
         });
       }
     }
@@ -1637,7 +1637,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       } else {
         await Printing.layoutPdf(name: filename, onLayout: (_) async => bytes);
       }
-
     } catch (e, st) {
       debugPrint('Error PDF Gestion V2: $e\n$st');
       if (mounted) {
@@ -1650,7 +1649,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       if (mounted) {
         setState(() {
           _generandoPdf = false;
-          _captureMode = false;
         });
       }
     }
@@ -1812,27 +1810,11 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         return '${v.substring(0, max).trim()}...';
       }
 
+      // Etiqueta unificada con el resto de la app (incluye el dia programado
+      // cuando la frecuencia depende de el).
       String frequencyLabel(String? raw) {
-        switch (_frequencyKeyV2(raw)) {
-          case 'DIARIA':
-            return 'DIARIA';
-          case 'SEMANAL':
-            return 'SEMANAL';
-          case 'QUINCENAL':
-            return 'QUINCENAL';
-          case 'MENSUAL':
-            return 'MENSUAL';
-          case 'BIMESTRAL':
-            return 'BIMESTRAL';
-          case 'TRIMESTRAL':
-            return 'TRIMESTRAL';
-          case 'SEMESTRAL':
-            return 'SEMESTRAL';
-          case 'ANUAL':
-            return 'ANUAL';
-          default:
-            return (raw ?? '-').trim().isEmpty ? '-' : (raw ?? '-').trim();
-        }
+        final label = etiquetaFrecuencia(raw);
+        return label == '—' ? '-' : label.toUpperCase();
       }
 
       double toDouble(dynamic v) {
@@ -2393,7 +2375,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       } else {
         await Printing.layoutPdf(name: filename, onLayout: (_) async => bytes);
       }
-
     } catch (e, st) {
       debugPrint('Error PDF Detallado V2: $e\n$st');
       if (mounted) {
@@ -2848,7 +2829,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       case 'rojo':
         return const Color(0xFFC62828);
       case 'cerrado':
-        return Colors.blueGrey;
+        return const Color(0xFF1B8F5A);
       default:
         return AppTheme.primary;
     }
@@ -2957,10 +2938,13 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                             const SizedBox(height: 10),
                             _miniTextPill(
                               'Prom. dias abiertos',
-                              '${_formatOneDecimal(r.promedioDiasAbiertos)}',
+                              _formatOneDecimal(r.promedioDiasAbiertos),
                             ),
                             const SizedBox(height: 10),
-                            _miniTextPill('Items evaluados', totalAns.toString()),
+                            _miniTextPill(
+                              'Items evaluados',
+                              totalAns.toString(),
+                            ),
                             const SizedBox(height: 14),
                             Wrap(
                               spacing: 8,
@@ -3014,15 +2998,10 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             ),
           ],
         ),
-        const SizedBox(height: 14),
-        _sectionTitle('Flujo del periodo'),
-        const SizedBox(height: 8),
-        _card(child: SizedBox(height: 280, child: _compromisosSerieChart(data))),
-        const SizedBox(height: 14),
         if (_esReporteGeneral) ...[
           _sectionTitle('Conjuntos con mayor carga de compromisos'),
           const SizedBox(height: 8),
-          _compromisosTopConjuntosCard(data),
+          _compromisosTopConjuntosChart(data),
           const SizedBox(height: 14),
         ],
         _sectionTitle('Compromisos criticos abiertos'),
@@ -3057,7 +3036,8 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     ].where((e) => e.value > 0).toList();
 
     final total = rows.fold<double>(0, (a, b) => a + b.value);
-    if (total <= 0) return const Center(child: Text('Sin compromisos en el rango'));
+    if (total <= 0)
+      return const Center(child: Text('Sin compromisos en el rango'));
 
     return SfCircularChart(
       margin: EdgeInsets.zero,
@@ -3089,7 +3069,10 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             children: [
               Text(
                 data.resumen.total.toString(),
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
               const Text(
                 'creados',
@@ -3102,135 +3085,106 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     );
   }
 
-  Widget _compromisosSerieChart(ReporteCompromisosDashboard data) {
-    final days = data.serie.days.length <= 30
-        ? data.serie.days
-        : data.serie.days.sublist(data.serie.days.length - 30);
-    if (days.isEmpty) return const Center(child: Text('Sin serie para mostrar'));
-
-    final chartData = <_CompromisoSerieDatum>[];
-    double maxY = 0;
-    for (final day in days) {
-      final dt = DateTime.tryParse(day)?.toLocal();
-      final label = dt == null ? day : '${dt.day}/${dt.month}';
-      final created = (data.serie.created[day] ?? 0).toDouble();
-      final closed = (data.serie.closed[day] ?? 0).toDouble();
-      chartData.add(
-        _CompromisoSerieDatum(label: label, created: created, closed: closed),
-      );
-      maxY = math.max(maxY, math.max(created, closed));
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 10,
-          runSpacing: 8,
-          children: [
-            _legendChip('Creados', AppTheme.primary),
-            _legendChip('Cerrados', Colors.teal.shade600),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Expanded(
-          child: SfCartesianChart(
-            margin: EdgeInsets.zero,
-            plotAreaBorderWidth: 0,
-            tooltipBehavior: TooltipBehavior(enable: true, shared: true),
-            primaryXAxis: CategoryAxis(
-              majorGridLines: const MajorGridLines(width: 0),
-              interval: math.max(1, (days.length / 6).floor()).toDouble(),
-            ),
-            primaryYAxis: NumericAxis(
-              minimum: 0,
-              maximum: maxY <= 0 ? 5 : (maxY * 1.2),
-              axisLine: const AxisLine(width: 0),
-              majorTickLines: const MajorTickLines(size: 0),
-            ),
-            series: <CartesianSeries<_CompromisoSerieDatum, String>>[
-              ColumnSeries<_CompromisoSerieDatum, String>(
-                dataSource: chartData,
-                animationDuration: 0,
-                xValueMapper: (d, _) => d.label,
-                yValueMapper: (d, _) => d.created,
-                color: AppTheme.primary.withValues(alpha: 0.75),
-                width: 0.6,
-                spacing: 0.1,
-                name: 'Creados',
-              ),
-              LineSeries<_CompromisoSerieDatum, String>(
-                dataSource: chartData,
-                animationDuration: 0,
-                xValueMapper: (d, _) => d.label,
-                yValueMapper: (d, _) => d.closed,
-                color: Colors.teal.shade600,
-                width: 3,
-                markerSettings: const MarkerSettings(isVisible: true),
-                name: 'Cerrados',
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _compromisosTopConjuntosCard(ReporteCompromisosDashboard data) {
+  Widget _compromisosTopConjuntosChart(ReporteCompromisosDashboard data) {
     if (data.topConjuntos.isEmpty) {
-      return const _EmptyCard(text: 'Sin datos por conjunto para el rango seleccionado.');
+      return const _EmptyCard(
+        text: 'Sin datos por conjunto para el rango seleccionado.',
+      );
     }
+
+    final items = [...data.topConjuntos]
+      ..sort((a, b) {
+        final abiertosDiff = b.abiertos.compareTo(a.abiertos);
+        if (abiertosDiff != 0) return abiertosDiff;
+        return b.total.compareTo(a.total);
+      });
+    final maxY = items
+        .map((e) => e.total)
+        .fold<int>(0, (a, b) => math.max(a, b))
+        .toDouble();
 
     return _card(
       child: Column(
-        children: data.topConjuntos.map((row) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.black12),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Comparativo por conjunto segun el total de compromisos gestionados en el rango.',
+            style: TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 320,
+            child: SfCartesianChart(
+              margin: EdgeInsets.zero,
+              plotAreaBorderWidth: 0,
+              tooltipBehavior: TooltipBehavior(enable: true, shared: true),
+              primaryXAxis: CategoryAxis(
+                majorGridLines: const MajorGridLines(width: 0),
+                labelRotation: items.length > 4 ? -28 : 0,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    row.conjuntoNombre.isEmpty ? row.nit : row.conjuntoNombre,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'NIT: ${row.nit}',
-                    style: const TextStyle(fontSize: 12, color: Colors.black54),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _miniPill('Total', row.total),
-                      _miniPill('Abiertos', row.abiertos),
-                      _miniPill('Cerrados', row.cerrados),
-                      _miniPill('Rojos', row.rojos),
-                    ],
-                  ),
-                ],
+              primaryYAxis: NumericAxis(
+                minimum: 0,
+                maximum: maxY <= 0 ? 5 : (maxY * 1.25),
+                axisLine: const AxisLine(width: 0),
+                majorTickLines: const MajorTickLines(size: 0),
               ),
+              series: <CartesianSeries<ReporteCompromisoConjuntoRow, String>>[
+                ColumnSeries<ReporteCompromisoConjuntoRow, String>(
+                  dataSource: items,
+                  animationDuration: 0,
+                  xValueMapper: (d, _) =>
+                      d.conjuntoNombre.isEmpty ? d.nit : d.conjuntoNombre,
+                  yValueMapper: (d, _) => d.total.toDouble(),
+                  color: AppTheme.primary.withValues(alpha: 0.82),
+                  width: 0.62,
+                  spacing: 0.16,
+                  name: 'Gestionados',
+                ),
+                ColumnSeries<ReporteCompromisoConjuntoRow, String>(
+                  dataSource: items,
+                  animationDuration: 0,
+                  xValueMapper: (d, _) =>
+                      d.conjuntoNombre.isEmpty ? d.nit : d.conjuntoNombre,
+                  yValueMapper: (d, _) => d.abiertos.toDouble(),
+                  color: const Color(0xFFEF6C00),
+                  width: 0.62,
+                  spacing: 0.16,
+                  name: 'Abiertos',
+                ),
+                ColumnSeries<ReporteCompromisoConjuntoRow, String>(
+                  dataSource: items,
+                  animationDuration: 0,
+                  xValueMapper: (d, _) =>
+                      d.conjuntoNombre.isEmpty ? d.nit : d.conjuntoNombre,
+                  yValueMapper: (d, _) => d.rojos.toDouble(),
+                  color: const Color(0xFFC62828),
+                  width: 0.62,
+                  spacing: 0.16,
+                  name: 'Rojos',
+                ),
+              ],
             ),
-          );
-        }).toList(),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              _legendChip('Gestionados', AppTheme.primary),
+              _legendChip('Abiertos', const Color(0xFFEF6C00)),
+              _legendChip('Rojos', const Color(0xFFC62828)),
+            ],
+          ),
+        ],
       ),
     );
   }
 
   Widget _compromisosCriticosCard(ReporteCompromisosDashboard data) {
     if (data.criticos.isEmpty) {
-      return const _EmptyCard(text: 'No hay compromisos criticos abiertos en este rango.');
+      return const _EmptyCard(
+        text: 'No hay compromisos criticos abiertos en este rango.',
+      );
     }
 
     final df = DateFormat('dd/MM/yyyy', 'es');
@@ -3238,7 +3192,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       child: Column(
         children: data.criticos.map((item) {
           final conjuntoTxt = _esReporteGeneral
-              ? (item.conjuntoNombre.isEmpty ? item.conjuntoNit : item.conjuntoNombre)
+              ? (item.conjuntoNombre.isEmpty
+                    ? item.conjuntoNit
+                    : item.conjuntoNombre)
               : 'Compromiso del conjunto';
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
@@ -3259,7 +3215,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                         width: 38,
                         height: 38,
                         decoration: BoxDecoration(
-                          color: _compromisoAnsColor(item.ansEstado).withValues(alpha: 0.14),
+                          color: _compromisoAnsColor(
+                            item.ansEstado,
+                          ).withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
@@ -3298,7 +3256,10 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                     runSpacing: 8,
                     children: [
                       _miniTextPill('ANS', item.ansLabel),
-                      _miniTextPill('Dias abierto', item.diasAbierto.toString()),
+                      _miniTextPill(
+                        'Dias abierto',
+                        item.diasAbierto.toString(),
+                      ),
                       _miniTextPill('Creado', df.format(item.creadaEn)),
                     ],
                   ),
@@ -3328,7 +3289,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: accent.withOpacity(.12),
+                color: accent.withValues(alpha: .12),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, color: accent),
@@ -3386,6 +3347,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     );
   }
 
+  // ignore: unused_element
   LineTouchData _whiteLineTouchData(List<String> labels) {
     return LineTouchData(
       enabled: true,
@@ -3518,6 +3480,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
 
   // -------- Line serie diaria --------
 
+  // ignore: unused_element
   Widget _dailyOperationalFlowChart() {
     final s = _serie;
     if (s == null || s.days.isEmpty) {
@@ -3691,8 +3654,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
 
   Widget _lineSerieDiaria() {
     final s = _serie;
-    if (s == null || s.days.isEmpty)
+    if (s == null || s.days.isEmpty) {
       return const Center(child: Text('Sin serie'));
+    }
 
     final days = s.days.length <= 30
         ? s.days
@@ -3900,7 +3864,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 BarChartRodData(
                   toY: items[i].total.toDouble(),
                   width: 16,
-                  color: AppTheme.primary.withOpacity(.8),
+                  color: AppTheme.primary.withValues(alpha: .8),
                   borderRadius: BorderRadius.circular(6),
                 ),
               ],
@@ -4328,8 +4292,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                     showTitles: true,
                     getTitlesWidget: (v, meta) {
                       final i = v.toInt();
-                      if (i < 0 || i >= top.length)
+                      if (i < 0 || i >= top.length) {
                         return const SizedBox.shrink();
+                      }
                       return Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: SizedBox(
@@ -4419,8 +4384,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   // ======================= TAB: TIPOS =======================
 
   Widget _tabTipos() {
-    if (_tareasDetalle.isEmpty)
+    if (_tareasDetalle.isEmpty) {
       return const Center(child: Text('Sin datos en el rango.'));
+    }
 
     final conteo = _contarTipos();
     final prev = conteo['preventivas'] ?? 0;
@@ -4459,7 +4425,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                         'Correctivas',
                         corr,
                         corr / total,
-                        AppTheme.primary.withOpacity(.55),
+                        AppTheme.primary.withValues(alpha: .55),
                       ),
                       const Spacer(),
                       Text(
@@ -4893,7 +4859,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: AppTheme.primary.withOpacity(.10),
+                            color: AppTheme.primary.withValues(alpha: .10),
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
@@ -5173,9 +5139,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: AppTheme.primary.withOpacity(.10),
+        color: AppTheme.primary.withValues(alpha: .10),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppTheme.primary.withOpacity(.25)),
+        border: Border.all(color: AppTheme.primary.withValues(alpha: .25)),
       ),
       child: Text(
         txt,
@@ -5194,9 +5160,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: bg.withOpacity(.14),
+        color: bg.withValues(alpha: .14),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: bg.withOpacity(.42)),
+        border: Border.all(color: bg.withValues(alpha: .42)),
       ),
       child: Text(
         txt,
@@ -5265,9 +5231,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         vertical: compact ? 5 : 6,
       ),
       decoration: BoxDecoration(
-        color: base.withOpacity(.12),
+        color: base.withValues(alpha: .12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: base.withOpacity(.36)),
+        border: Border.all(color: base.withValues(alpha: .36)),
       ),
       child: Text(
         label,
@@ -5323,7 +5289,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(.04),
+              color: Colors.black.withValues(alpha: .04),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: Colors.black12),
             ),
@@ -5491,18 +5457,6 @@ class _TrendDatum {
   final double value;
 
   const _TrendDatum({required this.label, required this.value});
-}
-
-class _CompromisoSerieDatum {
-  final String label;
-  final double created;
-  final double closed;
-
-  const _CompromisoSerieDatum({
-    required this.label,
-    required this.created,
-    required this.closed,
-  });
 }
 
 class _OperationalTrendDatum {

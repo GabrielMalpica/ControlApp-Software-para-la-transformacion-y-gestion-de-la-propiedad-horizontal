@@ -5,6 +5,7 @@ import '../../model/conjunto_model.dart';
 import '../../service/app_error.dart';
 import '../../service/theme.dart';
 import 'crear_conjunto_page.dart';
+import 'carga_conjunto_page.dart';
 import 'detalle_conjunto_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -595,6 +596,19 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
           ),
           title: const Text('Conjuntos', style: TextStyle(color: Colors.white)),
           actions: [
+            IconButton(
+              tooltip: 'Cargar desde Excel',
+              onPressed: () async {
+                final changed = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CargaConjuntoPage()),
+                );
+                if (!context.mounted || changed != true) return;
+                _hasChanges = true;
+                _loadConjuntos();
+              },
+              icon: const Icon(Icons.upload_file, color: Colors.white),
+            ),
             IconButton(
               tooltip: 'Crear conjunto',
               onPressed: () {

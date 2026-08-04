@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/administrador_api.dart';
+import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/permission_service.dart';
@@ -11,11 +13,15 @@ import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
+import 'package:flutter_application_1/widgets/perfil_action.dart';
 import '../service/theme.dart';
 import 'compartidos/reportes_dashboard_page.dart';
 import 'cronograma_page.dart';
 import 'inventario_page.dart';
 import 'gerente/compromisos_page.dart';
+import 'gerente/carga_residentes_page.dart';
+import 'gerente/crear_residente_page.dart';
+import 'gerente/residentes_page.dart';
 import 'gerente/mapa_conjunto_page.dart';
 
 class _AdminTile {
@@ -43,6 +49,7 @@ class AdministradorPage extends StatefulWidget {
 
 class _AdministradorPageState extends State<AdministradorPage> {
   final AdministradorApi _api = AdministradorApi();
+  final AuthApi _authApi = AuthApi();
   final SessionService _sessionService = SessionService();
 
   bool _can(String permission) => PermissionService.instance.can(permission);
@@ -67,7 +74,15 @@ class _AdministradorPageState extends State<AdministradorPage> {
   @override
   void initState() {
     super.initState();
+    _refreshSessionProfile();
     _cargarConjuntos();
+  }
+
+  Future<void> _refreshSessionProfile() async {
+    try {
+      await _authApi.me();
+      if (mounted) setState(() {});
+    } catch (_) {}
   }
 
   Future<void> _cargarConjuntos() async {
@@ -287,6 +302,55 @@ class _AdministradorPageState extends State<AdministradorPage> {
             ),
           ),
       ]),
+      _AdminSection('Comunidad y ventas', [
+        _AdminTile(
+          'Catalogo ecommerce',
+          Icons.storefront,
+          AppTheme.primaryDark,
+          () => _go(
+            const CommerceCatalogPage(
+              title: 'Catalogo ecommerce',
+              initialScope: CommerceCatalogScope.conjunto,
+            ),
+          ),
+        ),
+        if (_can('residentes.ver'))
+          _AdminTile(
+            'Gestion residentes',
+            Icons.groups_2_outlined,
+            AppTheme.primaryDark,
+            () => _go(
+              ResidentesPage(
+                conjuntoFijoNit: conjunto.nit,
+                conjuntoFijoNombre: conjunto.nombre,
+              ),
+            ),
+          ),
+        if (_can('residentes.crear'))
+          _AdminTile(
+            'Crear residente',
+            Icons.person_add_alt_1,
+            Colors.cyan,
+            () => _go(
+              CrearResidentePage(
+                conjuntoFijoNit: conjunto.nit,
+                conjuntoFijoNombre: conjunto.nombre,
+              ),
+            ),
+          ),
+        if (_can('residentes.cargar_masivo'))
+          _AdminTile(
+            'Carga residentes',
+            Icons.upload_file,
+            Colors.blue,
+            () => _go(
+              CargaResidentesPage(
+                conjuntoFijoNit: conjunto.nit,
+                conjuntoFijoNombre: conjunto.nombre,
+              ),
+            ),
+          ),
+      ]),
     ].where((section) => section.tiles.isNotEmpty).toList();
 
     return DashboardScaffold(
@@ -336,7 +400,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
         children: <Widget>[
           ConjuntoSelectorCard(
             conjuntoActual: conjunto,
-            conjuntos: _conjuntos,
+            conjuntos: _conjuntos.where((c) => c.activo).toList(),
             selectedNit: _conjuntoSeleccionadoNit,
             onChanged: (v) => setState(() => _conjuntoSeleccionadoNit = v),
           ),
@@ -404,6 +468,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
           style: TextStyle(color: Colors.white),
         ),
         actions: [
+          const PerfilAction(),
           const NotificacionesAction(),
           const CambiarContrasenaAction(),
           IconButton(

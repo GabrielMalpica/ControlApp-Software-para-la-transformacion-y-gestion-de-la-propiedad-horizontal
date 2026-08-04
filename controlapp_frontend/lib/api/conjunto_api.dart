@@ -59,6 +59,10 @@ class ConjuntoApi {
 
     switch (rol) {
       case 'gerente':
+      case 'jefe_operaciones':
+      case 'supervisor':
+      case 'operario':
+      case 'residente':
         return _obtenerHorariosDesdeRuta(
           '${AppConstants.conjuntosGerente}/$conjuntoNit',
         );
@@ -68,7 +72,9 @@ class ConjuntoApi {
           conjuntoNit: conjuntoNit,
         );
       default:
-        return const [];
+        return _obtenerHorariosDesdeRuta(
+          '${AppConstants.conjuntosGerente}/$conjuntoNit',
+        );
     }
   }
 

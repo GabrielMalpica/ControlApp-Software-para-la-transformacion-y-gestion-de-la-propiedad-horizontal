@@ -1,8 +1,9 @@
+// ignore_for_file: curly_braces_in_flow_control_structures
+
 // lib/pages/crear_preventiva_page.dart
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/api/agenda_api.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:intl/intl.dart';
 
@@ -15,46 +16,17 @@ import '../model/preventiva_model.dart';
 import '../model/conjunto_model.dart';
 import '../model/usuario_model.dart';
 import '../model/insumo_model.dart';
-import '../model/agenda_maquinaria_model.dart';
 import '../model/maquinaria_model.dart';
 import '../model/herramienta_model.dart';
-import 'cronograma_page.dart';
-import 'cronograma_preventivas_borrador_page.dart';
 import '../widgets/searchable_select_field.dart';
 
 import '../service/theme.dart';
 import '../service/api_exception.dart';
+import '../utils/frecuencia_utils.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
 enum SnackType { info, success, error }
-
-const List<String> _frecuenciasPreventivas = [
-  'DIARIA',
-  'SEMANAL',
-  'MENSUAL',
-  'BIMESTRAL',
-  'TRIMESTRAL',
-  'SEMESTRAL',
-  'ANUAL',
-];
-
-const List<String> _diasSemanaOpciones = [
-  'LUNES',
-  'MARTES',
-  'MIERCOLES',
-  'JUEVES',
-  'VIERNES',
-  'SABADO',
-  'DOMINGO',
-];
-
-const Map<String, int> _fechasRequeridasPorFrecuencia = {
-  'BIMESTRAL': 2,
-  'TRIMESTRAL': 3,
-  'SEMESTRAL': 2,
-  'ANUAL': 1,
-};
 
 class CrearEditarPreventivaPage extends StatefulWidget {
   final String nit;
@@ -78,7 +50,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   final _api = DefinicionPreventivaApi();
   final _gerenteApi = GerenteApi();
-  final _agendaApi = AgendaApi();
   final _empresaApi = EmpresaApi();
   final _herramientaApi = HerramientaApi();
 
@@ -131,31 +102,40 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   List<UbicacionConElementos> get _ubicaciones => widget.conjunto.ubicaciones;
   List<Usuario> get _operarios => widget.conjunto.operarios;
 
-  bool get _usaSelectorMultipleSemanal => _frecuencia == 'SEMANAL';
+  /// SEMANAL y QUINCENAL se programan eligiendo uno o varios dias de la semana.
+  bool get _frecuenciaUsaDiaSemana =>
+      frecuenciasPorDiaSemana.contains(_frecuencia);
 
-  String? get _diaSemanaProgramadoActual {
-    if (_diasSemanaProgramados.isEmpty) return null;
-    for (final dia in _diasSemanaOpciones) {
-      if (_diasSemanaProgramados.contains(dia)) return dia;
+  /// Solo SEMANAL admite varios dias; QUINCENAL se ejecuta un unico dia cada 14.
+  bool get _usaSelectorMultipleSemanal =>
+      frecuenciasMultiDiaSemana.contains(_frecuencia);
+
+  /// Texto de ayuda bajo el selector de dias, segun frecuencia y modo.
+  String _ayudaDiasSemana() {
+    if (!_usaSelectorMultipleSemanal) {
+      return 'La preventiva quincenal se ejecuta cada 14 días: '
+          'la 1ª y la 3ª ocurrencia del día elegido dentro del mes.';
     }
-    return _diasSemanaProgramados.first;
+    return widget.existente == null
+        ? 'Cada día seleccionado se guardará como una preventiva semanal independiente.'
+        : 'Se actualizará esta preventiva con el primer día elegido y se crearán '
+              'preventivas adicionales para los demás días.';
   }
 
-  bool get _frecuenciaUsaDiaMes => _frecuencia == 'MENSUAL';
+  bool get _frecuenciaUsaDiaMes => frecuenciasPorDiaMes.contains(_frecuencia);
 
   bool get _frecuenciaUsaFechasExplicitas =>
-      const {'BIMESTRAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'}
-          .contains(_frecuencia);
+      frecuenciasPorFechasExplicitas.contains(_frecuencia);
 
   int? get _fechasRequeridasFrecuencia =>
-      _frecuencia == null ? null : _fechasRequeridasPorFrecuencia[_frecuencia!];
+      _frecuencia == null ? null : fechasRequeridasPorFrecuencia[_frecuencia!];
 
-  List<String> get _diasSemanaSeleccionadosOrdenados =>
-      _diasSemanaOpciones
-          .where((dia) => _diasSemanaProgramados.contains(dia))
-          .toList();
+  List<String> get _diasSemanaSeleccionadosOrdenados => diasSemanaOpciones
+      .where((dia) => _diasSemanaProgramados.contains(dia))
+      .toList();
 
-  String _fmtFechaProgramada(DateTime fecha) => DateFormat('yyyy-MM-dd').format(fecha);
+  String _fmtFechaProgramada(DateTime fecha) =>
+      DateFormat('yyyy-MM-dd').format(fecha);
 
   int get _fechasProgramadasRestantes {
     final requeridas = _fechasRequeridasFrecuencia;
@@ -168,15 +148,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     return 'Debes seleccionar exactamente $requeridas fecha${requeridas == 1 ? '' : 's'} para la frecuencia ${_frecuencia ?? ''}.';
   }
 
-  // =========================================================
-  // ✅ NUEVO: Disponibilidad de maquinaria
-  // =========================================================
-  DisponibilidadMaquinariaResponse? _dispMaq;
-  bool _cargandoDispMaq = false;
-
-  // maps rápidos
-  final Map<int, MaquinariaOcupadaItem> _ocupadaPorId = {};
-
   @override
   void initState() {
     super.initState();
@@ -186,67 +157,18 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   // ===========================
   // helpers fechas disponibilidad
   // ===========================
-  DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+  Future<void> _initData() async {
+    await Future.wait([
+      _cargarCatalogoInsumos(),
+      _cargarCatalogoHerramientas(),
+      _cargarSupervisores(),
+    ]);
 
-  DateTime _proximaFechaProgramada() {
-    final now = DateTime.now();
-    final base = DateTime(now.year, now.month, now.day);
+    if (!mounted) return;
+    _cargarDesdeExistenteOInit();
 
-    if (_frecuencia == 'SEMANAL' && _diasSemanaProgramados.isNotEmpty) {
-      const map = {
-        'LUNES': 1,
-        'MARTES': 2,
-        'MIERCOLES': 3,
-        'JUEVES': 4,
-        'VIERNES': 5,
-        'SABADO': 6,
-        'DOMINGO': 7,
-      };
-      var mejorFecha = base.add(const Duration(days: 7));
-      for (final dia in _diasSemanaSeleccionadosOrdenados) {
-        final target = map[dia] ?? 1;
-        final today = base.weekday;
-        var delta = target - today;
-        if (delta < 0) delta += 7;
-        if (delta == 0) delta = 7;
-        final candidata = base.add(Duration(days: delta));
-        if (candidata.isBefore(mejorFecha)) {
-          mejorFecha = candidata;
-        }
-      }
-      return mejorFecha;
-    }
-
-    if (_frecuenciaUsaFechasExplicitas && _fechasProgramadas.isNotEmpty) {
-      final hoy = DateTime(base.year, base.month, base.day);
-      final ordenadas = [..._fechasProgramadas]..sort((a, b) => a.compareTo(b));
-      for (final fecha in ordenadas) {
-        final candidata = DateTime(hoy.year, fecha.month, fecha.day);
-        if (candidata.isAfter(hoy)) return candidata;
-      }
-      final primera = ordenadas.first;
-      return DateTime(hoy.year + 1, primera.month, primera.day);
-    }
-
-    if (_frecuenciaUsaDiaMes && _diaMesProgramado != null) {
-      final intervaloMeses = switch (_frecuencia) {
-        'MENSUAL' => 1,
-        'BIMESTRAL' => 2,
-        'TRIMESTRAL' => 3,
-        'SEMESTRAL' => 6,
-        'ANUAL' => 12,
-        _ => 1,
-      };
-      final day = _diaMesProgramado!.clamp(1, 28);
-      var dt = DateTime(base.year, base.month, day);
-      while (!dt.isAfter(base)) {
-        dt = DateTime(dt.year, dt.month + intervaloMeses, day);
-      }
-      return dt;
-    }
-
-    // DIARIA o fallback
-    return base.add(const Duration(days: 1));
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _agregarFechaProgramada() async {
@@ -286,594 +208,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         _fechasProgramadas.sort((a, b) => a.compareTo(b));
       }
     });
-  }
-
-  Future<void> _consultarDisponibilidadMaquinaria() async {
-    final totalMin = _previewMinutosBien();
-    if (totalMin == null) {
-      _snack(
-        'Define la duración para consultar disponibilidad',
-        type: SnackType.info,
-      );
-      return;
-    }
-
-    final inicio = _dateOnly(_proximaFechaProgramada());
-    final dias = _dividirEnDias
-        ? (int.tryParse(_diasParaCompletarCtrl.text) ?? 1)
-        : 1;
-    final finUso = inicio.add(Duration(days: (dias <= 1 ? 0 : dias - 1)));
-
-    setState(() {
-      _cargandoDispMaq = true;
-      _dispMaq = null;
-      _ocupadaPorId.clear();
-    });
-
-    try {
-      final r = await _api.maquinariaDisponible(
-        nit: widget.nit,
-        fechaInicioUso: inicio,
-        fechaFinUso: finUso,
-        excluirTareaId: widget.existente?.id,
-      );
-      if (!mounted) return;
-
-      for (final o in r.ocupadas) {
-        _ocupadaPorId[o.maquinariaId] = o;
-      }
-
-      setState(() => _dispMaq = r);
-    } catch (e) {
-      if (!mounted) return;
-      _snack('Error consultando disponibilidad: $e', type: SnackType.error);
-    } finally {
-      if (mounted) {
-        setState(() => _cargandoDispMaq = false);
-      }
-    }
-  }
-
-  List<MaquinariaDisponibilidadDetalladaItem> get _catalogoDisponibilidadMaq {
-    if (_dispMaq == null) return const [];
-    if (_dispMaq!.catalogo.isNotEmpty) return _dispMaq!.catalogo;
-    return [
-      ..._dispMaq!.propiasDisponibles.map(
-        (m) => MaquinariaDisponibilidadDetalladaItem(
-          id: m.id,
-          nombre: m.nombre,
-          tipo: m.tipo,
-          marca: m.marca,
-          origen: m.origen,
-          disponible: true,
-          motivo: 'Disponible para el rango solicitado.',
-          conflictos: const [],
-        ),
-      ),
-      ..._dispMaq!.empresaDisponibles.map(
-        (m) => MaquinariaDisponibilidadDetalladaItem(
-          id: m.id,
-          nombre: m.nombre,
-          tipo: m.tipo,
-          marca: m.marca,
-          origen: m.origen,
-          disponible: true,
-          motivo: 'Disponible para el rango solicitado.',
-          conflictos: const [],
-        ),
-      ),
-    ];
-  }
-
-  Future<void> _abrirConflictoMaquinaria(
-    MaquinariaDisponibilidadConflictoItem conflicto,
-  ) async {
-    if (conflicto.conjuntoId == null || conflicto.conjuntoId!.trim().isEmpty) {
-      _snack(
-        'No se pudo identificar el conjunto del conflicto.',
-        type: SnackType.info,
-      );
-      return;
-    }
-    if (!mounted) return;
-
-    if ((conflicto.fuente ?? '').toUpperCase() == 'BORRADOR_PREVENTIVA') {
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => CronogramaPreventivasBorradorPage(
-            nit: conflicto.conjuntoId!.trim(),
-            anio: conflicto.ini.toLocal().year,
-            mes: conflicto.ini.toLocal().month,
-          ),
-        ),
-      );
-      return;
-    }
-
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CronogramaPage(
-          nit: conflicto.conjuntoId!.trim(),
-          soloLectura: true,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _mostrarAgendaMaquinaria(
-    int maquinariaId, {
-    MaquinariaDisponibilidadDetalladaItem? detalle,
-  }) async {
-    final fechaBase = _dateOnly(_proximaFechaProgramada());
-    final desde = DateTime(fechaBase.year, fechaBase.month, 1);
-    final hasta = DateTime(fechaBase.year, fechaBase.month + 1, 0, 23, 59, 59);
-    final agenda = await _agendaApi.obtenerAgenda(
-      conjuntoId: widget.nit,
-      maquinariaId: maquinariaId,
-      desde: desde,
-      hasta: hasta,
-    );
-    if (!mounted) return;
-
-    final reservas = (agenda?.reservas ?? const <ReservaMaquinaria>[])
-      ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
-    final diasReservados = reservas
-        .expand((reserva) {
-          final out = <DateTime>[];
-          final inicioLocal = reserva.fechaInicio.toLocal();
-          final finLocal = reserva.fechaFin.toLocal();
-          var d = DateTime(
-            inicioLocal.year,
-            inicioLocal.month,
-            inicioLocal.day,
-          );
-          final fin = DateTime(finLocal.year, finLocal.month, finLocal.day);
-          while (!d.isAfter(fin)) {
-            out.add(d);
-            d = d.add(const Duration(days: 1));
-          }
-          return out;
-        })
-        .map((d) => '${d.year}-${d.month}-${d.day}')
-        .toSet();
-    final diasConflictoBorrador = <String>{};
-    final diasConflictoPublicado = <String>{};
-    final eventosPorDia = <String, List<ReservaMaquinaria>>{};
-    for (final reserva in reservas) {
-      final inicioLocal = reserva.fechaInicio.toLocal();
-      final finLocal = reserva.fechaFin.toLocal();
-      var d = DateTime(inicioLocal.year, inicioLocal.month, inicioLocal.day);
-      final fin = DateTime(finLocal.year, finLocal.month, finLocal.day);
-      while (!d.isAfter(fin)) {
-        final key = '${d.year}-${d.month}-${d.day}';
-        eventosPorDia
-            .putIfAbsent(key, () => <ReservaMaquinaria>[])
-            .add(reserva);
-        final fuente = (reserva.fuente ?? '').toUpperCase();
-        if (fuente == 'DEFINICION') {
-          diasConflictoBorrador.add(key);
-        } else if (fuente == 'BORRADOR' || fuente == 'PUBLICADA') {
-          diasConflictoPublicado.add(key);
-        }
-        d = d.add(const Duration(days: 1));
-      }
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) {
-        final daysInMonth = DateTime(desde.year, desde.month + 1, 0).day;
-        final firstWeekday = DateTime(desde.year, desde.month, 1).weekday;
-        final slots = List<int?>.filled(firstWeekday - 1, null, growable: true)
-          ..addAll(List.generate(daysInMonth, (i) => i + 1));
-        while (slots.length % 7 != 0) {
-          slots.add(null);
-        }
-
-        return AlertDialog(
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Agenda de ${agenda?.nombre ?? 'maquinaria'} ${DateFormat('MMMM yyyy', 'es').format(desde)}',
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 520,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _maqInfoChip(
-                        'Agenda publicada',
-                        reservas.length,
-                        Colors.blue,
-                      ),
-                      _maqInfoChip(
-                        'Choques definidas/borrador',
-                        detalle?.conflictos
-                                .where(
-                                  (c) =>
-                                      (c.fuente ?? '').toUpperCase() ==
-                                      'BORRADOR_PREVENTIVA',
-                                )
-                                .length ??
-                            0,
-                        Colors.orange,
-                      ),
-                      _maqInfoChip(
-                        'Choques publicados',
-                        detalle?.conflictos
-                                .where(
-                                  (c) =>
-                                      (c.fuente ?? '').toUpperCase() !=
-                                      'BORRADOR_PREVENTIVA',
-                                )
-                                .length ??
-                            0,
-                        Colors.red,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  const Row(
-                    children: [
-                      Expanded(child: Center(child: Text('L'))),
-                      Expanded(child: Center(child: Text('M'))),
-                      Expanded(child: Center(child: Text('M'))),
-                      Expanded(child: Center(child: Text('J'))),
-                      Expanded(child: Center(child: Text('V'))),
-                      Expanded(child: Center(child: Text('S'))),
-                      Expanded(child: Center(child: Text('D'))),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: slots.length,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 7,
-                          mainAxisSpacing: 6,
-                          crossAxisSpacing: 6,
-                          childAspectRatio: 1.25,
-                        ),
-                    itemBuilder: (_, index) {
-                      final day = slots[index];
-                      if (day == null) return const SizedBox.shrink();
-                      final key = '${desde.year}-${desde.month}-$day';
-                      final ocupado = diasReservados.contains(key);
-                      final conflictoBorrador = diasConflictoBorrador.contains(
-                        key,
-                      );
-                      final conflictoPublicado = diasConflictoPublicado
-                          .contains(key);
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(10),
-                        onTap: () async {
-                          final dayDate = DateTime(
-                            desde.year,
-                            desde.month,
-                            day,
-                          );
-                          final dayKey =
-                              '${dayDate.year}-${dayDate.month}-${dayDate.day}';
-                          final eventos =
-                              eventosPorDia[dayKey] ??
-                              const <ReservaMaquinaria>[];
-                          final tieneDefinicion = eventos.any(
-                            (e) =>
-                                (e.fuente ?? '').toUpperCase() == 'DEFINICION',
-                          );
-                          final tieneBorrador = eventos.any(
-                            (e) => (e.fuente ?? '').toUpperCase() == 'BORRADOR',
-                          );
-                          final tienePublicada = eventos.any(
-                            (e) =>
-                                (e.fuente ?? '').toUpperCase() == 'PUBLICADA',
-                          );
-                          final usoPropio = eventos.any(
-                            (e) =>
-                                (e.tarea?.conjuntoId ?? '').trim() ==
-                                widget.nit.trim(),
-                          );
-                          final tipoConflicto = tieneDefinicion
-                              ? 'DEFINICION'
-                              : (tieneBorrador ||
-                                    (tienePublicada && !usoPropio))
-                              ? 'PUBLICADA'
-                              : usoPropio
-                              ? 'USO_PROPIO'
-                              : 'LIBRE';
-                          await showDialog<void>(
-                            context: ctx,
-                            builder: (popupCtx) => AlertDialog(
-                              title: Text(
-                                'Detalle ${DateFormat('dd/MM/yyyy', 'es').format(dayDate)}',
-                              ),
-                              content: SizedBox(
-                                width: 420,
-                                child: SingleChildScrollView(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (tipoConflicto == 'DEFINICION')
-                                        Text(
-                                          'Hay una preventiva en definición para esta maquinaria en este día.',
-                                          style: TextStyle(
-                                            color: Colors.orange.shade900,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        )
-                                      else if (tipoConflicto == 'PUBLICADA')
-                                        Text(
-                                          tieneBorrador
-                                              ? 'Hay una preventiva en borrador para esta maquinaria en este día.'
-                                              : 'Hay una preventiva publicada para esta maquinaria en este día.',
-                                          style: TextStyle(
-                                            color: Colors.red.shade800,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        )
-                                      else if (tipoConflicto == 'USO_PROPIO')
-                                        Text(
-                                          'Para este día se estaría usando la maquinaria en este conjunto.',
-                                          style: TextStyle(
-                                            color: Colors.blue.shade800,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        )
-                                      else
-                                        Text(
-                                          'La maquinaria está libre en este día.',
-                                          style: TextStyle(
-                                            color: Colors.green.shade800,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      const SizedBox(height: 10),
-                                      if (eventos.isEmpty)
-                                        const Text(
-                                          'No hay eventos detallados para este día.',
-                                        )
-                                      else
-                                        ...eventos.map((evento) {
-                                          final fuente = (evento.fuente ?? '')
-                                              .toUpperCase();
-                                          final conjuntoNombre =
-                                              evento.tarea?.conjuntoNombre ??
-                                              evento.tarea?.conjuntoId ??
-                                              'otro conjunto';
-                                          final color = fuente == 'DEFINICION'
-                                              ? Colors.orange
-                                              : fuente == 'BORRADOR'
-                                              ? Colors.red
-                                              : Colors.blue;
-                                          return SizedBox(
-                                            width: double.infinity,
-                                            child: Container(
-                                              margin: const EdgeInsets.only(
-                                                bottom: 8,
-                                              ),
-                                              padding: const EdgeInsets.all(10),
-                                              decoration: BoxDecoration(
-                                                color: color.withValues(
-                                                  alpha: 0.08,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                                border: Border.all(
-                                                  color: color.withValues(
-                                                    alpha: 0.22,
-                                                  ),
-                                                ),
-                                              ),
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    evento.tarea?.descripcion ??
-                                                        'Reserva',
-                                                    style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Text(
-                                                    'Conjunto: $conjuntoNombre',
-                                                  ),
-                                                  Text(
-                                                    'Estado: ${evento.fuente == 'DEFINICION'
-                                                        ? 'DEFINICION'
-                                                        : evento.fuente == 'BORRADOR'
-                                                        ? 'BORRADOR'
-                                                        : 'PUBLICADA'}',
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        }),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(popupCtx),
-                                  child: const Text('Cerrar'),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                        child: SizedBox.expand(
-                          child: Container(
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: conflictoPublicado
-                                  ? Colors.red.withValues(alpha: 0.18)
-                                  : conflictoBorrador
-                                  ? Colors.orange.withValues(alpha: 0.22)
-                                  : ocupado
-                                  ? Colors.blue.withValues(alpha: 0.16)
-                                  : Colors.green.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: conflictoPublicado
-                                    ? Colors.red.shade300
-                                    : conflictoBorrador
-                                    ? Colors.orange.shade300
-                                    : ocupado
-                                    ? Colors.blue.shade300
-                                    : Colors.green.shade300,
-                              ),
-                            ),
-                            child: Text('$day'),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Reservas del mes',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 8),
-                  if (reservas.isEmpty)
-                    const Text('No tiene agenda ocupada en este mes.')
-                  else
-                    ...reservas.map((reserva) {
-                      final ini = DateFormat(
-                        'dd/MM HH:mm',
-                        'es',
-                      ).format(reserva.fechaInicio.toLocal());
-                      final fin = DateFormat(
-                        'dd/MM HH:mm',
-                        'es',
-                      ).format(reserva.fechaFin.toLocal());
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(
-                          Icons.precision_manufacturing,
-                          color: Colors.blue,
-                        ),
-                        title: Text(reserva.tarea?.descripcion ?? 'Reserva'),
-                        subtitle: Text('$ini -> $fin'),
-                      );
-                    }),
-                  if (detalle != null && detalle.conflictos.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Preventivas definidas / borrador que generan conflicto',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 8),
-                    ...detalle.conflictos.map((conflicto) {
-                      final rango =
-                          '${DateFormat('dd/MM/yyyy', 'es').format(conflicto.ini.toLocal())} -> ${DateFormat('dd/MM/yyyy', 'es').format(conflicto.fin.toLocal())}';
-                      final conjunto =
-                          (conflicto.conjuntoNombre ??
-                                  conflicto.conjuntoId ??
-                                  'otro conjunto')
-                              .trim();
-                      final esBorrador =
-                          (conflicto.fuente ?? '').toUpperCase() ==
-                          'BORRADOR_PREVENTIVA';
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: esBorrador
-                              ? Colors.orange.withValues(alpha: 0.08)
-                              : Colors.red.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: esBorrador
-                                ? Colors.orange.shade300
-                                : Colors.red.shade200,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              conflicto.descripcion ??
-                                  'Preventiva en conflicto',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '$conjunto · $rango',
-                              style: TextStyle(color: Colors.grey.shade700),
-                            ),
-                            const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: OutlinedButton.icon(
-                                onPressed: () {
-                                  Navigator.pop(ctx);
-                                  _abrirConflictoMaquinaria(conflicto);
-                                },
-                                icon: const Icon(Icons.open_in_new, size: 16),
-                                label: Text(
-                                  esBorrador
-                                      ? 'Abrir borrador'
-                                      : 'Abrir cronograma',
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cerrar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ===========================
-  // carga de datos
-  // ===========================
-  Future<void> _initData() async {
-    await Future.wait([
-      _cargarCatalogoInsumos(),
-      _cargarCatalogoHerramientas(),
-      _cargarSupervisores(),
-    ]);
-
-    if (!mounted) return;
-    _cargarDesdeExistenteOInit();
-    await _consultarDisponibilidadMaquinaria();
-
-    if (!mounted) return;
-    setState(() {});
   }
 
   Future<void> _cargarCatalogoInsumos() async {
@@ -1009,9 +343,15 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       _maquinariaPlanRows
         ..clear()
         ..addAll(
-          existente.maquinariaPlan.map(
-            (m) => _MaquinariaPlanRow(maquinariaId: m.maquinariaId),
-          ),
+          existente.maquinariaPlan
+              .where((m) => m.tipoEnum != null)
+              .map(
+                (m) => _MaquinariaPlanRow(
+                  tipo: m.tipoEnum,
+                  cantidad: (m.cantidad ?? 1).round().clamp(1, 99),
+                  maquinariaSugeridaId: m.maquinariaSugeridaId,
+                ),
+              ),
         );
 
       _herramientasPlanRows.clear();
@@ -1083,7 +423,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       _diasParaCompletarCtrl.text = '';
     }
 
-    if (_frecuencia == 'SEMANAL') {
+    if (_frecuenciaUsaDiaSemana) {
       if (_diasSemanaProgramados.isEmpty) {
         _diasSemanaProgramados.add('LUNES');
       }
@@ -1284,11 +624,11 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       return;
     }
 
-    if (_frecuencia == 'SEMANAL' && _diasSemanaProgramados.isEmpty) {
+    if (_frecuenciaUsaDiaSemana && _diasSemanaProgramados.isEmpty) {
       _snack(
         _usaSelectorMultipleSemanal
             ? 'Selecciona al menos un día de la semana'
-            : 'Selecciona el día de la semana',
+            : 'Selecciona el día de la semana en el que se ejecuta',
       );
       return;
     }
@@ -1406,11 +746,12 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         .toList();
 
     final maquinariaPlanRequests = _maquinariaPlanRows
-        .where((r) => r.maquinariaId != null)
+        .where((r) => r.tipo != null)
         .map(
           (r) => MaquinariaPlanItemRequest(
-            maquinariaId: r.maquinariaId!,
-            origen: r.origen, // ✅ viene automático del dropdown
+            tipo: r.tipo!,
+            cantidad: r.cantidad,
+            maquinariaSugeridaId: r.maquinariaSugeridaId,
           ),
         )
         .toList();
@@ -1444,8 +785,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         descripcion: _descripcionCtrl.text.trim(),
         frecuencia: _frecuencia!,
         prioridad: prioridad,
-        diaSemanaProgramado:
-            _frecuencia == 'SEMANAL' ? diaSemanaProgramado : null,
+        diaSemanaProgramado: _frecuenciaUsaDiaSemana
+            ? diaSemanaProgramado
+            : null,
         diaMesProgramado: _frecuenciaUsaDiaMes ? _diaMesProgramado : null,
         fechasProgramadasJson: _frecuenciaUsaFechasExplicitas
             ? _fechasProgramadas.map(_fmtFechaProgramada).toList()
@@ -1470,19 +812,22 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
     final req = buildRequest(
       diaSemanaProgramado:
-          _frecuencia == 'SEMANAL' && diasSemanaSeleccionados.isNotEmpty
+          _frecuenciaUsaDiaSemana && diasSemanaSeleccionados.isNotEmpty
           ? diasSemanaSeleccionados.first
           : null,
     );
 
     setState(() => _guardando = true);
     try {
-      if (_frecuencia == 'SEMANAL' && diasSemanaSeleccionados.length > 1) {
+      if (_usaSelectorMultipleSemanal && diasSemanaSeleccionados.length > 1) {
         final diaPrincipal = diasSemanaSeleccionados.first;
 
         if (widget.existente == null) {
           for (final dia in diasSemanaSeleccionados) {
-            await _api.crear(widget.nit, buildRequest(diaSemanaProgramado: dia));
+            await _api.crear(
+              widget.nit,
+              buildRequest(diaSemanaProgramado: dia),
+            );
           }
         } else {
           await _api.editar(
@@ -1492,7 +837,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
           );
 
           for (final dia in diasSemanaSeleccionados.skip(1)) {
-            await _api.crear(widget.nit, buildRequest(diaSemanaProgramado: dia));
+            await _api.crear(
+              widget.nit,
+              buildRequest(diaSemanaProgramado: dia),
+            );
           }
         }
       } else if (widget.existente == null) {
@@ -1507,16 +855,11 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
       // ✅ Si el backend ya manda {ok:false, reason, message, ...}
       if (e is ApiException) {
-        // mensaje amigable
-        if (e.reason == 'MAQUINARIA_NO_DISPONIBLE') {
-          await _showMaquinariaNoDisponibleDialog(e);
-        } else {
-          await _showFriendlyErrorDialog(
-            title: 'No se pudo guardar',
-            message: e.message,
-            details: e.details,
-          );
-        }
+        await _showFriendlyErrorDialog(
+          title: 'No se pudo guardar',
+          message: e.message,
+          details: e.details,
+        );
         return;
       }
 
@@ -1594,107 +937,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     );
   }
 
-  Future<void> _showMaquinariaNoDisponibleDialog(ApiException e) async {
-    // e.details puede ser Map o String
-    Map<String, dynamic>? body;
-    try {
-      if (e.details is Map<String, dynamic>) {
-        body = e.details as Map<String, dynamic>;
-      } else if (e.details is String) {
-        body = jsonDecode(e.details as String) as Map<String, dynamic>;
-      }
-    } catch (_) {
-      body = null;
-    }
-
-    final conflictos = (body?['conflictos'] as List?) ?? const [];
-    // Muestra máximo 3 (para no saturar)
-    final top = conflictos.take(3).toList();
-    final extra = conflictos.length - top.length;
-
-    String fmtDate(dynamic s) {
-      if (s == null) return '';
-      try {
-        final dt = DateTime.parse(s.toString()).toLocal();
-        return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-      } catch (_) {
-        return s.toString();
-      }
-    }
-
-    Widget conflictoTile(Map<String, dynamic> c) {
-      final maquinariaId = c['maquinariaId'];
-      final ocupadoPor = (c['ocupadoPor'] as Map?)?.cast<String, dynamic>();
-      final desc = ocupadoPor?['descripcion']?.toString() ?? 'Tarea';
-      final conj = ocupadoPor?['conjuntoId']?.toString() ?? '—';
-      final ini = fmtDate(ocupadoPor?['ini']);
-      final fin = fmtDate(ocupadoPor?['fin']);
-
-      final entrega = fmtDate((c['rangoSolicitado'] as Map?)?['entrega']);
-      final recogida = fmtDate((c['rangoSolicitado'] as Map?)?['recogida']);
-
-      return ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: const Icon(Icons.construction),
-        title: Text('Máquina #$maquinariaId • $desc'),
-        subtitle: Text(
-          'Conjunto: $conj\n'
-          'Ocupada: $ini → $fin\n'
-          'Reserva (entrega/recogida): $entrega → $recogida',
-        ),
-      );
-    }
-
-    await showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Maquinaria ocupada'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                e.message.isNotEmpty
-                    ? e.message
-                    : 'La maquinaria seleccionada está ocupada en esas fechas.',
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Conflictos detectados:',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 6),
-              ...top.map(
-                (x) => conflictoTile((x as Map).cast<String, dynamic>()),
-              ),
-              if (extra > 0) Text('… y $extra conflicto(s) más.'),
-              const SizedBox(height: 8),
-              const Text(
-                'Sugerencia: consulta disponibilidad y selecciona otra máquina u origen (Conjunto/Empresa).',
-                style: TextStyle(fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-          OutlinedButton.icon(
-            onPressed: () {
-              Navigator.pop(context);
-              _consultarDisponibilidadMaquinaria();
-            },
-            icon: const Icon(Icons.search),
-            label: const Text('Consultar disponibilidad'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _sectionCard({required String title, required Widget child}) {
     return Card(
       elevation: 0,
@@ -1752,286 +994,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         ],
       ),
     );
-  }
-
-  List<MaquinariaDisponibleItem> _opcionesMaquinariaDropdown() {
-    if (_dispMaq == null) return [];
-
-    final ocupadasIds = _ocupadaPorId.keys.toSet();
-    final seen = <int>{};
-    final opciones = <MaquinariaDisponibleItem>[];
-
-    for (final m in [
-      ..._dispMaq!.propiasDisponibles,
-      ..._dispMaq!.empresaDisponibles,
-    ]) {
-      if (ocupadasIds.contains(m.id)) continue;
-      if (!seen.add(m.id)) continue;
-      opciones.add(m);
-    }
-
-    opciones.sort((a, b) {
-      final tipoA = a.tipo.trim().toLowerCase();
-      final tipoB = b.tipo.trim().toLowerCase();
-      final byTipo = tipoA.compareTo(tipoB);
-      if (byTipo != 0) return byTipo;
-      final origenA = a.origen.trim().toUpperCase();
-      final origenB = b.origen.trim().toUpperCase();
-      final byOrigen = origenA.compareTo(origenB);
-      if (byOrigen != 0) return byOrigen;
-      return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
-    });
-
-    return opciones;
-  }
-
-  String _detalleOcupacionMaquinaria(MaquinariaOcupadaItem ocupada) {
-    final nombre =
-        (ocupada.maquinaNombre ?? 'Maquinaria #${ocupada.maquinariaId}').trim();
-    final conjunto = (ocupada.conjuntoId ?? '—').trim();
-    final desde = DateFormat('dd/MM/yyyy', 'es').format(ocupada.ini.toLocal());
-    final hasta = DateFormat('dd/MM/yyyy', 'es').format(ocupada.fin.toLocal());
-    return '$nombre ocupada por conjunto $conjunto desde $desde hasta $hasta';
-  }
-
-  Widget _maqInfoChip(String label, int count, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
-      ),
-      child: Text(
-        '$label: $count',
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: color,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildResumenVisualDisponibilidadMaquinaria() {
-    final catalogo = _catalogoDisponibilidadMaq;
-    if (catalogo.isEmpty) return const SizedBox.shrink();
-
-    final disponibles = catalogo.where((item) => item.disponible).toList();
-    final ocupadas = catalogo.where((item) => !item.disponible).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Resultado general de la consulta',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Se encontraron ${disponibles.length} máquina(s) libres y ${ocupadas.length} con conflicto para el rango consultado. El detalle y las sugerencias se muestran por cada maquinaria seleccionada.',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-        ),
-      ],
-    );
-  }
-
-  List<MaquinariaDisponibilidadDetalladaItem> _sugerenciasMaquinariaPorTipo({
-    required MaquinariaDisponibilidadDetalladaItem detalle,
-    required int selectedId,
-  }) {
-    return _catalogoDisponibilidadMaq
-        .where(
-          (item) =>
-              item.disponible &&
-              item.id != selectedId &&
-              item.tipo.trim().toUpperCase() ==
-                  detalle.tipo.trim().toUpperCase(),
-        )
-        .toList()
-      ..sort((a, b) {
-        if (a.origen != b.origen) return a.origen.compareTo(b.origen);
-        return a.nombre.compareTo(b.nombre);
-      });
-  }
-
-  Widget _buildDetalleSeleccionMaquinaria({
-    required _MaquinariaPlanRow row,
-    required MaquinariaDisponibilidadDetalladaItem detalle,
-  }) {
-    final sugeridas = _sugerenciasMaquinariaPorTipo(
-      detalle: detalle,
-      selectedId: row.maquinariaId ?? detalle.id,
-    );
-    final libre = detalle.disponible;
-
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: libre
-            ? Colors.green.withValues(alpha: 0.06)
-            : Colors.red.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: libre
-              ? Colors.green.withValues(alpha: 0.22)
-              : Colors.red.withValues(alpha: 0.18),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            libre
-                ? 'Esta maquinaria está libre para el rango de la tarea'
-                : 'Esta maquinaria tiene conflicto para el rango de la tarea',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: libre ? Colors.green.shade800 : Colors.red.shade800,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(detalle.motivo, style: TextStyle(color: Colors.grey.shade800)),
-          if (!libre && detalle.conflictos.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ...detalle.conflictos.map((c) {
-              final conjunto =
-                  (c.conjuntoNombre ?? c.conjuntoId ?? 'otro conjunto').trim();
-              final rango =
-                  '${DateFormat('dd/MM/yyyy', 'es').format(c.ini.toLocal())} -> ${DateFormat('dd/MM/yyyy', 'es').format(c.fin.toLocal())}';
-              final fuente =
-                  (c.fuente ?? '').toUpperCase() == 'BORRADOR_PREVENTIVA'
-                  ? 'Preventiva definida/borrador'
-                  : 'Agenda publicada';
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Text(
-                  '- $fuente: ${c.descripcion ?? 'Preventiva'} · $conjunto · $rango',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
-              );
-            }),
-          ],
-          if (!libre) ...[
-            const SizedBox(height: 10),
-            if (sugeridas.isNotEmpty)
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: Colors.green.withValues(alpha: 0.22),
-                  ),
-                ),
-                child: Text(
-                  'Recomendación principal: usa ${sugeridas.first.nombre} porque es del mismo tipo (${_tipoMaquinariaLabel(sugeridas.first.tipo)}) y no presenta solape para este rango.',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: Colors.green.shade800,
-                  ),
-                ),
-              ),
-            Text(
-              'Máquinas sugeridas del mismo tipo (${detalle.tipo})',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            if (sugeridas.isEmpty)
-              Text(
-                'No encontré máquinas libres del mismo tipo para este rango.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-              )
-            else
-              ...sugeridas.take(6).map((sug) {
-                final option = MaquinariaDisponibleItem(
-                  id: sug.id,
-                  nombre: sug.nombre,
-                  tipo: sug.tipo,
-                  marca: sug.marca,
-                  origen: sug.origen,
-                );
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: Colors.green.withValues(alpha: 0.20),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _labelMaq(option),
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          setState(() => row.maquinariaId = sug.id);
-                        },
-                        child: const Text('Usar esta'),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-          ],
-        ],
-      ),
-    );
-  }
-
-  String _labelMaq(MaquinariaDisponibleItem m) {
-    final o = m.origen.trim().toUpperCase();
-    final tag = (o == 'CONJUNTO') ? 'Conjunto' : 'Empresa';
-    final marca = m.marca.trim().isEmpty ? '' : ' • ${m.marca}';
-    return '[$tag] ${m.nombre}$marca';
-  }
-
-  String _tipoMaquinariaLabel(String tipo) {
-    final clean = tipo.trim();
-    return clean.isEmpty ? 'Sin tipo' : clean;
-  }
-
-  List<String> _mensajesConflictoMaquinariaSeleccionada() {
-    final mensajes = <String>[];
-    for (final row in _maquinariaPlanRows) {
-      if (row.maquinariaId == null) continue;
-      MaquinariaDisponibilidadDetalladaItem? detalle;
-      for (final item in _catalogoDisponibilidadMaq) {
-        if (item.id == row.maquinariaId) {
-          detalle = item;
-          break;
-        }
-      }
-      if (detalle == null || detalle.disponible || detalle.conflictos.isEmpty) {
-        continue;
-      }
-      for (final conflicto in detalle.conflictos) {
-        final estado =
-            (conflicto.fuente ?? '').toUpperCase() == 'BORRADOR_PREVENTIVA'
-            ? 'está en borrador'
-            : 'está publicada';
-        final conjunto =
-            (conflicto.conjuntoNombre ??
-                    conflicto.conjuntoId ??
-                    'otro conjunto')
-                .trim();
-        final rango =
-            '${DateFormat('dd/MM/yyyy', 'es').format(conflicto.ini.toLocal())} -> ${DateFormat('dd/MM/yyyy', 'es').format(conflicto.fin.toLocal())}';
-        mensajes.add(
-          'La preventiva "${conflicto.descripcion ?? 'Sin nombre'}" $estado en el conjunto "$conjunto" y se solapa con esta maquinaria en el rango $rango.',
-        );
-      }
-    }
-    return mensajes;
   }
 
   List<SearchableSelectOption<int>> _buildInsumoOptions() {
@@ -2179,7 +1141,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         border: OutlineInputBorder(),
                       ),
                       initialValue: _frecuencia,
-                      items: _frecuenciasPreventivas
+                      items: frecuenciasPreventivas
                           .map(
                             (f) => DropdownMenuItem(value: f, child: Text(f)),
                           )
@@ -2187,7 +1149,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       onChanged: (v) {
                         setState(() {
                           _frecuencia = v;
-                          if (_frecuencia != 'SEMANAL') {
+                          if (!_frecuenciaUsaDiaSemana) {
                             _diasSemanaProgramados.clear();
                           }
                           if (!_frecuenciaUsaDiaMes) {
@@ -2197,7 +1159,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                             _fechasProgramadas.clear();
                           }
 
-                          if (_frecuencia == 'SEMANAL' &&
+                          if (_frecuenciaUsaDiaSemana &&
                               _diasSemanaProgramados.isEmpty) {
                             _diasSemanaProgramados.add('LUNES');
                           }
@@ -2212,11 +1174,13 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     ),
                     const SizedBox(height: 12),
 
-                    if (_frecuencia == 'SEMANAL' && _usaSelectorMultipleSemanal) ...[
+                    if (_frecuenciaUsaDiaSemana) ...[
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Días de la semana',
+                          _usaSelectorMultipleSemanal
+                              ? 'Días de la semana'
+                              : 'Día de la semana',
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                       ),
@@ -2226,14 +1190,20 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         child: Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: _diasSemanaOpciones.map((dia) {
-                            final selected = _diasSemanaProgramados.contains(dia);
+                          children: diasSemanaOpciones.map((dia) {
+                            final selected = _diasSemanaProgramados.contains(
+                              dia,
+                            );
                             return ChoiceChip(
                               label: Text(
                                 dia,
                                 style: TextStyle(
-                                  color: selected ? Colors.white : Colors.black87,
-                                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                                  color: selected
+                                      ? Colors.white
+                                      : Colors.black87,
+                                  fontWeight: selected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
                                 ),
                               ),
                               selected: selected,
@@ -2248,6 +1218,15 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                               ),
                               onSelected: (value) {
                                 setState(() {
+                                  if (!_usaSelectorMultipleSemanal) {
+                                    // Un solo dia: al elegir otro se deselecciona el anterior.
+                                    if (value) {
+                                      _diasSemanaProgramados
+                                        ..clear()
+                                        ..add(dia);
+                                    }
+                                    return;
+                                  }
                                   if (value) {
                                     _diasSemanaProgramados.add(dia);
                                   } else {
@@ -2262,36 +1241,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       const SizedBox(height: 8),
                       Align(
                         alignment: Alignment.centerLeft,
-                        child: Text(
-                          widget.existente == null
-                              ? 'Cada día seleccionado se guardará como una preventiva semanal independiente.'
-                              : 'Se actualizará esta preventiva con el primer día elegido y se crearán preventivas adicionales para los demás días.',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ] else if (_frecuencia == 'SEMANAL') ...[
-                      DropdownButtonFormField<String>(
-                        key: ValueKey<String>(
-                          'diaSemana_${_diaSemanaProgramadoActual ?? 'none'}',
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Día de la semana',
-                          border: OutlineInputBorder(),
-                        ),
-                        initialValue: _diaSemanaProgramadoActual,
-                        items: _diasSemanaOpciones
-                            .map(
-                              (d) => DropdownMenuItem(
-                                value: d,
-                                child: Text(d),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) => setState(() {
-                          _diasSemanaProgramados
-                            ..clear()
-                            ..addAll(v == null ? const <String>[] : [v]);
-                        }),
+                        child: Text(_ayudaDiasSemana()),
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -2356,9 +1306,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       if (_fechasProgramadas.isEmpty)
                         const Align(
                           alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Aún no hay fechas seleccionadas.',
-                          ),
+                          child: Text('Aún no hay fechas seleccionadas.'),
                         )
                       else
                         Align(
@@ -2657,132 +1605,44 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
               const SizedBox(height: 12),
 
               // =========================================================
-              // ✅ 4.1 Maquinaria: botón consultar + resumen + filtrado
+              // 4.1 Maquinaria: solo la NECESIDAD (tipo + cantidad).
+              // La maquina concreta se asigna despues, para toda la empresa,
+              // desde el cronograma de maquinaria.
               // =========================================================
               _sectionCard(
-                title: '4.1) Maquinaria planificada',
+                title: '4.1) Maquinaria necesaria',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: _cargandoDispMaq
-                          ? null
-                          : _consultarDisponibilidadMaquinaria,
-                      icon: _cargandoDispMaq
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.search),
-                      label: const Text('Consultar disponibilidad'),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.blue.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 18,
+                            color: Colors.blue.shade800,
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Indica solo el tipo de máquina que hace falta. '
+                              'La máquina concreta se asigna después, para toda la '
+                              'empresa, desde el cronograma de maquinaria.',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 10),
-                    if (_dispMaq != null) ...[
-                      Builder(
-                        builder: (_) {
-                          final catalogo = _catalogoDisponibilidadMaq;
-                          final disponibles = catalogo
-                              .where((item) => item.disponible)
-                              .length;
-                          final conflictosBorrador = catalogo
-                              .where((item) => !item.disponible)
-                              .expand((item) => item.conflictos)
-                              .where(
-                                (item) =>
-                                    (item.fuente ?? '').toUpperCase() ==
-                                    'BORRADOR_PREVENTIVA',
-                              )
-                              .length;
-                          final conflictosPublicados = catalogo
-                              .where((item) => !item.disponible)
-                              .expand((item) => item.conflictos)
-                              .where(
-                                (item) =>
-                                    (item.fuente ?? '').toUpperCase() !=
-                                    'BORRADOR_PREVENTIVA',
-                              )
-                              .length;
-                          final mensajesConflictoSeleccionados =
-                              _mensajesConflictoMaquinariaSeleccionada();
-
-                          return Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey.shade200),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Disponibles: $disponibles | Con conflicto: ${catalogo.length - disponibles}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    _maqInfoChip(
-                                      'Conjunto libres',
-                                      _dispMaq!.propiasDisponibles.length,
-                                      Colors.green,
-                                    ),
-                                    _maqInfoChip(
-                                      'Empresa libres',
-                                      _dispMaq!.empresaDisponibles.length,
-                                      Colors.blue,
-                                    ),
-                                    _maqInfoChip(
-                                      'Choques publicadas',
-                                      conflictosPublicados,
-                                      Colors.red,
-                                    ),
-                                    _maqInfoChip(
-                                      'Choques definidas/borrador',
-                                      conflictosBorrador,
-                                      Colors.orange,
-                                    ),
-                                  ],
-                                ),
-                                if (mensajesConflictoSeleccionados
-                                    .isNotEmpty) ...[
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'Aviso: encontré conflictos de maquinaria en las filas que ya tienen máquina seleccionada:',
-                                    style: TextStyle(
-                                      color: Colors.orange.shade900,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  ...mensajesConflictoSeleccionados.map(
-                                    (msg) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
-                                      child: Text(
-                                        '- $msg',
-                                        style: TextStyle(
-                                          color: Colors.orange.shade900,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      _buildResumenVisualDisponibilidadMaquinaria(),
-                      const SizedBox(height: 10),
-                    ],
-
                     ListView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
@@ -2796,7 +1656,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           () => _maquinariaPlanRows.add(_MaquinariaPlanRow()),
                         ),
                         icon: const Icon(Icons.add),
-                        label: const Text('Agregar maquinaria'),
+                        label: const Text('Agregar necesidad de maquinaria'),
                       ),
                     ),
                   ],
@@ -2975,135 +1835,51 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   Widget _buildMaquinariaPlanRow(int index) {
     final row = _maquinariaPlanRows[index];
 
-    final opciones = _opcionesMaquinariaDropdown();
-    final catalogo = _catalogoDisponibilidadMaq;
-
-    if (_dispMaq == null) {
-      return const Padding(
-        padding: EdgeInsets.only(bottom: 8.0),
-        child: Text('Consulta disponibilidad para listar maquinaria.'),
-      );
-    }
-
-    // si la selección actual ya no está en opciones (por filtros), la dejamos como "no disponible"
-    final selectedExists = row.maquinariaId == null
-        ? true
-        : opciones.any((o) => o.id == row.maquinariaId);
-
-    // hint ocupada (si aplica)
-    final ocupada = row.maquinariaId != null
-        ? _ocupadaPorId[row.maquinariaId!]
-        : null;
-    MaquinariaDisponibilidadDetalladaItem? detalleSeleccion;
-    if (row.maquinariaId != null) {
-      for (final item in catalogo) {
-        if (item.id == row.maquinariaId) {
-          detalleSeleccion = item;
-          break;
-        }
-      }
-    }
-
-    final options = <SearchableSelectOption<int>>[
-      ...opciones.map(
-        (m) => SearchableSelectOption<int>(
-          value: m.id,
-          label: '${_labelMaq(m)} • ${_tipoMaquinariaLabel(m.tipo)}',
-          subtitle: 'Tipo: ${_tipoMaquinariaLabel(m.tipo)}',
-        ),
-      ),
-      if (!selectedExists && row.maquinariaId != null)
-        SearchableSelectOption<int>(
-          value: row.maquinariaId!,
-          label: '[No disponible] #${row.maquinariaId}',
-          subtitle: ocupada != null
-              ? _detalleOcupacionMaquinaria(ocupada)
-              : null,
-        ),
-    ];
-
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: Column(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: SearchableSelectField<int>(
-                  label: 'Maquinaria',
-                  value: row.maquinariaId,
-                  prefixIcon: const Icon(Icons.precision_manufacturing),
-                  searchHint: 'Buscar maquinaria por nombre, marca o tipo',
-                  clearLabel: 'Sin maquinaria',
-                  options: options,
-                  onChanged: (id) {
-                    if (id == null) {
-                      setState(() => row.maquinariaId = null);
-                      return;
-                    }
-
-                    final sel = opciones.firstWhere(
-                      (x) => x.id == id,
-                      orElse: () => MaquinariaDisponibleItem(
-                        id: id,
-                        nombre: 'Maquinaria',
-                        tipo: '',
-                        marca: '',
-                        origen: 'EMPRESA',
-                      ),
-                    );
-
-                    setState(() {
-                      row.maquinariaId = id;
-                      row.origen = sel.origen;
-                    });
-                  },
-                ),
-              ),
-              IconButton(
-                tooltip: row.maquinariaId == null
-                    ? 'Selecciona primero una maquinaria'
-                    : 'Mirar disponibilidad de esta maquinaria',
-                onPressed: row.maquinariaId == null
-                    ? null
-                    : () => _mostrarAgendaMaquinaria(
-                        row.maquinariaId!,
-                        detalle: detalleSeleccion,
-                      ),
-                icon: const Icon(Icons.calendar_month),
-              ),
-              const SizedBox(width: 8),
-              if (_dispMaq != null)
-                Text(
-                  '${opciones.length} libres',
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-                ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () {
-                  setState(() {
-                    _maquinariaPlanRows.removeAt(index);
-                  });
-                },
-              ),
-            ],
+          Expanded(
+            child: SearchableSelectField<TipoMaquinariaFlutter>(
+              label: 'Tipo de maquinaria',
+              value: row.tipo,
+              prefixIcon: const Icon(Icons.precision_manufacturing),
+              searchHint: 'Buscar tipo de maquinaria',
+              clearLabel: 'Sin definir',
+              options: TipoMaquinariaFlutter.values
+                  .map(
+                    (tipo) => SearchableSelectOption<TipoMaquinariaFlutter>(
+                      value: tipo,
+                      label: tipo.label,
+                    ),
+                  )
+                  .toList(),
+              onChanged: (tipo) => setState(() => row.tipo = tipo),
+            ),
           ),
-          if (ocupada != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '⛔ ${_detalleOcupacionMaquinaria(ocupada)}',
-                  style: const TextStyle(fontSize: 12),
-                ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 120,
+            child: TextFormField(
+              key: ValueKey('maqCantidad_${index}_${row.cantidad}'),
+              initialValue: '${row.cantidad}',
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Cantidad',
+                border: OutlineInputBorder(),
               ),
+              onChanged: (value) {
+                final n = int.tryParse(value.trim());
+                if (n != null && n > 0) row.cantidad = n;
+              },
             ),
-          if (detalleSeleccion != null)
-            _buildDetalleSeleccionMaquinaria(
-              row: row,
-              detalle: detalleSeleccion,
-            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Quitar',
+            onPressed: () =>
+                setState(() => _maquinariaPlanRows.removeAt(index)),
+          ),
         ],
       ),
     );
@@ -3190,25 +1966,14 @@ class _InsumoPlanRow {
       );
 }
 
+/// Necesidad de maquinaria de la preventiva: que tipo y cuantas.
+/// La maquina concreta se asigna despues desde el cronograma de maquinaria.
 class _MaquinariaPlanRow {
-  int? maquinariaId;
-  String? origen; // 'CONJUNTO' | 'EMPRESA'
+  TipoMaquinariaFlutter? tipo;
+  int cantidad;
+  int? maquinariaSugeridaId;
 
-  _MaquinariaPlanRow({this.maquinariaId});
-}
-
-class _MaqOption {
-  final int id;
-  final String nombre;
-  final String origen; // 'EMPRESA' | 'CONJUNTO'
-  final String? marca;
-
-  _MaqOption({
-    required this.id,
-    required this.nombre,
-    required this.origen,
-    this.marca,
-  });
+  _MaquinariaPlanRow({this.tipo, this.cantidad = 1, this.maquinariaSugeridaId});
 }
 
 class _HerramientaPlanRow {

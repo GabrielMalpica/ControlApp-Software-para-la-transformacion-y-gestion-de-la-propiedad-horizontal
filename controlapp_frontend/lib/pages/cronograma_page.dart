@@ -1,6 +1,7 @@
 // lib/pages/cronograma_definitivo_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:intl/intl.dart';
 
@@ -23,6 +24,13 @@ import '../service/tarea_cierre_service.dart';
 import '../service/theme.dart';
 import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
+import 'dart:async';
+
+import '../api/auditoria_api.dart';
+import '../model/auditoria_model.dart';
+import '../widgets/auditoria_trazabilidad.dart';
+import '../model/maquinaria_model.dart';
+import '../utils/frecuencia_utils.dart';
 import '../widgets/section_card.dart';
 import '../widgets/maquinaria_conflict_dialog.dart';
 import 'crear_tarea_page.dart';
@@ -35,8 +43,9 @@ enum _SidebarAgendaModo { agenda, excluidas }
 
 final ValueNotifier<bool> _weekCorrectivaDragActiveNotifier =
     ValueNotifier<bool>(false);
-final ValueNotifier<bool> _weekExcluidaDragActiveNotifier =
-    ValueNotifier<bool>(false);
+final ValueNotifier<bool> _weekExcluidaDragActiveNotifier = ValueNotifier<bool>(
+  false,
+);
 
 class CronogramaPage extends StatefulWidget {
   final String nit;
@@ -53,7 +62,17 @@ class CronogramaPage extends StatefulWidget {
 }
 
 class _CronogramaPageState extends State<CronogramaPage> {
+  final _authApi = AuthApi();
   final _cronogramaApi = CronogramaApi();
+  final _auditoriaApi = AuditoriaApi();
+
+  /// Trazabilidad del mes indexada por id de tarea. Se carga de una sola vez
+  /// junto al cronograma para no hacer una peticion por tarea.
+  Map<String, TrazabilidadEntidad> _trazabilidadTareas = const {};
+
+  /// Informe de excluidas del periodo: cuáles se programaron después y qué
+  /// tareas se desplazaron para lograrlo.
+  Map<String, dynamic> _informeExcluidas = const {};
   final _festivoApi = FestivoApi();
   final _conjuntoApi = ConjuntoApi();
   final _tareaApi = TareaApi();
@@ -139,6 +158,12 @@ class _CronogramaPageState extends State<CronogramaPage> {
       (_rolActual == 'gerente' ||
           PermissionService.instance.can('cronograma.correctivas_programar'));
 
+  /// Evita disparar dos acciones simultaneas sobre la misma excluida.
+  bool _accionExcluidaEnCurso = false;
+
+  /// Mostrar las excluidas del mes como filas de seguimiento en la matriz.
+  bool _verExcluidasEnMatriz = true;
+
   bool get _canViewExcluidasStandby =>
       _rolActual == 'gerente' ||
       PermissionService.instance.can('cronograma.excluidas_ver');
@@ -153,10 +178,16 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     _initMes();
     _semanaBase = DateTime(_anioActual, _mesActual, 1);
-    _cargarSesion().then((_) {
+    _refreshSessionProfile().then((_) => _cargarSesion()).then((_) {
       if (!mounted) return;
       _cargarDatos();
     });
+  }
+
+  Future<void> _refreshSessionProfile() async {
+    try {
+      await _authApi.me();
+    } catch (_) {}
   }
 
   Future<void> _cargarSesion() async {
@@ -385,9 +416,39 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   void _recalcularColeccionesDerivadas() {
     _tareasFiltradasCache = _tareasMes.where(_pasaFiltros).toList();
-    _filasCronoMensualCache = _construirFilasCronoMensual(
-      _tareasFiltradasCache,
-    );
+    _filasCronoMensualCache = [
+      ..._construirFilasCronoMensual(_tareasFiltradasCache),
+      if (_verExcluidasEnMatriz && _canViewExcluidasStandby)
+        ..._construirFilasExcluidas(),
+    ];
+  }
+
+  /// Filas de seguimiento de las tareas excluidas del mes. Se marcan con `EX`
+  /// en su fecha objetivo y desaparecen solas al cambiar de periodo.
+  List<_FilaCrono> _construirFilasExcluidas() {
+    return _excluidasFiltradas
+        .where((item) => item.estado.toUpperCase() == 'PENDIENTE')
+        .map(
+          (item) => _FilaCrono(
+            frecuencia: etiquetaFrecuencia(
+              item.frecuencia,
+              diaSemana: item.diaSemanaProgramado,
+              fechaReferencia: item.fechaObjetivo,
+            ),
+            diagnostico: item.descripcion.trim(),
+            ubicacion: (item.ubicacionNombre ?? 'ID ${item.ubicacionId}')
+                .trim(),
+            objeto: (item.elementoNombre ?? 'ID ${item.elementoId}').trim(),
+            responsable: item.operariosNombres.isEmpty
+                ? 'Sin asignar'
+                : item.operariosNombres.join(', '),
+            esCorrectiva: false,
+            esExcluida: true,
+            excluidaId: item.id,
+            porDia: {item.fechaObjetivo.day: 'EX'},
+          ),
+        )
+        .toList();
   }
 
   bool _esCanceladaPorReemplazo(TareaModel t) {
@@ -476,8 +537,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
     for (var i = 0; i < tarea.operariosNombres.length; i++) {
       final nombre = tarea.operariosNombres[i].trim();
       if (nombre.isEmpty) continue;
-      final cargo =
-          i < tarea.operariosCargos.length ? tarea.operariosCargos[i].trim() : '';
+      final cargo = i < tarea.operariosCargos.length
+          ? tarea.operariosCargos[i].trim()
+          : '';
       items.add(cargo.isEmpty ? nombre : '$nombre ($cargo)');
     }
     return items;
@@ -488,8 +550,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
     for (var i = 0; i < tarea.operariosNombres.length; i++) {
       final nombre = tarea.operariosNombres[i].trim();
       if (nombre.isEmpty) continue;
-      final cargo =
-          i < tarea.operariosCargos.length ? tarea.operariosCargos[i].trim() : '';
+      final cargo = i < tarea.operariosCargos.length
+          ? tarea.operariosCargos[i].trim()
+          : '';
       items.add(MapEntry(nombre, cargo));
     }
     return items;
@@ -773,6 +836,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
       }
 
       if (!mounted) return;
+
+      unawaited(_cargarTrazabilidadTareas(filtradas));
+      unawaited(_cargarInformeExcluidas());
 
       setState(() {
         _tareasMes = filtradas;
@@ -1401,7 +1467,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
       final esCorrectiva = (t.tipo ?? '').trim().toUpperCase() == 'CORRECTIVA';
       final ubic = (t.ubicacionNombre ?? 'ID ${t.ubicacionId}').trim();
       final objeto = (_nombreObjeto(t) ?? 'ID ${t.elementoId}').trim();
-      final freq = (t.frecuencia ?? '—').trim();
+      final freq = etiquetaFrecuencia(
+        t.frecuencia,
+        diaSemana: t.diaSemanaProgramado,
+        fechaReferencia: t.fechaInicio.toLocal(),
+      );
       final diag = (t.descripcion).trim();
 
       final operarios = [...t.operariosNombres]..sort();
@@ -1424,6 +1494,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
           objeto: objeto,
           responsable: resp,
           esCorrectiva: esCorrectiva,
+          esExcluida: false,
           porDia: {},
         ),
       );
@@ -1436,7 +1507,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     final list = rows.values.toList();
     list.sort((a, b) {
-      final c1 = a.frecuencia.compareTo(b.frecuencia);
+      final c1 = compararPorFrecuencia(a.frecuencia, b.frecuencia);
       if (c1 != 0) return c1;
       final c2 = a.diagnostico.compareTo(b.diagnostico);
       if (c2 != 0) return c2;
@@ -1467,6 +1538,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
           return 30;
         case 'AP':
           return 20;
+        case 'EX':
+          return 15;
         default:
           return s.isEmpty ? 0 : 10;
       }
@@ -1493,6 +1566,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
         return Colors.green.shade800;
       case 'AP':
         return Colors.teal.shade800;
+      case 'EX':
+        return Colors.orange.shade900;
       default:
         return Colors.grey.shade900;
     }
@@ -1683,11 +1758,14 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
                   // Body
                   ...filas.map((f) {
-                    final colorFila = f.esCorrectiva
+                    final colorFila = f.esExcluida
+                        ? const Color(0xFFFFF8EE)
+                        : f.esCorrectiva
                         ? const Color(0xFFFFF7F7)
                         : Colors.white;
                     final colorCeldaCorrectiva = const Color(0xFFFDE2E1);
                     final colorTextoCorrectiva = const Color(0xFFB23A33);
+                    final colorCeldaExcluida = const Color(0xFFFFE7C2);
 
                     return Row(
                       children: [
@@ -1758,11 +1836,15 @@ class _CronogramaPageState extends State<CronogramaPage> {
                           final val = f.porDia[dia] ?? '';
 
                           return GestureDetector(
-                            onTap: () => _abrirDia(dia),
+                            onTap: () => f.esExcluida && f.excluidaId != null
+                                ? _abrirDetalleExcluidaPorId(f.excluidaId!)
+                                : _abrirDia(dia),
                             child: cellBox(
                               w: wDia,
                               h: hFila,
-                              color: val.isNotEmpty && f.esCorrectiva
+                              color: val.isNotEmpty && f.esExcluida
+                                  ? colorCeldaExcluida
+                                  : val.isNotEmpty && f.esCorrectiva
                                   ? colorCeldaCorrectiva
                                   : dom
                                   ? Colors.yellow.shade200
@@ -2203,12 +2285,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
         ? 'Sin maquinaria planificada'
         : maquinariaLista
               .map((m) {
-                String base = 'ID ${m.maquinariaId ?? '-'}';
-                if (m.tipo != null && m.tipo!.trim().isNotEmpty) {
-                  base += ' – ${m.tipo}';
-                }
-                if (m.cantidad != null) base += ' (${m.cantidad} h / unidades)';
-                return base;
+                // La preventiva declara el tipo necesario; la máquina concreta
+                // se asigna desde el cronograma de maquinaria.
+                final tipo = m.tipoEnum?.label ?? m.tipo ?? 'Sin tipo';
+                final cantidad = (m.cantidad ?? 1).round();
+                return cantidad > 1 ? '$tipo × $cantidad' : tipo;
               })
               .join('\n');
 
@@ -2234,8 +2315,22 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 addRow('descripcion', 'Descripción', t.descripcion);
                 addRow('estado', 'Estado', t.estado ?? '—');
                 addRow('tipo', 'Tipo', t.tipo ?? '—');
-                addRow('frecuencia', 'Frecuencia', t.frecuencia ?? '—');
+                addRow(
+                  'frecuencia',
+                  'Frecuencia',
+                  etiquetaFrecuencia(
+                    t.frecuencia,
+                    diaSemana: t.diaSemanaProgramado,
+                    fechaReferencia: t.fechaInicio.toLocal(),
+                  ),
+                );
                 addRow('prioridad', 'Prioridad', prioridadLabel);
+                rows.add(const SizedBox(height: 8));
+                rows.add(
+                  AuditoriaTrazabilidad(
+                    trazabilidad: _trazabilidadTareas[t.id.toString()],
+                  ),
+                );
                 rows.add(const SizedBox(height: 8));
                 addRow('fechaInicio', 'Fecha inicio', fechaIniStr);
                 addRow('fechaFin', 'Fecha fin', fechaFinStr);
@@ -2546,6 +2641,25 @@ class _CronogramaPageState extends State<CronogramaPage> {
           Expanded(
             child: Column(
               children: [
+                if (_vista == _VistaCronograma.mensual &&
+                    _canViewExcluidasStandby)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: FilterChip(
+                        selected: _verExcluidasEnMatriz,
+                        avatar: const Icon(Icons.event_busy, size: 16),
+                        label: Text(
+                          'Ver excluidas del mes (${_excluidasFiltradas.length})',
+                        ),
+                        onSelected: (value) => setState(() {
+                          _verExcluidasEnMatriz = value;
+                          _recalcularColeccionesDerivadas();
+                        }),
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: _vista == _VistaCronograma.mensual
                       ? _buildCronogramaMensualTipoFoto()
@@ -3189,6 +3303,180 @@ class _CronogramaPageState extends State<CronogramaPage> {
     );
   }
 
+  /// Carga la trazabilidad del mes. Es informativa: si falla, el cronograma
+  /// se sigue mostrando sin el bloque de auditoría.
+  Future<void> _cargarTrazabilidadTareas(List<TareaModel> tareas) async {
+    if (tareas.isEmpty) {
+      if (mounted) setState(() => _trazabilidadTareas = const {});
+      return;
+    }
+
+    try {
+      final mapa = await _auditoriaApi.trazabilidad(
+        nit: widget.nit,
+        entidad: 'Tarea',
+        entidadIds: tareas.map((t) => t.id.toString()).toList(),
+      );
+      if (!mounted) return;
+      setState(() => _trazabilidadTareas = mapa);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _trazabilidadTareas = const {});
+    }
+  }
+
+  /// Informativo: si falla no debe impedir ver el cronograma.
+  Future<void> _cargarInformeExcluidas() async {
+    if (!_canViewExcluidasStandby) return;
+    try {
+      final data = await _cronogramaApi.informeExcluidas(
+        nit: widget.nit,
+        anio: _anioActual,
+        mes: _mesActual,
+      );
+      if (!mounted) return;
+      setState(() => _informeExcluidas = data);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _informeExcluidas = const {});
+    }
+  }
+
+  /// Sección del informe con las excluidas programadas posteriormente, las
+  /// tareas que se desplazaron para dar espacio y quién ejecutó cada acción.
+  Widget _buildSeccionInformeExcluidas() {
+    final programadas =
+        ((_informeExcluidas['programadasPosteriormente'] as List?) ?? const [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+    final excepciones =
+        ((_informeExcluidas['excepcionesOperario'] as List?) ?? const [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+    final pendientes = ((_informeExcluidas['pendientes'] as List?) ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+
+    if (programadas.isEmpty && excepciones.isEmpty && pendientes.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    String actorDe(Map<String, dynamic> item) {
+      final actor = item['actor'] as Map?;
+      final nombre = actor?['nombre']?.toString();
+      final rol = actor?['rol']?.toString();
+      if (nombre == null || nombre.trim().isEmpty) return 'el sistema';
+      return rol == null || rol.isEmpty ? nombre : '$nombre ($rol)';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Tareas excluidas del periodo',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+          ),
+          const SizedBox(height: 8),
+          if (programadas.isNotEmpty) ...[
+            const Text(
+              'Programadas posteriormente',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            ...programadas.map((item) {
+              final desplazadas =
+                  ((item['tareasDesplazadas'] as List?) ?? const [])
+                      .map((e) => Map<String, dynamic>.from(e as Map))
+                      .toList();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '• ${item['descripcion'] ?? '—'} — programada por ${actorDe(item)}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    if (desplazadas.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 14, top: 2),
+                        child: Text(
+                          'Se ubicó en un hueco libre, sin desplazar tareas.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      )
+                    else
+                      ...desplazadas.map(
+                        (d) => Padding(
+                          padding: const EdgeInsets.only(left: 14, top: 2),
+                          child: Text(
+                            '↳ ${d['descripcion'] ?? '—'} — ${(d['accion'] ?? '').toString().toLowerCase()}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade800,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+          ],
+          if (excepciones.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Excepciones de operario',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            ...excepciones.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '• ${item['descripcion'] ?? '—'}: '
+                  '${((item['operariosOriginales'] as List?) ?? const []).join(', ')} → '
+                  '${((item['operariosNuevos'] as List?) ?? const []).join(', ')} '
+                  '(aplicado por ${actorDe(item)})',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
+          ],
+          if (pendientes.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Pendientes por programar (${pendientes.length})',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            ...pendientes.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text(
+                  '• ${item['descripcion'] ?? '—'} — ${item['motivoMensaje'] ?? item['motivoTipo'] ?? ''}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
+          ],
+          const Divider(height: 24),
+        ],
+      ),
+    );
+  }
+
+  void _abrirDetalleExcluidaPorId(int excluidaId) {
+    final excluida = _excluidasMes.where((e) => e.id == excluidaId).firstOrNull;
+    if (excluida == null) return;
+    _mostrarDetalleExcluidaStandby(excluida, context);
+  }
+
   void _mostrarDetalleExcluidaStandby(
     PreventivaExcluidaBorradorModel item,
     BuildContext context,
@@ -3209,16 +3497,53 @@ class _CronogramaPageState extends State<CronogramaPage> {
             children: [
               Text(
                 item.descripcion,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 12),
-              Text('Fecha objetivo: ${DateFormat('dd/MM/yyyy', 'es').format(item.fechaObjetivo)}'),
+              Text(
+                'Fecha objetivo: ${DateFormat('dd/MM/yyyy', 'es').format(item.fechaObjetivo)}',
+              ),
               Text('Duración: ${item.duracionLabel}'),
               Text('Ubicación: ${item.ubicacionNombre ?? '—'}'),
               Text('Elemento: ${item.elementoNombre ?? '—'}'),
               Text('Operarios: $operarios'),
               Text('Motivo: $motivo'),
+              Text(
+                etiquetaFrecuenciaCompleta(
+                  item.frecuencia,
+                  diaSemana: item.diaSemanaProgramado,
+                  fechaReferencia: item.fechaObjetivo,
+                ),
+              ),
               const SizedBox(height: 12),
+              if (_canScheduleCorrectivasInCronograma) ...[
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton.tonalIcon(
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        _cambiarOperarioExcluida(item);
+                      },
+                      icon: const Icon(Icons.person_search, size: 18),
+                      label: const Text('Cambiar operario (excepción)'),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        _programarExcluidaDesplazandoTareas(item);
+                      },
+                      icon: const Icon(Icons.event_available, size: 18),
+                      label: const Text('Programar desplazando tareas'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
@@ -3264,7 +3589,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
             child: const Text('Cancelar'),
           ),
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
             child: const Text('Continuar'),
           ),
         ],
@@ -3272,6 +3598,339 @@ class _CronogramaPageState extends State<CronogramaPage> {
     );
     controller.dispose();
     return result;
+  }
+
+  /// Cambia el operario de una excluida del cronograma publicado. Es una
+  /// excepción puntual: no toca la definición preventiva ni los meses siguientes.
+  Future<void> _cambiarOperarioExcluida(
+    PreventivaExcluidaBorradorModel excluida,
+  ) async {
+    if (_accionExcluidaEnCurso) return;
+
+    // Se piden los operarios con disponibilidad en la ventana de la excluida.
+    final inicio = DateTime(
+      excluida.fechaObjetivo.year,
+      excluida.fechaObjetivo.month,
+      excluida.fechaObjetivo.day,
+      8,
+    );
+
+    setState(() => _accionExcluidaEnCurso = true);
+    List<Map<String, dynamic>> candidatos;
+    try {
+      candidatos = await _cronogramaApi.sugerirOperarios(
+        nit: widget.nit,
+        inicio: inicio,
+        fin: inicio.add(Duration(minutes: excluida.duracionMinutos)),
+        max: 20,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _accionExcluidaEnCurso = false);
+    }
+
+    if (!mounted) return;
+    if (candidatos.isEmpty) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text('Ningún operario tiene disponibilidad ese día.'),
+        ),
+      );
+      return;
+    }
+
+    final seleccionado = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text(
+              'Asignar otro operario solo para esta tarea',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'El plan preventivo no cambia: el próximo mes vuelve a programarse '
+              'con ${excluida.operariosNombres.isEmpty ? 'el operario original' : excluida.operariosNombres.join(', ')}.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 12),
+            ...candidatos.map(
+              (op) => ListTile(
+                leading: const Icon(Icons.person),
+                title: Text((op['nombre'] ?? op['id'] ?? '—').toString()),
+                onTap: () => Navigator.of(ctx).pop(op),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (seleccionado == null || !mounted) return;
+
+    final motivo = await _pedirMotivoReemplazoOpcional();
+    if (motivo == null || !mounted) return;
+
+    final nombreOperario =
+        (seleccionado['nombre'] ?? seleccionado['id'] ?? 'El operario')
+            .toString();
+
+    setState(() => _accionExcluidaEnCurso = true);
+    try {
+      await _cronogramaApi.reasignarOperarioExcluidaStandby(
+        nit: widget.nit,
+        excluidaId: excluida.id,
+        nuevoOperarioId: seleccionado['id'].toString(),
+        motivo: motivo.trim().isEmpty ? null : motivo,
+      );
+      await _cargarDatos();
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            'Excepción aplicada: $nombreOperario asumirá esta tarea.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _accionExcluidaEnCurso = false);
+    }
+  }
+
+  /// Programa una excluida desplazando una o varias tareas ya publicadas.
+  Future<void> _programarExcluidaDesplazandoTareas(
+    PreventivaExcluidaBorradorModel excluida, {
+    TareaModel? preseleccionada,
+    DateTime? fecha,
+  }) async {
+    if (_accionExcluidaEnCurso) return;
+
+    final dia = fecha ?? preseleccionada?.fechaInicio ?? excluida.fechaObjetivo;
+
+    setState(() => _accionExcluidaEnCurso = true);
+    Map<String, dynamic> opciones;
+    try {
+      opciones = await _cronogramaApi.opcionesReemplazoExcluida(
+        nit: widget.nit,
+        excluidaId: excluida.id,
+        fecha: dia,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _accionExcluidaEnCurso = false);
+    }
+
+    if (!mounted) return;
+
+    final seleccion = await _elegirTareasADesplazar(
+      excluida: excluida,
+      opciones: opciones,
+      preseleccionadaId: preseleccionada?.id,
+    );
+    if (seleccion == null || !mounted) return;
+
+    final motivo = await _pedirMotivoReemplazoOpcional();
+    if (motivo == null || !mounted) return;
+
+    final inicio = DateTime(
+      dia.year,
+      dia.month,
+      dia.day,
+      preseleccionada?.fechaInicio.hour ?? 8,
+      preseleccionada?.fechaInicio.minute ?? 0,
+    );
+
+    setState(() => _accionExcluidaEnCurso = true);
+    try {
+      final resp = await _cronogramaApi.programarExcluidaComoCorrectiva(
+        nit: widget.nit,
+        excluidaId: excluida.id,
+        fechaInicio: inicio,
+        fechaFin: inicio.add(Duration(minutes: excluida.duracionMinutos)),
+        reemplazarTareaIds: seleccion.isEmpty ? null : seleccion,
+        motivoReemplazo: motivo.trim().isEmpty ? null : motivo,
+      );
+
+      if (resp['ok'] == false) {
+        throw Exception(
+          (resp['message'] ??
+                  'No se pudo programar la excluida como correctiva.')
+              .toString(),
+        );
+      }
+
+      await _cargarDatos();
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            seleccion.isEmpty
+                ? 'Excluida programada como correctiva.'
+                : 'Excluida programada desplazando ${seleccion.length} tarea(s).',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _accionExcluidaEnCurso = false);
+    }
+  }
+
+  /// Hoja de selección múltiple: muestra cuántos minutos libera cada tarea y
+  /// cuántos faltan para que quepa la excluida.
+  Future<List<int>?> _elegirTareasADesplazar({
+    required PreventivaExcluidaBorradorModel excluida,
+    required Map<String, dynamic> opciones,
+    int? preseleccionadaId,
+  }) {
+    final lista = ((opciones['opciones'] as List?) ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    final combinacionMinima =
+        ((opciones['combinacionMinima'] as List?) ?? const [])
+            .map((e) => (e as num).toInt())
+            .toList();
+    final minutosFaltantes =
+        (opciones['minutosFaltantes'] as num?)?.toInt() ?? 0;
+
+    final seleccionados = <int>{
+      if (preseleccionadaId != null) preseleccionadaId,
+      ...combinacionMinima,
+    };
+
+    return showModalBottomSheet<List<int>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final liberados = lista
+              .where(
+                (t) => seleccionados.contains((t['tareaId'] as num).toInt()),
+              )
+              .fold<int>(
+                0,
+                (acc, t) =>
+                    acc + ((t['minutosQueLibera'] as num?)?.toInt() ?? 0),
+              );
+          final suficiente = liberados >= minutosFaltantes;
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Tareas a desplazar para "${excluida.descripcion}"',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    minutosFaltantes == 0
+                        ? 'Ya hay espacio libre: puedes programarla sin desplazar nada.'
+                        : 'Faltan $minutosFaltantes min. Seleccionadas: $liberados min.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: suficiente
+                          ? Colors.green.shade800
+                          : Colors.orange.shade900,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (lista.isEmpty)
+                    const Text(
+                      'No hay tareas publicadas ese día para desplazar.',
+                    )
+                  else
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: lista.map((t) {
+                          final id = (t['tareaId'] as num).toInt();
+                          final inicio = DateTime.parse(
+                            t['fechaInicio'].toString(),
+                          ).toLocal();
+                          final fin = DateTime.parse(
+                            t['fechaFin'].toString(),
+                          ).toLocal();
+                          return CheckboxListTile(
+                            value: seleccionados.contains(id),
+                            onChanged: (v) => setSheetState(() {
+                              if (v == true) {
+                                seleccionados.add(id);
+                              } else {
+                                seleccionados.remove(id);
+                              }
+                            }),
+                            title: Text(t['descripcion']?.toString() ?? '—'),
+                            subtitle: Text(
+                              'P${t['prioridad']} · '
+                              '${DateFormat('HH:mm').format(inicio)}-${DateFormat('HH:mm').format(fin)} · '
+                              'libera ${t['minutosQueLibera']} min',
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('Cancelar'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        onPressed: suficiente
+                            ? () =>
+                                  Navigator.of(ctx).pop(seleccionados.toList())
+                            : null,
+                        child: const Text('Programar'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _programarExcluidaComoCorrectiva({
@@ -3464,7 +4123,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
           child: _SidebarAgendaDia(
             weekStart: weekStart,
             dayIndex: _sidebarDiaIndex,
-            onDayIndexChanged: (value) => setState(() => _sidebarDiaIndex = value),
+            onDayIndexChanged: (value) =>
+                setState(() => _sidebarDiaIndex = value),
             modo: _sidebarAgendaModo,
             onModoChanged: _canViewExcluidasStandby
                 ? (value) => setState(() => _sidebarAgendaModo = value)
@@ -3663,6 +4323,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _buildSeccionInformeExcluidas(),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
@@ -4288,7 +4949,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       AppFeedback.showFromSnackBar(
         context,
         const SnackBar(
-          content: Text('No puedes programar correctivas desde excluidas en un día festivo.'),
+          content: Text(
+            'No puedes programar correctivas desde excluidas en un día festivo.',
+          ),
         ),
       );
       return;
@@ -4306,7 +4969,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       AppFeedback.showFromSnackBar(
         context,
         const SnackBar(
-          content: Text('No hay un hueco libre válido para programar esta excluida como correctiva.'),
+          content: Text(
+            'No hay un hueco libre válido para programar esta excluida como correctiva.',
+          ),
         ),
       );
       return;
@@ -4319,7 +4984,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       startMinute ~/ 60,
       startMinute % 60,
     );
-    final nuevoFin = nuevoInicio.add(Duration(minutes: dragged.excluida.duracionMinutos));
+    final nuevoFin = nuevoInicio.add(
+      Duration(minutes: dragged.excluida.duracionMinutos),
+    );
 
     await widget.onProgramExcluidaComoCorrectiva!(
       excluida: dragged.excluida,
@@ -4338,7 +5005,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       AppFeedback.showFromSnackBar(
         context,
         const SnackBar(
-          content: Text('Solo puedes soltar una excluida sobre una preventiva publicada.'),
+          content: Text(
+            'Solo puedes soltar una excluida sobre una preventiva publicada.',
+          ),
         ),
       );
       return;
@@ -4359,7 +5028,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     }
 
     final nuevoInicio = tareaObjetivo.fechaInicio.toLocal();
-    final nuevoFin = nuevoInicio.add(Duration(minutes: dragged.excluida.duracionMinutos));
+    final nuevoFin = nuevoInicio.add(
+      Duration(minutes: dragged.excluida.duracionMinutos),
+    );
     await widget.onProgramExcluidaComoCorrectiva!(
       excluida: dragged.excluida,
       nuevoInicio: nuevoInicio,
@@ -4431,17 +5102,21 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                       localDy: (local?.dy ?? 0) + top,
                     );
                   },
-                  builder: (context, candidateData, rejectedData) => AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    decoration: BoxDecoration(
-                      color: candidateData.isNotEmpty
-                          ? Colors.orange.withValues(alpha: 0.08)
-                          : Colors.transparent,
-                      border: candidateData.isNotEmpty
-                          ? Border.all(color: Colors.orange.withValues(alpha: 0.4), width: 1.2)
-                          : null,
-                    ),
-                  ),
+                  builder: (context, candidateData, rejectedData) =>
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
+                        decoration: BoxDecoration(
+                          color: candidateData.isNotEmpty
+                              ? Colors.orange.withValues(alpha: 0.08)
+                              : Colors.transparent,
+                          border: candidateData.isNotEmpty
+                              ? Border.all(
+                                  color: Colors.orange.withValues(alpha: 0.4),
+                                  width: 1.2,
+                                )
+                              : null,
+                        ),
+                      ),
                 );
               },
             ),
@@ -4878,11 +5553,16 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 },
                               ),
                               ValueListenableBuilder<bool>(
-                                valueListenable: _weekExcluidaDragActiveNotifier,
+                                valueListenable:
+                                    _weekExcluidaDragActiveNotifier,
                                 builder: (context, dragActivo, _) {
-                                  if (!dragActivo) return const SizedBox.shrink();
+                                  if (!dragActivo) {
+                                    return const SizedBox.shrink();
+                                  }
                                   return Stack(
-                                    children: _buildExcluidaDropTargets(colWidth),
+                                    children: _buildExcluidaDropTargets(
+                                      colWidth,
+                                    ),
                                   );
                                 },
                               ),
@@ -5199,10 +5879,14 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   height: height,
                                   child: DragTarget<_DraggedWeekExcluida>(
                                     onWillAcceptWithDetails: (details) {
-                                      return widget.onProgramExcluidaComoCorrectiva != null &&
-                                          (t.tipo ?? '').trim().toUpperCase() == 'PREVENTIVA' &&
+                                      return widget
+                                                  .onProgramExcluidaComoCorrectiva !=
+                                              null &&
+                                          (t.tipo ?? '').trim().toUpperCase() ==
+                                              'PREVENTIVA' &&
                                           _puedeReemplazarPreventiva(
-                                            prioridadCorrectiva: details.data.excluida.prioridad,
+                                            prioridadCorrectiva:
+                                                details.data.excluida.prioridad,
                                             prioridadPreventiva: t.prioridad,
                                           );
                                     },
@@ -5212,48 +5896,63 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                         tareaObjetivo: t,
                                       );
                                     },
-                                    builder: (context, candidateData, rejectedData) {
-                                      var dropState = _ExcluidaDropState.none;
-                                      if (candidateData.isNotEmpty) {
-                                        final dragged = candidateData.first;
-                                        if (dragged == null) {
-                                          dropState = _ExcluidaDropState.blocked;
-                                        } else {
-                                        final allow = _puedeReemplazarPreventiva(
-                                          prioridadCorrectiva:
-                                              dragged.excluida.prioridad,
-                                          prioridadPreventiva: t.prioridad,
-                                        );
-                                        dropState = allow
-                                            ? _ExcluidaDropState.allowed
-                                            : _ExcluidaDropState.blocked;
-                                        }
-                                      } else if (rejectedData.isNotEmpty) {
-                                        dropState = _ExcluidaDropState.blocked;
-                                      }
-                                      if (dropState == _ExcluidaDropState.none) {
-                                        return draggableCard;
-                                      }
-                                      final borderColor =
-                                          dropState == _ExcluidaDropState.allowed
-                                          ? Colors.green.shade700
-                                          : Colors.red.shade700;
-                                      final overlayColor =
-                                          dropState == _ExcluidaDropState.allowed
-                                          ? Colors.green.withValues(alpha: 0.14)
-                                          : Colors.red.withValues(alpha: 0.14);
-                                      return Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(10),
-                                          border: Border.all(
-                                            color: borderColor,
-                                            width: 2,
-                                          ),
-                                          color: overlayColor,
-                                        ),
-                                        child: draggableCard,
-                                      );
-                                    },
+                                    builder:
+                                        (context, candidateData, rejectedData) {
+                                          var dropState =
+                                              _ExcluidaDropState.none;
+                                          if (candidateData.isNotEmpty) {
+                                            final dragged = candidateData.first;
+                                            if (dragged == null) {
+                                              dropState =
+                                                  _ExcluidaDropState.blocked;
+                                            } else {
+                                              final allow =
+                                                  _puedeReemplazarPreventiva(
+                                                    prioridadCorrectiva: dragged
+                                                        .excluida
+                                                        .prioridad,
+                                                    prioridadPreventiva:
+                                                        t.prioridad,
+                                                  );
+                                              dropState = allow
+                                                  ? _ExcluidaDropState.allowed
+                                                  : _ExcluidaDropState.blocked;
+                                            }
+                                          } else if (rejectedData.isNotEmpty) {
+                                            dropState =
+                                                _ExcluidaDropState.blocked;
+                                          }
+                                          if (dropState ==
+                                              _ExcluidaDropState.none) {
+                                            return draggableCard;
+                                          }
+                                          final borderColor =
+                                              dropState ==
+                                                  _ExcluidaDropState.allowed
+                                              ? Colors.green.shade700
+                                              : Colors.red.shade700;
+                                          final overlayColor =
+                                              dropState ==
+                                                  _ExcluidaDropState.allowed
+                                              ? Colors.green.withValues(
+                                                  alpha: 0.14,
+                                                )
+                                              : Colors.red.withValues(
+                                                  alpha: 0.14,
+                                                );
+                                          return Container(
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: borderColor,
+                                                width: 2,
+                                              ),
+                                              color: overlayColor,
+                                            ),
+                                            child: draggableCard,
+                                          );
+                                        },
                                   ),
                                 );
                               }),
@@ -5506,9 +6205,7 @@ class _SidebarAgendaDia extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppTheme.primary.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: AppTheme.primary.withValues(alpha: 0.25),
-            ),
+            border: Border.all(color: AppTheme.primary.withValues(alpha: 0.25)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -5517,7 +6214,10 @@ class _SidebarAgendaDia extends StatelessWidget {
                 t.descripcion,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
               ),
               const SizedBox(height: 6),
               Text(
@@ -5550,7 +6250,10 @@ class _SidebarAgendaDia extends StatelessWidget {
                 item.descripcion,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
@@ -5583,8 +6286,12 @@ class _SidebarAgendaDia extends StatelessWidget {
         maxSimultaneousDrags: 1,
         onDragStarted: () => _weekExcluidaDragActiveNotifier.value = true,
         onDragEnd: (_) => _weekExcluidaDragActiveNotifier.value = false,
-        onDraggableCanceled: (_, __) => _weekExcluidaDragActiveNotifier.value = false,
-        feedback: Material(color: Colors.transparent, child: SizedBox(width: 280, child: card)),
+        onDraggableCanceled: (_, __) =>
+            _weekExcluidaDragActiveNotifier.value = false,
+        feedback: Material(
+          color: Colors.transparent,
+          child: SizedBox(width: 280, child: card),
+        ),
         childWhenDragging: Opacity(opacity: 0.35, child: card),
         child: card,
       );
@@ -5603,7 +6310,10 @@ class _SidebarAgendaDia extends StatelessWidget {
               children: [
                 Text(
                   modo == _SidebarAgendaModo.agenda ? 'Agenda' : 'Excluidas',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
                 const Spacer(),
                 DropdownButton<int>(
@@ -5619,7 +6329,10 @@ class _SidebarAgendaDia extends StatelessWidget {
                       'Sáb',
                       'Dom',
                     ][i];
-                    return DropdownMenuItem(value: i, child: Text('$label ${d.day}'));
+                    return DropdownMenuItem(
+                      value: i,
+                      child: Text('$label ${d.day}'),
+                    );
                   }),
                   onChanged: (v) {
                     if (v == null) return;
@@ -5681,8 +6394,10 @@ class _SidebarAgendaDia extends StatelessWidget {
                           )
                         : ListView.separated(
                             itemCount: tareasDia.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, i) => buildTarea(tareasDia[i]),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, i) =>
+                                buildTarea(tareasDia[i]),
                           ))
                   : (excluidas.isEmpty
                         ? const Center(
@@ -5694,8 +6409,10 @@ class _SidebarAgendaDia extends StatelessWidget {
                           )
                         : ListView.separated(
                             itemCount: excluidas.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 8),
-                            itemBuilder: (context, i) => buildExcluida(excluidas[i]),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, i) =>
+                                buildExcluida(excluidas[i]),
                           )),
             ),
           ],
@@ -5787,6 +6504,13 @@ class _FilaCrono {
   final String objeto;
   final String responsable;
   final bool esCorrectiva;
+
+  /// Fila de una tarea excluida: no está programada, se muestra para su
+  /// seguimiento durante el mes.
+  final bool esExcluida;
+
+  /// Id de la excluida cuando [esExcluida] es true.
+  final int? excluidaId;
   final Map<int, String> porDia;
 
   _FilaCrono({
@@ -5797,5 +6521,7 @@ class _FilaCrono {
     required this.responsable,
     required this.esCorrectiva,
     required this.porDia,
+    this.esExcluida = false,
+    this.excluidaId,
   });
 }

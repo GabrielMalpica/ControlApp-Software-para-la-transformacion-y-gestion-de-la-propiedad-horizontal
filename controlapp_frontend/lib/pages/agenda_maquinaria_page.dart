@@ -176,6 +176,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
     return salida;
   }
 
+  // ignore: unused_element
   List<String> _observaciones(List<ReservaMaquinaria> reservas) {
     final set = <String>{};
     for (final r in reservas) {
@@ -189,6 +190,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
   DateTime _dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
   // ✅ lógica E/P/R basada en la fecha real de la TAREA
+  // ignore: unused_element
   String _codeForDate(DateTime date, ReservaMaquinaria r) {
     final d = _dayOnly(date);
 
@@ -444,6 +446,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
             ],
           );
 
+          // ignore: unused_element
           Widget detalle() => _seleccionada == null
               ? const Center(
                   child: Text(
@@ -502,6 +505,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
 /// PLANILLA TIPO EXCEL (E/P/R)
 /// SIN GRUPOS 1-4 + UI más linda
 /// ===============================
+// ignore: unused_element
 class _PlanillaProgramacion extends StatelessWidget {
   final String titulo;
   final String subTitulo;

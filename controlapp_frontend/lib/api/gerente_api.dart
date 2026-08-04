@@ -1,12 +1,96 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:http/http.dart' as http;
+
+import '../model/conjunto_excel_model.dart';
 import '../model/conjunto_model.dart';
 import '../model/usuario_model.dart';
-import 'dart:convert';
-
 import '../service/api_client.dart';
 import '../service/app_constants.dart';
+import '../service/app_error.dart';
+import '../service/session_service.dart';
 
 class GerenteApi {
   final ApiClient _apiClient = ApiClient();
+  final SessionService _session = SessionService();
+
+  Future<Map<String, String>> _authHeaders() async {
+    final token = await _session.getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('Token requerido');
+    }
+    return {
+      'Authorization': 'Bearer $token',
+      'x-empresa-id': AppConstants.empresaNit,
+      'Accept': 'application/json',
+    };
+  }
+
+  Future<CargaConjuntoResult> cargarConjuntoMasivo({
+    required PlatformFile file,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('${AppConstants.gerenteBase}/conjuntos/carga-masiva'),
+    );
+    request.headers.addAll(await _authHeaders());
+    final filename = file.name.trim().isEmpty
+        ? 'plantilla_conjunto.xlsx'
+        : file.name.trim();
+
+    if (kIsWeb) {
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception('No se pudo leer el archivo seleccionado.');
+      }
+      request.files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: filename),
+      );
+    } else {
+      final path = file.path;
+      if (path == null || path.trim().isEmpty) {
+        throw Exception('No se pudo leer la ruta del archivo seleccionado.');
+      }
+      request.files.add(
+        await http.MultipartFile.fromPath('file', path, filename: filename),
+      );
+    }
+
+    final response = await request.send();
+    final body = await response.stream.bytesToString();
+    if (response.statusCode == 200 ||
+        response.statusCode == 201 ||
+        response.statusCode == 422) {
+      return CargaConjuntoResult.fromJson(
+        jsonDecode(body) as Map<String, dynamic>,
+      );
+    }
+
+    throw Exception(
+      AppError.fromResponseBody(
+        body,
+        fallback: 'No se pudo procesar la plantilla del conjunto.',
+      ),
+    );
+  }
+
+  Future<Uint8List> descargarPlantillaConjunto() async {
+    final response = await _apiClient.get(
+      '${AppConstants.gerenteBase}/conjuntos/plantilla',
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          response.body,
+          fallback: 'No se pudo descargar la plantilla.',
+        ),
+      );
+    }
+    return response.bodyBytes;
+  }
 
   Future<void> asignarOperario({
     required String usuarioId,
@@ -327,6 +411,8 @@ class GerenteApi {
     double? valorMensual,
     DateTime? fechaInicioContrato,
     DateTime? fechaFinContrato,
+    List<String>? consignasEspeciales,
+    List<String>? valorAgregado,
     String? administradorId,
     List<String>? operariosIds,
     List<Map<String, dynamic>>? ubicaciones,
@@ -344,6 +430,10 @@ class GerenteApi {
     if (fechaFinContrato != null) {
       body['fechaFinContrato'] = fechaFinContrato.toIso8601String();
     }
+    if (consignasEspeciales != null) {
+      body['consignasEspeciales'] = consignasEspeciales;
+    }
+    if (valorAgregado != null) body['valorAgregado'] = valorAgregado;
     if (administradorId != null) body['administradorId'] = administradorId;
     if (operariosIds != null) body['operariosIds'] = operariosIds;
     if (ubicaciones != null) body['ubicaciones'] = ubicaciones;

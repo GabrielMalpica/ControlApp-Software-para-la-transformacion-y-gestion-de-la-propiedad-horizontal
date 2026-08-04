@@ -7,7 +7,9 @@ import '../api/gerente_api.dart';
 import '../model/preventiva_model.dart' as pm;
 import '../model/conjunto_model.dart';
 import '../model/usuario_model.dart';
+import '../service/app_error.dart';
 import '../service/theme.dart';
+import '../utils/frecuencia_utils.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'crear_preventiva_page.dart' as ce;
 
@@ -27,6 +29,11 @@ class _PreventivasPageState extends State<PreventivasPage> {
 
   bool _cargando = true;
   bool _generando = false;
+
+  /// Modo seleccion multiple para borrar varias preventivas de una vez.
+  bool _modoSeleccion = false;
+  bool _eliminandoLote = false;
+  final Set<int> _seleccionadas = <int>{};
 
   Conjunto? _conjunto;
   List<pm.DefinicionPreventiva> _items = [];
@@ -162,27 +169,6 @@ class _PreventivasPageState extends State<PreventivasPage> {
         .toList()
       ..sort();
     return nombres;
-  }
-
-  Color _colorFrecuencia(String frecuencia) {
-    switch (frecuencia) {
-      case 'DIARIA':
-        return Colors.green;
-      case 'SEMANAL':
-        return Colors.blue;
-      case 'MENSUAL':
-        return Colors.purple;
-      case 'BIMESTRAL':
-        return Colors.indigo;
-      case 'TRIMESTRAL':
-        return Colors.teal;
-      case 'SEMESTRAL':
-        return Colors.orange;
-      case 'ANUAL':
-        return Colors.brown;
-      default:
-        return Colors.grey;
-    }
   }
 
   String _textoDimensionDuracion(pm.DefinicionPreventiva def) {
@@ -377,16 +363,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
                       labelText: 'Frecuencia',
                       border: OutlineInputBorder(),
                     ),
-                    items: const [
-                      'TODAS',
-                      'DIARIA',
-                      'SEMANAL',
-                      'MENSUAL',
-                      'BIMESTRAL',
-                      'TRIMESTRAL',
-                      'SEMESTRAL',
-                      'ANUAL',
-                    ]
+                    items: ['TODAS', ...frecuenciasPreventivas]
                         .map(
                           (item) => DropdownMenuItem(
                             value: item,
@@ -537,6 +514,105 @@ class _PreventivasPageState extends State<PreventivasPage> {
     }
   }
 
+  void _entrarModoSeleccion(pm.DefinicionPreventiva def) {
+    setState(() {
+      _modoSeleccion = true;
+      _seleccionadas
+        ..clear()
+        ..add(def.id);
+    });
+  }
+
+  void _salirModoSeleccion() {
+    setState(() {
+      _modoSeleccion = false;
+      _seleccionadas.clear();
+    });
+  }
+
+  void _alternarSeleccion(pm.DefinicionPreventiva def) {
+    setState(() {
+      if (!_seleccionadas.remove(def.id)) {
+        _seleccionadas.add(def.id);
+      }
+      // Al desmarcar la ultima se sale del modo seleccion.
+      if (_seleccionadas.isEmpty) _modoSeleccion = false;
+    });
+  }
+
+  void _seleccionarTodasVisibles(List<pm.DefinicionPreventiva> visibles) {
+    setState(() {
+      final ids = visibles.map((def) => def.id).toSet();
+      final yaTodas = _seleccionadas.containsAll(ids);
+      _seleccionadas
+        ..clear()
+        ..addAll(yaTodas ? const <int>[] : ids);
+      if (_seleccionadas.isEmpty) _modoSeleccion = false;
+    });
+  }
+
+  Future<void> _eliminarSeleccionadas() async {
+    if (_seleccionadas.isEmpty || _eliminandoLote) return;
+
+    final total = _seleccionadas.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Eliminar preventivas'),
+        content: Text(
+          total == 1
+              ? '¿Eliminar la preventiva seleccionada?'
+              : '¿Eliminar las $total preventivas seleccionadas?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    setState(() => _eliminandoLote = true);
+    try {
+      final res = await _preventivaApi.eliminarVarias(
+        widget.nit,
+        _seleccionadas.toList(),
+      );
+      final eliminadas = (res['eliminadas'] as num?)?.toInt() ?? total;
+      await _cargar();
+      if (!mounted) return;
+      _salirModoSeleccion();
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            eliminadas == 1
+                ? 'Preventiva eliminada'
+                : '$eliminadas preventivas eliminadas',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text(AppError.messageOf(e)),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _eliminandoLote = false);
+    }
+  }
+
   Future<void> _eliminar(pm.DefinicionPreventiva def) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -612,13 +688,6 @@ class _PreventivasPageState extends State<PreventivasPage> {
 
     setState(() => _generando = true);
     try {
-      await _preventivaApi.generarCronogramaMensual(
-        nit: widget.nit,
-        anio: anio,
-        mes: mes,
-        tamanoBloqueMinutos: 60,
-      );
-
       if (!mounted) return;
 
       await Navigator.of(context).push(
@@ -651,31 +720,68 @@ class _PreventivasPageState extends State<PreventivasPage> {
 
     return Scaffold(
       backgroundColor: AppTheme.background,
-      appBar: AppBar(
-        backgroundColor: primary,
-        title: Text(
-          'Tareas preventivas - ${widget.nit}',
-          style: const TextStyle(color: Colors.white),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(onPressed: _cargar, icon: const Icon(Icons.refresh)),
-          IconButton(
-            onPressed: _generando ? null : _generarCronogramaBorradorYVer,
-            icon: _generando
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
-                    ),
-                  )
-                : const Icon(Icons.calendar_view_month),
-            tooltip: 'Generar cronograma borrador',
-          ),
-        ],
-      ),
+      appBar: _modoSeleccion
+          ? AppBar(
+              backgroundColor: primary,
+              iconTheme: const IconThemeData(color: Colors.white),
+              leading: IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: 'Salir de la selección',
+                onPressed: _salirModoSeleccion,
+              ),
+              title: Text(
+                '${_seleccionadas.length} seleccionadas',
+                style: const TextStyle(color: Colors.white),
+              ),
+              actions: [
+                IconButton(
+                  onPressed: visibles.isEmpty
+                      ? null
+                      : () => _seleccionarTodasVisibles(visibles),
+                  icon: const Icon(Icons.select_all),
+                  tooltip: 'Seleccionar/deseleccionar todas las visibles',
+                ),
+                IconButton(
+                  onPressed: _eliminandoLote ? null : _eliminarSeleccionadas,
+                  icon: _eliminandoLote
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(Colors.white),
+                          ),
+                        )
+                      : const Icon(Icons.delete),
+                  tooltip: 'Eliminar seleccionadas',
+                ),
+              ],
+            )
+          : AppBar(
+              backgroundColor: primary,
+              title: Text(
+                'Tareas preventivas - ${widget.nit}',
+                style: const TextStyle(color: Colors.white),
+              ),
+              iconTheme: const IconThemeData(color: Colors.white),
+              actions: [
+                IconButton(onPressed: _cargar, icon: const Icon(Icons.refresh)),
+                IconButton(
+                  onPressed: _generando ? null : _generarCronogramaBorradorYVer,
+                  icon: _generando
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(Colors.white),
+                          ),
+                        )
+                      : const Icon(Icons.calendar_view_month),
+                  tooltip: 'Generar cronograma borrador',
+                ),
+              ],
+            ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _abrirFormulario(),
         child: const Icon(Icons.add),
@@ -719,22 +825,42 @@ class _PreventivasPageState extends State<PreventivasPage> {
                                 ? 'Sin operarios asignados'
                                 : nombresOps.join(', ');
 
+                            final seleccionada = _seleccionadas.contains(
+                              def.id,
+                            );
+
                             return Card(
                               margin: const EdgeInsets.only(bottom: 12),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
+                                side: seleccionada
+                                    ? BorderSide(color: primary, width: 2)
+                                    : BorderSide.none,
                               ),
                               elevation: 3,
                               child: ListTile(
-                                onTap: () => _abrirFormulario(inicial: def),
-                                contentPadding: const EdgeInsets.all(16),
-                                leading: Icon(
-                                  def.activo
-                                      ? Icons.rule_folder
-                                      : Icons.rule_folder_outlined,
-                                  color: _colorFrecuencia(def.frecuencia),
-                                  size: 32,
+                                selected: seleccionada,
+                                selectedTileColor: primary.withValues(
+                                  alpha: 0.06,
                                 ),
+                                onLongPress: () => _entrarModoSeleccion(def),
+                                onTap: () => _modoSeleccion
+                                    ? _alternarSeleccion(def)
+                                    : _abrirFormulario(inicial: def),
+                                contentPadding: const EdgeInsets.all(16),
+                                leading: _modoSeleccion
+                                    ? Checkbox(
+                                        value: seleccionada,
+                                        onChanged: (_) =>
+                                            _alternarSeleccion(def),
+                                      )
+                                    : Icon(
+                                        def.activo
+                                            ? Icons.rule_folder
+                                            : Icons.rule_folder_outlined,
+                                        color: colorFrecuencia(def.frecuencia),
+                                        size: 32,
+                                      ),
                                 title: Text(
                                   def.descripcion,
                                   style: const TextStyle(
@@ -785,10 +911,15 @@ class _PreventivasPageState extends State<PreventivasPage> {
                                               ),
                                               const SizedBox(width: 4),
                                               Text(
-                                                def.frecuencia,
+                                                etiquetaFrecuencia(
+                                                  def.frecuencia,
+                                                  diaSemana:
+                                                      def.diaSemanaProgramado,
+                                                  diaMes: def.diaMesProgramado,
+                                                ),
                                                 style: TextStyle(
                                                   fontWeight: FontWeight.bold,
-                                                  color: _colorFrecuencia(
+                                                  color: colorFrecuencia(
                                                     def.frecuencia,
                                                   ),
                                                 ),

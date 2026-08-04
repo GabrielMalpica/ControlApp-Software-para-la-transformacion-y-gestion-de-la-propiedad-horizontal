@@ -2,7 +2,6 @@ import 'package:flutter_application_1/model/tarea_model.dart';
 
 enum EstadoTarea { PENDIENTE, EN_PROCESO, COMPLETADA, CANCELADA }
 enum TipoTarea { CORRECTIVA, PREVENTIVA }
-enum Frecuencia { DIARIA, SEMANAL, MENSUAL, TRIMESTRAL, ANUAL }
 
 class CronogramaModel {
   final String conjuntoId;
