@@ -152,15 +152,26 @@ class _CargaConjuntoPageState extends State<CargaConjuntoPage> {
           pw.Text(
             'Preventivas creadas/fallidas: ${resumen.preventivasCreadas}/${resumen.preventivasFallidas}',
           ),
+          pw.Text('Definiciones creadas: ${resumen.definicionesCreadas}'),
+          pw.Text(
+            'Recursos (insumos/maquinaria/herramientas): ${resumen.insumosPreventivas}/${resumen.maquinariaPreventivas}/${resumen.herramientasPreventivas}',
+          ),
           pw.SizedBox(height: 18),
           if (result.errores.isEmpty)
             pw.Text('No hubo errores en el cargue.')
           else
             pw.TableHelper.fromTextArray(
               headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-              headers: const ['Fila', 'Sección', 'Motivo'],
+              headers: const ['Fila', 'Sección', 'Código', 'Motivo'],
               data: result.errores
-                  .map((error) => [error.fila, error.seccion, error.motivo])
+                  .map(
+                    (error) => [
+                      error.fila,
+                      error.seccion,
+                      error.codigo ?? '',
+                      error.motivo,
+                    ],
+                  )
                   .toList(),
             ),
         ],
@@ -202,7 +213,7 @@ class _CargaConjuntoPageState extends State<CargaConjuntoPage> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'El archivo debe contener las hojas Conjunto, Horarios, Ubicaciones, Operarios y Preventivas.',
+                    'La plantilla incluye datos del conjunto, operarios, disponibilidades, preventivas y recursos. Las listas múltiples aceptan coma o punto y coma.',
                   ),
                   const SizedBox(height: 18),
                   OutlinedButton.icon(
@@ -296,6 +307,22 @@ class _CargaConjuntoPageState extends State<CargaConjuntoPage> {
                           value: result.resumen.preventivasFallidas,
                           color: AppTheme.red,
                         ),
+                        _MetricChip(
+                          label: 'Definiciones creadas',
+                          value: result.resumen.definicionesCreadas,
+                        ),
+                        _MetricChip(
+                          label: 'Insumos planeados',
+                          value: result.resumen.insumosPreventivas,
+                        ),
+                        _MetricChip(
+                          label: 'Maquinaria planeada',
+                          value: result.resumen.maquinariaPreventivas,
+                        ),
+                        _MetricChip(
+                          label: 'Herramientas planeadas',
+                          value: result.resumen.herramientasPreventivas,
+                        ),
                       ],
                     ),
                     if (result.errores.isNotEmpty) ...[
@@ -318,7 +345,11 @@ class _CargaConjuntoPageState extends State<CargaConjuntoPage> {
                                 foregroundColor: AppTheme.red,
                                 child: Text('${error.fila}'),
                               ),
-                              title: Text(error.seccion),
+                              title: Text(
+                                error.codigo == null || error.codigo!.isEmpty
+                                    ? error.seccion
+                                    : '${error.seccion} · ${error.codigo}',
+                              ),
                               subtitle: Text(error.motivo),
                             ),
                           ),

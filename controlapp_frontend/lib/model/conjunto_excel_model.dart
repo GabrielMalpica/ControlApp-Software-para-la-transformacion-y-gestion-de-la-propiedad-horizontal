@@ -7,6 +7,10 @@ class CargaConjuntoResumen {
     required this.preventivasTotal,
     required this.preventivasCreadas,
     required this.preventivasFallidas,
+    required this.definicionesCreadas,
+    required this.insumosPreventivas,
+    required this.maquinariaPreventivas,
+    required this.herramientasPreventivas,
   });
 
   final int horarios;
@@ -16,6 +20,10 @@ class CargaConjuntoResumen {
   final int preventivasTotal;
   final int preventivasCreadas;
   final int preventivasFallidas;
+  final int definicionesCreadas;
+  final int insumosPreventivas;
+  final int maquinariaPreventivas;
+  final int herramientasPreventivas;
 
   factory CargaConjuntoResumen.fromJson(Map<String, dynamic> json) {
     int value(String key) => (json[key] as num?)?.toInt() ?? 0;
@@ -27,6 +35,10 @@ class CargaConjuntoResumen {
       preventivasTotal: value('preventivasTotal'),
       preventivasCreadas: value('preventivasCreadas'),
       preventivasFallidas: value('preventivasFallidas'),
+      definicionesCreadas: value('definicionesCreadas'),
+      insumosPreventivas: value('insumosPreventivas'),
+      maquinariaPreventivas: value('maquinariaPreventivas'),
+      herramientasPreventivas: value('herramientasPreventivas'),
     );
   }
 }
@@ -36,17 +48,20 @@ class CargaConjuntoError {
     required this.fila,
     required this.seccion,
     required this.motivo,
+    this.codigo,
   });
 
   final int fila;
   final String seccion;
   final String motivo;
+  final String? codigo;
 
   factory CargaConjuntoError.fromJson(Map<String, dynamic> json) {
     return CargaConjuntoError(
       fila: (json['fila'] as num?)?.toInt() ?? 0,
       seccion: json['seccion']?.toString() ?? '',
       motivo: json['motivo']?.toString() ?? 'Error sin detalle',
+      codigo: json['codigo']?.toString(),
     );
   }
 }
