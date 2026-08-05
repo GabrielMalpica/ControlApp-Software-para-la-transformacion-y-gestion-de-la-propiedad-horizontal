@@ -1283,6 +1283,12 @@ class DefinicionTareaPreventivaService {
      * CRUD BÁSICO
      * ======================= */
     async crear(payload) {
+        return this.crearConCliente(this.prisma, payload);
+    }
+    async crearEnTransaccion(tx, payload) {
+        return this.crearConCliente(tx, payload);
+    }
+    async crearConCliente(client, payload) {
         const dto = DefinicionTareaPreventiva_1.CrearDefinicionPreventivaDTO.parse(payload);
         this.validarProgramacionFrecuencia(dto);
         const supervisorIdResuelto = dto.supervisorId != null
@@ -1346,7 +1352,7 @@ class DefinicionTareaPreventivaService {
                 connect: { id: dto.responsableSugeridoId },
             };
         }
-        return this.prisma.definicionTareaPreventiva.create({ data });
+        return client.definicionTareaPreventiva.create({ data });
     }
     async listar(payload) {
         const f = DefinicionTareaPreventiva_1.FiltroDefinicionPreventivaDTO.parse(payload);

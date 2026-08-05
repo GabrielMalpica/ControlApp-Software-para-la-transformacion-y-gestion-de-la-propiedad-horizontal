@@ -1892,6 +1892,20 @@ export class DefinicionTareaPreventivaService {
    * ======================= */
 
   async crear(payload: unknown) {
+    return this.crearConCliente(this.prisma, payload);
+  }
+
+  async crearEnTransaccion(
+    tx: Prisma.TransactionClient,
+    payload: unknown,
+  ) {
+    return this.crearConCliente(tx, payload);
+  }
+
+  private async crearConCliente(
+    client: PrismaClient | Prisma.TransactionClient,
+    payload: unknown,
+  ) {
     const dto = CrearDefinicionPreventivaDTO.parse(payload);
     this.validarProgramacionFrecuencia(dto);
 
@@ -1973,7 +1987,7 @@ export class DefinicionTareaPreventivaService {
       };
     }
 
-    return this.prisma.definicionTareaPreventiva.create({ data });
+    return client.definicionTareaPreventiva.create({ data });
   }
 
   async listar(payload: unknown) {

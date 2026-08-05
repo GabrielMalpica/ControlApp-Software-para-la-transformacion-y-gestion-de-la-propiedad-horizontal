@@ -43,20 +43,8 @@ import {
   HorarioDTO,
   toConjuntoPublico,
 } from "../model/Conjunto";
-import {
-  ConjuntoFilaDTO,
-  HorarioFilaDTO,
-  HORARIOS_CONJUNTO_FALLBACK,
-  OperarioFilaDTO,
-  PLANTILLA_CONJUNTO_COLUMNAS,
-  PLANTILLA_CONJUNTO_EJEMPLOS,
-  PreventivaFilaDTO,
-  UbicacionFilaDTO,
-  type NombreHojaConjunto,
-  type OperarioFila,
-  type PreventivaFila,
-  type UbicacionFila,
-} from "../model/ConjuntoExcel";
+import { ConjuntoExcelTemplateService } from "./ConjuntoExcelTemplateService";
+import { ConjuntoCargaMasivaService } from "./ConjuntoCargaMasivaService";
 
 import { CrearTareaDTO, EditarTareaDTO } from "../model/Tarea";
 import {
@@ -97,15 +85,11 @@ import {
   validarOperariosDisponiblesEnFecha,
 } from "../utils/operarioAvailability";
 import { PermissionService } from "./PermissionService";
-import { DefinicionTareaPreventivaService } from "./DefinicionTareaPreventivaService";
 import {
-  mapExcelRow,
   normalizeCell,
   normalizeHeader,
   normalizeLocationPart,
-  normalizedLocationKey,
 } from "../utils/excelParsing";
-import { validarProgramacionFrecuencia } from "../utils/preventivaProgramacion";
 
 export const AsignarConReemplazoDTO = z.object({
   tarea: CrearTareaDTO,
@@ -206,24 +190,6 @@ type ResidenteFilaError = {
   nombre: string;
   correo: string;
   motivo: string;
-};
-
-export type ConjuntoCargaError = {
-  fila: number;
-  seccion: NombreHojaConjunto;
-  motivo: string;
-};
-
-type OperarioImportPlan = {
-  fila: number;
-  row: OperarioFila;
-  mode: "CREATE_USER" | "CREATE_PROFILE" | "REUSE";
-  passwordHash?: string;
-};
-
-type PreventivaImportPlan = {
-  fila: number;
-  row: PreventivaFila;
 };
 
 type PrismaWriteClient = PrismaClient | Prisma.TransactionClient;
@@ -1482,584 +1448,51 @@ export class GerenteService {
     );
   }
 
-  generarPlantillaConjunto(): Buffer {
-    const workbook = XLSX.utils.book_new();
-    for (const nombre of Object.keys(
-      PLANTILLA_CONJUNTO_COLUMNAS,
-    ) as NombreHojaConjunto[]) {
-      const rows = [
-        [...PLANTILLA_CONJUNTO_COLUMNAS[nombre]],
-        ...PLANTILLA_CONJUNTO_EJEMPLOS[nombre],
-      ];
-      const sheet = XLSX.utils.aoa_to_sheet(rows, { cellDates: true });
-      sheet["!cols"] = PLANTILLA_CONJUNTO_COLUMNAS[nombre].map((header) => ({
-        wch: Math.min(42, Math.max(14, header.length + 3)),
-      }));
-      for (const address of Object.keys(sheet)) {
-        if (address.startsWith("!")) continue;
-        const cell = sheet[address];
-        if (cell?.t === "d") cell.z = "yyyy-mm-dd";
-      }
-      XLSX.utils.book_append_sheet(workbook, sheet, nombre);
-    }
-    return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
-  }
-
-  private obtenerHoja(
-    workbook: XLSX.WorkBook,
-    nombre: NombreHojaConjunto,
-    required = true,
-  ): XLSX.WorkSheet | null {
-    const actual = workbook.SheetNames.find(
-      (item) => normalizeHeader(item) === normalizeHeader(nombre),
-    );
-    if (!actual) {
-      if (required) throw new Error(`El archivo no contiene la hoja ${nombre}.`);
-      return null;
-    }
-    return workbook.Sheets[actual] ?? null;
-  }
-
-  private leerFilasHoja(
-    workbook: XLSX.WorkBook,
-    nombre: NombreHojaConjunto,
-    required = true,
-  ): Array<Record<string, unknown>> {
-    const sheet = this.obtenerHoja(workbook, nombre, required);
-    if (!sheet) return [];
-
-    const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
-      header: 1,
-      defval: "",
-      raw: true,
-    });
-    const header = (matrix[0] ?? []).map((item) => normalizeHeader(String(item)));
-    const missing = PLANTILLA_CONJUNTO_COLUMNAS[nombre].filter(
-      (column) => !header.includes(normalizeHeader(column)),
-    );
-    if (missing.length) {
-      throw new Error(
-        `La hoja ${nombre} no contiene las columnas: ${missing.join(", ")}.`,
-      );
-    }
-
-    return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-      defval: "",
-      raw: true,
-    });
-  }
-
-  private canonicalizarFila(
-    nombre: NombreHojaConjunto,
-    row: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const normalized = mapExcelRow(row);
-    return Object.fromEntries(
-      PLANTILLA_CONJUNTO_COLUMNAS[nombre].map((column) => [
-        column,
-        normalized[normalizeHeader(column)] ?? "",
-      ]),
-    );
-  }
-
-  private motivoError(error: unknown): string {
-    if (error instanceof z.ZodError) {
-      return error.issues
-        .map((issue) => {
-          const field = issue.path.length ? `${issue.path.join(".")}: ` : "";
-          return `${field}${issue.message}`;
-        })
-        .join("; ");
-    }
-    return error instanceof Error ? error.message : "No se pudo procesar la fila";
-  }
-
-  private construirArbolUbicaciones(rows: UbicacionFila[]) {
-    const ubicaciones = new Map<
-      string,
-      { nombre: string; zonas: Map<string, { nombre: string; areas: Map<string, string> }> }
-    >();
-
-    for (const row of rows) {
-      const ubicacionKey = normalizeHeader(row.ubicacion);
-      const zonaKey = normalizeHeader(row.zona);
-      const areaKey = normalizeHeader(row.area);
-      let ubicacion = ubicaciones.get(ubicacionKey);
-      if (!ubicacion) {
-        ubicacion = { nombre: normalizeLocationPart(row.ubicacion), zonas: new Map() };
-        ubicaciones.set(ubicacionKey, ubicacion);
-      }
-      let zona = ubicacion.zonas.get(zonaKey);
-      if (!zona) {
-        zona = { nombre: normalizeLocationPart(row.zona), areas: new Map() };
-        ubicacion.zonas.set(zonaKey, zona);
-      }
-      if (!zona.areas.has(areaKey)) {
-        zona.areas.set(areaKey, normalizeLocationPart(row.area));
-      }
-    }
-
-    return [...ubicaciones.values()].map((ubicacion) => ({
-      nombre: ubicacion.nombre,
-      elementos: [...ubicacion.zonas.values()].map((zona) => ({
-        nombre: zona.nombre,
-        hijos: [...zona.areas.values()].map((area) => ({
-          nombre: area,
-          hijos: [],
-        })),
+  async generarPlantillaConjunto(): Promise<Buffer> {
+    const empresaId = await this.resolverEmpresaNit();
+    const [insumos, herramientas, supervisores] = await Promise.all([
+      this.prisma.insumo.findMany({
+        where: { empresaId },
+        select: { id: true, nombre: true, unidad: true },
+        orderBy: [{ nombre: "asc" }, { unidad: "asc" }],
+      }),
+      this.prisma.herramienta.findMany({
+        where: { empresaId },
+        select: { id: true, nombre: true, unidad: true },
+        orderBy: [{ nombre: "asc" }, { unidad: "asc" }],
+      }),
+      this.prisma.supervisor.findMany({
+        where: { empresaId },
+        select: { id: true, usuario: { select: { nombre: true } } },
+        orderBy: { usuario: { nombre: "asc" } },
+      }),
+    ]);
+    return new ConjuntoExcelTemplateService().generar({
+      insumos,
+      herramientas,
+      supervisores: supervisores.map((item) => ({
+        id: item.id,
+        nombre: item.usuario.nombre,
       })),
-    }));
+    });
   }
 
   async cargarConjuntoMasivo(
     _actorUserId: string,
     file: Express.Multer.File | undefined,
   ) {
-    if (!file?.buffer?.length) {
-      throw new Error("Debes adjuntar la plantilla Excel del conjunto.");
-    }
-    if (!file.originalname.toLowerCase().endsWith(".xlsx")) {
-      throw new Error("La carga masiva de conjuntos solo admite archivos .xlsx.");
-    }
-
-    const workbook = XLSX.read(file.buffer, {
-      type: "buffer",
-      cellDates: true,
-    });
-    const conjuntoRows = this.leerFilasHoja(workbook, "Conjunto");
-    const horarioRows = this.leerFilasHoja(workbook, "Horarios", false);
-    const ubicacionRows = this.leerFilasHoja(workbook, "Ubicaciones");
-    const operarioRows = this.leerFilasHoja(workbook, "Operarios");
-    const preventivaRows = this.leerFilasHoja(workbook, "Preventivas");
-
-    if (conjuntoRows.length !== 1) {
-      throw new Error("La hoja Conjunto debe contener exactamente una fila de datos.");
-    }
-    if (!ubicacionRows.length) {
-      throw new Error("La hoja Ubicaciones debe contener al menos una fila.");
-    }
-    if (!operarioRows.length) {
-      throw new Error("La hoja Operarios debe contener al menos una fila.");
-    }
-    if (!preventivaRows.length) {
-      throw new Error("La hoja Preventivas debe contener al menos una fila.");
-    }
-
-    const conjuntoRow = ConjuntoFilaDTO.parse(
-      this.canonicalizarFila("Conjunto", conjuntoRows[0]),
-    );
     const empresaId = await this.resolverEmpresaNit();
-    const duplicate = await this.prisma.conjunto.findUnique({
-      where: { nit: conjuntoRow.nit },
-      select: { nit: true },
-    });
-    if (duplicate) throw new Error("Ya existe un conjunto con ese NIT.");
-
-    let administradorId: string | null = null;
-    if (conjuntoRow.administradorCedula) {
-      const administrador = await this.prisma.administrador.findUnique({
-        where: { id: conjuntoRow.administradorCedula },
-        select: { id: true },
-      });
-      if (!administrador) {
-        throw new Error("El administrador indicado no existe.");
-      }
-      administradorId = administrador.id;
-    }
-
-    const erroresEstrictos: ConjuntoCargaError[] = [];
-    const erroresPreventivas: ConjuntoCargaError[] = [];
-    const horarios: Array<z.infer<typeof HorarioDTO>> = [];
-    const dias = new Set<DiaSemana>();
-
-    if (!horarioRows.length) {
-      horarios.push(...HORARIOS_CONJUNTO_FALLBACK.map((item) => ({ ...item })));
-    } else {
-      horarioRows.forEach((raw, index) => {
-        try {
-          const row = HorarioFilaDTO.parse(
-            this.canonicalizarFila("Horarios", raw),
-          );
-          if (dias.has(row.dia)) {
-            throw new Error(`El día ${row.dia} está repetido en la hoja`);
-          }
-          dias.add(row.dia);
-          horarios.push(HorarioDTO.parse(row));
-        } catch (error) {
-          erroresEstrictos.push({
-            fila: index + 2,
-            seccion: "Horarios",
-            motivo: this.motivoError(error),
-          });
-        }
-      });
-    }
-
-    const ubicacionesParsed: UbicacionFila[] = [];
-    ubicacionRows.forEach((raw, index) => {
-      try {
-        ubicacionesParsed.push(
-          UbicacionFilaDTO.parse(this.canonicalizarFila("Ubicaciones", raw)),
-        );
-      } catch (error) {
-        erroresEstrictos.push({
-          fila: index + 2,
-          seccion: "Ubicaciones",
-          motivo: this.motivoError(error),
-        });
-      }
-    });
-    const ubicaciones = this.construirArbolUbicaciones(ubicacionesParsed);
-    const locationKeys = new Set(
-      ubicacionesParsed.map((row) =>
-        normalizedLocationKey(row.ubicacion, row.zona, row.area),
-      ),
-    );
-
-    const operariosParsed: Array<{ fila: number; row: OperarioFila }> = [];
-    const seenCedulas = new Set<string>();
-    const seenCorreos = new Set<string>();
-    operarioRows.forEach((raw, index) => {
-      const fila = index + 2;
-      try {
-        const row = OperarioFilaDTO.parse(
-          this.canonicalizarFila("Operarios", raw),
-        );
-        if (seenCedulas.has(row.cedula)) {
-          throw new Error("La cédula está repetida en la hoja Operarios");
-        }
-        if (seenCorreos.has(row.correo)) {
-          throw new Error("El correo está repetido en la hoja Operarios");
-        }
-        seenCedulas.add(row.cedula);
-        seenCorreos.add(row.correo);
-
-        const password = row.contrasena || row.cedula;
-        CrearUsuarioDTO.parse({
-          id: row.cedula,
-          nombre: row.nombre,
-          correo: row.correo,
-          contrasena: password,
-          rol: Rol.operario,
-          telefono: row.telefono,
-          fechaNacimiento: row.fechaNacimiento,
-          jornadaLaboral: row.jornadaLaboral,
-          patronJornada: row.patronJornada,
-        });
-        CrearOperarioDTO.parse({
-          Id: row.cedula,
-          funciones: row.funciones,
-          cursoSalvamentoAcuatico: row.cursoSalvamentoAcuatico,
-          cursoAlturas: row.cursoAlturas,
-          examenIngreso: row.examenIngreso,
-          fechaIngreso: row.fechaIngreso,
-          disponibilidadPeriodos: [
-            {
-              fechaInicio: row.fechaIngreso,
-              trabajaDomingo: row.trabajaDomingo,
-              diaDescanso: row.diaDescanso,
-            },
-          ],
-        });
-        operariosParsed.push({ fila, row });
-      } catch (error) {
-        erroresEstrictos.push({
-          fila,
-          seccion: "Operarios",
-          motivo: this.motivoError(error),
-        });
-      }
-    });
-
-    const operarioPlans: OperarioImportPlan[] = [];
-    for (const item of operariosParsed) {
-      const [usuario, correoOwner] = await Promise.all([
-        this.prisma.usuario.findUnique({
-          where: { id: item.row.cedula },
-          include: { operario: { select: { id: true, empresaId: true } } },
-        }),
-        this.prisma.usuario.findUnique({
-          where: { correo: item.row.correo },
-          select: { id: true },
-        }),
-      ]);
-
-      if (correoOwner && correoOwner.id !== item.row.cedula) {
-        erroresEstrictos.push({
-          fila: item.fila,
-          seccion: "Operarios",
-          motivo: "Ya existe otro usuario con ese correo",
-        });
-        continue;
-      }
-      if (usuario && usuario.rol !== Rol.operario) {
-        erroresEstrictos.push({
-          fila: item.fila,
-          seccion: "Operarios",
-          motivo: "La cédula ya existe con un rol diferente de operario",
-        });
-        continue;
-      }
-      if (usuario?.operario && usuario.operario.empresaId !== empresaId) {
-        erroresEstrictos.push({
-          fila: item.fila,
-          seccion: "Operarios",
-          motivo: "El operario pertenece a otra empresa",
-        });
-        continue;
-      }
-
-      operarioPlans.push({
-        ...item,
-        mode: !usuario
-          ? "CREATE_USER"
-          : usuario.operario
-            ? "REUSE"
-            : "CREATE_PROFILE",
-      });
-    }
-
-    const preventivaPlans: PreventivaImportPlan[] = [];
-    const referencedExisting = new Set<string>();
-    const availableFromSheet = new Set(operarioPlans.map((item) => item.row.cedula));
-
-    for (let index = 0; index < preventivaRows.length; index += 1) {
-      const fila = index + 2;
-      try {
-        const row = PreventivaFilaDTO.parse(
-          this.canonicalizarFila("Preventivas", preventivaRows[index]),
-        );
-        validarProgramacionFrecuencia({
-          frecuencia: row.frecuencia,
-          diaSemanaProgramado: row.diaSemana ?? null,
-          diaMesProgramado: row.diaMes ?? null,
-          fechasProgramadasJson: row.fechasProgramadas,
-        });
-        if (!locationKeys.has(normalizedLocationKey(row.ubicacion, row.zona, row.area))) {
-          throw new Error("La ruta de ubicación no existe en la hoja Ubicaciones");
-        }
-
-        for (const cedula of row.operarioCedulas) {
-          if (availableFromSheet.has(cedula)) continue;
-          const existing = await this.prisma.operario.findUnique({
-            where: { id: cedula },
-            select: { id: true, empresaId: true },
-          });
-          if (!existing || existing.empresaId !== empresaId) {
-            throw new Error(`El operario ${cedula} no existe en la empresa`);
-          }
-          referencedExisting.add(existing.id);
-        }
-
-        if (row.supervisorCedula) {
-          const supervisor = await this.prisma.supervisor.findUnique({
-            where: { id: row.supervisorCedula },
-            select: { id: true, empresaId: true },
-          });
-          if (!supervisor || supervisor.empresaId !== empresaId) {
-            throw new Error("El supervisor indicado no existe en la empresa");
-          }
-        }
-        preventivaPlans.push({ fila, row });
-      } catch (error) {
-        erroresPreventivas.push({
-          fila,
-          seccion: "Preventivas",
-          motivo: this.motivoError(error),
-        });
-      }
-    }
-
-    const baseResult = {
-      conjunto: { nit: conjuntoRow.nit, nombre: conjuntoRow.nombre },
-      columnasEsperadas: PLANTILLA_CONJUNTO_COLUMNAS,
-    };
-    if (erroresEstrictos.length) {
-      return {
-        creado: false as const,
-        ...baseResult,
-        resumen: {
-          horarios: 0,
-          ubicaciones: 0,
-          operariosCreados: 0,
-          operariosReutilizados: 0,
-          preventivasTotal: preventivaRows.length,
-          preventivasCreadas: 0,
-          preventivasFallidas: preventivaRows.length,
-        },
-        errores: [...erroresEstrictos, ...erroresPreventivas],
-      };
-    }
-
-    await Promise.all(
-      operarioPlans.map(async (plan) => {
-        if (plan.mode === "CREATE_USER") {
-          plan.passwordHash = await bcrypt.hash(
-            plan.row.contrasena || plan.row.cedula,
-            10,
-          );
-        }
-      }),
-    );
-
-    const conjuntoDto = CrearConjuntoDTO.parse({
-      nit: conjuntoRow.nit,
-      nombre: conjuntoRow.nombre,
-      direccion: conjuntoRow.direccion,
-      correo: conjuntoRow.correo,
-      administradorId,
-      fechaInicioContrato: conjuntoRow.fechaInicioContrato,
-      activo: true,
-      tipoServicio: conjuntoRow.tipoServicio,
-      valorMensual: conjuntoRow.valorMensual,
-      consignasEspeciales: conjuntoRow.consignasEspeciales,
-      valorAgregado: conjuntoRow.valorAgregado,
-      horarios,
-      ubicaciones,
-    });
-
-    const allOperarios = new Set([
-      ...operarioPlans.map((item) => item.row.cedula),
-      ...referencedExisting,
-    ]);
-    await this.prisma.$transaction(async (tx) => {
-      for (const plan of operarioPlans) {
-        const row = plan.row;
-        if (plan.mode === "CREATE_USER") {
-          await tx.usuario.create({
-            data: {
-              id: row.cedula,
-              nombre: row.nombre,
-              correo: row.correo,
-              contrasena: plan.passwordHash!,
-              rol: Rol.operario,
-              activo: true,
-              requiereCambioContrasena: true,
-              telefono: BigInt(row.telefono),
-              fechaNacimiento: row.fechaNacimiento,
-              jornadaLaboral: row.jornadaLaboral,
-              patronJornada:
-                row.jornadaLaboral === JornadaLaboral.MEDIO_TIEMPO
-                  ? (row.patronJornada ?? null)
-                  : null,
-            },
-          });
-        }
-        if (plan.mode !== "REUSE") {
-          await tx.operario.create({
-            data: {
-              id: row.cedula,
-              empresaId,
-              funciones: row.funciones,
-              cursoSalvamentoAcuatico: row.cursoSalvamentoAcuatico,
-              cursoAlturas: row.cursoAlturas,
-              examenIngreso: row.examenIngreso,
-              fechaIngreso: row.fechaIngreso,
-              disponibilidadPeriodos: {
-                create: {
-                  fechaInicio: row.fechaIngreso,
-                  trabajaDomingo: row.trabajaDomingo,
-                  diaDescanso: row.diaDescanso ?? null,
-                },
-              },
-            },
-          });
-        }
-      }
-
-      await this.crearConjuntoConEstructura(
-        tx,
-        conjuntoDto,
-        empresaId,
-        administradorId,
-      );
-      if (allOperarios.size) {
-        await tx.conjunto.update({
-          where: { nit: conjuntoRow.nit },
-          data: {
-            operarios: {
-              connect: [...allOperarios].map((id) => ({ id })),
-            },
-          },
-        });
-      }
-    });
-
-    const createdLocations = await this.prisma.ubicacion.findMany({
-      where: { conjuntoId: conjuntoRow.nit },
-      select: {
-        id: true,
-        nombre: true,
-        elementos: { select: { id: true, nombre: true, padreId: true } },
-      },
-    });
-    const paths = new Map<string, { ubicacionId: number; elementoId: number }>();
-    for (const ubicacion of createdLocations) {
-      const zonas = new Map(
-        ubicacion.elementos
-          .filter((elemento) => elemento.padreId == null)
-          .map((elemento) => [elemento.id, elemento]),
-      );
-      for (const area of ubicacion.elementos.filter((elemento) => elemento.padreId != null)) {
-        const zona = zonas.get(area.padreId!);
-        if (!zona) continue;
-        paths.set(normalizedLocationKey(ubicacion.nombre, zona.nombre, area.nombre), {
-          ubicacionId: ubicacion.id,
-          elementoId: area.id,
-        });
-      }
-    }
-
-    let preventivasCreadas = 0;
-    const preventivaService = new DefinicionTareaPreventivaService(this.prisma);
-    for (const plan of preventivaPlans) {
-      try {
-        const ids = paths.get(
-          normalizedLocationKey(plan.row.ubicacion, plan.row.zona, plan.row.area),
-        );
-        if (!ids) throw new Error("No se pudo resolver la ruta creada");
-        await preventivaService.crear({
-          conjuntoId: conjuntoRow.nit,
-          ...ids,
-          descripcion: plan.row.descripcion,
-          frecuencia: plan.row.frecuencia,
-          prioridad: plan.row.prioridad,
-          diaSemanaProgramado: plan.row.diaSemana ?? null,
-          diaMesProgramado: plan.row.diaMes ?? null,
-          fechasProgramadasJson: plan.row.fechasProgramadas,
-          duracionMinutosFija: plan.row.duracionMinutos,
-          operariosIds: plan.row.operarioCedulas,
-          supervisorId: plan.row.supervisorCedula,
-          activo: true,
-        });
-        preventivasCreadas += 1;
-      } catch (error) {
-        erroresPreventivas.push({
-          fila: plan.fila,
-          seccion: "Preventivas",
-          motivo: this.motivoError(error),
-        });
-      }
-    }
-
-    return {
-      creado: true as const,
-      ...baseResult,
-      resumen: {
-        horarios: horarios.length,
-        ubicaciones: ubicaciones.length,
-        operariosCreados: operarioPlans.filter((item) => item.mode !== "REUSE").length,
-        operariosReutilizados:
-          operarioPlans.filter((item) => item.mode === "REUSE").length +
-          referencedExisting.size,
-        preventivasTotal: preventivaRows.length,
-        preventivasCreadas,
-        preventivasFallidas: preventivaRows.length - preventivasCreadas,
-      },
-      errores: erroresPreventivas,
-    };
+    return new ConjuntoCargaMasivaService(
+      this.prisma,
+      (client, dto, currentEmpresaId, administradorId) =>
+        this.crearConjuntoConEstructura(
+          client,
+          dto,
+          currentEmpresaId,
+          administradorId,
+        ),
+    ).cargar(empresaId, file);
   }
-
   async listarConjuntos() {
     const conjuntos = await this.prisma.conjunto.findMany({
       where: {

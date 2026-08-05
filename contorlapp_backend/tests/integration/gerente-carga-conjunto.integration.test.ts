@@ -23,7 +23,12 @@ function sampleBuffer(): Buffer {
     "Horarios",
     "Ubicaciones",
     "Operarios",
+    "Disponibilidad operarios",
     "Preventivas",
+    "Insumos preventivas",
+    "Maquinaria preventivas",
+    "Herramientas preventivas",
+    "Opciones",
   ]) {
     XLSX.utils.book_append_sheet(
       workbook,
@@ -68,6 +73,10 @@ describe("Endpoints de carga masiva de conjunto", () => {
         preventivasTotal: 2,
         preventivasCreadas: 1,
         preventivasFallidas: 1,
+        definicionesCreadas: 1,
+        insumosPreventivas: 0,
+        maquinariaPreventivas: 0,
+        herramientasPreventivas: 0,
       },
       errores: [{ fila: 3, seccion: "Preventivas", motivo: "Operario inexistente" }],
       columnasEsperadas: {},
@@ -91,7 +100,7 @@ describe("Endpoints de carga masiva de conjunto", () => {
   });
 
   test("GET devuelve un attachment XLSX válido", async () => {
-    generarPlantillaConjuntoMock.mockReturnValueOnce(sampleBuffer());
+    generarPlantillaConjuntoMock.mockResolvedValueOnce(sampleBuffer());
 
     const response = await request(makeApp())
       .get("/gerente/conjuntos/plantilla")
@@ -111,7 +120,12 @@ describe("Endpoints de carga masiva de conjunto", () => {
       "Horarios",
       "Ubicaciones",
       "Operarios",
+      "Disponibilidad operarios",
       "Preventivas",
+      "Insumos preventivas",
+      "Maquinaria preventivas",
+      "Herramientas preventivas",
+      "Opciones",
     ]);
   });
 });

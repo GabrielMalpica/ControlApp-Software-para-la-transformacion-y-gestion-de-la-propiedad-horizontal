@@ -1,6 +1,7 @@
 import { Rol } from "@prisma/client";
 import * as XLSX from "xlsx";
 
+import { ConjuntoExcelTemplateService } from "../../src/services/ConjuntoExcelTemplateService";
 import { GerenteService } from "../../src/services/GerenteServices";
 
 function makeFile(buffer: Buffer): Express.Multer.File {
@@ -12,13 +13,25 @@ function makeFile(buffer: Buffer): Express.Multer.File {
   } as Express.Multer.File;
 }
 
-function workbookBuffer(
+async function workbookBuffer(
   mutate?: (workbook: XLSX.WorkBook) => void,
-): Buffer {
-  const base = new GerenteService({} as any).generarPlantillaConjunto();
+): Promise<Buffer> {
+  const base = await new ConjuntoExcelTemplateService().generar({
+    insumos: [],
+    herramientas: [],
+    supervisores: [{ id: "1000000000", nombre: "Ana Supervisora" }],
+  });
   const workbook = XLSX.read(base, { type: "buffer", cellDates: true });
   mutate?.(workbook);
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+}
+
+function removeDataRows(workbook: XLSX.WorkBook, sheetName: string): void {
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], {
+    header: 1,
+    raw: true,
+  });
+  workbook.Sheets[sheetName] = XLSX.utils.aoa_to_sheet([matrix[0]]);
 }
 
 function makePrisma(existingOperario = true) {
@@ -34,13 +47,8 @@ function makePrisma(existingOperario = true) {
         correo: "administracion@miradordelparque.com",
         administradorId: null,
         empresaId: "EMP-1",
-        fechaInicioContrato: new Date("2026-01-15T00:00:00.000Z"),
-        fechaFinContrato: null,
         activo: true,
-        tipoServicio: ["ASEO", "PISCINA", "MANTENIMIENTOS_LOCATIVOS"],
-        valorMensual: 8500000,
-        consignasEspeciales: [],
-        valorAgregado: [],
+        tipoServicio: ["ASEO", "PISCINA"],
         horarios: [],
       }),
       update: jest.fn().mockResolvedValue({}),
@@ -67,7 +75,16 @@ function makePrisma(existingOperario = true) {
       findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({}),
     },
-    supervisor: { findUnique: jest.fn().mockResolvedValue(null) },
+    supervisor: {
+      findUnique: jest.fn().mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.id === "1000000000"
+            ? { id: "1000000000", empresaId: "EMP-1" }
+            : null,
+        ),
+      ),
+    },
+    insumo: { findMany: jest.fn().mockResolvedValue([]) },
     ubicacion: {
       findFirst: jest.fn().mockImplementation(({ where }: any) =>
         Promise.resolve({ id: where.nombre === "Torre 1" ? 1 : 2 }),
@@ -79,7 +96,6 @@ function makePrisma(existingOperario = true) {
           elementos: [
             { id: 10, nombre: "Zonas comunes", padreId: null },
             { id: 11, nombre: "Lobby", padreId: 10 },
-            { id: 12, nombre: "Escaleras", padreId: 10 },
           ],
         },
         {
@@ -88,7 +104,6 @@ function makePrisma(existingOperario = true) {
           elementos: [
             { id: 20, nombre: "Piscina", padreId: null },
             { id: 21, nombre: "Piscina principal", padreId: 20 },
-            { id: 22, nombre: "Cuarto de máquinas", padreId: 20 },
           ],
         },
       ]),
@@ -104,7 +119,7 @@ function makePrisma(existingOperario = true) {
       ),
     },
   };
-  prisma.$transaction.mockImplementation(async (cb: any) => cb(prisma));
+  prisma.$transaction.mockImplementation(async (callback: any) => callback(prisma));
   return prisma;
 }
 
@@ -116,101 +131,225 @@ describe("GerenteService.cargarConjuntoMasivo", () => {
     (service as any).resolverEmpresaNit = jest.fn().mockResolvedValue("EMP-1");
 
     await expect(
-      service.cargarConjuntoMasivo("gerente-1", makeFile(workbookBuffer())),
+      service.cargarConjuntoMasivo(
+        "gerente-1",
+        makeFile(await workbookBuffer()),
+      ),
     ).rejects.toThrow(/NIT/i);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   test("informa claramente cuando falta la hoja Conjunto", async () => {
     const service = new GerenteService(makePrisma());
-    const buffer = workbookBuffer((workbook) => {
+    (service as any).resolverEmpresaNit = jest.fn().mockResolvedValue("EMP-1");
+    const buffer = await workbookBuffer((workbook) => {
       delete workbook.Sheets.Conjunto;
-      workbook.SheetNames = workbook.SheetNames.filter((name) => name !== "Conjunto");
+      workbook.SheetNames = workbook.SheetNames.filter(
+        (name) => name !== "Conjunto",
+      );
     });
-
     await expect(
       service.cargarConjuntoMasivo("gerente-1", makeFile(buffer)),
     ).rejects.toThrow(/hoja Conjunto/i);
   });
 
   test("rechaza cédula repetida sin ejecutar la transacción", async () => {
-    const prisma = makePrisma();
+    const prisma = makePrisma(false);
     const service = new GerenteService(prisma);
     (service as any).resolverEmpresaNit = jest.fn().mockResolvedValue("EMP-1");
-    const buffer = workbookBuffer((workbook) => {
-      XLSX.utils.sheet_add_aoa(
+    const buffer = await workbookBuffer((workbook) => {
+      const matrix = XLSX.utils.sheet_to_json<unknown[]>(
         workbook.Sheets.Operarios,
-        [
-          [
-            "1032456789",
-            "Carlos duplicado",
-            "otro@example.com",
-            "3009999999",
-            "1992-06-15",
-            "ASEO",
-            "2026-01-15",
-            "COMPLETA",
-            "",
-            "NO",
-            "NO",
-            "SI",
-            "NO",
-            "",
-            "1032456789",
-          ],
-        ],
-        { origin: -1 },
+        { header: 1, raw: true },
       );
+      const duplicate = [...matrix[1]];
+      duplicate[1] = "Carlos duplicado";
+      duplicate[2] = "otro@example.com";
+      XLSX.utils.sheet_add_aoa(workbook.Sheets.Operarios, [duplicate], {
+        origin: -1,
+      });
     });
-
     const result = await service.cargarConjuntoMasivo(
       "gerente-1",
       makeFile(buffer),
     );
-
     expect(result.creado).toBe(false);
     expect(result.errores).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ seccion: "Operarios", motivo: expect.stringMatching(/repetida/i) }),
+        expect.objectContaining({
+          seccion: "Operarios",
+          motivo: expect.stringMatching(/repetida/i),
+        }),
       ]),
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  test("reutiliza, vincula y crea preventivas válidas", async () => {
-    const prisma = makePrisma(true);
+  test("rechaza periodos de disponibilidad solapados", async () => {
+    const prisma = makePrisma(false);
     const service = new GerenteService(prisma);
     (service as any).resolverEmpresaNit = jest.fn().mockResolvedValue("EMP-1");
-
+    const buffer = await workbookBuffer((workbook) => {
+      XLSX.utils.sheet_add_aoa(
+        workbook.Sheets["Disponibilidad operarios"],
+        [["1032456789", "2026-01-20", "", "No", "", "Solapado"]],
+        { origin: -1 },
+      );
+    });
     const result = await service.cargarConjuntoMasivo(
       "gerente-1",
-      makeFile(workbookBuffer()),
+      makeFile(buffer),
+    );
+    expect(result.creado).toBe(false);
+    expect(result.errores).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          seccion: "Disponibilidad operarios",
+          motivo: expect.stringMatching(/solapan/i),
+        }),
+      ]),
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  test("crea el usuario con datos laborales y expande una semanal multidía", async () => {
+    const prisma = makePrisma(false);
+    const service = new GerenteService(prisma);
+    (service as any).resolverEmpresaNit = jest.fn().mockResolvedValue("EMP-1");
+    const result = await service.cargarConjuntoMasivo(
+      "gerente-1",
+      makeFile(await workbookBuffer()),
     );
 
     expect(result.creado).toBe(true);
     expect(result.resumen).toMatchObject({
       horarios: 6,
       ubicaciones: 2,
-      operariosCreados: 0,
-      operariosReutilizados: 1,
-      preventivasTotal: 3,
-      preventivasCreadas: 3,
-      preventivasFallidas: 0,
+      operariosCreados: 1,
+      preventivasTotal: 2,
+      preventivasCreadas: 2,
+      definicionesCreadas: 3,
     });
+    expect(prisma.usuario.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          estadoCivil: "SOLTERO",
+          tipoContrato: "TERMINO_INDEFINIDO",
+          direccion: "Calle 10 # 20-30",
+        }),
+      }),
+    );
+    expect(prisma.operario.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          observaciones: "Operario creado desde la plantilla",
+          disponibilidadPeriodos: expect.any(Object),
+        }),
+      }),
+    );
+    expect(prisma.definicionTareaPreventiva.create).toHaveBeenCalledTimes(3);
+  });
+
+  test("reutiliza y vincula un operario sin sobrescribirlo", async () => {
+    const prisma = makePrisma(true);
+    const service = new GerenteService(prisma);
+    (service as any).resolverEmpresaNit = jest.fn().mockResolvedValue("EMP-1");
+    const buffer = await workbookBuffer((workbook) =>
+      removeDataRows(workbook, "Disponibilidad operarios"),
+    );
+    const result = await service.cargarConjuntoMasivo(
+      "gerente-1",
+      makeFile(buffer),
+    );
+    expect(result.creado).toBe(true);
+    expect(result.resumen.operariosReutilizados).toBe(1);
+    expect(prisma.usuario.create).not.toHaveBeenCalled();
+    expect(prisma.operario.create).not.toHaveBeenCalled();
     expect(prisma.conjunto.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: { operarios: { connect: [{ id: "1032456789" }] } },
       }),
     );
-    expect(prisma.definicionTareaPreventiva.create).toHaveBeenCalledTimes(3);
+  });
+
+  test("guarda planes de insumos, maquinaria y herramientas", async () => {
+    const prisma = makePrisma(false);
+    prisma.insumo.findMany.mockResolvedValue([
+      { id: 1, nombre: "Cloro", unidad: "LITRO" },
+    ]);
+    prisma.herramienta.findMany.mockResolvedValue([
+      { id: 2, nombre: "Escoba", unidad: "UNIDAD" },
+    ]);
+    const service = new GerenteService(prisma);
+    (service as any).resolverEmpresaNit = jest.fn().mockResolvedValue("EMP-1");
+    const buffer = await workbookBuffer((workbook) => {
+      XLSX.utils.sheet_add_aoa(
+        workbook.Sheets["Insumos preventivas"],
+        [["PREV-001", "1 | Cloro | LITRO", "LITRO", 0.5]],
+        { origin: -1 },
+      );
+      XLSX.utils.sheet_add_aoa(
+        workbook.Sheets["Herramientas preventivas"],
+        [["PREV-001", "2 | Escoba | UNIDAD", "UNIDAD", 2]],
+        { origin: -1 },
+      );
+    });
+    const result = await service.cargarConjuntoMasivo(
+      "gerente-1",
+      makeFile(buffer),
+    );
+    expect(result.creado).toBe(true);
+    expect(result.resumen).toMatchObject({
+      insumosPreventivas: 1,
+      maquinariaPreventivas: 1,
+      herramientasPreventivas: 1,
+    });
+    expect(prisma.definicionTareaPreventiva.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          insumosPlanJson: [{ insumoId: 1, consumoPorUnidad: 0.5 }],
+          maquinariaPlanJson: [
+            expect.objectContaining({
+              tipo: "HIDROLAVADORA_ELECTRICA",
+              cantidad: 1,
+            }),
+          ],
+          herramientasPlanJson: [{ herramientaId: 2, cantidad: 2 }],
+        }),
+      }),
+    );
   });
 
   test("operario inexistente falla solo su preventiva", async () => {
     const prisma = makePrisma(true);
     const service = new GerenteService(prisma);
     (service as any).resolverEmpresaNit = jest.fn().mockResolvedValue("EMP-1");
-    const buffer = workbookBuffer((workbook) => {
-      workbook.Sheets.Preventivas.K2.v = "9999999999";
+    const buffer = await workbookBuffer((workbook) => {
+      removeDataRows(workbook, "Disponibilidad operarios");
+      workbook.Sheets.Preventivas.T2.v = "9999999999";
+    });
+    const result = await service.cargarConjuntoMasivo(
+      "gerente-1",
+      makeFile(buffer),
+    );
+    expect(result.creado).toBe(true);
+    expect(result.resumen.preventivasCreadas).toBe(1);
+    expect(result.resumen.preventivasFallidas).toBe(1);
+    expect(result.errores).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ seccion: "Preventivas", fila: 2 }),
+      ]),
+    );
+  });
+
+  test("QUINCENAL con varios días falla solo su fila", async () => {
+    const prisma = makePrisma(true);
+    const service = new GerenteService(prisma);
+    (service as any).resolverEmpresaNit = jest.fn().mockResolvedValue("EMP-1");
+    const buffer = await workbookBuffer((workbook) => {
+      removeDataRows(workbook, "Disponibilidad operarios");
+      workbook.Sheets.Preventivas.F2.v = "Quincenal";
+      workbook.Sheets.Preventivas.G2.v = "Lunes, Miércoles";
     });
 
     const result = await service.cargarConjuntoMasivo(
@@ -219,8 +358,16 @@ describe("GerenteService.cargarConjuntoMasivo", () => {
     );
 
     expect(result.creado).toBe(true);
-    expect(result.resumen.preventivasCreadas).toBe(2);
+    expect(result.resumen.preventivasCreadas).toBe(1);
     expect(result.resumen.preventivasFallidas).toBe(1);
-    expect(result.errores[0]).toMatchObject({ seccion: "Preventivas", fila: 2 });
+    expect(result.errores).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          seccion: "Preventivas",
+          fila: 2,
+          motivo: expect.stringMatching(/exactamente un día/i),
+        }),
+      ]),
+    );
   });
 });

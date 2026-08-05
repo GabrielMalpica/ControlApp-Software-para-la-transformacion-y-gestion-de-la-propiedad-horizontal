@@ -330,7 +330,7 @@ export class GerenteController {
 
   descargarPlantillaConjunto: RequestHandler = async (_req, res, next) => {
     try {
-      const buffer = service.generarPlantillaConjunto();
+      const buffer = await service.generarPlantillaConjunto();
       res.setHeader(
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
