@@ -8,6 +8,8 @@ import express, {
   ErrorRequestHandler,
 } from "express";
 import cors from "cors";
+import helmet from "helmet";
+import { rateLimit } from "express-rate-limit";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 import { mensajeValidacionAmigable } from "./utils/errorFormat";
@@ -20,15 +22,58 @@ if (!process.env.JWT_SECRET) {
 }
 
 const app = express();
+const configuredOrigins = [
+  ...(process.env.CORS_ALLOWED_ORIGINS ?? "").split(","),
+  process.env.FRONTEND_WEB_URL ?? "",
+]
+  .map((origin) => origin.trim())
+  .filter(Boolean)
+  .map((origin) => {
+    try {
+      return new URL(origin).origin;
+    } catch {
+      return "";
+    }
+  })
+  .filter(Boolean);
+const allowedOrigins = new Set(configuredOrigins);
+const isDevLocalOrigin = (origin: string) => {
+  if (process.env.NODE_ENV === "production") return false;
+  try {
+    const url = new URL(origin);
+    return (
+      ["http:", "https:"].includes(url.protocol) &&
+      ["localhost", "127.0.0.1", "::1"].includes(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+};
 const corsOptions = {
-  origin: true,
+  origin: (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
+    if (!origin || allowedOrigins.has(origin) || isDevLocalOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error("Origen no permitido por CORS"));
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "x-empresa-id"],
 };
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
-app.use(express.json());
+app.use(helmet());
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: { ok: false, message: "Demasiadas solicitudes. Intenta nuevamente en unos minutos" },
+  }),
+);
+app.use(express.json({ limit: "1mb" }));
 
 app.set("json replacer", (_k: string, v: unknown) =>
   typeof v === "bigint" ? v.toString() : v,
@@ -218,7 +263,14 @@ function sendError(
 
 /* ----------------------- middleware de error (tipado) --------------------- */
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
-  console.error("Error:", err);
+  console.error("[api-error]", {
+    name: err instanceof Error ? err.name : "Error",
+    status: typeof err?.status === "number" ? err.status : undefined,
+    code: typeof err?.code === "string" ? err.code : undefined,
+    ...(process.env.NODE_ENV !== "production" && err instanceof Error
+      ? { message: fixMojibake(err.message) }
+      : {}),
+  });
 
   if (
     err &&

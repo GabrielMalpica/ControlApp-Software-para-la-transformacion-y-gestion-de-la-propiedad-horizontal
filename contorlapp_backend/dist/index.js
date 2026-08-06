@@ -7,6 +7,8 @@ require("dotenv/config");
 process.env.TZ = process.env.TZ || "America/Bogota";
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
+const helmet_1 = __importDefault(require("helmet"));
+const express_rate_limit_1 = require("express-rate-limit");
 const client_1 = require("@prisma/client");
 const zod_1 = require("zod");
 const errorFormat_1 = require("./utils/errorFormat");
@@ -17,15 +19,57 @@ if (!process.env.JWT_SECRET) {
     throw new Error("Falta JWT_SECRET en el archivo .env");
 }
 const app = (0, express_1.default)();
+const configuredOrigins = [
+    ...(process.env.CORS_ALLOWED_ORIGINS ?? "").split(","),
+    process.env.FRONTEND_WEB_URL ?? "",
+]
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .map((origin) => {
+    try {
+        return new URL(origin).origin;
+    }
+    catch {
+        return "";
+    }
+})
+    .filter(Boolean);
+const allowedOrigins = new Set(configuredOrigins);
+const isDevLocalOrigin = (origin) => {
+    if (process.env.NODE_ENV === "production")
+        return false;
+    try {
+        const url = new URL(origin);
+        return (["http:", "https:"].includes(url.protocol) &&
+            ["localhost", "127.0.0.1", "::1"].includes(url.hostname));
+    }
+    catch {
+        return false;
+    }
+};
 const corsOptions = {
-    origin: true,
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.has(origin) || isDevLocalOrigin(origin)) {
+            callback(null, true);
+            return;
+        }
+        callback(new Error("Origen no permitido por CORS"));
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "x-empresa-id"],
 };
 app.use((0, cors_1.default)(corsOptions));
 app.options(/.*/, (0, cors_1.default)(corsOptions));
-app.use(express_1.default.json());
+app.use((0, helmet_1.default)());
+app.use((0, express_rate_limit_1.rateLimit)({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: { ok: false, message: "Demasiadas solicitudes. Intenta nuevamente en unos minutos" },
+}));
+app.use(express_1.default.json({ limit: "1mb" }));
 app.set("json replacer", (_k, v) => typeof v === "bigint" ? v.toString() : v);
 /* --------------------------------- health -------------------------------- */
 app.get("/", (_req, res) => {
@@ -174,7 +218,14 @@ function sendError(res, status, message, extra = {}) {
 }
 /* ----------------------- middleware de error (tipado) --------------------- */
 const errorHandler = (err, _req, res, _next) => {
-    console.error("Error:", err);
+    console.error("[api-error]", {
+        name: err instanceof Error ? err.name : "Error",
+        status: typeof err?.status === "number" ? err.status : undefined,
+        code: typeof err?.code === "string" ? err.code : undefined,
+        ...(process.env.NODE_ENV !== "production" && err instanceof Error
+            ? { message: fixMojibake(err.message) }
+            : {}),
+    });
     if (err &&
         typeof err === "object" &&
         err.ok === false &&

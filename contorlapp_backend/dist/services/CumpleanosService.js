@@ -192,6 +192,10 @@ class CumpleanosService {
         return (rows[0]?.total ?? 0) > 0;
     }
     async asegurarNotificacionesCumpleanosHoy(actorUserId) {
+        const actor = await this.obtenerUsuarioActor(actorUserId);
+        if (String(actor.rol).trim().toLowerCase() === "residente") {
+            return;
+        }
         const empresaId = await this.obtenerEmpresaIdActor(actorUserId);
         const hoy = this.hoyBogota();
         const cumpleaneros = await this.listarCumpleanosEmpresa(empresaId, hoy.mes);

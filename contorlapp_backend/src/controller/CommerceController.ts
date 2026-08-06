@@ -14,6 +14,11 @@ const ProductIdParam = z.object({
   productId: z.coerce.number().int().positive(),
 });
 
+const ServiceAvailabilityQuery = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  slot: z.string().trim().regex(/^[a-z0-9_-]+$/i).optional(),
+});
+
 const service = new WooCommerceCatalogService();
 
 export class CommerceController {
@@ -31,6 +36,17 @@ export class CommerceController {
     try {
       const { productId } = ProductIdParam.parse(req.params);
       const data = await service.getProduct(productId);
+      res.json(data);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  obtenerDisponibilidadServicio: RequestHandler = async (req, res, next) => {
+    try {
+      const { productId } = ProductIdParam.parse(req.params);
+      const query = ServiceAvailabilityQuery.parse(req.query);
+      const data = await service.getServiceAvailability(productId, query.date, query.slot);
       res.json(data);
     } catch (error) {
       next(error);

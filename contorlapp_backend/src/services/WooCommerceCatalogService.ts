@@ -1,3 +1,5 @@
+import { buildWooUrl, getWooBaseUrl, wooFetch } from "./wooFetch";
+
 type ProductAudience = "todos" | "residente" | "conjunto" | "servicios";
 
 type WooStoreCategory = {
@@ -48,6 +50,11 @@ type WooStoreProduct = {
   tags?: WooStoreTag[];
   average_rating?: string;
   review_count?: number;
+  extensions?: {
+    clx?: {
+      clsr_config?: unknown;
+    };
+  };
 };
 
 type WooStoreProductsResponse = WooStoreProduct[];
@@ -90,8 +97,103 @@ function moneyToNumber(raw: string | undefined, minorUnit: number | undefined) {
   return parsed / divisor;
 }
 
-function ensureNoTrailingSlash(value: string) {
-  return value.endsWith("/") ? value.slice(0, -1) : value;
+export type CommerceServiceSlot = { id: string; label: string; capacity: number };
+export type CommerceAddonOption = { id: number; label: string; price: number };
+export type CommerceAddonGroup = {
+  id: string;
+  label: string;
+  type: "radio" | "checkbox";
+  required: boolean;
+  group: CommerceAddonOption[];
+};
+export type CommerceServiceConfig = {
+  enabled: boolean;
+  depositPct: number;
+  allowFull: boolean;
+  minDays: number;
+  daysAllowed: number[];
+  maxPerDay: number;
+  slots: CommerceServiceSlot[];
+  showRange: boolean;
+  range: { min: number; max: number };
+  addons: CommerceAddonGroup[];
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function safeNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function normalizeWooServiceConfig(raw: unknown): CommerceServiceConfig | null {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const value = asRecord(raw);
+  const slots = (Array.isArray(value.slots) ? value.slots : [])
+    .map((entry) => {
+      const slot = asRecord(entry);
+      return {
+        id: normalizeSlug(String(slot.id ?? "")),
+        label: String(slot.label ?? "").trim(),
+        capacity: Math.max(1, Math.trunc(safeNumber(slot.capacity, 1))),
+      };
+    })
+    .filter((slot) => slot.id !== "" && slot.label !== "");
+
+  const addons = (Array.isArray(value.addons) ? value.addons : [])
+    .map((entry) => {
+      const addon = asRecord(entry);
+      const optionsRaw = Array.isArray(addon.group)
+        ? addon.group
+        : Array.isArray(addon.options)
+          ? addon.options
+          : [];
+      const group = optionsRaw
+        .map((optionEntry, index) => {
+          const option = asRecord(optionEntry);
+          return {
+            id: Math.trunc(safeNumber(option.id, index)),
+            label: String(option.label ?? "").trim(),
+            price: Math.max(0, safeNumber(option.price)),
+          };
+        })
+        .filter((option) => option.label !== "");
+      return {
+        id: normalizeSlug(String(addon.id ?? addon.group_id ?? "")),
+        label: String(addon.label ?? addon.title ?? "").trim(),
+        type: addon.type === "checkbox" ? ("checkbox" as const) : ("radio" as const),
+        required: addon.required === true,
+        group,
+      };
+    })
+    .filter((addon) => addon.id !== "" && addon.label !== "" && addon.group.length > 0);
+
+  const range = asRecord(value.range);
+  const daysAllowed = (Array.isArray(value.daysAllowed)
+    ? value.daysAllowed
+    : String(value.daysAllowed ?? "1,2,3,4,5,6,7").split(","))
+    .map((day) => Math.trunc(safeNumber(day)))
+    .filter((day) => day >= 1 && day <= 7);
+
+  return {
+    enabled: value.enabled === true,
+    depositPct: Math.min(100, Math.max(1, safeNumber(value.depositPct, 50))),
+    allowFull: value.allowFull === true,
+    minDays: Math.max(0, Math.trunc(safeNumber(value.minDays))),
+    daysAllowed: daysAllowed.length > 0 ? [...new Set(daysAllowed)] : [1, 2, 3, 4, 5, 6, 7],
+    maxPerDay: Math.max(1, Math.trunc(safeNumber(value.maxPerDay, 1))),
+    slots,
+    showRange: value.showRange === true,
+    range: {
+      min: Math.max(0, safeNumber(range.min ?? value.rangeMin)),
+      max: Math.max(0, safeNumber(range.max ?? value.rangeMax)),
+    },
+    addons,
+  };
 }
 
 function buildSearchableText(product: {
@@ -113,47 +215,23 @@ function buildSearchableText(product: {
 }
 
 export class WooCommerceCatalogService {
-  private readonly baseUrl = ensureNoTrailingSlash(
-    process.env.WOOCOMMERCE_BASE_URL?.trim() || process.env.ECOMMERCE_BASE_URL?.trim() || "",
-  );
-
   private readonly residenteSlugs = parseCsvSet(process.env.WOO_RESIDENTE_SLUGS);
   private readonly conjuntoSlugs = parseCsvSet(process.env.WOO_CONJUNTO_SLUGS);
   private readonly servicioSlugs = parseCsvSet(process.env.WOO_SERVICIO_SLUGS);
   private readonly includeDrafts = parseBoolean(process.env.WOO_INCLUDE_NON_PUBLISHED, false);
 
   private ensureConfigured() {
-    if (!this.baseUrl) {
-      throw new Error(
-        "Falta WOOCOMMERCE_BASE_URL en el backend para consultar el catalogo comercial",
-      );
-    }
+    getWooBaseUrl();
   }
 
   private buildStoreUrl(path: string, query: Record<string, string | number | boolean | undefined> = {}) {
-    const url = new URL(`${this.baseUrl}/wp-json/wc/store/v1${path}`);
-    for (const [key, value] of Object.entries(query)) {
-      if (value == null || value === "") continue;
-      url.searchParams.set(key, String(value));
-    }
-    return url.toString();
+    return buildWooUrl("store", path, query);
   }
 
   private async fetchJson<T>(url: string) {
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-      },
+    return wooFetch<T>(url, {}, {
+      failureMessage: "No se pudo consultar el catalogo comercial. Intenta nuevamente",
     });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(
-        `WooCommerce respondio ${response.status}. ${body || "No se pudo consultar el catalogo comercial"}`,
-      );
-    }
-
-    return response.json() as Promise<T>;
   }
 
   private async fetchAllProducts() {
@@ -180,6 +258,7 @@ export class WooCommerceCatalogService {
     name: string;
     categories: Array<{ slug: string; name: string; link: string }>;
     tags: Array<{ slug: string }>;
+    service: CommerceServiceConfig | null;
   }) {
     const slugs = new Set([
       ...product.categories.map((item) => normalizeSlug(item.slug)),
@@ -190,7 +269,7 @@ export class WooCommerceCatalogService {
     const hasConjuntoMatch = [...this.conjuntoSlugs].some((slug) => slugs.has(slug));
     const hasServicioMatch = [...this.servicioSlugs].some((slug) => slugs.has(slug));
 
-    const hasAnyConfiguredAudienceMatch = hasResidentMatch || hasConjuntoMatch || hasServicioMatch;
+    const hasAnyConfiguredAudienceMatch = hasResidentMatch || hasConjuntoMatch;
 
     const inferredService =
       product.name.trim().toLowerCase().startsWith("servicio") ||
@@ -204,10 +283,10 @@ export class WooCommerceCatalogService {
         );
       });
 
-    const esServicio = hasAnyConfiguredAudienceMatch ? hasServicioMatch : inferredService;
+    const esServicio = product.service?.enabled ?? (hasServicioMatch || inferredService);
 
     return {
-      paraResidente: true,
+      paraResidente: hasAnyConfiguredAudienceMatch ? hasResidentMatch : true,
       paraConjunto: hasAnyConfiguredAudienceMatch ? hasConjuntoMatch : !esServicio,
       esServicio,
     };
@@ -227,10 +306,12 @@ export class WooCommerceCatalogService {
     }));
     const shortDescription = stripHtml(product.short_description);
     const description = stripHtml(product.description);
+    const service = normalizeWooServiceConfig(product.extensions?.clx?.clsr_config);
     const flags = this.classifyProduct({
       name: String(product.name ?? "").trim(),
       categories,
       tags,
+      service,
     });
 
     return {
@@ -265,6 +346,7 @@ export class WooCommerceCatalogService {
       averageRating: Number(product.average_rating ?? 0),
       reviewCount: Number(product.review_count ?? 0),
       audience: flags,
+      service,
       searchableText: "",
       source: "woo_store_api",
     };
@@ -336,7 +418,7 @@ export class WooCommerceCatalogService {
 
     return {
       source: "woo_store_api",
-      baseUrl: this.baseUrl,
+      baseUrl: getWooBaseUrl(),
       target: filters.target ?? "todos",
       pagination: {
         page,
@@ -358,5 +440,51 @@ export class WooCommerceCatalogService {
     const url = this.buildStoreUrl(`/products/${productId}`);
     const product = await this.fetchJson<WooStoreProduct>(url);
     return this.normalizeProduct(product);
+  }
+
+  async getServiceAvailability(productId: number, date: string, slot?: string) {
+    const url = buildWooUrl("plugin", `/services/${productId}/availability`, {
+      date,
+      slot,
+    });
+    return wooFetch<{
+      date: string;
+      slot: string | null;
+      capacity: number;
+      booked: number;
+      remaining: number;
+      available: boolean;
+    }>(url, {}, {
+      failureMessage: "No se pudo consultar la disponibilidad del servicio",
+      mapConflict: true,
+    });
+  }
+
+  async claimServiceAvailability(
+    productId: number,
+    selection: { date: string; slot: string; quantity: number },
+  ) {
+    const url = buildWooUrl("plugin", `/services/${productId}/claim`);
+    return wooFetch<{
+      token: string;
+      date: string;
+      slot: string;
+      capacity: number;
+      booked: number;
+      remaining: number;
+      available: boolean;
+      expiresAt: string;
+    }>(
+      url,
+      {
+        method: "POST",
+        body: JSON.stringify(selection),
+      },
+      {
+        requireAuth: true,
+        mapConflict: true,
+        failureMessage: "No se pudo reservar el cupo del servicio. Intenta nuevamente",
+      },
+    );
   }
 }

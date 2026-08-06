@@ -1,6 +1,6 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { EstadoPedidoInterno, Rol, type PrismaClient } from "@prisma/client";
+import { EstadoPedidoInterno, Prisma, Rol, type PrismaClient } from "@prisma/client";
 import { PermissionService } from "./PermissionService";
 
 const PEDIDO_COMPLETADO_STATES = [
@@ -303,6 +303,30 @@ export class AuthService {
             },
           },
         },
+        gerente: {
+          select: {
+            empresa: {
+              select: {
+                conjuntos: {
+                  select: { nit: true, nombre: true },
+                  orderBy: { nombre: "asc" },
+                },
+              },
+            },
+          },
+        },
+        jefeOperaciones: {
+          select: {
+            empresa: {
+              select: {
+                conjuntos: {
+                  select: { nit: true, nombre: true },
+                  orderBy: { nombre: "asc" },
+                },
+              },
+            },
+          },
+        },
         residente: {
           select: {
             tipoUnidad: true,
@@ -352,11 +376,44 @@ export class AuthService {
       nombre: item.nombre,
     })) ?? [];
 
+    const conjuntosEmpresa =
+      usuario.gerente?.empresa?.conjuntos ??
+      usuario.jefeOperaciones?.empresa?.conjuntos ??
+      [];
+    for (const item of conjuntosEmpresa) {
+      if (!conjuntos.some((conjunto) => conjunto.nit === item.nit)) {
+        conjuntos.push({ nit: item.nit, nombre: item.nombre });
+      }
+    }
+
     if (usuario.residente?.conjunto) {
       conjuntos.push({
         nit: usuario.residente.conjunto.nit,
         nombre: usuario.residente.conjunto.nombre,
       });
+    }
+
+    let beneficiosActivos = 0;
+    if (conjuntos.length) {
+      try {
+        beneficiosActivos = await this.prisma.beneficioPuntos.count({
+          where: {
+            activo: true,
+            config: {
+              activo: true,
+              conjuntoId: { in: conjuntos.map((conjunto) => conjunto.nit) },
+            },
+          },
+        });
+      } catch (error) {
+        // Mantiene operativo el perfil durante el despliegue previo de la migracion 8-10.
+        if (
+          !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+          error.code !== "P2021"
+        ) {
+          throw error;
+        }
+      }
     }
 
     return {
@@ -383,7 +440,7 @@ export class AuthService {
         totalCompras: Number(pedidoStats._sum.total ?? 0),
         comprasCompletadas: Number(comprasCompletadas._sum.total ?? 0),
         puntos: puntosStats._sum.puntos ?? 0,
-        beneficiosActivos: 0,
+        beneficiosActivos,
       },
     };
   }

@@ -428,6 +428,7 @@ model Usuario {
   compromisosCreados CompromisoConjunto[] @relation("CompromisoCreadoPor")
   pedidos            PedidoApp[]
   movimientosPuntos  MovimientoPuntos[]
+  cambiosEstadoPedido PedidoAppEstadoHistorico[] @relation("PedidoEstadoCambiadoPor")
 }
 
 model Empresa {
@@ -635,6 +636,8 @@ model Conjunto {
   compromisos               CompromisoConjunto[]
   residentes                Residente[]
   pedidos                   PedidoApp[]
+  configPuntos              ConfigPuntosConjunto?
+  movimientosPuntos         MovimientoPuntos[]
 
   // Plan Esperanza
   planEsperanzaConfig PlanEsperanzaConfig?
@@ -734,14 +737,20 @@ model Insumo {
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
   empresaId String
 
+  wooSku       String?
+  wooProductId Int?
+
   inventarios                InventarioInsumo[]
   consumos                   ConsumoInsumo[]
   consumosEmpresa            InsumoConsumoEmpresa[]
   solicitudInsumoItem        SolicitudInsumoItem[]
   definicionTareaPreventivas DefinicionTareaPreventiva[]
   tareas                     Tarea[]
+  pedidoAppItems             PedidoAppItem[]
 
   @@unique([empresaId, nombre, unidad])
+  @@unique([empresaId, wooSku])
+  @@unique([empresaId, wooProductId])
   @@map("Insumo")
 }
 
@@ -941,10 +950,15 @@ model ConsumoInsumo {
   tarea   Tarea? @relation(fields: [tareaId], references: [id])
   tareaId Int?
 
+  pedidoApp   PedidoApp? @relation("PedidoInventarioEntradas", fields: [pedidoAppId], references: [id], onDelete: SetNull)
+  pedidoAppId Int?
+
   cantidad    Decimal  @db.Decimal(14, 4)
   fecha       DateTime
   observacion String?
 
+  @@unique([pedidoAppId, insumoId, tipo])
+  @@index([pedidoAppId])
   @@map("ConsumoInsumo")
 }
 
@@ -1494,12 +1508,29 @@ model PedidoApp {
 
   total   Decimal @db.Decimal(14, 2)
   moneda  String  @default("COP")
+  pagarAhora         Decimal  @default(0) @db.Decimal(14, 2)
+  fechaServicio      DateTime? @db.Date
+  turnoServicio      String?
+  opcionPagoServicio String?
+  addonsServicio     Json?
+  idempotencyKey     String?   @unique
+
+  entradaInventarioAplicada   Boolean   @default(false)
+  entradaInventarioAplicadaEn DateTime?
+  puntosAplicados             Boolean   @default(false)
+  puntosAplicadosEn           DateTime?
+  descuentoPuntos             Decimal   @default(0) @db.Decimal(14, 2)
+
+  beneficioPuntos   BeneficioPuntos? @relation("PedidoBeneficioPuntos", fields: [beneficioPuntosId], references: [id], onDelete: SetNull)
+  beneficioPuntosId Int?
 
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
   items              PedidoAppItem[]
   movimientosPuntos  MovimientoPuntos[]
+  historialEstados   PedidoAppEstadoHistorico[]
+  consumosInventario ConsumoInsumo[] @relation("PedidoInventarioEntradas")
 
   @@index([usuarioId])
   @@index([usuarioId, estado])
@@ -1520,9 +1551,77 @@ model PedidoAppItem {
   cantidad        Decimal @db.Decimal(14, 4)
   precioUnitario  Decimal @db.Decimal(14, 2)
   subtotal        Decimal @db.Decimal(14, 2)
+  pagarAhora         Decimal  @default(0) @db.Decimal(14, 2)
+  fechaServicio      DateTime? @db.Date
+  turnoServicio      String?
+  opcionPagoServicio String?
+  addonsServicio     Json?
+
+  insumo   Insumo? @relation(fields: [insumoId], references: [id], onDelete: SetNull)
+  insumoId Int?
 
   @@index([pedidoId])
+  @@index([insumoId])
   @@map("PedidoAppItem")
+}
+
+model PedidoAppEstadoHistorico {
+  id Int @id @default(autoincrement())
+
+  pedido   PedidoApp @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  pedidoId Int
+
+  estadoAnterior EstadoPedidoInterno?
+  estadoNuevo    EstadoPedidoInterno
+
+  cambiadoPor    Usuario @relation("PedidoEstadoCambiadoPor", fields: [cambiadoPorId], references: [id])
+  cambiadoPorId  String
+  cambiadoPorRol String
+  motivo         String?
+  creadoEn       DateTime @default(now())
+
+  @@index([pedidoId, creadoEn])
+  @@index([cambiadoPorId])
+  @@map("PedidoAppEstadoHistorico")
+}
+
+model ConfigPuntosConjunto {
+  id Int @id @default(autoincrement())
+
+  conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
+  conjuntoId String   @unique
+
+  activo                  Boolean @default(false)
+  montoPorPuntoResidente  Decimal @default(1000) @db.Decimal(14, 2)
+  montoPorPuntoConjunto   Decimal @default(1000) @db.Decimal(14, 2)
+  minimoRedencionPuntos   Int     @default(100)
+
+  beneficios  BeneficioPuntos[]
+  creadoEn    DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@map("ConfigPuntosConjunto")
+}
+
+model BeneficioPuntos {
+  id Int @id @default(autoincrement())
+
+  config   ConfigPuntosConjunto @relation(fields: [configId], references: [id], onDelete: Cascade)
+  configId Int
+
+  nombre         String
+  descripcion    String?
+  puntosCosto    Int
+  valorDescuento Decimal @default(0) @db.Decimal(14, 2)
+  activo         Boolean @default(true)
+  creadoEn       DateTime @default(now())
+  actualizadoEn  DateTime @updatedAt
+
+  movimientos MovimientoPuntos[]
+  pedidos     PedidoApp[] @relation("PedidoBeneficioPuntos")
+
+  @@index([configId, activo])
+  @@map("BeneficioPuntos")
 }
 
 model MovimientoPuntos {
@@ -1533,6 +1632,12 @@ model MovimientoPuntos {
   pedido   PedidoApp? @relation(fields: [pedidoId], references: [id])
   pedidoId Int?
 
+  conjunto   Conjunto? @relation(fields: [conjuntoId], references: [nit], onDelete: SetNull)
+  conjuntoId String?
+
+  beneficio   BeneficioPuntos? @relation(fields: [beneficioId], references: [id], onDelete: SetNull)
+  beneficioId Int?
+
   tipo        TipoMovimientoPuntos
   puntos      Int
   descripcion String?
@@ -1541,6 +1646,9 @@ model MovimientoPuntos {
 
   @@index([usuarioId])
   @@index([usuarioId, creadoEn])
+  @@index([usuarioId, conjuntoId, creadoEn])
+  @@index([pedidoId, tipo])
+  @@index([beneficioId])
   @@map("MovimientoPuntos")
 }
 
