@@ -11,19 +11,14 @@ class ResidentOrdersApi {
   Future<ResidentOrderSummary> crearPedido({
     required List<ResidentCartItem> items,
     String notas = '',
+    String? idempotencyKey,
   }) async {
     final resp = await _client.post(
       '${AppConstants.commerceBase}/residente/pedidos',
       body: {
-        'items': items
-            .map(
-              (item) => {
-                'productId': item.productId,
-                'quantity': item.quantity,
-              },
-            )
-            .toList(),
+        'items': items.map((item) => item.toRequestJson()).toList(),
         'notas': notas.trim(),
+        if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,
       },
     );
 
@@ -42,7 +37,9 @@ class ResidentOrdersApi {
   }
 
   Future<List<ResidentOrderSummary>> listarPedidos() async {
-    final resp = await _client.get('${AppConstants.commerceBase}/residente/pedidos');
+    final resp = await _client.get(
+      '${AppConstants.commerceBase}/residente/pedidos',
+    );
     if (resp.statusCode != 200) {
       throw Exception(
         AppError.fromResponseBody(
@@ -60,7 +57,9 @@ class ResidentOrdersApi {
   }
 
   Future<ResidentOrderSummary> obtenerPedido(int pedidoId) async {
-    final resp = await _client.get('${AppConstants.commerceBase}/residente/pedidos/$pedidoId');
+    final resp = await _client.get(
+      '${AppConstants.commerceBase}/residente/pedidos/$pedidoId',
+    );
     if (resp.statusCode != 200) {
       throw Exception(
         AppError.fromResponseBody(

@@ -3,6 +3,8 @@ import 'package:flutter_application_1/api/administrador_api.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
+import 'package:flutter_application_1/pages/conjunto_cart_page.dart';
+import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/permission_service.dart';
@@ -304,15 +306,35 @@ class _AdministradorPageState extends State<AdministradorPage> {
       ]),
       _AdminSection('Comunidad y ventas', [
         _AdminTile(
-          'Catalogo ecommerce',
+          'Comprar insumos',
           Icons.storefront,
           AppTheme.primaryDark,
           () => _go(
-            const CommerceCatalogPage(
-              title: 'Catalogo ecommerce',
+            CommerceCatalogPage(
+              title: 'Tienda del conjunto',
               initialScope: CommerceCatalogScope.conjunto,
+              enableCart: true,
+              initialConjuntoId: conjunto.nit,
+              initialConjuntoNombre: conjunto.nombre,
             ),
           ),
+        ),
+        _AdminTile(
+          'Ver carrito',
+          Icons.shopping_cart_checkout_rounded,
+          AppTheme.secondary,
+          () => _go(
+            ConjuntoCartPage(
+              initialConjuntoId: conjunto.nit,
+              initialConjuntoNombre: conjunto.nombre,
+            ),
+          ),
+        ),
+        _AdminTile(
+          'Pedidos del conjunto',
+          Icons.receipt_long_outlined,
+          Colors.deepOrange,
+          () => _go(ConjuntoOrdersPage(initialConjuntoId: conjunto.nit)),
         ),
         if (_can('residentes.ver'))
           _AdminTile(

@@ -3,7 +3,11 @@ import 'package:flutter_application_1/api/resident_orders_api.dart';
 import 'package:flutter_application_1/model/resident_order_models.dart';
 import 'package:flutter_application_1/pages/resident_orders_page.dart';
 import 'package:flutter_application_1/service/app_error.dart';
+import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/resident_cart_service.dart';
+import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/widgets/commerce_clay.dart';
+import 'package:flutter_application_1/widgets/points_checkout_card.dart';
 import 'package:intl/intl.dart';
 
 class ResidentCartPage extends StatefulWidget {
@@ -18,7 +22,11 @@ class _ResidentCartPageState extends State<ResidentCartPage> {
   final _ordersApi = ResidentOrdersApi();
   final _notesCtrl = TextEditingController();
   final _money = NumberFormat.currency(locale: 'es_CO', symbol: 'COP ');
+  final String _idempotencyKey =
+      'resident-${DateTime.now().microsecondsSinceEpoch}';
   bool _submitting = false;
+
+  int get _units => _cart.items.fold(0, (sum, item) => sum + item.quantity);
 
   @override
   void dispose() {
@@ -33,20 +41,28 @@ class _ResidentCartPageState extends State<ResidentCartPage> {
       final pedido = await _ordersApi.crearPedido(
         items: _cart.items,
         notas: _notesCtrl.text,
+        idempotencyKey: _idempotencyKey,
       );
       _cart.clear();
       if (!mounted) return;
       await showDialog<void>(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(
+            Icons.check_circle_rounded,
+            color: AppTheme.primary,
+            size: 44,
+          ),
           title: const Text('Pedido creado'),
           content: Text(
-            'Tu pedido #${pedido.id} fue creado correctamente.\n\nEstado: ${pedido.estadoWoo}\nTotal: ${_money.format(pedido.total)}\n\nSi tu tienda tiene pasarela activa, continua el pago desde la URL generada en la siguiente fase.',
+            'Tu pedido #${pedido.id} fue registrado.\n\nTotal: ${_money.format(pedido.total)}\nEstado: pendiente de pago.',
+            textAlign: TextAlign.center,
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Aceptar'),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: <Widget>[
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Ver mis pedidos'),
             ),
           ],
         ),
@@ -56,11 +72,9 @@ class _ResidentCartPageState extends State<ResidentCartPage> {
         context,
         MaterialPageRoute(builder: (_) => const ResidentOrdersPage()),
       );
-    } catch (e) {
+    } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppError.messageOf(e))),
-      );
+      AppFeedback.showError(context, message: AppError.messageOf(error));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -73,41 +87,91 @@ class _ResidentCartPageState extends State<ResidentCartPage> {
       builder: (context, _) {
         final items = _cart.items;
         return Scaffold(
-          appBar: AppBar(title: const Text('Mi carrito')),
+          backgroundColor: CommerceClayTokens.canvas,
+          appBar: AppBar(
+            backgroundColor: CommerceClayTokens.canvas,
+            foregroundColor: CommerceClayTokens.ink,
+            surfaceTintColor: Colors.transparent,
+            title: const Text(
+              'Mi carrito',
+              style: TextStyle(
+                color: CommerceClayTokens.ink,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            actions: <Widget>[
+              IconButton(
+                tooltip: 'Mis pedidos',
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ResidentOrdersPage()),
+                ),
+                icon: const Icon(Icons.receipt_long_outlined),
+              ),
+            ],
+          ),
+          bottomNavigationBar: items.isEmpty
+              ? null
+              : CommerceCheckoutBar(
+                  caption: _cart.payNowTotal > 0
+                      ? 'A pagar ahora: ${_money.format(_cart.payNowTotal)}'
+                      : '$_units ${_units == 1 ? 'artículo' : 'artículos'} en tu carrito',
+                  total: _money.format(_cart.total),
+                  actionLabel: 'Pedir ahora',
+                  icon: Icons.lock_outline_rounded,
+                  loading: _submitting,
+                  onPressed: _checkout,
+                ),
           body: items.isEmpty
-              ? const Center(child: Text('Tu carrito esta vacio.'))
-              : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    ...items.map((item) => _CartItemCard(item: item, money: _money)),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _notesCtrl,
-                      minLines: 2,
-                      maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: 'Notas para el pedido (opcional)',
+              ? CommerceClayBackground(
+                  child: CommerceStateView(
+                    icon: Icons.shopping_bag_outlined,
+                    title: 'Tu carrito está vacío',
+                    message:
+                        'Explora la tienda y agrega los productos o servicios que necesitas.',
+                    actionLabel: 'Volver a la tienda',
+                    onAction: () => Navigator.pop(context),
+                  ),
+                )
+              : CommerceClayBackground(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
+                    children: <Widget>[
+                      CommerceHeroCard(
+                        eyebrow: 'Tu compra',
+                        title: 'Todo listo para pedir',
+                        subtitle:
+                            '$_units ${_units == 1 ? 'artículo seleccionado' : 'artículos seleccionados'} · ${_money.format(_cart.total)}',
+                        icon: Icons.shopping_bag_rounded,
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text('Total: ${_money.format(_cart.total)}'),
-                            const SizedBox(height: 12),
-                            ElevatedButton.icon(
-                              onPressed: _submitting ? null : _checkout,
-                              icon: const Icon(Icons.shopping_bag_outlined),
-                              label: Text(_submitting ? 'Creando pedido...' : 'Crear pedido'),
-                            ),
-                          ],
+                      const SizedBox(height: 22),
+                      const CommerceSectionHeader(
+                        title: 'Tu selección',
+                        subtitle: 'Ajusta cantidades antes de finalizar',
+                      ),
+                      const SizedBox(height: 12),
+                      ...items.map(
+                        (item) =>
+                            _ResidentCartItemCard(item: item, money: _money),
+                      ),
+                      const SizedBox(height: 6),
+                      const PointsCheckoutCard(),
+                      const SizedBox(height: 12),
+                      CommerceClayCard(
+                        child: TextField(
+                          controller: _notesCtrl,
+                          minLines: 2,
+                          maxLines: 4,
+                          maxLength: 500,
+                          decoration: const InputDecoration(
+                            labelText: 'Notas para el pedido (opcional)',
+                            hintText: 'Agrega instrucciones para la tienda',
+                            prefixIcon: Icon(Icons.notes_rounded),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
         );
       },
@@ -115,8 +179,8 @@ class _ResidentCartPageState extends State<ResidentCartPage> {
   }
 }
 
-class _CartItemCard extends StatelessWidget {
-  const _CartItemCard({required this.item, required this.money});
+class _ResidentCartItemCard extends StatelessWidget {
+  const _ResidentCartItemCard({required this.item, required this.money});
 
   final ResidentCartItem item;
   final NumberFormat money;
@@ -124,61 +188,121 @@ class _CartItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cart = ResidentCartService.instance;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(14)),
-              child: item.imageUrl.isEmpty
-                  ? const ColoredBox(
-                      color: Color(0xFFF0F3F5),
-                      child: Icon(Icons.inventory_2_outlined),
-                    )
-                  : Image.network(item.imageUrl, fit: BoxFit.cover),
+    return CommerceClayCard(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: 86,
+            height: item.service == null ? 96 : 164,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(19),
+              border: Border.all(color: Colors.white),
             ),
-            const SizedBox(width: 12),
-            Expanded(
+            clipBehavior: Clip.antiAlias,
+            child: CommerceNetworkImage(url: item.imageUrl),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: SizedBox(
+              height: item.service == null ? 96 : 164,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item.name, style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(money.format(item.unitPrice)),
-                  const SizedBox(height: 8),
+                children: <Widget>[
                   Row(
-                    children: [
-                      IconButton(
-                        onPressed: () => cart.setQuantity(item.productId, item.quantity - 1),
-                        icon: const Icon(Icons.remove_circle_outline),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          item.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                height: 1.15,
+                              ),
+                        ),
                       ),
-                      Text('${item.quantity}'),
-                      IconButton(
-                        onPressed: () => cart.setQuantity(item.productId, item.quantity + 1),
-                        icon: const Icon(Icons.add_circle_outline),
+                      SizedBox.square(
+                        dimension: 30,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          tooltip: 'Quitar',
+                          onPressed: () => cart.removeProduct(item.cartKey),
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          color: AppTheme.red,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (item.service != null) ...<Widget>[
+                    const SizedBox(height: 5),
+                    Text(
+                      '${item.service!.date} · ${item.service!.slotLabel}',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                    if (item.service!.selectedAddons.isNotEmpty)
+                      Text(
+                        item.service!.selectedAddons
+                            .map(
+                              (group) =>
+                                  '${group.groupLabel}: ${group.options.map((option) => option.label).join(', ')}',
+                            )
+                            .join(' · '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: CommerceClayTokens.muted,
+                        ),
+                      ),
+                    Text(
+                      '${item.service!.payChoice == 'full' ? 'Pago 100%' : 'Anticipo'} · A pagar ahora ${money.format(item.payNow)}',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: AppTheme.primaryDark,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  Row(
+                    children: <Widget>[
+                      CommerceQuantityStepper(
+                        compact: true,
+                        quantity: item.quantity,
+                        onDecrease: () =>
+                            cart.setQuantity(item.cartKey, item.quantity - 1),
+                        onIncrease: () =>
+                            cart.setQuantity(item.cartKey, item.quantity + 1),
+                      ),
+                      const Spacer(),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: <Widget>[
+                          Text(
+                            '${item.quantity} × ${money.format(item.unitPrice)}',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: CommerceClayTokens.muted),
+                          ),
+                          Text(
+                            money.format(item.subtotal),
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  color: AppTheme.primaryDark,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ],
               ),
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                IconButton(
-                  onPressed: () => cart.removeProduct(item.productId),
-                  icon: const Icon(Icons.delete_outline),
-                ),
-                Text(money.format(item.subtotal)),
-              ],
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

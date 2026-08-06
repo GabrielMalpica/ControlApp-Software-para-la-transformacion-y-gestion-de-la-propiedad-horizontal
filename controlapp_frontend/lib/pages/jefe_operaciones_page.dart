@@ -11,6 +11,8 @@ import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_pag
 import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
 import 'package:flutter_application_1/pages/cronograma_impresion_page.dart';
 import 'package:flutter_application_1/pages/cumpleanos_page.dart';
+import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
+import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/logout.dart';
@@ -346,6 +348,40 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
               ),
             );
           }),
+      ]),
+      _JefeSection('Compras del conjunto', [
+        _JefeTile(
+          'Comprar insumos',
+          Icons.storefront_outlined,
+          AppTheme.primaryDark,
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CommerceCatalogPage(
+                  title: 'Insumos para conjuntos',
+                  initialScope: CommerceCatalogScope.conjunto,
+                  enableCart: true,
+                  initialConjuntoId: nit,
+                  initialConjuntoNombre: conjunto.nombre,
+                ),
+              ),
+            );
+          },
+        ),
+        _JefeTile(
+          'Pedidos de conjunto',
+          Icons.receipt_long_outlined,
+          Colors.deepOrange,
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ConjuntoOrdersPage(initialConjuntoId: nit),
+              ),
+            );
+          },
+        ),
       ]),
       _JefeSection('Analisis y control', [
         if (_can('compromisos.globales_ver'))

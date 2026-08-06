@@ -6,6 +6,7 @@ import 'package:flutter_application_1/pages/agenda_herramientas_page.dart';
 import 'package:flutter_application_1/pages/cumpleanos_page.dart';
 import 'package:flutter_application_1/pages/agenda_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
+import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
 import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.dart';
 import 'package:flutter_application_1/pages/crear_herramienta_page.dart';
 import 'package:flutter_application_1/pages/festivos_page.dart';
@@ -83,6 +84,7 @@ enum _QuickAction {
   permisosGestion,
   catalogoComercial,
   catalogoInsumosEcommerce,
+  pedidosConjunto,
 
   // Conjuntos
   conjuntoCrear,
@@ -342,15 +344,17 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         "Gestionar permisos",
         Icons.admin_panel_settings_outlined,
       ),
-      item(
-        _QuickAction.catalogoComercial,
-        "Catalogo ecommerce",
-        Icons.storefront,
-      ),
+      item(_QuickAction.catalogoComercial, "Explorar tienda", Icons.storefront),
       item(
         _QuickAction.catalogoInsumosEcommerce,
-        "Catalogo insumos ecommerce",
+        "Comprar insumos",
         Icons.inventory_2,
+      ),
+      item(
+        _QuickAction.pedidosConjunto,
+        "Pedidos de conjunto",
+        Icons.receipt_long_outlined,
+        enabled: enabledNit,
       ),
 
       const PopupMenuDivider(),
@@ -538,16 +542,24 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         return;
 
       case _QuickAction.catalogoComercial:
-        await go(const CommerceCatalogPage(title: 'Catalogo ecommerce'));
+        await go(const CommerceCatalogPage(title: 'Tienda'));
         return;
 
       case _QuickAction.catalogoInsumosEcommerce:
         await go(
-          const CommerceCatalogPage(
-            title: 'Catalogo insumos ecommerce',
+          CommerceCatalogPage(
+            title: 'Comprar insumos',
             initialScope: CommerceCatalogScope.conjunto,
+            enableCart: true,
+            initialConjuntoId: nit,
+            initialConjuntoNombre: _conjuntoSeleccionado?.nombre,
           ),
         );
+        return;
+
+      case _QuickAction.pedidosConjunto:
+        if (!_requiereConjuntoOrWarn()) return;
+        await go(ConjuntoOrdersPage(initialConjuntoId: nit));
         return;
 
       case _QuickAction.conjuntoCrear:
@@ -612,9 +624,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
       // No depende de un conjunto: agrega las necesidades de toda la empresa.
       case _QuickAction.cronogramaMaquinaria:
-        await go(
-          CronogramaMaquinariaPage(empresaNit: AppConstants.empresaNit),
-        );
+        await go(CronogramaMaquinariaPage(empresaNit: AppConstants.empresaNit));
         return;
 
       case _QuickAction.agendaHerramientas:
@@ -809,11 +819,23 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         }),
       ]),
       _TileSection("Analisis y control", [
-        _Tile("Catalogo ecommerce", Icons.storefront, AppTheme.primaryDark, () {
+        _Tile("Comprar insumos", Icons.storefront, AppTheme.primaryDark, () {
           _abrirYRecargar(
-            const CommerceCatalogPage(title: 'Catalogo ecommerce'),
+            CommerceCatalogPage(
+              title: 'Insumos para conjuntos',
+              initialScope: CommerceCatalogScope.conjunto,
+              enableCart: true,
+              initialConjuntoId: nit,
+              initialConjuntoNombre: nombreConjunto,
+            ),
           );
         }),
+        _Tile(
+          "Pedidos de conjunto",
+          Icons.receipt_long_outlined,
+          Colors.deepOrange,
+          () => _abrirYRecargar(ConjuntoOrdersPage(initialConjuntoId: nit)),
+        ),
         _Tile("Reporte conjunto", Icons.bar_chart, AppTheme.green, () {
           Navigator.push(
             context,

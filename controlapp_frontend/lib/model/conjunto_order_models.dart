@@ -1,6 +1,6 @@
 import 'package:flutter_application_1/model/commerce_models.dart';
 
-class ResidentCartItem {
+class ConjuntoCartItem {
   final String cartKey;
   final int productId;
   final String name;
@@ -11,7 +11,7 @@ class ResidentCartItem {
   final String type;
   final CommerceServiceSelection? service;
 
-  const ResidentCartItem({
+  const ConjuntoCartItem({
     required this.cartKey,
     required this.productId,
     required this.name,
@@ -23,8 +23,8 @@ class ResidentCartItem {
     this.service,
   });
 
-  ResidentCartItem copyWith({int? quantity}) {
-    return ResidentCartItem(
+  ConjuntoCartItem copyWith({int? quantity}) {
+    return ConjuntoCartItem(
       cartKey: cartKey,
       productId: productId,
       name: name,
@@ -47,7 +47,7 @@ class ResidentCartItem {
   };
 }
 
-class ResidentOrderItem {
+class ConjuntoOrderItem {
   final int id;
   final String nombreProducto;
   final String? sku;
@@ -60,7 +60,7 @@ class ResidentOrderItem {
   final String? opcionPagoServicio;
   final List<dynamic> addonsServicio;
 
-  const ResidentOrderItem({
+  const ConjuntoOrderItem({
     required this.id,
     required this.nombreProducto,
     required this.sku,
@@ -74,8 +74,8 @@ class ResidentOrderItem {
     required this.addonsServicio,
   });
 
-  factory ResidentOrderItem.fromJson(Map<String, dynamic> json) {
-    return ResidentOrderItem(
+  factory ConjuntoOrderItem.fromJson(Map<String, dynamic> json) {
+    return ConjuntoOrderItem(
       id: (json['id'] as num?)?.toInt() ?? 0,
       nombreProducto: json['nombreProducto']?.toString() ?? '',
       sku: json['sku']?.toString(),
@@ -92,16 +92,19 @@ class ResidentOrderItem {
   }
 }
 
-class ResidentOrderSummary {
+class ConjuntoOrderSummary {
   final int id;
   final String wooOrderId;
   final String estado;
   final String estadoWoo;
   final double total;
   final String moneda;
+  final String? conjuntoId;
+  final String? conjuntoNombre;
   final DateTime? creadoEn;
+  final DateTime? actualizadoEn;
   final int cantidadItems;
-  final List<ResidentOrderItem> items;
+  final List<ConjuntoOrderItem> items;
   final String? pagoUrl;
   final double pagarAhora;
   final String? fechaServicio;
@@ -109,14 +112,17 @@ class ResidentOrderSummary {
   final String? opcionPagoServicio;
   final String whatsappPhone;
 
-  const ResidentOrderSummary({
+  const ConjuntoOrderSummary({
     required this.id,
     required this.wooOrderId,
     required this.estado,
     required this.estadoWoo,
     required this.total,
     required this.moneda,
+    required this.conjuntoId,
+    required this.conjuntoNombre,
     required this.creadoEn,
+    required this.actualizadoEn,
     required this.cantidadItems,
     required this.items,
     required this.pagoUrl,
@@ -127,29 +133,35 @@ class ResidentOrderSummary {
     required this.whatsappPhone,
   });
 
-  factory ResidentOrderSummary.fromJson(Map<String, dynamic> json) {
+  factory ConjuntoOrderSummary.fromJson(Map<String, dynamic> json) {
     final items = (json['items'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
-        .map(ResidentOrderItem.fromJson)
+        .map(ConjuntoOrderItem.fromJson)
         .toList();
-    return ResidentOrderSummary(
+
+    return ConjuntoOrderSummary(
       id: (json['id'] as num?)?.toInt() ?? 0,
       wooOrderId: json['wooOrderId']?.toString() ?? '',
       estado: json['estado']?.toString() ?? '',
       estadoWoo: json['estadoWoo']?.toString() ?? '',
       total: (json['total'] as num?)?.toDouble() ?? 0,
       moneda: json['moneda']?.toString() ?? 'COP',
+      conjuntoId: json['conjuntoId']?.toString(),
+      conjuntoNombre: json['conjuntoNombre']?.toString(),
       creadoEn: json['creadoEn'] != null
           ? DateTime.tryParse(json['creadoEn'].toString())
           : null,
+      actualizadoEn: json['actualizadoEn'] != null
+          ? DateTime.tryParse(json['actualizadoEn'].toString())
+          : null,
       cantidadItems: (json['cantidadItems'] as num?)?.toInt() ?? items.length,
+      items: items,
       pagoUrl: json['pagoUrl']?.toString(),
       pagarAhora: (json['pagarAhora'] as num?)?.toDouble() ?? 0,
       fechaServicio: json['fechaServicio']?.toString(),
       turnoServicio: json['turnoServicio']?.toString(),
       opcionPagoServicio: json['opcionPagoServicio']?.toString(),
       whatsappPhone: json['whatsappPhone']?.toString() ?? '',
-      items: items,
     );
   }
 }

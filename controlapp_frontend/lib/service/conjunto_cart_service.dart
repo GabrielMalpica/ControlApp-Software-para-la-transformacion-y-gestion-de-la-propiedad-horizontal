@@ -1,17 +1,20 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_application_1/model/commerce_models.dart';
-import 'package:flutter_application_1/model/resident_order_models.dart';
+import 'package:flutter_application_1/model/conjunto_order_models.dart';
 
-class ResidentCartService extends ChangeNotifier {
-  ResidentCartService._();
+class ConjuntoCartService extends ChangeNotifier {
+  ConjuntoCartService._();
 
-  static final ResidentCartService instance = ResidentCartService._();
+  static final ConjuntoCartService instance = ConjuntoCartService._();
 
-  final Map<String, ResidentCartItem> _items = <String, ResidentCartItem>{};
+  final Map<String, ConjuntoCartItem> _items = <String, ConjuntoCartItem>{};
 
-  List<ResidentCartItem> get items => _items.values.toList(growable: false);
+  List<ConjuntoCartItem> get items => _items.values.toList(growable: false);
 
   int get itemCount => _items.length;
+
+  int get unitsCount =>
+      _items.values.fold(0, (sum, item) => sum + item.quantity);
 
   double get total => _items.values.fold(0, (sum, item) => sum + item.subtotal);
   double get payNowTotal {
@@ -26,12 +29,16 @@ class ResidentCartService extends ChangeNotifier {
     int quantity = 1,
     CommerceServiceSelection? service,
   }) {
+    if (!product.audience.paraConjunto) {
+      return;
+    }
     if (product.service?.enabled == true && service == null) return;
+
     final cartKey = '${product.id}|${service?.signature ?? 'product'}';
     final current = _items[cartKey];
     final imageUrl = product.images.isNotEmpty ? product.images.first.src : '';
     if (current == null) {
-      _items[cartKey] = ResidentCartItem(
+      _items[cartKey] = ConjuntoCartItem(
         cartKey: cartKey,
         productId: product.id,
         name: product.name,

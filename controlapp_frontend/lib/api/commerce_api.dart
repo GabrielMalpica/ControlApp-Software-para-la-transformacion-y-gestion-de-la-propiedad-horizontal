@@ -23,9 +23,9 @@ class CommerceApi {
     if (q.trim().isNotEmpty) query['q'] = q.trim();
     if (category.trim().isNotEmpty) query['category'] = category.trim();
 
-    final uri = Uri.parse('${AppConstants.commerceBase}/catalogo').replace(
-      queryParameters: query,
-    );
+    final uri = Uri.parse(
+      '${AppConstants.commerceBase}/catalogo',
+    ).replace(queryParameters: query);
     final resp = await _client.get(uri.toString());
 
     if (resp.statusCode != 200) {
@@ -42,7 +42,9 @@ class CommerceApi {
   }
 
   Future<CommerceProduct> obtenerProducto(int productId) async {
-    final resp = await _client.get('${AppConstants.commerceBase}/catalogo/$productId');
+    final resp = await _client.get(
+      '${AppConstants.commerceBase}/catalogo/$productId',
+    );
 
     if (resp.statusCode != 200) {
       throw Exception(
@@ -55,5 +57,27 @@ class CommerceApi {
 
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     return CommerceProduct.fromJson(data);
+  }
+
+  Future<CommerceServiceAvailability> obtenerDisponibilidad({
+    required int productId,
+    required String date,
+    required String slot,
+  }) async {
+    final uri = Uri.parse(
+      '${AppConstants.commerceBase}/catalogo/$productId/disponibilidad',
+    ).replace(queryParameters: <String, String>{'date': date, 'slot': slot});
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo consultar la disponibilidad del servicio.',
+        ),
+      );
+    }
+    return CommerceServiceAvailability.fromJson(
+      jsonDecode(resp.body) as Map<String, dynamic>,
+    );
   }
 }
