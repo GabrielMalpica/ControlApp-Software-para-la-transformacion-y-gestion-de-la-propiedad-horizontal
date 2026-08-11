@@ -4,6 +4,7 @@ exports.TareaController = void 0;
 const prisma_1 = require("../db/prisma");
 const zod_1 = require("zod");
 const TareaServices_1 = require("../services/TareaServices");
+const tenant_middleware_1 = require("../middlewares/tenant.middleware");
 const IdParamSchema = zod_1.z.object({
     id: zod_1.z.coerce.number().int().positive(),
 });
@@ -12,7 +13,8 @@ class TareaController {
         // POST /tareas  (correctiva por defecto)
         this.crearTarea = async (req, res, next) => {
             try {
-                const creada = await TareaServices_1.TareaService.crearTareaCorrectiva(prisma_1.prisma, req.body);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                const creada = await TareaServices_1.TareaService.crearTareaCorrectiva(prisma_1.prisma, req.body, empresaId);
                 res.status(201).json(creada);
             }
             catch (err) {
@@ -22,7 +24,8 @@ class TareaController {
         // GET /tareas
         this.listarTareas = async (req, res, next) => {
             try {
-                const list = await TareaServices_1.TareaService.listarTareas(prisma_1.prisma, req.query);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                const list = await TareaServices_1.TareaService.listarTareas(prisma_1.prisma, req.query, empresaId);
                 res.json(list);
             }
             catch (err) {
@@ -33,7 +36,8 @@ class TareaController {
         this.obtenerTarea = async (req, res, next) => {
             try {
                 const { id } = IdParamSchema.parse(req.params);
-                const tarea = await TareaServices_1.TareaService.obtenerTarea(prisma_1.prisma, id);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                const tarea = await TareaServices_1.TareaService.obtenerTarea(prisma_1.prisma, id, empresaId);
                 res.json(tarea);
             }
             catch (err) {
@@ -44,7 +48,8 @@ class TareaController {
         this.editarTarea = async (req, res, next) => {
             try {
                 const { id } = IdParamSchema.parse(req.params);
-                const tarea = await TareaServices_1.TareaService.editarTarea(prisma_1.prisma, id, req.body);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                const tarea = await TareaServices_1.TareaService.editarTarea(prisma_1.prisma, id, req.body, empresaId);
                 res.json(tarea);
             }
             catch (err) {
@@ -55,7 +60,8 @@ class TareaController {
         this.eliminarTarea = async (req, res, next) => {
             try {
                 const { id } = IdParamSchema.parse(req.params);
-                await TareaServices_1.TareaService.eliminarTarea(prisma_1.prisma, id);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                await TareaServices_1.TareaService.eliminarTarea(prisma_1.prisma, id, empresaId);
                 res.status(204).send();
             }
             catch (err) {

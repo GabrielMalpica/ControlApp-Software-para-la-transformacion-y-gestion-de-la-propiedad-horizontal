@@ -4,6 +4,7 @@ import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
 import { requireRoles } from "../middlewares/role.middleware";
 import { uploadEvidencias } from "../middlewares/upload_evidencias";
+import { requireResourceScope } from "../middlewares/tenant.middleware";
 
 const router = Router();
 const ctrl = new SupervisorController();
@@ -20,6 +21,7 @@ router.post(
   "/tareas/:id/cerrar",
   requireRoles("supervisor", "gerente", "jefe_operaciones"),
   requirePermission("tareas.cerrar"),
+  requireResourceScope("tarea", "id"),
   uploadEvidencias.array("files", 10),
   ctrl.cerrarTarea,
 );
@@ -27,6 +29,7 @@ router.post(
   "/tareas/:id/veredicto",
   requireRoles("supervisor"),
   requirePermission("tareas.veredicto"),
+  requireResourceScope("tarea", "id"),
   ctrl.veredicto,
 );
 router.get(

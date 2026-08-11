@@ -7,13 +7,15 @@ import {
   HerramientaIdParam,
   ListarHerramientasQuery,
 } from "../model/Herramienta";
+import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
 
 export class HerramientaController {
 
   // POST /herramientas
   crear: RequestHandler = async (req, res, next) => {
     try {
-      const body = CrearHerramientaBody.parse(req.body);
+      const empresaId = await empresaIdAutenticada(req);
+      const body = CrearHerramientaBody.parse({ ...req.body, empresaId });
       const service = new HerramientaService(prisma);
       const out = await service.crear(body);
       res.status(201).json(out);
@@ -32,8 +34,9 @@ export class HerramientaController {
   listar: RequestHandler = async (req, res, next) => {
     try {
       const q = ListarHerramientasQuery.parse(req.query);
+      const empresaId = await empresaIdAutenticada(req);
       const service = new HerramientaService(prisma);
-      const out = await service.listar(q);
+      const out = await service.listar({ ...q, empresaId });
       res.json(out);
     } catch (err) {
       next(err);

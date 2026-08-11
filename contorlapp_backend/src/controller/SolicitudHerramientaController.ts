@@ -6,6 +6,7 @@ import {
   CrearSolicitudHerramientaBody,
   CambiarEstadoSolicitudBody,
 } from "../model/Herramienta";
+import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
 
 const SolicitudIdParam = z.object({
   solicitudId: z.coerce.number().int().positive(),
@@ -17,7 +18,7 @@ export class SolicitudHerramientaController {
   crear: RequestHandler = async (req, res, next) => {
     try {
       const body = CrearSolicitudHerramientaBody.parse(req.body);
-      const service = new SolicitudHerramientaService(prisma);
+      const service = new SolicitudHerramientaService(prisma, await empresaIdAutenticada(req));
       const out = await service.crear(body);
       res.status(201).json(out);
     } catch (err: any) {
@@ -35,14 +36,12 @@ export class SolicitudHerramientaController {
       const conjuntoId = req.query.conjuntoId
         ? String(req.query.conjuntoId)
         : undefined;
-      const empresaId = req.query.empresaId
-        ? String(req.query.empresaId)
-        : undefined;
+      const empresaId = await empresaIdAutenticada(req);
       const estado = req.query.estado
         ? (String(req.query.estado) as any)
         : undefined;
 
-      const service = new SolicitudHerramientaService(prisma);
+      const service = new SolicitudHerramientaService(prisma, empresaId);
       const out = await service.listar({ conjuntoId, empresaId, estado });
       res.json(out);
     } catch (err) {
@@ -54,7 +53,7 @@ export class SolicitudHerramientaController {
   obtener: RequestHandler = async (req, res, next) => {
     try {
       const { solicitudId } = SolicitudIdParam.parse(req.params);
-      const service = new SolicitudHerramientaService(prisma);
+      const service = new SolicitudHerramientaService(prisma, await empresaIdAutenticada(req));
       const out = await service.obtener(solicitudId);
       res.json(out);
     } catch (err) {
@@ -68,7 +67,7 @@ export class SolicitudHerramientaController {
       const { solicitudId } = SolicitudIdParam.parse(req.params);
       const body = CambiarEstadoSolicitudBody.parse(req.body);
 
-      const service = new SolicitudHerramientaService(prisma);
+      const service = new SolicitudHerramientaService(prisma, await empresaIdAutenticada(req));
       const out =
         body.estado === "APROBADA"
           ? await service.aprobar(solicitudId, req.body)

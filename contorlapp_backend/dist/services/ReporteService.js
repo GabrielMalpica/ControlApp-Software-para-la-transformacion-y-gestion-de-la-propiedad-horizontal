@@ -345,11 +345,16 @@ function toOutInsumoRow(i) {
     };
 }
 class ReporteService {
-    constructor(prisma) {
+    constructor(prisma, empresaId) {
         this.prisma = prisma;
+        this.empresaId = empresaId;
     }
     soloPublicadas(where) {
-        return { ...where, borrador: false };
+        return {
+            ...where,
+            borrador: false,
+            conjunto: { empresaId: this.empresaId },
+        };
     }
     // =========================================================
     // ✅ MÉTODOS QUE YA TENÍAS (NO SE BORRAN)
@@ -741,6 +746,7 @@ class ReporteService {
         const items = await this.prisma.compromisoConjunto.findMany({
             where: {
                 ...(conjuntoId ? { conjuntoId } : {}),
+                conjunto: { empresaId: this.empresaId },
                 creadaEn: { lte: hasta },
                 OR: [{ cerradaEn: null }, { cerradaEn: { gte: desde } }],
             },
@@ -901,8 +907,8 @@ class ReporteService {
     // =========================================================
     async usoDeInsumosPorFecha(payload) {
         const { conjuntoId, desde, hasta } = RangoConConjuntoDTO.parse(payload);
-        const inventario = await this.prisma.inventario.findUnique({
-            where: { conjuntoId },
+        const inventario = await this.prisma.inventario.findFirst({
+            where: { conjuntoId, conjunto: { empresaId: this.empresaId } },
             select: { id: true },
         });
         if (!inventario)
@@ -918,7 +924,7 @@ class ReporteService {
             _count: { _all: true },
         });
         const insumos = await this.prisma.insumo.findMany({
-            where: { id: { in: rows.map((r) => r.insumoId) } },
+            where: { id: { in: rows.map((r) => r.insumoId) }, empresaId: this.empresaId },
             select: { id: true, nombre: true, unidad: true },
         });
         const mapInfo = new Map(insumos.map((i) => [i.id, i]));
@@ -945,14 +951,23 @@ class ReporteService {
             by: ["maquinariaId"],
             where: {
                 fechaInicio: { gte: desde, lte: hasta },
-                ...(conjuntoId ? { tarea: { conjuntoId } } : {}), // ✅ así sí
+                tarea: {
+                    ...(conjuntoId ? { conjuntoId } : {}),
+                    conjunto: { empresaId: this.empresaId },
+                },
             },
             _count: { _all: true },
         });
         const maquinariaIds = rows.map((r) => r.maquinariaId);
         const maqs = maquinariaIds.length
             ? await this.prisma.maquinaria.findMany({
-                where: { id: { in: maquinariaIds } },
+                where: {
+                    id: { in: maquinariaIds },
+                    OR: [
+                        { empresaId: this.empresaId },
+                        { conjuntoPropietario: { empresaId: this.empresaId } },
+                    ],
+                },
                 select: { id: true, nombre: true },
             })
             : [];
@@ -978,7 +993,10 @@ class ReporteService {
             by: ["herramientaId"],
             where: {
                 fechaInicio: { gte: desde, lte: hasta },
-                ...(conjuntoId ? { tarea: { conjuntoId } } : {}),
+                tarea: {
+                    ...(conjuntoId ? { conjuntoId } : {}),
+                    conjunto: { empresaId: this.empresaId },
+                },
             },
             _count: { _all: true },
             _sum: { cantidad: true },
@@ -986,7 +1004,7 @@ class ReporteService {
         const herramientaIds = rows.map((r) => r.herramientaId);
         const herrs = herramientaIds.length
             ? await this.prisma.herramienta.findMany({
-                where: { id: { in: herramientaIds } },
+                where: { id: { in: herramientaIds }, empresaId: this.empresaId },
                 select: { id: true, nombre: true, unidad: true },
             })
             : [];
@@ -1500,6 +1518,7 @@ class ReporteService {
         const defs = await this.prisma.definicionTareaPreventiva.findMany({
             where: {
                 ...(conjuntoId ? { conjuntoId } : {}),
+                conjunto: { empresaId: this.empresaId },
                 ...(soloActivas ? { activo: true } : {}),
                 creadoEn: { gte: desde, lte: hasta },
             },
@@ -1529,7 +1548,7 @@ class ReporteService {
         }
         const insumoRows = insumoIds.size > 0
             ? await this.prisma.insumo.findMany({
-                where: { id: { in: Array.from(insumoIds) } },
+                where: { id: { in: Array.from(insumoIds) }, empresaId: this.empresaId },
                 select: { id: true, nombre: true, unidad: true },
             })
             : [];

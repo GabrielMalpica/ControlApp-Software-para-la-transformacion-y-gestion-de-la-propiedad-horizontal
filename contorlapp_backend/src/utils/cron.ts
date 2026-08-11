@@ -1,10 +1,9 @@
 // src/utils/cron.ts
 import cron from "node-cron";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../db/prisma";
 import { DefinicionTareaPreventivaService } from "../services/DefinicionTareaPreventivaService";
 import { purgarExcluidasDeMesesAnteriores } from "../services/CronogramaServices";
 
-const prisma = new PrismaClient();
 const service = new DefinicionTareaPreventivaService(prisma);
 
 // === OPCIÓN A: 1er día de cada mes a MEDIANOCHE (00:00) Bogotá ===

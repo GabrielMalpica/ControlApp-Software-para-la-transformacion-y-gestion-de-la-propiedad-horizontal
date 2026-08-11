@@ -4,9 +4,12 @@ import { CronogramaController } from "../controller/CronogramaController";
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
 import { requireRoles } from "../middlewares/role.middleware";
+import { requireConjuntoScope, requireResourceScope } from "../middlewares/tenant.middleware";
 
 const router = Router();
 const controller = new CronogramaController();
+
+router.use("/conjuntos/:nit", authRequired, requireConjuntoScope("nit"));
 
 // Sugerencia de operarios para un rango
 router.get(
@@ -96,6 +99,7 @@ router.get(
   "/conjuntos/:nit/cronograma/tareas/por-operario/:operarioId",
   authRequired,
   requirePermission("cronograma.ver"),
+  requireResourceScope("operario", "operarioId"),
   controller.tareasPorOperario,
 );
 router.get(

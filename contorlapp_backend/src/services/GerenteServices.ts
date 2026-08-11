@@ -182,8 +182,6 @@ type ReemplazoPropuesta =
       message: string;
     };
 
-const EMPRESA_ID_FIJA = "901191875-4";
-
 type ResidenteFilaError = {
   fila: number;
   cedula: string;
@@ -240,7 +238,10 @@ const ESTADOS_BLOQUEADOS_PARA_REEMPLAZO = [
 export class GerenteService {
   private permissionService: PermissionService;
 
-  constructor(private prisma: PrismaClient) {
+  constructor(
+    private prisma: PrismaClient,
+    private readonly empresaIdAutenticada?: string,
+  ) {
     this.permissionService = new PermissionService(prisma);
   }
 
@@ -395,21 +396,17 @@ export class GerenteService {
   }
 
   private async resolverEmpresaNit(): Promise<string> {
-    const empresaFija = await this.prisma.empresa.findUnique({
-      where: { nit: EMPRESA_ID_FIJA },
+    const empresaId = String(this.empresaIdAutenticada ?? "").trim();
+    if (!empresaId) {
+      throw new Error("No se pudo identificar la empresa autenticada.");
+    }
+
+    const empresa = await this.prisma.empresa.findUnique({
+      where: { nit: empresaId },
       select: { nit: true },
     });
-
-    if (empresaFija) return empresaFija.nit;
-
-    const primeraEmpresa = await this.prisma.empresa.findFirst({
-      select: { nit: true },
-      orderBy: { id: "asc" },
-    });
-
-    if (primeraEmpresa) return primeraEmpresa.nit;
-
-    throw new Error("No hay empresa registrada. Crea primero una empresa para poder crear/listar conjuntos.");
+    if (!empresa) throw new Error("Empresa autenticada no encontrada.");
+    return empresa.nit;
   }
 
   private resolverUbicacionResidente(input: {
@@ -777,7 +774,7 @@ export class GerenteService {
 
   /* ===================== EMPRESA ===================== */
 
-  async crearEmpresa(payload: unknown) {
+  async crearEmpresa(payload: unknown, actorUserId?: string) {
     const dto = z
       .object({ nombre: z.string().min(3), nit: z.string().min(3) })
       .parse(payload);
@@ -787,16 +784,24 @@ export class GerenteService {
     });
     if (existe) throw new Error("Ya existe una empresa con este NIT.");
 
-    return this.prisma.empresa.create({
-      data: { nombre: dto.nombre, nit: dto.nit },
+    return this.prisma.$transaction(async (tx) => {
+      const empresa = await tx.empresa.create({
+        data: { nombre: dto.nombre, nit: dto.nit },
+      });
+      if (actorUserId) {
+        await tx.gerente.update({
+          where: { id: actorUserId },
+          data: { empresaId: empresa.nit },
+        });
+      }
+      return empresa;
     });
   }
 
   async actualizarLimiteHorasEmpresa(limiteHorasSemana: number) {
-    const empresa = await this.prisma.empresa.findFirst();
-    if (!empresa) throw new Error("No hay empresa registrada.");
+    const empresaId = await this.resolverEmpresaNit();
     return this.prisma.empresa.update({
-      where: { nit: empresa.nit },
+      where: { nit: empresaId },
       data: { limiteHorasSemana },
       select: { nit: true, limiteHorasSemana: true },
     });
@@ -933,9 +938,11 @@ export class GerenteService {
 
   async asignarGerente(payload: unknown) {
     const dto = CrearGerenteDTO.parse(payload);
+    const empresaId = await this.resolverEmpresaNit();
+    if (dto.empresaId !== empresaId) throw new Error("Empresa no autorizada.");
 
     const [empresa, usuario] = await Promise.all([
-      this.prisma.empresa.findUnique({ where: { nit: dto.empresaId! } }),
+      this.prisma.empresa.findUnique({ where: { nit: empresaId } }),
       this.prisma.usuario.findUnique({ where: { id: dto.Id } }),
     ]);
     if (!empresa) throw new Error("Ã¢ÂÅ’ Empresa no encontrada con ese NIT.");
@@ -944,7 +951,7 @@ export class GerenteService {
       throw new Error("El usuario no tiene rol 'gerente'.");
 
     return this.prisma.gerente.create({
-      data: { id: dto.Id, empresaId: dto.empresaId! },
+      data: { id: dto.Id, empresaId },
       include: { usuario: true, empresa: true },
     });
   }
@@ -966,9 +973,10 @@ export class GerenteService {
 
   async asignarJefeOperaciones(payload: unknown) {
     const dto = CrearJefeOperacionesDTO.parse(payload);
+    const empresaId = await this.resolverEmpresaNit();
 
     const [empresa, usuario] = await Promise.all([
-      this.prisma.empresa.findFirst(), // Ã°Å¸â€˜Ë† toma la primera empresa registrada
+      this.prisma.empresa.findUnique({ where: { nit: empresaId } }),
       this.prisma.usuario.findUnique({ where: { id: dto.Id } }),
     ]);
 
@@ -988,9 +996,10 @@ export class GerenteService {
 
   async asignarSupervisor(payload: unknown) {
     const dto = CrearSupervisorDTO.parse(payload);
+    const empresaId = await this.resolverEmpresaNit();
 
     const [empresa, usuario] = await Promise.all([
-      this.prisma.empresa.findFirst(),
+      this.prisma.empresa.findUnique({ where: { nit: empresaId } }),
       this.prisma.usuario.findUnique({ where: { id: dto.Id } }),
     ]);
 
@@ -1011,9 +1020,10 @@ export class GerenteService {
   async asignarOperario(payload: unknown) {
     const dto = CrearOperarioDTO.parse(payload);
     this.validarDisponibilidadOperarioPeriodos(dto.disponibilidadPeriodos);
+    const empresaId = await this.resolverEmpresaNit();
 
     const [empresa, usuario] = await Promise.all([
-      this.prisma.empresa.findFirst(),
+      this.prisma.empresa.findUnique({ where: { nit: empresaId } }),
       this.prisma.usuario.findUnique({ where: { id: dto.Id } }),
     ]);
 
@@ -1058,7 +1068,17 @@ export class GerenteService {
   }
 
   async listarUsuarios(rol?: Rol): Promise<UsuarioPublico[]> {
-    const where: any = {};
+    const empresaId = await this.resolverEmpresaNit();
+    const where: any = {
+      OR: [
+        { gerente: { empresaId } },
+        { jefeOperaciones: { empresaId } },
+        { supervisor: { empresaId } },
+        { operario: { empresaId } },
+        { administrador: { conjuntos: { some: { empresaId } } } },
+        { residente: { conjunto: { empresaId } } },
+      ],
+    };
     if (rol) {
       where.rol = rol;
     } else {
@@ -1436,9 +1456,13 @@ export class GerenteService {
     if (dto.administradorId) {
       const admin = await this.prisma.administrador.findUnique({
         where: { id: dto.administradorId },
+        include: { conjuntos: { select: { empresaId: true }, take: 1 } },
       });
       if (!admin) {
         throw new Error("El administrador seleccionado no existe.");
+      }
+      if (admin.conjuntos?.[0]?.empresaId && admin.conjuntos[0].empresaId !== empresaId) {
+        throw new Error("El administrador pertenece a otra empresa.");
       }
       administradorId = dto.administradorId;
     }
@@ -1830,6 +1854,12 @@ export class GerenteService {
     operarioId: string | number;
   }) {
     const { conjuntoId, operarioId } = args;
+    const empresaId = await this.resolverEmpresaNit();
+    const operario = await this.prisma.operario.findFirst({
+      where: { id: operarioId.toString(), empresaId },
+      select: { id: true },
+    });
+    if (!operario) throw new Error("Operario no encontrado.");
 
     return this.prisma.operario.update({
       where: { id: operarioId.toString() },
@@ -1928,9 +1958,11 @@ export class GerenteService {
   }
 
   async listarSupervisores() {
+    const empresaId = await this.resolverEmpresaNit();
     const supervisores = await this.prisma.usuario.findMany({
       where: {
-        rol: Rol.supervisor, // ya importaste Rol arriba
+        rol: Rol.supervisor,
+        supervisor: { empresaId },
       },
       select: usuarioPublicSelect,
       orderBy: { nombre: "asc" },
@@ -2990,7 +3022,7 @@ export class GerenteService {
       if (dto.conjuntoId && herramientas.length) {
         await this.reservarHerramientasTarea({
           tx,
-          empresaId: EMPRESA_ID_FIJA,
+          empresaId: await this.resolverEmpresaNit(),
           conjuntoId: dto.conjuntoId,
           tareaId: tarea.id,
           herramientas,
@@ -3812,7 +3844,7 @@ export class GerenteService {
       if (dto.conjuntoId && herramientas.length) {
         await this.reservarHerramientasTarea({
           tx,
-          empresaId: EMPRESA_ID_FIJA,
+          empresaId: await this.resolverEmpresaNit(),
           conjuntoId: dto.conjuntoId,
           tareaId: nuevaCorrectiva.id,
           herramientas,
@@ -4493,7 +4525,13 @@ export class GerenteService {
     reemplazos: { conjuntoId: string; nuevoAdminId: number }[],
   ) {
     if (reemplazos.length === 0) return;
+    const empresaId = await this.resolverEmpresaNit();
     for (const { conjuntoId, nuevoAdminId } of reemplazos) {
+      const conjunto = await this.prisma.conjunto.findFirst({
+        where: { nit: conjuntoId, empresaId },
+        select: { nit: true },
+      });
+      if (!conjunto) throw new Error("Conjunto no encontrado.");
       await this.prisma.conjunto.update({
         where: { nit: conjuntoId },
         data: { administradorId: nuevoAdminId.toString() },

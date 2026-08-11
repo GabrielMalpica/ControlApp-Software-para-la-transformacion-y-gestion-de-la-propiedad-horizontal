@@ -2,28 +2,34 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmpresaController = void 0;
 const zod_1 = require("zod");
+const prisma_1 = require("../db/prisma");
 const EmpresaServices_1 = require("../services/EmpresaServices");
+const GerenteServices_1 = require("../services/GerenteServices");
 const IdParamSchema = zod_1.z.object({ id: zod_1.z.coerce.number().int().positive() });
 const NitHeaderSchema = zod_1.z.object({ nit: zod_1.z.string().min(3) });
 function resolveEmpresaId(req) {
-    const headersNit = (req.header("x-empresa-id") ?? req.header("x-nit"))?.trim();
-    const queryNit = typeof req.query.nit === "string" ? req.query.nit : undefined;
+    const jwtNit = String(req.user?.empresaId ?? "").trim();
     const paramsNit = req.params?.nit;
-    const nit = headersNit || queryNit || paramsNit;
-    if (!nit) {
-        // lanza con status para que tu error middleware lo tome
+    if (!jwtNit) {
         const e = new Error("Falta el NIT de la empresa.");
-        e.status = 400;
+        e.status = 401;
         throw e;
     }
-    return NitHeaderSchema.parse({ nit }).nit;
+    const nit = NitHeaderSchema.parse({ nit: jwtNit }).nit;
+    if (paramsNit && paramsNit.trim() !== nit) {
+        const e = new Error("Recurso no encontrado.");
+        e.status = 404;
+        throw e;
+    }
+    return nit;
 }
 class EmpresaController {
     constructor() {
         this.crearEmpresa = async (req, res, next) => {
             try {
-                const service = new EmpresaServices_1.EmpresaService("901191875-4");
-                const creada = await service.crearEmpresa(req.body);
+                NitHeaderSchema.parse(req.body);
+                const service = new GerenteServices_1.GerenteService(prisma_1.prisma);
+                const creada = await service.crearEmpresa(req.body, req.user?.sub);
                 res.status(201).json(creada);
             }
             catch (err) {

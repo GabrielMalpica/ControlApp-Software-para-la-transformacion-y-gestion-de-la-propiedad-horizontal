@@ -3,33 +3,34 @@ import { RequestHandler } from "express";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
 import { EmpresaService } from "../services/EmpresaServices";
+import { GerenteService } from "../services/GerenteServices";
 
 const IdParamSchema = z.object({ id: z.coerce.number().int().positive() });
 const NitHeaderSchema = z.object({ nit: z.string().min(3) });
 
 function resolveEmpresaId(req: any): string {
-  const headersNit = (
-    req.header("x-empresa-id") ?? req.header("x-nit")
-  )?.trim();
-  const queryNit =
-    typeof req.query.nit === "string" ? req.query.nit : undefined;
+  const jwtNit = String(req.user?.empresaId ?? "").trim();
   const paramsNit = req.params?.nit as string | undefined;
-
-  const nit = headersNit || queryNit || paramsNit;
-  if (!nit) {
-    // lanza con status para que tu error middleware lo tome
+  if (!jwtNit) {
     const e: any = new Error("Falta el NIT de la empresa.");
-    e.status = 400;
+    e.status = 401;
     throw e;
   }
-  return NitHeaderSchema.parse({ nit }).nit;
+  const nit = NitHeaderSchema.parse({ nit: jwtNit }).nit;
+  if (paramsNit && paramsNit.trim() !== nit) {
+    const e: any = new Error("Recurso no encontrado.");
+    e.status = 404;
+    throw e;
+  }
+  return nit;
 }
 
 export class EmpresaController {
   crearEmpresa: RequestHandler = async (req, res, next) => {
     try {
-      const service = new EmpresaService("901191875-4");
-      const creada = await service.crearEmpresa(req.body);
+      NitHeaderSchema.parse(req.body);
+      const service = new GerenteService(prisma);
+      const creada = await service.crearEmpresa(req.body, req.user?.sub);
       res.status(201).json(creada);
     } catch (err) {
       next(err);

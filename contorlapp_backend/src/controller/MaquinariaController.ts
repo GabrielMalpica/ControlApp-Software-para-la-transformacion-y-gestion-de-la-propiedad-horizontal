@@ -1,8 +1,9 @@
 // src/controllers/MaquinariaController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { MaquinariaService } from "../services/MaquinariaServices";
+import { prisma as globalPrisma } from "../db/prisma";
 
 // Params y body mínimos
 const MaquinariaIdParam = z.object({
@@ -25,7 +26,7 @@ const AgendaMaquinariaQuery = z.object({
 export class MaquinariaController {
   private prisma: PrismaClient;
   constructor(prisma?: PrismaClient) {
-    this.prisma = prisma ?? new PrismaClient();
+    this.prisma = prisma ?? globalPrisma;
   }
 
   // POST /maquinarias/:maquinariaId/asignar

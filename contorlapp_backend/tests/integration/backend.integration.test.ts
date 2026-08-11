@@ -25,6 +25,9 @@ import { TareaService } from '../../src/services/TareaServices';
 describe('Pruebas de integración backend', () => {
   test('PI1 - Actividades + Evidencias: cerrar tarea adjunta evidencias', async () => {
     const prisma: any = {
+      conjunto: {
+        findFirst: jest.fn().mockResolvedValue({ nit: 'C-1' }),
+      },
       tarea: {
         findUnique: jest.fn().mockResolvedValue({
           id: 90,
@@ -114,7 +117,7 @@ describe('Pruebas de integración backend', () => {
       },
     };
 
-    const service = new ReporteService(prisma);
+    const service = new ReporteService(prisma, 'EMP-1');
     const result = await service.kpis({
       desde: '2026-03-01T00:00:00.000Z',
       hasta: '2026-03-31T23:59:59.000Z',
@@ -127,6 +130,9 @@ describe('Pruebas de integración backend', () => {
 
   test('PI5 - Conjuntos + Tareas: crea tarea vinculada correctamente al conjunto', async () => {
     const prisma: any = {
+      conjunto: {
+        findFirst: jest.fn().mockResolvedValue({ nit: 'C-1' }),
+      },
       tarea: {
         create: jest.fn().mockResolvedValue({
           id: 101,
@@ -157,7 +163,7 @@ describe('Pruebas de integración backend', () => {
       ubicacionId: 1,
       elementoId: 1,
       conjuntoId: 'C-1',
-    });
+    }, 'EMP-1');
 
     expect(prisma.tarea.create).toHaveBeenCalledWith(
       expect.objectContaining({

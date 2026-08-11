@@ -27,6 +27,25 @@ const TRANSICIONES: Record<EstadoPedidoInterno, EstadoPedidoInterno[]> = {
   CANCELADO: [],
 };
 
+/**
+ * TODO(pasarela-Mono): consultar el estado de pago en WooCommerce/Mono.la antes
+ * de permitir PENDIENTE_PAGO -> PAGADO desde un flujo confiable del servidor.
+ */
+export async function verificarPagoEnWooCommerce(_pedidoId: number): Promise<boolean> {
+  return false;
+}
+
+/**
+ * TODO(pasarela-Mono): validar criptograficamente la firma y la antiguedad del
+ * webhook antes de aceptar cualquier cambio de estado de pago.
+ */
+export async function validarWebhookWooCommerce(
+  _payload: unknown,
+  _signature: string,
+): Promise<boolean> {
+  return false;
+}
+
 type PedidoCompleto = Prisma.PedidoAppGetPayload<{
   include: {
     conjunto: { select: { nombre: true; empresaId: true } };
@@ -75,7 +94,7 @@ export class CommerceLifecycleService {
 
     const residentAllowed: Partial<Record<EstadoPedidoInterno, EstadoPedidoInterno[]>> = {
       BORRADOR: [EstadoPedidoInterno.CANCELADO],
-      PENDIENTE_PAGO: [EstadoPedidoInterno.PAGADO, EstadoPedidoInterno.CANCELADO],
+      PENDIENTE_PAGO: [EstadoPedidoInterno.CANCELADO],
       ENVIADO: [EstadoPedidoInterno.RECIBIDO],
       RECIBIDO: [EstadoPedidoInterno.ENTREGADO],
     };
@@ -464,6 +483,7 @@ export class CommerceLifecycleService {
           estado: dto.estadoDestino,
           total: pedido.total,
           puntosAplicados: pedido.puntosAplicados,
+          entregaVerificada: initial.estado === EstadoPedidoInterno.RECIBIDO,
         });
       }
     });

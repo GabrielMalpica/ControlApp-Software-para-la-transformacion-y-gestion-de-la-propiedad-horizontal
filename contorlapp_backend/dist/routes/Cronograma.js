@@ -6,8 +6,10 @@ const CronogramaController_1 = require("../controller/CronogramaController");
 const auth_middleware_1 = require("../middlewares/auth.middleware");
 const permission_middleware_1 = require("../middlewares/permission.middleware");
 const role_middleware_1 = require("../middlewares/role.middleware");
+const tenant_middleware_1 = require("../middlewares/tenant.middleware");
 const router = (0, express_1.Router)();
 const controller = new CronogramaController_1.CronogramaController();
+router.use("/conjuntos/:nit", auth_middleware_1.authRequired, (0, tenant_middleware_1.requireConjuntoScope)("nit"));
 // Sugerencia de operarios para un rango
 router.get("/conjuntos/:nit/operarios/sugerir", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.sugerirOperarios);
 // Vistas de cronograma
@@ -24,7 +26,7 @@ router.post("/conjuntos/:nit/auditoria/trazabilidad", auth_middleware_1.authRequ
 router.delete("/conjuntos/:nit/cronograma/publicado", auth_middleware_1.authRequired, (0, role_middleware_1.requireRoles)("gerente"), (0, permission_middleware_1.requirePermission)("cronograma.eliminar_publicado"), controller.eliminarCronogramaPublicado);
 router.get("/conjuntos/:nit/cronograma/mes", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.calendarioMensual); // resumen por día (para el calendario)
 // Consultas de tareas
-router.get("/conjuntos/:nit/cronograma/tareas/por-operario/:operarioId", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.tareasPorOperario);
+router.get("/conjuntos/:nit/cronograma/tareas/por-operario/:operarioId", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), (0, tenant_middleware_1.requireResourceScope)("operario", "operarioId"), controller.tareasPorOperario);
 router.get("/conjuntos/:nit/cronograma/tareas/por-fecha", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.tareasPorFecha);
 router.get("/conjuntos/:nit/cronograma/tareas/en-rango", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.tareasEnRango);
 router.get("/conjuntos/:nit/cronograma/tareas/por-ubicacion", auth_middleware_1.authRequired, (0, permission_middleware_1.requirePermission)("cronograma.ver"), controller.tareasPorUbicacion);

@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "node --max-old-space-size=4096 ./node_modules/tsx/dist/cli.mjs watch src/index.ts",
-    "build": "node ./node_modules/typescript/bin/tsc -p tsconfig.json",
+    "build": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc -p tsconfig.json",
     "postinstall": "prisma generate",
     "start": "prisma migrate deploy && node dist/index.js",
     "test": "node --max-old-space-size=4096 ./node_modules/jest/bin/jest.js --runInBand",
@@ -26,6 +26,7 @@
     "express-rate-limit": "^8.6.2",
     "googleapis": "^152.0.0",
     "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
     "mime-types": "^3.0.1",
     "multer": "^2.0.2",

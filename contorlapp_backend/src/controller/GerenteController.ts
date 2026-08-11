@@ -62,8 +62,11 @@ const ActualizarMatrizPermisosBody = z.object({
   ),
 });
 
-const service = new GerenteService(prisma);
 const permissionService = new PermissionService(prisma);
+
+function serviceFor(req: Parameters<RequestHandler>[0]) {
+  return new GerenteService(prisma, req.user?.empresaId);
+}
 
 export class GerenteController {
   obtenerCatalogoPermisos: RequestHandler = async (req, res, next) => {
@@ -110,7 +113,7 @@ export class GerenteController {
   // â”€â”€ Empresa â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   crearEmpresa: RequestHandler = async (req, res, next) => {
     try {
-      const out = await service.crearEmpresa(req.body);
+      const out = await serviceFor(req).crearEmpresa(req.body, req.user?.sub);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -120,7 +123,7 @@ export class GerenteController {
   actualizarLimiteHoras: RequestHandler = async (req, res, next) => {
     try {
       const { limiteHorasSemana } = LimiteHorasBody.parse(req.body);
-      const out = await service.actualizarLimiteHorasEmpresa(limiteHorasSemana);
+      const out = await serviceFor(req).actualizarLimiteHorasEmpresa(limiteHorasSemana);
       res.json(out);
     } catch (err) {
       next(err);
@@ -130,7 +133,7 @@ export class GerenteController {
   // â”€â”€ Usuarios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   crearUsuario: RequestHandler = async (req, res, next) => {
     try {
-      const out = await service.crearUsuario(req.body);
+      const out = await serviceFor(req).crearUsuario(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -140,7 +143,7 @@ export class GerenteController {
   editarUsuario: RequestHandler = async (req, res, next) => {
     try {
       const { id } = UsuarioIdParam.parse(req.params);
-      const out = await service.editarUsuario(id, req.body);
+      const out = await serviceFor(req).editarUsuario(id, req.body);
       res.json(out);
     } catch (err) {
       next(err);
@@ -151,7 +154,7 @@ export class GerenteController {
     try {
       const dto = ListarUsuariosDTO.parse(req.query);
 
-      const usuarios = await service.listarUsuarios(dto.rol);
+      const usuarios = await serviceFor(req).listarUsuarios(dto.rol);
 
       res.json(usuarios);
     } catch (err) {
@@ -167,7 +170,7 @@ export class GerenteController {
         return;
       }
 
-      const out = await service.crearResidenteManual(actorUserId, req.body);
+      const out = await serviceFor(req).crearResidenteManual(actorUserId, req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -182,7 +185,7 @@ export class GerenteController {
         return;
       }
 
-      const out = await service.cargarResidentesMasivo(actorUserId, req.body, req.file);
+      const out = await serviceFor(req).cargarResidentesMasivo(actorUserId, req.body, req.file);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -197,7 +200,7 @@ export class GerenteController {
         return;
       }
 
-      const out = await service.listarResidentes(actorUserId, req.query);
+      const out = await serviceFor(req).listarResidentes(actorUserId, req.query);
       res.json(out);
     } catch (err) {
       next(err);
@@ -213,7 +216,7 @@ export class GerenteController {
       }
 
       const residenteId = String(req.params.residenteId ?? "").trim();
-      const out = await service.editarResidente(actorUserId, residenteId, req.body);
+      const out = await serviceFor(req).editarResidente(actorUserId, residenteId, req.body);
       res.json(out);
     } catch (err) {
       next(err);
@@ -230,7 +233,7 @@ export class GerenteController {
 
       const residenteId = String(req.params.residenteId ?? "").trim();
       const conjuntoId = String(req.query.conjuntoId ?? "").trim();
-      const out = await service.eliminarResidenteGestion(actorUserId, residenteId, conjuntoId);
+      const out = await serviceFor(req).eliminarResidenteGestion(actorUserId, residenteId, conjuntoId);
       res.json(out);
     } catch (err) {
       next(err);
@@ -240,7 +243,7 @@ export class GerenteController {
   // â”€â”€ Roles / Perfiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   asignarGerente: RequestHandler = async (req, res, next) => {
     try {
-      const out = await service.asignarGerente(req.body);
+      const out = await serviceFor(req).asignarGerente(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -249,7 +252,7 @@ export class GerenteController {
 
   asignarAdministrador: RequestHandler = async (req, res, next) => {
     try {
-      const out = await service.asignarAdministrador(req.body);
+      const out = await serviceFor(req).asignarAdministrador(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -258,7 +261,7 @@ export class GerenteController {
 
   asignarJefeOperaciones: RequestHandler = async (req, res, next) => {
     try {
-      const out = await service.asignarJefeOperaciones(req.body);
+      const out = await serviceFor(req).asignarJefeOperaciones(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -267,16 +270,16 @@ export class GerenteController {
 
   asignarSupervisor: RequestHandler = async (req, res, next) => {
     try {
-      const out = await service.asignarSupervisor(req.body);
+      const out = await serviceFor(req).asignarSupervisor(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
     }
   };
 
-  listarSupervisores: RequestHandler = async (_req, res, next) => {
+  listarSupervisores: RequestHandler = async (req, res, next) => {
     try {
-      const supervisores = await service.listarSupervisores();
+      const supervisores = await serviceFor(req).listarSupervisores();
       res.json(supervisores);
     } catch (err) {
       console.error("Error al listar supervisores:", err);
@@ -287,7 +290,7 @@ export class GerenteController {
   listarTareasPorConjunto: RequestHandler = async (req, res, next) => {
     try {
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);
-      const out = await service.listarTareasPorConjunto(conjuntoId);
+      const out = await serviceFor(req).listarTareasPorConjunto(conjuntoId);
       res.json(out);
     } catch (err) {
       next(err);
@@ -296,7 +299,7 @@ export class GerenteController {
 
   asignarOperario: RequestHandler = async (req, res, next) => {
     try {
-      const out = await service.asignarOperario(req.body);
+      const out = await serviceFor(req).asignarOperario(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -306,7 +309,7 @@ export class GerenteController {
   // â”€â”€ Conjuntos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   crearConjunto: RequestHandler = async (req, res, next) => {
     try {
-      const out = await service.crearConjunto(req.body);
+      const out = await serviceFor(req).crearConjunto(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -321,16 +324,16 @@ export class GerenteController {
         return;
       }
 
-      const out = await service.cargarConjuntoMasivo(actorUserId, req.file);
+      const out = await serviceFor(req).cargarConjuntoMasivo(actorUserId, req.file);
       res.status(out.creado ? 201 : 422).json(out);
     } catch (err) {
       next(err);
     }
   };
 
-  descargarPlantillaConjunto: RequestHandler = async (_req, res, next) => {
+  descargarPlantillaConjunto: RequestHandler = async (req, res, next) => {
     try {
-      const buffer = await service.generarPlantillaConjunto();
+      const buffer = await serviceFor(req).generarPlantillaConjunto();
       res.setHeader(
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -345,9 +348,9 @@ export class GerenteController {
     }
   };
 
-  listarConjuntos: RequestHandler = async (_req, res, next) => {
+  listarConjuntos: RequestHandler = async (req, res, next) => {
     try {
-      const out = await service.listarConjuntos();
+      const out = await serviceFor(req).listarConjuntos();
       res.json(out);
     } catch (err) {
       next(err);
@@ -357,7 +360,7 @@ export class GerenteController {
   obtenerConjunto: RequestHandler = async (req, res, next) => {
     try {
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);
-      const out = await service.obtenerConjunto(conjuntoId);
+      const out = await serviceFor(req).obtenerConjunto(conjuntoId);
       res.json(out);
     } catch (err) {
       next(err);
@@ -367,7 +370,7 @@ export class GerenteController {
   editarConjunto: RequestHandler = async (req, res, next) => {
     try {
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);
-      const out = await service.editarConjunto(conjuntoId, req.body);
+      const out = await serviceFor(req).editarConjunto(conjuntoId, req.body);
       res.json(out);
     } catch (err) {
       next(err);
@@ -379,7 +382,7 @@ export class GerenteController {
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);
       const { operarioId } = AsignarOperarioBody.parse(req.body);
 
-      await service.asignarOperarioAConjunto({
+      await serviceFor(req).asignarOperarioAConjunto({
         conjuntoId,
         operarioId,
       });
@@ -395,7 +398,7 @@ export class GerenteController {
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);
       const { operarioId } = QuitarOperarioBody.parse(req.body);
 
-      await service.quitarOperarioDeConjunto({ conjuntoId, operarioId });
+      await serviceFor(req).quitarOperarioDeConjunto({ conjuntoId, operarioId });
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -407,7 +410,7 @@ export class GerenteController {
     try {
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);
       const body = AddInsumoBody.parse(req.body);
-      const out = await service.agregarInsumoAConjunto({
+      const out = await serviceFor(req).agregarInsumoAConjunto({
         conjuntoId,
         insumoId: body.insumoId,
         cantidad: body.cantidad,
@@ -428,7 +431,7 @@ export class GerenteController {
 
       // âœ… 1) Correctiva P1/P2/P3: entra por reglas de conflicto/reemplazo
       if (tipo === "CORRECTIVA" && [1, 2, 3].includes(prioridad)) {
-        const r: any = await service.crearCorrectivaConReglas(body);
+        const r: any = await serviceFor(req).crearCorrectivaConReglas(body);
 
         // A) Creada sin reemplazo
         if (r.ok && r.mode === "CREADA_SIN_REEMPLAZO") {
@@ -533,7 +536,7 @@ export class GerenteController {
       }
 
       // âœ… 2) No es P1: asignaciÃ³n normal (incluye validaciÃ³n solapes/sugerencias)
-      const out: any = await service.asignarTarea(body);
+      const out: any = await serviceFor(req).asignarTarea(body);
 
       const status = out?.ok === true ? 201 : 200;
       res.status(status).json(out);
@@ -545,7 +548,7 @@ export class GerenteController {
 
   asignarTareaConReemplazo = async (req: any, res: any) => {
     try {
-      const out = await service.asignarTareaConReemplazoV2(req.body);
+      const out = await serviceFor(req).asignarTareaConReemplazoV2(req.body);
       if (out?.ok === false) return res.status(400).json(out);
       return res.status(200).json(out);
     } catch (e: any) {
@@ -558,7 +561,7 @@ export class GerenteController {
   editarTarea: RequestHandler = async (req, res, next) => {
     try {
       const { tareaId } = TareaIdParam.parse(req.params);
-      const out = await service.editarTarea(tareaId, req.body);
+      const out = await serviceFor(req).editarTarea(tareaId, req.body);
       res.json(out);
     } catch (err) {
       next(err);
@@ -569,7 +572,7 @@ export class GerenteController {
   eliminarAdministrador: RequestHandler = async (req, res, next) => {
     try {
       const { adminId } = AdminIdParam.parse(req.params);
-      await service.eliminarAdministrador(adminId.toString());
+      await serviceFor(req).eliminarAdministrador(adminId.toString());
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -579,7 +582,7 @@ export class GerenteController {
   reemplazarAdminEnVariosConjuntos: RequestHandler = async (req, res, next) => {
     try {
       const { reemplazos } = ReemplazosBody.parse(req.body);
-      await service.reemplazarAdminEnVariosConjuntos(reemplazos);
+      await serviceFor(req).reemplazarAdminEnVariosConjuntos(reemplazos);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -589,7 +592,7 @@ export class GerenteController {
   eliminarOperario: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
-      await service.eliminarOperario(operarioId.toString());
+      await serviceFor(req).eliminarOperario(operarioId.toString());
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -599,7 +602,7 @@ export class GerenteController {
   eliminarSupervisor: RequestHandler = async (req, res, next) => {
     try {
       const { supervisorId } = SupervisorIdParam.parse(req.params);
-      await service.eliminarSupervisor(supervisorId.toString());
+      await serviceFor(req).eliminarSupervisor(supervisorId.toString());
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -609,7 +612,7 @@ export class GerenteController {
   eliminarUsuario: RequestHandler = async (req, res, next) => {
     try {
       const { id } = UsuarioIdParam.parse(req.params);
-      await service.eliminarUsuario(id);
+      await serviceFor(req).eliminarUsuario(id);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -620,7 +623,7 @@ export class GerenteController {
     try {
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);
       const { confirmar } = EliminarConjuntoQuery.parse(req.query);
-      const result = await service.eliminarConjunto(conjuntoId, { confirmar });
+      const result = await serviceFor(req).eliminarConjunto(conjuntoId, { confirmar });
 
       if (!result.ok && result.requiresConfirmation) {
         res.status(409).json(result);
@@ -636,7 +639,7 @@ export class GerenteController {
   eliminarMaquinaria: RequestHandler = async (req, res, next) => {
     try {
       const { maquinariaId } = MaquinariaIdParam.parse(req.params);
-      await service.eliminarMaquinaria(maquinariaId);
+      await serviceFor(req).eliminarMaquinaria(maquinariaId);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -646,7 +649,7 @@ export class GerenteController {
   eliminarTarea: RequestHandler = async (req, res, next) => {
     try {
       const { tareaId } = TareaIdParam.parse(req.params);
-      await service.eliminarTarea(prisma, tareaId);
+      await serviceFor(req).eliminarTarea(prisma, tareaId);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -657,7 +660,7 @@ export class GerenteController {
   editarAdministrador: RequestHandler = async (req, res, next) => {
     try {
       const { adminId } = AdminIdParam.parse(req.params);
-      await service.editarAdministrador(adminId, req.body);
+      await serviceFor(req).editarAdministrador(adminId, req.body);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -667,7 +670,7 @@ export class GerenteController {
   editarOperario: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
-      await service.editarOperario(operarioId, req.body);
+      await serviceFor(req).editarOperario(operarioId, req.body);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -677,7 +680,7 @@ export class GerenteController {
   editarSupervisor: RequestHandler = async (req, res, next) => {
     try {
       const { supervisorId } = SupervisorIdParam.parse(req.params);
-      await service.editarSupervisor(supervisorId, req.body);
+      await serviceFor(req).editarSupervisor(supervisorId, req.body);
       res.status(204).send();
     } catch (err) {
       next(err);

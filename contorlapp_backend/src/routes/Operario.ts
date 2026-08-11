@@ -5,12 +5,14 @@ import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
 import { requireRoles } from "../middlewares/role.middleware";
 import { uploadEvidencias } from "../middlewares/upload_evidencias";
+import { requireSelfScope } from "../middlewares/tenant.middleware";
 
 const router = Router();
 const controller = new OperarioController();
 
 router.use(authRequired);
 router.use(requireRoles("operario"));
+router.use("/operarios/:operarioId", requireSelfScope("operarioId"));
 
 // Tareas del operario
 router.post(

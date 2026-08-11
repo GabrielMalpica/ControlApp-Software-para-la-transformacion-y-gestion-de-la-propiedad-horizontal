@@ -1,7 +1,11 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PlanEsperanzaService = void 0;
 const client_1 = require("@prisma/client");
+const fs_1 = __importDefault(require("fs"));
 const prisma_1 = require("../db/prisma");
 const drive_plan_esperanza_1 = require("../utils/drive_plan_esperanza");
 function normalizeChecklistItem(item) {
@@ -219,13 +223,24 @@ class PlanEsperanzaService {
                 : data.checklist;
         }
         if (data.filePath && data.fileName && data.mimeType && data.conjuntoNombre) {
-            const url = await (0, drive_plan_esperanza_1.uploadPlanEsperanzaFoto)({
-                filePath: data.filePath,
-                fileName: data.fileName,
-                mimeType: data.mimeType,
-                conjuntoNombre: data.conjuntoNombre,
-            });
-            updateData.urlFoto = url;
+            try {
+                const url = await (0, drive_plan_esperanza_1.uploadPlanEsperanzaFoto)({
+                    filePath: data.filePath,
+                    fileName: data.fileName,
+                    mimeType: data.mimeType,
+                    conjuntoNombre: data.conjuntoNombre,
+                });
+                updateData.urlFoto = url;
+            }
+            finally {
+                try {
+                    if (fs_1.default.existsSync(data.filePath))
+                        fs_1.default.unlinkSync(data.filePath);
+                }
+                catch {
+                    // La limpieza del temporal es best-effort y no oculta el resultado del upload.
+                }
+            }
         }
         await this.prisma.diagnosticoArea.update({
             where: { id: diagnosticoId },

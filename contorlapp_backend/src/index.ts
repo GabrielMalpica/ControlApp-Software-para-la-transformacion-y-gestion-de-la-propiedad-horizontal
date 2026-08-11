@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 process.env.TZ = process.env.TZ || "America/Bogota";
+import { createHash } from "crypto";
 import express, {
   Request,
   Response,
@@ -16,12 +17,17 @@ import { mensajeValidacionAmigable } from "./utils/errorFormat";
 import rutas from "./routes/Rutas";
 import { prisma } from "./db/prisma";
 import { bootstrapNotificacionesSchema } from "./services/NotificacionService";
+import { authRequiredUnlessPublic } from "./middlewares/auth.middleware";
+import { distributedRateLimit } from "./middlewares/rate-limit.middleware";
 
 if (!process.env.JWT_SECRET) {
   throw new Error("Falta JWT_SECRET en el archivo .env");
 }
 
 const app = express();
+app.set("trust proxy", 1);
+const rateLimitDigest = (...parts: string[]) =>
+  createHash("sha256").update(parts.join("\u0000")).digest("hex");
 const configuredOrigins = [
   ...(process.env.CORS_ALLOWED_ORIGINS ?? "").split(","),
   process.env.FRONTEND_WEB_URL ?? "",
@@ -59,7 +65,7 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-empresa-id"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 };
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
@@ -75,6 +81,44 @@ app.use(
 );
 app.use(express.json({ limit: "1mb" }));
 
+const loginIpLimit = distributedRateLimit({
+  name: "auth:login:ip",
+  windowMs: 60_000,
+  limit: 5,
+  key: (req) => req.ip ?? "sin-ip",
+});
+const loginEmailLimit = distributedRateLimit({
+  name: "auth:login:email",
+  windowMs: 60_000,
+  limit: 3,
+  key: (req) => rateLimitDigest(String(req.body?.correo ?? "sin-correo").trim().toLowerCase()),
+});
+const passwordRecoveryLimit = distributedRateLimit({
+  name: "auth:recuperacion",
+  windowMs: 15 * 60_000,
+  limit: 3,
+  key: (req) =>
+    rateLimitDigest(
+      req.ip ?? "sin-ip",
+      String(req.body?.correo ?? "sin-correo").trim().toLowerCase(),
+    ),
+});
+const publicCatalogLimit = distributedRateLimit({
+  name: "commerce:catalogo",
+  windowMs: 60_000,
+  limit: 60,
+  key: (req) => req.ip ?? "sin-ip",
+});
+const uploadLimit = distributedRateLimit({
+  name: "uploads",
+  windowMs: 15 * 60_000,
+  limit: 20,
+  key: (req) => req.user?.sub ?? req.ip ?? "sin-ip",
+});
+
+app.use("/auth/login", loginIpLimit, loginEmailLimit);
+app.use("/auth/recuperar-contrasena", passwordRecoveryLimit);
+app.use("/commerce/catalogo", publicCatalogLimit);
 app.set("json replacer", (_k: string, v: unknown) =>
   typeof v === "bigint" ? v.toString() : v,
 );
@@ -86,14 +130,22 @@ app.get("/", (_req: Request, res: Response) => {
 
 app.get("/ping", async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const count = await prisma.empresa.count();
-    res.json({ ok: true, empresaPublicSelect: count });
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }
 });
 
 /* -------------------------------- rutas ---------------------------------- */
+app.use(authRequiredUnlessPublic);
+app.use((req, res, next) => {
+  if (!req.is("multipart/form-data")) {
+    next();
+    return;
+  }
+  uploadLimit(req, res, next);
+});
 app.use(rutas);
 
 type ClientErrorPayload = {

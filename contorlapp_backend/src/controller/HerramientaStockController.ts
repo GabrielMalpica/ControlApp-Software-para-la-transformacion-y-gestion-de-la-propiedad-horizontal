@@ -10,13 +10,14 @@ import {
 } from "../model/Herramienta";
 import { HerramientaStockService } from "../services/HerramientaStockService";
 import { z } from "zod";
+import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
 
 const HerramientaIdParam = z.object({
   herramientaId: z.coerce.number().int().positive(),
 });
 
 const DisponibilidadQuery = z.object({
-  empresaId: z.string().min(3),
+  empresaId: z.string().min(3).optional(),
   fechaInicio: z.coerce.date().optional(),
   fechaFin: z.coerce.date().optional(),
   excluirTareaId: z.coerce.number().int().positive().optional(),
@@ -104,9 +105,10 @@ export class HerramientaStockController {
     try {
       const { nit } = ConjuntoNitParam.parse(req.params);
       const q = DisponibilidadQuery.parse(req.query);
+      const empresaId = await empresaIdAutenticada(req);
       const service = new HerramientaStockService(prisma, nit);
       const out = await service.listarDisponibilidad({
-        empresaId: q.empresaId,
+        empresaId,
         fechaInicio: q.fechaInicio,
         fechaFin: q.fechaFin,
         excluirTareaId: q.excluirTareaId,

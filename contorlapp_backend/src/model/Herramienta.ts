@@ -49,7 +49,7 @@ export const EditarHerramientaBody = z.object({
 });
 
 export const ListarHerramientasQuery = z.object({
-  empresaId: z.string().min(3),
+  empresaId: z.string().min(3).optional(),
   nombre: z.string().optional(),
   take: z.coerce.number().int().min(1).max(100).default(50),
   skip: z.coerce.number().int().min(0).default(0),

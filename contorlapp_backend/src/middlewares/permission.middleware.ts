@@ -1,4 +1,5 @@
 import { RequestHandler } from "express";
+import { Rol } from "@prisma/client";
 import { prisma } from "../db/prisma";
 import { PermissionService } from "../services/PermissionService";
 
@@ -15,9 +16,16 @@ export function requirePermission(...permissions: string[]): RequestHandler {
         return;
       }
 
+      if (role === "gerente" && !req.user?.empresaId?.trim()) {
+        const defaults = PermissionService.defaultPermissionsForRole(Rol.gerente);
+        if (permissions.some((permission) => defaults.has(permission))) {
+          next();
+          return;
+        }
+      }
+
       const empresaId =
         req.user?.empresaId?.trim() ||
-        String(req.headers["x-empresa-id"] ?? "").trim() ||
         (await permissionService.resolveEmpresaIdForUser(userId, role));
 
       const effective = await permissionService.getEffectivePermissionsForRole(empresaId, role);

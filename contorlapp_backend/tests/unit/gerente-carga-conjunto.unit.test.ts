@@ -55,6 +55,25 @@ function makePrisma(existingOperario = true) {
     },
     administrador: { findUnique: jest.fn() },
     usuario: {
+      findMany: jest.fn().mockImplementation(({ where }: any) => {
+        if (!existingOperario) return Promise.resolve([]);
+        if (where.id?.in?.includes("1032456789")) {
+          return Promise.resolve([
+            {
+              id: "1032456789",
+              correo: "carlos.perez@example.com",
+              rol: Rol.operario,
+              operario: { id: "1032456789", empresaId: "EMP-1" },
+            },
+          ]);
+        }
+        if (where.correo?.in?.includes("carlos.perez@example.com")) {
+          return Promise.resolve([
+            { id: "1032456789", correo: "carlos.perez@example.com" },
+          ]);
+        }
+        return Promise.resolve([]);
+      }),
       findUnique: jest.fn().mockImplementation(({ where }: any) => {
         if (!existingOperario) return Promise.resolve(null);
         if (where.id === "1032456789") {

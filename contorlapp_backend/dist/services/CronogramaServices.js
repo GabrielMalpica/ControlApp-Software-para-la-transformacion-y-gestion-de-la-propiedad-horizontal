@@ -1080,23 +1080,42 @@ class CronogramaService {
         });
         if (operarios.length === 0)
             return [];
-        // 2) Calcular horas ya asignadas
+        // 2) Cargar una sola vez las tareas semanales de todos los candidatos.
+        const lunes = mondayOfWeek(fechaInicio);
+        const domingo = new Date(lunes);
+        domingo.setDate(lunes.getDate() + 6);
+        const operariosIds = operarios.map((operario) => operario.id);
+        const tareasSemana = await this.prisma.tarea.findMany({
+            where: {
+                conjuntoId: this.conjuntoId,
+                operarios: { some: { id: { in: operariosIds } } },
+                fechaFin: { gte: lunes },
+                fechaInicio: { lte: domingo },
+            },
+            select: {
+                fechaInicio: true,
+                fechaFin: true,
+                duracionMinutos: true,
+                operarios: {
+                    where: { id: { in: operariosIds } },
+                    select: { id: true },
+                },
+            },
+        });
+        const tareasPorOperario = new Map();
+        for (const tarea of tareasSemana) {
+            for (const operario of tarea.operarios) {
+                const actuales = tareasPorOperario.get(operario.id) ?? [];
+                actuales.push(tarea);
+                tareasPorOperario.set(operario.id, actuales);
+            }
+        }
+        // 3) Calcular carga y solapes en memoria.
         const out = [];
         for (const op of operarios) {
-            const lunes = mondayOfWeek(fechaInicio);
-            const domingo = new Date(lunes);
-            domingo.setDate(lunes.getDate() + 6);
-            const tareasSemana = await this.prisma.tarea.findMany({
-                where: {
-                    conjuntoId: this.conjuntoId,
-                    operarios: { some: { id: op.id } }, // op.id es string
-                    fechaFin: { gte: lunes },
-                    fechaInicio: { lte: domingo },
-                },
-                select: { fechaInicio: true, fechaFin: true, duracionMinutos: true },
-            });
-            const horas = tareasSemana.reduce((acc, t) => acc + (t.duracionMinutos ?? 0), 0);
-            const solapa = tareasSemana.some((t) => t.fechaInicio <= fechaFin && fechaInicio <= t.fechaFin);
+            const tareasOperario = tareasPorOperario.get(op.id) ?? [];
+            const horas = tareasOperario.reduce((acc, t) => acc + (t.duracionMinutos ?? 0), 0);
+            const solapa = tareasOperario.some((t) => t.fechaInicio <= fechaFin && fechaInicio <= t.fechaFin);
             out.push({
                 id: op.id, // ya es string, no hace falta toString()
                 nombre: op.usuario.nombre,
@@ -1104,7 +1123,7 @@ class CronogramaService {
                 solapa,
             });
         }
-        // 3) Ranking
+        // 4) Ranking
         out.sort((a, b) => {
             if (a.solapa !== b.solapa)
                 return a.solapa ? 1 : -1;

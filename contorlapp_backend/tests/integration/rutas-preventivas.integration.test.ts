@@ -34,6 +34,14 @@ jest.mock('../../src/middlewares/role.middleware', () => ({
   requireRoles: () => (_req: any, _res: any, next: any) => next(),
 }));
 
+jest.mock('../../src/middlewares/permission.middleware', () => ({
+  requirePermission: () => (_req: any, _res: any, next: any) => next(),
+}));
+
+jest.mock('../../src/middlewares/tenant.middleware', () => ({
+  requireConjuntoScope: () => (_req: any, _res: any, next: any) => next(),
+}));
+
 import DefinicionPreventivaRoutes from '../../src/routes/DefinicionPreventiva';
 
 function app(onError?: (err: any) => void) {

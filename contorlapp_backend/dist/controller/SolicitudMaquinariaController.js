@@ -4,6 +4,7 @@ exports.SolicitudMaquinariaController = void 0;
 const zod_1 = require("zod");
 const prisma_1 = require("../db/prisma");
 const SolicitudMaquinariaServices_1 = require("../services/SolicitudMaquinariaServices");
+const tenant_middleware_1 = require("../middlewares/tenant.middleware");
 const IdParam = zod_1.z.object({ id: zod_1.z.coerce.number().int().positive() });
 const FiltroQuery = zod_1.z.object({
     conjuntoId: zod_1.z.string().optional(),
@@ -19,7 +20,8 @@ class SolicitudMaquinariaController {
     constructor() {
         this.crear = async (req, res, next) => {
             try {
-                const out = await service.crear(req.body);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                const out = await service.crear({ ...req.body, empresaId });
                 res.status(201).json(out);
             }
             catch (err) {
@@ -29,7 +31,8 @@ class SolicitudMaquinariaController {
         this.editar = async (req, res, next) => {
             try {
                 const { id } = IdParam.parse(req.params);
-                const out = await service.editar(id, req.body);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                const out = await service.editar(id, { ...req.body, empresaId });
                 res.json(out);
             }
             catch (err) {
@@ -39,7 +42,8 @@ class SolicitudMaquinariaController {
         this.aprobar = async (req, res, next) => {
             try {
                 const { id } = IdParam.parse(req.params);
-                const out = await service.aprobar(id, req.body);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                const out = await service.aprobar(id, { ...req.body, empresaId });
                 res.json(out);
             }
             catch (err) {
@@ -49,7 +53,8 @@ class SolicitudMaquinariaController {
         this.listar = async (req, res, next) => {
             try {
                 const f = FiltroQuery.parse(req.query);
-                const out = await service.listar(f);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                const out = await service.listar({ ...f, empresaId });
                 res.json(out);
             }
             catch (err) {

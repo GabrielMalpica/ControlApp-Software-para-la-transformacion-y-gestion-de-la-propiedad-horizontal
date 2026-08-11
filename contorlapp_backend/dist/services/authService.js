@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const crypto_1 = require("crypto");
 const client_1 = require("@prisma/client");
 const PermissionService_1 = require("./PermissionService");
 const PEDIDO_COMPLETADO_STATES = [
@@ -39,10 +40,21 @@ class AuthService {
                 requiereCambioContrasena: usuario.requiereCambioContrasena,
             };
         }
-        const { empresaId, permissions } = await this.permissionService.getEffectivePermissionsForUser({
-            userId: usuario.id,
-            role: normalizedRole,
-        });
+        let empresaId = "";
+        let permissions;
+        try {
+            const effective = await this.permissionService.getEffectivePermissionsForUser({
+                userId: usuario.id,
+                role: normalizedRole,
+            });
+            empresaId = effective.empresaId;
+            permissions = effective.permissions;
+        }
+        catch (error) {
+            if (normalizedRole !== client_1.Rol.gerente)
+                throw error;
+            permissions = Array.from(PermissionService_1.PermissionService.defaultPermissionsForRole(client_1.Rol.gerente));
+        }
         return {
             id: usuario.id,
             nombre: usuario.nombre,
@@ -93,7 +105,7 @@ class AuthService {
             rol: usuario.rol,
             correo: usuario.correo,
             empresaId: sessionUser.empresaId || undefined,
-        }, jwtSecret, { expiresIn: "8h" });
+        }, jwtSecret, { expiresIn: "8h", jwtid: (0, crypto_1.randomUUID)() });
         return {
             token,
             user: sessionUser,

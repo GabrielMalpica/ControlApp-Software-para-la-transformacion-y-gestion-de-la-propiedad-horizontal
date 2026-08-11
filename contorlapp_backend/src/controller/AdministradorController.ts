@@ -5,7 +5,7 @@ import { prisma } from "../db/prisma";
 import { AdministradorService } from "../services/AdministradorServices";
 
 // Validaciones mínimas para params / headers / query
-const AdminIdParam = z.object({ adminId: z.coerce.number().int().positive() });
+const AdminIdParam = z.object({ adminId: z.string().trim().min(1) });
 const ConjuntoParam = z.object({ conjuntoId: z.string().min(1) });
 const CompromisoParam = z.object({ id: z.coerce.number().int().positive() });
 const CrearCompromisoBody = z.object({ titulo: z.string().min(1) });
@@ -15,15 +15,17 @@ const ActualizarCompromisoBody = z.object({
 });
 
 // Puedes aceptar adminId también por header o query si te conviene multi-uso
-function resolveAdminId(req: any): number {
-  const paramId = req.params?.adminId;
-  const headerId = req.header("x-admin-id");
-  const queryId = typeof req.query.adminId === "string" ? req.query.adminId : undefined;
-
-  const parsed = AdminIdParam.safeParse({ adminId: paramId ?? headerId ?? queryId });
+function resolveAdminId(req: any): string {
+  const sessionId = String(req.user?.sub ?? "").trim();
+  const parsed = AdminIdParam.safeParse({ adminId: req.params?.adminId });
   if (!parsed.success) {
     const e: any = new Error("Falta o es inválido el administradorId.");
     e.status = 400;
+    throw e;
+  }
+  if (!sessionId || parsed.data.adminId !== sessionId) {
+    const e: any = new Error("No autorizado para operar sobre otro administrador.");
+    e.status = 403;
     throw e;
   }
   return parsed.data.adminId;
@@ -90,7 +92,7 @@ export class AdministradorController {
       const creado = await service.crearCompromisoConjunto({
         conjuntoId,
         titulo,
-        creadoPorId: req.user?.sub ? String(req.user.sub) : administradorId.toString(),
+        creadoPorId: administradorId,
       });
       res.status(201).json(creado);
     } catch (err) { next(err); }

@@ -33,6 +33,15 @@ class ConjuntoService {
         this.prisma = prisma;
         this.conjuntoId = conjuntoId;
     }
+    async empresaIdDelConjunto() {
+        const conjunto = await this.prisma.conjunto.findUnique({
+            where: { nit: this.conjuntoId },
+            select: { empresaId: true },
+        });
+        if (!conjunto?.empresaId)
+            throw new Error("Conjunto no encontrado.");
+        return conjunto.empresaId;
+    }
     async getOrCreateInventarioId() {
         const inv = await this.prisma.inventario.upsert({
             where: { conjuntoId: this.conjuntoId },
@@ -149,8 +158,9 @@ class ConjuntoService {
     async asignarOperario(payload) {
         const { operarioId } = AsignarOperarioDTO.parse(payload);
         try {
-            const existeOperario = await this.prisma.operario.findUnique({
-                where: { id: operarioId.toString() },
+            const empresaId = await this.empresaIdDelConjunto();
+            const existeOperario = await this.prisma.operario.findFirst({
+                where: { id: operarioId.toString(), empresaId },
                 select: { id: true },
             });
             if (!existeOperario)
@@ -201,9 +211,13 @@ class ConjuntoService {
     async agregarMaquinaria(payload) {
         const { maquinariaId } = AgregarMaquinariaDTO.parse(payload);
         try {
+            const empresaId = await this.empresaIdDelConjunto();
             // 1) validar que la maquinaria exista
-            const maq = await this.prisma.maquinaria.findUnique({
-                where: { id: maquinariaId },
+            const maq = await this.prisma.maquinaria.findFirst({
+                where: {
+                    id: maquinariaId,
+                    OR: [{ empresaId }, { conjuntoPropietario: { empresaId } }],
+                },
                 select: { id: true },
             });
             if (!maq)
@@ -299,8 +313,9 @@ class ConjuntoService {
     async agregarTareaACronograma(payload) {
         const { tareaId } = TareaIdDTO.parse(payload);
         try {
-            const tarea = await this.prisma.tarea.findUnique({
-                where: { id: tareaId },
+            const empresaId = await this.empresaIdDelConjunto();
+            const tarea = await this.prisma.tarea.findFirst({
+                where: { id: tareaId, conjunto: { empresaId } },
                 select: { id: true },
             });
             if (!tarea)

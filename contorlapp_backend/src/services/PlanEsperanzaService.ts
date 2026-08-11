@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from "@prisma/client";
+import fs from "fs";
 import { prisma } from "../db/prisma";
 import { uploadPlanEsperanzaFoto } from "../utils/drive_plan_esperanza";
 
@@ -305,13 +306,21 @@ export class PlanEsperanzaService {
     }
 
     if (data.filePath && data.fileName && data.mimeType && data.conjuntoNombre) {
-      const url = await uploadPlanEsperanzaFoto({
-        filePath: data.filePath,
-        fileName: data.fileName,
-        mimeType: data.mimeType,
-        conjuntoNombre: data.conjuntoNombre,
-      });
-      updateData.urlFoto = url;
+      try {
+        const url = await uploadPlanEsperanzaFoto({
+          filePath: data.filePath,
+          fileName: data.fileName,
+          mimeType: data.mimeType,
+          conjuntoNombre: data.conjuntoNombre,
+        });
+        updateData.urlFoto = url;
+      } finally {
+        try {
+          if (fs.existsSync(data.filePath)) fs.unlinkSync(data.filePath);
+        } catch {
+          // La limpieza del temporal es best-effort y no oculta el resultado del upload.
+        }
+      }
     }
 
     await this.prisma.diagnosticoArea.update({

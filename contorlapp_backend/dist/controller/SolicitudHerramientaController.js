@@ -5,6 +5,7 @@ const prisma_1 = require("../db/prisma");
 const zod_1 = require("zod");
 const SolicitudHerramientaService_1 = require("../services/SolicitudHerramientaService");
 const Herramienta_1 = require("../model/Herramienta");
+const tenant_middleware_1 = require("../middlewares/tenant.middleware");
 const SolicitudIdParam = zod_1.z.object({
     solicitudId: zod_1.z.coerce.number().int().positive(),
 });
@@ -14,7 +15,7 @@ class SolicitudHerramientaController {
         this.crear = async (req, res, next) => {
             try {
                 const body = Herramienta_1.CrearSolicitudHerramientaBody.parse(req.body);
-                const service = new SolicitudHerramientaService_1.SolicitudHerramientaService(prisma_1.prisma);
+                const service = new SolicitudHerramientaService_1.SolicitudHerramientaService(prisma_1.prisma, await (0, tenant_middleware_1.empresaIdAutenticada)(req));
                 const out = await service.crear(body);
                 res.status(201).json(out);
             }
@@ -32,13 +33,11 @@ class SolicitudHerramientaController {
                 const conjuntoId = req.query.conjuntoId
                     ? String(req.query.conjuntoId)
                     : undefined;
-                const empresaId = req.query.empresaId
-                    ? String(req.query.empresaId)
-                    : undefined;
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
                 const estado = req.query.estado
                     ? String(req.query.estado)
                     : undefined;
-                const service = new SolicitudHerramientaService_1.SolicitudHerramientaService(prisma_1.prisma);
+                const service = new SolicitudHerramientaService_1.SolicitudHerramientaService(prisma_1.prisma, empresaId);
                 const out = await service.listar({ conjuntoId, empresaId, estado });
                 res.json(out);
             }
@@ -50,7 +49,7 @@ class SolicitudHerramientaController {
         this.obtener = async (req, res, next) => {
             try {
                 const { solicitudId } = SolicitudIdParam.parse(req.params);
-                const service = new SolicitudHerramientaService_1.SolicitudHerramientaService(prisma_1.prisma);
+                const service = new SolicitudHerramientaService_1.SolicitudHerramientaService(prisma_1.prisma, await (0, tenant_middleware_1.empresaIdAutenticada)(req));
                 const out = await service.obtener(solicitudId);
                 res.json(out);
             }
@@ -63,7 +62,7 @@ class SolicitudHerramientaController {
             try {
                 const { solicitudId } = SolicitudIdParam.parse(req.params);
                 const body = Herramienta_1.CambiarEstadoSolicitudBody.parse(req.body);
-                const service = new SolicitudHerramientaService_1.SolicitudHerramientaService(prisma_1.prisma);
+                const service = new SolicitudHerramientaService_1.SolicitudHerramientaService(prisma_1.prisma, await (0, tenant_middleware_1.empresaIdAutenticada)(req));
                 const out = body.estado === "APROBADA"
                     ? await service.aprobar(solicitudId, req.body)
                     : await service.rechazar(solicitudId, {

@@ -4,14 +4,19 @@ import { Router } from "express";
 import { CronogramaMaquinariaController } from "../controller/CronogramaMaquinariaController";
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
+import { requireRoles } from "../middlewares/role.middleware";
+import { requireEmpresaScope, requireResourceScope } from "../middlewares/tenant.middleware";
 
 const router = Router();
 const controller = new CronogramaMaquinariaController();
 
+router.use(authRequired);
+router.use(requireRoles("gerente", "jefe_operaciones"));
+router.use("/empresas/:empresaNit", requireEmpresaScope("empresaNit"));
+
 // Necesidades de maquinaria del mes en todos los conjuntos de la empresa.
 router.get(
   "/empresas/:empresaNit/necesidades",
-  authRequired,
   requirePermission("maquinaria.ver"),
   controller.listarNecesidades,
 );
@@ -19,15 +24,14 @@ router.get(
 // Asignar una maquina real a una necesidad.
 router.post(
   "/empresas/:empresaNit/asignaciones",
-  authRequired,
   requirePermission("maquinaria.asignar"),
   controller.asignarMaquinaria,
 );
 
 router.delete(
   "/empresas/:empresaNit/asignaciones/:usoId",
-  authRequired,
   requirePermission("maquinaria.asignar"),
+  requireResourceScope("usoMaquinaria", "usoId"),
   controller.liberarAsignacion,
 );
 

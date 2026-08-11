@@ -1,11 +1,14 @@
 // src/controllers/ReporteController.ts
-import { RequestHandler } from "express";
+import { Request, RequestHandler } from "express";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
 import { ReporteService } from "../services/ReporteService";
 import { EstadoTarea } from "@prisma/client";
+import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
 
-const service = new ReporteService(prisma);
+async function serviceFor(req: Request) {
+  return new ReporteService(prisma, await empresaIdAutenticada(req));
+}
 
 function logPerf(nombre: string, inicio: number, detalle?: string) {
   const duracionSeg = ((Date.now() - inicio) / 1000).toFixed(2);
@@ -14,18 +17,8 @@ function logPerf(nombre: string, inicio: number, detalle?: string) {
   );
 }
 
-async function detalleConjunto(conjuntoId?: string) {
-  if (!conjuntoId) {
-    return "general";
-  }
-
-  const conjunto = await prisma.conjunto.findUnique({
-    where: { nit: conjuntoId },
-    select: { nombre: true },
-  });
-
-  const nombre = (conjunto?.nombre ?? "").trim();
-  return nombre.length > 0 ? `${nombre} (${conjuntoId})` : conjuntoId;
+function detalleConjunto(conjuntoId?: string) {
+  return conjuntoId?.trim() || "general";
 }
 
 // ✅ Base
@@ -87,7 +80,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await service.kpis(q);
+      const out = await (await serviceFor(req)).kpis(q);
       logPerf("Reporte KPIs", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -100,7 +93,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await service.serieDiariaPorEstado(q);
+      const out = await (await serviceFor(req)).serieDiariaPorEstado(q);
       logPerf("Reporte serie diaria", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -113,7 +106,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await service.compromisosDashboard(q);
+      const out = await (await serviceFor(req)).compromisosDashboard(q);
       logPerf("Reporte compromisos", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -126,7 +119,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoQuery.parse(req.query);
-      const out = await service.resumenPorConjunto(q);
+      const out = await (await serviceFor(req)).resumenPorConjunto(q);
       logPerf("Reporte por conjunto", inicio, "general");
       res.json(out);
     } catch (err) {
@@ -139,7 +132,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await service.resumenPorOperario(q);
+      const out = await (await serviceFor(req)).resumenPorOperario(q);
       logPerf("Reporte por operario", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -152,7 +145,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await service.duracionPromedioPorEstado(q);
+      const out = await (await serviceFor(req)).duracionPromedioPorEstado(q);
       logPerf(
         "Reporte duracion promedio",
         inicio,
@@ -170,7 +163,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await service.reporteMensualDetalle(q);
+      const out = await (await serviceFor(req)).reporteMensualDetalle(q);
       logPerf("Reporte mensual detalle", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -190,7 +183,7 @@ export class ReporteController {
             ? undefined
             : raw.soloActivas === "true" || raw.soloActivas === "1",
       };
-      const out = await service.zonificacionPreventivas(q);
+      const out = await (await serviceFor(req)).zonificacionPreventivas(q);
       logPerf(
         "Reporte zonificacion preventivas",
         inicio,
@@ -210,7 +203,7 @@ export class ReporteController {
   tareasAprobadasPorFecha: RequestHandler = async (req, res, next) => {
     try {
       const q = RangoQuery.parse(req.query);
-      const out = await service.tareasAprobadasPorFecha(q);
+      const out = await (await serviceFor(req)).tareasAprobadasPorFecha(q);
       res.json(out);
     } catch (err) {
       next(err);
@@ -221,7 +214,7 @@ export class ReporteController {
   tareasRechazadasPorFecha: RequestHandler = async (req, res, next) => {
     try {
       const q = RangoQuery.parse(req.query);
-      const out = await service.tareasRechazadasPorFecha(q);
+      const out = await (await serviceFor(req)).tareasRechazadasPorFecha(q);
       res.json(out);
     } catch (err) {
       next(err);
@@ -233,7 +226,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = UsoInsumosQuery.parse(req.query);
-      const out = await service.usoDeInsumosPorFecha(q);
+      const out = await (await serviceFor(req)).usoDeInsumosPorFecha(q);
       logPerf("Reporte insumos", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -246,7 +239,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = EstadoQuery.parse(req.query);
-      const out = await service.tareasPorEstado(q);
+      const out = await (await serviceFor(req)).tareasPorEstado(q);
       logPerf(
         `Reporte tareas estado ${q.estado}`,
         inicio,
@@ -263,7 +256,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = EstadoQuery.parse(req.query);
-      const out = await service.tareasConDetalle(q);
+      const out = await (await serviceFor(req)).tareasConDetalle(q);
       logPerf(
         `Reporte tareas detalle ${q.estado}`,
         inicio,
@@ -280,7 +273,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await service.usoMaquinariaTop(q);
+      const out = await (await serviceFor(req)).usoMaquinariaTop(q);
       logPerf("Reporte top maquinaria", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -293,7 +286,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await service.usoHerramientaTop(q);
+      const out = await (await serviceFor(req)).usoHerramientaTop(q);
       logPerf(
         "Reporte top herramientas",
         inicio,
@@ -310,7 +303,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await service.conteoPorTipo(q);
+      const out = await (await serviceFor(req)).conteoPorTipo(q);
       logPerf("Reporte tipos", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {

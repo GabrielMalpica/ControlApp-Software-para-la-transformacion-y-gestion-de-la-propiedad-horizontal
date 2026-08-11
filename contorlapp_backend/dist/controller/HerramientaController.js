@@ -4,12 +4,14 @@ exports.HerramientaController = void 0;
 const prisma_1 = require("../db/prisma");
 const HerramientaServices_1 = require("../services/HerramientaServices");
 const Herramienta_1 = require("../model/Herramienta");
+const tenant_middleware_1 = require("../middlewares/tenant.middleware");
 class HerramientaController {
     constructor() {
         // POST /herramientas
         this.crear = async (req, res, next) => {
             try {
-                const body = Herramienta_1.CrearHerramientaBody.parse(req.body);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                const body = Herramienta_1.CrearHerramientaBody.parse({ ...req.body, empresaId });
                 const service = new HerramientaServices_1.HerramientaService(prisma_1.prisma);
                 const out = await service.crear(body);
                 res.status(201).json(out);
@@ -28,8 +30,9 @@ class HerramientaController {
         this.listar = async (req, res, next) => {
             try {
                 const q = Herramienta_1.ListarHerramientasQuery.parse(req.query);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
                 const service = new HerramientaServices_1.HerramientaService(prisma_1.prisma);
-                const out = await service.listar(q);
+                const out = await service.listar({ ...q, empresaId });
                 res.json(out);
             }
             catch (err) {

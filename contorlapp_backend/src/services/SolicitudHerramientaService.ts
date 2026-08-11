@@ -10,14 +10,17 @@ type EstadoStock = "OPERATIVA" | "DANADA" | "PERDIDA" | "BAJA";
 type ModoControl = "PRESTAMO" | "CONSUMO" | "VIDA_CORTA";
 
 export class SolicitudHerramientaService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private prisma: PrismaClient,
+    private empresaId: string,
+  ) {}
 
   async crear(payload: unknown) {
     const dto = CrearSolicitudHerramientaDTO.parse(payload);
 
     // ✅ Validar conjunto
-    const conjunto = await this.prisma.conjunto.findUnique({
-      where: { nit: dto.conjuntoId },
+    const conjunto = await this.prisma.conjunto.findFirst({
+      where: { nit: dto.conjuntoId, empresaId: this.empresaId },
       select: { nit: true },
     });
     if (!conjunto) throw new Error("Conjunto no existe");
@@ -25,7 +28,7 @@ export class SolicitudHerramientaService {
     // ✅ Validar herramientas
     const ids = dto.items.map((i) => i.herramientaId);
     const herramientas = await this.prisma.herramienta.findMany({
-      where: { id: { in: ids } },
+      where: { id: { in: ids }, empresaId: this.empresaId },
       select: { id: true },
     });
     if (herramientas.length !== ids.length)
@@ -56,7 +59,7 @@ export class SolicitudHerramientaService {
     return this.prisma.solicitudHerramienta.create({
       data: {
         conjuntoId: dto.conjuntoId,
-        empresaId: dto.empresaId ?? null,
+        empresaId: this.empresaId,
         estado: "PENDIENTE" as any,
         items: {
           create: dto.items.map((it) => ({
@@ -82,8 +85,8 @@ export class SolicitudHerramientaService {
     const dto = AprobarSolicitudHerramientaDTO.parse(payload);
 
     return this.prisma.$transaction(async (tx) => {
-      const sol = await tx.solicitudHerramienta.findUnique({
-        where: { id },
+      const sol = await tx.solicitudHerramienta.findFirst({
+        where: { id, conjunto: { empresaId: this.empresaId } },
         include: { items: true },
       });
 
@@ -91,7 +94,7 @@ export class SolicitudHerramientaService {
       if (sol.estado === "APROBADA") return sol;
 
       const estadoIngreso = (dto.estadoIngreso ?? "OPERATIVA") as EstadoStock;
-      const empresaId = dto.empresaId ?? sol.empresaId;
+      const empresaId = this.empresaId;
       if (!empresaId) {
         throw new Error("La solicitud debe indicar la empresa que entrega la herramienta.");
       }
@@ -196,6 +199,12 @@ export class SolicitudHerramientaService {
     // si quieres método espejo
     const { observacionRespuesta } = (payload ?? {}) as any;
 
+    const solicitud = await this.prisma.solicitudHerramienta.findFirst({
+      where: { id, conjunto: { empresaId: this.empresaId } },
+      select: { id: true },
+    });
+    if (!solicitud) throw new Error("Solicitud no encontrada");
+
     return this.prisma.solicitudHerramienta.update({
       where: { id },
       data: {
@@ -225,7 +234,8 @@ export class SolicitudHerramientaService {
     return this.prisma.solicitudHerramienta.findMany({
       where: {
         conjuntoId: f.conjuntoId ?? undefined,
-        empresaId: f.empresaId ?? undefined,
+        empresaId: this.empresaId,
+        conjunto: { empresaId: this.empresaId },
         estado: f.estado ?? undefined,
         fechaSolicitud: Object.keys(rango).length ? rango : undefined,
       },
@@ -244,8 +254,8 @@ export class SolicitudHerramientaService {
   }
 
   async obtener(id: number) {
-    return this.prisma.solicitudHerramienta.findUnique({
-      where: { id },
+    return this.prisma.solicitudHerramienta.findFirst({
+      where: { id, conjunto: { empresaId: this.empresaId } },
       include: {
         items: {
           include: {
@@ -260,6 +270,11 @@ export class SolicitudHerramientaService {
   }
 
   async eliminar(id: number) {
+    const solicitud = await this.prisma.solicitudHerramienta.findFirst({
+      where: { id, conjunto: { empresaId: this.empresaId } },
+      select: { id: true },
+    });
+    if (!solicitud) throw new Error("Solicitud no encontrada");
     await this.prisma.solicitudHerramienta.delete({ where: { id } });
   }
 }

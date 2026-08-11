@@ -3,6 +3,7 @@ import { RequestHandler } from "express";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
 import { SolicitudMaquinariaService } from "../services/SolicitudMaquinariaServices";
+import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
 
 const IdParam = z.object({ id: z.coerce.number().int().positive() });
 
@@ -22,7 +23,8 @@ export class SolicitudMaquinariaController {
 
   crear: RequestHandler = async (req, res, next) => {
     try {
-      const out = await service.crear(req.body);
+      const empresaId = await empresaIdAutenticada(req);
+      const out = await service.crear({ ...req.body, empresaId });
       res.status(201).json(out);
     } catch (err) { next(err); }
   };
@@ -30,7 +32,8 @@ export class SolicitudMaquinariaController {
   editar: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParam.parse(req.params);
-      const out = await service.editar(id, req.body);
+      const empresaId = await empresaIdAutenticada(req);
+      const out = await service.editar(id, { ...req.body, empresaId });
       res.json(out);
     } catch (err) { next(err); }
   };
@@ -38,7 +41,8 @@ export class SolicitudMaquinariaController {
   aprobar: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParam.parse(req.params);
-      const out = await service.aprobar(id, req.body);
+      const empresaId = await empresaIdAutenticada(req);
+      const out = await service.aprobar(id, { ...req.body, empresaId });
       res.json(out);
     } catch (err) { next(err); }
   };
@@ -46,7 +50,8 @@ export class SolicitudMaquinariaController {
   listar: RequestHandler = async (req, res, next) => {
     try {
       const f = FiltroQuery.parse(req.query);
-      const out = await service.listar(f);
+      const empresaId = await empresaIdAutenticada(req);
+      const out = await service.listar({ ...f, empresaId });
       res.json(out);
     } catch (err) { next(err); }
   };

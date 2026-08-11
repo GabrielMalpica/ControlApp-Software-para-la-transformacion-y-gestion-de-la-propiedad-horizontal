@@ -1,5 +1,6 @@
 import {
   buildWooUrl,
+  getWooBaseUrl,
   WooFetchError,
   wooFetch,
 } from "../../src/services/wooFetch";
@@ -21,6 +22,12 @@ describe("wooFetch", () => {
     process.env = originalEnv;
     global.fetch = originalFetch;
     jest.restoreAllMocks();
+  });
+
+  test("rechaza HTTP incluso fuera de produccion", () => {
+    process.env.WOOCOMMERCE_BASE_URL = "http://store.example.test";
+
+    expect(() => getWooBaseUrl()).toThrow("La direccion configurada para la tienda no es segura");
   });
 
   test("no envia credenciales a la Store API publica", async () => {

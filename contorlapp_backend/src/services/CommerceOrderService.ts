@@ -11,6 +11,7 @@ import {
   type CommerceServiceConfig,
   WooCommerceCatalogService,
 } from "./WooCommerceCatalogService";
+import { cacheDelete } from "./RedisService";
 import { buildWooUrl, getWooBaseUrl, wooFetch } from "./wooFetch";
 
 type WooOrderResponse = {
@@ -115,7 +116,7 @@ export function validateAndPriceServiceSelection(
   const slots =
     config.slots.length > 0
       ? config.slots
-      : [{ id: "full", label: "Dia completo", capacity: config.maxPerDay }];
+      : [{ id: "full", label: "Día completo", capacity: config.maxPerDay }];
   const slotId = selection.slot ?? (slots.length === 1 ? slots[0].id : "");
   const slot = slots.find((item) => item.id === slotId);
   if (!slot) throw makeHttpError(400, "Debes seleccionar un turno valido para el servicio");
@@ -529,6 +530,17 @@ export class CommerceOrderService {
     return `${this.baseUrl}/mi-cuenta/orders/`;
   }
 
+  private async invalidateServiceAvailability(items: ResolvedOrderItem[]) {
+    const keys = new Set<string>();
+    for (const item of items) {
+      if (!item.service) continue;
+      const prefix = `commerce:disponibilidad:v1:${item.productId}:${item.service.date}`;
+      keys.add(`${prefix}:${item.service.slot}`);
+      keys.add(`${prefix}:todos`);
+    }
+    await cacheDelete(...keys);
+  }
+
   private serializeOrder(
     pedido: {
       id: number;
@@ -698,6 +710,7 @@ export class CommerceOrderService {
         items: true,
       },
     });
+    await this.invalidateServiceAvailability(orderItems);
 
     return {
       id: pedido.id,
@@ -812,6 +825,7 @@ export class CommerceOrderService {
         items: true,
       },
     });
+    await this.invalidateServiceAvailability(orderItems);
 
     return {
       ...this.serializeOrder(pedido),

@@ -12,7 +12,7 @@ function getDrive() {
       ...credentials,
       private_key: (credentials.private_key || "").replace(/\\n/g, "\n"),
     },
-    scopes: ["https://www.googleapis.com/auth/drive"],
+    scopes: ["https://www.googleapis.com/auth/drive.file"],
   });
 
   return google.drive({ version: "v3", auth });
@@ -61,13 +61,6 @@ async function getOrCreateFolder(
   return createFolder(drive, parentId, name);
 }
 
-async function makePublic(drive: any, fileId: string) {
-  await drive.permissions.create({
-    fileId,
-    requestBody: { role: "reader", type: "anyone" },
-  });
-}
-
 function safeName(s: string) {
   return s.replace(/[\\/:*?"<>|]/g, "-").trim();
 }
@@ -107,7 +100,5 @@ export async function uploadPlanEsperanzaFoto(params: {
   const file = res.data as { id?: string };
   if (!file.id) throw new Error("No se pudo obtener id del archivo en Drive");
 
-  await makePublic(drive, file.id);
-
-  return `https://drive.google.com/uc?id=${file.id}`;
+  return `https://drive.google.com/file/d/${file.id}/view`;
 }

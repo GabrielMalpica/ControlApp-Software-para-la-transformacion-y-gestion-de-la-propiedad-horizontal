@@ -12,7 +12,7 @@ class AdministradorService {
         this.administradorId = administradorId;
     }
     get adminIdAsString() {
-        return this.administradorId.toString();
+        return this.administradorId;
     }
     async validarConjuntoAsignado(conjuntoId) {
         const conjunto = await this.prisma.conjunto.findFirst({
@@ -20,12 +20,12 @@ class AdministradorService {
                 nit: conjuntoId,
                 administradorId: this.adminIdAsString,
             },
-            select: { nit: true, nombre: true },
+            select: { nit: true, nombre: true, empresaId: true },
         });
-        if (!conjunto) {
+        if (!conjunto?.empresaId) {
             throw new Error("No tienes acceso a ese conjunto.");
         }
-        return conjunto;
+        return { ...conjunto, empresaId: conjunto.empresaId };
     }
     async validarCompromisoAsignado(id) {
         const compromiso = await this.prisma.compromisoConjunto.findFirst({
@@ -43,7 +43,7 @@ class AdministradorService {
     async verConjuntos() {
         try {
             const conjuntos = await this.prisma.conjunto.findMany({
-                where: { administradorId: this.administradorId.toString(), activo: true },
+                where: { administradorId: this.administradorId, activo: true },
                 select: {
                     nombre: true,
                     nit: true,
@@ -114,9 +114,10 @@ class AdministradorService {
     async solicitarTarea(payload) {
         try {
             const dto = SolicitudTarea_1.CrearSolicitudTareaDTO.parse(payload);
+            const conjunto = await this.validarConjuntoAsignado(dto.conjuntoId);
             // Validaciones de coherencia relacional
-            const ubicacion = await this.prisma.ubicacion.findUnique({
-                where: { id: dto.ubicacionId },
+            const ubicacion = await this.prisma.ubicacion.findFirst({
+                where: { id: dto.ubicacionId, conjuntoId: dto.conjuntoId },
                 select: { id: true, conjuntoId: true },
             });
             if (!ubicacion || ubicacion.conjuntoId !== dto.conjuntoId) {
@@ -138,9 +139,7 @@ class AdministradorService {
                     conjunto: { connect: { nit: dto.conjuntoId } },
                     ubicacion: { connect: { id: dto.ubicacionId } },
                     elemento: { connect: { id: dto.elementoId } },
-                    empresa: dto.empresaId
-                        ? { connect: { nit: dto.empresaId } }
-                        : undefined,
+                    empresa: { connect: { nit: conjunto.empresaId } },
                 },
             });
         }
@@ -157,29 +156,21 @@ class AdministradorService {
         try {
             // Validación principal
             const dto = SolicitudInsumo_1.CrearSolicitudInsumoDTO.parse(payload);
+            const conjuntoAsignado = await this.validarConjuntoAsignado(dto.conjuntoId);
             // (Opcional) Validación por item si llega desde múltiples sitios
             dto.items.forEach((i) => SolicitudInsumo_1.SolicitudInsumoItemDTO.parse(i));
             // Validar que el conjunto exista (y empresa opcional)
-            const conjunto = await this.prisma.conjunto.findUnique({
-                where: { nit: dto.conjuntoId },
-                select: { nit: true },
+            const insumoIds = [...new Set(dto.items.map((item) => item.insumoId))];
+            const insumosValidos = await this.prisma.insumo.count({
+                where: { id: { in: insumoIds }, empresaId: conjuntoAsignado.empresaId },
             });
-            if (!conjunto)
-                throw new Error("Conjunto no encontrado.");
-            if (dto.empresaId) {
-                const empresa = await this.prisma.empresa.findUnique({
-                    where: { nit: dto.empresaId },
-                    select: { nit: true },
-                });
-                if (!empresa)
-                    throw new Error("Empresa no encontrada.");
+            if (insumosValidos !== insumoIds.length) {
+                throw new Error("Uno o mas insumos no pertenecen a la empresa del conjunto.");
             }
             return await this.prisma.solicitudInsumo.create({
                 data: {
                     conjunto: { connect: { nit: dto.conjuntoId } },
-                    empresa: dto.empresaId
-                        ? { connect: { nit: dto.empresaId } }
-                        : undefined,
+                    empresa: { connect: { nit: conjuntoAsignado.empresaId } },
                     fechaSolicitud: new Date(),
                     aprobado: false,
                     insumosSolicitados: {
@@ -205,22 +196,27 @@ class AdministradorService {
      */
     async solicitarMaquinaria(payload) {
         const dto = SolicitudMaquinaria_1.CrearSolicitudMaquinariaDTO.parse(payload);
-        const [conjunto, maquinaria, operario] = await Promise.all([
-            this.prisma.conjunto.findUnique({
-                where: { nit: dto.conjuntoId },
-                select: { nit: true },
-            }),
-            this.prisma.maquinaria.findUnique({
-                where: { id: dto.maquinariaId },
+        const conjunto = await this.validarConjuntoAsignado(dto.conjuntoId);
+        const [maquinaria, operario] = await Promise.all([
+            this.prisma.maquinaria.findFirst({
+                where: {
+                    id: dto.maquinariaId,
+                    OR: [
+                        { empresaId: conjunto.empresaId },
+                        { conjuntoPropietario: { empresaId: conjunto.empresaId } },
+                    ],
+                },
                 select: { id: true },
             }),
-            this.prisma.operario.findUnique({
-                where: { id: dto.operarioId.toString() },
+            this.prisma.operario.findFirst({
+                where: {
+                    id: dto.operarioId.toString(),
+                    empresaId: conjunto.empresaId,
+                    conjuntos: { some: { nit: conjunto.nit } },
+                },
                 select: { id: true },
             }),
         ]);
-        if (!conjunto)
-            throw new Error("Conjunto no encontrado.");
         if (!maquinaria)
             throw new Error("Maquinaria no encontrada.");
         if (!operario)
@@ -237,9 +233,7 @@ class AdministradorService {
                 conjunto: { connect: { nit: dto.conjuntoId } },
                 maquinaria: { connect: { id: dto.maquinariaId } },
                 responsable: { connect: { id: dto.operarioId.toString() } },
-                empresa: dto.empresaId
-                    ? { connect: { nit: dto.empresaId } }
-                    : undefined,
+                empresa: { connect: { nit: conjunto.empresaId } },
                 fechaUso: dto.fechaUso,
                 fechaDevolucionEstimada: dto.fechaDevolucionEstimada,
                 estado: "PENDIENTE",

@@ -2,8 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MaquinariaController = exports.ConjuntoIdParam = void 0;
 const zod_1 = require("zod");
-const client_1 = require("@prisma/client");
 const MaquinariaServices_1 = require("../services/MaquinariaServices");
+const prisma_1 = require("../db/prisma");
 // Params y body mínimos
 const MaquinariaIdParam = zod_1.z.object({
     maquinariaId: zod_1.z.coerce.number().int().positive(),
@@ -114,7 +114,7 @@ class MaquinariaController {
                 next(err);
             }
         };
-        this.prisma = prisma ?? new client_1.PrismaClient();
+        this.prisma = prisma ?? prisma_1.prisma;
     }
 }
 exports.MaquinariaController = MaquinariaController;

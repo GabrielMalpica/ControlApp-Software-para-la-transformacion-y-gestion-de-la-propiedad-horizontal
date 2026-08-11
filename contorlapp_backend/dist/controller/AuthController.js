@@ -4,6 +4,7 @@ exports.AuthController = void 0;
 const zod_1 = require("zod");
 const prisma_1 = require("../db/prisma");
 const authService_1 = require("../services/authService");
+const RedisService_1 = require("../services/RedisService");
 const LoginSchema = zod_1.z.object({
     correo: zod_1.z.string().email(),
     contrasena: zod_1.z.string().min(1),
@@ -24,6 +25,14 @@ const RecuperarContrasenaSchema = zod_1.z.object({
     nuevaContrasena: zod_1.z.string().min(8),
 });
 const service = new authService_1.AuthService(prisma_1.prisma);
+async function revokeCurrentToken(req) {
+    const jti = req.user?.jti;
+    if (!jti)
+        return;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const ttlSeconds = Math.max(1, Number(req.user?.exp ?? nowSeconds + 8 * 60 * 60) - nowSeconds);
+    await (0, RedisService_1.revokeToken)(jti, ttlSeconds);
+}
 class AuthController {
     constructor() {
         // POST /auth/login
@@ -76,6 +85,7 @@ class AuthController {
                 }
                 const { contrasenaActual, nuevaContrasena } = CambiarContrasenaSchema.parse(req.body);
                 await service.cambiarContrasena(userId, contrasenaActual, nuevaContrasena);
+                await revokeCurrentToken(req);
                 res.json({ ok: true, message: "Contrasena actualizada correctamente" });
             }
             catch (err) {
@@ -91,6 +101,7 @@ class AuthController {
                 }
                 const { nuevaContrasena } = CambiarContrasenaInicialSchema.parse(req.body);
                 await service.cambiarContrasenaInicial(userId, nuevaContrasena);
+                await revokeCurrentToken(req);
                 res.json({ ok: true, message: "Contrasena inicial actualizada correctamente" });
             }
             catch (err) {
@@ -122,6 +133,15 @@ class AuthController {
                     ok: true,
                     message: `Contrasena actualizada para ${result.nombre}`,
                 });
+            }
+            catch (err) {
+                next(err);
+            }
+        };
+        this.logout = async (req, res, next) => {
+            try {
+                await revokeCurrentToken(req);
+                res.status(204).send();
             }
             catch (err) {
                 next(err);

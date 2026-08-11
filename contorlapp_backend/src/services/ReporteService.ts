@@ -512,10 +512,14 @@ function toOutInsumoRow(i: InsumoAgg) {
 }
 
 export class ReporteService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(private prisma: PrismaClient, private empresaId: string) {}
 
   private soloPublicadas<T extends Record<string, unknown>>(where: T) {
-    return { ...where, borrador: false as const };
+    return {
+      ...where,
+      borrador: false as const,
+      conjunto: { empresaId: this.empresaId },
+    };
   }
 
   // =========================================================
@@ -1007,6 +1011,7 @@ export class ReporteService {
     const items = await this.prisma.compromisoConjunto.findMany({
       where: {
         ...(conjuntoId ? { conjuntoId } : {}),
+        conjunto: { empresaId: this.empresaId },
         creadaEn: { lte: hasta },
         OR: [{ cerradaEn: null }, { cerradaEn: { gte: desde } }],
       },
@@ -1209,8 +1214,8 @@ export class ReporteService {
   async usoDeInsumosPorFecha(payload: unknown) {
     const { conjuntoId, desde, hasta } = RangoConConjuntoDTO.parse(payload);
 
-    const inventario = await this.prisma.inventario.findUnique({
-      where: { conjuntoId },
+    const inventario = await this.prisma.inventario.findFirst({
+      where: { conjuntoId, conjunto: { empresaId: this.empresaId } },
       select: { id: true },
     });
     if (!inventario) throw new Error("Inventario no encontrado");
@@ -1227,7 +1232,7 @@ export class ReporteService {
     });
 
     const insumos = await this.prisma.insumo.findMany({
-      where: { id: { in: rows.map((r) => r.insumoId) } },
+      where: { id: { in: rows.map((r) => r.insumoId) }, empresaId: this.empresaId },
       select: { id: true, nombre: true, unidad: true },
     });
 
@@ -1260,7 +1265,10 @@ export class ReporteService {
       by: ["maquinariaId"],
       where: {
         fechaInicio: { gte: desde, lte: hasta },
-        ...(conjuntoId ? { tarea: { conjuntoId } } : {}), // ✅ así sí
+        tarea: {
+          ...(conjuntoId ? { conjuntoId } : {}),
+          conjunto: { empresaId: this.empresaId },
+        },
       },
       _count: { _all: true },
     });
@@ -1269,7 +1277,13 @@ export class ReporteService {
 
     const maqs = maquinariaIds.length
       ? await this.prisma.maquinaria.findMany({
-          where: { id: { in: maquinariaIds } },
+          where: {
+            id: { in: maquinariaIds },
+            OR: [
+              { empresaId: this.empresaId },
+              { conjuntoPropietario: { empresaId: this.empresaId } },
+            ],
+          },
           select: { id: true, nombre: true },
         })
       : [];
@@ -1303,7 +1317,10 @@ export class ReporteService {
       by: ["herramientaId"],
       where: {
         fechaInicio: { gte: desde, lte: hasta },
-        ...(conjuntoId ? { tarea: { conjuntoId } } : {}),
+        tarea: {
+          ...(conjuntoId ? { conjuntoId } : {}),
+          conjunto: { empresaId: this.empresaId },
+        },
       },
       _count: { _all: true },
       _sum: { cantidad: true },
@@ -1313,7 +1330,7 @@ export class ReporteService {
 
     const herrs = herramientaIds.length
       ? await this.prisma.herramienta.findMany({
-          where: { id: { in: herramientaIds } },
+          where: { id: { in: herramientaIds }, empresaId: this.empresaId },
           select: { id: true, nombre: true, unidad: true },
         })
       : [];
@@ -1909,6 +1926,7 @@ export class ReporteService {
     const defs = await this.prisma.definicionTareaPreventiva.findMany({
       where: {
         ...(conjuntoId ? { conjuntoId } : {}),
+        conjunto: { empresaId: this.empresaId },
         ...(soloActivas ? { activo: true } : {}),
         creadoEn: { gte: desde, lte: hasta },
       },
@@ -1940,7 +1958,7 @@ export class ReporteService {
     const insumoRows =
       insumoIds.size > 0
         ? await this.prisma.insumo.findMany({
-            where: { id: { in: Array.from(insumoIds) } },
+            where: { id: { in: Array.from(insumoIds) }, empresaId: this.empresaId },
             select: { id: true, nombre: true, unidad: true },
           })
         : [];

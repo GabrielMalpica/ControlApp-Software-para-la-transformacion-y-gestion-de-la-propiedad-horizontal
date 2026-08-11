@@ -17,6 +17,7 @@ import {
   commerceHttpError,
   type CommerceActor,
 } from "./CommerceAccessService";
+import { AuditoriaService } from "./AuditoriaService";
 
 type TransactionClient = Prisma.TransactionClient;
 
@@ -28,6 +29,7 @@ type PedidoParaPuntos = {
   estado: EstadoPedidoInterno;
   total: Prisma.Decimal;
   puntosAplicados: boolean;
+  entregaVerificada: boolean;
 };
 
 export class CommercePointsService {
@@ -318,7 +320,6 @@ export class CommercePointsService {
         OR: [
           { residente: { conjuntoId: dto.conjuntoId } },
           { administrador: { conjuntos: { some: { nit: dto.conjuntoId } } } },
-          { id: actor.id },
         ],
       },
       select: { id: true },
@@ -332,7 +333,7 @@ export class CommercePointsService {
       if (saldo + dto.puntos < 0) {
         throw commerceHttpError(409, "El ajuste dejaria un saldo negativo");
       }
-      return tx.movimientoPuntos.create({
+      const movimiento = await tx.movimientoPuntos.create({
         data: {
           usuarioId: dto.usuarioId,
           conjuntoId: dto.conjuntoId,
@@ -341,12 +342,32 @@ export class CommercePointsService {
           descripcion: dto.descripcion,
         },
       });
+      await new AuditoriaService(tx).registrar({
+        modulo: "COMERCIO",
+        entidad: "MovimientoPuntos",
+        entidadId: movimiento.id,
+        accion: "AJUSTAR_PUNTOS",
+        conjuntoId: dto.conjuntoId,
+        actor: { id: actor.id, rol: actor.rol, nombre: actor.nombre },
+        descripcion: dto.descripcion,
+        datosAntes: { saldo },
+        datosDespues: { saldo: saldo + dto.puntos, puntosAjustados: dto.puntos },
+        metadataJson: { usuarioObjetivoId: dto.usuarioId },
+      });
+      return movimiento;
     });
     return { id: movimiento.id, message: "Ajuste de puntos registrado" };
   }
 
   async applyAccumulation(tx: TransactionClient, pedido: PedidoParaPuntos) {
-    if (pedido.puntosAplicados || !pedido.conjuntoId) return 0;
+    if (
+      pedido.puntosAplicados ||
+      !pedido.conjuntoId ||
+      pedido.estado !== "ENTREGADO" ||
+      !pedido.entregaVerificada
+    ) {
+      return 0;
+    }
 
     const claimed = await tx.pedidoApp.updateMany({
       where: { id: pedido.id, puntosAplicados: false },

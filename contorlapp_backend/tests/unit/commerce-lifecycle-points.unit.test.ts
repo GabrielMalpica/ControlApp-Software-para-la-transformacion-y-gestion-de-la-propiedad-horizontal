@@ -1,6 +1,7 @@
 import {
   EstadoPedidoInterno,
   Prisma,
+  Rol,
   TipoMovimientoInsumo,
   TipoMovimientoPuntos,
   TipoPedidoApp,
@@ -58,6 +59,22 @@ function conjuntoOrder(overrides: Record<string, unknown> = {}) {
 }
 
 describe("CommerceLifecycleService - entrada de inventario", () => {
+  test("un residente no puede marcar su pedido como PAGADO", () => {
+    const service = new CommerceLifecycleService({} as never);
+    const transitions = (service as any).getAllowedTransitions(
+      {
+        id: "resident-1",
+        nombre: "Residente",
+        rol: Rol.residente,
+        empresaId: null,
+        residente: { conjuntoId: "CJ-1" },
+      },
+      conjuntoOrder({ estado: EstadoPedidoInterno.PENDIENTE_PAGO }),
+    );
+
+    expect(transitions).toEqual([EstadoPedidoInterno.CANCELADO]);
+  });
+
   test("suma stock, registra ENTRADA y reclama idempotencia una sola vez", async () => {
     const tx = {
       pedidoApp: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
@@ -137,6 +154,7 @@ describe("CommercePointsService - acumulacion", () => {
       estado: EstadoPedidoInterno.ENTREGADO,
       total: new Prisma.Decimal(50000),
       puntosAplicados: false,
+      entregaVerificada: true,
     });
 
     expect(points).toBe(10);
@@ -165,9 +183,32 @@ describe("CommercePointsService - acumulacion", () => {
       estado: EstadoPedidoInterno.ENTREGADO,
       total: new Prisma.Decimal(50000),
       puntosAplicados: true,
+      entregaVerificada: true,
     });
 
     expect(points).toBe(0);
     expect(tx.movimientoPuntos.create).not.toHaveBeenCalled();
+  });
+
+  test("no acumula si la entrega no fue verificada", async () => {
+    const tx = {
+      pedidoApp: { updateMany: jest.fn() },
+      movimientoPuntos: { create: jest.fn() },
+    };
+    const service = new CommercePointsService({} as never);
+
+    const points = await service.applyAccumulation(tx as never, {
+      id: 41,
+      usuarioId: "admin-1",
+      conjuntoId: "CJ-1",
+      tipo: TipoPedidoApp.CONJUNTO,
+      estado: EstadoPedidoInterno.PENDIENTE_PAGO,
+      total: new Prisma.Decimal(50000),
+      puntosAplicados: false,
+      entregaVerificada: false,
+    });
+
+    expect(points).toBe(0);
+    expect(tx.pedidoApp.updateMany).not.toHaveBeenCalled();
   });
 });

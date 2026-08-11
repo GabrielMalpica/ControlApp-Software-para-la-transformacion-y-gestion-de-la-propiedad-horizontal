@@ -161,7 +161,7 @@ export class SupervisorService {
   /** Lista tareas para el supervisor (por conjunto/operario/estado y rango) */
   async listarTareas(payload: unknown) {
     const dto = ListarDTO.parse(payload ?? {});
-    const where: Prisma.TareaWhereInput = {};
+    const where: Prisma.TareaWhereInput = { supervisorId: this.supervisorId };
 
     if (dto.conjuntoId) where.conjuntoId = dto.conjuntoId;
     if (dto.estado) where.estado = dto.estado as any;
@@ -589,6 +589,7 @@ export class SupervisorService {
     });
 
     if (!tarea) throw new Error("❌ Tarea no encontrada.");
+    this.assertPuedeCerrarTarea(tarea);
 
     const permitidos = new Set<EstadoTarea>([
       EstadoTarea.ASIGNADA,
@@ -791,10 +792,11 @@ export class SupervisorService {
 
     const tarea = await this.prisma.tarea.findUnique({
       where: { id: tareaId },
-      select: { estado: true },
+      select: { estado: true, supervisorId: true },
     });
 
     if (!tarea) throw new Error("❌ Tarea no encontrada.");
+    this.assertPuedeCerrarTarea(tarea);
     if (tarea.estado !== EstadoTarea.PENDIENTE_APROBACION) {
       throw new Error(
         "Solo puedes dar veredicto a tareas en PENDIENTE_APROBACION.",

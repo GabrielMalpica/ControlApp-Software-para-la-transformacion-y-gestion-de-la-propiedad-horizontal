@@ -571,17 +571,26 @@ export class ConjuntoCargaMasivaService {
     errores: CargaError[],
   ): Promise<OperarioPlan[]> {
     const plans: OperarioPlan[] = [];
+    const cedulas = [...new Set(parsed.map((item) => item.row.cedula))];
+    const correos = [...new Set(parsed.map((item) => item.row.correo))];
+    const [usuarios, propietariosCorreo] = await Promise.all([
+      this.prisma.usuario.findMany({
+        where: { id: { in: cedulas } },
+        include: { operario: { select: { id: true, empresaId: true } } },
+      }),
+      this.prisma.usuario.findMany({
+        where: { correo: { in: correos } },
+        select: { id: true, correo: true },
+      }),
+    ]);
+    const usuariosPorId = new Map(usuarios.map((usuario) => [usuario.id, usuario]));
+    const propietariosPorCorreo = new Map(
+      propietariosCorreo.map((usuario) => [usuario.correo.trim().toLowerCase(), usuario]),
+    );
+
     for (const item of parsed) {
-      const [usuario, correoOwner] = await Promise.all([
-        this.prisma.usuario.findUnique({
-          where: { id: item.row.cedula },
-          include: { operario: { select: { id: true, empresaId: true } } },
-        }),
-        this.prisma.usuario.findUnique({
-          where: { correo: item.row.correo },
-          select: { id: true },
-        }),
-      ]);
+      const usuario = usuariosPorId.get(item.row.cedula);
+      const correoOwner = propietariosPorCorreo.get(item.row.correo.trim().toLowerCase());
       if (correoOwner && correoOwner.id !== item.row.cedula) {
         errores.push({
           fila: item.fila,

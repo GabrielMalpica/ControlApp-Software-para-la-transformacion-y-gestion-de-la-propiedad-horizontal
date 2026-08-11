@@ -20,16 +20,18 @@ const VeredictoBodySchema = z.object({
 
 /**
  * ✅ Lee empresaId desde:
- * - req.user.empresaId (si ya existe)
- * - header x-empresa-id (para Flutter)
+ * - req.user.empresaId, emitido y firmado en el JWT
  *
  * Devuelve number o null (si no se puede)
  */
-function getEmpresaIdFromReq(req: any): number | null {
-  const raw = req.user?.empresaId ?? req.headers["x-empresa-id"];
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return n;
+function getEmpresaIdFromReq(req: any): string {
+  const empresaId = String(req.user?.empresaId ?? "").trim();
+  if (!empresaId) {
+    const error: any = new Error("No se pudo identificar la empresa autenticada.");
+    error.status = 401;
+    throw error;
+  }
+  return empresaId;
 }
 
 export class JefeOperacionesController {

@@ -3,12 +3,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const GerenteServices_1 = require("../services/GerenteServices");
 const prisma_1 = require("../db/prisma");
-const svc = new GerenteServices_1.GerenteService(prisma_1.prisma);
+const auth_middleware_1 = require("../middlewares/auth.middleware");
+const permission_middleware_1 = require("../middlewares/permission.middleware");
+const role_middleware_1 = require("../middlewares/role.middleware");
+const tenant_middleware_1 = require("../middlewares/tenant.middleware");
 const router = (0, express_1.Router)();
+router.use(auth_middleware_1.authRequired);
+router.use((0, role_middleware_1.requireRoles)("gerente", "jefe_operaciones", "supervisor"));
 // Crear correctiva
-router.post("/conjuntos/:nit/tareas", async (req, res, next) => {
+router.post("/conjuntos/:nit/tareas", (0, permission_middleware_1.requirePermission)("tareas.crear", "cronograma.correctivas_programar"), (0, tenant_middleware_1.requireConjuntoScope)("nit"), async (req, res, next) => {
     try {
         const conjuntoId = req.params.nit;
+        const svc = new GerenteServices_1.GerenteService(prisma_1.prisma, req.user?.empresaId);
         const out = await svc.asignarTarea({ ...req.body, conjuntoId, tipo: "CORRECTIVA" });
         res.status(201).json(out);
     }
@@ -17,9 +23,10 @@ router.post("/conjuntos/:nit/tareas", async (req, res, next) => {
     }
 });
 // Editar correctiva
-router.patch("/tareas/:id", async (req, res, next) => {
+router.patch("/tareas/:id", (0, permission_middleware_1.requirePermission)("tareas.crear", "cronograma.correctivas_programar"), (0, tenant_middleware_1.requireResourceScope)("tarea", "id"), async (req, res, next) => {
     try {
         const id = Number(req.params.id);
+        const svc = new GerenteServices_1.GerenteService(prisma_1.prisma, req.user?.empresaId);
         const out = await svc.editarTarea(id, req.body); // aquí puedes validar estado/solapes
         res.json(out);
     }
@@ -28,7 +35,7 @@ router.patch("/tareas/:id", async (req, res, next) => {
     }
 });
 // Listar por rango (mixto o filtra tipo)
-router.get("/conjuntos/:nit/tareas", async (req, res, next) => {
+router.get("/conjuntos/:nit/tareas", (0, permission_middleware_1.requirePermission)("tareas.ver"), (0, tenant_middleware_1.requireConjuntoScope)("nit"), async (req, res, next) => {
     try {
         const conjuntoId = req.params.nit;
         const { desde, hasta, tipo } = req.query;

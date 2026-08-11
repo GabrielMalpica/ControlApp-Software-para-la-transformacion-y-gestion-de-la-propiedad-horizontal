@@ -134,8 +134,12 @@ describe('Pruebas funcionales backend', () => {
       operario: {
         findUnique: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(1),
       },
-      conjunto: { findUnique: jest.fn().mockResolvedValue(null) },
+      conjunto: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue({ nit: 'C-100' }),
+      },
       tarea: {
         // El operario no tiene otras tareas esa semana.
         findMany: jest.fn().mockResolvedValue([]),
@@ -170,7 +174,7 @@ describe('Pruebas funcionales backend', () => {
       elementoId: 2,
       conjuntoId: 'C-100',
       operariosIds: ['op-1'],
-    });
+    }, 'EMP-1');
 
     expect((result as any).prioridad).toBe(1);
   });
@@ -284,7 +288,7 @@ describe('Pruebas funcionales backend', () => {
       },
     };
 
-    const service = new ReporteService(prisma);
+    const service = new ReporteService(prisma, 'EMP-1');
     const result = await service.kpis({
       desde: '2026-03-01T00:00:00.000Z',
       hasta: '2026-03-31T23:59:59.000Z',
@@ -313,7 +317,7 @@ describe('Pruebas funcionales backend', () => {
       },
     };
 
-    const service = new ReporteService(prisma);
+    const service = new ReporteService(prisma, 'EMP-1');
     const result = await service.resumenPorConjunto({
       desde: '2026-03-01T00:00:00.000Z',
       hasta: '2026-03-31T23:59:59.000Z',

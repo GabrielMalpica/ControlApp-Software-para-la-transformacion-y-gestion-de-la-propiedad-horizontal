@@ -101,8 +101,13 @@ describe('Pruebas unitarias backend', () => {
       operario: {
         findUnique: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(1),
       },
-      conjunto: { findUnique: jest.fn().mockResolvedValue(null) },
+      supervisor: { findFirst: jest.fn().mockResolvedValue({ id: 'sup-1' }) },
+      conjunto: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue({ nit: '9001' }),
+      },
       tarea: {
         // El operario no tiene otras tareas esa semana.
         findMany: jest.fn().mockResolvedValue([]),
@@ -139,7 +144,7 @@ describe('Pruebas unitarias backend', () => {
       conjuntoId: '9001',
       supervisorId: 'sup-1',
       operariosIds: ['op-1'],
-    });
+    }, 'EMP-1');
 
     expect(prisma.tarea.create).toHaveBeenCalledWith(
       expect.objectContaining({

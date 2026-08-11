@@ -6,6 +6,10 @@ import { GerenteController } from "../controller/GerenteController";
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
 import { requireRoles } from "../middlewares/role.middleware";
+import {
+  requireConjuntoScope,
+  requireResourceScope,
+} from "../middlewares/tenant.middleware";
 
 const router = Router();
 const ctrl = new GerenteController();
@@ -48,166 +52,173 @@ const uploadConjuntos = multer({
   },
 });
 
+router.use(authRequired);
+router.use(requireRoles("gerente"));
+
 /* Empresa */
 router.get(
   "/permisos",
-  authRequired,
-  requireRoles("gerente"),
+  requirePermission("usuarios.gestionar"),
   ctrl.obtenerCatalogoPermisos,
 );
 router.put(
   "/permisos",
-  authRequired,
-  requireRoles("gerente"),
+  requirePermission("usuarios.gestionar"),
   ctrl.actualizarMatrizPermisos,
 );
 
-router.post("/empresa", ctrl.crearEmpresa);
-router.patch("/empresa/limite-horas", ctrl.actualizarLimiteHoras); // opcional
+router.post("/empresa", requirePermission("empresa.gestionar"), ctrl.crearEmpresa);
+router.patch(
+  "/empresa/limite-horas",
+  requirePermission("empresa.gestionar"),
+  ctrl.actualizarLimiteHoras,
+);
 
 /* Usuarios */
-router.post("/usuarios", ctrl.crearUsuario);
-router.put("/usuarios/:id", ctrl.editarUsuario);
-router.get("/usuarios", ctrl.listarUsuarios);
-router.delete("/usuarios/:id", ctrl.eliminarUsuario);
+router.post("/usuarios", requirePermission("usuarios.gestionar"), ctrl.crearUsuario);
+router.put(
+  "/usuarios/:id",
+  requirePermission("usuarios.gestionar"),
+  requireResourceScope("usuario", "id"),
+  ctrl.editarUsuario,
+);
+router.get("/usuarios", requirePermission("usuarios.gestionar"), ctrl.listarUsuarios);
+router.delete(
+  "/usuarios/:id",
+  requirePermission("usuarios.gestionar"),
+  requireResourceScope("usuario", "id"),
+  ctrl.eliminarUsuario,
+);
 router.post(
   "/residentes",
-  authRequired,
   requirePermission("residentes.crear"),
   ctrl.crearResidenteManual,
 );
 router.get(
   "/residentes",
-  authRequired,
   requirePermission("residentes.ver"),
   ctrl.listarResidentes,
 );
 router.put(
   "/residentes/:residenteId",
-  authRequired,
   requirePermission("residentes.editar"),
+  requireResourceScope("residente", "residenteId"),
   ctrl.editarResidente,
 );
 router.delete(
   "/residentes/:residenteId",
-  authRequired,
   requirePermission("residentes.eliminar"),
+  requireResourceScope("residente", "residenteId"),
   ctrl.eliminarResidenteGestion,
 );
 router.post(
   "/residentes/carga-masiva",
-  authRequired,
   requirePermission("residentes.cargar_masivo"),
   uploadResidentes.single("file"),
   ctrl.cargarResidentesMasivo,
 );
 
 /* Roles / perfiles */
-router.post("/gerentes", ctrl.asignarGerente);
-router.post("/administradores", ctrl.asignarAdministrador);
-router.post("/jefes-operaciones", ctrl.asignarJefeOperaciones);
-router.post("/supervisores", ctrl.asignarSupervisor);
-router.post("/operarios", ctrl.asignarOperario);
-router.get("/supervisores", ctrl.listarSupervisores);
+router.post("/gerentes", requirePermission("usuarios.gestionar"), ctrl.asignarGerente);
+router.post("/administradores", requirePermission("usuarios.gestionar"), ctrl.asignarAdministrador);
+router.post("/jefes-operaciones", requirePermission("usuarios.gestionar"), ctrl.asignarJefeOperaciones);
+router.post("/supervisores", requirePermission("usuarios.gestionar"), ctrl.asignarSupervisor);
+router.post("/operarios", requirePermission("usuarios.gestionar"), ctrl.asignarOperario);
+router.get("/supervisores", requirePermission("usuarios.gestionar"), ctrl.listarSupervisores);
 
 /* Conjuntos */
-router.post("/conjuntos", ctrl.crearConjunto);
+router.post("/conjuntos", requirePermission("conjuntos.gestionar"), ctrl.crearConjunto);
 router.post(
   "/conjuntos/carga-masiva",
-  authRequired,
-  requireRoles("gerente"),
+  requirePermission("conjuntos.gestionar"),
   uploadConjuntos.single("file"),
   ctrl.cargarConjuntoMasivo,
 );
 router.get(
   "/conjuntos/plantilla",
-  authRequired,
-  requireRoles("gerente"),
+  requirePermission("conjuntos.gestionar"),
   ctrl.descargarPlantillaConjunto,
 );
-router.patch("/conjuntos/:conjuntoId", ctrl.editarConjunto);
-router.get("/conjuntos", ctrl.listarConjuntos);        
-router.get("/conjuntos/:conjuntoId", ctrl.obtenerConjunto); 
-router.post("/conjuntos/:conjuntoId/operarios", ctrl.asignarOperarioAConjunto);
-router.post("/conjuntos/:conjuntoId/insumos", ctrl.agregarInsumoAConjunto);
+router.patch("/conjuntos/:conjuntoId", requirePermission("conjuntos.gestionar"), requireConjuntoScope("conjuntoId"), ctrl.editarConjunto);
+router.get("/conjuntos", requirePermission("conjuntos.gestionar"), ctrl.listarConjuntos);
+router.get("/conjuntos/:conjuntoId", requirePermission("conjuntos.gestionar"), requireConjuntoScope("conjuntoId"), ctrl.obtenerConjunto);
+router.post("/conjuntos/:conjuntoId/operarios", requirePermission("conjuntos.gestionar"), requireConjuntoScope("conjuntoId"), ctrl.asignarOperarioAConjunto);
+router.post("/conjuntos/:conjuntoId/insumos", requirePermission("inventario.gestionar"), requireConjuntoScope("conjuntoId"), ctrl.agregarInsumoAConjunto);
 router.get(
   "/conjuntos/:conjuntoId/compromisos",
-  authRequired,
   requirePermission("compromisos.ver"),
+  requireConjuntoScope("conjuntoId"),
   compromisosCtrl.listarPorConjunto,
 );
 router.post(
   "/conjuntos/:conjuntoId/compromisos",
-  authRequired,
   requirePermission("compromisos.gestionar"),
+  requireConjuntoScope("conjuntoId"),
   compromisosCtrl.crear,
 );
 
 /* Compromisos */
 router.get(
   "/compromisos",
-  authRequired,
   requirePermission("compromisos.globales_ver"),
   compromisosCtrl.listarGlobal,
 );
 router.patch(
   "/compromisos/:id",
-  authRequired,
   requirePermission("compromisos.gestionar"),
+  requireResourceScope("compromiso", "id"),
   compromisosCtrl.actualizar,
 );
 router.delete(
   "/compromisos/:id",
-  authRequired,
   requirePermission("compromisos.gestionar"),
+  requireResourceScope("compromiso", "id"),
   compromisosCtrl.eliminar,
 );
 
 /* Tareas */
 router.post(
   "/tareas",
-  authRequired,
   requirePermission("tareas.crear", "cronograma.correctivas_programar"),
   ctrl.asignarTarea,
 );
 router.post(
   "/tareas/reemplazo",
-  authRequired,
   requirePermission("tareas.crear", "cronograma.correctivas_programar"),
   ctrl.asignarTareaConReemplazo,
 );
 router.patch(
   "/tareas/:tareaId",
-  authRequired,
   requirePermission("tareas.crear", "cronograma.correctivas_programar"),
+  requireResourceScope("tarea", "tareaId"),
   ctrl.editarTarea,
 );
 router.get(
   "/conjuntos/:conjuntoId/tareas",
-  authRequired,
   requirePermission("tareas.ver"),
+  requireConjuntoScope("conjuntoId"),
   ctrl.listarTareasPorConjunto,
 );
 
 /* Eliminaciones con reglas */
-router.delete("/administradores/:adminId", ctrl.eliminarAdministrador);
-router.post("/administradores/reemplazos", ctrl.reemplazarAdminEnVariosConjuntos);
+router.delete("/administradores/:adminId", requirePermission("usuarios.gestionar"), requireResourceScope("administrador", "adminId"), ctrl.eliminarAdministrador);
+router.post("/administradores/reemplazos", requirePermission("usuarios.gestionar"), ctrl.reemplazarAdminEnVariosConjuntos);
 
-router.delete("/operarios/:operarioId", ctrl.eliminarOperario);
-router.delete("/supervisores/:supervisorId", ctrl.eliminarSupervisor);
+router.delete("/operarios/:operarioId", requirePermission("usuarios.gestionar"), requireResourceScope("operario", "operarioId"), ctrl.eliminarOperario);
+router.delete("/supervisores/:supervisorId", requirePermission("usuarios.gestionar"), requireResourceScope("supervisor", "supervisorId"), ctrl.eliminarSupervisor);
 
-router.delete("/conjuntos/:conjuntoId", ctrl.eliminarConjunto);
-router.delete("/maquinaria/:maquinariaId", ctrl.eliminarMaquinaria);
+router.delete("/conjuntos/:conjuntoId", requirePermission("conjuntos.gestionar"), requireConjuntoScope("conjuntoId"), ctrl.eliminarConjunto);
+router.delete("/maquinaria/:maquinariaId", requirePermission("maquinaria.asignar"), requireResourceScope("maquinaria", "maquinariaId"), ctrl.eliminarMaquinaria);
 router.delete(
   "/tareas/:tareaId",
-  authRequired,
   requirePermission("tareas.crear"),
+  requireResourceScope("tarea", "tareaId"),
   ctrl.eliminarTarea,
 );
 
 /* Ediciones rápidas */
-router.patch("/administradores/:adminId", ctrl.editarAdministrador);
-router.patch("/operarios/:operarioId", ctrl.editarOperario);
-router.patch("/supervisores/:supervisorId", ctrl.editarSupervisor);
+router.patch("/administradores/:adminId", requirePermission("usuarios.gestionar"), requireResourceScope("administrador", "adminId"), ctrl.editarAdministrador);
+router.patch("/operarios/:operarioId", requirePermission("usuarios.gestionar"), requireResourceScope("operario", "operarioId"), ctrl.editarOperario);
+router.patch("/supervisores/:supervisorId", requirePermission("usuarios.gestionar"), requireResourceScope("supervisor", "supervisorId"), ctrl.editarSupervisor);
 
 export default router;

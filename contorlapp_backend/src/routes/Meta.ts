@@ -13,8 +13,22 @@ import {
   TipoFuncion,
   PatronJornada,
 } from "@prisma/client";
+import { authRequired } from "../middlewares/auth.middleware";
+import { requireRoles } from "../middlewares/role.middleware";
 
 const router = Router();
+
+router.use(authRequired);
+router.use(
+  requireRoles(
+    "gerente",
+    "administrador",
+    "jefe_operaciones",
+    "supervisor",
+    "operario",
+    "residente",
+  ),
+);
 
 router.get("/enums/usuario", (_req, res) => {
   res.json({

@@ -46,11 +46,8 @@ const TareasPorFiltroQuery = zod_1.z
 }, { message: "Debe enviar fechaExacta o un rango (fechaInicio y fechaFin)." });
 /* ===================== Helpers ===================== */
 function resolveConjuntoId(req) {
-    const headerNit = (req.header?.("x-conjunto-id") ?? req.header?.("x-nit"))?.trim();
-    const queryNit = typeof req.query?.nit === "string" ? req.query.nit : undefined;
     const paramsNit = req.params?.nit;
-    const nit = headerNit || queryNit || paramsNit;
-    const parsed = NitSchema.safeParse({ nit });
+    const parsed = NitSchema.safeParse({ nit: paramsNit });
     if (!parsed.success) {
         const e = new Error("Falta o es inválido el NIT del conjunto.");
         e.status = 400;

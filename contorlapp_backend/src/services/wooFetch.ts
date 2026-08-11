@@ -31,11 +31,8 @@ export function getWooBaseUrl() {
     throw new WooFetchError("La direccion configurada para la tienda no es valida", 500);
   }
 
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+  if (url.protocol !== "https:" || url.username || url.password) {
     throw new WooFetchError("La direccion configurada para la tienda no es segura", 500);
-  }
-  if (process.env.NODE_ENV === "production" && url.protocol !== "https:") {
-    throw new WooFetchError("La tienda debe usar HTTPS en produccion", 500);
   }
 
   url.hash = "";

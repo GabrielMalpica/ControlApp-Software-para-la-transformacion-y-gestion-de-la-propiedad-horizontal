@@ -45,7 +45,7 @@ exports.EditarHerramientaBody = zod_1.z.object({
     umbralBajo: zod_1.z.coerce.number().int().min(0).optional().nullable(),
 });
 exports.ListarHerramientasQuery = zod_1.z.object({
-    empresaId: zod_1.z.string().min(3),
+    empresaId: zod_1.z.string().min(3).optional(),
     nombre: zod_1.z.string().optional(),
     take: zod_1.z.coerce.number().int().min(1).max(100).default(50),
     skip: zod_1.z.coerce.number().int().min(0).default(0),

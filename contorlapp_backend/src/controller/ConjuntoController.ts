@@ -54,14 +54,8 @@ const TareasPorFiltroQuery = z
 
 /* ===================== Helpers ===================== */
 function resolveConjuntoId(req: any): string {
-  const headerNit = (
-    req.header?.("x-conjunto-id") ?? req.header?.("x-nit")
-  )?.trim();
-  const queryNit =
-    typeof req.query?.nit === "string" ? req.query.nit : undefined;
   const paramsNit = req.params?.nit as string | undefined;
-  const nit = headerNit || queryNit || paramsNit;
-  const parsed = NitSchema.safeParse({ nit });
+  const parsed = NitSchema.safeParse({ nit: paramsNit });
   if (!parsed.success) {
     const e: any = new Error("Falta o es inválido el NIT del conjunto.");
     e.status = 400;

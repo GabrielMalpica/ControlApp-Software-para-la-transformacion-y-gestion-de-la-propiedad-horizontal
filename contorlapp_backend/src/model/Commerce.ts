@@ -91,7 +91,7 @@ export const RedimirBeneficioDTO = z.object({
 export const AjustarPuntosDTO = z.object({
   conjuntoId: z.string().trim().min(1),
   usuarioId: z.string().trim().min(1),
-  puntos: z.coerce.number().int().refine((value) => value !== 0, {
+  puntos: z.coerce.number().int().min(-100_000).max(100_000).refine((value) => value !== 0, {
     message: "El ajuste debe ser diferente de cero",
   }),
   descripcion: z.string().trim().min(5).max(500),

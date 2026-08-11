@@ -2,6 +2,7 @@ import { RequestHandler } from "express";
 import { prisma } from "../db/prisma";
 import { z } from "zod";
 import { TareaService } from "../services/TareaServices";
+import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
 
 const IdParamSchema = z.object({
   id: z.coerce.number().int().positive(),
@@ -12,9 +13,11 @@ export class TareaController {
   // POST /tareas  (correctiva por defecto)
   crearTarea: RequestHandler = async (req, res, next) => {
     try {
+      const empresaId = await empresaIdAutenticada(req);
       const creada = await TareaService.crearTareaCorrectiva(
         prisma,
-        req.body
+        req.body,
+        empresaId,
       );
       res.status(201).json(creada);
     } catch (err) {
@@ -25,7 +28,8 @@ export class TareaController {
   // GET /tareas
   listarTareas: RequestHandler = async (req, res, next) => {
     try {
-      const list = await TareaService.listarTareas(prisma, req.query);
+      const empresaId = await empresaIdAutenticada(req);
+      const list = await TareaService.listarTareas(prisma, req.query, empresaId);
       res.json(list);
     } catch (err) {
       next(err);
@@ -36,7 +40,8 @@ export class TareaController {
   obtenerTarea: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParamSchema.parse(req.params);
-      const tarea = await TareaService.obtenerTarea(prisma, id);
+      const empresaId = await empresaIdAutenticada(req);
+      const tarea = await TareaService.obtenerTarea(prisma, id, empresaId);
       res.json(tarea);
     } catch (err) {
       next(err);
@@ -47,10 +52,12 @@ export class TareaController {
   editarTarea: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParamSchema.parse(req.params);
+      const empresaId = await empresaIdAutenticada(req);
       const tarea = await TareaService.editarTarea(
         prisma,
         id,
-        req.body
+        req.body,
+        empresaId,
       );
       res.json(tarea);
     } catch (err) {
@@ -62,7 +69,8 @@ export class TareaController {
   eliminarTarea: RequestHandler = async (req, res, next) => {
     try {
       const { id } = IdParamSchema.parse(req.params);
-      await TareaService.eliminarTarea(prisma, id);
+      const empresaId = await empresaIdAutenticada(req);
+      await TareaService.eliminarTarea(prisma, id, empresaId);
       res.status(204).send();
     } catch (err) {
       next(err);

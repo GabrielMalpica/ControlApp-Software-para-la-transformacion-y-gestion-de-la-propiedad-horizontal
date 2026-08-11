@@ -5,11 +5,12 @@ const prisma_1 = require("../db/prisma");
 const Herramienta_1 = require("../model/Herramienta");
 const HerramientaStockService_1 = require("../services/HerramientaStockService");
 const zod_1 = require("zod");
+const tenant_middleware_1 = require("../middlewares/tenant.middleware");
 const HerramientaIdParam = zod_1.z.object({
     herramientaId: zod_1.z.coerce.number().int().positive(),
 });
 const DisponibilidadQuery = zod_1.z.object({
-    empresaId: zod_1.z.string().min(3),
+    empresaId: zod_1.z.string().min(3).optional(),
     fechaInicio: zod_1.z.coerce.date().optional(),
     fechaFin: zod_1.z.coerce.date().optional(),
     excluirTareaId: zod_1.z.coerce.number().int().positive().optional(),
@@ -97,9 +98,10 @@ class HerramientaStockController {
             try {
                 const { nit } = Herramienta_1.ConjuntoNitParam.parse(req.params);
                 const q = DisponibilidadQuery.parse(req.query);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
                 const service = new HerramientaStockService_1.HerramientaStockService(prisma_1.prisma, nit);
                 const out = await service.listarDisponibilidad({
-                    empresaId: q.empresaId,
+                    empresaId,
                     fechaInicio: q.fechaInicio,
                     fechaFin: q.fechaFin,
                     excluirTareaId: q.excluirTareaId,

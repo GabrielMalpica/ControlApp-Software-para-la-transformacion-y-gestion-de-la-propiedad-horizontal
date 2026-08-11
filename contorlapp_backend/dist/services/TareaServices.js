@@ -86,6 +86,48 @@ const RechazarDTO = zod_1.z.object({
     supervisorId: zod_1.z.number().int().positive(),
     observacion: zod_1.z.string().min(3).max(500),
 });
+function recursoFueraDeEmpresa() {
+    const error = new Error("Recurso no encontrado");
+    error.status = 404;
+    return error;
+}
+async function validarRelacionesDeTarea(params) {
+    const { prisma, empresaId, conjuntoId, ubicacionId, elementoId, supervisorId, } = params;
+    const operariosIds = [...new Set(params.operariosIds)];
+    const [conjunto, supervisor, operariosValidos] = await Promise.all([
+        prisma.conjunto.findFirst({
+            where: {
+                nit: conjuntoId,
+                empresaId,
+                ubicaciones: {
+                    some: {
+                        id: ubicacionId,
+                        elementos: { some: { id: elementoId } },
+                    },
+                },
+            },
+            select: { nit: true },
+        }),
+        supervisorId
+            ? prisma.supervisor.findFirst({
+                where: { id: supervisorId, empresaId },
+                select: { id: true },
+            })
+            : Promise.resolve({ id: "sin-supervisor" }),
+        operariosIds.length
+            ? prisma.operario.count({
+                where: {
+                    id: { in: operariosIds },
+                    empresaId,
+                    conjuntos: { some: { nit: conjuntoId } },
+                },
+            })
+            : Promise.resolve(0),
+    ]);
+    if (!conjunto || !supervisor || operariosValidos !== operariosIds.length) {
+        throw recursoFueraDeEmpresa();
+    }
+}
 class TareaService {
     constructor(prisma, tareaId) {
         this.prisma = prisma;
@@ -137,8 +179,24 @@ class TareaService {
             data: { estado: client_1.EstadoTarea.NO_COMPLETADA },
         });
     }
-    static async crearTareaCorrectiva(prisma, payload) {
+    static async crearTareaCorrectiva(prisma, payload, empresaId) {
         const dto = Tarea_1.CrearTareaDTO.parse(payload);
+        if (!dto.conjuntoId)
+            throw recursoFueraDeEmpresa();
+        const operarios = dto.operariosIds?.length
+            ? dto.operariosIds.map(String)
+            : dto.operarioId
+                ? [String(dto.operarioId)]
+                : [];
+        await validarRelacionesDeTarea({
+            prisma,
+            empresaId,
+            conjuntoId: dto.conjuntoId,
+            ubicacionId: dto.ubicacionId,
+            elementoId: dto.elementoId,
+            supervisorId: dto.supervisorId,
+            operariosIds: operarios,
+        });
         const esFestivo = await (0, schedulerUtils_1.isFestivoDate)({
             prisma,
             fecha: dto.fechaInicio,
@@ -147,11 +205,6 @@ class TareaService {
         if (esFestivo) {
             throw new Error("No se permite programar tareas en festivos.");
         }
-        const operarios = dto.operariosIds?.length
-            ? dto.operariosIds.map(String)
-            : dto.operarioId
-                ? [String(dto.operarioId)]
-                : [];
         if (operarios.length) {
             const disponibilidad = await (0, operarioAvailability_1.validarOperariosDisponiblesEnFecha)({
                 prisma,
@@ -225,8 +278,37 @@ class TareaService {
         return (0, Tarea_1.toTareaPublica)(creada);
     }
     // ✏️ Editar tarea
-    static async editarTarea(prisma, id, payload) {
+    static async editarTarea(prisma, id, payload, empresaId) {
         const dto = Tarea_1.EditarTareaDTO.parse(payload);
+        if (dto.conjuntoId === null)
+            throw recursoFueraDeEmpresa();
+        const actual = await prisma.tarea.findFirst({
+            where: { id, conjunto: { empresaId } },
+            select: {
+                conjuntoId: true,
+                ubicacionId: true,
+                elementoId: true,
+                supervisorId: true,
+                fechaInicio: true,
+                fechaFin: true,
+                operarios: { select: { id: true } },
+            },
+        });
+        if (!actual?.conjuntoId)
+            throw recursoFueraDeEmpresa();
+        const conjuntoIdFinal = dto.conjuntoId ?? actual.conjuntoId;
+        const operariosFinal = dto.operariosIds?.map(String) ?? actual.operarios.map((o) => o.id);
+        await validarRelacionesDeTarea({
+            prisma,
+            empresaId,
+            conjuntoId: conjuntoIdFinal,
+            ubicacionId: dto.ubicacionId ?? actual.ubicacionId,
+            elementoId: dto.elementoId ?? actual.elementoId,
+            supervisorId: dto.supervisorId !== undefined
+                ? dto.supervisorId
+                : actual.supervisorId,
+            operariosIds: operariosFinal,
+        });
         const data = {
             descripcion: dto.descripcion ?? undefined,
             fechaInicio: dto.fechaInicio ?? undefined,
@@ -265,19 +347,8 @@ class TareaService {
                 set: dto.operariosIds.map((id) => ({ id: id })),
             };
         }
-        const actual = await prisma.tarea.findUnique({
-            where: { id },
-            select: {
-                conjuntoId: true,
-                fechaInicio: true,
-                fechaFin: true,
-                operarios: { select: { id: true } },
-            },
-        });
         const fechaInicioFinal = dto.fechaInicio ?? actual?.fechaInicio;
         const fechaFinFinal = dto.fechaFin ?? actual?.fechaFin;
-        const conjuntoIdFinal = dto.conjuntoId !== undefined ? dto.conjuntoId : actual?.conjuntoId;
-        const operariosFinal = dto.operariosIds?.map(String) ?? actual?.operarios.map((o) => o.id) ?? [];
         if (fechaInicioFinal && fechaFinFinal && operariosFinal.length) {
             const disponibilidad = await (0, operarioAvailability_1.validarOperariosDisponiblesEnFecha)({
                 prisma,
@@ -317,9 +388,9 @@ class TareaService {
         return (0, Tarea_1.toTareaPublica)(actualizada);
     }
     // 🔍 Obtener una tarea
-    static async obtenerTarea(prisma, id) {
-        const tarea = await prisma.tarea.findUnique({
-            where: { id },
+    static async obtenerTarea(prisma, id, empresaId) {
+        const tarea = await prisma.tarea.findFirst({
+            where: { id, conjunto: { empresaId } },
             select: Tarea_1.tareaPublicSelect,
         });
         if (!tarea)
@@ -327,9 +398,9 @@ class TareaService {
         return (0, Tarea_1.toTareaPublica)(tarea);
     }
     // 📋 Listar tareas con filtros
-    static async listarTareas(prisma, payloadFiltro) {
+    static async listarTareas(prisma, payloadFiltro, empresaId) {
         const filtro = payloadFiltro ? Tarea_1.FiltroTareaDTO.parse(payloadFiltro) : {};
-        const where = {};
+        const where = { conjunto: { empresaId } };
         if (filtro.conjuntoId)
             where.conjuntoId = filtro.conjuntoId;
         if (filtro.ubicacionId)
@@ -373,9 +444,9 @@ class TareaService {
         return tareas.map(Tarea_1.toTareaPublica);
     }
     // 🗑️ Eliminar tarea (con regla de negocio)
-    static async eliminarTarea(prisma, id) {
-        const tarea = await prisma.tarea.findUnique({
-            where: { id },
+    static async eliminarTarea(prisma, id, empresaId) {
+        const tarea = await prisma.tarea.findFirst({
+            where: { id, conjunto: { empresaId } },
             select: {
                 id: true,
                 estado: true,

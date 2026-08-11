@@ -1,4 +1,5 @@
 import { buildWooUrl, getWooBaseUrl, wooFetch } from "./wooFetch";
+import { cached } from "./RedisService";
 
 type ProductAudience = "todos" | "residente" | "conjunto" | "servicios";
 
@@ -235,23 +236,25 @@ export class WooCommerceCatalogService {
   }
 
   private async fetchAllProducts() {
-    const all: WooStoreProduct[] = [];
-    let page = 1;
-    const perPage = 100;
+    return cached("commerce:catalogo:productos:v1", 60, async () => {
+      const all: WooStoreProduct[] = [];
+      let page = 1;
+      const perPage = 100;
 
-    while (true) {
-      const url = this.buildStoreUrl("/products", {
-        page,
-        per_page: perPage,
-      });
-      const chunk = await this.fetchJson<WooStoreProductsResponse>(url);
-      all.push(...chunk);
-      if (chunk.length < perPage) break;
-      page += 1;
-      if (page > 50) break;
-    }
+      while (true) {
+        const url = this.buildStoreUrl("/products", {
+          page,
+          per_page: perPage,
+        });
+        const chunk = await this.fetchJson<WooStoreProductsResponse>(url);
+        all.push(...chunk);
+        if (chunk.length < perPage) break;
+        page += 1;
+        if (page > 50) break;
+      }
 
-    return all;
+      return all;
+    });
   }
 
   private classifyProduct(product: {
@@ -388,6 +391,17 @@ export class WooCommerceCatalogService {
 
     const page = Math.max(1, Number(filters.page ?? 1));
     const perPage = Math.min(100, Math.max(1, Number(filters.perPage ?? 24)));
+    const cacheKey = `commerce:catalogo:listado:v1:${encodeURIComponent(
+      JSON.stringify({
+        q: String(filters.q ?? "").trim().toLowerCase(),
+        target: filters.target ?? "todos",
+        category: normalizeSlug(filters.category),
+        page,
+        perPage,
+      }),
+    )}`;
+
+    return cached(cacheKey, 60, async () => {
 
     const categoriesUrl = this.buildStoreUrl("/products/categories", {
       per_page: 100,
@@ -395,7 +409,9 @@ export class WooCommerceCatalogService {
 
     const [productsRaw, categoriesRaw] = await Promise.all([
       this.fetchAllProducts(),
-      this.fetchJson<Array<{ id?: number; name?: string; slug?: string }>>(categoriesUrl),
+      cached("commerce:catalogo:categorias:v1", 60, () =>
+        this.fetchJson<Array<{ id?: number; name?: string; slug?: string }>>(categoriesUrl),
+      ),
     ]);
 
     const normalized = productsRaw.map((item) => this.normalizeProduct(item));
@@ -433,13 +449,16 @@ export class WooCommerceCatalogService {
       categories: [...categoryMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
       items,
     };
+    });
   }
 
   async getProduct(productId: number) {
     this.ensureConfigured();
     const url = this.buildStoreUrl(`/products/${productId}`);
-    const product = await this.fetchJson<WooStoreProduct>(url);
-    return this.normalizeProduct(product);
+    return cached(`commerce:catalogo:producto:v1:${productId}`, 60, async () => {
+      const product = await this.fetchJson<WooStoreProduct>(url);
+      return this.normalizeProduct(product);
+    });
   }
 
   async getServiceAvailability(productId: number, date: string, slot?: string) {
@@ -447,7 +466,7 @@ export class WooCommerceCatalogService {
       date,
       slot,
     });
-    return wooFetch<{
+    return cached(`commerce:disponibilidad:v1:${productId}:${date}:${slot ?? "todos"}`, 30, () => wooFetch<{
       date: string;
       slot: string | null;
       capacity: number;
@@ -457,7 +476,7 @@ export class WooCommerceCatalogService {
     }>(url, {}, {
       failureMessage: "No se pudo consultar la disponibilidad del servicio",
       mapConflict: true,
-    });
+    }));
   }
 
   async claimServiceAvailability(

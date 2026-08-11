@@ -3,6 +3,7 @@ import { RequestHandler } from "express";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
 import { SolicitudInsumoService } from "../services/SolicitudInsumoServices";
+import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
 
 const IdParam = z.object({ id: z.coerce.number().int().positive() });
 
@@ -27,7 +28,8 @@ export class SolicitudInsumoController {
   crear: RequestHandler = async (req, res, next) => {
     try {
       const actorId = req.user?.sub ? String(req.user.sub) : null;
-      const out = await service.crear(req.body, actorId);
+      const empresaId = await empresaIdAutenticada(req);
+      const out = await service.crear({ ...req.body, empresaId }, actorId);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -38,7 +40,8 @@ export class SolicitudInsumoController {
     try {
       const { id } = IdParam.parse(req.params);
       const body = AprobarBody.parse(req.body ?? {});
-      const out = await service.aprobar(id, body);
+      const empresaId = await empresaIdAutenticada(req);
+      const out = await service.aprobar(id, { ...body, empresaId });
       res.json(out);
     } catch (err) {
       next(err);
@@ -48,7 +51,8 @@ export class SolicitudInsumoController {
   listar: RequestHandler = async (req, res, next) => {
     try {
       const f = FiltroQuery.parse(req.query);
-      const out = await service.listar(f);
+      const empresaId = await empresaIdAutenticada(req);
+      const out = await service.listar({ ...f, empresaId });
       res.json(out);
     } catch (err) {
       next(err);

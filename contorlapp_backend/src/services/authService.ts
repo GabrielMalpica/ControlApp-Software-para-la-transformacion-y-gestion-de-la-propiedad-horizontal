@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { randomUUID } from "crypto";
 import { EstadoPedidoInterno, Prisma, Rol, type PrismaClient } from "@prisma/client";
 import { PermissionService } from "./PermissionService";
 
@@ -49,10 +50,19 @@ export class AuthService {
       };
     }
 
-    const { empresaId, permissions } = await this.permissionService.getEffectivePermissionsForUser({
-      userId: usuario.id,
-      role: normalizedRole,
-    });
+    let empresaId = "";
+    let permissions: string[];
+    try {
+      const effective = await this.permissionService.getEffectivePermissionsForUser({
+        userId: usuario.id,
+        role: normalizedRole,
+      });
+      empresaId = effective.empresaId;
+      permissions = effective.permissions;
+    } catch (error) {
+      if (normalizedRole !== Rol.gerente) throw error;
+      permissions = Array.from(PermissionService.defaultPermissionsForRole(Rol.gerente));
+    }
 
     return {
       id: usuario.id,
@@ -114,7 +124,7 @@ export class AuthService {
         empresaId: sessionUser.empresaId || undefined,
       },
       jwtSecret,
-      { expiresIn: "8h" },
+      { expiresIn: "8h", jwtid: randomUUID() },
     );
 
     return {

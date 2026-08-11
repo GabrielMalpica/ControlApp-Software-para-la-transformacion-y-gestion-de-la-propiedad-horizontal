@@ -4,6 +4,7 @@ exports.SolicitudInsumoController = void 0;
 const zod_1 = require("zod");
 const prisma_1 = require("../db/prisma");
 const SolicitudInsumoServices_1 = require("../services/SolicitudInsumoServices");
+const tenant_middleware_1 = require("../middlewares/tenant.middleware");
 const IdParam = zod_1.z.object({ id: zod_1.z.coerce.number().int().positive() });
 const FiltroQuery = zod_1.z.object({
     conjuntoId: zod_1.z.string().optional(),
@@ -23,7 +24,8 @@ class SolicitudInsumoController {
         this.crear = async (req, res, next) => {
             try {
                 const actorId = req.user?.sub ? String(req.user.sub) : null;
-                const out = await service.crear(req.body, actorId);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                const out = await service.crear({ ...req.body, empresaId }, actorId);
                 res.status(201).json(out);
             }
             catch (err) {
@@ -34,7 +36,8 @@ class SolicitudInsumoController {
             try {
                 const { id } = IdParam.parse(req.params);
                 const body = AprobarBody.parse(req.body ?? {});
-                const out = await service.aprobar(id, body);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                const out = await service.aprobar(id, { ...body, empresaId });
                 res.json(out);
             }
             catch (err) {
@@ -44,7 +47,8 @@ class SolicitudInsumoController {
         this.listar = async (req, res, next) => {
             try {
                 const f = FiltroQuery.parse(req.query);
-                const out = await service.listar(f);
+                const empresaId = await (0, tenant_middleware_1.empresaIdAutenticada)(req);
+                const out = await service.listar({ ...f, empresaId });
                 res.json(out);
             }
             catch (err) {

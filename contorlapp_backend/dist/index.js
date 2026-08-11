@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 require("dotenv/config");
 process.env.TZ = process.env.TZ || "America/Bogota";
+const crypto_1 = require("crypto");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
@@ -15,10 +16,14 @@ const errorFormat_1 = require("./utils/errorFormat");
 const Rutas_1 = __importDefault(require("./routes/Rutas"));
 const prisma_1 = require("./db/prisma");
 const NotificacionService_1 = require("./services/NotificacionService");
+const auth_middleware_1 = require("./middlewares/auth.middleware");
+const rate_limit_middleware_1 = require("./middlewares/rate-limit.middleware");
 if (!process.env.JWT_SECRET) {
     throw new Error("Falta JWT_SECRET en el archivo .env");
 }
 const app = (0, express_1.default)();
+app.set("trust proxy", 1);
+const rateLimitDigest = (...parts) => (0, crypto_1.createHash)("sha256").update(parts.join("\u0000")).digest("hex");
 const configuredOrigins = [
     ...(process.env.CORS_ALLOWED_ORIGINS ?? "").split(","),
     process.env.FRONTEND_WEB_URL ?? "",
@@ -57,7 +62,7 @@ const corsOptions = {
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-empresa-id"],
+    allowedHeaders: ["Content-Type", "Authorization"],
 };
 app.use((0, cors_1.default)(corsOptions));
 app.options(/.*/, (0, cors_1.default)(corsOptions));
@@ -70,6 +75,39 @@ app.use((0, express_rate_limit_1.rateLimit)({
     message: { ok: false, message: "Demasiadas solicitudes. Intenta nuevamente en unos minutos" },
 }));
 app.use(express_1.default.json({ limit: "1mb" }));
+const loginIpLimit = (0, rate_limit_middleware_1.distributedRateLimit)({
+    name: "auth:login:ip",
+    windowMs: 60000,
+    limit: 5,
+    key: (req) => req.ip ?? "sin-ip",
+});
+const loginEmailLimit = (0, rate_limit_middleware_1.distributedRateLimit)({
+    name: "auth:login:email",
+    windowMs: 60000,
+    limit: 3,
+    key: (req) => rateLimitDigest(String(req.body?.correo ?? "sin-correo").trim().toLowerCase()),
+});
+const passwordRecoveryLimit = (0, rate_limit_middleware_1.distributedRateLimit)({
+    name: "auth:recuperacion",
+    windowMs: 15 * 60000,
+    limit: 3,
+    key: (req) => rateLimitDigest(req.ip ?? "sin-ip", String(req.body?.correo ?? "sin-correo").trim().toLowerCase()),
+});
+const publicCatalogLimit = (0, rate_limit_middleware_1.distributedRateLimit)({
+    name: "commerce:catalogo",
+    windowMs: 60000,
+    limit: 60,
+    key: (req) => req.ip ?? "sin-ip",
+});
+const uploadLimit = (0, rate_limit_middleware_1.distributedRateLimit)({
+    name: "uploads",
+    windowMs: 15 * 60000,
+    limit: 20,
+    key: (req) => req.user?.sub ?? req.ip ?? "sin-ip",
+});
+app.use("/auth/login", loginIpLimit, loginEmailLimit);
+app.use("/auth/recuperar-contrasena", passwordRecoveryLimit);
+app.use("/commerce/catalogo", publicCatalogLimit);
 app.set("json replacer", (_k, v) => typeof v === "bigint" ? v.toString() : v);
 /* --------------------------------- health -------------------------------- */
 app.get("/", (_req, res) => {
@@ -77,14 +115,22 @@ app.get("/", (_req, res) => {
 });
 app.get("/ping", async (_req, res, next) => {
     try {
-        const count = await prisma_1.prisma.empresa.count();
-        res.json({ ok: true, empresaPublicSelect: count });
+        await prisma_1.prisma.$queryRaw `SELECT 1`;
+        res.json({ ok: true });
     }
     catch (e) {
         next(e);
     }
 });
 /* -------------------------------- rutas ---------------------------------- */
+app.use(auth_middleware_1.authRequiredUnlessPublic);
+app.use((req, res, next) => {
+    if (!req.is("multipart/form-data")) {
+        next();
+        return;
+    }
+    uploadLimit(req, res, next);
+});
 app.use(Rutas_1.default);
 function fixMojibake(text) {
     const replacements = [

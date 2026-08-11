@@ -22,12 +22,15 @@ const VeredictoMultipartDTO = z.object({
 
 export class JefeOperacionesService {
   private empresaIdNum: number | null;
+  private empresaId: string;
 
   constructor(
     private prisma: PrismaClient,
     empresaId: unknown,
   ) {
-    const n = Number(empresaId);
+    this.empresaId = String(empresaId ?? "").trim();
+    if (!this.empresaId) throw new Error("No se pudo identificar la empresa autenticada.");
+    const n = Number(this.empresaId);
     this.empresaIdNum = Number.isFinite(n) && n > 0 ? n : null;
   }
 
@@ -37,6 +40,7 @@ export class JefeOperacionesService {
     return this.prisma.tarea.findMany({
       where: {
         estado: EstadoTarea.PENDIENTE_APROBACION,
+        conjunto: { empresaId: this.empresaId },
         ...(nit ? { conjuntoId: nit } : {}),
       },
       orderBy: [{ fechaFinalizarTarea: "desc" }, { id: "desc" }],

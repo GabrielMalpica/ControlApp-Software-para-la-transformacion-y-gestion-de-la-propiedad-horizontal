@@ -33,7 +33,7 @@ function getDrive() {
             ...credentials,
             private_key: (credentials.private_key || "").replace(/\\n/g, "\n"),
         },
-        scopes: ["https://www.googleapis.com/auth/drive"],
+        scopes: ["https://www.googleapis.com/auth/drive.file"],
     });
     return googleapis_1.google.drive({ version: "v3", auth });
 }
@@ -66,12 +66,6 @@ async function getOrCreateFolder(drive, parentId, name) {
         return existing;
     return createFolder(drive, parentId, name);
 }
-async function makePublic(drive, fileId) {
-    await drive.permissions.create({
-        fileId,
-        requestBody: { role: "reader", type: "anyone" },
-    });
-}
 async function uploadEvidenciaToDrive(params) {
     const rootId = process.env.DRIVE_EVIDENCIAS_ROOT_ID;
     if (!rootId)
@@ -95,7 +89,6 @@ async function uploadEvidenciaToDrive(params) {
     const file = res.data;
     if (!file.id)
         throw new Error("No se pudo obtener id del archivo en Drive");
-    await makePublic(drive, file.id);
-    // URL pública tipo uc?id=
-    return `https://drive.google.com/uc?id=${file.id}`;
+    // El archivo conserva ACL privada; esta URL solo funciona para identidades autorizadas en Drive.
+    return `https://drive.google.com/file/d/${file.id}/view`;
 }

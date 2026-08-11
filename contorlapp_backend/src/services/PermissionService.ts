@@ -131,6 +131,41 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: "Permite consultar la agenda y disponibilidad de herramientas.",
   },
   {
+    key: "empresa.gestionar",
+    module: "empresa",
+    moduleLabel: "Empresa",
+    label: "Gestionar empresa",
+    description: "Permite modificar la configuracion general de la empresa.",
+  },
+  {
+    key: "usuarios.gestionar",
+    module: "usuarios",
+    moduleLabel: "Usuarios",
+    label: "Gestionar usuarios",
+    description: "Permite crear, editar, asignar roles y retirar usuarios de la empresa.",
+  },
+  {
+    key: "conjuntos.gestionar",
+    module: "conjuntos",
+    moduleLabel: "Conjuntos",
+    label: "Gestionar conjuntos",
+    description: "Permite crear, editar y eliminar conjuntos de la empresa.",
+  },
+  {
+    key: "inventario.gestionar",
+    module: "inventario",
+    moduleLabel: "Inventario",
+    label: "Gestionar inventario",
+    description: "Permite modificar catalogos y existencias de inventario.",
+  },
+  {
+    key: "herramientas.gestionar",
+    module: "herramientas",
+    moduleLabel: "Herramientas",
+    label: "Gestionar herramientas",
+    description: "Permite crear herramientas y ajustar sus existencias.",
+  },
+  {
     key: "mapa_areas.ver",
     module: "mapa_areas",
     moduleLabel: "Mapa de areas",
@@ -249,9 +284,11 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "cronograma.imprimir",
     "solicitudes.ver",
     "inventario.ver",
+    "inventario.gestionar",
     "maquinaria.ver",
     "maquinaria.asignar",
     "herramientas.ver",
+    "herramientas.gestionar",
     "mapa_areas.ver",
     "compromisos.ver",
     "compromisos.gestionar",
@@ -301,21 +338,8 @@ function ensureEmpresaId(value: string | null | undefined): string {
   return empresaId;
 }
 
-function hasText(value: string | null | undefined): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
 export class PermissionService {
   constructor(private prisma: PrismaClient) {}
-
-  private async resolveFallbackEmpresaId(): Promise<string> {
-    const empresa = await this.prisma.empresa.findFirst({
-      select: { nit: true },
-      orderBy: { id: "asc" },
-    });
-
-    return ensureEmpresaId(empresa?.nit);
-  }
 
   static roleOrder(): Rol[] {
     return [...ROLE_ORDER];
@@ -349,36 +373,28 @@ export class PermissionService {
           where: { id: userId },
           select: { empresaId: true },
         });
-        return hasText(gerente?.empresaId)
-          ? gerente!.empresaId!.trim()
-          : this.resolveFallbackEmpresaId();
+        return ensureEmpresaId(gerente?.empresaId);
       }
       case Rol.jefe_operaciones: {
         const jefe = await this.prisma.jefeOperaciones.findUnique({
           where: { id: userId },
           select: { empresaId: true },
         });
-        return hasText(jefe?.empresaId)
-          ? jefe!.empresaId!.trim()
-          : this.resolveFallbackEmpresaId();
+        return ensureEmpresaId(jefe?.empresaId);
       }
       case Rol.supervisor: {
         const supervisor = await this.prisma.supervisor.findUnique({
           where: { id: userId },
           select: { empresaId: true },
         });
-        return hasText(supervisor?.empresaId)
-          ? supervisor!.empresaId!.trim()
-          : this.resolveFallbackEmpresaId();
+        return ensureEmpresaId(supervisor?.empresaId);
       }
       case Rol.operario: {
         const operario = await this.prisma.operario.findUnique({
           where: { id: userId },
           select: { empresaId: true },
         });
-        return hasText(operario?.empresaId)
-          ? operario!.empresaId!.trim()
-          : this.resolveFallbackEmpresaId();
+        return ensureEmpresaId(operario?.empresaId);
       }
       case Rol.administrador: {
         const conjunto = await this.prisma.conjunto.findFirst({
@@ -386,18 +402,14 @@ export class PermissionService {
           select: { empresaId: true },
           orderBy: { nit: "asc" },
         });
-        return hasText(conjunto?.empresaId)
-          ? conjunto!.empresaId!.trim()
-          : this.resolveFallbackEmpresaId();
+        return ensureEmpresaId(conjunto?.empresaId);
       }
       case Rol.residente: {
         const residente = await this.prisma.residente.findUnique({
           where: { id: userId },
           select: { conjunto: { select: { empresaId: true } } },
         });
-        return hasText(residente?.conjunto?.empresaId)
-          ? residente!.conjunto!.empresaId!.trim()
-          : this.resolveFallbackEmpresaId();
+        return ensureEmpresaId(residente?.conjunto?.empresaId);
       }
     }
   }

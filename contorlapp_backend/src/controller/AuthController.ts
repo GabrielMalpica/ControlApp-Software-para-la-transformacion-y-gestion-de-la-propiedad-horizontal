@@ -3,6 +3,7 @@ import { RequestHandler } from "express";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
 import { AuthService } from "../services/authService";
+import { revokeToken } from "../services/RedisService";
 
 const LoginSchema = z.object({
   correo: z.string().email(),
@@ -29,6 +30,14 @@ const RecuperarContrasenaSchema = z.object({
 });
 
 const service = new AuthService(prisma);
+
+async function revokeCurrentToken(req: Parameters<RequestHandler>[0]) {
+  const jti = req.user?.jti;
+  if (!jti) return;
+  const nowSeconds = Math.floor(Date.now() / 1_000);
+  const ttlSeconds = Math.max(1, Number(req.user?.exp ?? nowSeconds + 8 * 60 * 60) - nowSeconds);
+  await revokeToken(jti, ttlSeconds);
+}
 
 export class AuthController {
   // POST /auth/login
@@ -88,6 +97,7 @@ export class AuthController {
         CambiarContrasenaSchema.parse(req.body);
 
       await service.cambiarContrasena(userId, contrasenaActual, nuevaContrasena);
+      await revokeCurrentToken(req);
 
       res.json({ ok: true, message: "Contrasena actualizada correctamente" });
     } catch (err) {
@@ -106,6 +116,7 @@ export class AuthController {
       const { nuevaContrasena } = CambiarContrasenaInicialSchema.parse(req.body);
 
       await service.cambiarContrasenaInicial(userId, nuevaContrasena);
+      await revokeCurrentToken(req);
 
       res.json({ ok: true, message: "Contrasena inicial actualizada correctamente" });
     } catch (err) {
@@ -153,6 +164,15 @@ export class AuthController {
         ok: true,
         message: `Contrasena actualizada para ${result.nombre}`,
       });
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  logout: RequestHandler = async (req, res, next) => {
+    try {
+      await revokeCurrentToken(req);
+      res.status(204).send();
     } catch (err) {
       next(err);
     }

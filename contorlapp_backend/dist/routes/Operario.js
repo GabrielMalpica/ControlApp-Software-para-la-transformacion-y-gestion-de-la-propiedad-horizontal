@@ -7,10 +7,12 @@ const auth_middleware_1 = require("../middlewares/auth.middleware");
 const permission_middleware_1 = require("../middlewares/permission.middleware");
 const role_middleware_1 = require("../middlewares/role.middleware");
 const upload_evidencias_1 = require("../middlewares/upload_evidencias");
+const tenant_middleware_1 = require("../middlewares/tenant.middleware");
 const router = (0, express_1.Router)();
 const controller = new OperarioController_1.OperarioController();
 router.use(auth_middleware_1.authRequired);
 router.use((0, role_middleware_1.requireRoles)("operario"));
+router.use("/operarios/:operarioId", (0, tenant_middleware_1.requireSelfScope)("operarioId"));
 // Tareas del operario
 router.post("/operarios/:operarioId/tareas/asignar", (0, permission_middleware_1.requirePermission)("tareas.cerrar"), controller.asignarTarea);
 router.post("/operarios/:operarioId/tareas/:tareaId/iniciar", (0, permission_middleware_1.requirePermission)("tareas.cerrar"), controller.iniciarTarea);
