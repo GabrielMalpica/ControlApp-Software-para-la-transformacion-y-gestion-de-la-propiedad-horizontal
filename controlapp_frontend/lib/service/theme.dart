@@ -17,11 +17,7 @@ class AppTheme {
   static const LinearGradient heroGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: <Color>[
-      Color(0xFFEFF7F1),
-      Color(0xFFDCEEE3),
-      Color(0xFFF8EED4),
-    ],
+    colors: <Color>[Color(0xFFEFF7F1), Color(0xFFDCEEE3), Color(0xFFF8EED4)],
   );
 
   static final ButtonStyle saveButtonStyle = ElevatedButton.styleFrom(
@@ -71,21 +67,9 @@ class AppTheme {
         fontWeight: FontWeight.w700,
         color: text,
       ),
-      bodyLarge: TextStyle(
-        fontSize: 16,
-        height: 1.45,
-        color: text,
-      ),
-      bodyMedium: TextStyle(
-        fontSize: 14,
-        height: 1.45,
-        color: text,
-      ),
-      bodySmall: TextStyle(
-        fontSize: 12,
-        height: 1.4,
-        color: textMuted,
-      ),
+      bodyLarge: TextStyle(fontSize: 16, height: 1.45, color: text),
+      bodyMedium: TextStyle(fontSize: 14, height: 1.45, color: text),
+      bodySmall: TextStyle(fontSize: 12, height: 1.4, color: textMuted),
       labelLarge: TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w700,

@@ -242,20 +242,26 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
         AppFeedback.showFromSnackBar(
           context,
           const SnackBar(
-            content: Text('Registre al menos un periodo de disponibilidad para el operario'),
+            content: Text(
+              'Registre al menos un periodo de disponibilidad para el operario',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
         return;
       }
       final periodoInvalido = periodos.any(
-        (p) => p.trabajaDomingo && (p.diaDescanso == null || p.diaDescanso == 'DOMINGO'),
+        (p) =>
+            p.trabajaDomingo &&
+            (p.diaDescanso == null || p.diaDescanso == 'DOMINGO'),
       );
       if (periodoInvalido) {
         AppFeedback.showFromSnackBar(
           context,
           const SnackBar(
-            content: Text('Si el operario trabaja domingo, debe tener un dia de descanso entre semana en ese periodo.'),
+            content: Text(
+              'Si el operario trabaja domingo, debe tener un día de descanso entre semana en ese periodo.',
+            ),
             backgroundColor: Colors.orange,
           ),
         );
@@ -861,7 +867,9 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                             ),
                             TextButton.icon(
                               onPressed: () => setState(() {
-                                _disponibilidadPeriodos.add(_DisponibilidadPeriodoForm());
+                                _disponibilidadPeriodos.add(
+                                  _DisponibilidadPeriodoForm(),
+                                );
                               }),
                               icon: const Icon(Icons.add),
                               label: const Text('Agregar periodo'),
@@ -1165,7 +1173,10 @@ class _DisponibilidadPeriodoCard extends StatelessWidget {
                   ),
                 ),
                 if (onRemove != null)
-                  IconButton(onPressed: onRemove, icon: const Icon(Icons.delete_outline)),
+                  IconButton(
+                    onPressed: onRemove,
+                    icon: const Icon(Icons.delete_outline),
+                  ),
               ],
             ),
             InkWell(
@@ -1203,11 +1214,14 @@ class _DisponibilidadPeriodoCard extends StatelessWidget {
             DropdownButtonFormField<String?>(
               initialValue: item.diaDescanso,
               decoration: const InputDecoration(
-                labelText: 'Dia de descanso semanal',
+                labelText: 'Día de descanso semanal',
                 border: OutlineInputBorder(),
               ),
               items: [
-                const DropdownMenuItem<String?>(value: null, child: Text('Sin definir')),
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('Sin definir'),
+                ),
                 ...dias.map((d) => DropdownMenuItem(value: d, child: Text(d))),
               ],
               onChanged: (v) {
@@ -1260,11 +1274,17 @@ class _PatronJornadaHelpCard extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           SizedBox(height: 6),
-          Text('MEDIO_SEMANA_SABADO: lunes a viernes antes del almuerzo y sabado completo.'),
+          Text(
+            'MEDIO_SEMANA_SABADO: lunes a viernes antes del almuerzo y sabado completo.',
+          ),
           SizedBox(height: 4),
-          Text('MEDIO_SEMANA_SABADO_TARDE: lunes a viernes despues del almuerzo y sabado completo.'),
+          Text(
+            'MEDIO_SEMANA_SABADO_TARDE: lunes a viernes despues del almuerzo y sabado completo.',
+          ),
           SizedBox(height: 4),
-          Text('MEDIO_DIAS_INTERCALADOS: lunes, miercoles, viernes y sabado completos.'),
+          Text(
+            'MEDIO_DIAS_INTERCALADOS: lunes, miercoles, viernes y sabado completos.',
+          ),
         ],
       ),
     );
@@ -1287,15 +1307,26 @@ class _DisponibilidadPeriodoHelpCard extends StatelessWidget {
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Como funciona este periodo', style: TextStyle(fontWeight: FontWeight.w700)),
+          Text(
+            'Como funciona este periodo',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
           SizedBox(height: 6),
-          Text('Fecha inicio: desde que dia empieza a aplicar este esquema de trabajo.'),
+          Text(
+            'Fecha inicio: desde qué día empieza a aplicar este esquema de trabajo.',
+          ),
           SizedBox(height: 4),
-          Text('Fecha fin: hasta que dia aplica. Si lo dejas vacio, sigue vigente hasta nuevo aviso.'),
+          Text(
+            'Fecha fin: hasta qué día aplica. Si lo dejas vacío, sigue vigente hasta nuevo aviso.',
+          ),
           SizedBox(height: 4),
-          Text('Trabaja domingos: actívalo solo si en ese periodo el operario sí labora domingo.'),
+          Text(
+            'Trabaja domingos: actívalo solo si en ese periodo el operario sí labora domingo.',
+          ),
           SizedBox(height: 4),
-          Text('Dia de descanso semanal: indica qué dia descansa durante ese mismo periodo.'),
+          Text(
+            'Día de descanso semanal: indica qué día descansa durante ese mismo periodo.',
+          ),
         ],
       ),
     );

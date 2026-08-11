@@ -25,7 +25,7 @@ class CompromisosPage extends StatefulWidget {
     this.pageTitle = 'Compromisos',
     this.inputLabel = 'Nuevo compromiso',
     this.inputHint = 'Ej: Llamar al administrador',
-    this.emptyMessage = 'Aun no hay compromisos.\nAgrega el primero.',
+    this.emptyMessage = 'Aún no hay compromisos.\nAgrega el primero.',
     this.addButtonLabel = 'Agregar',
     this.usarFlujoAdministrador = false,
   });
@@ -465,7 +465,8 @@ class _CompromisosPageState extends State<CompromisosPage> {
                                                   spacing: 8,
                                                   runSpacing: 8,
                                                   children: [
-                                                    if (!widget.usarFlujoAdministrador) ...[
+                                                    if (!widget
+                                                        .usarFlujoAdministrador) ...[
                                                       _MetaChip(
                                                         icon: Icons
                                                             .schedule_rounded,
@@ -487,13 +488,14 @@ class _CompromisosPageState extends State<CompromisosPage> {
                                                     _MetaChip(
                                                       icon: item.completado
                                                           ? Icons
-                                                                 .task_alt_outlined
+                                                                .task_alt_outlined
                                                           : Icons
-                                                                 .timelapse_rounded,
+                                                                .timelapse_rounded,
                                                       label:
                                                           item.fechaCierreLabel,
                                                     ),
-                                                    if (!widget.usarFlujoAdministrador)
+                                                    if (!widget
+                                                        .usarFlujoAdministrador)
                                                       _MetaChip(
                                                         icon:
                                                             Icons.flag_outlined,

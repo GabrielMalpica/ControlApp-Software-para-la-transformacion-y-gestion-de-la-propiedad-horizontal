@@ -589,9 +589,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
     'prioridad': 'Prioridad',
     'fechaInicio': 'Fecha inicio',
     'fechaFin': 'Fecha fin',
-    'duracion': 'Duracion',
+    'duracion': 'Duración',
     'conjunto': 'Conjunto',
-    'ubicacion': 'Ubicacion',
+    'ubicacion': 'Ubicación',
     'elemento': 'Elemento',
     'supervisor': 'Supervisor',
     'operarios': 'Operarios',
@@ -1935,7 +1935,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     final visibles = descripciones.take(2).join(' | ');
     if (descripciones.length <= 2) return visibles;
-    return '$visibles | +${descripciones.length - 2} mas';
+    return '$visibles | +${descripciones.length - 2} más';
   }
 
   Future<void> _abrirBloqueDia(_BloqueHora bloque, DateTime fechaBase) async {
@@ -2049,7 +2049,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Tareas del dia',
+                        'Tareas del día',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -5744,7 +5744,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                   const SizedBox(height: 2),
                                                 if (!ultraCompactMarker)
                                                   Text(
-                                                    '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra mas' : ''}'}',
+                                                    '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra más' : ''}'}',
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,
@@ -6362,7 +6362,7 @@ class _SidebarAgendaDia extends StatelessWidget {
               const SizedBox(height: 6),
               SegmentedButton<bool>(
                 segments: const [
-                  ButtonSegment<bool>(value: false, label: Text('Dia')),
+                  ButtonSegment<bool>(value: false, label: Text('Día')),
                   ButtonSegment<bool>(value: true, label: Text('Mes')),
                 ],
                 selected: {verExcluidasMes},

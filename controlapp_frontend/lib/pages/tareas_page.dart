@@ -118,11 +118,7 @@ class _TareasPageState extends State<TareasPage> {
 
     final resp = await http.get(
       uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'x-empresa-id': AppConstants.empresaNit,
-        'Accept': 'application/json',
-      },
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
     );
 
     if (resp.statusCode != 200) {

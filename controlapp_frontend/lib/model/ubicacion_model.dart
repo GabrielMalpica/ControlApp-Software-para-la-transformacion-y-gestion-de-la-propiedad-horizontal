@@ -20,10 +20,6 @@ class UbicacionModel {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'nombre': nombre,
-      'conjuntoId': conjuntoId,
-    };
+    return {'id': id, 'nombre': nombre, 'conjuntoId': conjuntoId};
   }
 }

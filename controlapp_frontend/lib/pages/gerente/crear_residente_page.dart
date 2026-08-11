@@ -41,7 +41,8 @@ class _CrearResidentePageState extends State<CrearResidentePage> {
   ResidenteCreado? _creado;
 
   bool get _conjuntoBloqueado =>
-      widget.conjuntoFijoNit != null && widget.conjuntoFijoNit!.trim().isNotEmpty;
+      widget.conjuntoFijoNit != null &&
+      widget.conjuntoFijoNit!.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -82,7 +83,10 @@ class _CrearResidentePageState extends State<CrearResidentePage> {
       if (!mounted) return;
       setState(() {
         _loadingConjuntos = false;
-        _error = AppError.messageOf(e, fallback: 'No se pudieron cargar los conjuntos.');
+        _error = AppError.messageOf(
+          e,
+          fallback: 'No se pudieron cargar los conjuntos.',
+        );
       });
     }
   }
@@ -129,7 +133,10 @@ class _CrearResidentePageState extends State<CrearResidentePage> {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _error = AppError.messageOf(e, fallback: 'No se pudo crear el residente.');
+        _error = AppError.messageOf(
+          e,
+          fallback: 'No se pudo crear el residente.',
+        );
       });
     }
   }
@@ -164,12 +171,17 @@ class _CrearResidentePageState extends State<CrearResidentePage> {
                           if (_conjuntoBloqueado)
                             _ReadOnlyField(
                               label: 'Conjunto',
-                              value: widget.conjuntoFijoNombre ?? _conjuntoNit ?? '',
+                              value:
+                                  widget.conjuntoFijoNombre ??
+                                  _conjuntoNit ??
+                                  '',
                             )
                           else
                             DropdownButtonFormField<String>(
                               initialValue: _conjuntoNit,
-                              decoration: const InputDecoration(labelText: 'Conjunto'),
+                              decoration: const InputDecoration(
+                                labelText: 'Conjunto',
+                              ),
                               items: _conjuntos
                                   .map(
                                     (c) => DropdownMenuItem(
@@ -178,21 +190,30 @@ class _CrearResidentePageState extends State<CrearResidentePage> {
                                     ),
                                   )
                                   .toList(),
-                              onChanged: _saving ? null : (value) => setState(() => _conjuntoNit = value),
+                              onChanged: _saving
+                                  ? null
+                                  : (value) =>
+                                        setState(() => _conjuntoNit = value),
                             ),
                           const SizedBox(height: 14),
                           TextFormField(
                             controller: _cedulaCtrl,
-                            decoration: const InputDecoration(labelText: 'Cedula'),
-                            validator: (value) => (value == null || value.trim().length < 5)
+                            decoration: const InputDecoration(
+                              labelText: 'Cedula',
+                            ),
+                            validator: (value) =>
+                                (value == null || value.trim().length < 5)
                                 ? 'Ingresa una cedula valida.'
                                 : null,
                           ),
                           const SizedBox(height: 14),
                           TextFormField(
                             controller: _nombreCtrl,
-                            decoration: const InputDecoration(labelText: 'Nombre completo'),
-                            validator: (value) => (value == null || value.trim().length < 3)
+                            decoration: const InputDecoration(
+                              labelText: 'Nombre completo',
+                            ),
+                            validator: (value) =>
+                                (value == null || value.trim().length < 3)
                                 ? 'Ingresa el nombre del residente.'
                                 : null,
                           ),
@@ -200,8 +221,11 @@ class _CrearResidentePageState extends State<CrearResidentePage> {
                           TextFormField(
                             controller: _correoCtrl,
                             keyboardType: TextInputType.emailAddress,
-                            decoration: const InputDecoration(labelText: 'Correo'),
-                            validator: (value) => (value == null || !value.contains('@'))
+                            decoration: const InputDecoration(
+                              labelText: 'Correo',
+                            ),
+                            validator: (value) =>
+                                (value == null || !value.contains('@'))
                                 ? 'Ingresa un correo valido.'
                                 : null,
                           ),
@@ -210,22 +234,38 @@ class _CrearResidentePageState extends State<CrearResidentePage> {
                             controller: _telefonoCtrl,
                             keyboardType: TextInputType.phone,
                             decoration: const InputDecoration(
-                              labelText: 'Telefono (opcional)',
+                              labelText: 'Teléfono (opcional)',
                             ),
                           ),
                           const SizedBox(height: 14),
                           DropdownButtonFormField<String>(
                             initialValue: _tipoUnidad,
-                            decoration: const InputDecoration(labelText: 'Tipo de unidad'),
+                            decoration: const InputDecoration(
+                              labelText: 'Tipo de unidad',
+                            ),
                             items: const [
-                              DropdownMenuItem(value: 'APARTAMENTO', child: Text('Apartamento')),
-                              DropdownMenuItem(value: 'CASA', child: Text('Casa')),
-                              DropdownMenuItem(value: 'OFICINA', child: Text('Oficina')),
-                              DropdownMenuItem(value: 'LOCAL', child: Text('Local')),
+                              DropdownMenuItem(
+                                value: 'APARTAMENTO',
+                                child: Text('Apartamento'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'CASA',
+                                child: Text('Casa'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'OFICINA',
+                                child: Text('Oficina'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'LOCAL',
+                                child: Text('Local'),
+                              ),
                             ],
                             onChanged: _saving
                                 ? null
-                                : (value) => setState(() => _tipoUnidad = value ?? 'APARTAMENTO'),
+                                : (value) => setState(
+                                    () => _tipoUnidad = value ?? 'APARTAMENTO',
+                                  ),
                           ),
                           const SizedBox(height: 14),
                           if (_tipoUnidad != 'CASA') ...[
@@ -244,7 +284,8 @@ class _CrearResidentePageState extends State<CrearResidentePage> {
                                   ? 'Casa / unidad'
                                   : 'Apartamento / unidad',
                             ),
-                            validator: (value) => (value == null || value.trim().isEmpty)
+                            validator: (value) =>
+                                (value == null || value.trim().isEmpty)
                                 ? 'Ingresa la unidad residencial.'
                                 : null,
                           ),
@@ -259,7 +300,9 @@ class _CrearResidentePageState extends State<CrearResidentePage> {
                           ElevatedButton.icon(
                             onPressed: _saving ? null : _guardar,
                             icon: const Icon(Icons.person_add_alt_1),
-                            label: Text(_saving ? 'Creando...' : 'Crear residente'),
+                            label: Text(
+                              _saving ? 'Creando...' : 'Crear residente',
+                            ),
                           ),
                         ],
                       ),
@@ -277,9 +320,8 @@ class _CrearResidentePageState extends State<CrearResidentePage> {
                         children: [
                           Text(
                             'Residente creado correctamente',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: AppTheme.primaryDark,
-                                ),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(color: AppTheme.primaryDark),
                           ),
                           const SizedBox(height: 10),
                           Text('${_creado!.nombre} - ${_creado!.correo}'),
@@ -288,7 +330,9 @@ class _CrearResidentePageState extends State<CrearResidentePage> {
                           const SizedBox(height: 6),
                           Text('Usuario: ${_creado!.credencialUsuario}'),
                           const SizedBox(height: 6),
-                          Text('Contrasena temporal: ${_creado!.credencialTemporal}'),
+                          Text(
+                            'Contrasena temporal: ${_creado!.credencialTemporal}',
+                          ),
                         ],
                       ),
                     ),

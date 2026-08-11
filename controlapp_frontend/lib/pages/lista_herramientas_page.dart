@@ -202,7 +202,7 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
                   : _items.isEmpty
                   ? _StateCard(
                       icon: Icons.handyman_outlined,
-                      title: 'Aun no hay herramientas en la empresa',
+                      title: 'Aún no hay herramientas en la empresa',
                       message:
                           'Primero crea la herramienta en el catalogo. El stock de empresa se administra en la pantalla separada de stock empresa.',
                       actionLabel: 'Crear herramienta',
@@ -365,7 +365,7 @@ class _ToolCard extends StatelessWidget {
               if (item.umbralBajo != null)
                 _PlainChip(text: 'Alerta: ${item.umbralBajo}'),
               if (item.vidaUtilDias != null)
-                _PlainChip(text: 'Vida util: ${item.vidaUtilDias} dias'),
+                _PlainChip(text: 'Vida útil: ${item.vidaUtilDias} días'),
             ],
           ),
           const SizedBox(height: 12),

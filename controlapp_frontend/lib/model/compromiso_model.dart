@@ -41,8 +41,8 @@ class CompromisoModel {
   String get antiguedadLabel {
     if (completado) return 'Cerrado';
     if (diasAbierto <= 0) return 'Hoy';
-    if (diasAbierto == 1) return '1 dia abierto';
-    return '$diasAbierto dias abierto';
+    if (diasAbierto == 1) return '1 día abierto';
+    return '$diasAbierto días abierto';
   }
 
   String get fechaCreacionLabel {

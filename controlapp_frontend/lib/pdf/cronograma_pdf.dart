@@ -577,8 +577,8 @@ pw.Widget _buildPreviewLikePdf({
                 pw.SizedBox(height: lineSpacing),
                 pw.Text(
                   diaAgenda.esMesAnterior
-                      ? 'Dia del mes anterior'
-                      : 'Dia del mes siguiente',
+                      ? 'Día del mes anterior'
+                      : 'Día del mes siguiente',
                   style: pw.TextStyle(
                     fontSize: bodyFont,
                     fontWeight: pw.FontWeight.bold,

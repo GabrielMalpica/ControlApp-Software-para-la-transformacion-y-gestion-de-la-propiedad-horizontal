@@ -26,10 +26,9 @@ class TareaNecesidadMaquinaria {
       fechaFin:
           DateTime.tryParse(json['fechaFin']?.toString() ?? '')?.toLocal() ??
           DateTime.now(),
-      operariosNombres:
-          ((json['operariosNombres'] as List?) ?? const [])
-              .map((e) => e.toString())
-              .toList(),
+      operariosNombres: ((json['operariosNombres'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(),
     );
   }
 }
@@ -194,7 +193,8 @@ class CronogramaMaquinariaResponse {
     raw.forEach((key, value) {
       catalogo[key.toString()] = ((value as List?) ?? const [])
           .map(
-            (e) => MaquinaCandidata.fromJson(Map<String, dynamic>.from(e as Map)),
+            (e) =>
+                MaquinaCandidata.fromJson(Map<String, dynamic>.from(e as Map)),
           )
           .toList();
     });

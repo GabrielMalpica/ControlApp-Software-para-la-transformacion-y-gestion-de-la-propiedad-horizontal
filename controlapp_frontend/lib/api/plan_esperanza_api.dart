@@ -17,10 +17,7 @@ class PlanEsperanzaApi {
 
   Future<Map<String, String>> _authHeaders({bool json = true}) async {
     final token = await _session.getToken();
-    final headers = <String, String>{
-      'Accept': 'application/json',
-      'x-empresa-id': AppConstants.empresaNit,
-    };
+    final headers = <String, String>{'Accept': 'application/json'};
     if (json) {
       headers['Content-Type'] = 'application/json';
     }
@@ -36,7 +33,7 @@ class PlanEsperanzaApi {
       throw Exception(
         AppError.fromResponseBody(
           resp.body,
-          fallback: 'No se pudo cargar la configuracion.',
+          fallback: 'No se pudo cargar la configuración.',
         ),
       );
     }
@@ -56,7 +53,7 @@ class PlanEsperanzaApi {
       throw Exception(
         AppError.fromResponseBody(
           resp.body,
-          fallback: 'No se pudo actualizar la configuracion.',
+          fallback: 'No se pudo actualizar la configuración.',
         ),
       );
     }

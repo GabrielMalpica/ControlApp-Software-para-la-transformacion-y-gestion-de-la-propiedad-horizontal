@@ -77,17 +77,21 @@ class ConjuntoOrderItem {
   factory ConjuntoOrderItem.fromJson(Map<String, dynamic> json) {
     return ConjuntoOrderItem(
       id: (json['id'] as num?)?.toInt() ?? 0,
-      nombreProducto: json['nombreProducto']?.toString() ?? '',
+      nombreProducto: repairCommerceText(json['nombreProducto']),
       sku: json['sku']?.toString(),
       cantidad: (json['cantidad'] as num?)?.toDouble() ?? 0,
       precioUnitario: (json['precioUnitario'] as num?)?.toDouble() ?? 0,
       subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0,
       pagarAhora: (json['pagarAhora'] as num?)?.toDouble() ?? 0,
       fechaServicio: json['fechaServicio']?.toString(),
-      turnoServicio: json['turnoServicio']?.toString(),
+      turnoServicio: json['turnoServicio'] == null
+          ? null
+          : repairCommerceText(json['turnoServicio']),
       opcionPagoServicio: json['opcionPagoServicio']?.toString(),
       addonsServicio:
-          json['addonsServicio'] as List<dynamic>? ?? const <dynamic>[],
+          (json['addonsServicio'] as List<dynamic>? ?? const <dynamic>[])
+              .map(repairCommerceJsonValue)
+              .toList(),
     );
   }
 }
@@ -147,7 +151,9 @@ class ConjuntoOrderSummary {
       total: (json['total'] as num?)?.toDouble() ?? 0,
       moneda: json['moneda']?.toString() ?? 'COP',
       conjuntoId: json['conjuntoId']?.toString(),
-      conjuntoNombre: json['conjuntoNombre']?.toString(),
+      conjuntoNombre: json['conjuntoNombre'] == null
+          ? null
+          : repairCommerceText(json['conjuntoNombre']),
       creadoEn: json['creadoEn'] != null
           ? DateTime.tryParse(json['creadoEn'].toString())
           : null,
@@ -159,7 +165,9 @@ class ConjuntoOrderSummary {
       pagoUrl: json['pagoUrl']?.toString(),
       pagarAhora: (json['pagarAhora'] as num?)?.toDouble() ?? 0,
       fechaServicio: json['fechaServicio']?.toString(),
-      turnoServicio: json['turnoServicio']?.toString(),
+      turnoServicio: json['turnoServicio'] == null
+          ? null
+          : repairCommerceText(json['turnoServicio']),
       opcionPagoServicio: json['opcionPagoServicio']?.toString(),
       whatsappPhone: json['whatsappPhone']?.toString() ?? '',
     );

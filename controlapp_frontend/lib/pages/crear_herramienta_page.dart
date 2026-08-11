@@ -193,7 +193,7 @@ class _CrearHerramientaPageState extends State<CrearHerramientaPage> {
                         ),
                         validator: (value) {
                           final parsed = num.tryParse((value ?? '').trim());
-                          if (parsed == null) return 'Ingresa un numero valido';
+                          if (parsed == null) return 'Ingresa un número válido';
                           if (parsed < 0) return 'No puede ser negativo';
                           return null;
                         },

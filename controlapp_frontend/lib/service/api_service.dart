@@ -13,7 +13,6 @@ class ApiService {
     final token = await _session.getToken();
     return {
       'Accept': 'application/json',
-      'x-empresa-id': AppConstants.empresaNit,
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
     };
   }

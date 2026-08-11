@@ -18,10 +18,7 @@ class ConjuntoApi {
 
   Future<Map<String, String>> _authHeaders({bool json = true}) async {
     final token = await _session.getToken();
-    final headers = <String, String>{
-      'Accept': 'application/json',
-      'x-empresa-id': AppConstants.empresaNit,
-    };
+    final headers = <String, String>{'Accept': 'application/json'};
 
     if (json) {
       headers['Content-Type'] = 'application/json';

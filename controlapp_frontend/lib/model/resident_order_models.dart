@@ -77,17 +77,21 @@ class ResidentOrderItem {
   factory ResidentOrderItem.fromJson(Map<String, dynamic> json) {
     return ResidentOrderItem(
       id: (json['id'] as num?)?.toInt() ?? 0,
-      nombreProducto: json['nombreProducto']?.toString() ?? '',
+      nombreProducto: repairCommerceText(json['nombreProducto']),
       sku: json['sku']?.toString(),
       cantidad: (json['cantidad'] as num?)?.toDouble() ?? 0,
       precioUnitario: (json['precioUnitario'] as num?)?.toDouble() ?? 0,
       subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0,
       pagarAhora: (json['pagarAhora'] as num?)?.toDouble() ?? 0,
       fechaServicio: json['fechaServicio']?.toString(),
-      turnoServicio: json['turnoServicio']?.toString(),
+      turnoServicio: json['turnoServicio'] == null
+          ? null
+          : repairCommerceText(json['turnoServicio']),
       opcionPagoServicio: json['opcionPagoServicio']?.toString(),
       addonsServicio:
-          json['addonsServicio'] as List<dynamic>? ?? const <dynamic>[],
+          (json['addonsServicio'] as List<dynamic>? ?? const <dynamic>[])
+              .map(repairCommerceJsonValue)
+              .toList(),
     );
   }
 }
@@ -146,7 +150,9 @@ class ResidentOrderSummary {
       pagoUrl: json['pagoUrl']?.toString(),
       pagarAhora: (json['pagarAhora'] as num?)?.toDouble() ?? 0,
       fechaServicio: json['fechaServicio']?.toString(),
-      turnoServicio: json['turnoServicio']?.toString(),
+      turnoServicio: json['turnoServicio'] == null
+          ? null
+          : repairCommerceText(json['turnoServicio']),
       opcionPagoServicio: json['opcionPagoServicio']?.toString(),
       whatsappPhone: json['whatsappPhone']?.toString() ?? '',
       items: items,

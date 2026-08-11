@@ -171,7 +171,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
           ],
         ),
         content: const Text(
-          'Se iniciara un nuevo Plan Esperanza con todas las areas '
+          'Se iniciará un nuevo Plan Esperanza con todas las áreas '
           'finales del conjunto. ¿Desea continuar?',
         ),
         actions: [
@@ -511,7 +511,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
   }
 
   Future<void> _showConfigDialog() async {
-      final controller = TextEditingController(
+    final controller = TextEditingController(
       text: (_config?.intervaloMeses ?? 3).toString(),
     );
     final result = await showDialog<int>(
@@ -522,7 +522,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
           children: [
             Icon(Icons.settings, color: AppTheme.primary, size: 28),
             const SizedBox(width: 10),
-            const Text('Configuracion'),
+            const Text('Configuración'),
           ],
         ),
         content: Column(
@@ -588,7 +588,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
           context,
           message: AppError.messageOf(
             e,
-            fallback: 'No se pudo actualizar la configuracion.',
+            fallback: 'No se pudo actualizar la configuración.',
           ),
         );
       }
@@ -735,7 +735,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
               const SizedBox(height: 8),
               Text(
                 'Inicie uno nuevo para comenzar los diagnosticos '
-                'de todas las areas del conjunto.',
+                'de todas las áreas del conjunto.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
               ),
@@ -829,7 +829,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
         Expanded(
           child: diagnosticos.isEmpty
               ? const Center(
-                  child: Text('No hay areas diagnosticadas en este plan.'),
+                  child: Text('No hay áreas diagnosticadas en este plan.'),
                 )
               : ListView(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
@@ -855,9 +855,8 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
                                 setState(() => _editValoraciones[diag.id] = v),
                             onObservacionesChanged: (v) =>
                                 setState(() => _editObservaciones[diag.id] = v),
-                            onChecklistChanged: (items) => setState(
-                              () => _editChecklist[diag.id] = items,
-                            ),
+                            onChecklistChanged: (items) =>
+                                setState(() => _editChecklist[diag.id] = items),
                             onAddChecklist: () => _agregarChecklist(diag),
                           ),
                       ],
@@ -1015,7 +1014,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
             Icon(Icons.history, size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 16),
             Text(
-              'Aun no hay planes registrados.',
+              'Aún no hay planes registrados.',
               style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
             ),
           ],
@@ -1188,7 +1187,7 @@ class _PlanInformeTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '${plan.totalAreas} areas - ${plan.completado ? "Finalizado" : "Activo"}',
+                      '${plan.totalAreas} áreas - ${plan.completado ? "Finalizado" : "Activo"}',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade600,
@@ -1725,18 +1724,18 @@ class _DiagnosticoCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: Colors.grey.shade200),
                     ),
-                     child: fotoActual != null
-                         ? ClipRRect(
-                             borderRadius: BorderRadius.circular(9),
-                             child: _PlanEsperanzaPageState._buildPhotoWidget(
-                               fotoActual,
-                               fallback: _fotoPlaceholder(),
-                               fit: BoxFit.cover,
-                               width: 88,
-                               height: 88,
-                             ),
-                           )
-                         : _fotoPlaceholder(),
+                    child: fotoActual != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(9),
+                            child: _PlanEsperanzaPageState._buildPhotoWidget(
+                              fotoActual,
+                              fallback: _fotoPlaceholder(),
+                              fit: BoxFit.cover,
+                              width: 88,
+                              height: 88,
+                            ),
+                          )
+                        : _fotoPlaceholder(),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1973,7 +1972,8 @@ class _ChecklistEditor extends StatelessWidget {
                   ),
                   IconButton(
                     onPressed: () {
-                      final next = List<ChecklistItem>.from(items)..removeAt(index);
+                      final next = List<ChecklistItem>.from(items)
+                        ..removeAt(index);
                       onChanged(next);
                     },
                     icon: Icon(
@@ -2006,7 +2006,8 @@ class _ChecklistSummary extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           'Checklist',
-          style: style?.copyWith(fontWeight: FontWeight.w700) ??
+          style:
+              style?.copyWith(fontWeight: FontWeight.w700) ??
               const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 4),
@@ -2015,8 +2016,8 @@ class _ChecklistSummary extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 2),
             child: Text(
               '• ${item.texto}',
-              style: style ??
-                  TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              style:
+                  style ?? TextStyle(fontSize: 12, color: Colors.grey.shade700),
             ),
           ),
       ],
@@ -2038,8 +2039,8 @@ class _AreaInformeCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.grey.shade200),
       ),
-        child: Row(
-          children: [
+      child: Row(
+        children: [
           GestureDetector(
             onTap: area.urlFoto != null
                 ? () => _showStaticPhotoDialog(context, area.urlFoto!)
@@ -2179,7 +2180,10 @@ class _CandidateNetworkImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cleanUrls = urls.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final cleanUrls = urls
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
     return _buildFromIndex(cleanUrls, 0);
   }
 
@@ -2387,7 +2391,10 @@ class _AreaHistoricoCardState extends State<_AreaHistoricoCard> {
                     width: 140,
                     height: 80,
                     color: Colors.grey.shade200,
-                    child: Icon(Icons.broken_image, color: Colors.grey.shade400),
+                    child: Icon(
+                      Icons.broken_image,
+                      color: Colors.grey.shade400,
+                    ),
                   ),
                   fit: BoxFit.cover,
                   width: 140,

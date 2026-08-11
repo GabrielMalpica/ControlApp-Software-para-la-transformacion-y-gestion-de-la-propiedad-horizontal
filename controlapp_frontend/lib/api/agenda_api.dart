@@ -76,13 +76,16 @@ class AgendaApi {
           queryParameters: {
             'anio': anio.toString(),
             'mes': mes.toString(),
-            if (categoria != null && categoria.isNotEmpty) 'categoria': categoria,
+            if (categoria != null && categoria.isNotEmpty)
+              'categoria': categoria,
           },
         );
 
     final resp = await _client.get(uri.toString());
     if (resp.statusCode != 200) {
-      throw Exception('Error agenda herramientas: ${resp.statusCode} ${resp.body}');
+      throw Exception(
+        'Error agenda herramientas: ${resp.statusCode} ${resp.body}',
+      );
     }
     return AgendaHerramientaResponse.fromJson(jsonDecode(resp.body));
   }

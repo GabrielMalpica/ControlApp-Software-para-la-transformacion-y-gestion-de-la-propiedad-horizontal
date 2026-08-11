@@ -283,7 +283,7 @@ class _ZonificacionPageState extends State<ZonificacionPage> {
                         const SizedBox(height: 14),
                       ],
                       const Text(
-                        'Cobertura por conjunto y ubicacion',
+                        'Cobertura por conjunto y ubicación',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w900,

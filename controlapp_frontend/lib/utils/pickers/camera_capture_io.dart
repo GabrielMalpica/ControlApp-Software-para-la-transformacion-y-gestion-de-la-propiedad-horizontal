@@ -14,10 +14,6 @@ class CameraCapture {
     final path = x.path.trim();
     if (path.isEmpty) return null;
 
-    return SelectedUploadFile(
-      name: name,
-      mimeType: 'image/jpeg',
-      path: path,
-    );
+    return SelectedUploadFile(name: name, mimeType: 'image/jpeg', path: path);
   }
 }

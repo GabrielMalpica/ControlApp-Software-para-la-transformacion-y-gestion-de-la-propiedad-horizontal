@@ -81,13 +81,9 @@ class TareaApi {
   Future<Map<String, String>> _authHeaders() async {
     final token = await _session.getToken();
     if (token == null || token.isEmpty) {
-      throw Exception('Token requerido (no hay sesiÃ³n guardada)');
+      throw Exception('Token requerido (no hay sesión guardada)');
     }
-    return {
-      'Authorization': 'Bearer $token',
-      'x-empresa-id': AppConstants.empresaNit,
-      'Accept': 'application/json',
-    };
+    return {'Authorization': 'Bearer $token', 'Accept': 'application/json'};
   }
 
   Future<Map<String, dynamic>> crearTarea(TareaRequest req) async {

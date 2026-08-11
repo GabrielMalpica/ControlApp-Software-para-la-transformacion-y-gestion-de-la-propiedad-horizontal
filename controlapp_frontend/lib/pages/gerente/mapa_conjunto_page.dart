@@ -418,7 +418,7 @@ class _MapaImagenCard extends StatelessWidget {
                     Text(
                       conjunto.tieneMapaConjunto
                           ? 'El mapa cargado queda visible para todos los roles del sistema.'
-                          : 'Aun no se ha cargado una imagen del mapa del conjunto.',
+                          : 'Aún no se ha cargado una imagen del mapa del conjunto.',
                       style: const TextStyle(
                         color: Colors.black54,
                         height: 1.35,

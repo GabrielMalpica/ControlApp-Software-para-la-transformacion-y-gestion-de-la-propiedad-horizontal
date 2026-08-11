@@ -2,10 +2,7 @@ class ProfileConjunto {
   final String nit;
   final String nombre;
 
-  const ProfileConjunto({
-    required this.nit,
-    required this.nombre,
-  });
+  const ProfileConjunto({required this.nit, required this.nombre});
 
   factory ProfileConjunto.fromJson(Map<String, dynamic> json) {
     return ProfileConjunto(

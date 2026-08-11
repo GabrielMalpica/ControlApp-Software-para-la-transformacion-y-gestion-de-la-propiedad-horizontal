@@ -1,6 +1,7 @@
 import 'package:flutter_application_1/model/tarea_model.dart';
 
 enum EstadoTarea { PENDIENTE, EN_PROCESO, COMPLETADA, CANCELADA }
+
 enum TipoTarea { CORRECTIVA, PREVENTIVA }
 
 class CronogramaModel {
@@ -40,4 +41,5 @@ class CronogramaModel {
     };
   }
 }
+
 // ignore_for_file: constant_identifier_names

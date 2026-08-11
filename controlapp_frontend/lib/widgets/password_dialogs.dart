@@ -382,7 +382,7 @@ Future<void> showRecoverPasswordDialog(
   if (ok == true && context.mounted) {
     AppFeedback.showInfo(
       context,
-      message: 'Contrasena restablecida. Ya puedes iniciar sesion.',
+      message: 'Contraseña restablecida. Ya puedes iniciar sesión.',
     );
     onSuccess?.call(correo: correo, nuevaContrasena: nueva);
   }
@@ -465,7 +465,10 @@ Future<void> showManagerResetPasswordDialog(
                   children: [
                     Text(
                       'Define una nueva contrasena para $nombreUsuario.',
-                      style: const TextStyle(fontSize: 13, color: Colors.black54),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Colors.black54,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(

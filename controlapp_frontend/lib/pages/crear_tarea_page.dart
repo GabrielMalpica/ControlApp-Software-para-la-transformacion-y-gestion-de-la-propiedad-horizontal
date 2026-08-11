@@ -718,7 +718,7 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
         inicio.month == fin.month &&
         inicio.day == fin.day;
     if (!mismoDia) {
-      return 'La correctiva debe iniciar y terminar el mismo dia, dentro del horario del conjunto.';
+      return 'La correctiva debe iniciar y terminar el mismo día, dentro del horario del conjunto.';
     }
 
     final horarios = conjunto.horarios;
@@ -1217,7 +1217,7 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
     if (tareas.isEmpty) return 'Sin detalle adicional.';
     final lineas = tareas.take(2).map(_detalleTareaReemplazo).toList();
     if (tareas.length > 2) {
-      lineas.add('y ${tareas.length - 2} mas...');
+      lineas.add('y ${tareas.length - 2} más...');
     }
     return lineas.join('\n');
   }
@@ -1896,7 +1896,7 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
           if (decision != 'REPLACE') {
             AppFeedback.showFromSnackBar(
               context,
-              const SnackBar(content: Text('Operacion cancelada.')),
+              const SnackBar(content: Text('Operación cancelada.')),
             );
             return;
           }
@@ -2020,7 +2020,7 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
         if (seleccion == null) {
           AppFeedback.showFromSnackBar(
             context,
-            SnackBar(content: Text('Operacion cancelada.')),
+            SnackBar(content: Text('Operación cancelada.')),
           );
           return;
         }
@@ -2040,7 +2040,7 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
         if (!confirmado) {
           AppFeedback.showFromSnackBar(
             context,
-            const SnackBar(content: Text('Operacion cancelada.')),
+            const SnackBar(content: Text('Operación cancelada.')),
           );
           return;
         }
@@ -2056,7 +2056,7 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
           if (accionReemplazadas == null) {
             AppFeedback.showFromSnackBar(
               context,
-              const SnackBar(content: Text('Operacion cancelada.')),
+              const SnackBar(content: Text('Operación cancelada.')),
             );
             return;
           }
@@ -2099,7 +2099,7 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
                 seleccionReprogramacion.isEmpty) {
               AppFeedback.showFromSnackBar(
                 context,
-                const SnackBar(content: Text('Operacion cancelada.')),
+                const SnackBar(content: Text('Operación cancelada.')),
               );
               return;
             }

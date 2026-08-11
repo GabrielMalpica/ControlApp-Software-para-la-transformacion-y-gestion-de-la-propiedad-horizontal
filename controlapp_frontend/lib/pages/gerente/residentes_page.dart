@@ -34,7 +34,8 @@ class _ResidentesPageState extends State<ResidentesPage> {
   List<ResidenteAdminItem> _residentes = const [];
 
   bool get _conjuntoBloqueado =>
-      widget.conjuntoFijoNit != null && widget.conjuntoFijoNit!.trim().isNotEmpty;
+      widget.conjuntoFijoNit != null &&
+      widget.conjuntoFijoNit!.trim().isNotEmpty;
 
   bool _can(String permission) => PermissionService.instance.can(permission);
 
@@ -127,33 +128,61 @@ class _ResidentesPageState extends State<ResidentesPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    TextField(controller: nombreCtrl, decoration: const InputDecoration(labelText: 'Nombre')),
+                    TextField(
+                      controller: nombreCtrl,
+                      decoration: const InputDecoration(labelText: 'Nombre'),
+                    ),
                     const SizedBox(height: 10),
-                    TextField(controller: correoCtrl, decoration: const InputDecoration(labelText: 'Correo')),
+                    TextField(
+                      controller: correoCtrl,
+                      decoration: const InputDecoration(labelText: 'Correo'),
+                    ),
                     const SizedBox(height: 10),
-                    TextField(controller: telefonoCtrl, decoration: const InputDecoration(labelText: 'Telefono')),
+                    TextField(
+                      controller: telefonoCtrl,
+                      decoration: const InputDecoration(labelText: 'Teléfono'),
+                    ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
                       initialValue: tipoUnidad,
-                      decoration: const InputDecoration(labelText: 'Tipo de unidad'),
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo de unidad',
+                      ),
                       items: const [
-                        DropdownMenuItem(value: 'APARTAMENTO', child: Text('Apartamento')),
+                        DropdownMenuItem(
+                          value: 'APARTAMENTO',
+                          child: Text('Apartamento'),
+                        ),
                         DropdownMenuItem(value: 'CASA', child: Text('Casa')),
-                        DropdownMenuItem(value: 'OFICINA', child: Text('Oficina')),
+                        DropdownMenuItem(
+                          value: 'OFICINA',
+                          child: Text('Oficina'),
+                        ),
                         DropdownMenuItem(value: 'LOCAL', child: Text('Local')),
                       ],
-                      onChanged: (value) => setDialogState(() => tipoUnidad = value ?? 'APARTAMENTO'),
+                      onChanged: (value) => setDialogState(
+                        () => tipoUnidad = value ?? 'APARTAMENTO',
+                      ),
                     ),
                     const SizedBox(height: 10),
                     if (tipoUnidad != 'CASA') ...[
-                      TextField(controller: sectorCtrl, decoration: const InputDecoration(labelText: 'Sector / torre / bloque')),
+                      TextField(
+                        controller: sectorCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Sector / torre / bloque',
+                        ),
+                      ),
                       const SizedBox(height: 10),
                     ],
-                    TextField(controller: unidadCtrl, decoration: const InputDecoration(labelText: 'Unidad')),
+                    TextField(
+                      controller: unidadCtrl,
+                      decoration: const InputDecoration(labelText: 'Unidad'),
+                    ),
                     const SizedBox(height: 10),
                     SwitchListTile.adaptive(
                       value: activo,
-                      onChanged: (value) => setDialogState(() => activo = value),
+                      onChanged: (value) =>
+                          setDialogState(() => activo = value),
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Activo'),
                     ),
@@ -170,11 +199,11 @@ class _ResidentesPageState extends State<ResidentesPage> {
                 ElevatedButton(
                   onPressed: () {
                     if (nombreCtrl.text.trim().length < 3) {
-                      setDialogState(() => error = 'Nombre invalido.');
+                      setDialogState(() => error = 'Nombre inválido.');
                       return;
                     }
                     if (!correoCtrl.text.contains('@')) {
-                      setDialogState(() => error = 'Correo invalido.');
+                      setDialogState(() => error = 'Correo inválido.');
                       return;
                     }
                     if (unidadCtrl.text.trim().isEmpty) {
@@ -216,9 +245,9 @@ class _ResidentesPageState extends State<ResidentesPage> {
       await _cargarResidentes();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppError.messageOf(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(AppError.messageOf(e))));
     } finally {
       nombreCtrl.dispose();
       correoCtrl.dispose();
@@ -233,10 +262,18 @@ class _ResidentesPageState extends State<ResidentesPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Eliminar residente'),
-        content: Text('Se eliminara a ${item.nombre} y su acceso a la app. Esta accion no se puede deshacer.'),
+        content: Text(
+          'Se eliminara a ${item.nombre} y su acceso a la app. Esta accion no se puede deshacer.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Eliminar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Eliminar'),
+          ),
         ],
       ),
     );
@@ -250,9 +287,9 @@ class _ResidentesPageState extends State<ResidentesPage> {
       await _cargarResidentes();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppError.messageOf(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(AppError.messageOf(e))));
     }
   }
 
@@ -270,15 +307,27 @@ class _ResidentesPageState extends State<ResidentesPage> {
                     children: [
                       if (_conjuntoBloqueado)
                         TextFormField(
-                          initialValue: widget.conjuntoFijoNombre ?? _conjuntoNit ?? '',
+                          initialValue:
+                              widget.conjuntoFijoNombre ?? _conjuntoNit ?? '',
                           enabled: false,
-                          decoration: const InputDecoration(labelText: 'Conjunto'),
+                          decoration: const InputDecoration(
+                            labelText: 'Conjunto',
+                          ),
                         )
                       else
                         DropdownButtonFormField<String>(
                           initialValue: _conjuntoNit,
-                          decoration: const InputDecoration(labelText: 'Conjunto'),
-                          items: _conjuntos.map((c) => DropdownMenuItem(value: c.nit, child: Text(c.nombre))).toList(),
+                          decoration: const InputDecoration(
+                            labelText: 'Conjunto',
+                          ),
+                          items: _conjuntos
+                              .map(
+                                (c) => DropdownMenuItem(
+                                  value: c.nit,
+                                  child: Text(c.nombre),
+                                ),
+                              )
+                              .toList(),
                           onChanged: (value) {
                             setState(() => _conjuntoNit = value);
                             _cargarResidentes();
@@ -291,7 +340,8 @@ class _ResidentesPageState extends State<ResidentesPage> {
                             child: TextField(
                               controller: _searchCtrl,
                               decoration: const InputDecoration(
-                                labelText: 'Buscar por nombre, correo, cedula o unidad',
+                                labelText:
+                                    'Buscar por nombre, correo, cedula o unidad',
                               ),
                               onSubmitted: (_) => _cargarResidentes(),
                             ),
@@ -310,48 +360,60 @@ class _ResidentesPageState extends State<ResidentesPage> {
                   child: _loading
                       ? const Center(child: CircularProgressIndicator())
                       : _error != null
-                          ? Center(child: Text(_error!))
-                          : _residentes.isEmpty
-                              ? const Center(child: Text('No hay residentes registrados para este conjunto.'))
-                              : ListView.separated(
-                                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                                  itemCount: _residentes.length,
-                                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                                  itemBuilder: (context, index) {
-                                    final item = _residentes[index];
-                                    return Card(
-                                      child: ListTile(
-                                        leading: CircleAvatar(
-                                          backgroundColor: item.activo
-                                              ? AppTheme.primary.withValues(alpha: 0.12)
-                                              : AppTheme.red.withValues(alpha: 0.12),
-                                          foregroundColor: item.activo ? AppTheme.primary : AppTheme.red,
-                                          child: const Icon(Icons.person_outline),
-                                        ),
-                                        title: Text(item.nombre),
-                                        subtitle: Text('${item.correo}\n${item.tipoUnidad} - ${item.ubicacion}'),
-                                        isThreeLine: true,
-                                        trailing: Wrap(
-                                          spacing: 4,
-                                          children: [
-                                            if (_can('residentes.editar'))
-                                              IconButton(
-                                                tooltip: 'Editar',
-                                                onPressed: () => _editar(item),
-                                                icon: const Icon(Icons.edit_outlined),
-                                              ),
-                                            if (_can('residentes.eliminar'))
-                                              IconButton(
-                                                tooltip: 'Eliminar',
-                                                onPressed: () => _eliminar(item),
-                                                icon: const Icon(Icons.delete_outline, color: AppTheme.red),
-                                              ),
-                                          ],
+                      ? Center(child: Text(_error!))
+                      : _residentes.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No hay residentes registrados para este conjunto.',
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          itemCount: _residentes.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final item = _residentes[index];
+                            return Card(
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: item.activo
+                                      ? AppTheme.primary.withValues(alpha: 0.12)
+                                      : AppTheme.red.withValues(alpha: 0.12),
+                                  foregroundColor: item.activo
+                                      ? AppTheme.primary
+                                      : AppTheme.red,
+                                  child: const Icon(Icons.person_outline),
+                                ),
+                                title: Text(item.nombre),
+                                subtitle: Text(
+                                  '${item.correo}\n${item.tipoUnidad} - ${item.ubicacion}',
+                                ),
+                                isThreeLine: true,
+                                trailing: Wrap(
+                                  spacing: 4,
+                                  children: [
+                                    if (_can('residentes.editar'))
+                                      IconButton(
+                                        tooltip: 'Editar',
+                                        onPressed: () => _editar(item),
+                                        icon: const Icon(Icons.edit_outlined),
+                                      ),
+                                    if (_can('residentes.eliminar'))
+                                      IconButton(
+                                        tooltip: 'Eliminar',
+                                        onPressed: () => _eliminar(item),
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          color: AppTheme.red,
                                         ),
                                       ),
-                                    );
-                                  },
+                                  ],
                                 ),
+                              ),
+                            );
+                          },
+                        ),
                 ),
               ],
             ),

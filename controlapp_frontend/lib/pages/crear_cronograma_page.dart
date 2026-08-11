@@ -9,7 +9,9 @@ class CrearCronogramaPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Crear Cronograma")),
-      body: Center(child: Text("Formulario para crear cronograma del proyecto $nit")),
+      body: Center(
+        child: Text("Formulario para crear cronograma del proyecto $nit"),
+      ),
     );
   }
 }

@@ -292,9 +292,8 @@ class ReporteCompromisosDashboard {
       criticos: criticosRaw
           .whereType<Map>()
           .map(
-            (e) => ReporteCompromisoCriticoRow.fromJson(
-              e.cast<String, dynamic>(),
-            ),
+            (e) =>
+                ReporteCompromisoCriticoRow.fromJson(e.cast<String, dynamic>()),
           )
           .toList(),
     );
@@ -762,8 +761,7 @@ class PdfDatasetRow {
 
       ubicacionNombre:
           json['ubicacionNombre']?.toString() ?? ubic?['nombre']?.toString(),
-      elementoNombre:
-          json['elementoNombre']?.toString() ?? _elementoRuta(elem),
+      elementoNombre: json['elementoNombre']?.toString() ?? _elementoRuta(elem),
 
       supervisor: json['supervisor']?.toString(),
       operarios: (json['operarios'] is List)

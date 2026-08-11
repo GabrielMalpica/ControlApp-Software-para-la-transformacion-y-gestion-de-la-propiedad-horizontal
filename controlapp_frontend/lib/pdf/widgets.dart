@@ -10,8 +10,7 @@ Future<Uint8List> buildInformeGestionPdf({
   required Uint8List chartSeriePng,
   required Uint8List chartEstadosPng,
   required Uint8List chartTiposPng,
-  required Map<String, String>
-  textos,
+  required Map<String, String> textos,
 }) async {
   final doc = pw.Document();
 

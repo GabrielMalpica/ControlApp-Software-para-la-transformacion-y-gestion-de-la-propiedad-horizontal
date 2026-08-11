@@ -54,7 +54,9 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
 
     final stock = stockRaw
         .whereType<Map>()
-        .map((e) => HerramientaStockResponse.fromJson(e.cast<String, dynamic>()))
+        .map(
+          (e) => HerramientaStockResponse.fromJson(e.cast<String, dynamic>()),
+        )
         .toList();
 
     final byId = <int, AgendaHerramientaLite>{};
@@ -84,7 +86,10 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
         item.id,
         () => AgendaHerramientaBlock(
           herramienta: item,
-          semanas: {for (int s = 1; s <= 6; s++) s: {for (int g = 1; g <= 6; g++) g: <AgendaHerramientaItem>[]}},
+          semanas: {
+            for (int s = 1; s <= 6; s++)
+              s: {for (int g = 1; g <= 6; g++) g: <AgendaHerramientaItem>[]},
+          },
           reservasMes: 0,
         ),
       );
@@ -95,7 +100,9 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
       ..addAll(bloques);
 
     final salida = byId.values.toList()
-      ..sort((a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()));
+      ..sort(
+        (a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()),
+      );
     return salida;
   }
 
@@ -105,9 +112,14 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
     for (int semana = 1; semana <= 6; semana++) {
       final grupos = <int, List<AgendaHerramientaItem>>{};
       for (int grupo = 1; grupo <= 6; grupo++) {
-        final items = (block.semanas[semana]?[grupo] ?? const <AgendaHerramientaItem>[])
-            .where((item) => (item.conjuntoId?.trim() ?? '') == widget.conjuntoId.trim())
-            .toList();
+        final items =
+            (block.semanas[semana]?[grupo] ?? const <AgendaHerramientaItem>[])
+                .where(
+                  (item) =>
+                      (item.conjuntoId?.trim() ?? '') ==
+                      widget.conjuntoId.trim(),
+                )
+                .toList();
         grupos[grupo] = items;
         for (final item in items) {
           usoIds.add(item.usoId);
@@ -125,14 +137,29 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
 
   @override
   Widget build(BuildContext context) {
-    final mesLabel = '${_month.year}-${_month.month.toString().padLeft(2, '0')}';
+    final mesLabel =
+        '${_month.year}-${_month.month.toString().padLeft(2, '0')}';
     return Scaffold(
       appBar: AppBar(
         title: const Text('Agenda de herramientas'),
         actions: [
-          IconButton(icon: const Icon(Icons.chevron_left), onPressed: () => _changeMonth(-1)),
-          SizedBox(width: 110, child: Center(child: Text(mesLabel, style: const TextStyle(fontWeight: FontWeight.w600)))),
-          IconButton(icon: const Icon(Icons.chevron_right), onPressed: () => _changeMonth(1)),
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: () => _changeMonth(-1),
+          ),
+          SizedBox(
+            width: 110,
+            child: Center(
+              child: Text(
+                mesLabel,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            onPressed: () => _changeMonth(1),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
@@ -151,19 +178,23 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snap.hasError) {
-            return Center(child: Text('Error catalogo: ${AppError.messageOf(snap.error)}'));
+            return Center(
+              child: Text('Error catalogo: ${AppError.messageOf(snap.error)}'),
+            );
           }
 
-          final items = (snap.data ?? const <AgendaHerramientaLite>[])
-              .where((h) {
-                final q = _query.trim().toLowerCase();
-                if (q.isEmpty) return true;
-                return [h.nombre, h.unidad, h.categoria, h.modoControl]
-                    .join(' ')
-                    .toLowerCase()
-                    .contains(q);
-              })
-              .toList();
+          final items = (snap.data ?? const <AgendaHerramientaLite>[]).where((
+            h,
+          ) {
+            final q = _query.trim().toLowerCase();
+            if (q.isEmpty) return true;
+            return [
+              h.nombre,
+              h.unidad,
+              h.categoria,
+              h.modoControl,
+            ].join(' ').toLowerCase().contains(q);
+          }).toList();
 
           return Row(
             children: [
@@ -212,7 +243,9 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
 
   Widget _buildDetalle() {
     if (_seleccionada == null) {
-      return const Center(child: Text('Selecciona una herramienta para ver su programacion'));
+      return const Center(
+        child: Text('Selecciona una herramienta para ver su programacion'),
+      );
     }
 
     final block = _blocks[_seleccionada!.id];
@@ -220,7 +253,8 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
       return const Center(child: Text('Sin datos'));
     }
 
-    final semanas = block.semanas.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+    final semanas = block.semanas.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -231,13 +265,22 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
             style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
           ),
           const SizedBox(height: 6),
-          Text('${block.herramienta.categoria} • ${block.herramienta.modoControl}'),
+          Text(
+            '${block.herramienta.categoria} • ${block.herramienta.modoControl}',
+          ),
           const SizedBox(height: 10),
           Expanded(
             child: SingleChildScrollView(
               child: Column(
                 children: semanas
-                    .map((e) => _AgendaSemanaHerramientaConjunto(anio: _month.year, mes: _month.month, semana: e.key, grupos: e.value))
+                    .map(
+                      (e) => _AgendaSemanaHerramientaConjunto(
+                        anio: _month.year,
+                        mes: _month.month,
+                        semana: e.key,
+                        grupos: e.value,
+                      ),
+                    )
                     .toList(),
               ),
             ),
@@ -279,14 +322,20 @@ class _AgendaSemanaHerramientaConjunto extends StatelessWidget {
           rows: [
             for (int grupo = 1; grupo <= 6; grupo++)
               ...grupos[grupo]!.map(
-                (item) => DataRow(cells: [
-                  DataCell(Text('Semana $semana · Grupo $grupo')),
-                  ...List.generate(6, (i) {
-                    final day = monday.add(Duration(days: i));
-                    return DataCell(Text('${_days[i]} ${day.day}\n${item.grid[i]}'));
-                  }),
-                  DataCell(Text('cant: ${item.cantidad} · ${item.origenStock}')),
-                ]),
+                (item) => DataRow(
+                  cells: [
+                    DataCell(Text('Semana $semana · Grupo $grupo')),
+                    ...List.generate(6, (i) {
+                      final day = monday.add(Duration(days: i));
+                      return DataCell(
+                        Text('${_days[i]} ${day.day}\n${item.grid[i]}'),
+                      );
+                    }),
+                    DataCell(
+                      Text('cant: ${item.cantidad} · ${item.origenStock}'),
+                    ),
+                  ],
+                ),
               ),
           ],
         ),

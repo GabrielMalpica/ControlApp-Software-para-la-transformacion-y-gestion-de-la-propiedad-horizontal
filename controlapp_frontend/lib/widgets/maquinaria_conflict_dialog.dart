@@ -28,7 +28,8 @@ Future<bool> showMaquinariaConflictDialog(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(payload.message),
-              if (payload.userHint != null && payload.userHint!.trim().isNotEmpty) ...[
+              if (payload.userHint != null &&
+                  payload.userHint!.trim().isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text(
                   payload.userHint!,
@@ -106,9 +107,15 @@ class _ConflictCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(conflicto.motivo),
           const SizedBox(height: 12),
-          _Section(title: 'Tarea que intentas mover/publicar', child: _TaskDetails(task: conflicto.tareaSolicitada)),
+          _Section(
+            title: 'Tarea que intentas mover/publicar',
+            child: _TaskDetails(task: conflicto.tareaSolicitada),
+          ),
           const SizedBox(height: 12),
-          _Section(title: 'Tarea que bloquea la maquinaria', child: _TaskDetails(task: conflicto.ocupadoPor)),
+          _Section(
+            title: 'Tarea que bloquea la maquinaria',
+            child: _TaskDetails(task: conflicto.ocupadoPor),
+          ),
           if (conflicto.sugerencia != null) ...[
             const SizedBox(height: 12),
             _Section(
@@ -117,7 +124,9 @@ class _ConflictCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (conflicto.sugerencia!.libreDesde != null)
-                    Text('Libre desde: ${_formatDateTime(conflicto.sugerencia!.libreDesde!)}'),
+                    Text(
+                      'Libre desde: ${_formatDateTime(conflicto.sugerencia!.libreDesde!)}',
+                    ),
                   if (conflicto.sugerencia!.inicioUsoSugerido != null &&
                       conflicto.sugerencia!.finUsoSugerido != null)
                     Text(
@@ -170,9 +179,9 @@ class _Section extends StatelessWidget {
       children: [
         Text(
           title,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 6),
         child,
@@ -196,7 +205,8 @@ class _TaskDetails extends StatelessWidget {
       'Reserva maquinaria: ${_formatDateTimeRange(task.reservaInicio, task.reservaFin)}',
       if (task.entrega != null || task.recogida != null)
         'Ventana logística: entrega ${task.entrega ?? '-'} / recogida ${task.recogida ?? '-'}',
-      if (task.fuente != null && task.fuente!.isNotEmpty) 'Fuente: ${task.fuente}',
+      if (task.fuente != null && task.fuente!.isNotEmpty)
+        'Fuente: ${task.fuente}',
     ];
 
     return Column(
@@ -238,7 +248,9 @@ class _MaquinariaConflictPayload {
 
     if (raw is! Map) return null;
     final data = raw.cast<String, dynamic>();
-    final reason = (data['reason'] ?? data['code'] ?? '').toString().toUpperCase();
+    final reason = (data['reason'] ?? data['code'] ?? '')
+        .toString()
+        .toUpperCase();
     final rawConflictos = data['conflictos'];
     if (reason != 'MAQUINARIA_NO_DISPONIBLE' && rawConflictos is! List) {
       return null;
@@ -246,13 +258,17 @@ class _MaquinariaConflictPayload {
 
     final conflictos = (rawConflictos as List? ?? const [])
         .whereType<Map>()
-        .map((item) => _MaquinariaConflictItem.fromMap(item.cast<String, dynamic>()))
+        .map(
+          (item) =>
+              _MaquinariaConflictItem.fromMap(item.cast<String, dynamic>()),
+        )
         .toList();
     if (conflictos.isEmpty) return null;
 
     return _MaquinariaConflictPayload(
       title: (data['title'] ?? 'Conflicto de maquinaria').toString(),
-      message: (data['message'] ?? 'La maquinaria no está disponible.').toString(),
+      message: (data['message'] ?? 'La maquinaria no está disponible.')
+          .toString(),
       userHint: data['userHint']?.toString(),
       conflictos: conflictos,
     );
@@ -282,9 +298,12 @@ class _MaquinariaConflictItem {
     return _MaquinariaConflictItem(
       maquinariaId: _asInt(json['maquinariaId']),
       maquinaNombre:
-          (json['maquinaNombre'] ?? 'Maquinaria #${_asInt(json['maquinariaId'])}').toString(),
+          (json['maquinaNombre'] ??
+                  'Maquinaria #${_asInt(json['maquinariaId'])}')
+              .toString(),
       tipoSolape: (json['tipoSolape'] ?? 'RESERVA_LOGISTICA').toString(),
-      motivo: (json['motivo'] ?? 'La agenda de la maquinaria ya está ocupada.').toString(),
+      motivo: (json['motivo'] ?? 'La agenda de la maquinaria ya está ocupada.')
+          .toString(),
       tareaSolicitada: _TaskConflictSnapshot.fromMap(
         (json['tareaSolicitada'] as Map? ?? const {}).cast<String, dynamic>(),
       ),
@@ -396,9 +415,7 @@ String _labelSolape(String tipo) {
 String _beautifyEstado(String estado) => estado
     .split('_')
     .where((part) => part.trim().isNotEmpty)
-    .map(
-      (part) => '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}',
-    )
+    .map((part) => '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}')
     .join(' ');
 
 String _formatDateTime(DateTime value) =>

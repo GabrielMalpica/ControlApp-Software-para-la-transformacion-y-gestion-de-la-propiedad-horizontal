@@ -20,10 +20,7 @@ Future<void> showErrorDialog(
       ),
       content: Text(message),
       actions: [
-        CustomButton(
-          text: "Aceptar",
-          onPressed: () => Navigator.pop(context),
-        ),
+        CustomButton(text: "Aceptar", onPressed: () => Navigator.pop(context)),
       ],
     ),
   );

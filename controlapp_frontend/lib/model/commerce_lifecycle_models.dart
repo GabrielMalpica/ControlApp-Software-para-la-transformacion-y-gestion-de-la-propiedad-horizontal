@@ -1,3 +1,5 @@
+import 'package:flutter_application_1/model/commerce_models.dart';
+
 class CommerceInsumoRef {
   const CommerceInsumoRef({
     required this.id,
@@ -12,7 +14,7 @@ class CommerceInsumoRef {
   factory CommerceInsumoRef.fromJson(Map<String, dynamic> json) {
     return CommerceInsumoRef(
       id: (json['id'] as num?)?.toInt() ?? 0,
-      nombre: json['nombre']?.toString() ?? '',
+      nombre: repairCommerceText(json['nombre']),
       unidad: json['unidad']?.toString() ?? '',
     );
   }
@@ -51,17 +53,21 @@ class CommerceOrderDetailItem {
     final rawInsumo = json['insumo'];
     return CommerceOrderDetailItem(
       id: (json['id'] as num?)?.toInt() ?? 0,
-      nombreProducto: json['nombreProducto']?.toString() ?? '',
+      nombreProducto: repairCommerceText(json['nombreProducto']),
       sku: json['sku']?.toString(),
       cantidad: (json['cantidad'] as num?)?.toDouble() ?? 0,
       precioUnitario: (json['precioUnitario'] as num?)?.toDouble() ?? 0,
       subtotal: (json['subtotal'] as num?)?.toDouble() ?? 0,
       pagarAhora: (json['pagarAhora'] as num?)?.toDouble() ?? 0,
       fechaServicio: json['fechaServicio']?.toString(),
-      turnoServicio: json['turnoServicio']?.toString(),
+      turnoServicio: json['turnoServicio'] == null
+          ? null
+          : repairCommerceText(json['turnoServicio']),
       opcionPagoServicio: json['opcionPagoServicio']?.toString(),
       addonsServicio:
-          json['addonsServicio'] as List<dynamic>? ?? const <dynamic>[],
+          (json['addonsServicio'] as List<dynamic>? ?? const <dynamic>[])
+              .map(repairCommerceJsonValue)
+              .toList(),
       insumo: rawInsumo is Map<String, dynamic>
           ? CommerceInsumoRef.fromJson(rawInsumo)
           : null,
@@ -178,12 +184,16 @@ class CommerceOrderDetail {
       estadoWoo: json['estadoWoo']?.toString() ?? '',
       wooOrderId: json['wooOrderId']?.toString() ?? '',
       conjuntoId: json['conjuntoId']?.toString(),
-      conjuntoNombre: json['conjuntoNombre']?.toString(),
+      conjuntoNombre: json['conjuntoNombre'] == null
+          ? null
+          : repairCommerceText(json['conjuntoNombre']),
       total: (json['total'] as num?)?.toDouble() ?? 0,
       moneda: json['moneda']?.toString() ?? 'COP',
       pagarAhora: (json['pagarAhora'] as num?)?.toDouble() ?? 0,
       fechaServicio: json['fechaServicio']?.toString(),
-      turnoServicio: json['turnoServicio']?.toString(),
+      turnoServicio: json['turnoServicio'] == null
+          ? null
+          : repairCommerceText(json['turnoServicio']),
       opcionPagoServicio: json['opcionPagoServicio']?.toString(),
       whatsappPhone: json['whatsappPhone']?.toString() ?? '',
       creadoEn: DateTime.tryParse(json['creadoEn']?.toString() ?? ''),

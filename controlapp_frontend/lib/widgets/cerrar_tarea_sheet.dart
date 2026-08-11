@@ -170,9 +170,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
     setState(() => _esperandoPegado = false);
     AppFeedback.showFromSnackBar(
       context,
-      const SnackBar(
-        content: Text('Imagen pegada desde el portapapeles.'),
-      ),
+      const SnackBar(content: Text('Imagen pegada desde el portapapeles.')),
     );
   }
 
@@ -332,52 +330,52 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                     const Text(
-                       '📸 Evidencias de cierre',
-                       style: TextStyle(fontWeight: FontWeight.w700),
-                     ),
-                     if (_puedePegarImagen && _esperandoPegado) ...[
-                       const SizedBox(height: 8),
-                       Container(
-                         width: double.infinity,
-                         padding: const EdgeInsets.all(10),
-                         decoration: BoxDecoration(
-                           color: Colors.blue.withValues(alpha: 0.08),
-                           borderRadius: BorderRadius.circular(10),
-                           border: Border.all(
-                             color: Colors.blue.withValues(alpha: 0.22),
-                           ),
-                         ),
-                         child: const Text(
-                           'Modo pegado activo: copia la imagen y presiona Ctrl+V mientras este panel siga abierto.',
-                           style: TextStyle(fontSize: 12),
-                         ),
-                       ),
-                     ],
-                     const SizedBox(height: 8),
-                     Wrap(
-                       spacing: 8,
-                       runSpacing: 8,
-                       children: [
+                    const Text(
+                      '📸 Evidencias de cierre',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    if (_puedePegarImagen && _esperandoPegado) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: Colors.blue.withValues(alpha: 0.22),
+                          ),
+                        ),
+                        child: const Text(
+                          'Modo pegado activo: copia la imagen y presiona Ctrl+V mientras este panel siga abierto.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
                         if (_puedeTomarFoto)
                           OutlinedButton.icon(
                             onPressed: _tomarFoto,
                             icon: const Icon(Icons.photo_camera),
                             label: const Text('Tomar foto'),
                           ),
-                         if (_puedePegarImagen)
-                           OutlinedButton.icon(
-                             onPressed: _activarPegado,
-                             icon: const Icon(Icons.content_paste_rounded),
-                             label: Text(
-                               _esperandoPegado
-                                   ? 'Esperando Ctrl+V'
-                                   : 'Pegar imagen',
-                             ),
-                           ),
-                         OutlinedButton.icon(
-                           onPressed: _pickEvidencias,
-                           icon: const Icon(Icons.attach_file),
+                        if (_puedePegarImagen)
+                          OutlinedButton.icon(
+                            onPressed: _activarPegado,
+                            icon: const Icon(Icons.content_paste_rounded),
+                            label: Text(
+                              _esperandoPegado
+                                  ? 'Esperando Ctrl+V'
+                                  : 'Pegar imagen',
+                            ),
+                          ),
+                        OutlinedButton.icon(
+                          onPressed: _pickEvidencias,
+                          icon: const Icon(Icons.attach_file),
                           label: const Text('Agregar archivos'),
                         ),
                         Padding(

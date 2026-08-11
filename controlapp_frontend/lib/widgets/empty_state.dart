@@ -32,7 +32,9 @@ class EmptyState extends StatelessWidget {
                 colors: <Color>[Colors.white, Color(0xFFF6FBF7)],
               ),
               borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: AppTheme.primary.withValues(alpha: 0.08)),
+              border: Border.all(
+                color: AppTheme.primary.withValues(alpha: 0.08),
+              ),
               boxShadow: const <BoxShadow>[
                 BoxShadow(
                   color: Color(0x12084D31),
@@ -50,13 +52,15 @@ class EmptyState extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: AppTheme.primary.withValues(alpha: 0.10),
-                    border: Border.all(color: AppTheme.primary.withValues(alpha: 0.08)),
+                    border: Border.all(
+                      color: AppTheme.primary.withValues(alpha: 0.08),
+                    ),
                   ),
                   child: Icon(icon, size: 40, color: AppTheme.primary),
                 ),
                 const SizedBox(height: 18),
                 Text(
-                  'Aun no hay informacion',
+                  'Aún no hay información',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.titleLarge,
                 ),

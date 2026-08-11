@@ -193,10 +193,10 @@ class _SupervisorPageState extends State<SupervisorPage> {
     if (_cargandoConjuntos) {
       return const DashboardScaffold(
         title: 'Panel del supervisor',
-        headline: 'Coordina el trabajo diario con una vista mas clara.',
+        headline: 'Coordina el trabajo diario con una vista más clara.',
         description:
             'Aqui puedes revisar tareas, solicitudes, cronogramas e inventario desde el conjunto activo.',
-        leadingBadge: 'Operacion en campo',
+        leadingBadge: 'Operación en campo',
         child: Center(child: CircularProgressIndicator()),
       );
     }
@@ -206,8 +206,8 @@ class _SupervisorPageState extends State<SupervisorPage> {
         title: 'Panel del supervisor',
         headline: 'No se pudieron cargar los conjuntos.',
         description:
-            'Intenta recargar para continuar con las validaciones y la operacion diaria.',
-        leadingBadge: 'Operacion en campo',
+            'Intenta recargar para continuar con las validaciones y la operación diaria.',
+        leadingBadge: 'Operación en campo',
         child: DashboardEmptyStateCard(
           title: 'Carga pendiente',
           message: _errorConjuntos!,
@@ -220,10 +220,10 @@ class _SupervisorPageState extends State<SupervisorPage> {
     if (conjunto == null) {
       return const DashboardScaffold(
         title: 'Panel del supervisor',
-        headline: 'Aun no tienes conjuntos disponibles.',
+        headline: 'Aún no tienes conjuntos disponibles.',
         description:
             'Solicita al gerente que registre o asigne conjuntos para habilitar este panel.',
-        leadingBadge: 'Operacion en campo',
+        leadingBadge: 'Operación en campo',
         child: DashboardEmptyStateCard(
           title: 'Sin conjuntos',
           message:
@@ -236,7 +236,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
     final nit = conjunto.nit;
     final nombreConjunto = conjunto.nombre;
     final sections = <_SupervisorSection>[
-      _SupervisorSection('Operacion diaria', [
+      _SupervisorSection('Operación diaria', [
         if (_can('plan_esperanza.acceso'))
           _SupervisorTile(
             'Plan Esperanza',
@@ -311,7 +311,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
           }),
         if (_can('mapa_areas.ver'))
           _SupervisorTile(
-            'Mapa de areas',
+            'Mapa de áreas',
             Icons.account_tree_outlined,
             Colors.teal,
             () {

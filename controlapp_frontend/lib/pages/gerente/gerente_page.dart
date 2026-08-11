@@ -75,13 +75,15 @@ class _TileSection {
 
 /// Acciones del menú superior (AppBar)
 enum _QuickAction {
-  // Usuarios
+  // Usuarios y residentes
   usuariosGestion,
   usuarioCrear,
   residentesGestion,
   residenteCrear,
   residentesCarga,
   permisosGestion,
+
+  // Comercio
   catalogoComercial,
   catalogoInsumosEcommerce,
   pedidosConjunto,
@@ -91,32 +93,30 @@ enum _QuickAction {
   conjuntoCarga,
   conjuntosGestion,
 
-  // Creación general
-  crearInsumo,
-  crearMaquinaria,
-  crearHerramienta,
-
   // Catálogos
   catalogoInsumos,
   catalogoMaquinaria,
   catalogoHerramientas,
   stockHerramientasEmpresa,
 
-  // Tareas
-  tareaCrear,
+  // Creación
+  crearInsumo,
+  crearMaquinaria,
+  crearHerramienta,
 
-  // Solicitudes
+  // Planeación y tareas
+  tareaCrear,
+  cronogramaCrear,
+  cronogramaMaquinaria,
+  festivosCrear,
+
+  // Solicitudes y agenda
   solicitudInsumo,
   agendaMaquinaria,
-  cronogramaMaquinaria,
   agendaHerramientas,
+
+  // Extras
   cumpleanos,
-
-  // Cronogramas
-  cronogramaCrear,
-
-  // Festivos
-  festivosCrear,
 }
 
 class GerenteDashboardPage extends StatefulWidget {
@@ -308,7 +308,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
     }
 
     return [
-      header("Usuarios", Icons.people_alt_outlined),
+      header("Usuarios y residentes", Icons.people_alt_outlined),
       item(
         _QuickAction.usuariosGestion,
         "Gestión de usuarios",
@@ -344,6 +344,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         "Gestionar permisos",
         Icons.admin_panel_settings_outlined,
       ),
+
+      const PopupMenuDivider(),
+
+      header("Comercio", Icons.storefront),
       item(_QuickAction.catalogoComercial, "Explorar tienda", Icons.storefront),
       item(
         _QuickAction.catalogoInsumosEcommerce,
@@ -366,28 +370,6 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         _QuickAction.conjuntosGestion,
         "Gestión de conjuntos",
         Icons.business,
-      ),
-
-      const PopupMenuDivider(),
-
-      header("Creación general", Icons.add_circle_outline),
-      item(
-        _QuickAction.crearInsumo,
-        "Crear insumo",
-        Icons.inventory,
-        enabled: enabledNit,
-      ),
-      item(
-        _QuickAction.crearMaquinaria,
-        "Crear maquinaria",
-        Icons.build,
-        enabled: true,
-      ),
-      item(
-        _QuickAction.crearHerramienta,
-        "Crear herramienta",
-        Icons.handyman,
-        enabled: enabledNit,
       ),
 
       const PopupMenuDivider(),
@@ -420,17 +402,51 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
       const PopupMenuDivider(),
 
-      header("Tareas", Icons.assignment),
+      header("Creación", Icons.add_circle_outline),
+      item(
+        _QuickAction.crearInsumo,
+        "Crear insumo",
+        Icons.inventory,
+        enabled: enabledNit,
+      ),
+      item(
+        _QuickAction.crearMaquinaria,
+        "Crear maquinaria",
+        Icons.build,
+        enabled: true,
+      ),
+      item(
+        _QuickAction.crearHerramienta,
+        "Crear herramienta",
+        Icons.handyman,
+        enabled: enabledNit,
+      ),
+
+      const PopupMenuDivider(),
+
+      header("Planeación y tareas", Icons.calendar_month),
       item(
         _QuickAction.tareaCrear,
         "Crear tarea",
         Icons.add_task,
         enabled: enabledNit,
       ),
+      item(
+        _QuickAction.cronogramaCrear,
+        "Crear cronograma",
+        Icons.calendar_today,
+        enabled: enabledNit,
+      ),
+      item(
+        _QuickAction.cronogramaMaquinaria,
+        "Cronograma maquinaria",
+        Icons.event_repeat,
+      ),
+      item(_QuickAction.festivosCrear, "Crear días festivos", Icons.event),
 
       const PopupMenuDivider(),
 
-      header("Solicitudes", Icons.shopping_cart_outlined),
+      header("Solicitudes y agenda", Icons.shopping_cart_outlined),
       item(
         _QuickAction.solicitudInsumo,
         "Solicitudes de insumos",
@@ -444,37 +460,21 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         enabled: enabledNit,
       ),
       item(
-        _QuickAction.cronogramaMaquinaria,
-        "Cronograma maquinaria",
-        Icons.event_repeat,
-      ),
-      item(
         _QuickAction.agendaHerramientas,
         "Agenda herramientas",
         Icons.handyman,
         enabled: enabledNit,
       ),
+
+      const PopupMenuDivider(),
+
+      header("Extras", Icons.more_horiz),
       item(
         _QuickAction.cumpleanos,
-        "Cumpleanos del mes",
+        "Cumpleaños del mes",
         Icons.cake_outlined,
         enabled: true,
       ),
-
-      const PopupMenuDivider(),
-
-      header("Cronogramas", Icons.calendar_month),
-      item(
-        _QuickAction.cronogramaCrear,
-        "Crear cronograma",
-        Icons.calendar_today,
-        enabled: enabledNit,
-      ),
-
-      const PopupMenuDivider(),
-
-      header("Festivos", Icons.event_available),
-      item(_QuickAction.festivosCrear, "Crear días festivos", Icons.event),
     ];
   }
 
@@ -655,7 +655,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         title: 'Panel del gerente',
         headline: 'Todo el control del servicio en un solo tablero.',
         description:
-            'Accede mas rapido a la operacion diaria, la planeacion y el seguimiento del conjunto.',
+            'Accede más rápido a la operación diaria, la planeación y el seguimiento del conjunto.',
         leadingBadge: 'Vision ejecutiva y operativa',
         child: Center(child: CircularProgressIndicator()),
       );
@@ -679,7 +679,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
     if (_conjuntoSeleccionado == null) {
       return const DashboardScaffold(
         title: 'Panel del gerente',
-        headline: 'Aun no hay conjuntos configurados.',
+        headline: 'Aún no hay conjuntos configurados.',
         description:
             'Crea el primer conjunto desde Atajos para habilitar tareas, inventario, cronogramas y reportes.',
         leadingBadge: 'Vision ejecutiva y operativa',
@@ -884,7 +884,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             MaterialPageRoute(builder: (_) => const ZonificacionPage()),
           );
         }),
-        _Tile("Cumpleanos", Icons.cake_outlined, AppTheme.accent, () {
+        _Tile("Cumpleaños", Icons.cake_outlined, AppTheme.accent, () {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const CumpleanosPage()),

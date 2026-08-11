@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../model/solicitud_insumo_model.dart';
-import '../service/app_constants.dart';
 import '../service/session_service.dart';
 
 class SolicitudInsumoItemResponse {
@@ -122,7 +121,6 @@ class SolicitudInsumoApi {
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'x-empresa-id': AppConstants.empresaNit,
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
     };
   }

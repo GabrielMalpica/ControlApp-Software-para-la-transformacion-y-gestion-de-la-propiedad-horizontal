@@ -97,7 +97,8 @@ class _CronogramaMaquinariaPageState extends State<CronogramaMaquinariaPage> {
 
   Future<void> _abrirNecesidad(NecesidadMaquinaria necesidad) async {
     final candidatas =
-        _data?.maquinariasPorTipo[necesidad.tipoRaw] ?? const <MaquinaCandidata>[];
+        _data?.maquinariasPorTipo[necesidad.tipoRaw] ??
+        const <MaquinaCandidata>[];
 
     await showModalBottomSheet<void>(
       context: context,
@@ -265,10 +266,7 @@ class _CronogramaMaquinariaPageState extends State<CronogramaMaquinariaPage> {
     if (_procesando) return;
     setState(() => _procesando = true);
     try {
-      await _api.liberarAsignacion(
-        empresaNit: widget.empresaNit,
-        usoId: usoId,
-      );
+      await _api.liberarAsignacion(empresaNit: widget.empresaNit, usoId: usoId);
       await _cargar();
       if (!mounted) return;
       AppFeedback.showFromSnackBar(

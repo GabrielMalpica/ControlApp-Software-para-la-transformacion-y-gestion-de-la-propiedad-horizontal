@@ -46,7 +46,9 @@ class InventarioApi {
   Future<List<InsumoResponse>> listarCatalogoInsumosEmpresa(
     String empresaNit,
   ) async {
-    final resp = await _client.get('${AppConstants.baseUrl}/empresa/$empresaNit/catalogo');
+    final resp = await _client.get(
+      '${AppConstants.baseUrl}/empresa/$empresaNit/catalogo',
+    );
     if (resp.statusCode != 200) {
       throw Exception('Error al listar catálogo: ${resp.body}');
     }

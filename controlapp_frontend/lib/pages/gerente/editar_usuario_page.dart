@@ -192,7 +192,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
           context,
           const SnackBar(
             content: Text(
-              'Si el operario trabaja domingo, debe tener un dia de descanso entre semana en ese periodo.',
+              'Si el operario trabaja domingo, debe tener un día de descanso entre semana en ese periodo.',
             ),
             backgroundColor: Colors.orange,
           ),
@@ -592,7 +592,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                             .toList(),
                         onChanged: (v) => setState(() => tallaPantalon = v),
                         decoration: const InputDecoration(
-                          labelText: 'Talla pantalon (opcional)',
+                          labelText: 'Talla pantalón (opcional)',
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -942,7 +942,7 @@ class _DisponibilidadPeriodoCard extends StatelessWidget {
             DropdownButtonFormField<String?>(
               initialValue: item.diaDescanso,
               decoration: const InputDecoration(
-                labelText: 'Dia de descanso semanal',
+                labelText: 'Día de descanso semanal',
                 border: OutlineInputBorder(),
               ),
               items: [
@@ -1041,11 +1041,11 @@ class _DisponibilidadPeriodoHelpCard extends StatelessWidget {
           ),
           SizedBox(height: 6),
           Text(
-            'Fecha inicio: desde que dia empieza a aplicar este esquema de trabajo.',
+            'Fecha inicio: desde qué día empieza a aplicar este esquema de trabajo.',
           ),
           SizedBox(height: 4),
           Text(
-            'Fecha fin: hasta que dia aplica. Si lo dejas vacio, sigue vigente hasta nuevo aviso.',
+            'Fecha fin: hasta qué día aplica. Si lo dejas vacío, sigue vigente hasta nuevo aviso.',
           ),
           SizedBox(height: 4),
           Text(
@@ -1053,7 +1053,7 @@ class _DisponibilidadPeriodoHelpCard extends StatelessWidget {
           ),
           SizedBox(height: 4),
           Text(
-            'Dia de descanso semanal: indica qué dia descansa durante ese mismo periodo.',
+            'Día de descanso semanal: indica qué día descansa durante ese mismo periodo.',
           ),
         ],
       ),

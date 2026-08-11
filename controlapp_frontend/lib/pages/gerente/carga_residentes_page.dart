@@ -39,7 +39,8 @@ class _CargaResidentesPageState extends State<CargaResidentesPage> {
   CargaResidentesResult? _result;
 
   bool get _conjuntoBloqueado =>
-      widget.conjuntoFijoNit != null && widget.conjuntoFijoNit!.trim().isNotEmpty;
+      widget.conjuntoFijoNit != null &&
+      widget.conjuntoFijoNit!.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -69,7 +70,10 @@ class _CargaResidentesPageState extends State<CargaResidentesPage> {
       if (!mounted) return;
       setState(() {
         _loadingConjuntos = false;
-        _error = AppError.messageOf(e, fallback: 'No se pudieron cargar los conjuntos.');
+        _error = AppError.messageOf(
+          e,
+          fallback: 'No se pudieron cargar los conjuntos.',
+        );
       });
     }
   }
@@ -90,7 +94,9 @@ class _CargaResidentesPageState extends State<CargaResidentesPage> {
 
   Future<void> _upload() async {
     if ((_conjuntoNit ?? '').isEmpty) {
-      setState(() => _error = 'Selecciona un conjunto antes de cargar el archivo.');
+      setState(
+        () => _error = 'Selecciona un conjunto antes de cargar el archivo.',
+      );
       return;
     }
     if (_file == null) {
@@ -197,19 +203,24 @@ class _CargaResidentesPageState extends State<CargaResidentesPage> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'Columnas recomendadas: cedula, nombre, correo, telefono, tipoUnidad, sector, unidad. También soporta torre/apartamento o casa.',
+                          'Columnas recomendadas: cédula, nombre, correo, teléfono, tipoUnidad, sector, unidad. También soporta torre/apartamento o casa.',
                         ),
                         const SizedBox(height: 18),
                         if (_conjuntoBloqueado)
                           TextFormField(
-                            initialValue: widget.conjuntoFijoNombre ?? _conjuntoNit ?? '',
+                            initialValue:
+                                widget.conjuntoFijoNombre ?? _conjuntoNit ?? '',
                             enabled: false,
-                            decoration: const InputDecoration(labelText: 'Conjunto'),
+                            decoration: const InputDecoration(
+                              labelText: 'Conjunto',
+                            ),
                           )
                         else
                           DropdownButtonFormField<String>(
                             initialValue: _conjuntoNit,
-                            decoration: const InputDecoration(labelText: 'Conjunto'),
+                            decoration: const InputDecoration(
+                              labelText: 'Conjunto',
+                            ),
                             items: _conjuntos
                                 .map(
                                   (c) => DropdownMenuItem(
@@ -218,23 +229,33 @@ class _CargaResidentesPageState extends State<CargaResidentesPage> {
                                   ),
                                 )
                                 .toList(),
-                            onChanged: _uploading ? null : (value) => setState(() => _conjuntoNit = value),
+                            onChanged: _uploading
+                                ? null
+                                : (value) =>
+                                      setState(() => _conjuntoNit = value),
                           ),
                         const SizedBox(height: 16),
                         OutlinedButton.icon(
                           onPressed: _uploading ? null : _pickFile,
                           icon: const Icon(Icons.upload_file),
-                          label: Text(_file == null ? 'Seleccionar archivo' : _file!.name),
+                          label: Text(
+                            _file == null ? 'Seleccionar archivo' : _file!.name,
+                          ),
                         ),
                         if (_error != null) ...[
                           const SizedBox(height: 14),
-                          Text(_error!, style: const TextStyle(color: AppTheme.red)),
+                          Text(
+                            _error!,
+                            style: const TextStyle(color: AppTheme.red),
+                          ),
                         ],
                         const SizedBox(height: 18),
                         ElevatedButton.icon(
                           onPressed: _uploading ? null : _upload,
                           icon: const Icon(Icons.cloud_upload_outlined),
-                          label: Text(_uploading ? 'Procesando...' : 'Cargar residentes'),
+                          label: Text(
+                            _uploading ? 'Procesando...' : 'Cargar residentes',
+                          ),
                         ),
                       ],
                     ),
@@ -278,21 +299,31 @@ class _CargaResidentesPageState extends State<CargaResidentesPage> {
                             ElevatedButton.icon(
                               onPressed: _openPdfReport,
                               icon: const Icon(Icons.picture_as_pdf_outlined),
-                              label: const Text('Abrir reporte PDF de fallidos'),
-                            ),
-                            const SizedBox(height: 12),
-                            ..._result!.errores.take(10).map(
-                              (error) => ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                leading: CircleAvatar(
-                                  backgroundColor: AppTheme.red.withValues(alpha: 0.12),
-                                  foregroundColor: AppTheme.red,
-                                  child: Text('${error.fila}'),
-                                ),
-                                title: Text(error.nombre.isEmpty ? 'Fila ${error.fila}' : error.nombre),
-                                subtitle: Text(error.motivo),
+                              label: const Text(
+                                'Abrir reporte PDF de fallidos',
                               ),
                             ),
+                            const SizedBox(height: 12),
+                            ..._result!.errores
+                                .take(10)
+                                .map(
+                                  (error) => ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: CircleAvatar(
+                                      backgroundColor: AppTheme.red.withValues(
+                                        alpha: 0.12,
+                                      ),
+                                      foregroundColor: AppTheme.red,
+                                      child: Text('${error.fila}'),
+                                    ),
+                                    title: Text(
+                                      error.nombre.isEmpty
+                                          ? 'Fila ${error.fila}'
+                                          : error.nombre,
+                                    ),
+                                    subtitle: Text(error.motivo),
+                                  ),
+                                ),
                             if (_result!.errores.length > 10)
                               Text(
                                 'Se muestran 10 errores. El reporte PDF incluye el detalle completo.',
@@ -337,7 +368,9 @@ class _MetricChip extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(color: color),
           ),
         ],
       ),

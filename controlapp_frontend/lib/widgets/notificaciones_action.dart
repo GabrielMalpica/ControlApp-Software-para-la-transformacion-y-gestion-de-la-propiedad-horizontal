@@ -6,10 +6,7 @@ import 'package:intl/intl.dart';
 class NotificacionesAction extends StatefulWidget {
   final Color iconColor;
 
-  const NotificacionesAction({
-    super.key,
-    this.iconColor = Colors.white,
-  });
+  const NotificacionesAction({super.key, this.iconColor = Colors.white});
 
   @override
   State<NotificacionesAction> createState() => _NotificacionesActionState();

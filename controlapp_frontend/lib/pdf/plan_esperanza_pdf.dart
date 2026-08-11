@@ -272,7 +272,10 @@ pw.TableRow _tableHeader(List<String> values) {
             padding: const pw.EdgeInsets.all(6),
             child: pw.Text(
               value,
-              style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold),
+              style: pw.TextStyle(
+                fontSize: 8.5,
+                fontWeight: pw.FontWeight.bold,
+              ),
               textAlign: pw.TextAlign.center,
             ),
           ),
@@ -284,7 +287,11 @@ pw.TableRow _tableHeader(List<String> values) {
 pw.Widget _tableCell(String value, {pw.TextAlign align = pw.TextAlign.left}) {
   return pw.Padding(
     padding: const pw.EdgeInsets.all(6),
-    child: pw.Text(value.isEmpty ? '-' : value, style: const pw.TextStyle(fontSize: 8), textAlign: align),
+    child: pw.Text(
+      value.isEmpty ? '-' : value,
+      style: const pw.TextStyle(fontSize: 8),
+      textAlign: align,
+    ),
   );
 }
 

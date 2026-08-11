@@ -125,18 +125,20 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
             'id': u.id,
             'nombre': u.nombre,
             'zonas': u.elementos
-                .map((e) => <String, dynamic>{
-                      'id': e.id,
-                      'nombre': e.nombre,
-                      'areas': e.hijos
-                          .map(
-                            (h) => <String, dynamic>{
-                              'id': h.id,
-                              'nombre': h.nombre,
-                            },
-                          )
-                          .toList(growable: true),
-                    })
+                .map(
+                  (e) => <String, dynamic>{
+                    'id': e.id,
+                    'nombre': e.nombre,
+                    'areas': e.hijos
+                        .map(
+                          (h) => <String, dynamic>{
+                            'id': h.id,
+                            'nombre': h.nombre,
+                          },
+                        )
+                        .toList(growable: true),
+                  },
+                )
                 .toList(growable: true),
           },
         )
@@ -245,10 +247,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                 .whereType<Map<String, dynamic>>()
                 .toList();
             if (nombreZona.isEmpty) return null;
-            final out = <String, dynamic>{
-              'nombre': nombreZona,
-              'hijos': areas,
-            };
+            final out = <String, dynamic>{'nombre': nombreZona, 'hijos': areas};
             if (zonaId is int) out['id'] = zonaId;
             return out;
           })
@@ -270,7 +269,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
     if (rawValor.isNotEmpty) {
       valorMensual = double.tryParse(rawValor.replaceAll(',', '.'));
       if (valorMensual == null) {
-        _showSnack('Valor mensual invalido.', color: Colors.red);
+        _showSnack('Valor mensual inválido.', color: Colors.red);
         return;
       }
     }
@@ -379,72 +378,72 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
         body: FutureBuilder<Conjunto>(
           future: _futureConjunto,
           builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (snapshot.hasError || !snapshot.hasData) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 46,
-                      color: Colors.red,
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'No fue posible cargar el conjunto.\n${AppError.messageOf(snapshot.error)}',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    ElevatedButton.icon(
-                      onPressed: _refreshConjunto,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Reintentar'),
-                    ),
-                  ],
+            if (snapshot.hasError || !snapshot.hasData) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 46,
+                        color: Colors.red,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'No fue posible cargar el conjunto.\n${AppError.messageOf(snapshot.error)}',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      ElevatedButton.icon(
+                        onPressed: _refreshConjunto,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Reintentar'),
+                      ),
+                    ],
+                  ),
                 ),
+              );
+            }
+
+            final c = snapshot.data!;
+            if (_editMode) _inicializarForm(c);
+
+            return RefreshIndicator(
+              onRefresh: _refreshConjunto,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                children: [
+                  _headerHero(c),
+                  const SizedBox(height: 12),
+                  _editMode ? _editBasicsCard() : _generalInfoCard(c),
+                  const SizedBox(height: 12),
+                  _administradorCard(c),
+                  const SizedBox(height: 12),
+                  _operariosCard(c),
+                  const SizedBox(height: 12),
+                  _horariosCard(c),
+                  const SizedBox(height: 12),
+                  _ubicacionesCard(c),
+                  if (_editMode ||
+                      c.consignasEspeciales.isNotEmpty ||
+                      c.valorAgregado.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    _textosCard(c),
+                  ],
+                  if (_editMode) ...[
+                    const SizedBox(height: 12),
+                    _editActionsCard(c),
+                  ],
+                ],
               ),
             );
-          }
-
-          final c = snapshot.data!;
-          if (_editMode) _inicializarForm(c);
-
-          return RefreshIndicator(
-            onRefresh: _refreshConjunto,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              children: [
-                _headerHero(c),
-                const SizedBox(height: 12),
-                _editMode ? _editBasicsCard() : _generalInfoCard(c),
-                const SizedBox(height: 12),
-                _administradorCard(c),
-                const SizedBox(height: 12),
-                _operariosCard(c),
-                const SizedBox(height: 12),
-                _horariosCard(c),
-                const SizedBox(height: 12),
-                _ubicacionesCard(c),
-                if (_editMode ||
-                    c.consignasEspeciales.isNotEmpty ||
-                    c.valorAgregado.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _textosCard(c),
-                ],
-                if (_editMode) ...[
-                  const SizedBox(height: 12),
-                  _editActionsCard(c),
-                ],
-              ],
-            ),
-          );
           },
         ),
       ),
@@ -644,7 +643,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
         children: [
           _inputField(label: 'Nombre', controller: _nombreCtrl),
           const SizedBox(height: 10),
-          _inputField(label: 'Direccion', controller: _direccionCtrl),
+          _inputField(label: 'Dirección', controller: _direccionCtrl),
           const SizedBox(height: 10),
           _inputField(label: 'Correo', controller: _correoCtrl),
           const SizedBox(height: 10),
@@ -968,13 +967,13 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
               child: ExpansionTile(
                 tilePadding: const EdgeInsets.symmetric(horizontal: 12),
                 childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                 title: Text(
-                   u.nombre,
-                   style: const TextStyle(fontWeight: FontWeight.w700),
-                 ),
-                 subtitle: Text('${u.elementosHoja.length} areas finales'),
-                 children: [
-                   if (u.elementos.isEmpty)
+                title: Text(
+                  u.nombre,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text('${u.elementosHoja.length} áreas finales'),
+                children: [
+                  if (u.elementos.isEmpty)
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
@@ -1005,7 +1004,9 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
         width: double.infinity,
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: hasChildren ? const Color(0xFFF4F8F5) : const Color(0xFFEFF5F1),
+          color: hasChildren
+              ? const Color(0xFFF4F8F5)
+              : const Color(0xFFEFF5F1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -1020,7 +1021,9 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
             ),
             if (hasChildren) ...[
               const SizedBox(height: 8),
-              ...elemento.hijos.map((hijo) => _elementoTreeNode(hijo, nivel: nivel + 1)),
+              ...elemento.hijos.map(
+                (hijo) => _elementoTreeNode(hijo, nivel: nivel + 1),
+              ),
             ],
           ],
         ),
@@ -1063,7 +1066,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                       child: TextFormField(
                         initialValue: nombre,
                         decoration: const InputDecoration(
-                          labelText: 'Nombre de ubicacion',
+                          labelText: 'Nombre de ubicación',
                           border: OutlineInputBorder(),
                         ),
                         onChanged: (value) {
@@ -1074,7 +1077,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                     IconButton(
                       onPressed: () async {
                         final confirmado = await _confirmarEliminacion(
-                          'la ubicacion "$nombre"',
+                          'la ubicación "$nombre"',
                         );
                         if (!confirmado || !mounted) return;
                         setState(() => _ubicacionesEditables.removeAt(index));
@@ -1104,13 +1107,13 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                     ),
                   ),
                 ...zonas.asMap().entries.map((item) {
-                   final i = item.key;
-                   final zona = item.value;
-                   final text = (zona['nombre'] ?? '').toString();
-                   final areas = ((zona['areas'] as List?) ?? const [])
-                       .whereType<Map>()
-                       .toList(growable: false);
-                   return Padding(
+                  final i = item.key;
+                  final zona = item.value;
+                  final text = (zona['nombre'] ?? '').toString();
+                  final areas = ((zona['areas'] as List?) ?? const [])
+                      .whereType<Map>()
+                      .toList(growable: false);
+                  return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Container(
                       padding: const EdgeInsets.all(10),
@@ -1131,19 +1134,23 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                                     border: OutlineInputBorder(),
                                   ),
                                   onChanged: (value) {
-                                    ((_ubicacionesEditables[index]['zonas'] as List)[i]
-                                        as Map)['nombre'] = value;
+                                    ((_ubicacionesEditables[index]['zonas']
+                                                as List)[i]
+                                            as Map)['nombre'] =
+                                        value;
                                   },
                                 ),
                               ),
                               IconButton(
                                 onPressed: () async {
-                                  final confirmado = await _confirmarEliminacion(
-                                    'la subzona "$text"',
-                                  );
+                                  final confirmado =
+                                      await _confirmarEliminacion(
+                                        'la subzona "$text"',
+                                      );
                                   if (!confirmado || !mounted) return;
                                   setState(() {
-                                    (_ubicacionesEditables[index]['zonas'] as List)
+                                    (_ubicacionesEditables[index]['zonas']
+                                            as List)
                                         .removeAt(i);
                                   });
                                 },
@@ -1167,29 +1174,37 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                                     child: TextFormField(
                                       initialValue: areaText,
                                       decoration: const InputDecoration(
-                                       labelText: 'Area final',
+                                        labelText: 'Area final',
                                         border: OutlineInputBorder(),
                                       ),
                                       onChanged: (value) {
-                                        (((( _ubicacionesEditables[index]['zonas'] as List)[i]
-                                                    as Map)['areas'] as List)[areaIndex]
-                                                as Map)['nombre'] = value;
+                                        ((((_ubicacionesEditables[index]['zonas']
+                                                            as List)[i]
+                                                        as Map)['areas']
+                                                    as List)[areaIndex]
+                                                as Map)['nombre'] =
+                                            value;
                                       },
                                     ),
                                   ),
                                   IconButton(
                                     onPressed: () async {
-                                      final confirmado = await _confirmarEliminacion(
-                                        'el area final "$areaText"',
-                                      );
+                                      final confirmado =
+                                          await _confirmarEliminacion(
+                                            'el area final "$areaText"',
+                                          );
                                       if (!confirmado || !mounted) return;
                                       setState(() {
-                                        (((( _ubicacionesEditables[index]['zonas'] as List)[i]
-                                                    as Map)['areas'] as List))
+                                        ((((_ubicacionesEditables[index]['zonas']
+                                                        as List)[i]
+                                                    as Map)['areas']
+                                                as List))
                                             .removeAt(areaIndex);
                                       });
                                     },
-                                    icon: const Icon(Icons.remove_circle_outline),
+                                    icon: const Icon(
+                                      Icons.remove_circle_outline,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1200,8 +1215,10 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                             child: TextButton.icon(
                               onPressed: () {
                                 setState(() {
-                                  (((( _ubicacionesEditables[index]['zonas'] as List)[i]
-                                              as Map)['areas'] as List))
+                                  ((((_ubicacionesEditables[index]['zonas']
+                                                  as List)[i]
+                                              as Map)['areas']
+                                          as List))
                                       .add(<String, dynamic>{'nombre': ''});
                                 });
                               },
@@ -1247,7 +1264,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
               });
             },
             icon: const Icon(Icons.add_location_alt_outlined),
-            label: const Text('Agregar ubicacion'),
+            label: const Text('Agregar ubicación'),
           ),
         ),
       ],

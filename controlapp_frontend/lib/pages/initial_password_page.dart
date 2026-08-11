@@ -32,11 +32,15 @@ class _InitialPasswordPageState extends State<InitialPasswordPage> {
     final confirmar = _confirmCtrl.text.trim();
 
     if (nueva.length < 8) {
-      setState(() => _error = 'La nueva contrasena debe tener minimo 8 caracteres.');
+      setState(
+        () => _error = 'La nueva contrasena debe tener minimo 8 caracteres.',
+      );
       return;
     }
     if (nueva != confirmar) {
-      setState(() => _error = 'La confirmacion no coincide con la nueva contrasena.');
+      setState(
+        () => _error = 'La confirmacion no coincide con la nueva contrasena.',
+      );
       return;
     }
 
@@ -127,7 +131,9 @@ class _InitialPasswordPageState extends State<InitialPasswordPage> {
                       const SizedBox(height: 22),
                       ElevatedButton(
                         onPressed: _loading ? null : _submit,
-                        child: Text(_loading ? 'Actualizando...' : 'Guardar y continuar'),
+                        child: Text(
+                          _loading ? 'Actualizando...' : 'Guardar y continuar',
+                        ),
                       ),
                     ],
                   ),

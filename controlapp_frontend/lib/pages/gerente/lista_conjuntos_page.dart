@@ -122,7 +122,7 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
       final label = _diaLabel[dia]?.substring(0, 3) ?? dia.substring(0, 3);
       return '$label ${h.horaApertura}-${h.horaCierre}';
     }).toList();
-    if (ordenados.length > 2) top.add('+${ordenados.length - 2} mas');
+    if (ordenados.length > 2) top.add('+${ordenados.length - 2} más');
     return top.join(' | ');
   }
 
@@ -191,7 +191,7 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
               Text(e.message),
               const SizedBox(height: 12),
               const Text(
-                'Tambien se eliminara:',
+                'También se eliminará:',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
@@ -398,7 +398,7 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
                           ),
                           const SizedBox(height: 4),
                           const Text(
-                            'Configura apertura, cierre y descanso por dia.',
+                            'Configura apertura, cierre y descanso por día.',
                           ),
                           if (error != null) ...[
                             const SizedBox(height: 8),

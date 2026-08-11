@@ -240,10 +240,7 @@ class _CronogramaPreventivasBorradorPageState
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text(
-              'Regenerar',
-              style: TextStyle(color: Colors.red),
-            ),
+            child: const Text('Regenerar', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -671,9 +668,9 @@ class _CronogramaPreventivasBorradorPageState
     'prioridad': 'Prioridad',
     'fechaInicio': 'Fecha inicio',
     'fechaFin': 'Fecha fin',
-    'duracion': 'Duracion',
+    'duracion': 'Duración',
     'conjunto': 'Conjunto',
-    'ubicacion': 'Ubicacion',
+    'ubicacion': 'Ubicación',
     'elemento': 'Elemento',
     'supervisor': 'Supervisor',
     'operarios': 'Operarios',
@@ -691,9 +688,9 @@ class _CronogramaPreventivasBorradorPageState
     'frecuencia': 'Frecuencia',
     'prioridad': 'Prioridad',
     'fechaObjetivo': 'Fecha objetivo',
-    'duracion': 'Duracion',
+    'duracion': 'Duración',
     'conjunto': 'Conjunto',
-    'ubicacion': 'Ubicacion',
+    'ubicacion': 'Ubicación',
     'elemento': 'Elemento',
     'supervisor': 'Supervisor',
     'operarios': 'Operarios',
@@ -1573,7 +1570,7 @@ class _CronogramaPreventivasBorradorPageState
         final movidaSiguienteDia =
             fO != null && fN != null && fN.difference(fO).inDays == 1;
         final motivo = movidaSiguienteDia
-            ? 'Se movio al siguiente dia porque la fecha original no era laborable.'
+            ? 'Se movió al siguiente día porque la fecha original no era laborable.'
             : 'Se reprogramo porque la fecha original no era laborable.';
         return '$desc\n$pr\n$motivo\n${n.fechaOriginal ?? '-'} -> ${n.fechaNueva ?? '-'}';
       }
@@ -1599,7 +1596,7 @@ class _CronogramaPreventivasBorradorPageState
             : '';
         final msg = (n.mensaje ?? '').trim();
         return '$desc\n$pr\nFecha: $fecha\n'
-            'Aun no se reemplazo ninguna tarea: se requiere decision manual.\n'
+            'Aún no se reemplazó ninguna tarea: se requiere decisión manual.\n'
             '$candTxt\n'
             '${reglaPrioridad(n.prioridad)}'
             '${prObjTxt.isEmpty ? '' : '\n$prObjTxt'}'
@@ -1709,7 +1706,7 @@ class _CronogramaPreventivasBorradorPageState
                     : item.toString();
                 return ListTile(
                   title: Text(label),
-                  subtitle: Text('Duracion: ${item['duracionMinutos']} min'),
+                  subtitle: Text('Duración: ${item['duracionMinutos']} min'),
                   onTap: () => Navigator.pop(dialogContext, item),
                 );
               },
@@ -2374,13 +2371,13 @@ class _CronogramaPreventivasBorradorPageState
                   : const Icon(Icons.event_available),
               title: Text(
                 requiereDivision
-                    ? 'Plan dividido en ${item['diasUtilizados'] ?? bloques.length} dia(s)'
+                    ? 'Plan dividido en ${item['diasUtilizados'] ?? bloques.length} día(s)'
                     : DateFormat('EEE dd MMM · HH:mm', 'es').format(fi),
               ),
               subtitle: Text(
                 requiereDivision
                     ? detalleBloques
-                    : '${DateFormat('HH:mm').format(fi)} - ${DateFormat('HH:mm').format(ff)} • ${item['tipoSugerencia'] == 'MISMO_DIA' ? 'Mismo dia' : 'Otro dia del mes'}',
+                    : '${DateFormat('HH:mm').format(fi)} - ${DateFormat('HH:mm').format(ff)} • ${item['tipoSugerencia'] == 'MISMO_DIA' ? 'Mismo día' : 'Otro día del mes'}',
               ),
               isThreeLine: requiereDivision,
               onTap: () => Navigator.pop(context, item),
@@ -3746,7 +3743,7 @@ class _CronogramaPreventivasBorradorPageState
 
     final visibles = descripciones.take(2).join(' | ');
     if (descripciones.length <= 2) return visibles;
-    return '$visibles | +${descripciones.length - 2} mas';
+    return '$visibles | +${descripciones.length - 2} más';
   }
 
   Future<void> _abrirBloqueDia(_BloqueHora bloque, DateTime fechaBase) async {
@@ -3860,7 +3857,7 @@ class _CronogramaPreventivasBorradorPageState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Tareas borrador del dia',
+                        'Tareas borrador del día',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -4013,7 +4010,7 @@ class _CronogramaPreventivasBorradorPageState
           children: [
             const SizedBox(height: 4),
             Text(
-              'Duracion: ${formatHoursMinutes(durMin)} | $horaIni - $horaFin',
+              'Duración: ${formatHoursMinutes(durMin)} | $horaIni - $horaFin',
               style: const TextStyle(fontSize: 12),
             ),
             Text(
@@ -4052,7 +4049,7 @@ class _CronogramaPreventivasBorradorPageState
           ElevatedButton(
             onPressed: () =>
                 Navigator.pop(ctx, _ModoCambioOperario.tambienDefinicion),
-            child: const Text('Tambien en definicion'),
+            child: const Text('También en definición'),
           ),
         ],
       ),
@@ -5052,7 +5049,7 @@ class _CronogramaPreventivasBorradorPageState
                   OutlinedButton.icon(
                     icon: const Icon(Icons.filter_alt, size: 18),
                     label: Text(
-                      _hayFiltrosActivos() ? 'Filtros â€¢' : 'Filtros',
+                      _hayFiltrosActivos() ? 'Filtros •' : 'Filtros',
                       style: const TextStyle(fontSize: 12),
                     ),
                     onPressed: () => setState(
@@ -6855,7 +6852,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                   const SizedBox(height: 2),
                                                 if (!ultraCompactMarker)
                                                   Text(
-                                                    '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra mas' : ''}'}',
+                                                    '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra más' : ''}'}',
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,
@@ -7298,7 +7295,7 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
             const SizedBox(height: 6),
             SegmentedButton<bool>(
               segments: const [
-                ButtonSegment<bool>(value: false, label: Text('Excluidas dia')),
+                ButtonSegment<bool>(value: false, label: Text('Excluidas día')),
                 ButtonSegment<bool>(value: true, label: Text('Excluidas mes')),
               ],
               selected: {widget.verExcluidasMes},

@@ -5,7 +5,8 @@ import '../service/api_client.dart';
 import '../service/app_constants.dart';
 
 class UsuarioRepository {
-  UsuarioRepository({ApiClient? apiClient}) : _apiClient = apiClient ?? ApiClient();
+  UsuarioRepository({ApiClient? apiClient})
+    : _apiClient = apiClient ?? ApiClient();
 
   final ApiClient _apiClient;
 
@@ -23,10 +24,7 @@ class UsuarioRepository {
   Future<Usuario> crearUsuario(Usuario usuario) async {
     final body = usuario.toJson()..['contrasena'] = usuario.cedula;
 
-    final response = await _apiClient.post(
-      AppConstants.usuarios,
-      body: body,
-    );
+    final response = await _apiClient.post(AppConstants.usuarios, body: body);
 
     if (response.statusCode != 201 && response.statusCode != 200) {
       throw Exception('Error al crear usuario: ${response.body}');
@@ -36,7 +34,10 @@ class UsuarioRepository {
     return Usuario.fromJson(data);
   }
 
-  Future<Usuario> editarUsuario(String cedula, Map<String, dynamic> cambios) async {
+  Future<Usuario> editarUsuario(
+    String cedula,
+    Map<String, dynamic> cambios,
+  ) async {
     final payload = Map<String, dynamic>.from(cambios);
 
     final response = await _apiClient.put(
@@ -53,7 +54,9 @@ class UsuarioRepository {
   }
 
   Future<void> eliminarUsuario(String cedula) async {
-    final response = await _apiClient.delete('${AppConstants.usuarios}/$cedula');
+    final response = await _apiClient.delete(
+      '${AppConstants.usuarios}/$cedula',
+    );
 
     if (response.statusCode != 200 && response.statusCode != 204) {
       throw Exception('Error al eliminar usuario: ${response.body}');

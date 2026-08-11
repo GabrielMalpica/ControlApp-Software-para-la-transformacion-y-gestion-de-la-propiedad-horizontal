@@ -205,7 +205,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
             'Gestiona tu conjunto con la misma vista central del sistema.',
         description:
             'Accede a inventario, PQRS y reportes del conjunto activo desde un tablero unificado.',
-        leadingBadge: 'Operacion administrativa',
+        leadingBadge: 'Operación administrativa',
         child: Center(child: CircularProgressIndicator()),
       );
     }
@@ -215,8 +215,8 @@ class _AdministradorPageState extends State<AdministradorPage> {
         title: 'Panel del administrador',
         headline: 'No se pudieron cargar tus conjuntos.',
         description:
-            'Recarga el panel para continuar con la operacion administrativa del servicio.',
-        leadingBadge: 'Operacion administrativa',
+            'Recarga el panel para continuar con la operación administrativa del servicio.',
+        leadingBadge: 'Operación administrativa',
         child: DashboardEmptyStateCard(
           title: 'Carga pendiente',
           message: _error!,
@@ -228,10 +228,10 @@ class _AdministradorPageState extends State<AdministradorPage> {
     if (_conjuntoSeleccionado == null) {
       return const DashboardScaffold(
         title: 'Panel del administrador',
-        headline: 'Aun no tienes conjuntos asignados.',
+        headline: 'Aún no tienes conjuntos asignados.',
         description:
-            'Cuando el gerente te asigne uno o mas conjuntos, aqui veras el mismo panel operativo del resto de roles.',
-        leadingBadge: 'Operacion administrativa',
+            'Cuando el gerente te asigne uno o más conjuntos, aquí verás el mismo panel operativo del resto de roles.',
+        leadingBadge: 'Operación administrativa',
         child: DashboardEmptyStateCard(
           title: 'Sin conjuntos',
           message:
@@ -243,7 +243,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
 
     final conjunto = _conjuntoSeleccionado!;
     final sections = <_AdminSection>[
-      _AdminSection('Operacion diaria', [
+      _AdminSection('Operación diaria', [
         if (_can('compromisos.ver'))
           _AdminTile(
             'PQRS',
@@ -256,7 +256,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
                 pageTitle: 'PQRS',
                 inputLabel: 'Nueva PQRS',
                 inputHint: 'Ej: Reporte de novedad o requerimiento',
-                emptyMessage: 'Aun no hay PQRS.\nRegistra la primera.',
+                emptyMessage: 'Aún no hay PQRS.\nRegistra la primera.',
                 addButtonLabel: 'Registrar',
                 usarFlujoAdministrador: true,
               ),
@@ -283,7 +283,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
           ),
         if (_can('mapa_areas.ver'))
           _AdminTile(
-            'Mapa de areas',
+            'Mapa de áreas',
             Icons.account_tree_outlined,
             Colors.teal,
             () => _go(MapaConjuntoPage(conjuntoNit: conjunto.nit)),

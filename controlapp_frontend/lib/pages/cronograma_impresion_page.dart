@@ -164,16 +164,17 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
     bool esFestivo,
     bool esFueraDePeriodo,
   ) {
-    final bloques = tareasDia
-        .map(
-          (t) => _PreviewAgendaBlock.task(
-            inicio: t.fechaInicio.toLocal(),
-            fin: t.fechaFin.toLocal(),
-            tarea: t,
-          ),
-        )
-        .toList()
-      ..sort((a, b) => a.inicio.compareTo(b.inicio));
+    final bloques =
+        tareasDia
+            .map(
+              (t) => _PreviewAgendaBlock.task(
+                inicio: t.fechaInicio.toLocal(),
+                fin: t.fechaFin.toLocal(),
+                tarea: t,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => a.inicio.compareTo(b.inicio));
 
     if (esFestivo || esFueraDePeriodo) return bloques;
 
@@ -198,13 +199,21 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
     final segmentos = <(DateTime, DateTime)>[
       (
         DateTime(dia.year, dia.month, dia.day).add(Duration(minutes: apertura)),
-        DateTime(dia.year, dia.month, dia.day).add(
-          Duration(minutes: descansoInicio ?? cierre),
-        ),
+        DateTime(
+          dia.year,
+          dia.month,
+          dia.day,
+        ).add(Duration(minutes: descansoInicio ?? cierre)),
       ),
-      if (descansoInicio != null && descansoFin != null && descansoFin > descansoInicio)
+      if (descansoInicio != null &&
+          descansoFin != null &&
+          descansoFin > descansoInicio)
         (
-          DateTime(dia.year, dia.month, dia.day).add(Duration(minutes: descansoFin)),
+          DateTime(
+            dia.year,
+            dia.month,
+            dia.day,
+          ).add(Duration(minutes: descansoFin)),
           DateTime(dia.year, dia.month, dia.day).add(Duration(minutes: cierre)),
         ),
     ];
@@ -214,24 +223,29 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
       final fin = segmento.$2;
       if (!fin.isAfter(inicio)) continue;
 
-      final tareasSegmento = tareasDia
-          .map(
-            (t) => (
-              tarea: t,
-              inicio: t.fechaInicio.toLocal().isAfter(inicio)
-                  ? t.fechaInicio.toLocal()
-                  : inicio,
-              fin: t.fechaFin.toLocal().isBefore(fin) ? t.fechaFin.toLocal() : fin,
-            ),
-          )
-          .where((item) => item.fin.isAfter(item.inicio))
-          .toList()
-        ..sort((a, b) => a.inicio.compareTo(b.inicio));
+      final tareasSegmento =
+          tareasDia
+              .map(
+                (t) => (
+                  tarea: t,
+                  inicio: t.fechaInicio.toLocal().isAfter(inicio)
+                      ? t.fechaInicio.toLocal()
+                      : inicio,
+                  fin: t.fechaFin.toLocal().isBefore(fin)
+                      ? t.fechaFin.toLocal()
+                      : fin,
+                ),
+              )
+              .where((item) => item.fin.isAfter(item.inicio))
+              .toList()
+            ..sort((a, b) => a.inicio.compareTo(b.inicio));
 
       var cursor = inicio;
       for (final item in tareasSegmento) {
         if (item.inicio.isAfter(cursor)) {
-          bloques.add(_PreviewAgendaBlock.gap(inicio: cursor, fin: item.inicio));
+          bloques.add(
+            _PreviewAgendaBlock.gap(inicio: cursor, fin: item.inicio),
+          );
         }
         if (item.fin.isAfter(cursor)) {
           cursor = item.fin;
@@ -751,7 +765,10 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                                   ),
                                 ),
                                 child: Text(
-                                  _festivoNombrePorYmd[_toYmd(dia)]?.trim().isNotEmpty == true
+                                  _festivoNombrePorYmd[_toYmd(dia)]
+                                              ?.trim()
+                                              .isNotEmpty ==
+                                          true
                                       ? 'Festivo: ${_festivoNombrePorYmd[_toYmd(dia)]!.trim()}'
                                       : 'Festivo - no se programan tareas',
                                   style: const TextStyle(
@@ -763,7 +780,9 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                               ),
                             if (bloquesDia.isEmpty)
                               Text(
-                                esFestivo ? 'No se programan tareas.' : 'Sin tareas',
+                                esFestivo
+                                    ? 'No se programan tareas.'
+                                    : 'Sin tareas',
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: Colors.grey.shade600,
@@ -778,12 +797,16 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                                   decoration: BoxDecoration(
                                     color: bloque.isGap
                                         ? const Color(0xFFFFF3E0)
-                                        : AppTheme.primary.withValues(alpha: 0.08),
+                                        : AppTheme.primary.withValues(
+                                            alpha: 0.08,
+                                          ),
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
                                       color: bloque.isGap
                                           ? const Color(0xFFFB8C00)
-                                          : AppTheme.primary.withValues(alpha: 0.20),
+                                          : AppTheme.primary.withValues(
+                                              alpha: 0.20,
+                                            ),
                                     ),
                                   ),
                                   child: bloque.isGap
@@ -809,7 +832,9 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                                             ),
                                             Text(
                                               _formatearDuracionDisponible(
-                                                bloque.fin.difference(bloque.inicio),
+                                                bloque.fin.difference(
+                                                  bloque.inicio,
+                                                ),
                                               ),
                                               style: const TextStyle(
                                                 fontSize: 10,
@@ -822,7 +847,8 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                                           builder: (context) {
                                             final t = bloque.tarea!;
                                             final ubicacion =
-                                                (t.ubicacionNombre ?? '').trim();
+                                                (t.ubicacionNombre ?? '')
+                                                    .trim();
                                             final elemento =
                                                 (t.elementoNombre ?? '').trim();
 
@@ -850,7 +876,8 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                                                     'Ubicación: $ubicacion',
                                                     style: TextStyle(
                                                       fontSize: 10,
-                                                      color: Colors.grey.shade700,
+                                                      color:
+                                                          Colors.grey.shade700,
                                                     ),
                                                   ),
                                                 if (elemento.isNotEmpty)
@@ -858,7 +885,8 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                                                     'Elemento: $elemento',
                                                     style: TextStyle(
                                                       fontSize: 10,
-                                                      color: Colors.grey.shade700,
+                                                      color:
+                                                          Colors.grey.shade700,
                                                     ),
                                                   ),
                                               ],

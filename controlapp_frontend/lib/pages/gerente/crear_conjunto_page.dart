@@ -295,9 +295,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     // payload de ubicaciones
     final List<Map<String, dynamic>> ubicacionesPayload = _ubicaciones
         .where((u) => u.nombreCtrl.text.trim().isNotEmpty)
-        .map(
-          (u) => u.toPayload(),
-        )
+        .map((u) => u.toPayload())
         .toList();
 
     setState(() => _isSaving = true);
@@ -772,7 +770,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                           ),
                           const SizedBox(width: 8),
                           const Text(
-                            'Ubicaciones, subzonas y areas (opcional)',
+                            'Ubicaciones, subzonas y áreas (opcional)',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
@@ -846,7 +844,9 @@ class _ZonaForm {
     if (nombre.isEmpty) return null;
     return {
       'nombre': nombre,
-      'hijos': areas.map((area) => {'nombre': area, 'hijos': const []}).toList(),
+      'hijos': areas
+          .map((area) => {'nombre': area, 'hijos': const []})
+          .toList(),
     };
   }
 
@@ -964,7 +964,8 @@ class _UbicacionWidget extends StatelessWidget {
                         controller: zona.nombreCtrl,
                         decoration: const InputDecoration(
                           labelText: 'Nombre de la subzona',
-                          hintText: 'Ej: Zona verde, zona humeda, zona transitiva',
+                          hintText:
+                              'Ej: Zona verde, zona humeda, zona transitiva',
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -973,7 +974,7 @@ class _UbicacionWidget extends StatelessWidget {
                         controller: zona.areasCtrl,
                         maxLines: 3,
                         decoration: const InputDecoration(
-                          labelText: 'Areas finales (una por linea)',
+                          labelText: 'Áreas finales (una por línea)',
                           hintText: 'Ej: Parque, Piscina, Pasillo 1',
                           border: OutlineInputBorder(),
                         ),

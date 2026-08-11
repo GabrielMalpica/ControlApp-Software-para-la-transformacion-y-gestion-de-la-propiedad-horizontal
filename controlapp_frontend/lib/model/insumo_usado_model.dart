@@ -2,10 +2,7 @@ class InsumoUsadoItem {
   final int insumoId;
   final num cantidad;
 
-  InsumoUsadoItem({
-    required this.insumoId,
-    required this.cantidad,
-  });
+  InsumoUsadoItem({required this.insumoId, required this.cantidad});
 
   factory InsumoUsadoItem.fromJson(Map<String, dynamic> json) {
     return InsumoUsadoItem(
@@ -15,9 +12,6 @@ class InsumoUsadoItem {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'insumoId': insumoId,
-      'cantidad': cantidad,
-    };
+    return {'insumoId': insumoId, 'cantidad': cantidad};
   }
 }

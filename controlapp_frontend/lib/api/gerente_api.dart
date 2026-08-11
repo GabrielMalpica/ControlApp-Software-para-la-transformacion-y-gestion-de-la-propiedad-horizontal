@@ -22,11 +22,7 @@ class GerenteApi {
     if (token == null || token.isEmpty) {
       throw Exception('Token requerido');
     }
-    return {
-      'Authorization': 'Bearer $token',
-      'x-empresa-id': AppConstants.empresaNit,
-      'Accept': 'application/json',
-    };
+    return {'Authorization': 'Bearer $token', 'Accept': 'application/json'};
   }
 
   Future<CargaConjuntoResult> cargarConjuntoMasivo({

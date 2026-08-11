@@ -43,7 +43,9 @@ class SessionService {
 
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_kToken, token);
+      // El JWT web vive solo en memoria. Limpiamos cualquier valor legado que
+      // hubiera quedado expuesto en localStorage por versiones anteriores.
+      await prefs.remove(_kToken);
       await prefs.setString(_kRol, rol);
       await prefs.setString(_kCorreo, correo);
       await prefs.setString(_kNombre, nombre);
@@ -135,8 +137,8 @@ class SessionService {
     if (_memToken != null && _memToken!.isNotEmpty) return _memToken;
 
     if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      _memToken = prefs.getString(_kToken);
+      // Sin cookie HttpOnly/refresh token en el backend, una recarga exige login.
+      // Nunca se recupera el bearer token desde SharedPreferences/localStorage.
       return _memToken;
     }
 

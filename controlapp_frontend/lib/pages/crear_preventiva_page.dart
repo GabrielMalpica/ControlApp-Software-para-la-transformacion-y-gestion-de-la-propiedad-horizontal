@@ -184,7 +184,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     final ahora = DateTime.now();
     final seleccionada = await showDatePicker(
       context: context,
-      initialDate: _fechasProgramadas.isNotEmpty ? _fechasProgramadas.last : ahora,
+      initialDate: _fechasProgramadas.isNotEmpty
+          ? _fechasProgramadas.last
+          : ahora,
       firstDate: DateTime(ahora.year - 1),
       lastDate: DateTime(ahora.year + 10),
     );

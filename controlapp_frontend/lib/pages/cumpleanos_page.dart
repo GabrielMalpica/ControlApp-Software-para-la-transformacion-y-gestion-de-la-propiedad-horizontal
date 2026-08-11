@@ -99,7 +99,7 @@ class _CumpleanosPageState extends State<CumpleanosPage> {
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
-        title: const Text('Cumpleanos'),
+        title: const Text('Cumpleaños'),
         actions: [
           IconButton(
             onPressed: _loading ? null : _cargar,
@@ -112,7 +112,7 @@ class _CumpleanosPageState extends State<CumpleanosPage> {
           : _error != null
           ? Center(child: Text(_error!))
           : monthItems.isEmpty && _items.isEmpty
-          ? const Center(child: Text('No hay cumpleanos registrados.'))
+          ? const Center(child: Text('No hay cumpleaños registrados.'))
           : LayoutBuilder(
               builder: (context, constraints) {
                 final wide = constraints.maxWidth >= 1040;
@@ -240,14 +240,14 @@ class _HeaderSummary extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Calendario de cumpleanos',
+            'Calendario de cumpleaños',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w900,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Explora por mes, ubica el dia con cumpleanos y abre el detalle de las personas celebradas.',
+            'Explora por mes, ubica el día con cumpleaños y abre el detalle de las personas celebradas.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: AppTheme.textMuted,
             ),
@@ -258,13 +258,13 @@ class _HeaderSummary extends StatelessWidget {
             runSpacing: 10,
             children: [
               _SummaryPill(label: 'Mes', value: monthLabel),
-              _SummaryPill(label: 'Cumpleanos', value: totalMonth.toString()),
+              _SummaryPill(label: 'Cumpleaños', value: totalMonth.toString()),
               _SummaryPill(
-                label: 'Dias con eventos',
+                label: 'Días con eventos',
                 value: totalDays.toString(),
               ),
               _SummaryPill(
-                label: 'Dia seleccionado',
+                label: 'Día seleccionado',
                 value: selectedDay == null
                     ? 'Ninguno'
                     : selectedDay.toString().padLeft(2, '0'),
@@ -418,8 +418,8 @@ class _MonthOverview extends StatelessWidget {
                               const SizedBox(height: 4),
                               Text(
                                 total == 1
-                                    ? '1 cumpleanos'
-                                    : '$total cumpleanos',
+                                    ? '1 cumpleaños'
+                                    : '$total cumpleaños',
                                 style: TextStyle(
                                   color: selected
                                       ? Colors.white.withValues(alpha: 0.86)
@@ -630,18 +630,18 @@ class _DayDetailCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Detalle del dia',
+            'Detalle del día',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
           if (selectedDay == null)
             const Text(
-              'Selecciona un dia del calendario para ver quienes cumplen anos.',
+              'Selecciona un día del calendario para ver quiénes cumplen años.',
               style: TextStyle(color: Colors.black54),
             )
           else ...[
             Text(
-              'Dia ${selectedDay.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}',
+              'Día ${selectedDay.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}',
               style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 color: AppTheme.primaryDark,
@@ -650,7 +650,7 @@ class _DayDetailCard extends StatelessWidget {
             const SizedBox(height: 12),
             if (people.isEmpty)
               const Text(
-                'No hay cumpleanos registrados para este dia.',
+                'No hay cumpleaños registrados para este día.',
                 style: TextStyle(color: Colors.black54),
               )
             else

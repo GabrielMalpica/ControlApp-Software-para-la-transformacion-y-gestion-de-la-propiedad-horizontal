@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:http/http.dart' as http;
@@ -20,15 +20,12 @@ class ApiClient {
     final h = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'x-empresa-id': AppConstants.empresaNit,
     };
 
     if (token != null && token.isNotEmpty) {
       h['Authorization'] = 'Bearer $token';
     }
 
-    if (kDebugMode) {
-    }
     return h;
   }
 

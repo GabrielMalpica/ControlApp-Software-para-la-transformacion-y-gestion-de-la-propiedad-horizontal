@@ -68,12 +68,15 @@ class _CumpleanosBannerState extends State<CumpleanosBanner> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Feliz cumpleanos, ${info.nombre}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  'Feliz cumpleaños, ${info.nombre}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  info.mensaje ?? 'La empresa te desea un excelente dia.',
+                  info.mensaje ?? 'La empresa te desea un excelente día.',
                   style: const TextStyle(height: 1.35),
                 ),
               ],

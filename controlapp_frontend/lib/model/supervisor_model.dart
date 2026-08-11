@@ -1,13 +1,10 @@
 // lib/models/supervisor_model.dart
 
 class SupervisorModel {
-  final int id;            // mismo ID que Usuario.id
-  final String empresaId;  // NIT de la empresa
+  final int id; // mismo ID que Usuario.id
+  final String empresaId; // NIT de la empresa
 
-  SupervisorModel({
-    required this.id,
-    required this.empresaId,
-  });
+  SupervisorModel({required this.id, required this.empresaId});
 
   factory SupervisorModel.fromJson(Map<String, dynamic> json) {
     return SupervisorModel(
@@ -17,10 +14,7 @@ class SupervisorModel {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'empresaId': empresaId,
-    };
+    return {'id': id, 'empresaId': empresaId};
   }
 }
 
@@ -29,15 +23,9 @@ class CrearSupervisorDTO {
   final int id;
   final String empresaId;
 
-  CrearSupervisorDTO({
-    required this.id,
-    required this.empresaId,
-  });
+  CrearSupervisorDTO({required this.id, required this.empresaId});
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'empresaId': empresaId,
-      };
+  Map<String, dynamic> toJson() => {'id': id, 'empresaId': empresaId};
 }
 
 /// DTO para editar supervisor
@@ -47,6 +35,6 @@ class EditarSupervisorDTO {
   EditarSupervisorDTO({this.empresaId});
 
   Map<String, dynamic> toJson() => {
-        if (empresaId != null) 'empresaId': empresaId,
-      };
+    if (empresaId != null) 'empresaId': empresaId,
+  };
 }

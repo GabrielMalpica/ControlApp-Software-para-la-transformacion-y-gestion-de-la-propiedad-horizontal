@@ -19,11 +19,7 @@ class ResidentesApi {
       throw Exception('Token requerido');
     }
 
-    return {
-      'Authorization': 'Bearer $token',
-      'x-empresa-id': AppConstants.empresaNit,
-      'Accept': 'application/json',
-    };
+    return {'Authorization': 'Bearer $token', 'Accept': 'application/json'};
   }
 
   Future<ResidenteCreado> crearResidenteManual({
@@ -68,25 +64,33 @@ class ResidentesApi {
     required String conjuntoId,
     required PlatformFile file,
   }) async {
-    final uri = Uri.parse('${AppConstants.gerenteBase}/residentes/carga-masiva');
+    final uri = Uri.parse(
+      '${AppConstants.gerenteBase}/residentes/carga-masiva',
+    );
     final req = http.MultipartRequest('POST', uri);
     req.headers.addAll(await _authHeaders());
     req.fields['conjuntoId'] = conjuntoId;
 
-    final filename = file.name.trim().isEmpty ? 'residentes.xlsx' : file.name.trim();
+    final filename = file.name.trim().isEmpty
+        ? 'residentes.xlsx'
+        : file.name.trim();
 
     if (kIsWeb) {
       final bytes = file.bytes;
       if (bytes == null || bytes.isEmpty) {
         throw Exception('No se pudo leer el archivo seleccionado.');
       }
-      req.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+      req.files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: filename),
+      );
     } else {
       final path = file.path;
       if (path == null || path.trim().isEmpty) {
         throw Exception('No se pudo leer la ruta del archivo seleccionado.');
       }
-      req.files.add(await http.MultipartFile.fromPath('file', path, filename: filename));
+      req.files.add(
+        await http.MultipartFile.fromPath('file', path, filename: filename),
+      );
     }
 
     final streamed = await req.send();
@@ -110,7 +114,9 @@ class ResidentesApi {
     required String conjuntoId,
     String? query,
   }) async {
-    final qs = StringBuffer('?conjuntoId=${Uri.encodeQueryComponent(conjuntoId)}');
+    final qs = StringBuffer(
+      '?conjuntoId=${Uri.encodeQueryComponent(conjuntoId)}',
+    );
     if (query != null && query.trim().isNotEmpty) {
       qs.write('&q=${Uri.encodeQueryComponent(query.trim())}');
     }

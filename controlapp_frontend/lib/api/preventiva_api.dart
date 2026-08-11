@@ -167,6 +167,7 @@ class DefinicionPreventivaApi {
     int? tamanoBloqueHoras,
     int? tamanoBloqueMinutos,
     List<Map<String, dynamic>>? confirmacionesReemplazo,
+
     /// 'RESET' descarta el borrador previo; 'CONSERVAR' respeta lo ya cuadrado
     /// y solo planifica las preventivas que aún no tienen tarea en el periodo.
     String? modo,
@@ -211,10 +212,9 @@ class DefinicionPreventivaApi {
     required int anio,
     required int mes,
   }) async {
-    final uri =
-        Uri.parse(
-          '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/estado',
-        ).replace(queryParameters: {'anio': '$anio', 'mes': '$mes'});
+    final uri = Uri.parse(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/estado',
+    ).replace(queryParameters: {'anio': '$anio', 'mes': '$mes'});
 
     final resp = await _client.get(uri.toString());
     if (resp.statusCode != 200) {
@@ -233,17 +233,13 @@ class DefinicionPreventivaApi {
     required int anio,
     required int mes,
   }) async {
-    final uri =
-        Uri.parse(
-          '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador',
-        ).replace(queryParameters: {'anio': '$anio', 'mes': '$mes'});
+    final uri = Uri.parse(
+      '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador',
+    ).replace(queryParameters: {'anio': '$anio', 'mes': '$mes'});
 
     final resp = await _client.delete(uri.toString());
     if (resp.statusCode != 200) {
-      _throwCrudApiError(
-        resp,
-        fallback: 'No se pudo descartar el borrador.',
-      );
+      _throwCrudApiError(resp, fallback: 'No se pudo descartar el borrador.');
     }
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
   }

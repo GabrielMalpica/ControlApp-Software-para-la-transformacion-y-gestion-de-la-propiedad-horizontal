@@ -359,7 +359,9 @@ class HerramientaDisponibilidadResponse {
     required this.totalDisponible,
   });
 
-  factory HerramientaDisponibilidadResponse.fromJson(Map<String, dynamic> json) {
+  factory HerramientaDisponibilidadResponse.fromJson(
+    Map<String, dynamic> json,
+  ) {
     return HerramientaDisponibilidadResponse(
       herramientaId: _asInt(json['herramientaId']),
       nombre: _asString(json['nombre'], fallback: '-'),
@@ -442,4 +444,5 @@ class SolicitudHerramientaItemResponse {
     );
   }
 }
+
 // ignore_for_file: constant_identifier_names

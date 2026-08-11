@@ -161,13 +161,14 @@ class _PreventivasPageState extends State<PreventivasPage> {
   }
 
   List<String> _operariosDisponibles() {
-    final nombres = _items
-        .expand(_operariosDePreventiva)
-        .map((nombre) => nombre.trim())
-        .where((nombre) => nombre.isNotEmpty)
-        .toSet()
-        .toList()
-      ..sort();
+    final nombres =
+        _items
+            .expand(_operariosDePreventiva)
+            .map((nombre) => nombre.trim())
+            .where((nombre) => nombre.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
     return nombres;
   }
 
@@ -662,14 +663,18 @@ class _PreventivasPageState extends State<PreventivasPage> {
         final siguiente = DateTime(ahora.year, ahora.month + 1, 1);
         return AlertDialog(
           title: const Text('Generar borrador'),
-          content: const Text('¿Quieres generar el cronograma del mes actual o del mes siguiente?'),
+          content: const Text(
+            '¿Quieres generar el cronograma del mes actual o del mes siguiente?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Cancelar'),
             ),
             OutlinedButton(
-              onPressed: () => Navigator.of(context).pop(DateTime(ahora.year, ahora.month, 1)),
+              onPressed: () => Navigator.of(
+                context,
+              ).pop(DateTime(ahora.year, ahora.month, 1)),
               child: const Text('Mes actual'),
             ),
             ElevatedButton(

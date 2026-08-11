@@ -1612,7 +1612,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 actionPlan: _p12Ctrl.text,
               ),
               chartSection(
-                title: '3. Tareas por dia (tendencia)',
+                title: '3. Tareas por día (tendencia)',
                 imageBytes: charts['serie']!,
                 analysis: _a13Ctrl.text,
                 actionPlan: _p13Ctrl.text,
@@ -1962,8 +1962,8 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         final motivoReemplazo = _replacementInfoText(principal);
 
         final resumenTexto = uniqueDays >= totalDiasRango
-            ? 'Esta tarea se hizo todos los dias del mes.'
-            : 'Esta tarea se hizo de forma diaria durante el mes ($uniqueDays de $totalDiasRango dias con registro).';
+            ? 'Esta tarea se hizo todos los días del mes.'
+            : 'Esta tarea se hizo de forma diaria durante el mes ($uniqueDays de $totalDiasRango días con registro).';
 
         final insumosTxt = resumenDiario
             ? mergedResourceList(tasks, (t) => t.insumos)
@@ -2082,7 +2082,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                         : '${df.format(principal.fechaFin)} (${principal.duracionMinutos} min)',
                   ),
                   kvRow(
-                    k1: 'Ubicacion',
+                    k1: 'Ubicación',
                     v1: safe(principal.ubicacion),
                     k2: 'Elemento',
                     v2: safe(principal.elemento),
@@ -2908,7 +2908,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             ),
             _kpiTile(
               'Prom. cierre',
-              '${_formatOneDecimal(r.promedioDiasCierre)} dias',
+              '${_formatOneDecimal(r.promedioDiasCierre)} días',
               Icons.av_timer_outlined,
               accentColor: AppTheme.primary,
             ),
@@ -2937,7 +2937,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                             ),
                             const SizedBox(height: 10),
                             _miniTextPill(
-                              'Prom. dias abiertos',
+                              'Prom. días abiertos',
                               _formatOneDecimal(r.promedioDiasAbiertos),
                             ),
                             const SizedBox(height: 10),
@@ -3257,7 +3257,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                     children: [
                       _miniTextPill('ANS', item.ansLabel),
                       _miniTextPill(
-                        'Dias abierto',
+                        'Días abiertos',
                         item.diasAbierto.toString(),
                       ),
                       _miniTextPill('Creado', df.format(item.creadaEn)),
@@ -3546,7 +3546,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Curva tipo trading/equity: compara como ha crecido el trabajo asignado frente al realmente resuelto. Si la brecha y el backlog suben, la operacion se esta quedando atras.',
+          'Curva tipo trading/equity: compara cómo ha crecido el trabajo asignado frente al realmente resuelto. Si la brecha y el backlog suben, la operación se está quedando atrás.',
           style: TextStyle(fontSize: 12, color: Colors.black54),
         ),
         const SizedBox(height: 12),

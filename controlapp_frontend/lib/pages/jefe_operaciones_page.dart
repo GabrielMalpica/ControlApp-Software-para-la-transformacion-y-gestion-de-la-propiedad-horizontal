@@ -192,7 +192,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
       return const DashboardScaffold(
         title: 'Panel del jefe de operaciones',
         headline:
-            'Coordina la operacion con el mismo tablero visual del gerente.',
+            'Coordina la operación con el mismo tablero visual del gerente.',
         description:
             'Consulta solicitudes, tareas, inventario y compromisos desde el conjunto activo.',
         leadingBadge: 'Seguimiento operativo',
@@ -219,7 +219,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
     if (conjunto == null) {
       return const DashboardScaffold(
         title: 'Panel del jefe de operaciones',
-        headline: 'Aun no hay conjuntos disponibles.',
+        headline: 'Aún no hay conjuntos disponibles.',
         description:
             'Cuando haya conjuntos asignados, aqui veras el mismo tablero central con tus accesos operativos.',
         leadingBadge: 'Seguimiento operativo',
@@ -234,7 +234,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
 
     final nit = conjunto.nit;
     final sections = <_JefeSection>[
-      _JefeSection('Operacion diaria', [
+      _JefeSection('Operación diaria', [
         if (_can('tareas.ver'))
           _JefeTile('Tareas', Icons.assignment, AppTheme.green, () {
             Navigator.push(
@@ -320,7 +320,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
           }),
         if (_can('mapa_areas.ver'))
           _JefeTile(
-            'Mapa de areas',
+            'Mapa de áreas',
             Icons.account_tree_outlined,
             Colors.teal,
             () {
@@ -399,7 +399,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
             },
           ),
         if (_can('cumpleanos.ver'))
-          _JefeTile('Cumpleanos', Icons.cake_outlined, AppTheme.accent, () {
+          _JefeTile('Cumpleaños', Icons.cake_outlined, AppTheme.accent, () {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const CumpleanosPage()),

@@ -5,10 +5,7 @@ import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 
 class ConsignasValorAgregadoPage extends StatelessWidget {
-  const ConsignasValorAgregadoPage({
-    super.key,
-    required this.conjunto,
-  });
+  const ConsignasValorAgregadoPage({super.key, required this.conjunto});
 
   final Conjunto conjunto;
 
@@ -130,7 +127,9 @@ class _TextoMatrizCard extends StatelessWidget {
                 return TableRow(
                   decoration: BoxDecoration(color: zebra),
                   children: <Widget>[
-                    _BodyCell(text: index < consignas.length ? consignas[index] : ''),
+                    _BodyCell(
+                      text: index < consignas.length ? consignas[index] : '',
+                    ),
                     _BodyCell(
                       text: index < valoresAgregados.length
                           ? valoresAgregados[index]
@@ -174,10 +173,7 @@ class _HeaderCell extends StatelessWidget {
           Icon(icon, color: color, size: 18),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
           ),
         ],
       ),

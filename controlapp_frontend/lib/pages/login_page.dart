@@ -53,7 +53,7 @@ class _LoginPageState extends State<LoginPage> {
       AppRouter.goReplacementAfterLogin(context, resp.user);
     } catch (e) {
       setState(() {
-        _error = AppError.messageOf(e, fallback: 'No se pudo iniciar sesion.');
+        _error = AppError.messageOf(e, fallback: 'No se pudo iniciar sesión.');
       });
     } finally {
       if (mounted) {

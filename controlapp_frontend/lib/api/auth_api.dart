@@ -25,7 +25,7 @@ class AuthApi {
 
     if (resp.statusCode != 200) {
       throw Exception(
-        _serverMessage(resp.body, fallback: 'No se pudo iniciar sesion.'),
+        _serverMessage(resp.body, fallback: 'No se pudo iniciar sesión.'),
       );
     }
 
@@ -53,7 +53,7 @@ class AuthApi {
     final resp = await _client.get('/auth/me');
 
     if (resp.statusCode != 200) {
-      throw Exception(_serverMessage(resp.body, fallback: 'Sesion invalida.'));
+      throw Exception(_serverMessage(resp.body, fallback: 'Sesión inválida.'));
     }
 
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -109,9 +109,7 @@ class AuthApi {
   }) async {
     final resp = await _client.post(
       '/auth/cambiar-contrasena-inicial',
-      body: {
-        'nuevaContrasena': nuevaContrasena,
-      },
+      body: {'nuevaContrasena': nuevaContrasena},
     );
 
     if (resp.statusCode != 200) {

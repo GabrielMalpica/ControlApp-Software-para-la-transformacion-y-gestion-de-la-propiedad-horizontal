@@ -66,7 +66,7 @@ class TareaCierreService {
 
     final estado = (tarea.estado ?? '').trim().toUpperCase();
     if (!_estadosCerrables.contains(estado)) {
-      return 'Esta tarea no esta disponible para cierre.';
+      return 'Esta tarea no está disponible para cierre.';
     }
 
     final rolNormalizado = _rol(rol);

@@ -58,7 +58,7 @@ class NotificacionApi {
   Future<List<CumpleaneroModel>> listarCumpleanosMesActual() async {
     final resp = await _client.get('/notificaciones/cumpleanos/mes-actual');
     if (resp.statusCode != 200) {
-      throw Exception('Error listando cumpleanos: ${resp.body}');
+      throw Exception('Error listando cumpleaños: ${resp.body}');
     }
 
     final decoded = jsonDecode(resp.body);
@@ -72,7 +72,7 @@ class NotificacionApi {
   Future<List<CumpleaneroModel>> listarCumpleanosAnio() async {
     final resp = await _client.get('/notificaciones/cumpleanos/anio');
     if (resp.statusCode != 200) {
-      throw Exception('Error listando cumpleanos del anio: ${resp.body}');
+      throw Exception('Error listando cumpleaños del año: ${resp.body}');
     }
 
     final decoded = jsonDecode(resp.body);
@@ -86,7 +86,7 @@ class NotificacionApi {
   Future<CumpleanosHoyModel> obtenerCumpleanosHoy() async {
     final resp = await _client.get('/notificaciones/cumpleanos/hoy');
     if (resp.statusCode != 200) {
-      throw Exception('Error consultando cumpleanos de hoy: ${resp.body}');
+      throw Exception('Error consultando cumpleaños de hoy: ${resp.body}');
     }
 
     final decoded = jsonDecode(resp.body) as Map<String, dynamic>;

@@ -23,7 +23,6 @@ class SupervisorApi {
     }
     return {
       'Authorization': 'Bearer $token',
-      'x-empresa-id': AppConstants.empresaNit,
       'Accept': 'application/json',
       // OJO: no Content-Type aquí; multipart lo define solo
     };

@@ -20,9 +20,13 @@ class SerieDiariaLineChart extends StatelessWidget {
       values.add(total.toDouble());
     }
 
-    final maxY = (values.isEmpty ? 1.0 : values.reduce((a, b) => a > b ? a : b)).clamp(1.0, double.infinity);
+    final maxY = (values.isEmpty ? 1.0 : values.reduce((a, b) => a > b ? a : b))
+        .clamp(1.0, double.infinity);
 
-    final spots = List.generate(values.length, (i) => FlSpot(i.toDouble(), values[i]));
+    final spots = List.generate(
+      values.length,
+      (i) => FlSpot(i.toDouble(), values[i]),
+    );
 
     String shortDay(String ymd) {
       // yyyy-MM-dd -> dd/MM
@@ -50,26 +54,43 @@ class SerieDiariaLineChart extends StatelessWidget {
               gridData: const FlGridData(show: true),
               borderData: FlBorderData(show: false),
               titlesData: FlTitlesData(
-                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                rightTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
                     reservedSize: 34,
-                    getTitlesWidget: (v, _) => Text(v.toInt().toString(), style: const TextStyle(fontSize: 10)),
+                    getTitlesWidget: (v, _) => Text(
+                      v.toInt().toString(),
+                      style: const TextStyle(fontSize: 10),
+                    ),
                   ),
                 ),
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
                     reservedSize: 30,
-                    interval: (values.length <= 10) ? 1 : (values.length / 6).ceilToDouble(),
+                    interval: (values.length <= 10)
+                        ? 1
+                        : (values.length / 6).ceilToDouble(),
                     getTitlesWidget: (v, _) {
                       final i = v.toInt();
-                      if (i < 0 || i >= days.length) return const SizedBox.shrink();
+                      if (i < 0 || i >= days.length) {
+                        return const SizedBox.shrink();
+                      }
                       return Padding(
                         padding: const EdgeInsets.only(top: 6),
-                        child: Text(shortDay(days[i]), style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700)),
+                        child: Text(
+                          shortDay(days[i]),
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       );
                     },
                   ),
@@ -81,7 +102,10 @@ class SerieDiariaLineChart extends StatelessWidget {
                   isCurved: true,
                   barWidth: 3,
                   dotData: const FlDotData(show: false),
-                  belowBarData: BarAreaData(show: true, color: const Color(0xFF60A5FA).withValues(alpha: 0.15)),
+                  belowBarData: BarAreaData(
+                    show: true,
+                    color: const Color(0xFF60A5FA).withValues(alpha: 0.15),
+                  ),
                   color: const Color(0xFF2563EB),
                 ),
               ],

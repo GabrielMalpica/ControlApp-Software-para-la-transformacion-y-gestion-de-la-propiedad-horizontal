@@ -4,10 +4,7 @@ class GerenteModel {
   final int id;
   final String? empresaId;
 
-  GerenteModel({
-    required this.id,
-    this.empresaId,
-  });
+  GerenteModel({required this.id, this.empresaId});
 
   /// Crear instancia desde JSON
   factory GerenteModel.fromJson(Map<String, dynamic> json) {
@@ -19,9 +16,6 @@ class GerenteModel {
 
   /// Convertir a JSON para envío al backend
   Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'empresaId': empresaId,
-    };
+    return {'id': id, 'empresaId': empresaId};
   }
 }

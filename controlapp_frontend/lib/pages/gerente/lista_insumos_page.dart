@@ -173,7 +173,7 @@ class _ListaInsumosPageState extends State<ListaInsumosPage> {
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return null;
                     final parsed = int.tryParse(v.trim());
-                    if (parsed == null || parsed < 0) return 'Numero invalido';
+                    if (parsed == null || parsed < 0) return 'Número inválido';
                     return null;
                   },
                 ),
@@ -380,7 +380,7 @@ class _HeaderCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Aqui editas nombre, unidad, categoria y umbral de los insumos que usara la operacion.',
+            'Aquí editas nombre, unidad, categoría y umbral de los insumos que usará la operación.',
             style: TextStyle(color: Colors.white70),
           ),
           const SizedBox(height: 14),

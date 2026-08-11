@@ -1,15 +1,9 @@
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+    show TargetPlatform, defaultTargetPlatform, kIsWeb, kReleaseMode;
 
 class AppConstants {
-  static const String _railwayBaseUrl =
-      'https://thriving-empathy-production-2f17.up.railway.app';
   static const String _localBaseUrlWebDesktop = 'http://localhost:3000';
   static const String _localBaseUrlAndroid = 'http://10.0.2.2:3000';
-
-  // Cambia a `false` solo para builds de producción (web).
-  // En local se detecta automáticamente por el host.
-  static const bool _usarApiLocalEnDebug = true;
 
   /// Cambia en build/run con:
   /// --dart-define=API_BASE_URL=https://tu-api
@@ -36,18 +30,20 @@ class AppConstants {
 
   /// Base URL efectiva en runtime.
   /// Si el build trae localhost pero la app NO corre en localhost (ej: producción web),
-  /// forzamos Railway para evitar que apunte al backend local por error.
+  /// En produccion no existe fallback: API_BASE_URL debe declararse en el build.
   static String get baseUrl {
     final env = _apiBaseFromEnv.trim();
     if (env.isEmpty) {
-      if (_usarApiLocalEnDebug) {
-        if (!kIsWeb) return _localBaseUrl;
-
-        final host = Uri.base.host.toLowerCase();
-        final runningOnLocalhost = host == 'localhost' || host == '127.0.0.1';
-        if (runningOnLocalhost) return _localBaseUrl;
+      final host = kIsWeb ? Uri.base.host.toLowerCase() : '';
+      final runningOnLocalhost =
+          !kIsWeb || host == 'localhost' || host == '127.0.0.1';
+      if (kReleaseMode || !runningOnLocalhost) {
+        throw StateError(
+          'API_BASE_URL es obligatorio en produccion. Usa '
+          '--dart-define=API_BASE_URL=https://tu-api.',
+        );
       }
-      return _railwayBaseUrl;
+      return _localBaseUrl;
     }
 
     if (!kIsWeb) {
@@ -64,7 +60,9 @@ class AppConstants {
         envLower.contains('localhost') || envLower.contains('127.0.0.1');
 
     if (envPointsToLocal && !runningOnLocalhost) {
-      return _railwayBaseUrl;
+      throw StateError(
+        'API_BASE_URL no puede apuntar a localhost desde una app web desplegada.',
+      );
     }
 
     return env;
@@ -73,7 +71,10 @@ class AppConstants {
   // 🔹 Prefijo de todo lo que maneja el GerenteController
   static String get gerenteBase => "$baseUrl/gerente";
   static String get administradorBase => "$baseUrl/administrador";
-  static const empresaNit = '901191875-4';
+  static const empresaNit = String.fromEnvironment(
+    'EMPRESA_NIT',
+    defaultValue: '',
+  );
 
   static String get empresaBase => "$baseUrl/empresa";
   static String maquinariaEmpresa(String nit) => "$empresaBase/$nit/maquinaria";

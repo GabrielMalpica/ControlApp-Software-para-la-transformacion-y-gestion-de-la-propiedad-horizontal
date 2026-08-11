@@ -118,8 +118,7 @@ class PlanEsperanzaActivo {
           : null,
       completado: json['completado'] as bool? ?? false,
       diagnosticos: (json['diagnosticos'] as List<dynamic>? ?? [])
-          .map((d) =>
-              DiagnosticoAreaModel.fromJson(d as Map<String, dynamic>))
+          .map((d) => DiagnosticoAreaModel.fromJson(d as Map<String, dynamic>))
           .toList(),
     );
   }
@@ -210,10 +209,7 @@ class SubzonaHistorico {
   final String subzonaNombre;
   final List<AreaHistorico> areas;
 
-  const SubzonaHistorico({
-    required this.subzonaNombre,
-    required this.areas,
-  });
+  const SubzonaHistorico({required this.subzonaNombre, required this.areas});
 
   factory SubzonaHistorico.fromJson(Map<String, dynamic> json) {
     return SubzonaHistorico(
@@ -248,10 +244,7 @@ class HistoricoResponse {
   final List<PlanResumen> planes;
   final List<UbicacionHistorico> ubicaciones;
 
-  const HistoricoResponse({
-    required this.planes,
-    required this.ubicaciones,
-  });
+  const HistoricoResponse({required this.planes, required this.ubicaciones});
 
   factory HistoricoResponse.fromJson(Map<String, dynamic> json) {
     return HistoricoResponse(
@@ -300,10 +293,7 @@ class SubzonaInforme {
   final String subzonaNombre;
   final List<AreaInforme> areas;
 
-  const SubzonaInforme({
-    required this.subzonaNombre,
-    required this.areas,
-  });
+  const SubzonaInforme({required this.subzonaNombre, required this.areas});
 
   factory SubzonaInforme.fromJson(Map<String, dynamic> json) {
     return SubzonaInforme(

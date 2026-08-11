@@ -65,10 +65,12 @@ class _AgendaHerramientasGlobalPageState
       final q = _query.trim().toLowerCase();
       if (q.isEmpty) return true;
       final h = block.herramienta;
-      return [h.nombre, h.unidad, h.categoria, h.modoControl]
-          .join(' ')
-          .toLowerCase()
-          .contains(q);
+      return [
+        h.nombre,
+        h.unidad,
+        h.categoria,
+        h.modoControl,
+      ].join(' ').toLowerCase().contains(q);
     }).toList();
 
     if (_selectedIndex >= blocks.length) _selectedIndex = 0;
@@ -90,7 +92,9 @@ class _AgendaHerramientasGlobalPageState
                           children: [
                             SizedBox(width: 340, child: _panelLista(blocks)),
                             const VerticalDivider(width: 1),
-                            Expanded(child: _panelAgenda(blocks[_selectedIndex])),
+                            Expanded(
+                              child: _panelAgenda(blocks[_selectedIndex]),
+                            ),
                           ],
                         );
                       }
@@ -183,7 +187,9 @@ class _AgendaHerramientasGlobalPageState
             h.nombre,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontWeight: selected ? FontWeight.w900 : FontWeight.w700),
+            style: TextStyle(
+              fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
+            ),
           ),
           subtitle: Text('${h.categoria} • ${h.unidad} • ${h.modoControl}'),
           trailing: Container(
@@ -193,7 +199,10 @@ class _AgendaHerramientasGlobalPageState
               borderRadius: BorderRadius.circular(999),
               border: Border.all(color: Colors.grey.shade200),
             ),
-            child: Text('${b.reservasMes}', style: const TextStyle(fontWeight: FontWeight.w900)),
+            child: Text(
+              '${b.reservasMes}',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
           ),
           onTap: () => setState(() => _selectedIndex = i),
         );
@@ -203,7 +212,8 @@ class _AgendaHerramientasGlobalPageState
 
   Widget _panelAgenda(AgendaHerramientaBlock block) {
     final h = block.herramienta;
-    final semanas = block.semanas.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+    final semanas = block.semanas.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
 
     return Padding(
       padding: const EdgeInsets.all(12),
@@ -217,18 +227,27 @@ class _AgendaHerramientasGlobalPageState
                   '${h.nombre.toUpperCase()} • ${h.unidad}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.grey.shade100,
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(color: Colors.grey.shade200),
                 ),
-                child: Text('Reservas mes: ${block.reservasMes}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                child: Text(
+                  'Reservas mes: ${block.reservasMes}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
               ),
             ],
           ),
@@ -239,7 +258,14 @@ class _AgendaHerramientasGlobalPageState
             child: SingleChildScrollView(
               child: Column(
                 children: semanas
-                    .map((e) => _AgendaSemanaHerramienta(anio: _anio, mes: _mes, semana: e.key, grupos: e.value))
+                    .map(
+                      (e) => _AgendaSemanaHerramienta(
+                        anio: _anio,
+                        mes: _mes,
+                        semana: e.key,
+                        grupos: e.value,
+                      ),
+                    )
                     .toList(),
               ),
             ),
@@ -281,18 +307,22 @@ class _AgendaSemanaHerramienta extends StatelessWidget {
           rows: [
             for (int grupo = 1; grupo <= 6; grupo++)
               ...grupos[grupo]!.map(
-                (item) => DataRow(cells: [
-                  DataCell(Text('Semana $semana · Grupo $grupo')),
-                  ...List.generate(6, (i) {
-                    final day = monday.add(Duration(days: i));
-                    return DataCell(Text('${_days[i]} ${day.day}\n${item.grid[i]}'));
-                  }),
-                  DataCell(
-                    Text(
-                      '${item.conjuntoNombre ?? item.conjuntoId ?? '-'} · cant: ${item.cantidad} · ${item.origenStock}',
+                (item) => DataRow(
+                  cells: [
+                    DataCell(Text('Semana $semana · Grupo $grupo')),
+                    ...List.generate(6, (i) {
+                      final day = monday.add(Duration(days: i));
+                      return DataCell(
+                        Text('${_days[i]} ${day.day}\n${item.grid[i]}'),
+                      );
+                    }),
+                    DataCell(
+                      Text(
+                        '${item.conjuntoNombre ?? item.conjuntoId ?? '-'} · cant: ${item.cantidad} · ${item.origenStock}',
+                      ),
                     ),
-                  ),
-                ]),
+                  ],
+                ),
               ),
           ],
         ),

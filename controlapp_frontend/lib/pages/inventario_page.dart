@@ -197,7 +197,7 @@ class _InventarioPageState extends State<InventarioPage> {
                     AppFeedback.showFromSnackBar(
                       context,
                       const SnackBar(
-                        content: Text('Cantidad invalida para la devolucion'),
+                        content: Text('Cantidad inválida para la devolución'),
                       ),
                     );
                     return;

@@ -231,7 +231,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                       ),
                     if (_can('mapa_areas.ver'))
                       _simpleCard(
-                        'Mapa de areas',
+                        'Mapa de áreas',
                         Colors.teal,
                         Icons.account_tree_outlined,
                         onTap: () {
@@ -258,7 +258,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      _sectionHeader('Operacion diaria'),
+                      _sectionHeader('Operación diaria'),
                       GridView.count(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
