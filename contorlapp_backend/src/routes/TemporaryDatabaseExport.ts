@@ -51,6 +51,87 @@ function pgDumpExecutable() {
   return "pg_dump";
 }
 
+const libpqQueryParameters = new Set([
+  "application_name",
+  "channel_binding",
+  "client_encoding",
+  "connect_timeout",
+  "fallback_application_name",
+  "gssencmode",
+  "gsslib",
+  "host",
+  "hostaddr",
+  "keepalives",
+  "keepalives_count",
+  "keepalives_idle",
+  "keepalives_interval",
+  "krbsrvname",
+  "load_balance_hosts",
+  "options",
+  "passfile",
+  "port",
+  "requirepeer",
+  "service",
+  "sslcert",
+  "sslcompression",
+  "sslcrl",
+  "sslcrldir",
+  "sslkey",
+  "ssl_max_protocol_version",
+  "ssl_min_protocol_version",
+  "sslmode",
+  "sslpassword",
+  "sslrootcert",
+  "sslsni",
+  "target_session_attrs",
+  "tcp_user_timeout",
+  "user",
+]);
+
+export function databaseUrlForPgDump(databaseUrl: string) {
+  const url = new URL(databaseUrl);
+  if (url.protocol !== "postgresql:" && url.protocol !== "postgres:") {
+    throw new Error("DATABASE_URL no usa PostgreSQL");
+  }
+
+  // Prisma accepts parameters such as connection_limit, pool_timeout, schema
+  // and pgbouncer. libpq rejects unknown URI parameters before connecting, so
+  // only its documented connection parameters may reach pg_dump.
+  for (const key of [...url.searchParams.keys()]) {
+    if (!libpqQueryParameters.has(key)) url.searchParams.delete(key);
+  }
+
+  return url.toString();
+}
+
+function safePgDumpFailureReason(stderr: string) {
+  const versionMismatch = stderr.match(
+    /server version:\s*([\d.]+)[\s\S]*pg_dump version:\s*([\d.]+)/i,
+  );
+  if (versionMismatch) {
+    return `Version incompatible: PostgreSQL ${versionMismatch[1]}, pg_dump ${versionMismatch[2]}`;
+  }
+
+  const invalidParameter = stderr.match(/invalid URI query parameter:\s*["']([^"']+)["']/i);
+  if (invalidParameter) {
+    return `Parametro de conexion incompatible: ${invalidParameter[1]}`;
+  }
+  if (/password authentication failed/i.test(stderr)) {
+    return "PostgreSQL rechazo las credenciales configuradas";
+  }
+  if (/could not translate host name|name or service not known/i.test(stderr)) {
+    return "El servidor no pudo resolver el host de PostgreSQL";
+  }
+  if (/connection refused|could not connect to server/i.test(stderr)) {
+    return "El servidor no pudo conectarse a PostgreSQL";
+  }
+  if (/SSL|certificate verify failed/i.test(stderr)) {
+    return "Fallo la configuracion SSL de PostgreSQL";
+  }
+
+  return "pg_dump termino con error; revisa el evento temporary-db-export en Railway";
+}
+
 function startPostgresDump(databaseUrl: string): DumpProcess {
   const dumpEnvironment = { ...process.env };
   for (const key of Object.keys(dumpEnvironment)) {
@@ -131,11 +212,21 @@ export function createTemporaryDatabaseExportRouter(
       return;
     }
 
+    let dumpDatabaseUrl: string;
+    try {
+      dumpDatabaseUrl = databaseUrlForPgDump(databaseUrl);
+    } catch {
+      res.status(500).json({
+        message: "DATABASE_URL no es una conexion PostgreSQL valida",
+      });
+      return;
+    }
+
     exportInProgress = true;
     let child: DumpProcess;
 
     try {
-      child = startDump(databaseUrl);
+      child = startDump(dumpDatabaseUrl);
     } catch {
       exportInProgress = false;
       res.status(503).json({
@@ -146,6 +237,7 @@ export function createTemporaryDatabaseExportRouter(
 
     let handled = false;
     let stderrBytes = 0;
+    let stderr = "";
     const timeout = setTimeout(() => {
       child.kill("SIGTERM");
     }, parseTimeoutMs(env.TEMP_DB_EXPORT_TIMEOUT_MINUTES));
@@ -169,9 +261,10 @@ export function createTemporaryDatabaseExportRouter(
     });
 
     child.stderr.on("data", (chunk: Buffer | string) => {
-      // Do not log pg_dump output: connection errors can contain production
-      // host/user details. The byte count is enough for operational diagnosis.
       stderrBytes += Buffer.byteLength(chunk);
+      // The raw text is never logged or returned because it may include host or
+      // user details. It is kept only to derive a safe error category.
+      if (stderr.length < 16_000) stderr += chunk.toString();
     });
 
     child.once("spawn", () => {
@@ -211,7 +304,11 @@ export function createTemporaryDatabaseExportRouter(
         stderrBytes,
       });
       if (!res.headersSent) {
-        res.status(500).json({ message: "No se pudo generar el respaldo" });
+        res.removeHeader("Content-Disposition");
+        res.type("json").status(500).json({
+          message: "No se pudo generar el respaldo",
+          reason: safePgDumpFailureReason(stderr),
+        });
         return;
       }
       res.destroy();

@@ -2,7 +2,10 @@ import { EventEmitter } from "events";
 import { PassThrough } from "stream";
 import express from "express";
 import request from "supertest";
-import { createTemporaryDatabaseExportRouter } from "../../src/routes/TemporaryDatabaseExport";
+import {
+  createTemporaryDatabaseExportRouter,
+  databaseUrlForPgDump,
+} from "../../src/routes/TemporaryDatabaseExport";
 
 function fakeSuccessfulDump(contents = "PGDMP-test") {
   const child = new EventEmitter() as any;
@@ -17,6 +20,24 @@ function fakeSuccessfulDump(contents = "PGDMP-test") {
     child.stderr.end();
     child.exitCode = 0;
     child.emit("close", 0, null);
+  });
+
+  return child;
+}
+
+function fakeFailedDump(stderr: string) {
+  const child = new EventEmitter() as any;
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.exitCode = null;
+  child.kill = jest.fn(() => true);
+
+  setImmediate(() => {
+    child.emit("spawn");
+    child.stderr.end(stderr);
+    child.stdout.end();
+    child.exitCode = 1;
+    child.emit("close", 1, null);
   });
 
   return child;
@@ -45,6 +66,19 @@ function testApp(
 }
 
 describe("exportacion temporal de base de datos", () => {
+  test("elimina opciones de Prisma y conserva opciones SSL para libpq", () => {
+    const result = databaseUrlForPgDump(
+      "postgresql://user:secret@db.internal/app?connection_limit=10&pool_timeout=20&pgbouncer=true&schema=public&sslmode=require",
+    );
+
+    const url = new URL(result);
+    expect(url.searchParams.get("sslmode")).toBe("require");
+    expect(url.searchParams.has("connection_limit")).toBe(false);
+    expect(url.searchParams.has("pool_timeout")).toBe(false);
+    expect(url.searchParams.has("pgbouncer")).toBe(false);
+    expect(url.searchParams.has("schema")).toBe(false);
+  });
+
   test("permanece oculta cuando no esta habilitada", async () => {
     const { app, startDump } = testApp({ TEMP_DB_EXPORT_ENABLED: "false" });
 
@@ -111,5 +145,30 @@ describe("exportacion temporal de base de datos", () => {
 
     expect(response.body.toString()).toBe("PGDMP-test");
     expect(startDump).toHaveBeenCalledWith("postgresql://production.example/controlapp");
+  });
+
+  test("informa una incompatibilidad de versiones sin exponer la conexion", async () => {
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    const startDump = jest.fn(() =>
+      fakeFailedDump(
+        'pg_dump: error: server version: 18.1; pg_dump version: 17.6\npg_dump: error: aborting because of server version mismatch',
+      ),
+    );
+    const { app } = testApp({}, startDump);
+
+    try {
+      const response = await request(app)
+        .get("/internal/temporary/database-export")
+        .set("Authorization", `Bearer ${"a".repeat(43)}`)
+        .expect(500);
+
+      expect(response.body).toEqual({
+        message: "No se pudo generar el respaldo",
+        reason: "Version incompatible: PostgreSQL 18.1, pg_dump 17.6",
+      });
+      expect(JSON.stringify(response.body)).not.toContain("production.example");
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });
