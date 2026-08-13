@@ -172,6 +172,7 @@ type ExclusionMotivoTipo =
   | "SIN_HUECO"
   | "REQUIERE_CONFIRMACION_REEMPLAZO"
   | "FESTIVO_OMITIDO"
+  | "REEMPLAZO_PRIORIDAD"
   | "MANUAL_REEMPLAZADA"
   | "MANUAL_ELIMINADA";
 
@@ -207,7 +208,7 @@ const dayKey = (d: Date) => ymdLocal(d);
  * Tope de bloques en que la fase de rescate puede partir una tarea dentro de un mismo dia.
  * Con 3 se cubre el caso tipico "mañana + antes del almuerzo + tarde" sin fragmentar en exceso.
  */
-const MAX_BLOQUES_RESCATE_POR_DIA = 3;
+const MAX_BLOQUES_RESCATE_POR_DIA = Number.MAX_SAFE_INTEGER;
 
 /**
  * Clave de respaldo para emparejar una definicion con sus tareas de borrador
@@ -225,6 +226,42 @@ function claveDefinicionBorrador(def: {
     def.elementoId,
     def.frecuencia ?? "",
   ].join("|");
+}
+
+type VersionDefinicionBorrador = {
+  id: number;
+  actualizadoEn: string;
+};
+
+function versionesDefinicionesDesdeMetadata(
+  metadata: unknown,
+): Map<number, string> {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return new Map();
+  }
+
+  const raw = (metadata as Record<string, unknown>).versionesDefiniciones;
+  if (!Array.isArray(raw)) return new Map();
+
+  const versiones = new Map<number, string>();
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const id = Number((item as Record<string, unknown>).id);
+    const actualizadoEn = String(
+      (item as Record<string, unknown>).actualizadoEn ?? "",
+    );
+    if (Number.isInteger(id) && id > 0 && actualizadoEn) {
+      versiones.set(id, actualizadoEn);
+    }
+  }
+  return versiones;
+}
+
+function versionActualDefinicion(def: {
+  actualizadoEn?: Date | null;
+  creadoEn?: Date | null;
+}): string {
+  return (def.actualizadoEn ?? def.creadoEn ?? new Date(0)).toISOString();
 }
 
 /** Minutos totales cubiertos por un plan de bloques. */
@@ -441,7 +478,7 @@ export class DefinicionTareaPreventivaService {
     const dto = PeriodoBorradorDTO.parse(payload);
     const { conjuntoId, anio, mes } = dto;
 
-    const [totalTareas, excluidasPendientes, definiciones, ultimoEvento] =
+    const [totalTareas, excluidasPendientes, definiciones, marcaGeneracion] =
       await Promise.all([
         this.prisma.tarea.count({
           where: {
@@ -468,12 +505,19 @@ export class DefinicionTareaPreventivaService {
             ubicacionId: true,
             elementoId: true,
             frecuencia: true,
+            creadoEn: true,
+            actualizadoEn: true,
           },
         }),
         this.prisma.preventivaBorradorEvento.findFirst({
-          where: { conjuntoId, periodoAnio: anio, periodoMes: mes },
+          where: {
+            conjuntoId,
+            periodoAnio: anio,
+            periodoMes: mes,
+            tipo: "BORRADOR_GENERADO",
+          },
           orderBy: { creadoEn: "desc" },
-          select: { creadoEn: true },
+          select: { creadoEn: true, metadataJson: true },
         }),
       ]);
 
@@ -489,8 +533,40 @@ export class DefinicionTareaPreventivaService {
         !enBorrador.claves.has(claveDefinicionBorrador(def)),
     );
 
+    const versionesGuardadas = versionesDefinicionesDesdeMetadata(
+      marcaGeneracion?.metadataJson,
+    );
+    const idsSinPlanificar = new Set(sinPlanificar.map((def) => def.id));
+    const definicionesModificadas = definiciones.filter((def) => {
+      if (idsSinPlanificar.has(def.id)) return false;
+      const versionGuardada = versionesGuardadas.get(def.id);
+      if (versionGuardada) {
+        return versionGuardada !== versionActualDefinicion(def);
+      }
+      return Boolean(
+        marcaGeneracion &&
+          def.actualizadoEn &&
+          def.actualizadoEn.getTime() > marcaGeneracion.creadoEn.getTime(),
+      );
+    });
+    const idsActivos = new Set(definiciones.map((def) => def.id));
+    const definicionesRetiradas = Array.from(versionesGuardadas.keys()).filter(
+      (id) => !idsActivos.has(id),
+    );
+    const existeFisicamente = totalTareas > 0 || excluidasPendientes > 0;
+    const cacheGestionado = marcaGeneracion != null;
+    const desactualizado =
+      sinPlanificar.length > 0 ||
+      definicionesModificadas.length > 0 ||
+      definicionesRetiradas.length > 0;
+
     return {
-      existe: totalTareas > 0 || excluidasPendientes > 0,
+      // Filas antiguas con borrador=true no se ofrecen como caché si nunca
+      // fueron marcadas por el flujo de borrador persistente.
+      existe: existeFisicamente && cacheGestionado,
+      cacheGestionado,
+      borradorAnteriorSinMarca: existeFisicamente && !cacheGestionado,
+      desactualizado,
       anio,
       mes,
       totalTareas,
@@ -499,7 +575,12 @@ export class DefinicionTareaPreventivaService {
       descripcionesSinPlanificar: sinPlanificar
         .slice(0, 5)
         .map((def) => def.descripcion),
-      ultimaActividad: ultimoEvento?.creadoEn ?? null,
+      definicionesModificadas: definicionesModificadas.length,
+      descripcionesModificadas: definicionesModificadas
+        .slice(0, 5)
+        .map((def) => def.descripcion),
+      definicionesRetiradas: definicionesRetiradas.length,
+      ultimaActividad: marcaGeneracion?.creadoEn ?? null,
     };
   }
 
@@ -1001,6 +1082,35 @@ export class DefinicionTareaPreventivaService {
       motivoMensaje: params.motivoMensaje,
       metadataJson: params.metadataJson,
     });
+  }
+
+  /**
+   * Las tareas de menor prioridad desplazadas por el generador dejan de ocupar
+   * agenda y pasan a la bandeja de excluidas; no deben quedar como filas ocultas
+   * en estado PENDIENTE_REPROGRAMACION dentro del borrador.
+   */
+  private async moverReemplazadasAExcluidas(params: {
+    tareaIds: number[];
+    reemplazadaPorDefId: number;
+    reemplazadaPorDescripcion: string;
+  }) {
+    const ids = Array.from(new Set(params.tareaIds));
+    for (const tareaId of ids) {
+      const excluida = await this.crearExcluidaDesdeTarea({
+        tareaId,
+        motivoTipo: "REEMPLAZO_PRIORIDAD",
+        motivoMensaje:
+          `Fue desplazada automáticamente por la tarea prioritaria ` +
+          `'${params.reemplazadaPorDescripcion}'.`,
+        metadataJson: {
+          reemplazadaPorDefId: params.reemplazadaPorDefId,
+          reemplazadaPorDescripcion: params.reemplazadaPorDescripcion,
+        },
+      });
+      if (excluida) {
+        await this.prisma.tarea.delete({ where: { id: tareaId } });
+      }
+    }
   }
 
   private async validarSlotPreventivaBorrador(params: {
@@ -2720,7 +2830,6 @@ export class DefinicionTareaPreventivaService {
       tamanoBloqueMinutos = 60,
       paisFestivos = "CO",
       incluirPublicadasEnAgenda = true,
-      confirmacionesReemplazo = [],
       modo = "RESET",
     } = params;
 
@@ -2731,55 +2840,6 @@ export class DefinicionTareaPreventivaService {
     });
 
     const novedades: NovedadCronograma[] = [];
-    const confirmacionesMap = new Map<
-      string,
-      { aceptar: boolean; candidataId?: number; reprogramarReemplazada?: boolean }
-    >();
-    const keyConfirmacion = (
-      defId: number,
-      fecha: string,
-      prioridadSolicitante: number,
-      prioridadObjetivo: number,
-    ) => `${defId}|${fecha}|${prioridadSolicitante}|${prioridadObjetivo}`;
-
-    for (const c of confirmacionesReemplazo) {
-      if (!c?.defId || !c?.fecha) continue;
-      confirmacionesMap.set(
-        keyConfirmacion(
-          Number(c.defId),
-          String(c.fecha),
-          Number(c.prioridadSolicitante ?? 0),
-          Number(c.prioridadObjetivo ?? 0),
-        ),
-        {
-          aceptar: Boolean(c.aceptar),
-          candidataId:
-            c.candidataId != null && Number.isFinite(Number(c.candidataId))
-              ? Number(c.candidataId)
-              : undefined,
-          reprogramarReemplazada:
-            c.reprogramarReemplazada == null
-              ? undefined
-              : Boolean(c.reprogramarReemplazada),
-        },
-      );
-    }
-
-    const obtenerConfirmacion = (args: {
-      defId: number;
-      fecha: string;
-      prioridadSolicitante: number;
-      prioridadObjetivo: number;
-    }) =>
-      confirmacionesMap.get(
-        keyConfirmacion(
-          args.defId,
-          args.fecha,
-          args.prioridadSolicitante,
-          args.prioridadObjetivo,
-        ),
-      );
-
     // 1️⃣ Definiciones activas
     const defs = await this.prisma.definicionTareaPreventiva.findMany({
       where: { conjuntoId, activo: true },
@@ -2788,6 +2848,23 @@ export class DefinicionTareaPreventivaService {
     });
 
     if (!defs.length) return { creadas: 0, novedades };
+
+    const marcaGeneracionAnterior =
+      modo === "CONSERVAR"
+        ? await this.prisma.preventivaBorradorEvento.findFirst({
+            where: {
+              conjuntoId,
+              periodoAnio,
+              periodoMes,
+              tipo: "BORRADOR_GENERADO",
+            },
+            orderBy: { creadoEn: "desc" },
+            select: { metadataJson: true },
+          })
+        : null;
+    const versionesAnteriores = versionesDefinicionesDesdeMetadata(
+      marcaGeneracionAnterior?.metadataJson,
+    );
 
     // 2️⃣ Horarios del conjunto
     const horarios = await this.prisma.conjuntoHorario.findMany({
@@ -2819,54 +2896,42 @@ export class DefinicionTareaPreventivaService {
     const month0 = periodoMes - 1;
     const inicioMes = new Date(periodoAnio, month0, 1, 0, 0, 0, 0);
     const finMes = new Date(periodoAnio, month0 + 1, 0, 23, 59, 59, 999);
+    const finBusquedaPrioridadAlta = new Date(finMes);
+    finBusquedaPrioridadAlta.setDate(finBusquedaPrioridadAlta.getDate() + 70);
     const fechasDelMes = enumerateDays(inicioMes, finMes);
+    const fechasPrioridadAlta = enumerateDays(inicioMes, finBusquedaPrioridadAlta);
 
     // 4️⃣ Festivos
     const festivosSet = await getFestivosSet({
       prisma: this.prisma,
       pais: paisFestivos,
       inicio: inicioMes,
-      fin: finMes,
+      fin: finBusquedaPrioridadAlta,
     });
 
-    const listarCandidatasPorPrioridadDia = async (
-      fechaDia: Date,
-      prioridades: Array<2 | 3>,
-    ): Promise<number[]> => {
-      if (!prioridades.length) return [];
-
-      const ini = new Date(
-        fechaDia.getFullYear(),
-        fechaDia.getMonth(),
-        fechaDia.getDate(),
-        0,
-        0,
-        0,
-        0,
-      );
-      const fin = new Date(
-        fechaDia.getFullYear(),
-        fechaDia.getMonth(),
-        fechaDia.getDate(),
-        23,
-        59,
-        59,
-        999,
-      );
-
-      const rows = await this.prisma.tarea.findMany({
-        where: {
-          conjuntoId,
-          fechaInicio: { lte: fin },
-          fechaFin: { gte: ini },
-          estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
-          prioridad: { in: prioridades },
-        },
-        select: { id: true },
-        orderBy: [{ prioridad: "desc" }, { fechaInicio: "asc" }, { id: "asc" }],
+    const resolverDiaProgramable = (start: Date, prioridad: number) => {
+      const dentroDelPeriodo = findNextValidDay({
+        start,
+        periodoAnio,
+        periodoMes,
+        prioridad,
+        horariosPorDia,
+        festivosSet,
       });
+      if (dentroDelPeriodo || prioridad !== 1) return dentroDelPeriodo;
 
-      return rows.map((r) => r.id);
+      // Una P1 del cierre del mes puede quedar en el siguiente mes, pero sigue
+      // perteneciendo al periodo que originó el cronograma.
+      const anterior = new Date(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate() - 1,
+      );
+      return siguienteDiaHabil({
+        fecha: anterior,
+        festivosSet,
+        horariosPorDia,
+      });
     };
 
     // 5️⃣ Borrador previo: se descarta solo en modo RESET.
@@ -2963,46 +3028,40 @@ export class DefinicionTareaPreventivaService {
           null;
         const durMinTotal = minutosEstimados ?? tamanoBloqueMinutos;
 
-        const diaProgramable = findNextValidDay({
-          start: diaBase,
-          periodoAnio,
-          periodoMes,
-          prioridad,
-          horariosPorDia,
-          festivosSet,
-        });
-          if (!diaProgramable) {
-            const diaBaseEsFestivo = festivosSet.has(dayKey(diaBase));
-            const diaBaseEsDomingo = dateToDiaSemana(diaBase) === DiaSemana.DOMINGO;
-            if (diaBaseEsFestivo || diaBaseEsDomingo) {
-              const mensaje = diaBaseEsDomingo
-                ? "La tarea cae en domingo y no se programo en el periodo."
-                : "La tarea cae en festivo y no se programo en el periodo.";
-              novedades.push({
-                tipo: "FESTIVO_OMITIDO",
-                defId: def.id,
-                descripcion: def.descripcion,
-                prioridad,
-                fecha: dayKey(diaBase),
+        const diaProgramable = resolverDiaProgramable(diaBase, prioridad);
+        if (!diaProgramable) {
+          const diaBaseEsFestivo = festivosSet.has(dayKey(diaBase));
+          const diaBaseEsDomingo =
+            dateToDiaSemana(diaBase) === DiaSemana.DOMINGO;
+          if (diaBaseEsFestivo || diaBaseEsDomingo) {
+            const mensaje = diaBaseEsDomingo
+              ? "La tarea cae en domingo y no se programo en el periodo."
+              : "La tarea cae en festivo y no se programo en el periodo.";
+            novedades.push({
+              tipo: "FESTIVO_OMITIDO",
+              defId: def.id,
+              descripcion: def.descripcion,
+              prioridad,
+              fecha: dayKey(diaBase),
+              motivo: diaBaseEsDomingo ? "DOMINGO" : "FESTIVO",
+              mensaje,
+            });
+            await this.crearExcluidaDesdeDefinicion({
+              conjuntoId,
+              periodoAnio,
+              periodoMes,
+              defId: def.id,
+              fechaObjetivo: diaBase,
+              duracionMinutos: Math.max(1, durMinTotal),
+              motivoTipo: "FESTIVO_OMITIDO",
+              motivoMensaje: mensaje,
+              metadataJson: {
                 motivo: diaBaseEsDomingo ? "DOMINGO" : "FESTIVO",
-                mensaje,
-              });
-              await this.crearExcluidaDesdeDefinicion({
-                conjuntoId,
-                periodoAnio,
-                periodoMes,
-                defId: def.id,
-                fechaObjetivo: diaBase,
-                duracionMinutos: Math.max(1, durMinTotal),
-                motivoTipo: "FESTIVO_OMITIDO",
-                motivoMensaje: mensaje,
-                metadataJson: {
-                  motivo: diaBaseEsDomingo ? "DOMINGO" : "FESTIVO",
-                },
-              });
-            }
-            continue;
+              },
+            });
           }
+          continue;
+        }
 
         // ✅ log: cayó en festivo/domingo y se movió
         const diaBaseEsFestivo = festivosSet.has(dayKey(diaBase));
@@ -3046,47 +3105,30 @@ export class DefinicionTareaPreventivaService {
         for (let p = 0; p < partesMin.length; p++) {
           const durMinParte = partesMin[p];
 
-          let diaParte = findNextValidDay({
-            start: cursorDia,
-            periodoAnio,
-            periodoMes,
-            prioridad,
-            horariosPorDia,
-            festivosSet,
-          });
+          let diaParte = resolverDiaProgramable(cursorDia, prioridad);
           if (!diaParte) break;
 
           // Fecha objetivo real de esta parte: la fase de rescate busca a partir de aqui.
           const diaObjetivoParte = new Date(diaParte);
 
           let agendada = false;
-          let pendienteConfirmacion:
-            | {
-                fecha: string;
-                prioridadObjetivo: 2 | 3;
-                candidatasIds: number[];
-              }
-            | null = null;
-          let diasSinCandidatasP3 = 0;
-          let diasConCandidatasP3SinHueco = 0;
-          const fechasConCandidatasP3 = new Set<string>();
           let diasConCandidatasP3ParaP2 = 0;
-          let diasSinCandidatasP3ParaP2 = 0;
-          let intentosConfirmadosP2ConP3Fallidos = 0;
 
-          // Regla: para P1 y P2, buscar hueco/reemplazo solo sobre la
-          // fecha objetivo actual (normalmente el siguiente dia habil).
+          // P2 se resuelve en su fecha objetivo. P1 continúa buscando días
+          // hábiles y nunca se convierte en una excluida.
           const finSemanaBusqueda = new Date(diaParte);
           finSemanaBusqueda.setHours(23, 59, 59, 999);
 
-          for (let guardDia = 0; guardDia < 8; guardDia++) {
+          const maxDiasBusqueda = prioridad === 1 ? 70 : 8;
+          for (let guardDia = 0; guardDia < maxDiasBusqueda; guardDia++) {
             if (!diaParte) break;
-            if ((prioridad === 1 || prioridad === 2) && +diaParte > +finSemanaBusqueda) break;
+            if (prioridad === 2 && +diaParte > +finSemanaBusqueda) break;
 
             // Nunca crear bloques fuera del periodo solicitado.
             if (
-              diaParte.getFullYear() !== periodoAnio ||
-              diaParte.getMonth() + 1 !== periodoMes
+              prioridad !== 1 &&
+              (diaParte.getFullYear() !== periodoAnio ||
+                diaParte.getMonth() + 1 !== periodoMes)
             ) {
               diaParte = null;
               break;
@@ -3154,7 +3196,7 @@ export class DefinicionTareaPreventivaService {
               ocupados: ocupadosGlobal,
               bloqueos,
               desiredStartMin: horario.startMin,
-              maxBloques: 2,
+              maxBloques: Number.MAX_SAFE_INTEGER,
             });
 
             if (bloquesFound) {
@@ -3262,11 +3304,10 @@ export class DefinicionTareaPreventivaService {
                 marcarComoReprogramada: false,
               };
 
-              const fechaIntento = dayKey(diaParte);
-
-              // P1: auto reemplaza P3; P2 solo por confirmacion del usuario.
+              // P1 es obligatoria: desplaza automáticamente P3 y, si aún no
+              // alcanza, P2. Si ese día no sirve continúa al siguiente hábil.
               if (prioridad === 1) {
-                const repAutoP3 = await intentarReemplazoPorPrioridadBaja({
+                const repAuto = await intentarReemplazoPorPrioridadBaja({
                   prisma: this.prisma,
                   conjuntoId,
                   fechaDia: diaParte,
@@ -3275,7 +3316,7 @@ export class DefinicionTareaPreventivaService {
                   bloqueos,
                   durMin: durMinParte,
                   payload,
-                  prioridadesCandidatas: [3],
+                  prioridadesCandidatas: [3, 2],
                   incluirBorradorEnAgenda: true,
                   incluirPublicadasEnAgenda,
                   onEvent: (ev) => {
@@ -3291,166 +3332,75 @@ export class DefinicionTareaPreventivaService {
                           reprogramadasIds: ev.reprogramadasIds,
                         });
                       }
-                    } else if (ev.tipo === "SIN_CANDIDATAS") {
-                      diasSinCandidatasP3++;
-                    } else if (ev.tipo === "SIN_HUECO") {
-                      diasConCandidatasP3SinHueco++;
-                      fechasConCandidatasP3.add(fechaIntento);
                     }
                   },
                 });
 
-                if (repAutoP3.ok) {
-                  creadas += repAutoP3.nuevaTareaIds.length;
+                if (repAuto.ok) {
+                  await this.moverReemplazadasAExcluidas({
+                    tareaIds: repAuto.reprogramadasIds,
+                    reemplazadaPorDefId: def.id,
+                    reemplazadaPorDescripcion: def.descripcion,
+                  });
+                  creadas += repAuto.nuevaTareaIds.length;
                   if (grupoPlanId)
-                    bloqueIndexCursor += repAutoP3.nuevaTareaIds.length;
+                    bloqueIndexCursor += repAuto.nuevaTareaIds.length;
 
                   agendada = true;
                   break;
                 }
 
-                const candidatasP2 = await listarCandidatasPorPrioridadDia(
-                  diaParte,
-                  [2],
-                );
-                const confirmP2 = obtenerConfirmacion({
-                  defId: def.id,
-                  fecha: fechaIntento,
-                  prioridadSolicitante: 1,
-                  prioridadObjetivo: 2,
+                diaParte = siguienteDiaHabil({
+                  fecha: diaParte,
+                  festivosSet,
+                  horariosPorDia,
                 });
-
-                if (confirmP2?.aceptar === true && candidatasP2.length) {
-                  const candidatasPreferidas = confirmP2.candidataId
-                    ? [confirmP2.candidataId]
-                    : candidatasP2;
-
-                  const repConfirmadoP2 = await intentarReemplazoPorPrioridadBaja(
-                    {
-                      prisma: this.prisma,
-                      conjuntoId,
-                      fechaDia: diaParte,
-                      startMin: horario.startMin,
-                      endMin: horario.endMin,
-                      bloqueos,
-                      durMin: durMinParte,
-                      payload,
-                      prioridadesCandidatas: [2],
-                      candidatasIdsPreferidas: candidatasPreferidas,
-                      marcarReemplazadasComoNoCompletadas:
-                        confirmP2.reprogramarReemplazada === false,
-                      incluirBorradorEnAgenda: true,
-                      incluirPublicadasEnAgenda,
-                      onEvent: (ev) => {
-                        if (
-                          ev.tipo === "REEMPLAZO" &&
-                          ev.reprogramadasIds.length
-                        ) {
-                          novedades.push({
-                            tipo: "REEMPLAZO_PRIORIDAD",
-                            defId: def.id,
-                            descripcion: def.descripcion,
-                            prioridad,
-                            fecha: dayKey(diaParte!),
-                            nuevaTareaIds: ev.nuevaTareaIds,
-                            reprogramadasIds: ev.reprogramadasIds,
-                            mensaje:
-                              "Reemplazo confirmado por usuario sobre prioridad 2.",
-                          });
-                        }
-                      },
-                    },
-                  );
-
-                  if (repConfirmadoP2.ok) {
-                    creadas += repConfirmadoP2.nuevaTareaIds.length;
-                    if (grupoPlanId)
-                      bloqueIndexCursor += repConfirmadoP2.nuevaTareaIds.length;
-                    agendada = true;
-                    break;
-                  }
-                } else if (confirmP2 == null && candidatasP2.length) {
-                  pendienteConfirmacion ??= {
-                    fecha: fechaIntento,
-                    prioridadObjetivo: 2,
-                    candidatasIds: candidatasP2,
-                  };
-                }
-
-                break;
+                continue;
               }
 
-              // P2: no reemplaza automatico; sugiere reemplazo de P3 con confirmacion.
-              const candidatasP3 = await listarCandidatasPorPrioridadDia(
-                diaParte,
-                [3],
-              );
-              if (candidatasP3.length) diasConCandidatasP3ParaP2++;
-              else diasSinCandidatasP3ParaP2++;
-
-              const confirmP3 = obtenerConfirmacion({
-                defId: def.id,
-                fecha: fechaIntento,
-                prioridadSolicitante: 2,
-                prioridadObjetivo: 3,
+              // P2 permanece en su día objetivo y reemplaza automáticamente
+              // tantas P3 como sean necesarias para completar el hueco.
+              const repAutoP3 = await intentarReemplazoPorPrioridadBaja({
+                prisma: this.prisma,
+                conjuntoId,
+                fechaDia: diaParte,
+                startMin: horario.startMin,
+                endMin: horario.endMin,
+                bloqueos,
+                durMin: durMinParte,
+                payload,
+                prioridadesCandidatas: [3],
+                incluirBorradorEnAgenda: true,
+                incluirPublicadasEnAgenda,
+                onEvent: (ev) => {
+                  if (ev.tipo === "REEMPLAZO" && ev.reprogramadasIds.length) {
+                    novedades.push({
+                      tipo: "REEMPLAZO_PRIORIDAD",
+                      defId: def.id,
+                      descripcion: def.descripcion,
+                      prioridad,
+                      fecha: dayKey(diaParte!),
+                      nuevaTareaIds: ev.nuevaTareaIds,
+                      reprogramadasIds: ev.reprogramadasIds,
+                      mensaje: "Reemplazo automático de prioridad 3.",
+                    });
+                  } else if (ev.tipo === "SIN_HUECO") {
+                    diasConCandidatasP3ParaP2++;
+                  }
+                },
               });
 
-              if (confirmP3?.aceptar === true && candidatasP3.length) {
-                const candidatasPreferidas = confirmP3.candidataId
-                  ? [confirmP3.candidataId]
-                  : candidatasP3;
-
-                const repConfirmadoP3 = await intentarReemplazoPorPrioridadBaja(
-                  {
-                    prisma: this.prisma,
-                    conjuntoId,
-                    fechaDia: diaParte,
-                    startMin: horario.startMin,
-                    endMin: horario.endMin,
-                    bloqueos,
-                    durMin: durMinParte,
-                    payload,
-                    prioridadesCandidatas: [3],
-                      candidatasIdsPreferidas: candidatasPreferidas,
-                      marcarReemplazadasComoNoCompletadas:
-                        confirmP3.reprogramarReemplazada === false,
-                      incluirBorradorEnAgenda: true,
-                    incluirPublicadasEnAgenda,
-                    onEvent: (ev) => {
-                      if (
-                        ev.tipo === "REEMPLAZO" &&
-                        ev.reprogramadasIds.length
-                      ) {
-                        novedades.push({
-                          tipo: "REEMPLAZO_PRIORIDAD",
-                          defId: def.id,
-                          descripcion: def.descripcion,
-                          prioridad,
-                          fecha: dayKey(diaParte!),
-                          nuevaTareaIds: ev.nuevaTareaIds,
-                          reprogramadasIds: ev.reprogramadasIds,
-                          mensaje:
-                            "Reemplazo confirmado por usuario sobre prioridad 3.",
-                        });
-                      }
-                    },
-                  },
-                );
-
-                if (repConfirmadoP3.ok) {
-                  creadas += repConfirmadoP3.nuevaTareaIds.length;
-                  if (grupoPlanId)
-                    bloqueIndexCursor += repConfirmadoP3.nuevaTareaIds.length;
-                  agendada = true;
-                  break;
-                }
-                intentosConfirmadosP2ConP3Fallidos++;
-              } else if (confirmP3 == null && candidatasP3.length) {
-                pendienteConfirmacion ??= {
-                  fecha: fechaIntento,
-                  prioridadObjetivo: 3,
-                  candidatasIds: candidatasP3,
-                };
+              if (repAutoP3.ok) {
+                await this.moverReemplazadasAExcluidas({
+                  tareaIds: repAutoP3.reprogramadasIds,
+                  reemplazadaPorDefId: def.id,
+                  reemplazadaPorDescripcion: def.descripcion,
+                });
+                creadas += repAutoP3.nuevaTareaIds.length;
+                if (grupoPlanId)
+                  bloqueIndexCursor += repAutoP3.nuevaTareaIds.length;
+                agendada = true;
+                break;
               }
 
               break;
@@ -3466,10 +3416,12 @@ export class DefinicionTareaPreventivaService {
           // temprano que quepa, la tarea se queda en su misma semana cuando
           // hay sitio y solo se corre a las siguientes cuando no lo hay.
           // ============================================================
-          if (!agendada) {
-            // Se incluye el propio dia objetivo: la fase A solo intenta 1 o 2 bloques,
-            // aqui puede partirse en mas y aprovechar huecos sueltos de ese mismo dia.
-            const diasRescate = fechasDelMes.filter(
+          if (!agendada && prioridad !== 2) {
+            // P3 puede aprovechar huecos posteriores del mes. P1 dispone además
+            // de un margen de 70 días para garantizar que nunca termine excluida.
+            const fuenteDiasRescate =
+              prioridad === 1 ? fechasPrioridadAlta : fechasDelMes;
+            const diasRescate = fuenteDiasRescate.filter(
               (dia) => +dia >= +diaObjetivoParte && horariosPorDia.has(dateToDiaSemana(dia)),
             );
 
@@ -3596,130 +3548,37 @@ export class DefinicionTareaPreventivaService {
             });
           }
 
-          if (!agendada && (prioridad === 1 || prioridad === 2)) {
-            if (pendienteConfirmacion != null) {
-              const p3Contexto =
-                prioridad === 1 && diasConCandidatasP3SinHueco > 0
-                  ? ` Se evaluaron candidatas P3 en ${diasConCandidatasP3SinHueco} dia(s), pero no liberaron hueco.`
-                  : "";
+          if (!agendada && prioridad === 2) {
+            const encontroCandidatas = diasConCandidatasP3ParaP2 > 0;
+            const motivoTipo = encontroCandidatas ? "SIN_HUECO" : "SIN_CANDIDATAS";
+            const mensaje = encontroCandidatas
+              ? "Las tareas P3 disponibles no liberaron capacidad suficiente en el dia objetivo."
+              : "No se encontraron tareas P3 para reemplazar en el dia objetivo.";
+            novedades.push({
+              tipo: motivoTipo,
+              defId: def.id,
+              descripcion: def.descripcion,
+              prioridad,
+              fecha: dayKey(diaObjetivoParte),
+              mensaje,
+            });
+            await this.crearExcluidaDesdeDefinicion({
+              conjuntoId,
+              periodoAnio,
+              periodoMes,
+              defId: def.id,
+              fechaObjetivo: diaObjetivoParte,
+              duracionMinutos: durMinParte,
+              motivoTipo,
+              motivoMensaje: mensaje,
+            });
+          }
 
-              const objetivo = pendienteConfirmacion.prioridadObjetivo;
-              const msgObjetivo =
-                objetivo === 2
-                  ? "Hay opcion de reemplazo con prioridad 2 y requiere confirmacion."
-                  : "Hay opcion de reemplazo con prioridad 3 y requiere confirmacion.";
-
-              novedades.push({
-                tipo: "REQUIERE_CONFIRMACION_REEMPLAZO",
-                defId: def.id,
-                descripcion: def.descripcion,
-                prioridad,
-                fecha: pendienteConfirmacion.fecha,
-                prioridadObjetivo: objetivo,
-                candidatasIds: pendienteConfirmacion.candidatasIds,
-                mensaje: `No se encontro hueco ni reemplazo automatico en la fecha objetivo.${p3Contexto} ${msgObjetivo}`,
-              });
-              await this.crearExcluidaDesdeDefinicion({
-                conjuntoId,
-                periodoAnio,
-                periodoMes,
-                defId: def.id,
-                fechaObjetivo: diaParte ?? cursorDia,
-                duracionMinutos: durMinParte,
-                motivoTipo: "REQUIERE_CONFIRMACION_REEMPLAZO",
-                motivoMensaje: `No se encontro hueco ni reemplazo automatico en la fecha objetivo.${p3Contexto} ${msgObjetivo}`,
-                metadataJson: {
-                  fecha: pendienteConfirmacion.fecha,
-                  prioridadObjetivo: objetivo,
-                  candidatasIds: pendienteConfirmacion.candidatasIds,
-                },
-              });
-            } else if (prioridad === 1 && diasConCandidatasP3SinHueco > 0) {
-              const fechas = Array.from(fechasConCandidatasP3).sort();
-              const fechasTxt =
-                fechas.length > 0
-                  ? ` Fechas evaluadas: ${fechas.slice(0, 4).join(", ")}${fechas.length > 4 ? ` (+${fechas.length - 4} mas)` : ""}.`
-                  : "";
-              novedades.push({
-                tipo: "SIN_HUECO",
-                defId: def.id,
-                descripcion: def.descripcion,
-                prioridad,
-                fecha: dayKey(diaParte ?? cursorDia),
-                mensaje: `Se encontraron candidatas P3 en la fecha objetivo, pero ninguna libero hueco para ubicar la tarea.${fechasTxt}`,
-              });
-              await this.crearExcluidaDesdeDefinicion({
-                conjuntoId,
-                periodoAnio,
-                periodoMes,
-                defId: def.id,
-                fechaObjetivo: diaParte ?? cursorDia,
-                duracionMinutos: durMinParte,
-                motivoTipo: "SIN_HUECO",
-                motivoMensaje: `Se encontraron candidatas P3 en la fecha objetivo, pero ninguna libero hueco para ubicar la tarea.${fechasTxt}`,
-                metadataJson: { fechasEvaluadas: fechas },
-              });
-            } else if (prioridad === 1) {
-              novedades.push({
-                tipo: "SIN_CANDIDATAS",
-                defId: def.id,
-                descripcion: def.descripcion,
-                prioridad,
-                fecha: dayKey(diaParte ?? cursorDia),
-                mensaje: `No se encontraron tareas candidatas P3 para reemplazo en la fecha objetivo.`,
-              });
-              await this.crearExcluidaDesdeDefinicion({
-                conjuntoId,
-                periodoAnio,
-                periodoMes,
-                defId: def.id,
-                fechaObjetivo: diaParte ?? cursorDia,
-                duracionMinutos: durMinParte,
-                motivoTipo: "SIN_CANDIDATAS",
-                motivoMensaje: "No se encontraron tareas candidatas P3 para reemplazo en la fecha objetivo.",
-              });
-            } else if (
-              diasConCandidatasP3ParaP2 > 0 ||
-              intentosConfirmadosP2ConP3Fallidos > 0
-            ) {
-              novedades.push({
-                tipo: "SIN_HUECO",
-                defId: def.id,
-                descripcion: def.descripcion,
-                prioridad,
-                fecha: dayKey(diaParte ?? cursorDia),
-                mensaje: `Se encontraron candidatas P3 para reemplazo en la fecha objetivo, pero no se logro agendar la tarea.`,
-              });
-              await this.crearExcluidaDesdeDefinicion({
-                conjuntoId,
-                periodoAnio,
-                periodoMes,
-                defId: def.id,
-                fechaObjetivo: diaParte ?? cursorDia,
-                duracionMinutos: durMinParte,
-                motivoTipo: "SIN_HUECO",
-                motivoMensaje: "Se encontraron candidatas P3 para reemplazo en la fecha objetivo, pero no se logro agendar la tarea.",
-              });
-            } else {
-              novedades.push({
-                tipo: "SIN_CANDIDATAS",
-                defId: def.id,
-                descripcion: def.descripcion,
-                prioridad,
-                fecha: dayKey(diaParte ?? cursorDia),
-                mensaje: `No se encontraron candidatas P3 para reemplazo de esta tarea de prioridad 2 en la fecha objetivo.`,
-              });
-              await this.crearExcluidaDesdeDefinicion({
-                conjuntoId,
-                periodoAnio,
-                periodoMes,
-                defId: def.id,
-                fechaObjetivo: diaParte ?? cursorDia,
-                duracionMinutos: durMinParte,
-                motivoTipo: "SIN_CANDIDATAS",
-                motivoMensaje: "No se encontraron candidatas P3 para reemplazo de esta tarea de prioridad 2 en la fecha objetivo.",
-              });
-            }
+          if (!agendada && prioridad === 1) {
+            throw new Error(
+              `No fue posible programar la tarea obligatoria '${def.descripcion}' ` +
+                "despues de buscar capacidad y reemplazos durante 70 dias.",
+            );
           }
 
           // mover cursor al siguiente día (para la siguiente parte)
@@ -3737,6 +3596,39 @@ export class DefinicionTareaPreventivaService {
       periodoMes,
       creadas,
       novedades,
+    });
+
+    const versionesDefiniciones: VersionDefinicionBorrador[] = defs.map((def) => {
+      const yaEstabaEnBorrador =
+        definicionesYaEnBorrador != null &&
+        (definicionesYaEnBorrador.defIds.has(def.id) ||
+          definicionesYaEnBorrador.claves.has(claveDefinicionBorrador(def)));
+      return {
+        id: def.id,
+        // CONSERVAR no vuelve a generar lo ya planificado: mantener su versión
+        // anterior permite seguir avisando si esa definición fue modificada.
+        actualizadoEn:
+          yaEstabaEnBorrador && versionesAnteriores.has(def.id)
+            ? versionesAnteriores.get(def.id)!
+            : versionActualDefinicion(def),
+      };
+    });
+
+    await this.registrarEventoBorrador({
+      conjuntoId,
+      periodoAnio,
+      periodoMes,
+      tipo: "BORRADOR_GENERADO",
+      accionAuditoria: AccionAuditoria.GENERAR_BORRADOR,
+      origenAuditoria: OrigenAuditoria.SCHEDULER,
+      detalle:
+        modo === "CONSERVAR"
+          ? "Se incorporaron preventivas al borrador guardado."
+          : "Se generó un nuevo borrador mensual.",
+      metadataJson: {
+        modo,
+        versionesDefiniciones,
+      },
     });
 
     return { creadas, novedades };

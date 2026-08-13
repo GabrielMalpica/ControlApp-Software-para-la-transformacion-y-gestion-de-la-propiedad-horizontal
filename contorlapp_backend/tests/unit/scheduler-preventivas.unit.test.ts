@@ -1,6 +1,9 @@
 import { DiaSemana, Frecuencia } from '@prisma/client';
 
-import { buscarHuecoDiaConSplitEarliest } from '../../src/utils/schedulerUtils';
+import {
+  buscarHuecoDiaConSplitEarliest,
+  findNextValidDay,
+} from '../../src/utils/schedulerUtils';
 import {
   DefinicionTareaPreventivaService,
   pickDaysByFrecuencia,
@@ -135,10 +138,53 @@ describe('Scheduler de preventivas', () => {
     });
   });
 
+  describe('reglas de festivos por prioridad', () => {
+    const horarios = new Map(
+      [
+        DiaSemana.LUNES,
+        DiaSemana.MARTES,
+        DiaSemana.MIERCOLES,
+        DiaSemana.JUEVES,
+        DiaSemana.VIERNES,
+      ].map((dia) => [dia, { startMin: HORA(8), endMin: HORA(16) }]),
+    );
+    const festivos = new Set(['2026-03-02']);
+
+    test('PU-S7 - P1 que cae en festivo pasa al siguiente dia habil', () => {
+      const fecha = findNextValidDay({
+        start: new Date(2026, 2, 2),
+        periodoAnio: 2026,
+        periodoMes: 3,
+        prioridad: 1,
+        horariosPorDia: horarios,
+        festivosSet: festivos,
+      });
+
+      expect(fecha).not.toBeNull();
+      expect(fecha?.getDate()).toBe(3);
+    });
+
+    test.each([2, 3])(
+      'PU-S8 - P%s que cae en festivo se omite para enviarla a excluidas',
+      (prioridad) => {
+        expect(
+          findNextValidDay({
+            start: new Date(2026, 2, 2),
+            periodoAnio: 2026,
+            periodoMes: 3,
+            prioridad,
+            horariosPorDia: horarios,
+            festivosSet: festivos,
+          }),
+        ).toBeNull();
+      },
+    );
+  });
+
   describe('validarProgramacionFrecuencia', () => {
     const service: any = new DefinicionTareaPreventivaService({} as any);
 
-    test('PU-S7 - QUINCENAL exige dia de la semana', () => {
+    test('PU-S9 - QUINCENAL exige dia de la semana', () => {
       expect(() =>
         service.validarProgramacionFrecuencia({
           frecuencia: Frecuencia.QUINCENAL,
@@ -154,7 +200,7 @@ describe('Scheduler de preventivas', () => {
       ).not.toThrow();
     });
 
-    test('PU-S8 - SEMANAL sigue exigiendo dia programado', () => {
+    test('PU-S10 - SEMANAL sigue exigiendo dia programado', () => {
       expect(() =>
         service.validarProgramacionFrecuencia({
           frecuencia: Frecuencia.SEMANAL,

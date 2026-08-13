@@ -256,6 +256,14 @@ describe('Borrador persistente', () => {
       const prisma = construirPrisma({ definiciones: [] });
       prisma.tarea.count.mockResolvedValue(12);
       prisma.preventivaExcluidaBorrador.count.mockResolvedValue(2);
+      prisma.preventivaBorradorEvento.findFirst.mockResolvedValue({
+        creadoEn: new Date(2026, 1, 28),
+        metadataJson: {
+          versionesDefiniciones: [
+            { id: 77, actualizadoEn: new Date(0).toISOString() },
+          ],
+        },
+      });
       prisma.definicionTareaPreventiva.findMany.mockResolvedValue([
         {
           id: 77,
@@ -294,6 +302,8 @@ describe('Borrador persistente', () => {
       expect(out.excluidasPendientes).toBe(2);
       expect(out.definicionesSinPlanificar).toBe(1);
       expect(out.descripcionesSinPlanificar).toEqual(['Poda de setos']);
+      expect(out.definicionesModificadas).toBe(0);
+      expect(out.desactualizado).toBe(true);
     });
 
     test('PU-B7 - sin tareas ni excluidas, el borrador no existe', async () => {
@@ -308,9 +318,70 @@ describe('Borrador persistente', () => {
 
       expect(out.existe).toBe(false);
     });
+
+    test('PU-B8 - filas antiguas sin marca no se ofrecen como cache guardado', async () => {
+      const prisma = construirPrisma({ definiciones: [] });
+      prisma.tarea.count.mockResolvedValue(4);
+      const service = new DefinicionTareaPreventivaService(prisma, ACTOR);
+
+      const out = await service.estadoBorrador({
+        conjuntoId: CONJUNTO,
+        anio: 2026,
+        mes: 3,
+      });
+
+      expect(out.existe).toBe(false);
+      expect(out.borradorAnteriorSinMarca).toBe(true);
+      expect(out.cacheGestionado).toBe(false);
+    });
+
+    test('PU-B9 - detecta una definicion modificada despues de generar', async () => {
+      const prisma = construirPrisma({ definiciones: [] });
+      prisma.tarea.count.mockResolvedValue(1);
+      prisma.definicionTareaPreventiva.findMany.mockResolvedValue([
+        {
+          id: 77,
+          descripcion: 'Lavado de fachada',
+          ubicacionId: 1,
+          elementoId: 2,
+          frecuencia: Frecuencia.MENSUAL,
+          creadoEn: new Date('2026-02-01T10:00:00Z'),
+          actualizadoEn: new Date('2026-03-02T10:00:00Z'),
+        },
+      ]);
+      prisma.tarea.findMany.mockResolvedValue([
+        {
+          definicionId: 77,
+          descripcion: 'Lavado de fachada',
+          ubicacionId: 1,
+          elementoId: 2,
+          frecuencia: Frecuencia.MENSUAL,
+        },
+      ]);
+      prisma.preventivaBorradorEvento.findFirst.mockResolvedValue({
+        creadoEn: new Date('2026-03-01T10:00:00Z'),
+        metadataJson: {
+          versionesDefiniciones: [
+            { id: 77, actualizadoEn: '2026-02-01T10:00:00.000Z' },
+          ],
+        },
+      });
+      const service = new DefinicionTareaPreventivaService(prisma, ACTOR);
+
+      const out = await service.estadoBorrador({
+        conjuntoId: CONJUNTO,
+        anio: 2026,
+        mes: 3,
+      });
+
+      expect(out.existe).toBe(true);
+      expect(out.desactualizado).toBe(true);
+      expect(out.definicionesModificadas).toBe(1);
+      expect(out.descripcionesModificadas).toEqual(['Lavado de fachada']);
+    });
   });
 
-  test('PU-B8 - descartarBorradorMes borra las tres tablas y audita', async () => {
+  test('PU-B10 - descartarBorradorMes borra las tres tablas y audita', async () => {
     const prisma = construirPrisma({ definiciones: [] });
     prisma.tarea.deleteMany.mockResolvedValue({ count: 12 });
 

@@ -12,6 +12,7 @@ jest.mock('../../src/utils/schedulerUtils', () => {
 });
 
 import { DefinicionTareaPreventivaService } from '../../src/services/DefinicionTareaPreventivaService';
+import { getFestivosSet } from '../../src/utils/schedulerUtils';
 
 const CONJUNTO = '9001';
 const DIAS_LABORALES = [
@@ -46,9 +47,15 @@ function construirPrisma(opts: {
       ? [
           {
             id: 1,
+            prioridad: 1,
             fechaInicio: new Date(`${dia}T08:00:00`),
             fechaFin: new Date(`${dia}T16:00:00`),
             duracionMinutos: 480,
+            borrador: true,
+            estado: 'ASIGNADA',
+            grupoPlanId: null,
+            bloqueIndex: null,
+            bloquesTotales: null,
             operarios: [{ id: 'op-1' }],
           },
         ]
@@ -147,7 +154,10 @@ function construirPrisma(opts: {
         const enRango = tareasCreadas.filter(
           (t) => (!hasta || t.fechaInicio <= hasta) && t.fechaFin >= desde,
         );
-        return [...preexistentes, ...enRango];
+        return [...preexistentes, ...enRango].filter(
+          (t: any) =>
+            !where?.prioridad?.in || where.prioridad.in.includes(t.prioridad),
+        );
       }),
       create: jest.fn(async ({ data }: any) => {
         const creada = { ...data, id: ++secuencia };
@@ -204,12 +214,64 @@ function construirPrisma(opts: {
 }
 
 describe('generarBorradorMensual - fase de rescate', () => {
-  test('PU-R1 - si el dia objetivo esta lleno, reubica en el siguiente dia habil en vez de excluir', async () => {
+  beforeEach(() => {
+    jest.mocked(getFestivosSet).mockResolvedValue(new Set<string>());
+  });
+
+  test.each([2, 3])(
+    'PU-R0 - una P%s en festivo pasa directamente a excluidas',
+    async (prioridad) => {
+      jest.mocked(getFestivosSet).mockResolvedValue(new Set(['2026-03-02']));
+      const prisma = construirPrisma({
+        diasOcupados: [],
+        duracionMinutosFija: 120,
+        prioridad,
+        diaMesProgramado: 2,
+      });
+      const service = new DefinicionTareaPreventivaService(prisma);
+
+      const { creadas } = await service.generarBorradorMensual({
+        conjuntoId: CONJUNTO,
+        periodoAnio: 2026,
+        periodoMes: 3,
+      });
+
+      expect(creadas).toBe(0);
+      expect(prisma.excluidasCreadas).toHaveLength(1);
+      expect(prisma.excluidasCreadas[0]).toMatchObject({
+        prioridad,
+        motivoTipo: 'FESTIVO_OMITIDO',
+      });
+    },
+  );
+
+  test('PU-R0B - una P1 en festivo se programa el siguiente dia habil', async () => {
+    jest.mocked(getFestivosSet).mockResolvedValue(new Set(['2026-03-02']));
+    const prisma = construirPrisma({
+      diasOcupados: [],
+      duracionMinutosFija: 120,
+      prioridad: 1,
+      diaMesProgramado: 2,
+    });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    const { creadas } = await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    });
+
+    expect(creadas).toBe(1);
+    expect(ymd(prisma.tareasCreadas[0].fechaInicio)).toBe('2026-03-03');
+    expect(prisma.excluidasCreadas).toHaveLength(0);
+  });
+
+  test('PU-R1 - una P3 sin espacio objetivo aprovecha el siguiente dia habil', async () => {
     // Lunes 2 de marzo de 2026 completamente ocupado; el martes 3 esta libre.
     const prisma = construirPrisma({
       diasOcupados: ['2026-03-02'],
       duracionMinutosFija: 120,
-      prioridad: 2,
+      prioridad: 3,
       diaMesProgramado: 2,
     });
 
@@ -240,6 +302,30 @@ describe('generarBorradorMensual - fase de rescate', () => {
 
     // La reubicacion queda persistida, no solo en la respuesta HTTP.
     expect(prisma.eventos.some((e: any) => e.tipo === 'REUBICADA_EN_PERIODO')).toBe(true);
+  });
+
+  test('PU-R1B - una P2 sin hueco ni P3 queda excluida en su dia objetivo', async () => {
+    const prisma = construirPrisma({
+      diasOcupados: ['2026-03-02'],
+      duracionMinutosFija: 120,
+      prioridad: 2,
+      diaMesProgramado: 2,
+    });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    const { creadas } = await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    });
+
+    expect(creadas).toBe(0);
+    expect(prisma.excluidasCreadas).toHaveLength(1);
+    expect(prisma.excluidasCreadas[0]).toMatchObject({
+      prioridad: 2,
+      motivoTipo: 'SIN_CANDIDATAS',
+    });
+    expect(ymd(prisma.excluidasCreadas[0].fechaObjetivo)).toBe('2026-03-02');
   });
 
   test('PU-R2 - una P3 sin espacio en todo el mes queda registrada como excluida', async () => {
@@ -333,9 +419,8 @@ describe('generarBorradorMensual - fase de rescate', () => {
       '2026-03-02 14-16',
     ]);
 
-    // Se mantuvo en su dia objetivo, solo que repartida.
-    const reubicacion = novedades.find((n) => n.tipo === 'REUBICADA_EN_PERIODO') as any;
-    expect(reubicacion.fecha).toBe('2026-03-02');
-    expect(reubicacion.fechaObjetivo).toBe('2026-03-02');
+    // Al admitir todos los huecos desde el primer intento ya no necesita pasar
+    // por la fase de rescate ni reportarse como reubicada.
+    expect(novedades.some((n) => n.tipo === 'REUBICADA_EN_PERIODO')).toBe(false);
   });
 });

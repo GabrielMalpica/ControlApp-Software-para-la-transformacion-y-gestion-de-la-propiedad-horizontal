@@ -737,7 +737,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     ocupados: ocupadosGlobal,
     bloqueos,
     desiredStartMin: startMin,
-    maxBloques: 2,
+    maxBloques: Number.MAX_SAFE_INTEGER,
   });
 
   if (normal) {
@@ -797,6 +797,9 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       ...(payload.borrador || !incluirPublicadasEnAgenda
         ? { borrador: true }
         : {}),
+      ...(operariosIds.length
+        ? { operarios: { some: { id: { in: operariosIds } } } }
+        : {}),
     },
     select: {
       id: true,
@@ -834,20 +837,64 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     return { ok: false, reason: "SIN_CANDIDATAS" };
   }
 
-  // helper: ids a excluir (si está en grupo -> todo el grupo)
-  const excluyeIds = async (t: (typeof candidatas)[number]) => {
-    if (!t.grupoPlanId) return new Set([t.id]);
+  // Los bloques de una misma tarea se reemplazan como una unidad. Se prioriza
+  // P3 sobre P2 y, dentro de cada prioridad, lo que libera más minutos primero.
+  const grupos: Array<{
+    prioridad: number;
+    ids: number[];
+    minutosDia: number;
+    fechaInicio: Date;
+  }> = [];
+  const gruposVistos = new Set<string>();
 
-    const grupo = await prisma.tarea.findMany({
-      where: { grupoPlanId: t.grupoPlanId },
-      select: { id: true },
+  for (const candidata of candidatas) {
+    const clave = candidata.grupoPlanId
+      ? `GRUPO:${candidata.grupoPlanId}`
+      : `TAREA:${candidata.id}`;
+    if (gruposVistos.has(clave)) continue;
+    gruposVistos.add(clave);
+
+    const miembrosDia = candidata.grupoPlanId
+      ? candidatas.filter((item) => item.grupoPlanId === candidata.grupoPlanId)
+      : [candidata];
+    const ids = candidata.grupoPlanId
+      ? (
+          await prisma.tarea.findMany({
+            where: { grupoPlanId: candidata.grupoPlanId },
+            select: { id: true },
+          })
+        ).map((item) => item.id)
+      : [candidata.id];
+    const intervalos = mergeIntervalos(
+      miembrosDia.map((item) => ({
+        i: Math.max(startMin, toMinOfDaySafe(item.fechaInicio)),
+        f: Math.min(endMin, toMinOfDaySafe(item.fechaFin)),
+      })),
+    );
+
+    grupos.push({
+      prioridad: candidata.prioridad,
+      ids,
+      minutosDia: intervalos.reduce(
+        (total, intervalo) => total + Math.max(0, intervalo.f - intervalo.i),
+        0,
+      ),
+      fechaInicio: candidata.fechaInicio,
     });
-    return new Set(grupo.map((x) => x.id));
-  };
+  }
 
-  // 4) probar reemplazos
-  for (const cand of candidatas) {
-    const idsAExcluir = await excluyeIds(cand);
+  grupos.sort((a, b) => {
+    if (a.prioridad !== b.prioridad) return b.prioridad - a.prioridad;
+    if (a.minutosDia !== b.minutosDia) return b.minutosDia - a.minutosDia;
+    return +a.fechaInicio - +b.fechaInicio;
+  });
+
+  // Acumula una o más tareas hasta liberar el plan completo. Antes cada tarea
+  // se probaba por separado, por lo que dos tareas cortas nunca podían dar paso
+  // a una tarea de mayor duración.
+  const idsAExcluir = new Set<number>();
+  for (const grupo of grupos) {
+    for (const id of grupo.ids) idsAExcluir.add(id);
 
     // reconstruir ocupadosGlobal sin esos ids
     let ocupSinCand: Intervalo[] = [];
@@ -903,7 +950,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       ocupados: ocupSinCand,
       bloqueos,
       desiredStartMin: startMin,
-      maxBloques: 2,
+      maxBloques: Number.MAX_SAFE_INTEGER,
     });
 
     if (!bloques) continue;
@@ -1135,11 +1182,11 @@ export function findNextValidDay(params: {
     // - si cae en festivo, se mueve/omite según prioridad
     // - el domingo se permite si el conjunto tiene horario para ese día
     if (esFestivo) {
-      if (prioridad === 1 || prioridad === 2) {
+      if (prioridad === 1) {
         cur.setDate(cur.getDate() + 1);
         continue; // sigue buscando el próximo día hábil con horario
       }
-      return null; // prioridad 3: se omite
+      return null; // prioridades 2 y 3: se omiten
     }
 
     const tieneHorario = horariosPorDia.has(ds);
