@@ -8,3 +8,6 @@ node_modules
 
 # Compiled JavaScript output (tracked by mistake, keeping rule for future)
 /dist
+
+# Los respaldos contienen datos sensibles y nunca deben versionarse.
+/tmp/*.dump

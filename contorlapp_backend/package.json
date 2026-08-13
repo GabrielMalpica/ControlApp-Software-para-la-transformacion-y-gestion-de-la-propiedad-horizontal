@@ -10,7 +10,9 @@
     "test": "node --max-old-space-size=4096 ./node_modules/jest/bin/jest.js --runInBand",
     "test:watch": "jest --watch",
     "test-prisma": "ts-node test.ts",
-    "clear-maquinaria": "node ./scripts/clear-maquinaria.js"
+    "clear-maquinaria": "node ./scripts/clear-maquinaria.js",
+    "db:prepare-production-export": "node ./scripts/prepare-temporary-db-export.js",
+    "db:clone-production": "node ./scripts/clone-production-database.js"
   },
   "keywords": [],
   "author": "",
