@@ -358,6 +358,9 @@ export function createTemporaryDatabaseExportRouter(
       );
       res.setHeader("Cache-Control", "no-store, max-age=0");
       res.setHeader("Pragma", "no-cache");
+      // The temporary deployment image pins pg_dump 18. This lets the local
+      // clone script choose a matching PostgreSQL 18 development target.
+      res.setHeader("X-ControlApp-Postgres-Major", "18");
       child.stdout.pipe(res, { end: false });
     });
 

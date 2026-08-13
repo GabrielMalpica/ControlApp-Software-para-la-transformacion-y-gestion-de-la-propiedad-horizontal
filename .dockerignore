@@ -1,0 +1,12 @@
+.git
+.agents
+.codex
+controlapp_frontend
+docs
+manuals
+plugins-woocommerce
+contorlapp_backend/node_modules
+contorlapp_backend/dist
+contorlapp_backend/tmp
+contorlapp_backend/.env
+**/*.dump

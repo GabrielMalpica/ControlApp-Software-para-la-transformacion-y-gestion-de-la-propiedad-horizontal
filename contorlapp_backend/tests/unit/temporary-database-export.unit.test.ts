@@ -157,7 +157,8 @@ describe("exportacion temporal de base de datos", () => {
       })
       .expect(200)
       .expect("Content-Type", "application/octet-stream")
-      .expect("Cache-Control", "no-store, max-age=0");
+      .expect("Cache-Control", "no-store, max-age=0")
+      .expect("X-ControlApp-Postgres-Major", "18");
 
     expect(response.body.toString()).toBe("PGDMP-test");
     expect(startDump).toHaveBeenCalledWith({

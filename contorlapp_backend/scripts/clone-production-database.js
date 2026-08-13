@@ -1,5 +1,7 @@
 const { spawn } = require("child_process");
+const { randomBytes } = require("crypto");
 const fs = require("fs");
+const net = require("net");
 const path = require("path");
 const { pipeline } = require("stream/promises");
 const { Readable } = require("stream");
@@ -176,17 +178,23 @@ function runTool(executable, args, env, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
       env,
-      stdio: ["ignore", options.showOutput ? "inherit" : "ignore", "pipe"],
+      stdio: ["ignore", options.showOutput ? "inherit" : "pipe", "pipe"],
       windowsHide: true,
     });
+    let stdout = "";
     let stderr = "";
+    if (child.stdout) {
+      child.stdout.on("data", (chunk) => {
+        if (stdout.length < 16_000) stdout += chunk.toString();
+      });
+    }
     child.stderr.on("data", (chunk) => {
       if (stderr.length < 16_000) stderr += chunk.toString();
     });
     child.once("error", reject);
     child.once("close", (code) => {
       if (code === 0) {
-        resolve();
+        resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
         return;
       }
       reject(new Error(stderr.trim() || `${path.basename(executable)} termino con codigo ${code}`));
@@ -209,6 +217,8 @@ async function downloadDump(endpoint, token, destination) {
     throw new Error(`La API respondio ${response.status}: ${detail}`);
   }
 
+  const sourceMajor = Number(response.headers.get("x-controlapp-postgres-major") ?? "0");
+
   await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(destination));
   const magic = Buffer.alloc(5);
   const handle = await fs.promises.open(destination, "r");
@@ -220,6 +230,222 @@ async function downloadDump(endpoint, token, destination) {
 
   if (magic.toString("ascii") !== "PGDMP") {
     throw new Error("El archivo recibido no es un respaldo valido de PostgreSQL");
+  }
+
+  return Number.isInteger(sourceMajor) && sourceMajor > 0 ? sourceMajor : 0;
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function canListen(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", () => resolve(false));
+    server.listen({ host: "127.0.0.1", port }, () => {
+      server.close(() => resolve(true));
+    });
+  });
+}
+
+async function findAvailablePort() {
+  for (let port = 55432; port <= 55532; port += 1) {
+    if (await canListen(port)) return port;
+  }
+  throw new Error("No se encontro un puerto local libre entre 55432 y 55532");
+}
+
+async function ensureDockerAvailable() {
+  try {
+    await runTool("docker", ["info", "--format", "{{.ServerVersion}}"], sanitizedProcessEnvironment());
+  } catch {
+    throw new Error(
+      "PostgreSQL 18 requiere Docker Desktop para mantener la misma version que produccion. Abre Docker Desktop, espera a que inicie y ejecuta nuevamente este comando.",
+    );
+  }
+}
+
+function dockerDatabaseUrl(originalUrl, port, user, password, database) {
+  const url = new URL(originalUrl);
+  url.protocol = "postgresql:";
+  url.hostname = "127.0.0.1";
+  url.port = String(port);
+  url.username = user;
+  url.password = password;
+  url.pathname = `/${database}`;
+  for (const parameter of [
+    "sslmode",
+    "sslcert",
+    "sslkey",
+    "sslrootcert",
+    "sslaccept",
+    "pgbouncer",
+  ]) {
+    url.searchParams.delete(parameter);
+  }
+  return url.toString();
+}
+
+async function updateLocalDatabaseUrl(newDatabaseUrl, tempDirectory, stamp) {
+  const envPath = path.join(backendRoot, ".env");
+  const previousContents = await fs.promises.readFile(envPath, "utf8");
+  const backupPath = path.join(tempDirectory, `local-env-before-clone-${stamp}.env`);
+  await fs.promises.writeFile(backupPath, previousContents, { mode: 0o600 });
+
+  const line = `DATABASE_URL=${newDatabaseUrl}`;
+  const nextContents = /^DATABASE_URL=.*$/m.test(previousContents)
+    ? previousContents.replace(/^DATABASE_URL=.*$/m, line)
+    : `${previousContents.replace(/\s*$/, "")}\n${line}\n`;
+  await fs.promises.writeFile(envPath, nextContents, { mode: 0o600 });
+  return backupPath;
+}
+
+async function cloneIntoDockerPostgres18({
+  dumpPath,
+  localConfig,
+  originalDatabaseUrl,
+  tempDirectory,
+  stamp,
+}) {
+  await ensureDockerAvailable();
+
+  const suffix = Date.now().toString(36);
+  const containerName = `controlapp-postgres18-${suffix}`;
+  const volumeName = `${containerName}-data`;
+  const port = await findAvailablePort();
+  const user = "controlapp_dev";
+  const password = randomBytes(24).toString("base64url");
+  const database = /^[A-Za-z0-9_-]+$/.test(localConfig.database)
+    ? localConfig.database
+    : "controlapp_bd";
+  const dockerEnvPath = path.join(tempDirectory, `docker-postgres-${stamp}.env`);
+  const dockerEnv = sanitizedProcessEnvironment();
+  let containerCreated = false;
+  let volumeCreated = false;
+
+  try {
+    await fs.promises.writeFile(
+      dockerEnvPath,
+      `POSTGRES_USER=${user}\nPOSTGRES_PASSWORD=${password}\nPOSTGRES_DB=${database}\n`,
+      { mode: 0o600 },
+    );
+    console.log("Preparando PostgreSQL 18 local en Docker (la primera vez puede descargar la imagen)...");
+    await runTool("docker", ["volume", "create", volumeName], dockerEnv);
+    volumeCreated = true;
+    await runTool(
+      "docker",
+      [
+        "run",
+        "--detach",
+        "--name",
+        containerName,
+        "--label",
+        "controlapp.temporary-production-clone=true",
+        "--restart",
+        "unless-stopped",
+        "--env-file",
+        dockerEnvPath,
+        "--publish",
+        `127.0.0.1:${port}:5432`,
+        "--volume",
+        `${volumeName}:/var/lib/postgresql`,
+        "postgres:18.4-bookworm",
+      ],
+      dockerEnv,
+    );
+    containerCreated = true;
+  } catch (error) {
+    if (containerCreated) {
+      await runTool("docker", ["rm", "--force", containerName], dockerEnv).catch(() => undefined);
+    }
+    if (volumeCreated) {
+      await runTool("docker", ["volume", "rm", volumeName], dockerEnv).catch(() => undefined);
+    }
+    throw error;
+  } finally {
+    await fs.promises.rm(dockerEnvPath, { force: true });
+  }
+
+  try {
+    let ready = false;
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      try {
+        await runTool(
+          "docker",
+          ["exec", containerName, "pg_isready", "--username", user, "--dbname", database],
+          dockerEnv,
+        );
+        ready = true;
+        break;
+      } catch {
+        await wait(1_000);
+      }
+    }
+    if (!ready) throw new Error("PostgreSQL 18 no estuvo listo despues de 90 segundos");
+
+    await runTool("docker", ["cp", dumpPath, `${containerName}:/tmp/production.dump`], dockerEnv);
+    console.log("Restaurando el respaldo en PostgreSQL 18 local...");
+    await runTool(
+      "docker",
+      [
+        "exec",
+        containerName,
+        "pg_restore",
+        "--username",
+        user,
+        "--dbname",
+        database,
+        "--exit-on-error",
+        "--no-owner",
+        "--no-privileges",
+        "/tmp/production.dump",
+      ],
+      dockerEnv,
+    );
+    const validation = await runTool(
+      "docker",
+      [
+        "exec",
+        containerName,
+        "psql",
+        "--username",
+        user,
+        "--dbname",
+        database,
+        "--tuples-only",
+        "--no-align",
+        "--command",
+        "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = 'public';",
+      ],
+      dockerEnv,
+    );
+    const tableCount = Number(validation.stdout);
+    if (!Number.isInteger(tableCount) || tableCount < 1) {
+      throw new Error("La restauracion no produjo tablas publicas y no se activara");
+    }
+
+    const newDatabaseUrl = dockerDatabaseUrl(
+      originalDatabaseUrl,
+      port,
+      user,
+      password,
+      database,
+    );
+    const envBackupPath = await updateLocalDatabaseUrl(newDatabaseUrl, tempDirectory, stamp);
+    console.log(`PostgreSQL 18 local activo en 127.0.0.1:${port}.`);
+    console.log(`Contenedor local: ${containerName}.`);
+    console.log(`Se actualizo contorlapp_backend/.env. Copia anterior: ${envBackupPath}`);
+    return { containerName, volumeName, port, tableCount };
+  } catch (error) {
+    if (containerCreated) {
+      await runTool("docker", ["rm", "--force", containerName], dockerEnv).catch(() => undefined);
+    }
+    if (volumeCreated) {
+      await runTool("docker", ["volume", "rm", volumeName], dockerEnv).catch(() => undefined);
+    }
+    throw error;
   }
 }
 
@@ -275,14 +501,6 @@ async function main() {
   const localConfig = options.downloadOnly
     ? null
     : localDatabaseConfig(process.env.DATABASE_URL ?? "");
-  const pgBin = findPostgresBin();
-  const tools = {
-    pgDump: path.join(pgBin, executableName("pg_dump")),
-    pgRestore: path.join(pgBin, executableName("pg_restore")),
-    dropdb: path.join(pgBin, executableName("dropdb")),
-    createdb: path.join(pgBin, executableName("createdb")),
-  };
-
   const tempDirectory = path.join(backendRoot, "tmp");
   await fs.promises.mkdir(tempDirectory, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -292,7 +510,33 @@ async function main() {
   let restoreCompleted = false;
 
   try {
-    await downloadDump(endpoint, token, productionDump);
+    const sourceMajor = await downloadDump(endpoint, token, productionDump);
+
+    if (sourceMajor >= 18) {
+      console.log(`El respaldo proviene de PostgreSQL ${sourceMajor}; se usara un destino local compatible.`);
+      if (options.downloadOnly) {
+        console.log(`Archivo conservado en: ${productionDump}`);
+        return;
+      }
+      await cloneIntoDockerPostgres18({
+        dumpPath: productionDump,
+        localConfig,
+        originalDatabaseUrl: process.env.DATABASE_URL,
+        tempDirectory,
+        stamp,
+      });
+      restoreCompleted = true;
+      console.log("Base de produccion clonada correctamente en PostgreSQL 18 local.");
+      return;
+    }
+
+    const pgBin = findPostgresBin();
+    const tools = {
+      pgDump: path.join(pgBin, executableName("pg_dump")),
+      pgRestore: path.join(pgBin, executableName("pg_restore")),
+      dropdb: path.join(pgBin, executableName("dropdb")),
+      createdb: path.join(pgBin, executableName("createdb")),
+    };
     await runTool(
       tools.pgRestore,
       ["--list", productionDump],
