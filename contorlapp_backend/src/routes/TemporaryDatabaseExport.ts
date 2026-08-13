@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "child_process";
 import { createHash, timingSafeEqual } from "crypto";
+import { existsSync, readdirSync } from "fs";
+import path from "path";
 import type { Readable } from "stream";
 import { Router } from "express";
 
@@ -27,6 +29,28 @@ function bearerToken(authorization: string | undefined) {
   return authorization.slice("Bearer ".length).trim();
 }
 
+function pgDumpExecutable() {
+  const configuredPath = process.env.PG_DUMP_PATH?.trim();
+  if (configuredPath) return configuredPath;
+
+  // Debian installs versioned PostgreSQL binaries here. Normally it also adds
+  // /usr/bin/pg_dump, but this fallback covers minimal deployment images.
+  const postgresLib = "/usr/lib/postgresql";
+  if (existsSync(postgresLib)) {
+    const versions = readdirSync(postgresLib, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort((a, b) => Number(b) - Number(a));
+
+    for (const version of versions) {
+      const candidate = path.join(postgresLib, version, "bin", "pg_dump");
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+
+  return "pg_dump";
+}
+
 function startPostgresDump(databaseUrl: string): DumpProcess {
   const dumpEnvironment = { ...process.env };
   for (const key of Object.keys(dumpEnvironment)) {
@@ -39,7 +63,7 @@ function startPostgresDump(databaseUrl: string): DumpProcess {
   dumpEnvironment.PGDATABASE = databaseUrl;
 
   return spawn(
-    "pg_dump",
+    pgDumpExecutable(),
     [
       "--format=custom",
       "--compress=6",

@@ -3,6 +3,8 @@
   "scripts": {
     "install:backend": "npm --prefix contorlapp_backend install --include=dev",
     "build": "npm run install:backend && npm --prefix contorlapp_backend run build",
-    "start": "npm --prefix contorlapp_backend start"
+    "start": "npm --prefix contorlapp_backend start",
+    "db:prepare-production-export": "npm --prefix contorlapp_backend run db:prepare-production-export --",
+    "db:clone-production": "npm --prefix contorlapp_backend run db:clone-production --"
   }
 }
