@@ -10,7 +10,9 @@ type DumpProcess = ChildProcess & {
   stderr: Readable;
 };
 
-type StartDump = (databaseUrl: string) => DumpProcess;
+type PgDumpConnection = Record<string, string>;
+
+type StartDump = (connection: PgDumpConnection) => DumpProcess;
 
 type TemporaryDatabaseExportOptions = {
   env?: NodeJS.ProcessEnv;
@@ -104,12 +106,73 @@ export function databaseUrlForPgDump(databaseUrl: string) {
   return url.toString();
 }
 
+const libpqEnvironmentByQueryParameter: Record<string, string> = {
+  application_name: "PGAPPNAME",
+  channel_binding: "PGCHANNELBINDING",
+  client_encoding: "PGCLIENTENCODING",
+  connect_timeout: "PGCONNECT_TIMEOUT",
+  gssencmode: "PGGSSENCMODE",
+  keepalives: "PGKEEPALIVES",
+  keepalives_count: "PGKEEPALIVESCOUNT",
+  keepalives_idle: "PGKEEPALIVESIDLE",
+  keepalives_interval: "PGKEEPALIVESINTERVAL",
+  options: "PGOPTIONS",
+  passfile: "PGPASSFILE",
+  sslcert: "PGSSLCERT",
+  sslcompression: "PGSSLCOMPRESSION",
+  sslcrl: "PGSSLCRL",
+  sslcrldir: "PGSSLCRLDIR",
+  sslkey: "PGSSLKEY",
+  ssl_max_protocol_version: "PGSSLMAXPROTOCOLVERSION",
+  ssl_min_protocol_version: "PGSSLMINPROTOCOLVERSION",
+  sslmode: "PGSSLMODE",
+  sslpassword: "PGSSLPASSWORD",
+  sslrootcert: "PGSSLROOTCERT",
+  sslsni: "PGSSLSNI",
+  target_session_attrs: "PGTARGETSESSIONATTRS",
+  tcp_user_timeout: "PGTCPUSER_TIMEOUT",
+};
+
+function decodeUrlComponent(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+export function pgDumpConnectionForDatabaseUrl(databaseUrl: string): PgDumpConnection {
+  const url = new URL(databaseUrlForPgDump(databaseUrl));
+  const database = decodeUrlComponent(url.pathname.replace(/^\//, ""));
+  if (!url.hostname || !database) {
+    throw new Error("DATABASE_URL no contiene host o base de datos");
+  }
+
+  const connection: PgDumpConnection = {
+    PGHOST: url.hostname.replace(/^\[|\]$/g, ""),
+    PGPORT: url.port || "5432",
+    PGDATABASE: database,
+  };
+  if (url.username) connection.PGUSER = decodeUrlComponent(url.username);
+  if (url.password) connection.PGPASSWORD = decodeUrlComponent(url.password);
+
+  for (const [queryParameter, environmentName] of Object.entries(
+    libpqEnvironmentByQueryParameter,
+  )) {
+    const value = url.searchParams.get(queryParameter);
+    if (value !== null) connection[environmentName] = value;
+  }
+
+  return connection;
+}
+
 function safePgDumpFailureReason(stderr: string) {
-  const versionMismatch = stderr.match(
-    /server version:\s*([\d.]+)[\s\S]*pg_dump version:\s*([\d.]+)/i,
-  );
-  if (versionMismatch) {
-    return `Version incompatible: PostgreSQL ${versionMismatch[1]}, pg_dump ${versionMismatch[2]}`;
+  const serverVersion = stderr.match(/server version:[^\d]*([\d.]+)/i)?.[1];
+  const dumpVersion = stderr.match(/pg_dump version:[^\d]*([\d.]+)/i)?.[1];
+  if (/version mismatch/i.test(stderr) || (serverVersion && dumpVersion)) {
+    return serverVersion && dumpVersion
+      ? `Version incompatible: PostgreSQL ${serverVersion}, pg_dump ${dumpVersion}`
+      : "La version de pg_dump no es compatible con PostgreSQL";
   }
 
   const invalidParameter = stderr.match(/invalid URI query parameter:\s*["']([^"']+)["']/i);
@@ -119,20 +182,38 @@ function safePgDumpFailureReason(stderr: string) {
   if (/password authentication failed/i.test(stderr)) {
     return "PostgreSQL rechazo las credenciales configuradas";
   }
+  if (/no password supplied/i.test(stderr)) {
+    return "La conexion de PostgreSQL no entrego una contrasena";
+  }
   if (/could not translate host name|name or service not known/i.test(stderr)) {
     return "El servidor no pudo resolver el host de PostgreSQL";
   }
-  if (/connection refused|could not connect to server/i.test(stderr)) {
+  if (/connection refused|could not connect to server|server closed the connection/i.test(stderr)) {
     return "El servidor no pudo conectarse a PostgreSQL";
   }
-  if (/SSL|certificate verify failed/i.test(stderr)) {
+  if (/too many clients|remaining connection slots/i.test(stderr)) {
+    return "PostgreSQL no tiene conexiones disponibles temporalmente";
+  }
+  if (/permission denied/i.test(stderr)) {
+    return "El usuario de DATABASE_URL no tiene permisos para respaldar todas las tablas";
+  }
+  if (/database .* does not exist/i.test(stderr)) {
+    return "La base indicada por DATABASE_URL no existe";
+  }
+  if (/timeout expired|connection timed out/i.test(stderr)) {
+    return "La conexion con PostgreSQL excedio el tiempo disponible";
+  }
+  if (/SSL|certificate verify failed|invalid sslmode/i.test(stderr)) {
     return "Fallo la configuracion SSL de PostgreSQL";
+  }
+  if (/query failed/i.test(stderr)) {
+    return "PostgreSQL rechazo una consulta necesaria para construir el respaldo";
   }
 
   return "pg_dump termino con error; revisa el evento temporary-db-export en Railway";
 }
 
-function startPostgresDump(databaseUrl: string): DumpProcess {
+function startPostgresDump(connection: PgDumpConnection): DumpProcess {
   const dumpEnvironment = { ...process.env };
   for (const key of Object.keys(dumpEnvironment)) {
     if (
@@ -141,7 +222,7 @@ function startPostgresDump(databaseUrl: string): DumpProcess {
       delete dumpEnvironment[key];
     }
   }
-  dumpEnvironment.PGDATABASE = databaseUrl;
+  Object.assign(dumpEnvironment, connection);
 
   return spawn(
     pgDumpExecutable(),
@@ -212,9 +293,9 @@ export function createTemporaryDatabaseExportRouter(
       return;
     }
 
-    let dumpDatabaseUrl: string;
+    let dumpConnection: PgDumpConnection;
     try {
-      dumpDatabaseUrl = databaseUrlForPgDump(databaseUrl);
+      dumpConnection = pgDumpConnectionForDatabaseUrl(databaseUrl);
     } catch {
       res.status(500).json({
         message: "DATABASE_URL no es una conexion PostgreSQL valida",
@@ -226,7 +307,7 @@ export function createTemporaryDatabaseExportRouter(
     let child: DumpProcess;
 
     try {
-      child = startDump(dumpDatabaseUrl);
+      child = startDump(dumpConnection);
     } catch {
       exportInProgress = false;
       res.status(503).json({

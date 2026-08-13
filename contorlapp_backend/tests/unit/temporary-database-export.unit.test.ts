@@ -5,6 +5,7 @@ import request from "supertest";
 import {
   createTemporaryDatabaseExportRouter,
   databaseUrlForPgDump,
+  pgDumpConnectionForDatabaseUrl,
 } from "../../src/routes/TemporaryDatabaseExport";
 
 function fakeSuccessfulDump(contents = "PGDMP-test") {
@@ -79,6 +80,21 @@ describe("exportacion temporal de base de datos", () => {
     expect(url.searchParams.has("schema")).toBe(false);
   });
 
+  test("entrega la conexion a pg_dump mediante variables nativas de libpq", () => {
+    expect(
+      pgDumpConnectionForDatabaseUrl(
+        "postgresql://usuario:contra%20segura@db.internal:5444/controlapp?connection_limit=10&pool_timeout=20&sslmode=require",
+      ),
+    ).toEqual({
+      PGHOST: "db.internal",
+      PGPORT: "5444",
+      PGDATABASE: "controlapp",
+      PGUSER: "usuario",
+      PGPASSWORD: "contra segura",
+      PGSSLMODE: "require",
+    });
+  });
+
   test("permanece oculta cuando no esta habilitada", async () => {
     const { app, startDump } = testApp({ TEMP_DB_EXPORT_ENABLED: "false" });
 
@@ -144,7 +160,11 @@ describe("exportacion temporal de base de datos", () => {
       .expect("Cache-Control", "no-store, max-age=0");
 
     expect(response.body.toString()).toBe("PGDMP-test");
-    expect(startDump).toHaveBeenCalledWith("postgresql://production.example/controlapp");
+    expect(startDump).toHaveBeenCalledWith({
+      PGHOST: "production.example",
+      PGPORT: "5432",
+      PGDATABASE: "controlapp",
+    });
   });
 
   test("informa una incompatibilidad de versiones sin exponer la conexion", async () => {
