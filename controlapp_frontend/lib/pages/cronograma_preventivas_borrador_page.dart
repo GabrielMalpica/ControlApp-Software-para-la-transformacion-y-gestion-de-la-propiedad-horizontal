@@ -175,6 +175,14 @@ class _CronogramaPreventivasBorradorPageState
   int get _preventivasSinPlanificar =>
       (_estadoBorrador['definicionesSinPlanificar'] as num?)?.toInt() ?? 0;
 
+  int get _preventivasModificadas =>
+      (_estadoBorrador['definicionesModificadas'] as num?)?.toInt() ?? 0;
+
+  int get _preventivasRetiradas =>
+      (_estadoBorrador['definicionesRetiradas'] as num?)?.toInt() ?? 0;
+
+  bool get _borradorDesactualizado => _estadoBorrador['desactualizado'] == true;
+
   /// Abre el periodo: si ya hay borrador guardado lo carga tal cual; si no,
   /// lo genera por primera vez.
   Future<void> _abrirBorrador() async {
@@ -4902,46 +4910,77 @@ class _CronogramaPreventivasBorradorPageState
     if (_estadoBorrador['existe'] != true) return const SizedBox.shrink();
 
     final pendientes = _preventivasSinPlanificar;
+    final modificadas = _preventivasModificadas;
+    final retiradas = _preventivasRetiradas;
+    final desactualizado = _borradorDesactualizado;
     final total = (_estadoBorrador['totalTareas'] as num?)?.toInt() ?? 0;
+    final cambios = <String>[
+      if (pendientes > 0) '$pendientes nueva(s)',
+      if (modificadas > 0) '$modificadas modificada(s)',
+      if (retiradas > 0) '$retiradas retirada(s)',
+    ];
+    final mensaje = desactualizado
+        ? 'Borrador guardado · $total tarea(s). Cambios detectados: '
+              '${cambios.join(', ')}. Incorporar conserva lo ya editado; '
+              'generar nuevo aplica también duraciones y configuraciones cambiadas.'
+        : 'Borrador guardado · $total tarea(s). Está actualizado con las preventivas.';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: pendientes > 0
+          color: desactualizado
               ? Colors.orange.withValues(alpha: 0.10)
               : Colors.green.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: pendientes > 0
+            color: desactualizado
                 ? Colors.orange.withValues(alpha: 0.35)
                 : Colors.green.withValues(alpha: 0.30),
           ),
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(
-              pendientes > 0 ? Icons.playlist_add : Icons.save_outlined,
+              desactualizado ? Icons.update : Icons.save_outlined,
               size: 18,
-              color: pendientes > 0
+              color: desactualizado
                   ? Colors.orange.shade900
                   : Colors.green.shade800,
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                pendientes > 0
-                    ? 'Borrador guardado · $total tarea(s). Hay $pendientes preventiva(s) sin planificar.'
-                    : 'Borrador guardado · $total tarea(s). Todas las preventivas están planificadas.',
-                style: const TextStyle(fontSize: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(mensaje, style: const TextStyle(fontSize: 12)),
+                  if (desactualizado) ...[
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        if (pendientes > 0)
+                          TextButton.icon(
+                            onPressed: _loading
+                                ? null
+                                : _incorporarPreventivasNuevas,
+                            icon: const Icon(Icons.playlist_add, size: 18),
+                            label: const Text('Incorporar nuevas'),
+                          ),
+                        OutlinedButton.icon(
+                          onPressed: _loading ? null : _regenerarDesdeCero,
+                          icon: const Icon(Icons.restart_alt, size: 18),
+                          label: const Text('Generar nuevo'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             ),
-            if (pendientes > 0)
-              TextButton(
-                onPressed: _loading ? null : _incorporarPreventivasNuevas,
-                child: const Text('Incorporar'),
-              ),
           ],
         ),
       ),
@@ -5209,6 +5248,7 @@ class _CronogramaPreventivasBorradorPageState
       return _WeekScheduleView(
         weekStart: weekStart,
         tareas: tareas,
+        tareasCompletas: tareasCompletas,
         horariosConjunto: _horariosConjunto,
         scaleMinutes: _escalaSemanalMinutos,
         horaInicio: _horaInicioJornada,
@@ -5267,6 +5307,7 @@ class _CronogramaPreventivasBorradorPageState
           child: _WeekScheduleView(
             weekStart: weekStart,
             tareas: tareas,
+            tareasCompletas: tareasCompletas,
             horariosConjunto: _horariosConjunto,
             scaleMinutes: _escalaSemanalMinutos,
             horaInicio: _horaInicioJornada,
@@ -5640,6 +5681,7 @@ Color _cronogramaBorradorColorBaseTareaSemana(TareaModel t) {
 class _WeekScheduleView extends StatefulWidget {
   final DateTime weekStart; // lunes 00:00
   final List<TareaModel> tareas;
+  final List<TareaModel> tareasCompletas;
   final List<HorarioConjunto> horariosConjunto;
   final int scaleMinutes;
   final int horaInicio;
@@ -5674,6 +5716,7 @@ class _WeekScheduleView extends StatefulWidget {
   const _WeekScheduleView({
     required this.weekStart,
     required this.tareas,
+    required this.tareasCompletas,
     required this.horariosConjunto,
     required this.scaleMinutes,
     required this.horaInicio,
@@ -5781,6 +5824,22 @@ class _DraggedWeekTask {
   bool get esExcluidaCompleta => excluida != null && bloque == null;
 }
 
+class _WeekDropPreview {
+  final int dayIndex;
+  final int startMinute;
+  final int duracionMinutos;
+  final bool valido;
+  final bool conflictoOtroOperario;
+
+  const _WeekDropPreview({
+    required this.dayIndex,
+    required this.startMinute,
+    required this.duracionMinutos,
+    required this.valido,
+    this.conflictoOtroOperario = false,
+  });
+}
+
 class _WeekScheduleViewState extends State<_WeekScheduleView> {
   final ScrollController _headerHCtrl = ScrollController();
   final ScrollController _hCtrl = ScrollController();
@@ -5797,6 +5856,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   List<_WeekTaskPlacement> _taskPlacementsCache = const [];
   String _taskPlacementsSignature = '';
   final Map<int, List<_MinuteRange>> _occupiedRangesByDay = {};
+  final Map<int, List<TareaModel>> _completeTasksByDay = {};
+  _WeekDropPreview? _dropPreview;
 
   double get pxPorMin {
     switch (widget.scaleMinutes) {
@@ -5900,6 +5961,16 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
         ..write(tarea.fechaFin.millisecondsSinceEpoch)
         ..write(';');
     }
+    buffer.write('|completas:');
+    for (final tarea in widget.tareasCompletas) {
+      buffer
+        ..write(tarea.id)
+        ..write(':')
+        ..write(tarea.fechaInicio.millisecondsSinceEpoch)
+        ..write(':')
+        ..write(tarea.fechaFin.millisecondsSinceEpoch)
+        ..write(';');
+    }
     return buffer.toString();
   }
 
@@ -5911,6 +5982,43 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     _occupiedRangesByDay
       ..clear()
       ..addAll(_buildOccupiedRangesByDay());
+    _completeTasksByDay
+      ..clear()
+      ..addAll(_buildCompleteTasksByDay());
+  }
+
+  Map<int, List<TareaModel>> _buildCompleteTasksByDay() {
+    final out = <int, List<TareaModel>>{};
+    for (final tarea in widget.tareasCompletas) {
+      final day = _dayIndex(tarea.fechaInicio.toLocal());
+      if (day < 0 || day > 6) continue;
+      out.putIfAbsent(day, () => <TareaModel>[]).add(tarea);
+    }
+    return out;
+  }
+
+  Set<String> _operariosArrastrados(_DraggedWeekTask dragged) {
+    if (dragged.tarea != null) return dragged.tarea!.operariosIds.toSet();
+    return dragged.excluida?.operariosIds.toSet() ?? const <String>{};
+  }
+
+  bool _hayConflictoDeOperarios({
+    required _DraggedWeekTask dragged,
+    required int dayIndex,
+    required int startMinute,
+  }) {
+    final operarios = _operariosArrastrados(dragged);
+    if (operarios.isEmpty) return false;
+    final endMinute = startMinute + dragged.duracionMinutos;
+    return (_completeTasksByDay[dayIndex] ?? const <TareaModel>[]).any((tarea) {
+      if (tarea.id == dragged.tarea?.id) return false;
+      if (!tarea.operariosIds.any(operarios.contains)) return false;
+      final inicio = tarea.fechaInicio.toLocal();
+      final fin = tarea.fechaFin.toLocal();
+      final tareaInicio = inicio.hour * 60 + inicio.minute;
+      final tareaFin = fin.hour * 60 + fin.minute;
+      return startMinute < tareaFin && endMinute > tareaInicio;
+    });
   }
 
   Map<int, List<_MinuteRange>> _buildOccupiedRangesByDay() {
@@ -5944,6 +6052,13 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   int _snapToGridForward(int minutes) {
     final snap = widget.scaleMinutes <= 15 ? widget.scaleMinutes : _snapMinutes;
     return ((minutes + snap - 1) ~/ snap) * snap;
+  }
+
+  String _formatMinuteOfDay(int minutes) {
+    final safe = minutes.clamp(0, 24 * 60);
+    final hour = (safe ~/ 60).toString().padLeft(2, '0');
+    final minute = (safe % 60).toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 
   List<_MinuteRange> _rangosDisponiblesDia(int dayIndex) {
@@ -6056,6 +6171,45 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
         .where((range) => range.tareaId != excluirTareaId)
         .toList();
 
+    bool inicioValido(int candidate) {
+      if (!_cabeCompletaEnRangoDisponible(
+        startMinute: candidate,
+        duracionMinutos: duracion,
+        rangosDisponibles: rangosDisponibles,
+      )) {
+        return false;
+      }
+      return !spans.any(
+        (range) =>
+            candidate < range.end && (candidate + duracion) > range.start,
+      );
+    }
+
+    // Imán a bordes reales: si se suelta cerca del final de otra tarea o de
+    // un hueco exacto, se usa ese minuto sin redondearlo al siguiente bloque.
+    // Esto permite colocar 15:00-16:00 aunque la escala visual sea de 15 min.
+    final snap = widget.scaleMinutes <= 15 ? widget.scaleMinutes : _snapMinutes;
+    final tolerancia = snap.clamp(5, 10);
+    final candidatosMagneticos =
+        <int>{
+          for (final range in spans)
+            if ((desiredMinuteOfDay - range.end).abs() <= tolerancia) range.end,
+          for (final range in spans)
+            if ((desiredMinuteOfDay - (range.start - duracion)).abs() <=
+                tolerancia)
+              range.start - duracion,
+          for (final range in rangosDisponibles)
+            if ((desiredMinuteOfDay - range.start).abs() <= tolerancia)
+              range.start,
+        }.where((candidate) => candidate >= inicioJornada).toList()..sort(
+          (a, b) => (a - desiredMinuteOfDay).abs().compareTo(
+            (b - desiredMinuteOfDay).abs(),
+          ),
+        );
+    for (final candidate in candidatosMagneticos) {
+      if (inicioValido(candidate)) return candidate;
+    }
+
     var start = _snapToGridNearest(desiredMinuteOfDay);
     if (start < inicioJornada) {
       start = _snapToGridForward(inicioJornada);
@@ -6091,7 +6245,9 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       for (final range in spans) {
         final overlaps = start < range.end && (start + duracion) > range.start;
         if (overlaps) {
-          final nextStart = _snapToGridForward(range.end);
+          // El final de una tarea es un borde válido (los intervalos son
+          // [inicio, fin)); no se debe perder hasta un bloque de 15 minutos.
+          final nextStart = range.end;
           if (nextStart <= start) return null;
           start = nextStart;
           ajustado = true;
@@ -6103,10 +6259,59 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     return null;
   }
 
+  void _actualizarPrevisualizacion({
+    required _DraggedWeekTask dragged,
+    required int dayIndex,
+    required double localDy,
+  }) {
+    final minuteFromGrid = (localDy / pxPorMin).round();
+    final desiredMinute = (_horaInicio * 60) + minuteFromGrid;
+    final resolved = _resolverInicioLibreEnDia(
+      duracionMinutos: dragged.duracionMinutos,
+      excluirTareaId: dragged.tarea?.id,
+      dayIndex: dayIndex,
+      desiredMinuteOfDay: desiredMinute,
+    );
+    final inicioVisible = _horaInicio * 60;
+    final finVisible = _horaFin * 60;
+    final fallback = _snapToGridNearest(
+      desiredMinute,
+    ).clamp(inicioVisible, finVisible - 1).toInt();
+    final previewStart = resolved ?? fallback;
+    final conflictoOtroOperario = _hayConflictoDeOperarios(
+      dragged: dragged,
+      dayIndex: dayIndex,
+      startMinute: previewStart,
+    );
+    final nueva = _WeekDropPreview(
+      dayIndex: dayIndex,
+      startMinute: previewStart,
+      duracionMinutos: dragged.duracionMinutos,
+      valido: resolved != null && !conflictoOtroOperario,
+      conflictoOtroOperario: conflictoOtroOperario,
+    );
+    final actual = _dropPreview;
+    if (actual?.dayIndex == nueva.dayIndex &&
+        actual?.startMinute == nueva.startMinute &&
+        actual?.duracionMinutos == nueva.duracionMinutos &&
+        actual?.valido == nueva.valido &&
+        actual?.conflictoOtroOperario == nueva.conflictoOtroOperario) {
+      return;
+    }
+    setState(() => _dropPreview = nueva);
+  }
+
+  void _limpiarPrevisualizacion([int? dayIndex]) {
+    if (_dropPreview == null) return;
+    if (dayIndex != null && _dropPreview!.dayIndex != dayIndex) return;
+    setState(() => _dropPreview = null);
+  }
+
   Future<void> _intentarMoverTareaSemana({
     required _DraggedWeekTask dragged,
     required int dayIndex,
     required double localDy,
+    int? inicioPrevisualizado,
   }) async {
     if (_moviendoTarea) return;
     final targetDay = widget.weekStart.add(Duration(days: dayIndex));
@@ -6122,12 +6327,14 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
     final minuteFromGrid = (localDy / pxPorMin).round();
     final minuteOfDay = (_horaInicio * 60) + minuteFromGrid;
-    final startMinute = _resolverInicioLibreEnDia(
-      duracionMinutos: dragged.duracionMinutos,
-      excluirTareaId: dragged.tarea?.id,
-      dayIndex: dayIndex,
-      desiredMinuteOfDay: minuteOfDay,
-    );
+    final startMinute =
+        inicioPrevisualizado ??
+        _resolverInicioLibreEnDia(
+          duracionMinutos: dragged.duracionMinutos,
+          excluirTareaId: dragged.tarea?.id,
+          dayIndex: dayIndex,
+          desiredMinuteOfDay: minuteOfDay,
+        );
 
     if (startMinute == null) {
       AppFeedback.showFromSnackBar(
@@ -6395,6 +6602,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
   @override
   void dispose() {
+    _weekDragActiveNotifier.removeListener(_onDragActiveChanged);
     _headerHCtrl.dispose();
     _hCtrl.dispose();
     _vCtrl.dispose();
@@ -6404,6 +6612,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
   @override
   void initState() {
     super.initState();
+    _weekDragActiveNotifier.addListener(_onDragActiveChanged);
     _rebuildDerivedWeekDataIfNeeded();
     _headerHCtrl.addListener(() {
       if (_syncingBody || !_hCtrl.hasClients) return;
@@ -6417,6 +6626,12 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       _headerHCtrl.jumpTo(_hCtrl.offset);
       _syncingBody = false;
     });
+  }
+
+  void _onDragActiveChanged() {
+    if (!_weekDragActiveNotifier.value && mounted) {
+      _limpiarPrevisualizacion();
+    }
   }
 
   @override
@@ -6651,6 +6866,26 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                   (details) {
                                                     return !_moviendoTarea;
                                                   },
+                                              onMove: (details) {
+                                                final box =
+                                                    targetContext
+                                                            .findRenderObject()
+                                                        as RenderBox?;
+                                                final local = box
+                                                    ?.globalToLocal(
+                                                      details.offset,
+                                                    );
+                                                if (local == null) return;
+                                                _actualizarPrevisualizacion(
+                                                  dragged: details.data,
+                                                  dayIndex: dayIndex,
+                                                  localDy: local.dy,
+                                                );
+                                              },
+                                              onLeave: (_) =>
+                                                  _limpiarPrevisualizacion(
+                                                    dayIndex,
+                                                  ),
                                               onAcceptWithDetails: (details) async {
                                                 final box =
                                                     targetContext
@@ -6660,10 +6895,37 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                     ?.globalToLocal(
                                                       details.offset,
                                                     );
+                                                final preview = _dropPreview;
+                                                if (preview != null &&
+                                                    preview.dayIndex ==
+                                                        dayIndex &&
+                                                    preview
+                                                        .conflictoOtroOperario) {
+                                                  _limpiarPrevisualizacion();
+                                                  AppFeedback.showFromSnackBar(
+                                                    context,
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Uno de los operarios de esta tarea ya está ocupado en ese horario.',
+                                                      ),
+                                                    ),
+                                                  );
+                                                  return;
+                                                }
+                                                final previewStart =
+                                                    preview != null &&
+                                                        preview.dayIndex ==
+                                                            dayIndex &&
+                                                        preview.valido
+                                                    ? preview.startMinute
+                                                    : null;
+                                                _limpiarPrevisualizacion();
                                                 await _intentarMoverTareaSemana(
                                                   dragged: details.data,
                                                   dayIndex: dayIndex,
                                                   localDy: local?.dy ?? 0,
+                                                  inicioPrevisualizado:
+                                                      previewStart,
                                                 );
                                               },
                                               builder: (context, _, __) =>
@@ -6676,6 +6938,77 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   );
                                 },
                               ),
+
+                              if (_dropPreview
+                                  case final _WeekDropPreview preview)
+                                Builder(
+                                  builder: (_) {
+                                    final naturalTop =
+                                        (preview.startMinute -
+                                            (_horaInicio * 60)) *
+                                        pxPorMin;
+                                    final previewHeight =
+                                        (preview.duracionMinutos * pxPorMin)
+                                            .clamp(24.0, heightGrid)
+                                            .toDouble();
+                                    final maxTop = (heightGrid - previewHeight)
+                                        .clamp(0.0, heightGrid)
+                                        .toDouble();
+                                    final previewTop = naturalTop
+                                        .clamp(0.0, maxTop)
+                                        .toDouble();
+                                    final previewColor = preview.valido
+                                        ? Colors.green.shade700
+                                        : Colors.red.shade700;
+                                    final endMinute =
+                                        preview.startMinute +
+                                        preview.duracionMinutos;
+
+                                    return Positioned(
+                                      left:
+                                          anchoHora +
+                                          preview.dayIndex * colWidth +
+                                          5,
+                                      top: previewTop,
+                                      width: colWidth - 10,
+                                      height: previewHeight,
+                                      child: IgnorePointer(
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 7,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: previewColor.withValues(
+                                              alpha: 0.2,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: previewColor,
+                                              width: 2,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            preview.valido
+                                                ? '${_formatMinuteOfDay(preview.startMinute)} - ${_formatMinuteOfDay(endMinute)}'
+                                                : preview.conflictoOtroOperario
+                                                ? 'Otro operario ya está ocupado'
+                                                : 'No cabe aquí',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: previewColor,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
 
                               // tareas
                               ...taskPlacements.map((placement) {
@@ -6886,6 +7219,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   height: height,
                                   child: LongPressDraggable<_DraggedWeekTask>(
                                     data: draggedData,
+                                    dragAnchorStrategy:
+                                        pointerDragAnchorStrategy,
                                     maxSimultaneousDrags: _moviendoTarea
                                         ? 0
                                         : 1,
@@ -7733,6 +8068,8 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                       excluida: item,
                                       bloque: bloque,
                                     ),
+                                    dragAnchorStrategy:
+                                        pointerDragAnchorStrategy,
                                     onDragStarted: () {
                                       _weekDragActiveNotifier.value = true;
                                     },
@@ -7765,6 +8102,7 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
 
                       return LongPressDraggable<_DraggedWeekTask>(
                         data: _DraggedWeekTask.fromExcluida(excluida: item),
+                        dragAnchorStrategy: pointerDragAnchorStrategy,
                         onDragStarted: () {
                           _weekDragActiveNotifier.value = true;
                         },
