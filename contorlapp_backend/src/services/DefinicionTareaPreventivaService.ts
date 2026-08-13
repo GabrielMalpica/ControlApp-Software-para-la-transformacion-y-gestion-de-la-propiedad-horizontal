@@ -49,7 +49,6 @@ import {
   intentarReemplazoPorPrioridadBaja,
   isFestivoDate,
   mergeIntervalos,
-  siguienteDiaHabil,
   splitMinutes,
   toDateAtMin,
   toMinOfDay,
@@ -84,6 +83,10 @@ type Patron =
 
 type Jornada = "COMPLETA" | "MEDIO_TIEMPO";
 type BloqueProgramacion = { fechaInicio: Date; fechaFin: Date };
+type IntervaloAgendaScheduler = Intervalo & {
+  tareaId: number;
+  borrador: boolean;
+};
 type EstadoBloqueExcluida = "PENDIENTE" | "AGENDADO";
 type BloqueExcluidaManual = {
   id: string;
@@ -389,12 +392,177 @@ const ReordenarTareasDiaBorradorDTO = z.object({
 
 export class DefinicionTareaPreventivaService {
   private auditoria: AuditoriaService;
+  private disponibilidadSchedulerCache = new Map<
+    string,
+    { ok: boolean; noDisponibles: string[] }
+  >();
+  private bloqueosPatronSchedulerCache = new Map<string, Bloqueo[]>();
+  private limiteSemanalSchedulerCache = new Map<string, number>();
+  private minutosSemanaSchedulerCache = new Map<string, number>();
+  private agendaSchedulerActiva = false;
+  private agendaScheduler = new Map<string, IntervaloAgendaScheduler[]>();
 
   constructor(
     private prisma: PrismaClient,
     private actor?: ActorAuditoria,
   ) {
     this.auditoria = new AuditoriaService(prisma);
+  }
+
+  private claveOperariosDia(fecha: Date, operariosIds: string[]) {
+    return `${dayKey(fecha)}|${[...operariosIds].sort().join(",")}`;
+  }
+
+  private async disponibilidadScheduler(params: {
+    fecha: Date;
+    operariosIds: string[];
+  }): Promise<{ ok: boolean; noDisponibles: string[] }> {
+    if (!params.operariosIds.length) return { ok: true, noDisponibles: [] };
+    const clave = this.claveOperariosDia(params.fecha, params.operariosIds);
+    const existente = this.disponibilidadSchedulerCache.get(clave);
+    if (existente) return existente;
+    const disponibilidad = await validarOperariosDisponiblesEnFecha({
+      prisma: this.prisma,
+      fecha: params.fecha,
+      operariosIds: params.operariosIds,
+    });
+    this.disponibilidadSchedulerCache.set(clave, disponibilidad);
+    return disponibilidad;
+  }
+
+  private async bloqueosPatronScheduler(params: {
+    fecha: Date;
+    horario: HorarioDia;
+    operariosIds: string[];
+  }): Promise<Bloqueo[]> {
+    if (!params.operariosIds.length) return [];
+    const clave = this.claveOperariosDia(params.fecha, params.operariosIds);
+    const existentes = this.bloqueosPatronSchedulerCache.get(clave);
+    if (existentes) return existentes;
+    const bloqueos = await buildBloqueosPorPatronJornada({
+      prisma: this.prisma,
+      fechaDia: params.fecha,
+      horarioDia: params.horario,
+      operariosIds: params.operariosIds,
+    });
+    this.bloqueosPatronSchedulerCache.set(clave, bloqueos);
+    return bloqueos;
+  }
+
+  private registrarBloquesEnCacheSemanal(
+    bloques: BloqueProgramacion[],
+    operariosIds: string[],
+  ) {
+    for (const bloque of bloques) {
+      const semana = dayKey(inicioSemana(bloque.fechaInicio));
+      const minutos = Math.max(
+        1,
+        Math.round((+bloque.fechaFin - +bloque.fechaInicio) / 60_000),
+      );
+      for (const operarioId of operariosIds) {
+        for (const incluirPublicadas of [true, false]) {
+          const clave = `${operarioId}|${semana}|${incluirPublicadas}`;
+          const actuales = this.minutosSemanaSchedulerCache.get(clave);
+          if (actuales != null) {
+            this.minutosSemanaSchedulerCache.set(clave, actuales + minutos);
+          }
+        }
+      }
+    }
+  }
+
+  private claveAgendaScheduler(operarioId: string, fecha: Date) {
+    return `${operarioId}|${dayKey(fecha)}`;
+  }
+
+  private async iniciarAgendaScheduler(params: {
+    conjuntoId: string;
+    inicio: Date;
+    fin: Date;
+  }) {
+    this.agendaScheduler.clear();
+    const tareas = await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: params.conjuntoId,
+        fechaInicio: { lte: params.fin },
+        fechaFin: { gte: params.inicio },
+        estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
+      },
+      select: {
+        id: true,
+        fechaInicio: true,
+        fechaFin: true,
+        borrador: true,
+        operarios: { select: { id: true } },
+      },
+    });
+    this.agendaSchedulerActiva = true;
+    for (const tarea of tareas) {
+      this.registrarIntervaloAgendaScheduler({
+        tareaId: tarea.id,
+        fechaInicio: tarea.fechaInicio,
+        fechaFin: tarea.fechaFin,
+        operariosIds: tarea.operarios.map((operario) => operario.id),
+        borrador: tarea.borrador,
+      });
+    }
+  }
+
+  private registrarIntervaloAgendaScheduler(params: {
+    tareaId: number;
+    fechaInicio: Date;
+    fechaFin: Date;
+    operariosIds: string[];
+    borrador: boolean;
+  }) {
+    if (!this.agendaSchedulerActiva) return;
+    const intervalo: IntervaloAgendaScheduler = {
+      i: toMinOfDay(params.fechaInicio),
+      f: toMinOfDay(params.fechaFin),
+      tareaId: params.tareaId,
+      borrador: params.borrador,
+    };
+    for (const operarioId of params.operariosIds) {
+      const clave = this.claveAgendaScheduler(operarioId, params.fechaInicio);
+      const intervalos = this.agendaScheduler.get(clave) ?? [];
+      intervalos.push(intervalo);
+      this.agendaScheduler.set(clave, intervalos);
+    }
+  }
+
+  private retirarTareasAgendaScheduler(tareaIds: number[]) {
+    if (!this.agendaSchedulerActiva || !tareaIds.length) return;
+    const ids = new Set(tareaIds);
+    for (const [clave, intervalos] of this.agendaScheduler) {
+      const restantes = intervalos.filter(
+        (intervalo) => !ids.has(intervalo.tareaId),
+      );
+      if (restantes.length) this.agendaScheduler.set(clave, restantes);
+      else this.agendaScheduler.delete(clave);
+    }
+  }
+
+  private ocupadosAgendaScheduler(params: {
+    fecha: Date;
+    operariosIds: string[];
+    incluirPublicadas: boolean;
+    bloqueos: Bloqueo[];
+  }): Intervalo[] {
+    const intervalos: Intervalo[] = [];
+    for (const operarioId of params.operariosIds) {
+      const clave = this.claveAgendaScheduler(operarioId, params.fecha);
+      for (const intervalo of this.agendaScheduler.get(clave) ?? []) {
+        if (!params.incluirPublicadas && !intervalo.borrador) continue;
+        intervalos.push({ i: intervalo.i, f: intervalo.f });
+      }
+    }
+    intervalos.push(
+      ...params.bloqueos.map((bloqueo) => ({
+        i: bloqueo.startMin,
+        f: bloqueo.endMin,
+      })),
+    );
+    return mergeIntervalos(intervalos);
   }
 
   private async limpiarExcluidasDeMesesAnteriores(params: {
@@ -1498,6 +1666,7 @@ export class DefinicionTareaPreventivaService {
 
     // El tope semanal depende de la semana, por eso la cache se indexa por operario + semana.
     const limitePorOperarioSemana = new Map<string, number>();
+    const minutosPlanificadosPorSemana = new Map<string, number>();
 
     let restante = duracionMinutos;
     const plan: BloqueProgramacion[] = [];
@@ -1512,8 +1681,7 @@ export class DefinicionTareaPreventivaService {
       if (!horario) continue;
 
       const disponibilidad = operariosIds.length
-        ? await validarOperariosDisponiblesEnFecha({
-            prisma: this.prisma,
+        ? await this.disponibilidadScheduler({
             fecha: dia,
             operariosIds,
           })
@@ -1522,29 +1690,37 @@ export class DefinicionTareaPreventivaService {
 
       const bloqueos = [
         ...buildBloqueosPorDescanso(horario),
-        ...(await buildBloqueosPorPatronJornada({
-          prisma: this.prisma,
-          fechaDia: dia,
-          horarioDia: horario,
+        ...(await this.bloqueosPatronScheduler({
+          fecha: dia,
+          horario,
           operariosIds,
         })),
       ];
 
       let ocupadosGlobal: Intervalo[] = [];
       if (operariosIds.length) {
-        const agenda = await buildAgendaPorOperarioDia({
-          prisma: this.prisma,
-          conjuntoId,
-          fechaDia: dia,
-          operariosIds,
-          incluirBorrador: true,
-          bloqueosGlobales: bloqueos,
-          excluirEstados: ["PENDIENTE_REPROGRAMACION"],
-        });
+        if (this.agendaSchedulerActiva) {
+          ocupadosGlobal = this.ocupadosAgendaScheduler({
+            fecha: dia,
+            operariosIds,
+            incluirPublicadas: incluirPublicadasEnAgenda,
+            bloqueos,
+          });
+        } else {
+          const agenda = await buildAgendaPorOperarioDia({
+            prisma: this.prisma,
+            conjuntoId,
+            fechaDia: dia,
+            operariosIds,
+            incluirBorrador: true,
+            bloqueosGlobales: bloqueos,
+            excluirEstados: ["PENDIENTE_REPROGRAMACION"],
+          });
 
-        const all: Intervalo[] = [];
-        for (const opId of Object.keys(agenda)) all.push(...agenda[opId]);
-        ocupadosGlobal = mergeIntervalos(all);
+          const all: Intervalo[] = [];
+          for (const opId of Object.keys(agenda)) all.push(...agenda[opId]);
+          ocupadosGlobal = mergeIntervalos(all);
+        }
       } else {
         ocupadosGlobal = mergeIntervalos(
           bloqueos.map((bloqueo) => ({ i: bloqueo.startMin, f: bloqueo.endMin })),
@@ -1576,17 +1752,6 @@ export class DefinicionTareaPreventivaService {
         const fechaInicio = toDateAtMin(dia, inicioMin);
         const fechaFin = toDateAtMin(dia, inicioMin + tomar);
 
-        try {
-          await this.validarSlotPreventivaBorrador({
-            conjuntoId,
-            fechaInicio,
-            fechaFin,
-            operariosIds,
-          });
-        } catch {
-          continue;
-        }
-
         planDia.push({ fechaInicio, fechaFin });
         restanteDia -= tomar;
       }
@@ -1594,13 +1759,16 @@ export class DefinicionTareaPreventivaService {
       if (!planDia.length) continue;
 
       const minutosDia = duracionDeBloques(planDia);
+      const claveSemana = dayKey(inicioSemana(planDia[0].fechaInicio));
+      const minutosPreviosDelPlan =
+        minutosPlanificadosPorSemana.get(claveSemana) ?? 0;
       if (
         validarLimiteSemanal &&
         !(await this.cabeEnLimiteSemanal({
           conjuntoId,
           operariosIds,
           fechaReferencia: planDia[0].fechaInicio,
-          minutosAdicionales: minutosDia,
+          minutosAdicionales: minutosPreviosDelPlan + minutosDia,
           horariosPorDia,
           incluirPublicadasEnAgenda,
           cacheLimite: limitePorOperarioSemana,
@@ -1617,9 +1785,186 @@ export class DefinicionTareaPreventivaService {
 
       plan.push(...planDia);
       restante -= minutosDia;
+      minutosPlanificadosPorSemana.set(
+        claveSemana,
+        minutosPreviosDelPlan + minutosDia,
+      );
     }
 
-    return restante <= 0 ? plan : [];
+    return restante <= 0
+      ? plan.sort((a, b) => +a.fechaInicio - +b.fechaInicio)
+      : [];
+  }
+
+  /** Calcula la carga de todos los días candidatos con una sola consulta. */
+  private async cargaOperariosEnDias(params: {
+    conjuntoId: string;
+    dias: Date[];
+    operariosIds: string[];
+    horariosPorDia: Map<DiaSemana, HorarioDia>;
+  }): Promise<Map<string, number>> {
+    const cargas = new Map(params.dias.map((dia) => [dayKey(dia), 0]));
+    if (!params.operariosIds.length || !params.dias.length) return cargas;
+
+    if (this.agendaSchedulerActiva) {
+      for (const dia of params.dias) {
+        const intervalos = this.ocupadosAgendaScheduler({
+          fecha: dia,
+          operariosIds: params.operariosIds,
+          incluirPublicadas: true,
+          bloqueos: [],
+        });
+        cargas.set(
+          dayKey(dia),
+          intervalos.reduce(
+            (total, intervalo) => total + intervalo.f - intervalo.i,
+            0,
+          ),
+        );
+      }
+      return cargas;
+    }
+
+    const inicioPeriodo = new Date(params.dias[0]);
+    inicioPeriodo.setHours(0, 0, 0, 0);
+    const finPeriodo = new Date(params.dias[params.dias.length - 1]);
+    finPeriodo.setHours(23, 59, 59, 999);
+    const tareas = await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId: params.conjuntoId,
+        fechaInicio: { lte: finPeriodo },
+        fechaFin: { gte: inicioPeriodo },
+        estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
+        operarios: { some: { id: { in: params.operariosIds } } },
+      },
+      select: { fechaInicio: true, fechaFin: true },
+    });
+
+    const intervalosPorDia = new Map<string, Intervalo[]>();
+    for (const tarea of tareas) {
+      const clave = dayKey(tarea.fechaInicio);
+      if (!cargas.has(clave)) continue;
+      const horario = params.horariosPorDia.get(
+        dateToDiaSemana(tarea.fechaInicio),
+      );
+      if (!horario) continue;
+      const intervalo = {
+        i: Math.max(horario.startMin, toMinOfDay(tarea.fechaInicio)),
+        f: Math.min(horario.endMin, toMinOfDay(tarea.fechaFin)),
+      };
+      if (intervalo.f <= intervalo.i) continue;
+      const intervalos = intervalosPorDia.get(clave) ?? [];
+      intervalos.push(intervalo);
+      intervalosPorDia.set(clave, intervalos);
+    }
+    for (const [clave, intervalos] of intervalosPorDia) {
+      cargas.set(
+        clave,
+        mergeIntervalos(intervalos).reduce(
+          (total, intervalo) => total + intervalo.f - intervalo.i,
+          0,
+        ),
+      );
+    }
+    return cargas;
+  }
+
+  /**
+   * Devuelve todos los días hábiles del mes objetivo. El día previsto conserva
+   * la primera oportunidad y luego se priorizan las jornadas más aprovechadas.
+   */
+  private async diasMesPorAprovechamiento(params: {
+    conjuntoId: string;
+    fechaObjetivo: Date;
+    periodoAnio: number;
+    periodoMes: number;
+    operariosIds: string[];
+    horariosPorDia: Map<DiaSemana, HorarioDia>;
+    festivosSet: Set<string>;
+  }): Promise<Date[]> {
+    const inicio = new Date(params.periodoAnio, params.periodoMes - 1, 1);
+    const fin = new Date(params.periodoAnio, params.periodoMes, 0);
+
+    const candidatos = enumerateDays(inicio, fin).filter(
+      (dia) =>
+        dia.getFullYear() === params.periodoAnio &&
+        dia.getMonth() + 1 === params.periodoMes &&
+        !params.festivosSet.has(dayKey(dia)) &&
+        params.horariosPorDia.has(dateToDiaSemana(dia)),
+    );
+    const cargas = await this.cargaOperariosEnDias({
+      conjuntoId: params.conjuntoId,
+      dias: candidatos,
+      operariosIds: params.operariosIds,
+      horariosPorDia: params.horariosPorDia,
+    });
+    const conCarga = candidatos.map((dia) => ({
+      dia,
+      carga: cargas.get(dayKey(dia)) ?? 0,
+    }));
+    const objetivoKey = dayKey(params.fechaObjetivo);
+
+    conCarga.sort((a, b) => {
+      const aObjetivo = dayKey(a.dia) === objetivoKey;
+      const bObjetivo = dayKey(b.dia) === objetivoKey;
+      if (aObjetivo !== bObjetivo) return aObjetivo ? -1 : 1;
+      if (a.carga !== b.carga) return b.carga - a.carga;
+
+      const distanciaA = Math.abs(+a.dia - +params.fechaObjetivo);
+      const distanciaB = Math.abs(+b.dia - +params.fechaObjetivo);
+      if (distanciaA !== distanciaB) return distanciaA - distanciaB;
+
+      // A igual distancia se usa primero el día futuro y luego el anterior.
+      const aFuturo = +a.dia >= +params.fechaObjetivo;
+      const bFuturo = +b.dia >= +params.fechaObjetivo;
+      if (aFuturo !== bFuturo) return aFuturo ? -1 : 1;
+      return +a.dia - +b.dia;
+    });
+
+    return conCarga.map((item) => item.dia);
+  }
+
+  /** Elige el día que requiere menos fragmentos y luego el de mayor carga. */
+  private async construirMejorPlanEnDias(params: {
+    conjuntoId: string;
+    duracionMinutos: number;
+    operariosIds: string[];
+    dias: Date[];
+    horariosPorDia: Map<DiaSemana, HorarioDia>;
+    festivosSet: Set<string>;
+    incluirPublicadasEnAgenda: boolean;
+  }): Promise<BloqueProgramacion[]> {
+    let mejor: BloqueProgramacion[] = [];
+    let mejorOrden = Number.MAX_SAFE_INTEGER;
+
+    for (let orden = 0; orden < params.dias.length; orden++) {
+      const plan = await this.construirPlanEnRango({
+        conjuntoId: params.conjuntoId,
+        duracionMinutos: params.duracionMinutos,
+        operariosIds: params.operariosIds,
+        dias: [params.dias[orden]],
+        horariosPorDia: params.horariosPorDia,
+        festivosSet: params.festivosSet,
+        maxBloquesPorDia: MAX_BLOQUES_RESCATE_POR_DIA,
+        permitirMultiDia: false,
+        validarLimiteSemanal: true,
+        incluirPublicadasEnAgenda: params.incluirPublicadasEnAgenda,
+      });
+      if (!plan.length) continue;
+      // Un solo bloque es el óptimo teórico. Como los días ya vienen ordenados
+      // por aprovechamiento, consultar el resto del mes no puede mejorarlo.
+      if (plan.length === 1) return plan;
+      if (
+        !mejor.length ||
+        plan.length < mejor.length ||
+        (plan.length === mejor.length && orden < mejorOrden)
+      ) {
+        mejor = plan;
+        mejorOrden = orden;
+      }
+    }
+
+    return mejor;
   }
 
   /** Comprueba que todos los operarios sigan bajo su tope semanal tras sumar `minutosAdicionales`. */
@@ -1647,6 +1992,7 @@ export class DefinicionTareaPreventivaService {
     for (const operarioId of operariosIds) {
       const clave = `${operarioId}|${claveSemana}`;
       let limite = cacheLimite?.get(clave);
+      limite ??= this.limiteSemanalSchedulerCache.get(clave);
       if (limite == null) {
         limite = await getLimiteMinSemanaPorOperario({
           prisma: this.prisma,
@@ -1656,15 +2002,21 @@ export class DefinicionTareaPreventivaService {
           fechaReferencia,
         });
         cacheLimite?.set(clave, limite);
+        this.limiteSemanalSchedulerCache.set(clave, limite);
       }
 
-      const asignados = await minutosAsignadosEnSemana(
-        this.prisma,
-        conjuntoId,
-        operarioId,
-        fechaReferencia,
-        incluirPublicadasEnAgenda,
-      );
+      const claveAsignados = `${operarioId}|${claveSemana}|${incluirPublicadasEnAgenda}`;
+      let asignados = this.minutosSemanaSchedulerCache.get(claveAsignados);
+      if (asignados == null) {
+        asignados = await minutosAsignadosEnSemana(
+          this.prisma,
+          conjuntoId,
+          operarioId,
+          fechaReferencia,
+          incluirPublicadasEnAgenda,
+        );
+        this.minutosSemanaSchedulerCache.set(claveAsignados, asignados);
+      }
 
       if (asignados + minutosAdicionales > limite) return false;
     }
@@ -1787,9 +2139,17 @@ export class DefinicionTareaPreventivaService {
       });
 
       ids.push(creada.id);
+      this.registrarIntervaloAgendaScheduler({
+        tareaId: creada.id,
+        fechaInicio: bloque.fechaInicio,
+        fechaFin: bloque.fechaFin,
+        operariosIds,
+        borrador: true,
+      });
       indice++;
     }
 
+    this.registrarBloquesEnCacheSemanal(bloques, operariosIds);
     return ids;
   }
 
@@ -2833,6 +3193,15 @@ export class DefinicionTareaPreventivaService {
       modo = "RESET",
     } = params;
 
+    // La disponibilidad y los patrones no cambian durante una generación.
+    // Se reutilizan entre definiciones y se limpian al iniciar cada corrida.
+    this.disponibilidadSchedulerCache.clear();
+    this.bloqueosPatronSchedulerCache.clear();
+    this.limiteSemanalSchedulerCache.clear();
+    this.minutosSemanaSchedulerCache.clear();
+    this.agendaSchedulerActiva = false;
+    this.agendaScheduler.clear();
+
     await this.limpiarExcluidasDeMesesAnteriores({
       conjuntoId,
       anio: periodoAnio,
@@ -2845,6 +3214,24 @@ export class DefinicionTareaPreventivaService {
       where: { conjuntoId, activo: true },
       include: { operarios: true, supervisor: true },
       orderBy: [{ prioridad: "asc" }, { id: "asc" }],
+    });
+
+    // P1 reserva primero su fecha obligatoria. Las P3 se ubican provisionalmente
+    // antes de las P2 para que estas últimas puedan desplazarlas si hace falta:
+    // el resultado final conserva la jerarquía P1 > P2 > P3.
+    // Dentro del nivel se priorizan las tareas compartidas, menos flexibles.
+    defs.sort((a, b) => {
+      const prioridadA = Number((a as any).prioridad ?? 2);
+      const prioridadB = Number((b as any).prioridad ?? 2);
+      const ordenPrioridad = (prioridad: number) =>
+        prioridad === 1 ? 0 : prioridad === 3 ? 1 : 2;
+      const ordenA = ordenPrioridad(prioridadA);
+      const ordenB = ordenPrioridad(prioridadB);
+      if (ordenA !== ordenB) return ordenA - ordenB;
+      if (a.operarios.length !== b.operarios.length) {
+        return b.operarios.length - a.operarios.length;
+      }
+      return a.id - b.id;
     });
 
     if (!defs.length) return { creadas: 0, novedades };
@@ -2896,21 +3283,18 @@ export class DefinicionTareaPreventivaService {
     const month0 = periodoMes - 1;
     const inicioMes = new Date(periodoAnio, month0, 1, 0, 0, 0, 0);
     const finMes = new Date(periodoAnio, month0 + 1, 0, 23, 59, 59, 999);
-    const finBusquedaPrioridadAlta = new Date(finMes);
-    finBusquedaPrioridadAlta.setDate(finBusquedaPrioridadAlta.getDate() + 70);
     const fechasDelMes = enumerateDays(inicioMes, finMes);
-    const fechasPrioridadAlta = enumerateDays(inicioMes, finBusquedaPrioridadAlta);
 
     // 4️⃣ Festivos
     const festivosSet = await getFestivosSet({
       prisma: this.prisma,
       pais: paisFestivos,
       inicio: inicioMes,
-      fin: finBusquedaPrioridadAlta,
+      fin: finMes,
     });
 
     const resolverDiaProgramable = (start: Date, prioridad: number) => {
-      const dentroDelPeriodo = findNextValidDay({
+      return findNextValidDay({
         start,
         periodoAnio,
         periodoMes,
@@ -2918,20 +3302,28 @@ export class DefinicionTareaPreventivaService {
         horariosPorDia,
         festivosSet,
       });
-      if (dentroDelPeriodo || prioridad !== 1) return dentroDelPeriodo;
+    };
 
-      // Una P1 del cierre del mes puede quedar en el siguiente mes, pero sigue
-      // perteneciendo al periodo que originó el cronograma.
-      const anterior = new Date(
+    // Una P2 conserva su fecha contemplada como referencia aunque sea festivo
+    // o no tenga jornada. Así siempre alcanza la búsqueda de cualquier otro
+    // día hábil del mes, en vez de quedar excluida anticipadamente.
+    const resolverDiaObjetivo = (start: Date, prioridad: number) => {
+      if (prioridad !== 2) return resolverDiaProgramable(start, prioridad);
+      if (
+        start.getFullYear() !== periodoAnio ||
+        start.getMonth() + 1 !== periodoMes
+      ) {
+        return null;
+      }
+      return new Date(
         start.getFullYear(),
         start.getMonth(),
-        start.getDate() - 1,
+        start.getDate(),
+        0,
+        0,
+        0,
+        0,
       );
-      return siguienteDiaHabil({
-        fecha: anterior,
-        festivosSet,
-        horariosPorDia,
-      });
     };
 
     // 5️⃣ Borrador previo: se descarta solo en modo RESET.
@@ -2960,8 +3352,39 @@ export class DefinicionTareaPreventivaService {
       });
     }
 
-    // ✅ Cache de límite semanal por operario (para no recalcular siempre)
-    const limitePorOperario = new Map<string, number>();
+    await this.iniciarAgendaScheduler({
+      conjuntoId,
+      inicio: inicioMes,
+      fin: finMes,
+    });
+
+    const publicadasPeriodo = await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId,
+        periodoAnio,
+        periodoMes,
+        tipo: TipoTarea.PREVENTIVA,
+        borrador: false,
+      },
+      select: {
+        definicionId: true,
+        descripcion: true,
+        ubicacionId: true,
+        elementoId: true,
+        frecuencia: true,
+      },
+    });
+    const definicionesPublicadas = new Set(
+      publicadasPeriodo
+        .map((tarea) => tarea.definicionId)
+        .filter((id): id is number => id != null),
+    );
+    const clavesPublicadas = new Set(
+      publicadasPeriodo.map(
+        (tarea) =>
+          `${tarea.descripcion}|${tarea.ubicacionId}|${tarea.elementoId}|${tarea.frecuencia ?? ""}`,
+      ),
+    );
 
     let creadas = 0;
 
@@ -2971,20 +3394,13 @@ export class DefinicionTareaPreventivaService {
       const operariosIds = def.operarios.map((o) => o.id);
 
       // evitar duplicar si ya fue publicada
-      const yaPublicadaEstaDef = await this.prisma.tarea.count({
-        where: {
-          conjuntoId,
-          periodoAnio,
-          periodoMes,
-          tipo: TipoTarea.PREVENTIVA,
-          borrador: false,
-          descripcion: def.descripcion,
-          ubicacionId: def.ubicacionId,
-          elementoId: def.elementoId,
-          frecuencia: def.frecuencia,
-        },
-      });
-      if (yaPublicadaEstaDef > 0) continue;
+      const clavePublicada = `${def.descripcion}|${def.ubicacionId}|${def.elementoId}|${def.frecuencia ?? ""}`;
+      if (
+        definicionesPublicadas.has(def.id) ||
+        clavesPublicadas.has(clavePublicada)
+      ) {
+        continue;
+      }
 
       // En modo CONSERVAR, lo que ya esta en el borrador no se vuelve a planificar.
       if (
@@ -3028,8 +3444,13 @@ export class DefinicionTareaPreventivaService {
           null;
         const durMinTotal = minutosEstimados ?? tamanoBloqueMinutos;
 
-        const diaProgramable = resolverDiaProgramable(diaBase, prioridad);
+        const diaProgramable = resolverDiaObjetivo(diaBase, prioridad);
         if (!diaProgramable) {
+          if (prioridad === 1) {
+            throw new Error(
+              `La tarea obligatoria '${def.descripcion}' no tiene un siguiente día hábil dentro de ${periodoAnio}-${String(periodoMes).padStart(2, "0")}.`,
+            );
+          }
           const diaBaseEsFestivo = festivosSet.has(dayKey(diaBase));
           const diaBaseEsDomingo =
             dateToDiaSemana(diaBase) === DiaSemana.DOMINGO;
@@ -3105,21 +3526,57 @@ export class DefinicionTareaPreventivaService {
         for (let p = 0; p < partesMin.length; p++) {
           const durMinParte = partesMin[p];
 
-          let diaParte = resolverDiaProgramable(cursorDia, prioridad);
-          if (!diaParte) break;
+          let diaParte = resolverDiaObjetivo(cursorDia, prioridad);
+          if (!diaParte) {
+            if (prioridad === 1) {
+              throw new Error(
+                `No hay un día hábil dentro del mes para completar la tarea obligatoria '${def.descripcion}'.`,
+              );
+            }
+            break;
+          }
 
           // Fecha objetivo real de esta parte: la fase de rescate busca a partir de aqui.
           const diaObjetivoParte = new Date(diaParte);
 
           let agendada = false;
           let diasConCandidatasP3ParaP2 = 0;
+          let diasMesEvaluados: Date[] = [];
+          const crearPayloadReemplazo = () => ({
+            descripcion: def.descripcion,
+            tipo: TipoTarea.PREVENTIVA,
+            frecuencia: def.frecuencia ?? null,
+            definicionId: def.id,
+            diaSemanaProgramado: def.diaSemanaProgramado ?? null,
+            prioridad,
+            supervisorId: def.supervisorId
+              ? def.supervisorId.toString()
+              : null,
+            ubicacionId: def.ubicacionId,
+            elementoId: def.elementoId,
+            conjuntoId,
+            borrador: true,
+            periodoAnio,
+            periodoMes,
+            insumosPlanJson: def.insumosPlanJson ?? undefined,
+            maquinariaPlanJson: def.maquinariaPlanJson ?? undefined,
+            herramientasPlanJson:
+              (def as any).herramientasPlanJson ?? undefined,
+            operariosIds,
+            grupoPlanId,
+            bloqueIndexBase: grupoPlanId ? bloqueIndexCursor : undefined,
+            bloquesTotalesOverride: grupoPlanId
+              ? totalBloquesEsperados
+              : undefined,
+            marcarComoReprogramada: false,
+          });
 
           // P2 se resuelve en su fecha objetivo. P1 continúa buscando días
           // hábiles y nunca se convierte en una excluida.
           const finSemanaBusqueda = new Date(diaParte);
           finSemanaBusqueda.setHours(23, 59, 59, 999);
 
-          const maxDiasBusqueda = prioridad === 1 ? 70 : 8;
+          const maxDiasBusqueda = 1;
           for (let guardDia = 0; guardDia < maxDiasBusqueda; guardDia++) {
             if (!diaParte) break;
             if (prioridad === 2 && +diaParte > +finSemanaBusqueda) break;
@@ -3136,9 +3593,11 @@ export class DefinicionTareaPreventivaService {
 
             const diaParteKey = dayKey(diaParte);
             const esFestivo = festivosSet.has(diaParteKey);
-            const disponibilidadOperarios = operariosIds.length
-              ? await validarOperariosDisponiblesEnFecha({
-                  prisma: this.prisma,
+            const disponibilidadOperarios =
+              prioridad === 1
+                ? { ok: true, noDisponibles: [] as string[] }
+                : operariosIds.length
+              ? await this.disponibilidadScheduler({
                   fecha: diaParte,
                   operariosIds,
                 })
@@ -3155,12 +3614,14 @@ export class DefinicionTareaPreventivaService {
             const bloqueosDescanso = buildBloqueosPorDescanso(horario);
 
             // ✅ 2) Patrón jornada (bloqueos por operario)
-            const bloqueosPatron = await buildBloqueosPorPatronJornada({
-              prisma: this.prisma,
-              fechaDia: diaParte,
-              horarioDia: horario,
-              operariosIds,
-            });
+            const bloqueosPatron =
+              prioridad === 1
+                ? []
+                : await this.bloqueosPatronScheduler({
+                    fecha: diaParte,
+                    horario,
+                    operariosIds,
+                  });
 
             // ✅ 3) Bloqueos totales
             const bloqueos = [...bloqueosDescanso, ...bloqueosPatron];
@@ -3169,19 +3630,30 @@ export class DefinicionTareaPreventivaService {
             let ocupadosGlobal: Intervalo[] = [];
 
             if (operariosIds.length) {
-              const agenda = await buildAgendaPorOperarioDia({
-                prisma: this.prisma,
-                conjuntoId,
-                fechaDia: diaParte,
-                operariosIds,
-                incluirBorrador: true,
-                bloqueosGlobales: bloqueos,
-                excluirEstados: ["PENDIENTE_REPROGRAMACION"],
-              });
+              if (this.agendaSchedulerActiva) {
+                ocupadosGlobal = this.ocupadosAgendaScheduler({
+                  fecha: diaParte,
+                  operariosIds,
+                  incluirPublicadas: incluirPublicadasEnAgenda,
+                  bloqueos,
+                });
+              } else {
+                const agenda = await buildAgendaPorOperarioDia({
+                  prisma: this.prisma,
+                  conjuntoId,
+                  fechaDia: diaParte,
+                  operariosIds,
+                  incluirBorrador: true,
+                  bloqueosGlobales: bloqueos,
+                  excluirEstados: ["PENDIENTE_REPROGRAMACION"],
+                });
 
-              const all: Intervalo[] = [];
-              for (const opId of Object.keys(agenda)) all.push(...agenda[opId]);
-              ocupadosGlobal = mergeIntervalos(all);
+                const all: Intervalo[] = [];
+                for (const opId of Object.keys(agenda)) {
+                  all.push(...agenda[opId]);
+                }
+                ocupadosGlobal = mergeIntervalos(all);
+              }
             } else {
               ocupadosGlobal = mergeIntervalos(
                 bloqueos.map((b) => ({ i: b.startMin, f: b.endMin })),
@@ -3200,45 +3672,23 @@ export class DefinicionTareaPreventivaService {
             });
 
             if (bloquesFound) {
-              // ✅ validar límite semanal (POR OPERARIO)
-              let pasaLimite = true;
-
-              for (const opId of operariosIds) {
-                // cache límite por operario
-                let limiteOp = limitePorOperario.get(opId);
-                if (limiteOp == null) {
-                  limiteOp = await getLimiteMinSemanaPorOperario({
-                    prisma: this.prisma,
-                    conjuntoId,
-                    operarioId: opId,
-                    horariosPorDia: horariosPorDia as any,
-                  });
-                  limitePorOperario.set(opId, limiteOp);
-                }
-
-                const minSemana = await minutosAsignadosEnSemana(
-                  this.prisma,
+              // P1 es obligatoria en su fecha: el tope semanal no puede
+              // desplazarla. P2/P3 sí respetan la capacidad semanal.
+              const pasaLimite =
+                prioridad === 1 ||
+                (await this.cabeEnLimiteSemanal({
                   conjuntoId,
-                  opId,
-                  toDateAtMin(diaParte, bloquesFound[0].i),
+                  operariosIds,
+                  fechaReferencia: toDateAtMin(
+                    diaParte,
+                    bloquesFound[0].i,
+                  ),
+                  minutosAdicionales: durMinParte,
+                  horariosPorDia,
                   incluirPublicadasEnAgenda,
-                );
-
-                if (minSemana + durMinParte > limiteOp) {
-                  pasaLimite = false;
-                  break;
-                }
-              }
+                }));
 
               if (!pasaLimite) {
-                if (prioridad === 1 || prioridad === 2) {
-                  diaParte = siguienteDiaHabil({
-                    fecha: diaParte,
-                    festivosSet,
-                    horariosPorDia,
-                  });
-                  continue;
-                }
                 break;
               }
 
@@ -3266,101 +3716,12 @@ export class DefinicionTareaPreventivaService {
               break;
             }
 
-            // ❌ No hubo hueco
-            if (prioridad === 1 || prioridad === 2) {
-              const payload: any = {
-                descripcion: def.descripcion,
-                tipo: TipoTarea.PREVENTIVA,
-                frecuencia: def.frecuencia ?? null,
-                definicionId: def.id,
-                diaSemanaProgramado: def.diaSemanaProgramado ?? null,
+            // P2/P3 buscan primero cualquier hueco libre del mes. Solo P1
+            // reemplaza de inmediato porque su fecha es obligatoria.
+            if (prioridad === 1) {
+              const payload = crearPayloadReemplazo();
 
-                prioridad,
-                supervisorId: def.supervisorId
-                  ? def.supervisorId.toString()
-                  : null,
-
-                ubicacionId: def.ubicacionId,
-                elementoId: def.elementoId,
-                conjuntoId,
-
-                borrador: true,
-                periodoAnio,
-                periodoMes,
-
-                insumosPlanJson: def.insumosPlanJson ?? undefined,
-                maquinariaPlanJson: def.maquinariaPlanJson ?? undefined,
-                herramientasPlanJson:
-                  (def as any).herramientasPlanJson ?? undefined,
-
-                operariosIds,
-
-                grupoPlanId,
-                bloqueIndexBase: grupoPlanId ? bloqueIndexCursor : undefined,
-                bloquesTotalesOverride: grupoPlanId
-                  ? totalBloquesEsperados
-                  : undefined,
-
-                marcarComoReprogramada: false,
-              };
-
-              // P1 es obligatoria: desplaza automáticamente P3 y, si aún no
-              // alcanza, P2. Si ese día no sirve continúa al siguiente hábil.
-              if (prioridad === 1) {
-                const repAuto = await intentarReemplazoPorPrioridadBaja({
-                  prisma: this.prisma,
-                  conjuntoId,
-                  fechaDia: diaParte,
-                  startMin: horario.startMin,
-                  endMin: horario.endMin,
-                  bloqueos,
-                  durMin: durMinParte,
-                  payload,
-                  prioridadesCandidatas: [3, 2],
-                  incluirBorradorEnAgenda: true,
-                  incluirPublicadasEnAgenda,
-                  onEvent: (ev) => {
-                    if (ev.tipo === "REEMPLAZO") {
-                      if (ev.reprogramadasIds.length) {
-                        novedades.push({
-                          tipo: "REEMPLAZO_PRIORIDAD",
-                          defId: def.id,
-                          descripcion: def.descripcion,
-                          prioridad,
-                          fecha: dayKey(diaParte!),
-                          nuevaTareaIds: ev.nuevaTareaIds,
-                          reprogramadasIds: ev.reprogramadasIds,
-                        });
-                      }
-                    }
-                  },
-                });
-
-                if (repAuto.ok) {
-                  await this.moverReemplazadasAExcluidas({
-                    tareaIds: repAuto.reprogramadasIds,
-                    reemplazadaPorDefId: def.id,
-                    reemplazadaPorDescripcion: def.descripcion,
-                  });
-                  creadas += repAuto.nuevaTareaIds.length;
-                  if (grupoPlanId)
-                    bloqueIndexCursor += repAuto.nuevaTareaIds.length;
-
-                  agendada = true;
-                  break;
-                }
-
-                diaParte = siguienteDiaHabil({
-                  fecha: diaParte,
-                  festivosSet,
-                  horariosPorDia,
-                });
-                continue;
-              }
-
-              // P2 permanece en su día objetivo y reemplaza automáticamente
-              // tantas P3 como sean necesarias para completar el hueco.
-              const repAutoP3 = await intentarReemplazoPorPrioridadBaja({
+              const repAuto = await intentarReemplazoPorPrioridadBaja({
                 prisma: this.prisma,
                 conjuntoId,
                 fechaDia: diaParte,
@@ -3369,11 +3730,14 @@ export class DefinicionTareaPreventivaService {
                 bloqueos,
                 durMin: durMinParte,
                 payload,
-                prioridadesCandidatas: [3],
+                prioridadesCandidatas: [3, 2],
                 incluirBorradorEnAgenda: true,
                 incluirPublicadasEnAgenda,
                 onEvent: (ev) => {
-                  if (ev.tipo === "REEMPLAZO" && ev.reprogramadasIds.length) {
+                  if (
+                    ev.tipo === "REEMPLAZO" &&
+                    ev.reprogramadasIds.length
+                  ) {
                     novedades.push({
                       tipo: "REEMPLAZO_PRIORIDAD",
                       defId: def.id,
@@ -3382,23 +3746,93 @@ export class DefinicionTareaPreventivaService {
                       fecha: dayKey(diaParte!),
                       nuevaTareaIds: ev.nuevaTareaIds,
                       reprogramadasIds: ev.reprogramadasIds,
-                      mensaje: "Reemplazo automático de prioridad 3.",
                     });
-                  } else if (ev.tipo === "SIN_HUECO") {
-                    diasConCandidatasP3ParaP2++;
                   }
                 },
               });
 
-              if (repAutoP3.ok) {
+              if (repAuto.ok) {
                 await this.moverReemplazadasAExcluidas({
-                  tareaIds: repAutoP3.reprogramadasIds,
+                  tareaIds: repAuto.reprogramadasIds,
                   reemplazadaPorDefId: def.id,
                   reemplazadaPorDescripcion: def.descripcion,
                 });
-                creadas += repAutoP3.nuevaTareaIds.length;
-                if (grupoPlanId)
-                  bloqueIndexCursor += repAutoP3.nuevaTareaIds.length;
+                this.minutosSemanaSchedulerCache.clear();
+                this.retirarTareasAgendaScheduler(repAuto.reprogramadasIds);
+                repAuto.bloques.forEach((bloque, index) => {
+                  const tareaId = repAuto.nuevaTareaIds[index];
+                  if (tareaId == null) return;
+                  this.registrarIntervaloAgendaScheduler({
+                    tareaId,
+                    fechaInicio: toDateAtMin(diaParte!, bloque.i),
+                    fechaFin: toDateAtMin(diaParte!, bloque.f),
+                    operariosIds,
+                    borrador: true,
+                  });
+                });
+                creadas += repAuto.nuevaTareaIds.length;
+                if (grupoPlanId) {
+                  bloqueIndexCursor += repAuto.nuevaTareaIds.length;
+                }
+
+                agendada = true;
+                break;
+              }
+
+              // Si las propias P1 del día superan la jornada (por ejemplo,
+              // varias trasladadas desde un festivo), completar al final de
+              // ese mismo día. Es la última salida: no mueve ni excluye P1 y
+              // tampoco permite solapes entre sus operarios.
+              const bloqueadosExtension = mergeIntervalos([
+                ...ocupadosGlobal,
+                ...bloqueos.map((bloqueo) => ({
+                  i: bloqueo.startMin,
+                  f: bloqueo.endMin,
+                })),
+              ]);
+              const libresExtension = [
+                ...freeFromOccupied(
+                  horario.startMin,
+                  horario.endMin,
+                  bloqueadosExtension,
+                ),
+                ...freeFromOccupied(
+                  horario.endMin,
+                  24 * 60,
+                  bloqueadosExtension,
+                ),
+              ];
+              const bloquesExtension: Intervalo[] = [];
+              let restanteExtension = durMinParte;
+              for (const libre of libresExtension) {
+                if (restanteExtension <= 0) break;
+                const tomar = Math.min(libre.f - libre.i, restanteExtension);
+                if (tomar <= 0) continue;
+                bloquesExtension.push({ i: libre.i, f: libre.i + tomar });
+                restanteExtension -= tomar;
+              }
+              if (restanteExtension <= 0 && bloquesExtension.length) {
+                const bloquesPlan = bloquesExtension.map((bloque) => ({
+                  fechaInicio: toDateAtMin(diaParte!, bloque.i),
+                  fechaFin: toDateAtMin(diaParte!, bloque.f),
+                }));
+                const nuevaTareaIds =
+                  await this.crearBloquesPreventivosDeDefinicion({
+                    def,
+                    conjuntoId,
+                    periodoAnio,
+                    periodoMes,
+                    prioridad,
+                    operariosIds,
+                    bloques: bloquesPlan,
+                    grupoPlanId,
+                    bloqueIndexBase: bloqueIndexCursor,
+                    bloquesTotales: totalBloquesEsperados,
+                  });
+                creadas += nuevaTareaIds.length;
+                if (grupoPlanId) {
+                  bloqueIndexCursor += nuevaTareaIds.length;
+                }
                 agendada = true;
                 break;
               }
@@ -3406,37 +3840,36 @@ export class DefinicionTareaPreventivaService {
               break;
             }
 
-            // prioridad 3: si no cabe en la fecha objetivo, pasa a la fase de rescate
+            // prioridad 2/3: pasar al rescate mensual antes de reemplazar.
             break;
           }
 
           // ============================================================
-          // Fase B - rescate: antes de excluir, se barren cronologicamente
-          // los dias restantes del periodo. Como siempre se toma el dia mas
-          // temprano que quepa, la tarea se queda en su misma semana cuando
-          // hay sitio y solo se corre a las siguientes cuando no lo hay.
+          // Fase B - rescate mensual para P2/P3. P1 queda anclada a su fecha
+          // prevista (o al siguiente hábil cuando la prevista es festiva).
           // ============================================================
-          if (!agendada && prioridad !== 2) {
-            // P3 puede aprovechar huecos posteriores del mes. P1 dispone además
-            // de un margen de 70 días para garantizar que nunca termine excluida.
-            const fuenteDiasRescate =
-              prioridad === 1 ? fechasPrioridadAlta : fechasDelMes;
-            const diasRescate = fuenteDiasRescate.filter(
-              (dia) => +dia >= +diaObjetivoParte && horariosPorDia.has(dateToDiaSemana(dia)),
-            );
+          if (!agendada && prioridad !== 1) {
+            const diasRescate = await this.diasMesPorAprovechamiento({
+              conjuntoId,
+              fechaObjetivo: diaObjetivoParte,
+              periodoAnio,
+              periodoMes,
+              operariosIds,
+              horariosPorDia,
+              festivosSet,
+            });
+            diasMesEvaluados = diasRescate;
 
             if (diasRescate.length) {
-              // 1) un solo dia (permitiendo partir la tarea en varios bloques dentro de ese dia)
-              let planRescate = await this.construirPlanEnRango({
+              // 1) elegir el día que deja menos fragmentación y completa mejor
+              // las jornadas ya ocupadas de todos los operarios requeridos.
+              let planRescate = await this.construirMejorPlanEnDias({
                 conjuntoId,
                 duracionMinutos: durMinParte,
                 operariosIds,
                 dias: diasRescate,
                 horariosPorDia,
                 festivosSet,
-                maxBloquesPorDia: MAX_BLOQUES_RESCATE_POR_DIA,
-                permitirMultiDia: false,
-                validarLimiteSemanal: true,
                 incluirPublicadasEnAgenda,
               });
 
@@ -3525,9 +3958,99 @@ export class DefinicionTareaPreventivaService {
             }
           }
 
+          // Fase C: si tampoco hubo hueco libre, aplicar la jerarquía de
+          // reemplazo en los demás días del mes. Esto es especialmente
+          // importante para tareas compartidas, cuyo hueco común puede estar
+          // en miércoles o jueves aunque el objetivo fuera lunes.
+          if (!agendada && prioridad === 2) {
+            const prioridadesCandidatas: Array<2 | 3> = [3];
+
+            for (const diaAlternativo of diasMesEvaluados) {
+              const disponibilidad = operariosIds.length
+                ? await this.disponibilidadScheduler({
+                    fecha: diaAlternativo,
+                    operariosIds,
+                  })
+                : { ok: true, noDisponibles: [] as string[] };
+              if (!disponibilidad.ok) continue;
+
+              const horario = horariosPorDia.get(
+                dateToDiaSemana(diaAlternativo),
+              );
+              if (!horario) continue;
+              const bloqueos = [
+                ...buildBloqueosPorDescanso(horario),
+                ...(await this.bloqueosPatronScheduler({
+                  fecha: diaAlternativo,
+                  horario,
+                  operariosIds,
+                })),
+              ];
+
+              const reemplazo = await intentarReemplazoPorPrioridadBaja({
+                prisma: this.prisma,
+                conjuntoId,
+                fechaDia: diaAlternativo,
+                startMin: horario.startMin,
+                endMin: horario.endMin,
+                bloqueos,
+                durMin: durMinParte,
+                payload: crearPayloadReemplazo(),
+                prioridadesCandidatas,
+                incluirBorradorEnAgenda: true,
+                incluirPublicadasEnAgenda,
+              });
+              if (!reemplazo.ok) {
+                if (prioridad === 2 && reemplazo.reason === "SIN_HUECO") {
+                  diasConCandidatasP3ParaP2++;
+                }
+                continue;
+              }
+
+              await this.moverReemplazadasAExcluidas({
+                tareaIds: reemplazo.reprogramadasIds,
+                reemplazadaPorDefId: def.id,
+                reemplazadaPorDescripcion: def.descripcion,
+              });
+              this.minutosSemanaSchedulerCache.clear();
+              this.retirarTareasAgendaScheduler(reemplazo.reprogramadasIds);
+              reemplazo.bloques.forEach((bloque, index) => {
+                const tareaId = reemplazo.nuevaTareaIds[index];
+                if (tareaId == null) return;
+                this.registrarIntervaloAgendaScheduler({
+                  tareaId,
+                  fechaInicio: toDateAtMin(diaAlternativo, bloque.i),
+                  fechaFin: toDateAtMin(diaAlternativo, bloque.f),
+                  operariosIds,
+                  borrador: true,
+                });
+              });
+              creadas += reemplazo.nuevaTareaIds.length;
+              if (grupoPlanId) {
+                bloqueIndexCursor += reemplazo.nuevaTareaIds.length;
+              }
+              if (reemplazo.reprogramadasIds.length) {
+                novedades.push({
+                  tipo: "REEMPLAZO_PRIORIDAD",
+                  defId: def.id,
+                  descripcion: def.descripcion,
+                  prioridad,
+                  fecha: dayKey(diaAlternativo),
+                  nuevaTareaIds: reemplazo.nuevaTareaIds,
+                  reprogramadasIds: reemplazo.reprogramadasIds,
+                  mensaje:
+                    "Reemplazo automático en el mejor día disponible del mes.",
+                });
+              }
+              agendada = true;
+              diaParte = diaAlternativo;
+              break;
+            }
+          }
+
           if (!agendada && prioridad === 3) {
             const mensaje =
-              "No se encontro espacio disponible en el periodo para esta tarea de prioridad 3.";
+              "No se encontro espacio disponible en el mes para esta tarea de prioridad 3.";
             novedades.push({
               tipo: "SIN_HUECO",
               defId: def.id,
@@ -3552,8 +4075,8 @@ export class DefinicionTareaPreventivaService {
             const encontroCandidatas = diasConCandidatasP3ParaP2 > 0;
             const motivoTipo = encontroCandidatas ? "SIN_HUECO" : "SIN_CANDIDATAS";
             const mensaje = encontroCandidatas
-              ? "Las tareas P3 disponibles no liberaron capacidad suficiente en el dia objetivo."
-              : "No se encontraron tareas P3 para reemplazar en el dia objetivo.";
+              ? "Las tareas P3 disponibles en el mes no liberaron capacidad suficiente para programar esta P2."
+              : "No existe capacidad libre ni tareas P3 desplazables en los dias habiles restantes del mes.";
             novedades.push({
               tipo: motivoTipo,
               defId: def.id,
@@ -3577,7 +4100,7 @@ export class DefinicionTareaPreventivaService {
           if (!agendada && prioridad === 1) {
             throw new Error(
               `No fue posible programar la tarea obligatoria '${def.descripcion}' ` +
-                "despues de buscar capacidad y reemplazos durante 70 dias.",
+                `en su fecha obligatoria ${dayKey(diaObjetivoParte)}, incluso aplicando reemplazos.`,
             );
           }
 
@@ -6360,6 +6883,7 @@ async function minutosAsignadosEnSemana(
     operarios: { some: { id: operarioId.toString() } },
     fechaInicio: { lte: fin },
     fechaFin: { gte: ini },
+    estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
   };
 
   if (!incluirPublicadas) where.borrador = true;

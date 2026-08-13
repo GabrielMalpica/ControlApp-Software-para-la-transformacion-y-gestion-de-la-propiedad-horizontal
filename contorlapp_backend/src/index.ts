@@ -19,7 +19,6 @@ import { prisma } from "./db/prisma";
 import { bootstrapNotificacionesSchema } from "./services/NotificacionService";
 import { authRequiredUnlessPublic } from "./middlewares/auth.middleware";
 import { distributedRateLimit } from "./middlewares/rate-limit.middleware";
-import temporaryDatabaseExportRouter from "./routes/TemporaryDatabaseExport";
 
 if (!process.env.JWT_SECRET) {
   throw new Error("Falta JWT_SECRET en el archivo .env");
@@ -137,10 +136,6 @@ app.get("/ping", async (_req: Request, res: Response, next: NextFunction) => {
     next(e);
   }
 });
-
-// TEMPORARY: protected by a separate expiring token and disabled by default.
-// Remove this registration after the production database has been cloned.
-app.use("/internal/temporary/database-export", temporaryDatabaseExportRouter);
 
 /* -------------------------------- rutas ---------------------------------- */
 app.use(authRequiredUnlessPublic);
