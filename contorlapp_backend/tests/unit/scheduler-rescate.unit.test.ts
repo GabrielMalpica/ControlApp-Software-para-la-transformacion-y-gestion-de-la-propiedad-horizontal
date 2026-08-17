@@ -8,11 +8,24 @@ jest.mock('../../src/utils/schedulerUtils', () => {
     ...real,
     getFestivosSet: jest.fn().mockResolvedValue(new Set<string>()),
     isFestivoDate: jest.fn().mockResolvedValue(false),
+    intentarReemplazoPorPrioridadBaja: jest.fn(
+      (...args: any[]) => real.intentarReemplazoPorPrioridadBaja(...args),
+    ),
   };
 });
 
-import { DefinicionTareaPreventivaService } from '../../src/services/DefinicionTareaPreventivaService';
-import { getFestivosSet } from '../../src/utils/schedulerUtils';
+import {
+  DefinicionTareaPreventivaService,
+  ordenarDiasMesPorProximidad,
+} from '../../src/services/DefinicionTareaPreventivaService';
+import {
+  getFestivosSet,
+  intentarReemplazoPorPrioridadBaja,
+} from '../../src/utils/schedulerUtils';
+
+const intentarReemplazoReal = jest.requireActual(
+  '../../src/utils/schedulerUtils',
+).intentarReemplazoPorPrioridadBaja;
 
 const CONJUNTO = '9001';
 const DIAS_LABORALES = [
@@ -220,6 +233,31 @@ function construirPrisma(opts: {
 describe('generarBorradorMensual - fase de rescate', () => {
   beforeEach(() => {
     jest.mocked(getFestivosSet).mockResolvedValue(new Set<string>());
+    jest
+      .mocked(intentarReemplazoPorPrioridadBaja)
+      .mockImplementation(intentarReemplazoReal);
+  });
+
+  test('PU-R00 - recorre el mes por proximidad sin incluir meses vecinos', () => {
+    const ordenados = ordenarDiasMesPorProximidad({
+      dias: [
+        new Date(2026, 7, 15),
+        new Date(2026, 7, 20),
+        new Date(2026, 8, 1),
+        new Date(2026, 7, 17),
+        new Date(2026, 7, 16),
+      ],
+      fechaObjetivo: new Date(2026, 7, 16),
+      periodoAnio: 2026,
+      periodoMes: 8,
+    });
+
+    expect(ordenados.map(ymd)).toEqual([
+      '2026-08-16',
+      '2026-08-17',
+      '2026-08-15',
+      '2026-08-20',
+    ]);
   });
 
   test('PU-R0 - una P2 en festivo se rescata en otro día hábil del mes', async () => {
@@ -308,6 +346,81 @@ describe('generarBorradorMensual - fase de rescate', () => {
     expect(prisma.tareasCreadas[0].fechaInicio.getHours()).toBe(8);
     expect(prisma.tareasCreadas[0].fechaFin.getHours()).toBeLessThanOrEqual(16);
     expect(prisma.excluidasCreadas).toHaveLength(0);
+  });
+
+  test('PU-R0D - una P1 prueba reemplazos en días posteriores y anteriores del mes', async () => {
+    const todosLosDias = Array.from(
+      { length: 31 },
+      (_, index) => `2026-03-${String(index + 1).padStart(2, '0')}`,
+    );
+    const prisma = construirPrisma({
+      diasOcupados: todosLosDias,
+      duracionMinutosFija: 120,
+      prioridad: 1,
+      diaMesProgramado: 16,
+    });
+    prisma.tarea.findUnique = jest.fn(async ({ where }: any) => ({
+      id: where.id,
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+      definicionId: where.id,
+      ocurrenciaPlanId: null,
+      descripcion: `Preventiva desplazada ${where.id}`,
+      frecuencia: Frecuencia.MENSUAL,
+      diaSemanaProgramado: DiaSemana.VIERNES,
+      prioridad: 3,
+      duracionMinutos: 60,
+      fechaInicio: new Date(2026, 2, 13, 8),
+      fechaFin: new Date(2026, 2, 13, 9),
+      fechaInicioOriginal: null,
+      ubicacionId: 1,
+      ubicacion: { nombre: 'Torre A' },
+      elementoId: 2,
+      elemento: { nombre: 'Pasillo' },
+      supervisorId: null,
+      supervisor: null,
+      operarios: [{ id: 'op-1', usuario: { nombre: 'Pedro' } }],
+    }));
+    prisma.tarea.delete = jest.fn().mockResolvedValue({});
+
+    const fechasIntentadas: string[] = [];
+    const reemplazoMock = jest
+      .mocked(intentarReemplazoPorPrioridadBaja)
+      .mockImplementation(async (params: any) => {
+        const fecha = ymd(params.fechaDia);
+        fechasIntentadas.push(fecha);
+        if (fecha !== '2026-03-13') {
+          return { ok: false, reason: 'SIN_HUECO' } as any;
+        }
+        return {
+          ok: true,
+          nuevaTareaIds: [7001, 7002],
+          reprogramadasIds: [501, 502],
+          bloques: [
+            { i: 8 * 60, f: 9 * 60 },
+            { i: 10 * 60, f: 11 * 60 },
+          ],
+        } as any;
+      });
+
+    try {
+      const service = new DefinicionTareaPreventivaService(prisma);
+      const { creadas } = await service.generarBorradorMensual({
+        conjuntoId: CONJUNTO,
+        periodoAnio: 2026,
+        periodoMes: 3,
+      });
+
+      expect(creadas).toBe(2);
+      expect(fechasIntentadas).toContain('2026-03-17');
+      expect(fechasIntentadas).toContain('2026-03-13');
+      expect(fechasIntentadas.every((fecha) => fecha.startsWith('2026-03-'))).toBe(true);
+      expect(prisma.tarea.delete).toHaveBeenCalledTimes(2);
+      expect(prisma.excluidasCreadas).toHaveLength(2);
+    } finally {
+      reemplazoMock.mockImplementation(intentarReemplazoReal);
+    }
   });
 
   test('PU-R1 - una P3 sin espacio objetivo aprovecha el siguiente dia habil', async () => {

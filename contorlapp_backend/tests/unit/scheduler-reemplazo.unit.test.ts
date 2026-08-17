@@ -200,4 +200,129 @@ describe('reemplazo automatico por prioridad', () => {
     );
     expect(prisma.tarea.delete).toHaveBeenCalledWith({ where: { id: 15 } });
   });
+
+  test('PU-RP3 - una P1 desplaza varias tareas y se divide antes y despues del almuerzo', async () => {
+    const fecha = new Date(2026, 2, 4);
+    const at = (hora: number) => new Date(2026, 2, 4, hora);
+    const tareas: any[] = [
+      {
+        id: 1,
+        prioridad: 3,
+        fechaInicio: at(8),
+        fechaFin: at(10),
+        borrador: true,
+        estado: 'ASIGNADA',
+        grupoPlanId: null,
+        operarios: [{ id: 'op-1' }],
+      },
+      {
+        id: 2,
+        prioridad: 1,
+        fechaInicio: at(10),
+        fechaFin: at(12),
+        borrador: true,
+        estado: 'ASIGNADA',
+        grupoPlanId: null,
+        operarios: [{ id: 'op-1' }],
+      },
+      {
+        id: 3,
+        prioridad: 3,
+        fechaInicio: at(13),
+        fechaFin: at(15),
+        borrador: true,
+        estado: 'ASIGNADA',
+        grupoPlanId: null,
+        operarios: [{ id: 'op-1' }],
+      },
+      {
+        id: 4,
+        prioridad: 1,
+        fechaInicio: at(15),
+        fechaFin: at(17),
+        borrador: true,
+        estado: 'ASIGNADA',
+        grupoPlanId: null,
+        operarios: [{ id: 'op-1' }],
+      },
+    ];
+    let secuencia = 10;
+    const filtrar = (where: any) =>
+      tareas.filter((tarea) => {
+        if (where?.id?.notIn?.includes(tarea.id)) return false;
+        if (where?.prioridad?.in && !where.prioridad.in.includes(tarea.prioridad)) {
+          return false;
+        }
+        if (where?.borrador != null && tarea.borrador !== where.borrador) return false;
+        if (where?.estado?.notIn?.includes(tarea.estado)) return false;
+        if (
+          where?.operarios?.some?.id?.in &&
+          !tarea.operarios.some((op: any) => where.operarios.some.id.in.includes(op.id))
+        ) {
+          return false;
+        }
+        return true;
+      });
+    const prisma: any = {
+      tarea: {
+        findMany: jest.fn(async ({ where }: any) => filtrar(where)),
+        findUnique: jest.fn(async ({ where }: any) =>
+          tareas.find((tarea) => tarea.id === where.id) ?? null,
+        ),
+        update: jest.fn(async ({ where, data }: any) => {
+          const tarea = tareas.find((item) => item.id === where.id);
+          Object.assign(tarea, data);
+          return tarea;
+        }),
+        updateMany: jest.fn(async ({ where, data }: any) => {
+          const afectadas = filtrar(where);
+          for (const tarea of afectadas) Object.assign(tarea, data);
+          return { count: afectadas.length };
+        }),
+        create: jest.fn(async ({ data }: any) => {
+          const creada = { ...data, id: ++secuencia, operarios: [{ id: 'op-1' }] };
+          tareas.push(creada);
+          return creada;
+        }),
+      },
+      $transaction: jest.fn(async (callback: any) => callback(prisma)),
+    };
+
+    const resultado = await intentarReemplazoPorPrioridadBaja({
+      prisma,
+      conjuntoId: '9001',
+      fechaDia: fecha,
+      startMin: 8 * 60,
+      endMin: 17 * 60,
+      bloqueos: [{ startMin: 12 * 60, endMin: 13 * 60, reason: 'DESCANSO' }],
+      durMin: 240,
+      payload: {
+        descripcion: 'Mantenimiento obligatorio',
+        tipo: TipoTarea.PREVENTIVA,
+        frecuencia: Frecuencia.MENSUAL,
+        definicionId: 77,
+        prioridad: 1,
+        supervisorId: null,
+        ubicacionId: 1,
+        elementoId: 2,
+        conjuntoId: '9001',
+        borrador: true,
+        periodoAnio: 2026,
+        periodoMes: 3,
+        operariosIds: ['op-1'],
+      },
+      prioridadesCandidatas: [3, 2],
+      incluirBorradorEnAgenda: true,
+      incluirPublicadasEnAgenda: true,
+    });
+
+    expect(resultado.ok).toBe(true);
+    if (!resultado.ok) return;
+    expect(resultado.reprogramadasIds).toEqual([1, 3]);
+    expect(resultado.bloques).toEqual([
+      { i: 8 * 60, f: 10 * 60 },
+      { i: 13 * 60, f: 15 * 60 },
+    ]);
+    expect(prisma.tarea.create).toHaveBeenCalledTimes(2);
+  });
 });
