@@ -18,6 +18,7 @@ import {
   elementoParentChainInclude,
 } from "../utils/elementoHierarchy";
 import {
+  validarIntervaloProgramacion,
   validarLimiteSemanalOperarios,
   validarOperariosDisponiblesEnFecha,
 } from "../utils/operarioAvailability";
@@ -47,6 +48,14 @@ const CronoMesDTO = z.object({
   anio: z.number().int().min(2000).max(2100),
   mes: z.number().int().min(1).max(12),
   borrador: z.boolean().optional(), // undefined = todos, true = solo borrador, false = solo operativo
+});
+
+const InformeActividadJerarquicoDTO = CronoMesDTO.extend({
+  operarioId: z.string().trim().min(1).optional(),
+  semanaInicio: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
 });
 
 const ExcluidasStandbyDTO = z.object({
@@ -185,6 +194,11 @@ function dateKeyLocal(d: Date) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function parseDateKeyLocal(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
 }
 
 /**
@@ -353,6 +367,391 @@ export class CronogramaService {
     return Array.from(rows.values()).sort((a, b) =>
       a.actividad.localeCompare(b.actividad),
     );
+  }
+
+  async informeActividadJerarquico(payload: unknown) {
+    const { anio, mes, borrador, operarioId, semanaInicio } =
+      InformeActividadJerarquicoDTO.parse(payload);
+    const esBorrador = borrador ?? false;
+
+    let ocurrencias: any[] = await this.prisma.preventivaOcurrenciaPlan.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        periodoAnio: anio,
+        periodoMes: mes,
+        borrador: esBorrador,
+      },
+      orderBy: [
+        { ubicacionNombre: "asc" },
+        { descripcion: "asc" },
+        { fechaObjetivo: "asc" },
+      ],
+    });
+    const trazabilidadDisponible = ocurrencias.length > 0;
+
+    let tareas: any[];
+    if (trazabilidadDisponible) {
+      const ids = ocurrencias.map((ocurrencia) => ocurrencia.id);
+      tareas = await this.prisma.tarea.findMany({
+          where: {
+            conjuntoId: this.conjuntoId,
+            borrador: esBorrador,
+            ocurrenciaPlanId: { in: ids },
+            estado: { notIn: ESTADOS_NO_CRONOGRAMA },
+          },
+          select: {
+            id: true,
+            ocurrenciaPlanId: true,
+            fechaInicio: true,
+            fechaFin: true,
+            duracionMinutos: true,
+            estado: true,
+            operarios: {
+              select: {
+                id: true,
+                usuario: { select: { nombre: true } },
+              },
+            },
+          },
+          orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
+        });
+      const sinTrazabilidad = await this.prisma.tarea.findMany({
+        where: {
+          conjuntoId: this.conjuntoId,
+          borrador: esBorrador,
+          tipo: TipoTarea.PREVENTIVA,
+          periodoAnio: anio,
+          periodoMes: mes,
+          ocurrenciaPlanId: null,
+          estado: { notIn: ESTADOS_NO_CRONOGRAMA },
+        },
+        select: {
+          id: true,
+          definicionId: true,
+          descripcion: true,
+          frecuencia: true,
+          prioridad: true,
+          ubicacionId: true,
+          elementoId: true,
+          fechaInicio: true,
+          fechaFin: true,
+          duracionMinutos: true,
+          estado: true,
+          ubicacion: { select: { nombre: true } },
+          elemento: { select: { nombre: true } },
+          operarios: {
+            select: {
+              id: true,
+              usuario: { select: { nombre: true } },
+            },
+          },
+        },
+        orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
+      });
+      ocurrencias.push(
+        ...sinTrazabilidad.map((tarea) => ({
+          id: `legacy:${tarea.id}`,
+          defId: tarea.definicionId,
+          descripcion: tarea.descripcion,
+          frecuencia: tarea.frecuencia,
+          prioridad: tarea.prioridad,
+          fechaObjetivo: tarea.fechaInicio,
+          duracionEsperadaMin: tarea.duracionMinutos,
+          ubicacionId: tarea.ubicacionId,
+          ubicacionNombre: tarea.ubicacion?.nombre ?? null,
+          elementoId: tarea.elementoId,
+          elementoNombre: tarea.elemento?.nombre ?? null,
+          operariosEsperadosIds: tarea.operarios.map((operario) => operario.id),
+          operariosEsperadosNombres: tarea.operarios.map(
+            (operario) => operario.usuario?.nombre ?? operario.id,
+          ),
+          motivoCodigo: null,
+          motivoMensaje: null,
+        })),
+      );
+      tareas.push(
+        ...sinTrazabilidad.map((tarea) => ({
+          ...tarea,
+          ocurrenciaPlanId: `legacy:${tarea.id}`,
+        })),
+      );
+    } else {
+      const legacy = await this.prisma.tarea.findMany({
+        where: {
+          conjuntoId: this.conjuntoId,
+          borrador: esBorrador,
+          tipo: TipoTarea.PREVENTIVA,
+          periodoAnio: anio,
+          periodoMes: mes,
+          estado: { notIn: ESTADOS_NO_CRONOGRAMA },
+        },
+        select: {
+          id: true,
+          definicionId: true,
+          descripcion: true,
+          frecuencia: true,
+          prioridad: true,
+          ubicacionId: true,
+          elementoId: true,
+          fechaInicio: true,
+          fechaFin: true,
+          duracionMinutos: true,
+          estado: true,
+          ubicacion: { select: { nombre: true } },
+          elemento: { select: { nombre: true } },
+          operarios: {
+            select: {
+              id: true,
+              usuario: { select: { nombre: true } },
+            },
+          },
+        },
+        orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
+      });
+      ocurrencias = legacy.map((tarea) => ({
+        id: `legacy:${tarea.id}`,
+        defId: tarea.definicionId,
+        descripcion: tarea.descripcion,
+        frecuencia: tarea.frecuencia,
+        prioridad: tarea.prioridad,
+        fechaObjetivo: tarea.fechaInicio,
+        duracionEsperadaMin: tarea.duracionMinutos,
+        ubicacionId: tarea.ubicacionId,
+        ubicacionNombre: tarea.ubicacion?.nombre ?? null,
+        elementoId: tarea.elementoId,
+        elementoNombre: tarea.elemento?.nombre ?? null,
+        operariosEsperadosIds: tarea.operarios.map((operario) => operario.id),
+        operariosEsperadosNombres: tarea.operarios.map(
+          (operario) => operario.usuario?.nombre ?? operario.id,
+        ),
+        motivoCodigo: null,
+        motivoMensaje: null,
+      }));
+      tareas = legacy.map((tarea) => ({
+        ...tarea,
+        ocurrenciaPlanId: `legacy:${tarea.id}`,
+      }));
+    }
+
+    const tareasPorOcurrencia = new Map<string, typeof tareas>();
+    for (const tarea of tareas) {
+      if (!tarea.ocurrenciaPlanId) continue;
+      const lista = tareasPorOcurrencia.get(tarea.ocurrenciaPlanId) ?? [];
+      lista.push(tarea);
+      tareasPorOcurrencia.set(tarea.ocurrenciaPlanId, lista);
+    }
+
+    const operadores = new Map<string, string>();
+    for (const ocurrencia of ocurrencias) {
+      ocurrencia.operariosEsperadosIds.forEach((id, index) => {
+        operadores.set(
+          id,
+          ocurrencia.operariosEsperadosNombres[index] ?? id,
+        );
+      });
+    }
+    for (const tarea of tareas) {
+      for (const operario of tarea.operarios) {
+        operadores.set(operario.id, operario.usuario?.nombre ?? operario.id);
+      }
+    }
+
+    const inicioSemanaFiltro = semanaInicio
+      ? mondayOfWeek(parseDateKeyLocal(semanaInicio))
+      : null;
+    const finSemanaFiltro = inicioSemanaFiltro
+      ? new Date(
+          inicioSemanaFiltro.getFullYear(),
+          inicioSemanaFiltro.getMonth(),
+          inicioSemanaFiltro.getDate() + 6,
+          23,
+          59,
+          59,
+          999,
+        )
+      : null;
+
+    type OcurrenciaInforme = {
+      id: string;
+      fechaObjetivo: Date;
+      duracionEsperadaMin: number;
+      minutosProgramados: number;
+      estado: "PROGRAMADA" | "PARCIAL" | "SIN_PROGRAMAR";
+      reubicada: boolean;
+      fechaRealInicio: Date | null;
+      fechaRealFin: Date | null;
+      motivoCodigo: string | null;
+      motivoMensaje: string | null;
+      operariosEsperados: Array<{ id: string; nombre: string }>;
+      bloques: Array<{
+        tareaId: number;
+        fechaInicio: Date;
+        fechaFin: Date;
+        duracionMinutos: number;
+        estado: EstadoTarea;
+        operarios: Array<{ id: string; nombre: string }>;
+      }>;
+    };
+    type DefinicionInforme = {
+      id: string;
+      definicionId: number | null;
+      descripcion: string;
+      frecuencia: string | null;
+      prioridad: number;
+      elementoId: number;
+      elementoNombre: string | null;
+      ocurrencias: OcurrenciaInforme[];
+    };
+    type UbicacionInforme = {
+      id: number;
+      nombre: string;
+      definiciones: Map<string, DefinicionInforme>;
+    };
+    const ubicacionesMap = new Map<number, UbicacionInforme>();
+
+    for (const ocurrencia of ocurrencias) {
+      if (
+        inicioSemanaFiltro &&
+        finSemanaFiltro &&
+        (ocurrencia.fechaObjetivo < inicioSemanaFiltro ||
+          ocurrencia.fechaObjetivo > finSemanaFiltro)
+      ) {
+        continue;
+      }
+
+      const bloquesTodos = tareasPorOcurrencia.get(ocurrencia.id) ?? [];
+      const esperadaPorOperario = operarioId
+        ? ocurrencia.operariosEsperadosIds.includes(operarioId)
+        : true;
+      const bloques = operarioId
+        ? bloquesTodos.filter((tarea) =>
+            tarea.operarios.some((operario) => operario.id === operarioId),
+          )
+        : bloquesTodos;
+      if (operarioId && !esperadaPorOperario && bloques.length === 0) continue;
+
+      const minutosProgramados = bloques.reduce(
+        (total, tarea) => total + Math.max(0, tarea.duracionMinutos),
+        0,
+      );
+      const estado: OcurrenciaInforme["estado"] =
+        minutosProgramados <= 0
+          ? "SIN_PROGRAMAR"
+          : minutosProgramados < ocurrencia.duracionEsperadaMin
+            ? "PARCIAL"
+            : "PROGRAMADA";
+      const fechaRealInicio = bloques[0]?.fechaInicio ?? null;
+      const fechaRealFin = bloques.reduce<Date | null>(
+        (maxima, tarea) =>
+          maxima == null || tarea.fechaFin > maxima ? tarea.fechaFin : maxima,
+        null,
+      );
+      const reubicada =
+        fechaRealInicio != null &&
+        dateKeyLocal(fechaRealInicio) !== dateKeyLocal(ocurrencia.fechaObjetivo);
+
+      const ubicacion = ubicacionesMap.get(ocurrencia.ubicacionId) ?? {
+        id: ocurrencia.ubicacionId,
+        nombre: ocurrencia.ubicacionNombre ?? "Sin ubicacion",
+        definiciones: new Map<string, DefinicionInforme>(),
+      };
+      ubicacionesMap.set(ocurrencia.ubicacionId, ubicacion);
+
+      const definicionKey = ocurrencia.defId != null
+        ? `def:${ocurrencia.defId}`
+        : `legacy:${ocurrencia.descripcion}:${ocurrencia.elementoId}`;
+      const definicion: DefinicionInforme = ubicacion.definiciones.get(definicionKey) ?? {
+        id: definicionKey,
+        definicionId: ocurrencia.defId,
+        descripcion: ocurrencia.descripcion,
+        frecuencia: ocurrencia.frecuencia,
+        prioridad: ocurrencia.prioridad,
+        elementoId: ocurrencia.elementoId,
+        elementoNombre: ocurrencia.elementoNombre,
+        ocurrencias: [],
+      };
+      ubicacion.definiciones.set(definicionKey, definicion);
+      definicion.ocurrencias.push({
+        id: ocurrencia.id,
+        fechaObjetivo: ocurrencia.fechaObjetivo,
+        duracionEsperadaMin: ocurrencia.duracionEsperadaMin,
+        minutosProgramados,
+        estado,
+        reubicada,
+        fechaRealInicio,
+        fechaRealFin,
+        motivoCodigo:
+          ocurrencia.motivoCodigo ?? (reubicada ? "REUBICADA_EN_PERIODO" : null),
+        motivoMensaje: ocurrencia.motivoMensaje,
+        operariosEsperados: ocurrencia.operariosEsperadosIds.map((id, index) => ({
+          id,
+          nombre: ocurrencia.operariosEsperadosNombres[index] ?? id,
+        })),
+        bloques: bloques.map((tarea) => ({
+          tareaId: tarea.id,
+          fechaInicio: tarea.fechaInicio,
+          fechaFin: tarea.fechaFin,
+          duracionMinutos: tarea.duracionMinutos,
+          estado: tarea.estado,
+          operarios: tarea.operarios.map((item) => ({
+            id: item.id,
+            nombre: item.usuario?.nombre ?? item.id,
+          })),
+        })),
+      });
+    }
+
+    const resumir = (lista: OcurrenciaInforme[]) => ({
+      esperadas: lista.length,
+      conProgramacion: lista.filter((item) => item.minutosProgramados > 0).length,
+      completas: lista.filter((item) => item.estado === "PROGRAMADA").length,
+      parciales: lista.filter((item) => item.estado === "PARCIAL").length,
+      sinProgramar: lista.filter((item) => item.estado === "SIN_PROGRAMAR").length,
+      minutosEsperados: lista.reduce(
+        (total, item) => total + item.duracionEsperadaMin,
+        0,
+      ),
+      minutosProgramados: lista.reduce(
+        (total, item) => total + item.minutosProgramados,
+        0,
+      ),
+    });
+
+    const ubicaciones = Array.from(ubicacionesMap.values())
+      .map((ubicacion) => {
+        const definiciones = Array.from(ubicacion.definiciones.values())
+          .map((definicion) => ({
+            ...definicion,
+            resumen: resumir(definicion.ocurrencias),
+          }))
+          .sort((a, b) => a.descripcion.localeCompare(b.descripcion));
+        return {
+          id: ubicacion.id,
+          nombre: ubicacion.nombre,
+          resumen: resumir(definiciones.flatMap((item) => item.ocurrencias)),
+          definiciones,
+        };
+      })
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+    const todas = ubicaciones.flatMap((ubicacion) =>
+      ubicacion.definiciones.flatMap((definicion) => definicion.ocurrencias),
+    );
+
+    return {
+      periodo: {
+        anio,
+        mes,
+        semanaInicio: inicioSemanaFiltro,
+        semanaFin: finSemanaFiltro,
+      },
+      filtros: { borrador: esBorrador, operarioId: operarioId ?? null },
+      trazabilidadDisponible,
+      resumen: resumir(todas),
+      operarios: Array.from(operadores.entries())
+        .map(([id, nombre]) => ({ id, nombre }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre)),
+      ubicaciones,
+    };
   }
 
   async listarExcluidasStandby(payload: unknown) {
@@ -1548,6 +1947,14 @@ export class CronogramaService {
       select: { operarios: { select: { id: true } } },
     });
     const operariosIds = tarea?.operarios.map((o) => o.id) ?? [];
+    const validacionIntervalo = await validarIntervaloProgramacion({
+      prisma: this.prisma,
+      conjuntoId: this.conjuntoId,
+      fechaInicio,
+      fechaFin,
+      operariosIds,
+    });
+    if (!validacionIntervalo.ok) throw new Error(validacionIntervalo.mensaje);
     if (operariosIds.length) {
       const disponibilidad = await validarOperariosDisponiblesEnFecha({
         prisma: this.prisma,

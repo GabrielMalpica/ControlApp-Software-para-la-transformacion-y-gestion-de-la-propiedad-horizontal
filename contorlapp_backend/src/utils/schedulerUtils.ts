@@ -613,6 +613,7 @@ type CrearTareaPayload = {
 
   // origen preventivo (trazabilidad hacia la definicion que la genero)
   definicionId?: number | null;
+  ocurrenciaPlanId?: string | null;
   diaSemanaProgramado?: DiaSemana | null;
 
   prioridad: number;
@@ -961,7 +962,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       payload.motivoReprogramacion ??
       "Reprogramada por reemplazo de prioridad alta";
 
-    const result = await prisma.$transaction(async (tx) => {
+    const ejecutarReemplazo = async (tx: Prisma.TransactionClient) => {
       const reprogramadas = Array.from(idsAExcluir);
 
       for (const id of reprogramadas) {
@@ -1011,7 +1012,11 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       }
 
       return { nuevaIds, reprogramadas };
-    });
+    };
+    const result =
+      typeof (prisma as any).$transaction === "function"
+        ? await (prisma as any).$transaction(ejecutarReemplazo)
+        : await ejecutarReemplazo(prisma as unknown as Prisma.TransactionClient);
 
     onEvent?.({
       tipo: "REEMPLAZO",
@@ -1072,6 +1077,7 @@ async function crearTareaConBloques(
         tipo: payload.tipo,
         frecuencia: payload.frecuencia ?? null,
         definicionId: payload.definicionId ?? null,
+        ocurrenciaPlanId: payload.ocurrenciaPlanId ?? null,
         diaSemanaProgramado: payload.diaSemanaProgramado ?? null,
 
         fechaInicio,

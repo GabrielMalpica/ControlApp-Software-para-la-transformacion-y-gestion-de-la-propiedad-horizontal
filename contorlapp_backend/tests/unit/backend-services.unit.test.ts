@@ -88,6 +88,12 @@ describe('Pruebas unitarias backend', () => {
       // Jornada abierta L-S: el horario no es lo que se prueba aqui, pero da
       // capacidad semanal suficiente para que la validacion no bloquee.
       conjuntoHorario: {
+        findUnique: jest.fn().mockResolvedValue({
+          horaApertura: '00:00',
+          horaCierre: '23:59',
+          descansoInicio: null,
+          descansoFin: null,
+        }),
         findMany: jest.fn().mockResolvedValue(
           ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO'].map((dia) => ({
             dia,
@@ -100,7 +106,12 @@ describe('Pruebas unitarias backend', () => {
       },
       operario: {
         findUnique: jest.fn().mockResolvedValue(null),
-        findMany: jest.fn().mockResolvedValue([]),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'op-1',
+            usuario: { jornadaLaboral: 'COMPLETA', patronJornada: null },
+          },
+        ]),
         count: jest.fn().mockResolvedValue(1),
       },
       supervisor: { findFirst: jest.fn().mockResolvedValue({ id: 'sup-1' }) },

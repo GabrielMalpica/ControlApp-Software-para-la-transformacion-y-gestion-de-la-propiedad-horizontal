@@ -1163,6 +1163,7 @@ model Tarea {
   grupoPlanId    String?
   bloqueIndex    Int?
   bloquesTotales Int?
+  ocurrenciaPlanId String?
 
   // Rendimientos / estimaciones
   tiempoEstimadoMinutos     Int?
@@ -1196,6 +1197,7 @@ model Tarea {
   @@index([grupoPlanId, bloqueIndex])
   @@index([rendimientoId])
   @@index([definicionId], map: "Tarea_definicionId_idx")
+  @@index([ocurrenciaPlanId], map: "Tarea_ocurrenciaPlanId_idx")
   @@map("Tarea")
 }
 
@@ -1209,6 +1211,7 @@ model PreventivaExcluidaBorrador {
   defId             Int?
   origenTareaId     Int?
   tareaProgramadaId Int?
+  ocurrenciaPlanId  String?
 
   descripcion         String
   frecuencia          Frecuencia?
@@ -1240,7 +1243,46 @@ model PreventivaExcluidaBorrador {
   @@index([conjuntoId, periodoAnio, periodoMes], map: "PEB_periodo_idx")
   @@index([conjuntoId, periodoAnio, periodoMes, fechaObjetivo], map: "PEB_periodo_fecha_idx")
   @@index([conjuntoId, periodoAnio, periodoMes, estado], map: "PEB_periodo_estado_idx")
+  @@index([ocurrenciaPlanId], map: "PEB_ocurrenciaPlanId_idx")
   @@map("PreventivaExcluidaBorrador")
+}
+
+/// Inventario persistente de las ocurrencias que una definición debía generar.
+/// Es la fuente del informe incluso cuando no existe ninguna Tarea programada.
+model PreventivaOcurrenciaPlan {
+  id String @id
+
+  conjuntoId  String
+  periodoAnio Int
+  periodoMes  Int
+  borrador    Boolean @default(true)
+
+  defId                Int?
+  descripcion          String
+  frecuencia           Frecuencia?
+  prioridad            Int       @default(2)
+  fechaObjetivo        DateTime
+  duracionEsperadaMin  Int
+  ubicacionId          Int
+  ubicacionNombre      String?
+  elementoId           Int
+  elementoNombre       String?
+  operariosEsperadosIds     String[] @default([])
+  operariosEsperadosNombres String[] @default([])
+
+  estado        String @default("PENDIENTE")
+  motivoCodigo  String?
+  motivoMensaje String?
+  fechaRealInicio DateTime?
+  fechaRealFin    DateTime?
+
+  creadaEn      DateTime @default(now())
+  actualizadaEn DateTime @updatedAt
+
+  @@index([conjuntoId, periodoAnio, periodoMes, borrador], map: "POP_periodo_idx")
+  @@index([defId], map: "POP_defId_idx")
+  @@index([fechaObjetivo], map: "POP_fechaObjetivo_idx")
+  @@map("PreventivaOcurrenciaPlan")
 }
 
 model PreventivaBorradorEvento {

@@ -10,8 +10,8 @@ import {
 } from "../model/Tarea";
 import { isFestivoDate } from "../utils/schedulerUtils";
 import {
+  validarIntervaloProgramacion,
   validarOperariosDisponiblesEnFecha,
-  validarOperariosDisponiblesEnRango,
   validarLimiteSemanalOperarios,
 } from "../utils/operarioAvailability";
 
@@ -30,74 +30,15 @@ async function validarOperariosEnHorarioTarea(params: {
   operariosIds: string[];
 }) {
   const { prisma, conjuntoId, fechaInicio, fechaFin, operariosIds } = params;
-  if (!conjuntoId || !operariosIds.length) return;
-
-  const toMin = (value: unknown) => {
-    const text = String(value ?? "").trim();
-    const match = text.match(/(\d{1,2}):(\d{2})/);
-    if (!match) return null;
-    return Number(match[1]) * 60 + Number(match[2]);
-  };
-
-  const dia = fechaInicio.getDay();
-  const horarios = await prisma.conjuntoHorario.findMany({ where: { conjuntoId } });
-  const horario = horarios.find((h) => {
-    const map: Record<string, number> = {
-      LUNES: 1,
-      MARTES: 2,
-      MIERCOLES: 3,
-      JUEVES: 4,
-      VIERNES: 5,
-      SABADO: 6,
-      DOMINGO: 0,
-    };
-    return map[String(h.dia)] === dia;
-  });
-  if (!horario) return;
-
-  const jornadas = await prisma.operario.findMany({
-    where: { id: { in: operariosIds } },
-    select: {
-      id: true,
-      usuario: { select: { jornadaLaboral: true, patronJornada: true } },
-    },
-  });
-  const jornadasByOperario = new Map(
-    jornadas.map((j) => [
-      j.id,
-      {
-        jornadaLaboral: j.usuario?.jornadaLaboral ?? null,
-        patronJornada: j.usuario?.patronJornada ?? null,
-      },
-    ]),
-  );
-
-  const startMin = toMin(horario.horaApertura);
-  const endMin = toMin(horario.horaCierre);
-  if (startMin == null || endMin == null) return;
-  const result = await validarOperariosDisponiblesEnRango({
+  if (!conjuntoId) return;
+  const result = await validarIntervaloProgramacion({
     prisma,
+    conjuntoId,
     fechaInicio,
     fechaFin,
     operariosIds,
-    jornadasByOperario,
-    horarioDia: {
-      startMin,
-      endMin,
-      descansoStartMin: horario.descansoInicio
-        ? toMin(horario.descansoInicio) ?? undefined
-        : undefined,
-      descansoEndMin: horario.descansoFin
-        ? toMin(horario.descansoFin) ?? undefined
-        : undefined,
-    },
   });
-
-  if (!result.ok) {
-    throw new Error(
-      `Los operarios ${result.noDisponibles.join(", ")} no tienen horario disponible para ese rango.`,
-    );
-  }
+  if (!result.ok) throw new Error(result.mensaje);
 }
 
 const CompletarConInsumosDTO = z.object({
@@ -274,6 +215,20 @@ export class TareaService {
       );
     }
 
+    await validarOperariosEnHorarioTarea({
+      prisma,
+      conjuntoId: dto.conjuntoId ?? null,
+      fechaInicio: dto.fechaInicio,
+      fechaFin:
+        dto.fechaFin ??
+        new Date(
+          dto.fechaInicio.getTime() +
+            (dto.duracionMinutos ?? Math.round((dto.duracionHoras ?? 1) * 60)) *
+              60000,
+        ),
+      operariosIds: operarios,
+    });
+
     if (operarios.length) {
       const disponibilidad = await validarOperariosDisponiblesEnFecha({
         prisma,
@@ -285,13 +240,6 @@ export class TareaService {
           `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
         );
       }
-      await validarOperariosEnHorarioTarea({
-        prisma,
-        conjuntoId: dto.conjuntoId ?? null,
-        fechaInicio: dto.fechaInicio,
-        fechaFin: dto.fechaFin ?? new Date(dto.fechaInicio.getTime() + (dto.duracionMinutos ?? Math.round((dto.duracionHoras ?? 1) * 60)) * 60000),
-        operariosIds: operarios,
-      });
       if (dto.conjuntoId) {
         const duracionMinutos =
           dto.duracionMinutos ??
@@ -455,6 +403,16 @@ export class TareaService {
     const fechaInicioFinal = dto.fechaInicio ?? actual?.fechaInicio;
     const fechaFinFinal = dto.fechaFin ?? actual?.fechaFin;
 
+    if (fechaInicioFinal && fechaFinFinal) {
+      await validarOperariosEnHorarioTarea({
+        prisma,
+        conjuntoId: conjuntoIdFinal ?? null,
+        fechaInicio: fechaInicioFinal,
+        fechaFin: fechaFinFinal,
+        operariosIds: operariosFinal,
+      });
+    }
+
     if (fechaInicioFinal && fechaFinFinal && operariosFinal.length) {
       const disponibilidad = await validarOperariosDisponiblesEnFecha({
         prisma,
@@ -466,13 +424,6 @@ export class TareaService {
           `Los operarios ${disponibilidad.noDisponibles.join(", ")} no tienen disponibilidad para ese dia.`,
         );
       }
-      await validarOperariosEnHorarioTarea({
-        prisma,
-        conjuntoId: conjuntoIdFinal ?? null,
-        fechaInicio: fechaInicioFinal,
-        fechaFin: fechaFinFinal,
-        operariosIds: operariosFinal,
-      });
       if (conjuntoIdFinal) {
         const duracionMinutos = Math.max(
           1,

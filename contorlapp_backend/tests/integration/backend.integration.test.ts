@@ -130,6 +130,14 @@ describe('Pruebas de integración backend', () => {
 
   test('PI5 - Conjuntos + Tareas: crea tarea vinculada correctamente al conjunto', async () => {
     const prisma: any = {
+      conjuntoHorario: {
+        findUnique: jest.fn().mockResolvedValue({
+          horaApertura: '00:00',
+          horaCierre: '23:59',
+          descansoInicio: null,
+          descansoFin: null,
+        }),
+      },
       conjunto: {
         findFirst: jest.fn().mockResolvedValue({ nit: 'C-1' }),
       },

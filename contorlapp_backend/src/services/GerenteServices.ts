@@ -2092,6 +2092,7 @@ export class GerenteService {
 
       const bloqueosPatron = await buildBloqueosPorPatronJornada({
         prisma: prisma as any,
+        conjuntoId,
         fechaDia: inicio,
         horarioDia: {
           startMin,
@@ -2621,6 +2622,7 @@ export class GerenteService {
 
           const bloqueosPatron = await buildBloqueosPorPatronJornada({
             prisma: tx as any,
+            conjuntoId,
             fechaDia: base,
             horarioDia: {
               startMin,

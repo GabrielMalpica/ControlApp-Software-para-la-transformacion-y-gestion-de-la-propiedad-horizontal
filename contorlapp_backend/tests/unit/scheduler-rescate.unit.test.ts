@@ -288,7 +288,7 @@ describe('generarBorradorMensual - fase de rescate', () => {
     expect(prisma.excluidasCreadas).toHaveLength(0);
   });
 
-  test('PU-R0C - una P1 usa extensión sin abandonar su fecha obligatoria', async () => {
+  test('PU-R0C - una P1 no extiende la jornada y se reubica en un día válido', async () => {
     const prisma = construirPrisma({
       diasOcupados: ['2026-03-02'],
       duracionMinutosFija: 120,
@@ -304,8 +304,9 @@ describe('generarBorradorMensual - fase de rescate', () => {
     });
 
     expect(creadas).toBe(1);
-    expect(ymd(prisma.tareasCreadas[0].fechaInicio)).toBe('2026-03-02');
-    expect(prisma.tareasCreadas[0].fechaInicio.getHours()).toBe(16);
+    expect(ymd(prisma.tareasCreadas[0].fechaInicio)).toBe('2026-03-03');
+    expect(prisma.tareasCreadas[0].fechaInicio.getHours()).toBe(8);
+    expect(prisma.tareasCreadas[0].fechaFin.getHours()).toBeLessThanOrEqual(16);
     expect(prisma.excluidasCreadas).toHaveLength(0);
   });
 

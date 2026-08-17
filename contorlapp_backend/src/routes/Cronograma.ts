@@ -33,6 +33,12 @@ router.get(
   controller.informeMensualActividad,
 );
 router.get(
+  "/conjuntos/:nit/cronograma/informe-actividad-v2",
+  authRequired,
+  requirePermission("cronograma.ver"),
+  controller.informeActividadJerarquico,
+);
+router.get(
   "/conjuntos/:nit/cronograma/excluidas-standby",
   authRequired,
   requirePermission("cronograma.excluidas_ver"),

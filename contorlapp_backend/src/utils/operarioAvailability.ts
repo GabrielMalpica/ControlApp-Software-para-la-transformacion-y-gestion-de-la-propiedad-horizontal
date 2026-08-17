@@ -1,5 +1,16 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@prisma/client";
 import { DiaSemana, EstadoTarea } from "@prisma/client";
+
+type DbClient = PrismaClient | Prisma.TransactionClient;
+
+export type IntervaloLaboral = { i: number; f: number };
+
+export type MotivoIntervaloInvalido =
+  | "RANGO_INVALIDO"
+  | "CRUZA_DIA"
+  | "SIN_HORARIO_CONJUNTO"
+  | "FUERA_HORARIO_CONJUNTO"
+  | "FUERA_HORARIO_OPERARIO";
 
 type HorarioDia = {
   startMin: number;
@@ -22,23 +33,41 @@ export function diaSemanaFromDate(date: Date): DiaSemana {
 }
 
 export async function obtenerPeriodoDisponibilidadActivo(params: {
-  prisma: PrismaClient;
+  prisma: DbClient;
   operarioId: string;
   fecha: Date;
 }) {
   const { prisma, operarioId, fecha } = params;
+  const inicioDia = new Date(
+    fecha.getFullYear(),
+    fecha.getMonth(),
+    fecha.getDate(),
+    0,
+    0,
+    0,
+    0,
+  );
+  const finDia = new Date(
+    fecha.getFullYear(),
+    fecha.getMonth(),
+    fecha.getDate(),
+    23,
+    59,
+    59,
+    999,
+  );
   return prisma.operarioDisponibilidadPeriodo.findFirst({
     where: {
       operarioId,
-      fechaInicio: { lte: fecha },
-      OR: [{ fechaFin: null }, { fechaFin: { gte: fecha } }],
+      fechaInicio: { lte: finDia },
+      OR: [{ fechaFin: null }, { fechaFin: { gte: inicioDia } }],
     },
     orderBy: [{ fechaInicio: "desc" }, { id: "desc" }],
   });
 }
 
 export async function obtenerDisponibilidadActivaOperarios(params: {
-  prisma: PrismaClient;
+  prisma: DbClient;
   operariosIds: string[];
   fecha: Date;
 }) {
@@ -77,7 +106,7 @@ export function disponibilidadPermiteDia(params: {
 }
 
 export async function validarOperariosDisponiblesEnFecha(params: {
-  prisma: PrismaClient;
+  prisma: DbClient;
   fecha: Date;
   operariosIds: string[];
 }) {
@@ -111,7 +140,7 @@ export async function validarOperariosDisponiblesEnFecha(params: {
 }
 
 export async function validarOperariosDisponiblesEnRango(params: {
-  prisma: PrismaClient;
+  prisma: DbClient;
   fechaInicio: Date;
   fechaFin: Date;
   operariosIds: string[];
@@ -161,7 +190,7 @@ function inicioSemana(fecha: Date) {
 }
 
 async function capacidadSemanalOperario(params: {
-  prisma: PrismaClient;
+  prisma: DbClient;
   conjuntoId: string;
   operarioId: string;
   fechaReferencia: Date;
@@ -231,7 +260,7 @@ async function capacidadSemanalOperario(params: {
 }
 
 async function minutosAsignadosSemana(params: {
-  prisma: PrismaClient;
+  prisma: DbClient;
   conjuntoId: string;
   operarioId: string;
   fechaReferencia: Date;
@@ -259,7 +288,7 @@ async function minutosAsignadosSemana(params: {
 }
 
 export async function validarLimiteSemanalOperarios(params: {
-  prisma: PrismaClient;
+  prisma: DbClient;
   conjuntoId: string;
   operariosIds: string[];
   fechaInicio: Date;
@@ -299,13 +328,21 @@ export function allowedIntervalsForUserWithAvailability(params: {
       ? disponibilidad.diaDescanso
       : dia;
 
-  if (!jornadaLaboral) return [{ i: horario.startMin, f: horario.endMin }];
-  if (jornadaLaboral === "COMPLETA") {
-    return [{ i: horario.startMin, f: horario.endMin }];
+  const intervalosConjunto = workIntervalsFromHorario(horario);
+
+  // Compatibilidad con usuarios antiguos sin jornada: se consideran de jornada
+  // completa, pero nunca por fuera del horario (ni del descanso) del conjunto.
+  if (!jornadaLaboral || jornadaLaboral === "COMPLETA") {
+    return intervalosConjunto;
   }
-  if (jornadaLaboral !== "MEDIO_TIEMPO") {
-    return [{ i: horario.startMin, f: horario.endMin }];
+
+  if (jornadaLaboral === "FINES_DE_SEMANA") {
+    return dia === DiaSemana.SABADO || dia === DiaSemana.DOMINGO
+      ? intervalosConjunto
+      : [];
   }
+
+  if (jornadaLaboral !== "MEDIO_TIEMPO") return [];
 
   const apertura = horario.startMin;
   const cierre = horario.endMin;
@@ -342,7 +379,7 @@ export function allowedIntervalsForUserWithAvailability(params: {
       diaPatron === DiaSemana.VIERNES ||
       diaPatron === DiaSemana.SABADO
     ) {
-      return [{ i: apertura, f: cierre }];
+      return intervalosConjunto;
     }
     return [];
   }
@@ -358,7 +395,7 @@ export function allowedIntervalsForUserWithAvailability(params: {
       return beforeLunchEffective != null ? [beforeLunchEffective] : [];
     }
     if (diaPatron === DiaSemana.SABADO) {
-      return [{ i: apertura, f: cierre }];
+      return intervalosConjunto;
     }
     return [];
   }
@@ -374,10 +411,247 @@ export function allowedIntervalsForUserWithAvailability(params: {
       return afterLunchEffective != null ? [afterLunchEffective] : [];
     }
     if (diaPatron === DiaSemana.SABADO) {
-      return [{ i: apertura, f: cierre }];
+      return intervalosConjunto;
     }
     return [];
   }
 
   return [] as Array<{ i: number; f: number }>;
+}
+
+function workIntervalsFromHorario(horario: HorarioDia): IntervaloLaboral[] {
+  if (horario.endMin <= horario.startMin) return [];
+  const ds = horario.descansoStartMin;
+  const df = horario.descansoEndMin;
+  if (
+    ds == null ||
+    df == null ||
+    ds <= horario.startMin ||
+    df <= ds ||
+    df >= horario.endMin
+  ) {
+    return [{ i: horario.startMin, f: horario.endMin }];
+  }
+  return [
+    { i: horario.startMin, f: ds },
+    { i: df, f: horario.endMin },
+  ];
+}
+
+function intersectIntervals(
+  left: IntervaloLaboral[],
+  right: IntervaloLaboral[],
+): IntervaloLaboral[] {
+  const out: IntervaloLaboral[] = [];
+  for (const a of left) {
+    for (const b of right) {
+      const i = Math.max(a.i, b.i);
+      const f = Math.min(a.f, b.f);
+      if (f > i) out.push({ i, f });
+    }
+  }
+  return out.sort((a, b) => a.i - b.i);
+}
+
+export function parseHorarioMinutos(value: unknown): number | null {
+  const text = String(value ?? "").trim();
+  const match = /^(\d{1,2}):(\d{2})$/.exec(text);
+  if (!match) return null;
+  const horas = Number(match[1]);
+  const minutos = Number(match[2]);
+  if (horas < 0 || horas > 23 || minutos < 0 || minutos > 59) return null;
+  return horas * 60 + minutos;
+}
+
+export async function obtenerIntervalosEfectivosProgramacion(params: {
+  prisma: DbClient;
+  conjuntoId: string;
+  fecha: Date;
+  operariosIds?: string[];
+}): Promise<{
+  dia: DiaSemana;
+  horario: HorarioDia | null;
+  intervalosConjunto: IntervaloLaboral[];
+  intervalosEfectivos: IntervaloLaboral[];
+  operariosSinConfiguracion: string[];
+}> {
+  const { prisma, conjuntoId, fecha } = params;
+  const operariosIds = Array.from(new Set((params.operariosIds ?? []).map(String)));
+  const dia = diaSemanaFromDate(fecha);
+  const horarioRepo = (prisma as any).conjuntoHorario;
+  const horarioSelect = {
+    horaApertura: true,
+    horaCierre: true,
+    descansoInicio: true,
+    descansoFin: true,
+  };
+  const row = horarioRepo?.findUnique
+    ? await horarioRepo.findUnique({
+        where: { conjuntoId_dia: { conjuntoId, dia } },
+        select: horarioSelect,
+      })
+    : horarioRepo?.findFirst
+      ? await horarioRepo.findFirst({
+          where: { conjuntoId, dia },
+          select: horarioSelect,
+        })
+      : null;
+
+  if (!row) {
+    return {
+      dia,
+      horario: null,
+      intervalosConjunto: [],
+      intervalosEfectivos: [],
+      operariosSinConfiguracion: [],
+    };
+  }
+
+  const startMin = parseHorarioMinutos(row.horaApertura);
+  const endMin = parseHorarioMinutos(row.horaCierre);
+  if (startMin == null || endMin == null || endMin <= startMin) {
+    return {
+      dia,
+      horario: null,
+      intervalosConjunto: [],
+      intervalosEfectivos: [],
+      operariosSinConfiguracion: [],
+    };
+  }
+
+  const horario: HorarioDia = {
+    startMin,
+    endMin,
+    descansoStartMin: row.descansoInicio
+      ? parseHorarioMinutos(row.descansoInicio) ?? undefined
+      : undefined,
+    descansoEndMin: row.descansoFin
+      ? parseHorarioMinutos(row.descansoFin) ?? undefined
+      : undefined,
+  };
+  const intervalosConjunto = workIntervalsFromHorario(horario);
+  if (!operariosIds.length) {
+    return {
+      dia,
+      horario,
+      intervalosConjunto,
+      intervalosEfectivos: intervalosConjunto,
+      operariosSinConfiguracion: [],
+    };
+  }
+
+  const [operarios, disponibilidad] = await Promise.all([
+    prisma.operario.findMany({
+      where: { id: { in: operariosIds } },
+      select: {
+        id: true,
+        usuario: { select: { jornadaLaboral: true, patronJornada: true } },
+      },
+    }),
+    obtenerDisponibilidadActivaOperarios({ prisma, operariosIds, fecha }),
+  ]);
+  const byId = new Map(operarios.map((operario) => [operario.id, operario]));
+  const operariosSinConfiguracion = operariosIds.filter((id) => !byId.has(id));
+  let intervalosEfectivos = intervalosConjunto;
+
+  for (const operarioId of operariosIds) {
+    const operario = byId.get(operarioId);
+    if (!operario) {
+      intervalosEfectivos = [];
+      continue;
+    }
+    const periodo = disponibilidad.get(operarioId);
+    const permitidos = allowedIntervalsForUserWithAvailability({
+      dia,
+      horario,
+      jornadaLaboral: operario.usuario?.jornadaLaboral ?? null,
+      patronJornada: operario.usuario?.patronJornada ?? null,
+      disponibilidad: periodo
+        ? {
+            trabajaDomingo: periodo.trabajaDomingo,
+            diaDescanso: periodo.diaDescanso,
+          }
+        : null,
+    });
+    intervalosEfectivos = intersectIntervals(intervalosEfectivos, permitidos);
+    if (!intervalosEfectivos.length) break;
+  }
+
+  return {
+    dia,
+    horario,
+    intervalosConjunto,
+    intervalosEfectivos,
+    operariosSinConfiguracion,
+  };
+}
+
+export async function validarIntervaloProgramacion(params: {
+  prisma: DbClient;
+  conjuntoId: string;
+  fechaInicio: Date;
+  fechaFin: Date;
+  operariosIds?: string[];
+}): Promise<
+  | { ok: true; intervalo: IntervaloLaboral }
+  | { ok: false; motivo: MotivoIntervaloInvalido; mensaje: string }
+> {
+  const { fechaInicio, fechaFin } = params;
+  if (!(fechaFin > fechaInicio)) {
+    return {
+      ok: false,
+      motivo: "RANGO_INVALIDO",
+      mensaje: "La fecha final debe ser posterior a la fecha inicial.",
+    };
+  }
+  if (
+    fechaInicio.getFullYear() !== fechaFin.getFullYear() ||
+    fechaInicio.getMonth() !== fechaFin.getMonth() ||
+    fechaInicio.getDate() !== fechaFin.getDate()
+  ) {
+    return {
+      ok: false,
+      motivo: "CRUZA_DIA",
+      mensaje: "Cada bloque debe quedar completamente dentro del mismo día.",
+    };
+  }
+
+  const disponibilidad = await obtenerIntervalosEfectivosProgramacion({
+    prisma: params.prisma,
+    conjuntoId: params.conjuntoId,
+    fecha: fechaInicio,
+    operariosIds: params.operariosIds,
+  });
+  if (!disponibilidad.horario) {
+    return {
+      ok: false,
+      motivo: "SIN_HORARIO_CONJUNTO",
+      mensaje: "El conjunto no tiene un horario laboral válido para ese día.",
+    };
+  }
+  const inicioMin = fechaInicio.getHours() * 60 + fechaInicio.getMinutes();
+  const finMin = fechaFin.getHours() * 60 + fechaFin.getMinutes();
+  const dentroConjunto = disponibilidad.intervalosConjunto.some(
+    (intervalo) => inicioMin >= intervalo.i && finMin <= intervalo.f,
+  );
+  if (!dentroConjunto) {
+    return {
+      ok: false,
+      motivo: "FUERA_HORARIO_CONJUNTO",
+      mensaje:
+        "La tarea queda por fuera del horario o sobre el descanso configurado para el conjunto.",
+    };
+  }
+  const efectivo = disponibilidad.intervalosEfectivos.find(
+    (intervalo) => inicioMin >= intervalo.i && finMin <= intervalo.f,
+  );
+  if (!efectivo) {
+    return {
+      ok: false,
+      motivo: "FUERA_HORARIO_OPERARIO",
+      mensaje:
+        "El intervalo completo no está dentro de la jornada disponible de todos los operarios asignados.",
+    };
+  }
+  return { ok: true, intervalo: efectivo };
 }

@@ -1408,6 +1408,7 @@ export class ReporteService {
         id: true,
         tipo: true,
         frecuencia: true,
+        ocurrenciaPlanId: true,
         descripcion: true,
         estado: true,
         fechaInicio: true,
@@ -1453,6 +1454,27 @@ export class ReporteService {
     });
 
     const ids = tareas.map((t) => t.id);
+    const ocurrenciaIds = Array.from(
+      new Set(
+        tareas
+          .map((t) => t.ocurrenciaPlanId)
+          .filter((id): id is string => typeof id === "string" && id.length > 0),
+      ),
+    );
+    const ocurrenciasPlan = ocurrenciaIds.length
+      ? await this.prisma.preventivaOcurrenciaPlan.findMany({
+          where: { id: { in: ocurrenciaIds } },
+          select: {
+            id: true,
+            fechaObjetivo: true,
+            motivoCodigo: true,
+            motivoMensaje: true,
+          },
+        })
+      : [];
+    const ocurrenciaPlanById = new Map(
+      ocurrenciasPlan.map((ocurrencia) => [ocurrencia.id, ocurrencia]),
+    );
 
     const tareasPreventivasReemplazadasEnRango = tareas.filter(
       (t) =>
@@ -1477,6 +1499,7 @@ export class ReporteService {
           id: true,
           tipo: true,
           frecuencia: true,
+          ocurrenciaPlanId: true,
           descripcion: true,
           estado: true,
           fechaInicio: true,
@@ -1755,6 +1778,12 @@ export class ReporteService {
 
     // Construcción final
     const data = tareas.map((t) => {
+      const ocurrenciaPlan = t.ocurrenciaPlanId
+        ? ocurrenciaPlanById.get(t.ocurrenciaPlanId)
+        : null;
+      const reubicadaPorPlanificacion =
+        ocurrenciaPlan != null &&
+        dayKey(ocurrenciaPlan.fechaObjetivo) !== dayKey(t.fechaInicio);
       const operarios = (t.operarios ?? [])
         .map((op) => op.usuario?.nombre)
         .filter((x): x is string => Boolean(x));
@@ -1800,6 +1829,14 @@ export class ReporteService {
         duracionMinutos: t.duracionMinutos,
         prioridad: t.prioridad,
         fechaVerificacion: t.fechaVerificacion ?? null,
+        planificacion: ocurrenciaPlan
+          ? {
+              fechaObjetivo: ocurrenciaPlan.fechaObjetivo,
+              reubicada: reubicadaPorPlanificacion,
+              motivoCodigo: ocurrenciaPlan.motivoCodigo,
+              motivoMensaje: ocurrenciaPlan.motivoMensaje,
+            }
+          : null,
 
         conjunto: {
           id: t.conjuntoId,

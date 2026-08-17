@@ -113,6 +113,35 @@ export class CronogramaController {
     }
   };
 
+  informeActividadJerarquico: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const anio = Number(req.query.anio);
+      const mes = Number(req.query.mes);
+      const borrador =
+        req.query.borrador === undefined
+          ? false
+          : String(req.query.borrador) === "true";
+      const operarioId = req.query.operarioId
+        ? String(req.query.operarioId)
+        : undefined;
+      const semanaInicio = req.query.semanaInicio
+        ? String(req.query.semanaInicio)
+        : undefined;
+      const service = new CronogramaService(prisma, conjuntoId);
+      const out = await service.informeActividadJerarquico({
+        anio,
+        mes,
+        borrador,
+        operarioId,
+        semanaInicio,
+      });
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   listarExcluidasStandby: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
