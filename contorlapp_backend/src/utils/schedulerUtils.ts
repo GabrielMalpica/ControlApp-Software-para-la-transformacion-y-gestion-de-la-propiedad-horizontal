@@ -403,6 +403,8 @@ export function buscarHuecoDiaConSplitEarliest(params: {
   bloqueos: Bloqueo[];
   desiredStartMin?: number;
   maxBloques?: number;
+  /** Si es true, solo permite dos bloques separados exactamente por el descanso. */
+  splitSoloPorDescanso?: boolean;
 }): BloquePlan[] | null {
   const {
     startMin,
@@ -412,6 +414,7 @@ export function buscarHuecoDiaConSplitEarliest(params: {
     bloqueos,
     desiredStartMin = startMin,
     maxBloques = 2,
+    splitSoloPorDescanso = false,
   } = params;
 
   const blocked = mergeIntervalos([
@@ -428,6 +431,50 @@ export function buscarHuecoDiaConSplitEarliest(params: {
   }
 
   if (maxBloques < 2) return null;
+
+  if (splitSoloPorDescanso) {
+    if (durMin < 2) return null;
+    const descansos = bloqueos.filter((bloqueo) => {
+      const motivo =
+        bloqueo.reason ?? (bloqueo as Bloqueo & { motivo?: string }).motivo;
+      return motivo === "DESCANSO";
+    });
+
+    for (const descanso of descansos) {
+      const libresAntes = libres.filter(
+        (libre) =>
+          libre.f === descanso.startMin &&
+          libre.f > Math.max(libre.i, desiredStartMin),
+      );
+      const libresDespues = libres.filter(
+        (libre) => libre.i === descanso.endMin && libre.f > libre.i,
+      );
+
+      for (const antes of libresAntes) {
+        const inicioMinimo = Math.max(antes.i, desiredStartMin);
+        const capacidadAntes = antes.f - inicioMinimo;
+        if (capacidadAntes <= 0) continue;
+
+        for (const despues of libresDespues) {
+          const capacidadDespues = despues.f - despues.i;
+          if (capacidadAntes + capacidadDespues < durMin) continue;
+
+          // Se usa el tramo inmediatamente anterior al almuerzo y se continúa
+          // justo al terminarlo, sin dejar huecos laborales intermedios.
+          const minutosAntes = Math.min(capacidadAntes, durMin - 1);
+          const minutosDespues = durMin - minutosAntes;
+          if (minutosDespues <= 0 || minutosDespues > capacidadDespues) {
+            continue;
+          }
+          return [
+            { i: antes.f - minutosAntes, f: antes.f },
+            { i: despues.i, f: despues.i + minutosDespues },
+          ];
+        }
+      }
+    }
+    return null;
+  }
 
   // 2) split en 2 bloques earliest
   for (let idx = 0; idx < libres.length; idx++) {
@@ -666,6 +713,8 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
   // agenda
   incluirBorradorEnAgenda: boolean;
   incluirPublicadasEnAgenda: boolean;
+  /** Para P1: evita fragmentos separados por huecos distintos al almuerzo. */
+  splitSoloPorDescanso?: boolean;
 
   // ✅ NUEVO: para reportar al UI / log
   onEvent?: (
@@ -701,6 +750,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     marcarReemplazadasComoNoCompletadas = false,
     incluirBorradorEnAgenda,
     incluirPublicadasEnAgenda,
+    splitSoloPorDescanso = false,
     onEvent,
   } = params;
 
@@ -738,7 +788,8 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     ocupados: ocupadosGlobal,
     bloqueos,
     desiredStartMin: startMin,
-    maxBloques: Number.MAX_SAFE_INTEGER,
+    maxBloques: splitSoloPorDescanso ? 2 : Number.MAX_SAFE_INTEGER,
+    splitSoloPorDescanso,
   });
 
   if (normal) {
@@ -951,7 +1002,8 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       ocupados: ocupSinCand,
       bloqueos,
       desiredStartMin: startMin,
-      maxBloques: Number.MAX_SAFE_INTEGER,
+      maxBloques: splitSoloPorDescanso ? 2 : Number.MAX_SAFE_INTEGER,
+      splitSoloPorDescanso,
     });
 
     if (!bloques) continue;

@@ -1680,6 +1680,7 @@ export class DefinicionTareaPreventivaService {
     permitirMultiDia?: boolean;
     validarLimiteSemanal?: boolean;
     incluirPublicadasEnAgenda?: boolean;
+    splitSoloPorDescanso?: boolean;
   }): Promise<BloqueProgramacion[]> {
     const {
       conjuntoId,
@@ -1693,6 +1694,7 @@ export class DefinicionTareaPreventivaService {
       permitirMultiDia = true,
       validarLimiteSemanal = false,
       incluirPublicadasEnAgenda = true,
+      splitSoloPorDescanso = false,
     } = params;
 
     if (duracionMinutos <= 0 || !dias.length) return [];
@@ -1772,22 +1774,42 @@ export class DefinicionTareaPreventivaService {
           : horario.startMin;
 
       const planDia: BloqueProgramacion[] = [];
-      let restanteDia = restante;
+      if (splitSoloPorDescanso) {
+        const bloquesPermitidos = buscarHuecoDiaConSplitEarliest({
+          startMin: horario.startMin,
+          endMin: horario.endMin,
+          durMin: restante,
+          ocupados: ocupadosGlobal,
+          bloqueos,
+          desiredStartMin,
+          maxBloques: 2,
+          splitSoloPorDescanso: true,
+        });
+        if (bloquesPermitidos) {
+          planDia.push(
+            ...bloquesPermitidos.map((bloque) => ({
+              fechaInicio: toDateAtMin(dia, bloque.i),
+              fechaFin: toDateAtMin(dia, bloque.f),
+            })),
+          );
+        }
+      } else {
+        let restanteDia = restante;
+        for (const libre of libres) {
+          if (restanteDia <= 0) break;
+          if (planDia.length >= maxBloquesPorDia) break;
 
-      for (const libre of libres) {
-        if (restanteDia <= 0) break;
-        if (planDia.length >= maxBloquesPorDia) break;
+          const inicioMin = Math.max(libre.i, desiredStartMin);
+          const capacidad = libre.f - inicioMin;
+          if (capacidad <= 0) continue;
 
-        const inicioMin = Math.max(libre.i, desiredStartMin);
-        const capacidad = libre.f - inicioMin;
-        if (capacidad <= 0) continue;
+          const tomar = Math.min(capacidad, restanteDia);
+          const fechaInicio = toDateAtMin(dia, inicioMin);
+          const fechaFin = toDateAtMin(dia, inicioMin + tomar);
 
-        const tomar = Math.min(capacidad, restanteDia);
-        const fechaInicio = toDateAtMin(dia, inicioMin);
-        const fechaFin = toDateAtMin(dia, inicioMin + tomar);
-
-        planDia.push({ fechaInicio, fechaFin });
-        restanteDia -= tomar;
+          planDia.push({ fechaInicio, fechaFin });
+          restanteDia -= tomar;
+        }
       }
 
       if (!planDia.length) continue;
@@ -4056,7 +4078,8 @@ export class DefinicionTareaPreventivaService {
               ocupados: ocupadosGlobal,
               bloqueos,
               desiredStartMin: horario.startMin,
-              maxBloques: Number.MAX_SAFE_INTEGER,
+              maxBloques: prioridad === 1 ? 2 : Number.MAX_SAFE_INTEGER,
+              splitSoloPorDescanso: prioridad === 1,
             });
 
             if (bloquesFound) {
@@ -4121,10 +4144,9 @@ export class DefinicionTareaPreventivaService {
               periodoMes,
             });
 
-            // Se prefiere mantener la tarea completa en un solo día, aunque
-            // deba partirse alrededor del almuerzo o de otros huecos libres.
-            // Solo si ningún día puede contenerla se permite repartirla entre
-            // varios días del mismo mes.
+            // Se mantiene cada parte de la P1 en un solo día: primero un bloque
+            // continuo y, si no existe, dos bloques pegados al descanso. Una
+            // parte no se fragmenta por huecos arbitrarios ni entre varios días.
             let planP1: BloqueProgramacion[] = [];
             for (const diaCandidato of diasP1) {
               planP1 = await this.construirPlanEnRango({
@@ -4134,26 +4156,13 @@ export class DefinicionTareaPreventivaService {
                 dias: [diaCandidato],
                 horariosPorDia,
                 festivosSet,
-                maxBloquesPorDia: MAX_BLOQUES_RESCATE_POR_DIA,
+                maxBloquesPorDia: 2,
                 permitirMultiDia: false,
                 validarLimiteSemanal: true,
                 incluirPublicadasEnAgenda,
+                splitSoloPorDescanso: true,
               });
               if (planP1.length) break;
-            }
-            if (!planP1.length) {
-              planP1 = await this.construirPlanEnRango({
-                conjuntoId,
-                duracionMinutos: durMinParte,
-                operariosIds,
-                dias: diasP1,
-                horariosPorDia,
-                festivosSet,
-                maxBloquesPorDia: MAX_BLOQUES_RESCATE_POR_DIA,
-                permitirMultiDia: true,
-                validarLimiteSemanal: true,
-                incluirPublicadasEnAgenda,
-              });
             }
 
             if (planP1.length) {
@@ -4214,9 +4223,9 @@ export class DefinicionTareaPreventivaService {
             }
 
             // Si no bastaron los huecos libres, se intenta desplazar una o
-            // varias P3/P2 en cada día válido del mes. El motor de reemplazo
-            // puede dividir la P1 en cuantos intervalos sean necesarios dentro
-            // de la jornada (por ejemplo, antes y después del almuerzo).
+            // varias P3/P2 en cada día válido del mes. El reemplazo solo
+            // divide la P1 en dos tramos contiguos al descanso y nunca deja
+            // huecos laborales arbitrarios entre las partes.
             if (!agendada) {
               for (const diaAlternativo of diasP1) {
                 const disponibilidad = operariosIds.length
@@ -4253,6 +4262,7 @@ export class DefinicionTareaPreventivaService {
                   prioridadesCandidatas: [3, 2],
                   incluirBorradorEnAgenda: true,
                   incluirPublicadasEnAgenda,
+                  splitSoloPorDescanso: true,
                 });
                 if (!reemplazo.ok) continue;
 

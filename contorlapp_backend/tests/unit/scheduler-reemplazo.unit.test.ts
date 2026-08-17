@@ -208,8 +208,8 @@ describe('reemplazo automatico por prioridad', () => {
       {
         id: 1,
         prioridad: 3,
-        fechaInicio: at(8),
-        fechaFin: at(10),
+        fechaInicio: at(10),
+        fechaFin: at(12),
         borrador: true,
         estado: 'ASIGNADA',
         grupoPlanId: null,
@@ -218,8 +218,8 @@ describe('reemplazo automatico por prioridad', () => {
       {
         id: 2,
         prioridad: 1,
-        fechaInicio: at(10),
-        fechaFin: at(12),
+        fechaInicio: at(8),
+        fechaFin: at(10),
         borrador: true,
         estado: 'ASIGNADA',
         grupoPlanId: null,
@@ -314,13 +314,14 @@ describe('reemplazo automatico por prioridad', () => {
       prioridadesCandidatas: [3, 2],
       incluirBorradorEnAgenda: true,
       incluirPublicadasEnAgenda: true,
+      splitSoloPorDescanso: true,
     });
 
-    expect(resultado.ok).toBe(true);
+    expect(resultado).toEqual(expect.objectContaining({ ok: true }));
     if (!resultado.ok) return;
     expect(resultado.reprogramadasIds).toEqual([1, 3]);
     expect(resultado.bloques).toEqual([
-      { i: 8 * 60, f: 10 * 60 },
+      { i: 10 * 60, f: 12 * 60 },
       { i: 13 * 60, f: 15 * 60 },
     ]);
     expect(prisma.tarea.create).toHaveBeenCalledTimes(2);

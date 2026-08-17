@@ -95,11 +95,52 @@ describe('Scheduler de preventivas', () => {
         endMin: HORA(17),
         durMin: 180,
         ocupados: [{ i: HORA(8), f: HORA(12) }],
-        bloqueos: [{ startMin: HORA(13), endMin: HORA(14) }],
-        maxBloques: 3,
+        bloqueos: [
+          { startMin: HORA(13), endMin: HORA(14), reason: 'DESCANSO' },
+        ],
+        maxBloques: 2,
+        splitSoloPorDescanso: true,
       });
 
       expect(plan).toEqual([{ i: HORA(14), f: HORA(17) }]);
+    });
+
+    test('PU-S5 - una P1 solo se divide en tramos contiguos al almuerzo', () => {
+      const plan = buscarHuecoDiaConSplitEarliest({
+        startMin: HORA(8),
+        endMin: HORA(17),
+        durMin: 240,
+        ocupados: [
+          { i: HORA(8), f: HORA(10) },
+          { i: HORA(15), f: HORA(17) },
+        ],
+        bloqueos: [
+          { startMin: HORA(12), endMin: HORA(13), reason: 'DESCANSO' },
+        ],
+        maxBloques: 2,
+        splitSoloPorDescanso: true,
+      });
+
+      expect(plan).toEqual([
+        { i: HORA(10), f: HORA(12) },
+        { i: HORA(13), f: HORA(15) },
+      ]);
+    });
+
+    test('PU-S6 - una P1 no se divide entre huecos alejados aunque sumen la duracion', () => {
+      const plan = buscarHuecoDiaConSplitEarliest({
+        startMin: HORA(8),
+        endMin: HORA(17),
+        durMin: 240,
+        ocupados: [{ i: HORA(9), f: HORA(14) }],
+        bloqueos: [
+          { startMin: HORA(12), endMin: HORA(13), reason: 'DESCANSO' },
+        ],
+        maxBloques: 2,
+        splitSoloPorDescanso: true,
+      });
+
+      expect(plan).toBeNull();
     });
   });
 
