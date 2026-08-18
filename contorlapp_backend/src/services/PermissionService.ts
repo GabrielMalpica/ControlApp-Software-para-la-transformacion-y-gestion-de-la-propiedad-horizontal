@@ -146,6 +146,13 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: "Permite crear, editar, asignar roles y retirar usuarios de la empresa.",
   },
   {
+    key: "conjuntos.ver",
+    module: "conjuntos",
+    moduleLabel: "Conjuntos",
+    label: "Ver conjuntos",
+    description: "Permite consultar el listado y el detalle de los conjuntos de la empresa.",
+  },
+  {
     key: "conjuntos.gestionar",
     module: "conjuntos",
     moduleLabel: "Conjuntos",
@@ -278,6 +285,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "residentes.cargar_masivo",
   ]),
   [Rol.jefe_operaciones]: new Set([
+    "conjuntos.ver",
     "tareas.ver",
     "tareas.cerrar",
     "tareas.veredicto",
@@ -297,6 +305,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "cumpleanos.ver",
   ]),
   [Rol.supervisor]: new Set([
+    "conjuntos.ver",
     "tareas.crear",
     "tareas.ver",
     "tareas.cerrar",

@@ -166,7 +166,12 @@ function construirPrisma(opts: {
         const consultaMesCompleto =
           hasta != null && ymd(desde) !== ymd(hasta);
         const preexistentes = consultaMesCompleto
-          ? opts.diasOcupados.flatMap(ocupacionDelDia)
+          ? opts.diasOcupados
+              .filter((dia) => {
+                const fecha = new Date(`${dia}T12:00:00`);
+                return fecha >= desde && (!hasta || fecha <= hasta);
+              })
+              .flatMap(ocupacionDelDia)
           : ocupacionDelDia(ymd(desde));
         const enRango = tareasCreadas.filter(
           (t) => (!hasta || t.fechaInicio <= hasta) && t.fechaFin >= desde,
@@ -177,9 +182,18 @@ function construirPrisma(opts: {
         );
       }),
       create: jest.fn(async ({ data }: any) => {
-        const creada = { ...data, id: ++secuencia };
+        const creada = {
+          ...data,
+          operarios: data.operarios?.connect ?? data.operarios ?? [],
+          id: ++secuencia,
+        };
         tareasCreadas.push(creada);
         return creada;
+      }),
+      update: jest.fn(async ({ where, data }: any) => {
+        const tarea = tareasCreadas.find((t) => t.id === where.id);
+        if (tarea) Object.assign(tarea, data);
+        return tarea;
       }),
     },
 
@@ -260,6 +274,28 @@ describe('generarBorradorMensual - fase de rescate', () => {
     ]);
   });
 
+  test('PU-R00B - deja para el final un dia con la misma tarea, sin descartarlo', () => {
+    const service = new DefinicionTareaPreventivaService({} as any) as any;
+    service.registrarOcurrenciaDefinicionDiaScheduler({
+      definicionId: 77,
+      ocurrenciaPlanId: 'ocurrencia-anterior',
+      bloques: [
+        {
+          fechaInicio: new Date(2026, 2, 3, 8),
+          fechaFin: new Date(2026, 2, 3, 9),
+        },
+      ],
+    });
+
+    const priorizados = service.priorizarDiasSinRepetirDefinicion({
+      dias: [new Date(2026, 2, 3), new Date(2026, 2, 4)],
+      definicionId: 77,
+      ocurrenciaPlanId: 'ocurrencia-nueva',
+    });
+
+    expect(priorizados.map(ymd)).toEqual(['2026-03-04', '2026-03-03']);
+  });
+
   test('PU-R0 - una P2 en festivo se rescata en otro día hábil del mes', async () => {
     jest.mocked(getFestivosSet).mockResolvedValue(new Set(['2026-03-02']));
     const prisma = construirPrisma({
@@ -281,7 +317,7 @@ describe('generarBorradorMensual - fase de rescate', () => {
     expect(ymd(prisma.tareasCreadas[0].fechaInicio)).toBe('2026-03-03');
   });
 
-  test('PU-R0A - una P3 en festivo conserva la regla de exclusión', async () => {
+  test('PU-R0A - la cobertura mínima P3 mueve su primera ocurrencia festiva', async () => {
     jest.mocked(getFestivosSet).mockResolvedValue(new Set(['2026-03-02']));
     const prisma = construirPrisma({
       diasOcupados: [],
@@ -297,12 +333,9 @@ describe('generarBorradorMensual - fase de rescate', () => {
       periodoMes: 3,
     });
 
-    expect(creadas).toBe(0);
-    expect(prisma.excluidasCreadas).toHaveLength(1);
-    expect(prisma.excluidasCreadas[0]).toMatchObject({
-      prioridad: 3,
-      motivoTipo: 'FESTIVO_OMITIDO',
-    });
+    expect(creadas).toBe(1);
+    expect(prisma.excluidasCreadas).toHaveLength(0);
+    expect(ymd(prisma.tareasCreadas[0].fechaInicio)).toBe('2026-03-03');
   });
 
   test('PU-R0B - una P1 en festivo se programa el siguiente dia habil', async () => {
@@ -585,7 +618,7 @@ describe('generarBorradorMensual - fase de rescate', () => {
     expect(novedades.some((n) => n.tipo === 'SIN_HUECO')).toBe(true);
   });
 
-  test('PU-R3 - una tarea que no cabe entera se divide en tres bloques del mismo dia', async () => {
+  test('PU-R3 - prefiere otro dia antes que fragmentar una tarea en tres bloques', async () => {
     // Lunes 2 con libres 08:00-09:00, 10:00-11:00 y 14:00-16:00 (4h en total).
     // Ninguna pareja de huecos suma las 4h: solo se resuelve partiendo en tres,
     // algo que la fase A (maximo 2 bloques) no puede hacer.
@@ -636,20 +669,203 @@ describe('generarBorradorMensual - fase de rescate', () => {
       periodoMes: 3,
     });
 
-    expect(creadas).toBe(3);
+    expect(creadas).toBe(1);
     expect(prisma.excluidasCreadas).toHaveLength(0);
 
     const horarios = prisma.tareasCreadas.map(
       (t: any) => `${ymd(t.fechaInicio)} ${t.fechaInicio.getHours()}-${t.fechaFin.getHours()}`,
     );
-    expect(horarios).toEqual([
-      '2026-03-02 8-9',
-      '2026-03-02 10-11',
-      '2026-03-02 14-16',
-    ]);
+    expect(horarios).toEqual(['2026-03-03 8-12']);
 
-    // Al admitir todos los huecos desde el primer intento ya no necesita pasar
-    // por la fase de rescate ni reportarse como reubicada.
-    expect(novedades.some((n) => n.tipo === 'REUBICADA_EN_PERIODO')).toBe(false);
+    expect(novedades.some((n) => n.tipo === 'REUBICADA_EN_PERIODO')).toBe(true);
+  });
+
+  test('PU-R4 - no reparte una ocurrencia entre varios dias', async () => {
+    const prisma = construirPrisma({
+      diasOcupados: [],
+      duracionMinutosFija: 600,
+      prioridad: 2,
+      diaMesProgramado: 2,
+    });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    const { creadas } = await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    });
+
+    expect(creadas).toBe(0);
+    expect(prisma.tareasCreadas).toHaveLength(0);
+    expect(prisma.excluidasCreadas).toHaveLength(1);
+  });
+
+  test('PU-R5 - reserva el minimo P3 antes de consumir capacidad con P2', async () => {
+    const diasOcupados = Array.from({ length: 31 }, (_, index) => {
+      const fecha = new Date(2026, 2, index + 1);
+      return { fecha, key: ymd(fecha) };
+    })
+      .filter(
+        ({ fecha, key }) =>
+          fecha.getDay() >= 1 && fecha.getDay() <= 5 && key !== '2026-03-02',
+      )
+      .map(({ key }) => key);
+    const prisma = construirPrisma({
+      diasOcupados,
+      duracionMinutosFija: 480,
+      prioridad: 3,
+      diaMesProgramado: 2,
+    });
+    const [base] = await prisma.definicionTareaPreventiva.findMany();
+    prisma.definicionTareaPreventiva.findMany.mockResolvedValue([
+      { ...base, id: 78, descripcion: 'P2 repetitiva', prioridad: 2 },
+      { ...base, id: 77, descripcion: 'P3 mínima', prioridad: 3 },
+    ]);
+    prisma.operario.findUnique.mockResolvedValue({
+      usuario: { jornadaLaboral: 'COMPLETA', patronJornada: null },
+      empresa: { limiteHorasSemana: 1000 },
+    });
+    prisma.conjunto.findUnique.mockResolvedValue({
+      limiteHorasSemanaOverride: 1000,
+      empresa: { limiteHorasSemana: 1000 },
+    });
+    prisma.empresa.findFirst.mockResolvedValue({ limiteHorasSemana: 1000 });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    });
+
+    expect(prisma.tareasCreadas).toHaveLength(1);
+    expect(prisma.tareasCreadas[0]).toMatchObject({
+      definicionId: 77,
+      prioridad: 3,
+      descripcion: 'P3 mínima',
+    });
+  });
+
+  test('PU-R6 - reparte equitativamente varias P3 DIARIA de duracion muy distinta', async () => {
+    // Reproduce el caso real reportado: 5 definiciones P3 DIARIA con el mismo
+    // operario y jornada de 8h, con duraciones muy dispares (igual que
+    // "Aseo del ascensor" 10min vs "Lavado de baños" 90min). Antes del
+    // reparto por rondas, la definicion mas larga terminaba con muchas menos
+    // ocurrencias que las cortas porque el ciclo agotaba cada definicion
+    // (hasta ~22 dias) antes de pasar a la siguiente.
+    const prisma = construirPrisma({
+      diasOcupados: [],
+      duracionMinutosFija: 480,
+      prioridad: 3,
+      diaMesProgramado: 2,
+    });
+    const [base] = await prisma.definicionTareaPreventiva.findMany();
+    // Mismas proporciones del caso real (10/15/30/30/90 min) escaladas para
+    // que la suma supere la jornada de 8h (480min): así ningún día alcanza
+    // para las 5 y el reparto por rondas tiene contención real que resolver.
+    const duraciones: Record<number, number> = {
+      201: 30,
+      202: 45,
+      203: 90,
+      204: 90,
+      205: 270,
+    };
+    prisma.definicionTareaPreventiva.findMany.mockResolvedValue(
+      Object.entries(duraciones).map(([id, duracionMinutosFija]) => ({
+        ...base,
+        id: Number(id),
+        descripcion: `P3 ${duracionMinutosFija}min`,
+        prioridad: 3,
+        frecuencia: Frecuencia.DIARIA,
+        duracionMinutosFija,
+      })),
+    );
+    prisma.operario.findUnique.mockResolvedValue({
+      usuario: { jornadaLaboral: 'COMPLETA', patronJornada: null },
+      empresa: { limiteHorasSemana: 1000 },
+    });
+    prisma.conjunto.findUnique.mockResolvedValue({
+      limiteHorasSemanaOverride: 1000,
+      empresa: { limiteHorasSemana: 1000 },
+    });
+    prisma.empresa.findFirst.mockResolvedValue({ limiteHorasSemana: 1000 });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    });
+
+    const conteosPorDefinicion = new Map<number, number>();
+    for (const tarea of prisma.tareasCreadas) {
+      conteosPorDefinicion.set(
+        tarea.definicionId,
+        (conteosPorDefinicion.get(tarea.definicionId) ?? 0) + 1,
+      );
+    }
+
+    // Ninguna definicion se queda en cero...
+    for (const id of Object.keys(duraciones).map(Number)) {
+      expect(conteosPorDefinicion.get(id) ?? 0).toBeGreaterThan(0);
+    }
+    // ...y la diferencia entre la mas y la menos programada es pequeña: ya
+    // no debe repetirse el patron real (22 vs 11, casi el doble). Con
+    // contención real de capacidad el reparto queda ~19-23 por definición.
+    const conteos = Array.from(conteosPorDefinicion.values());
+    const spread = Math.max(...conteos) - Math.min(...conteos);
+    expect(spread).toBeLessThanOrEqual(5);
+  });
+
+  test('PU-R7 - garantiza el minimo de una P2 aunque otra P2 DIARIA vaya primero', async () => {
+    // Antes del reparto por rondas, la fase P2 era "TODAS" por definicion:
+    // la primera P2 DIARIA agotaba el mes entero antes de que la segunda
+    // tuviera su primer intento.
+    const prisma = construirPrisma({
+      diasOcupados: [],
+      duracionMinutosFija: 480,
+      prioridad: 2,
+      diaMesProgramado: 2,
+    });
+    const [base] = await prisma.definicionTareaPreventiva.findMany();
+    prisma.definicionTareaPreventiva.findMany.mockResolvedValue([
+      {
+        ...base,
+        id: 301,
+        descripcion: 'P2 A',
+        prioridad: 2,
+        frecuencia: Frecuencia.DIARIA,
+        duracionMinutosFija: 300,
+      },
+      {
+        ...base,
+        id: 302,
+        descripcion: 'P2 B',
+        prioridad: 2,
+        frecuencia: Frecuencia.DIARIA,
+        duracionMinutosFija: 300,
+      },
+    ]);
+    prisma.operario.findUnique.mockResolvedValue({
+      usuario: { jornadaLaboral: 'COMPLETA', patronJornada: null },
+      empresa: { limiteHorasSemana: 1000 },
+    });
+    prisma.conjunto.findUnique.mockResolvedValue({
+      limiteHorasSemanaOverride: 1000,
+      empresa: { limiteHorasSemana: 1000 },
+    });
+    prisma.empresa.findFirst.mockResolvedValue({ limiteHorasSemana: 1000 });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    });
+
+    const conteoA = prisma.tareasCreadas.filter((t: any) => t.definicionId === 301).length;
+    const conteoB = prisma.tareasCreadas.filter((t: any) => t.definicionId === 302).length;
+    expect(conteoA).toBeGreaterThan(0);
+    expect(conteoB).toBeGreaterThan(0);
   });
 });

@@ -53,6 +53,32 @@ const uploadConjuntos = multer({
 });
 
 router.use(authRequired);
+
+// Lectura de conjuntos: supervisor y jefe de operaciones también la
+// necesitan (ven todos los conjuntos de su empresa junto a lo que sus
+// permisos les habiliten), no solo gerente. Por eso estas dos rutas se
+// registran ANTES del gate de rol exclusivo de gerente de más abajo — así
+// no lo heredan — y quedan controladas únicamente por "conjuntos.ver"/
+// "conjuntos.gestionar". Deben ir en este orden (la ruta literal antes que
+// la de parámetro) para que "/conjuntos/plantilla" no quede interceptada
+// por "/conjuntos/:conjuntoId".
+router.get(
+  "/conjuntos/plantilla",
+  requirePermission("conjuntos.gestionar"),
+  ctrl.descargarPlantillaConjunto,
+);
+router.get(
+  "/conjuntos",
+  requirePermission("conjuntos.ver", "conjuntos.gestionar"),
+  ctrl.listarConjuntos,
+);
+router.get(
+  "/conjuntos/:conjuntoId",
+  requirePermission("conjuntos.ver", "conjuntos.gestionar"),
+  requireConjuntoScope("conjuntoId"),
+  ctrl.obtenerConjunto,
+);
+
 router.use(requireRoles("gerente"));
 
 /* Empresa */
@@ -127,6 +153,8 @@ router.post("/operarios", requirePermission("usuarios.gestionar"), ctrl.asignarO
 router.get("/supervisores", requirePermission("usuarios.gestionar"), ctrl.listarSupervisores);
 
 /* Conjuntos */
+// GET /conjuntos, GET /conjuntos/plantilla y GET /conjuntos/:conjuntoId se
+// registran más arriba, antes del gate de rol exclusivo de gerente.
 router.post("/conjuntos", requirePermission("conjuntos.gestionar"), ctrl.crearConjunto);
 router.post(
   "/conjuntos/carga-masiva",
@@ -134,14 +162,7 @@ router.post(
   uploadConjuntos.single("file"),
   ctrl.cargarConjuntoMasivo,
 );
-router.get(
-  "/conjuntos/plantilla",
-  requirePermission("conjuntos.gestionar"),
-  ctrl.descargarPlantillaConjunto,
-);
 router.patch("/conjuntos/:conjuntoId", requirePermission("conjuntos.gestionar"), requireConjuntoScope("conjuntoId"), ctrl.editarConjunto);
-router.get("/conjuntos", requirePermission("conjuntos.gestionar"), ctrl.listarConjuntos);
-router.get("/conjuntos/:conjuntoId", requirePermission("conjuntos.gestionar"), requireConjuntoScope("conjuntoId"), ctrl.obtenerConjunto);
 router.post("/conjuntos/:conjuntoId/operarios", requirePermission("conjuntos.gestionar"), requireConjuntoScope("conjuntoId"), ctrl.asignarOperarioAConjunto);
 router.post("/conjuntos/:conjuntoId/insumos", requirePermission("inventario.gestionar"), requireConjuntoScope("conjuntoId"), ctrl.agregarInsumoAConjunto);
 router.get(

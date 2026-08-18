@@ -56,6 +56,26 @@ function resolveConjuntoId(req: Request): string {
 
 export class CronogramaController {
 
+  listarConfiguracionZonas: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const service = new CronogramaService(prisma, conjuntoId);
+      res.json(await service.listarConfiguracionZonas());
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  guardarConfiguracionZonas: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const service = new CronogramaService(prisma, conjuntoId);
+      res.json(await service.guardarConfiguracionZonas(req.body));
+    } catch (err) {
+      next(err);
+    }
+  };
+
   // GET /conjuntos/:nit/operarios/sugerir?inicio=...&fin=...&max=5&requiereFuncion=...
   sugerirOperarios: RequestHandler = async (req, res, next) => {
     try {

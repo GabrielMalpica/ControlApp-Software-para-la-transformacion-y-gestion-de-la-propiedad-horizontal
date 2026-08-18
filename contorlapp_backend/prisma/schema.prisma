@@ -625,6 +625,7 @@ model Conjunto {
   // Config/agenda
   horarios                  ConjuntoHorario[]
   DefinicionTareaPreventiva DefinicionTareaPreventiva[]
+  configuracionesZonaCronograma ConfiguracionZonaCronograma[]
 
   // Overrides / maquinaria
   limiteHorasSemanaOverride Int?
@@ -719,9 +720,31 @@ model Elemento {
   solicitudesTareas         SolicitudTarea[]
   DefinicionTareaPreventiva DefinicionTareaPreventiva[]
   diagnosticosPlanEsperanza DiagnosticoArea[]
+  configuracionCronograma   ConfiguracionZonaCronograma?
 
   @@index([ubicacionId, padreId])
   @@map("Elemento")
+}
+
+/// Preferencias de orden y color para una zona raiz dentro del cronograma.
+/// Se mantiene separada de Elemento para no reescribir la jerarquia existente.
+model ConfiguracionZonaCronograma {
+  id Int @id @default(autoincrement())
+
+  conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
+  conjuntoId String
+
+  elementoZona   Elemento @relation(fields: [elementoZonaId], references: [id], onDelete: Cascade)
+  elementoZonaId Int      @unique
+
+  orden    Int
+  colorHex String
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@index([conjuntoId, orden])
+  @@map("ConfiguracionZonaCronograma")
 }
 
 /**

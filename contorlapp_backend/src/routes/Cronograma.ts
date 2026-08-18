@@ -11,6 +11,19 @@ const controller = new CronogramaController();
 
 router.use("/conjuntos/:nit", authRequired, requireConjuntoScope("nit"));
 
+router.get(
+  "/conjuntos/:nit/cronograma/zonas-configuracion",
+  authRequired,
+  requirePermission("cronograma.ver"),
+  controller.listarConfiguracionZonas,
+);
+router.put(
+  "/conjuntos/:nit/cronograma/zonas-configuracion",
+  authRequired,
+  requirePermission("cronograma.publicar"),
+  controller.guardarConfiguracionZonas,
+);
+
 // Sugerencia de operarios para un rango
 router.get(
   "/conjuntos/:nit/operarios/sugerir",

@@ -31,6 +31,11 @@ import {
 } from "../model/Auditoria";
 import { AuditoriaService } from "./AuditoriaService";
 import { GerenteService } from "./GerenteServices";
+import {
+  politicaZonaPredeterminada,
+  resolverConfiguracionZona,
+  type ConfiguracionZonaGuardada,
+} from "../utils/cronogramaZona";
 
 // DTOs locales de filtros para este servicio
 const OperarioIdDTO = z.object({ operarioId: z.number().int().positive() });
@@ -49,6 +54,18 @@ const CronoMesDTO = z.object({
   anio: z.number().int().min(2000).max(2100),
   mes: z.number().int().min(1).max(12),
   borrador: z.boolean().optional(), // undefined = todos, true = solo borrador, false = solo operativo
+});
+
+const GuardarConfiguracionZonasDTO = z.object({
+  zonas: z
+    .array(
+      z.object({
+        elementoZonaId: z.number().int().positive(),
+        orden: z.number().int().min(1).max(10_000),
+        colorHex: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+      }),
+    )
+    .max(500),
 });
 
 const InformeActividadJerarquicoDTO = CronoMesDTO.extend({
@@ -310,15 +327,124 @@ export class CronogramaService {
       where.borrador = borrador;
     }
 
-    return this.prisma.tarea.findMany({
-      where,
-      include: {
-        operarios: { select: operarioResumenSelect },
-        ubicacion: true,
-        elemento: { include: elementoParentChainInclude },
+    const configuracionRepo = (this.prisma as any)
+      .configuracionZonaCronograma;
+    const [tareas, configuraciones] = await Promise.all([
+      this.prisma.tarea.findMany({
+        where,
+        include: {
+          operarios: { select: operarioResumenSelect },
+          ubicacion: true,
+          elemento: { include: elementoParentChainInclude },
+        },
+        orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
+      }),
+      configuracionRepo?.findMany
+        ? configuracionRepo.findMany({
+            where: { conjuntoId: this.conjuntoId },
+            select: { elementoZonaId: true, orden: true, colorHex: true },
+          })
+        : Promise.resolve([] as ConfiguracionZonaGuardada[]),
+    ]);
+
+    const configuracionPorElemento = new Map<number, ConfiguracionZonaGuardada>(
+      configuraciones.map((item) => [item.elementoZonaId, item]),
+    );
+
+    return tareas.map((tarea) => ({
+      ...tarea,
+      zonaCronograma: resolverConfiguracionZona(
+        tarea.elemento,
+        configuracionPorElemento,
+      ),
+    }));
+  }
+
+  async listarConfiguracionZonas() {
+    const zonas = await this.prisma.elemento.findMany({
+      where: {
+        padreId: null,
+        ubicacion: { conjuntoId: this.conjuntoId },
       },
-      orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        nombre: true,
+        ubicacionId: true,
+        ubicacion: { select: { nombre: true } },
+        configuracionCronograma: {
+          select: { orden: true, colorHex: true },
+        },
+      },
     });
+
+    return zonas
+      .map((zona) => {
+        const predeterminada = politicaZonaPredeterminada(zona.nombre);
+        return {
+          elementoZonaId: zona.id,
+          nombre: zona.nombre,
+          ubicacionId: zona.ubicacionId,
+          ubicacionNombre: zona.ubicacion.nombre,
+          orden: zona.configuracionCronograma?.orden ?? predeterminada.orden,
+          colorHex:
+            zona.configuracionCronograma?.colorHex.toUpperCase() ??
+            predeterminada.colorHex,
+          configurado: zona.configuracionCronograma != null,
+        };
+      })
+      .sort(
+        (a, b) =>
+          a.orden - b.orden ||
+          a.nombre.localeCompare(b.nombre, "es") ||
+          a.ubicacionNombre.localeCompare(b.ubicacionNombre, "es"),
+      );
+  }
+
+  async guardarConfiguracionZonas(payload: unknown) {
+    const dto = GuardarConfiguracionZonasDTO.parse(payload);
+    const ids = dto.zonas.map((zona) => zona.elementoZonaId);
+    if (new Set(ids).size !== ids.length) {
+      throw Object.assign(new Error("No se permiten zonas repetidas."), {
+        status: 400,
+      });
+    }
+
+    const zonasValidas = ids.length
+      ? await this.prisma.elemento.findMany({
+          where: {
+            id: { in: ids },
+            padreId: null,
+            ubicacion: { conjuntoId: this.conjuntoId },
+          },
+          select: { id: true },
+        })
+      : [];
+    if (zonasValidas.length !== ids.length) {
+      throw Object.assign(
+        new Error(
+          "Una o más zonas no pertenecen al conjunto o no son elementos raíz.",
+        ),
+        { status: 400 },
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.configuracionZonaCronograma.deleteMany({
+        where: { conjuntoId: this.conjuntoId },
+      });
+      if (dto.zonas.length) {
+        await tx.configuracionZonaCronograma.createMany({
+          data: dto.zonas.map((zona) => ({
+            conjuntoId: this.conjuntoId,
+            elementoZonaId: zona.elementoZonaId,
+            orden: zona.orden,
+            colorHex: zona.colorHex.toUpperCase(),
+          })),
+        });
+      }
+    });
+
+    return this.listarConfiguracionZonas();
   }
 
   async informeMensualActividad(payload: unknown) {

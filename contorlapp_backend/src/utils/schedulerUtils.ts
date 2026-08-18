@@ -268,6 +268,7 @@ export async function buildAgendaPorOperarioDia(params: {
   incluirBorrador: boolean;
   bloqueosGlobales?: Bloqueo[];
   excluirEstados?: string[];
+  excluirTareaIds?: number[];
 }): Promise<Record<string, Intervalo[]>> {
   const {
     prisma,
@@ -277,6 +278,7 @@ export async function buildAgendaPorOperarioDia(params: {
     incluirBorrador,
     bloqueosGlobales = [],
     excluirEstados = [],
+    excluirTareaIds = [],
   } = params;
 
   const ini = new Date(
@@ -307,6 +309,7 @@ export async function buildAgendaPorOperarioDia(params: {
       ...(excluirEstados.length
         ? { estado: { notIn: excluirEstados as any } }
         : {}),
+      ...(excluirTareaIds.length ? { id: { notIn: excluirTareaIds } } : {}),
       operarios: { some: { id: { in: operariosIds } } },
     },
     select: {
@@ -708,6 +711,8 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
   payload: CrearTareaPayload;
   prioridadesCandidatas?: Array<2 | 3>;
   candidatasIdsPreferidas?: number[];
+  /** Ocurrencias que representan el mínimo mensual P3 y no se pueden desplazar. */
+  ocurrenciasProtegidasIds?: ReadonlySet<string>;
   marcarReemplazadasComoNoCompletadas?: boolean;
 
   // agenda
@@ -747,6 +752,7 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
     payload,
     prioridadesCandidatas,
     candidatasIdsPreferidas,
+    ocurrenciasProtegidasIds,
     marcarReemplazadasComoNoCompletadas = false,
     incluirBorradorEnAgenda,
     incluirPublicadasEnAgenda,
@@ -859,11 +865,20 @@ export async function intentarReemplazoPorPrioridadBaja(params: {
       fechaInicio: true,
       fechaFin: true,
       grupoPlanId: true,
+      ocurrenciaPlanId: true,
       bloqueIndex: true,
       bloquesTotales: true,
     },
     orderBy: [{ prioridad: "desc" }, { fechaInicio: "asc" }],
   });
+
+  if (ocurrenciasProtegidasIds?.size) {
+    candidatas = candidatas.filter(
+      (candidata) =>
+        candidata.ocurrenciaPlanId == null ||
+        !ocurrenciasProtegidasIds.has(candidata.ocurrenciaPlanId),
+    );
+  }
 
   if (candidatasIdsPreferidas?.length) {
     const ordenMap = new Map<number, number>();
