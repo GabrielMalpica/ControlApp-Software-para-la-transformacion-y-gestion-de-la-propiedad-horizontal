@@ -1,4 +1,5 @@
 import { Prisma, Rol, type PrismaClient } from "@prisma/client";
+import { cached, cacheDelete } from "./RedisService";
 
 type PermissionDefinition = {
   key: string;
@@ -367,6 +368,17 @@ export class PermissionService {
       throw new Error("El rol del usuario no es valido para resolver permisos.");
     }
 
+    // La empresa de un usuario practicamente nunca cambia entre requests; se
+    // resolvia con una consulta a BD en cada request (varias veces por
+    // request: auth, tenant scope, permisos). Se cachea 60s.
+    return cached(
+      `empresa:usuario:v1:${userId}:${normalizedRole}`,
+      60,
+      () => this._resolveEmpresaIdForUser(userId, normalizedRole),
+    );
+  }
+
+  private async _resolveEmpresaIdForUser(userId: string, normalizedRole: Rol): Promise<string> {
     switch (normalizedRole) {
       case Rol.gerente: {
         const gerente = await this.prisma.gerente.findUnique({
@@ -418,11 +430,27 @@ export class PermissionService {
     const normalizedRole = normalizeRole(role);
     if (!normalizedRole) return new Set();
 
-    const effective = PermissionService.defaultPermissionsForRole(normalizedRole);
-
     if (normalizedRole === Rol.gerente) {
-      return effective;
+      return PermissionService.defaultPermissionsForRole(normalizedRole);
     }
+
+    // permisoRol cambia rarisimo (solo via replacePermissionMatrix) pero se
+    // consultaba en cada request autenticado; se cachea 60s y se invalida
+    // explicitamente al guardar cambios.
+    const effectiveArray = await cached(
+      `permisos:rol:v1:${empresaId}:${normalizedRole}`,
+      60,
+      async () => [...(await this._getEffectivePermissionsForRole(empresaId, normalizedRole))],
+    );
+
+    return new Set(effectiveArray);
+  }
+
+  private async _getEffectivePermissionsForRole(
+    empresaId: string,
+    normalizedRole: Rol,
+  ): Promise<Set<string>> {
+    const effective = PermissionService.defaultPermissionsForRole(normalizedRole);
 
     let overrides: Array<{ permiso: string; permitido: boolean }> = [];
 
@@ -575,6 +603,10 @@ export class PermissionService {
         }
       }
     });
+
+    await cacheDelete(
+      ...uniqueRoles.map((role) => `permisos:rol:v1:${empresaId}:${role}`),
+    );
 
     return this.getPermissionMatrix(empresaId);
   }

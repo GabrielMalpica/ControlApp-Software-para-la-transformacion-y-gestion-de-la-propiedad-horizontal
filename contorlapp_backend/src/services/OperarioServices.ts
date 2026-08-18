@@ -73,7 +73,7 @@ export class OperarioService {
     if (horasSemana + tarea.duracionMinutos > limite) {
       const operario = await this.prisma.operario.findUnique({
         where: { id: this.operarioId.toString() },
-        include: { usuario: true },
+        select: { usuario: { select: { nombre: true } } },
       });
       const nombre = operario?.usuario?.nombre ?? "Operario";
       throw new Error(
@@ -462,7 +462,7 @@ export class OperarioService {
     const horas = await this.horasAsignadasEnSemana(fecha);
     const operario = await this.prisma.operario.findUnique({
       where: { id: this.operarioId.toString() },
-      include: { usuario: true },
+      select: { usuario: { select: { nombre: true } } },
     });
     const nombre = operario?.usuario?.nombre ?? "Operario";
     return `🔔 A ${nombre} le quedan ${Math.max(

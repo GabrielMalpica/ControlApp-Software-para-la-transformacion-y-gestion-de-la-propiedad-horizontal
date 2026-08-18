@@ -64,6 +64,8 @@ import {
 import {
   construirRutaElemento,
   elementoParentChainInclude,
+  operarioResumenSelect,
+  supervisorResumenSelect,
 } from "../utils/elementoHierarchy";
 import {
   allowedIntervalsForUserWithAvailability,
@@ -359,10 +361,10 @@ const ReasignarOperarioExcluidaDTO = z.object({
 });
 
 const tareaBorradorDetalleInclude = {
-  operarios: { include: { usuario: true } },
+  operarios: { select: operarioResumenSelect },
   ubicacion: true,
   elemento: { include: elementoParentChainInclude },
-  supervisor: { include: { usuario: true } },
+  supervisor: { select: supervisorResumenSelect },
 } satisfies Prisma.TareaInclude;
 
 const DividirExcluidaManualDTO = z.object({
@@ -2677,8 +2679,9 @@ export class DefinicionTareaPreventivaService {
       include: {
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
-        operarios: { include: { usuario: true } },
-        supervisor: { include: { usuario: true } },
+        // El frontend (DefinicionPreventiva.fromJson) solo lee operarios[].id
+        // y el supervisorId plano; no necesita la fila Usuario completa.
+        operarios: { select: { id: true } },
       },
       orderBy: [{ prioridad: "asc" }, { id: "asc" }],
     });
@@ -2690,8 +2693,7 @@ export class DefinicionTareaPreventivaService {
       include: {
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
-        operarios: { include: { usuario: true } },
-        supervisor: { include: { usuario: true } },
+        operarios: { select: { id: true } },
       },
       orderBy: [{ prioridad: "asc" }, { id: "asc" }],
     });
@@ -7554,7 +7556,7 @@ async function getOperarioNombre(
   const idStr = operarioId.toString();
   const op = await prisma.operario.findUnique({
     where: { id: idStr },
-    include: { usuario: true },
+    select: { usuario: { select: { nombre: true } } },
   });
 
   return op?.usuario?.nombre ?? `Operario ${idStr}`;

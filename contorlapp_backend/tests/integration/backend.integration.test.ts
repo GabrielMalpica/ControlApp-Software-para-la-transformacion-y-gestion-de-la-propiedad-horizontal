@@ -109,6 +109,9 @@ describe('Pruebas de integración backend', () => {
 
   test('PI4 - Actividades + Reportes: tareas reflejan métricas de cumplimiento', async () => {
     const prisma: any = {
+      conjunto: {
+        findMany: jest.fn().mockResolvedValue([{ nit: 'C-1' }]),
+      },
       tarea: {
         groupBy: jest.fn().mockResolvedValue([
           { estado: EstadoTarea.APROBADA, _count: { _all: 3 } },

@@ -14,6 +14,8 @@ import { NotificacionService } from "./NotificacionService";
 import {
   construirRutaElemento,
   elementoParentChainInclude,
+  operarioResumenSelect,
+  supervisorResumenSelect,
 } from "../utils/elementoHierarchy";
 
 /**
@@ -181,9 +183,9 @@ export class SupervisorService {
       include: {
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
-        conjunto: true,
-        operarios: { include: { usuario: true } },
-        supervisor: { include: { usuario: true } },
+        conjunto: { select: { nombre: true } },
+        operarios: { select: operarioResumenSelect },
+        supervisor: { select: supervisorResumenSelect },
 
         insumoPrincipal: { select: { id: true, nombre: true, unidad: true } },
 
@@ -319,7 +321,7 @@ export class SupervisorService {
     // Datos operario / conjunto (opcional pero recomendado)
     const operario = await this.prisma.operario.findUnique({
       where: { id: payload.operarioId },
-      include: { usuario: true },
+      select: { usuario: { select: { nombre: true } } },
     });
 
     const conjunto = await this.prisma.conjunto.findUnique({

@@ -5,7 +5,9 @@ import { decToNumber } from "../utils/decimal";
 import {
   construirRutaElemento,
   elementoParentChainInclude,
+  operarioResumenSelect,
 } from "../utils/elementoHierarchy";
+import { cached } from "./RedisService";
 
 /** ======================
  * DTOs
@@ -514,12 +516,44 @@ function toOutInsumoRow(i: InsumoAgg) {
 export class ReporteService {
   constructor(private prisma: PrismaClient, private empresaId: string) {}
 
-  private soloPublicadas<T extends Record<string, unknown>>(where: T) {
-    return {
-      ...where,
-      borrador: false as const,
-      conjunto: { empresaId: this.empresaId },
-    };
+  /**
+   * Lista de conjuntoId de la empresa autenticada. Antes cada reporte
+   * filtraba con `conjunto: { empresaId }` (un JOIN por fila que invalida los
+   * indices `@@index([conjuntoId, ...])` de Tarea). Resolviendo la lista una
+   * vez y filtrando por `conjuntoId: { in: [...] }` se puede usar el indice
+   * directamente, y el resultado se cachea 45s (cached() ya deduplica
+   * llamadas concurrentes a la misma clave).
+   */
+  private conjuntoIdsDeEmpresa(): Promise<string[]> {
+    return cached(`reporte:conjuntos:v1:${this.empresaId}`, 45, async () => {
+      const rows = await this.prisma.conjunto.findMany({
+        where: { empresaId: this.empresaId },
+        select: { nit: true },
+      });
+      return rows.map((r) => r.nit);
+    });
+  }
+
+  private async soloPublicadas(
+    where: Record<string, unknown> & { conjuntoId?: string },
+  ): Promise<Record<string, unknown>> {
+    const conjuntoIds = await this.conjuntoIdsDeEmpresa();
+
+    if (where.conjuntoId) {
+      // Un conjuntoId especifico: se conserva la igualdad, pero solo si
+      // pertenece a la empresa autenticada (mismo scope que antes daba el
+      // JOIN con conjunto.empresaId). Si no pertenece, "in: []" nunca
+      // matchea ninguna fila, igual que antes el JOIN no encontraba nada.
+      return {
+        ...where,
+        borrador: false,
+        conjuntoId: conjuntoIds.includes(where.conjuntoId)
+          ? where.conjuntoId
+          : { in: [] },
+      };
+    }
+
+    return { ...where, borrador: false, conjuntoId: { in: conjuntoIds } };
   }
 
   // =========================================================
@@ -529,7 +563,7 @@ export class ReporteService {
   async tareasAprobadasPorFecha(payload: unknown) {
     const { desde, hasta } = RangoDTO.parse(payload);
     return this.prisma.tarea.findMany({
-      where: this.soloPublicadas({
+      where: await this.soloPublicadas({
         estado: EstadoTarea.APROBADA,
         fechaVerificacion: { gte: desde, lte: hasta },
       }),
@@ -544,7 +578,7 @@ export class ReporteService {
   async tareasRechazadasPorFecha(payload: unknown) {
     const { desde, hasta } = RangoDTO.parse(payload);
     return this.prisma.tarea.findMany({
-      where: this.soloPublicadas({
+      where: await this.soloPublicadas({
         estado: EstadoTarea.RECHAZADA,
         fechaVerificacion: { gte: desde, lte: hasta },
       }),
@@ -560,7 +594,7 @@ export class ReporteService {
     const { conjuntoId, estado, desde, hasta } =
       TareasPorEstadoDTO.parse(payload);
     return this.prisma.tarea.findMany({
-      where: this.soloPublicadas({
+      where: await this.soloPublicadas({
         conjuntoId,
         estado,
         fechaInicio: { gte: desde },
@@ -579,7 +613,7 @@ export class ReporteService {
       TareasPorEstadoDTO.parse(payload);
 
     const tareas = await this.prisma.tarea.findMany({
-      where: this.soloPublicadas({
+      where: await this.soloPublicadas({
         conjuntoId,
         estado,
         fechaInicio: { gte: desde },
@@ -588,7 +622,7 @@ export class ReporteService {
       include: {
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
-        operarios: { include: { usuario: true } },
+        operarios: { select: operarioResumenSelect },
       },
     });
 
@@ -628,7 +662,7 @@ export class ReporteService {
 
     const grouped = await this.prisma.tarea.groupBy({
       by: ["estado"],
-      where: this.soloPublicadas(where),
+      where: await this.soloPublicadas(where),
       _count: { _all: true },
     });
 
@@ -677,7 +711,7 @@ export class ReporteService {
       RangoConConjuntoOpcionalDTO.parse(payload);
 
     const tareas = await this.prisma.tarea.findMany({
-      where: this.soloPublicadas({
+      where: await this.soloPublicadas({
         ...(conjuntoId ? { conjuntoId } : {}),
         fechaInicio: { gte: desde },
         fechaFin: { lte: hasta },
@@ -709,7 +743,7 @@ export class ReporteService {
     const { desde, hasta } = RangoDTO.parse(payload);
 
     const tareas = await this.prisma.tarea.findMany({
-      where: this.soloPublicadas({
+      where: await this.soloPublicadas({
         fechaInicio: { gte: desde },
         fechaFin: { lte: hasta },
       }),
@@ -770,7 +804,7 @@ export class ReporteService {
       RangoConConjuntoOpcionalDTO.parse(payload);
 
     const tareas = await this.prisma.tarea.findMany({
-      where: this.soloPublicadas({
+      where: await this.soloPublicadas({
         ...(conjuntoId ? { conjuntoId } : {}),
         fechaInicio: { gte: desde },
         fechaFin: { lte: hasta },
@@ -1212,21 +1246,35 @@ export class ReporteService {
   // 5) Insumos por rango (por conjunto obligatorio)
   // =========================================================
   async usoDeInsumosPorFecha(payload: unknown) {
-    const { conjuntoId, desde, hasta } = RangoConConjuntoDTO.parse(payload);
+    const { conjuntoId, desde, hasta } =
+      RangoConConjuntoOpcionalDTO.parse(payload);
 
-    const inventario = await this.prisma.inventario.findFirst({
-      where: { conjuntoId, conjunto: { empresaId: this.empresaId } },
-      select: { id: true },
-    });
-    if (!inventario) throw new Error("Inventario no encontrado");
+    let where: any;
+    if (conjuntoId) {
+      const inventario = await this.prisma.inventario.findFirst({
+        where: { conjuntoId, conjunto: { empresaId: this.empresaId } },
+        select: { id: true },
+      });
+      if (!inventario) throw new Error("Inventario no encontrado");
+
+      where = {
+        inventarioId: inventario.id,
+        fecha: { gte: desde, lte: hasta },
+        tipo: "SALIDA" as any,
+      };
+    } else {
+      // Sin conjuntoId: agrega en una sola consulta todo el uso de insumos
+      // de la empresa, en lugar de que el cliente pida conjunto por conjunto.
+      where = {
+        inventario: { conjunto: { empresaId: this.empresaId } },
+        fecha: { gte: desde, lte: hasta },
+        tipo: "SALIDA" as any,
+      };
+    }
 
     const rows = await this.prisma.consumoInsumo.groupBy({
       by: ["insumoId"],
-      where: {
-        inventarioId: inventario.id,
-        fecha: { gte: desde, lte: hasta },
-        tipo: "SALIDA" as any, // si tu enum es TipoMovimientoInsumo.SALIDA, ajústalo si aplica
-      },
+      where,
       _sum: { cantidad: true },
       _count: { _all: true },
     });
@@ -1364,7 +1412,7 @@ export class ReporteService {
       RangoConConjuntoOpcionalDTO.parse(payload);
 
     const tareas = await this.prisma.tarea.findMany({
-      where: this.soloPublicadas({
+      where: await this.soloPublicadas({
         ...(conjuntoId ? { conjuntoId } : {}),
         fechaInicio: { gte: desde },
         fechaFin: { lte: hasta },
@@ -1398,7 +1446,7 @@ export class ReporteService {
       RangoConConjuntoOpcionalDTO.parse(payload);
 
     const tareas = await this.prisma.tarea.findMany({
-      where: this.soloPublicadas({
+      where: await this.soloPublicadas({
         ...(conjuntoId ? { conjuntoId } : {}),
         fechaInicio: { gte: desde },
         fechaFin: { lte: hasta },
@@ -1487,7 +1535,7 @@ export class ReporteService {
     // reprogramada fuera del mes (fechaInicio/fechaFin ya cambiaron).
     const tareasPreventivasReemplazadasPorEvento =
       await this.prisma.tarea.findMany({
-        where: this.soloPublicadas({
+        where: await this.soloPublicadas({
           ...(conjuntoId ? { conjuntoId } : {}),
           tipo: "PREVENTIVA" as any,
           reprogramada: true,
@@ -1560,7 +1608,7 @@ export class ReporteService {
     const tareasReemplazo =
       tareaIdsReemplazo.length > 0
         ? await this.prisma.tarea.findMany({
-            where: this.soloPublicadas({ id: { in: tareaIdsReemplazo } }),
+            where: await this.soloPublicadas({ id: { in: tareaIdsReemplazo } }),
             select: {
               id: true,
               tipo: true,
@@ -1690,7 +1738,10 @@ export class ReporteService {
         tareaId: { in: ids },
         fecha: { gte: desde, lte: hasta },
       },
-      include: { insumo: true, operario: { include: { usuario: true } } },
+      include: {
+        insumo: true,
+        operario: { select: { usuario: { select: { nombre: true } } } },
+      },
       orderBy: [{ fecha: "asc" }, { id: "asc" }],
     });
 
@@ -1721,7 +1772,7 @@ export class ReporteService {
       },
       include: {
         maquinaria: true,
-        operario: { include: { usuario: true } },
+        operario: { select: { usuario: { select: { nombre: true } } } },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
@@ -1753,7 +1804,7 @@ export class ReporteService {
       },
       include: {
         herramienta: true,
-        operario: { include: { usuario: true } },
+        operario: { select: { usuario: { select: { nombre: true } } } },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
@@ -1931,7 +1982,7 @@ export class ReporteService {
 
     const grouped = await this.prisma.tarea.groupBy({
       by: ["tipo"],
-      where: this.soloPublicadas(where),
+      where: await this.soloPublicadas(where),
       _count: { _all: true },
     });
 

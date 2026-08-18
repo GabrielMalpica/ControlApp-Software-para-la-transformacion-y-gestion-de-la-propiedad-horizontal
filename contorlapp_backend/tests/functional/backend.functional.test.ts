@@ -290,6 +290,9 @@ describe('Pruebas funcionales backend', () => {
 
   test('PF8 - Reportes: genera indicadores de cumplimiento', async () => {
     const prisma: any = {
+      conjunto: {
+        findMany: jest.fn().mockResolvedValue([{ nit: 'C-100' }]),
+      },
       tarea: {
         groupBy: jest.fn().mockResolvedValue([
           { estado: EstadoTarea.APROBADA, _count: { _all: 4 } },
@@ -312,6 +315,9 @@ describe('Pruebas funcionales backend', () => {
 
   test('PF9 - Dashboard: muestra indicadores de desempeño por conjunto', async () => {
     const prisma: any = {
+      conjunto: {
+        findMany: jest.fn().mockResolvedValue([{ nit: 'C-100' }]),
+      },
       tarea: {
         findMany: jest.fn().mockResolvedValue([
           {

@@ -79,6 +79,9 @@ import {
   construirRutaElemento,
   elementoParentChainInclude,
   elementoTreeInclude,
+  operarioResumenSelect,
+  supervisorResumenSelect,
+  usuarioSinContrasenaSelect,
 } from "../utils/elementoHierarchy";
 import {
   validarLimiteSemanalOperarios,
@@ -1522,12 +1525,23 @@ export class GerenteService {
       where: {
         empresaId: await this.resolverEmpresaNit(),
       },
-      include: {
+      select: {
+        nit: true,
+        nombre: true,
+        direccion: true,
+        correo: true,
+        activo: true,
+        tipoServicio: true,
+        valorMensual: true,
+        fechaInicioContrato: true,
+        fechaFinContrato: true,
+        consignasEspeciales: true,
+        valorAgregado: true,
         administrador: {
-          include: { usuario: true },
+          select: { id: true, usuario: { select: usuarioSinContrasenaSelect } },
         },
         operarios: {
-          include: { usuario: true },
+          select: { id: true, usuario: { select: usuarioSinContrasenaSelect } },
         },
         horarios: true,
         ubicaciones: {
@@ -1539,6 +1553,11 @@ export class GerenteService {
             },
           },
         },
+        // Nunca se selecciona mapaConjuntoBytes aqui: es un blob binario que
+        // solo se sirve por separado via obtenerMapaArchivo().
+        mapaConjuntoNombreArchivo: true,
+        mapaConjuntoMimeType: true,
+        mapaConjuntoActualizadoEn: true,
       },
       orderBy: { nombre: "asc" },
     });
@@ -1549,16 +1568,23 @@ export class GerenteService {
   async obtenerConjunto(conjuntoId: string) {
     const conjunto = await this.prisma.conjunto.findUnique({
       where: { nit: conjuntoId },
-      include: {
+      select: {
+        nit: true,
+        nombre: true,
+        direccion: true,
+        correo: true,
+        activo: true,
+        tipoServicio: true,
+        valorMensual: true,
+        fechaInicioContrato: true,
+        fechaFinContrato: true,
+        consignasEspeciales: true,
+        valorAgregado: true,
         administrador: {
-          include: {
-            usuario: true,
-          },
+          select: { id: true, usuario: { select: usuarioSinContrasenaSelect } },
         },
         operarios: {
-          include: {
-            usuario: true,
-          },
+          select: { id: true, usuario: { select: usuarioSinContrasenaSelect } },
         },
         horarios: true,
         ubicaciones: {
@@ -1570,6 +1596,11 @@ export class GerenteService {
             },
           },
         },
+        // Nunca se selecciona mapaConjuntoBytes aqui: es un blob binario que
+        // solo se sirve por separado via obtenerMapaArchivo().
+        mapaConjuntoNombreArchivo: true,
+        mapaConjuntoMimeType: true,
+        mapaConjuntoActualizadoEn: true,
       },
     });
 
@@ -4420,8 +4451,8 @@ export class GerenteService {
     const tareas = await this.prisma.tarea.findMany({
       where: { conjuntoId, borrador: false },
       include: {
-        supervisor: { include: { usuario: true } },
-        operarios: { include: { usuario: true } },
+        supervisor: { select: supervisorResumenSelect },
+        operarios: { select: operarioResumenSelect },
 
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },

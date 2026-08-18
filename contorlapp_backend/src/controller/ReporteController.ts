@@ -41,14 +41,6 @@ const RangoConConjuntoOpcionalQuery = RangoQueryBase.merge(
   message: "hasta debe ser >= desde",
 });
 
-// ✅ Insumos requiere conjunto
-const UsoInsumosQuery = RangoQueryBase.merge(
-  z.object({ conjuntoId: z.string().min(1) }),
-).refine((d) => d.hasta >= d.desde, {
-  path: ["hasta"],
-  message: "hasta debe ser >= desde",
-});
-
 // ✅ Tareas por estado (requiere conjunto + estado)
 const EstadoQuery = RangoQueryBase.merge(
   z.object({
@@ -221,11 +213,12 @@ export class ReporteController {
     }
   };
 
-  // GET /reporte/insumos/uso?conjuntoId=&desde=&hasta=
+  // GET /reporte/insumos/uso?conjuntoId=&desde=&hasta= (conjuntoId opcional:
+  // sin el, agrega el uso de insumos de toda la empresa en una sola consulta).
   usoDeInsumosPorFecha: RequestHandler = async (req, res, next) => {
     const inicio = Date.now();
     try {
-      const q = UsoInsumosQuery.parse(req.query);
+      const q = RangoConConjuntoOpcionalQuery.parse(req.query);
       const out = await (await serviceFor(req)).usoDeInsumosPorFecha(q);
       logPerf("Reporte insumos", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);

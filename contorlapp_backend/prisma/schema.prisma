@@ -642,6 +642,8 @@ model Conjunto {
   // Plan Esperanza
   planEsperanzaConfig PlanEsperanzaConfig?
   planesEsperanza     PlanEsperanza[]
+
+  @@index([empresaId])
 }
 
 model CompromisoConjunto {
@@ -698,6 +700,7 @@ model Ubicacion {
   solicitudesTareas         SolicitudTarea[]
   DefinicionTareaPreventiva DefinicionTareaPreventiva[]
 
+  @@index([conjuntoId])
   @@map("Ubicacion")
 }
 
@@ -1110,6 +1113,7 @@ model DefinicionTareaPreventiva {
 
   insumosSiteOverrideJson Json?
 
+  @@index([conjuntoId, activo])
   @@map("DefinicionTareaPreventiva")
 }
 
@@ -1194,6 +1198,8 @@ model Tarea {
   @@index([conjuntoId, fechaInicio])
   @@index([conjuntoId, fechaFin])
   @@index([periodoAnio, periodoMes, conjuntoId])
+  @@index([conjuntoId, periodoAnio, periodoMes, borrador])
+  @@index([borrador, fechaInicio])
   @@index([grupoPlanId, bloqueIndex])
   @@index([rendimientoId])
   @@index([definicionId], map: "Tarea_definicionId_idx")

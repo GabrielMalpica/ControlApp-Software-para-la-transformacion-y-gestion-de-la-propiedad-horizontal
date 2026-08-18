@@ -130,7 +130,9 @@ export class MaquinariaService {
         conjuntoId,
         estado: "ACTIVA",
       },
-      include: { responsable: { include: { usuario: true } } },
+      include: {
+        responsable: { select: { usuario: { select: { nombre: true } } } },
+      },
     });
 
     return activa?.responsable?.usuario?.nombre ?? "Sin asignar";

@@ -3,7 +3,10 @@ import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { CrearUbicacionDTO, FiltroUbicacionDTO } from "../model/Ubicacion";
 import { InventarioService } from "./InventarioServices";
-import { elementoTreeInclude } from "../utils/elementoHierarchy";
+import {
+  elementoTreeInclude,
+  usuarioSinContrasenaSelect,
+} from "../utils/elementoHierarchy";
 
 // DTOs locales
 const AsignarOperarioDTO = z.object({
@@ -398,10 +401,10 @@ export class ConjuntoService {
         consignasEspeciales: true,
         valorAgregado: true,
         administrador: {
-          include: { usuario: true },
+          select: { id: true, usuario: { select: usuarioSinContrasenaSelect } },
         },
         operarios: {
-          include: { usuario: true },
+          select: { id: true, usuario: { select: usuarioSinContrasenaSelect } },
         },
         horarios: true,
         ubicaciones: {

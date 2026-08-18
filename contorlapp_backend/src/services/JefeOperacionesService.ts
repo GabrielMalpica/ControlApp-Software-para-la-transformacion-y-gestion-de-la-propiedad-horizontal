@@ -3,7 +3,11 @@ import { PrismaClient, EstadoTarea } from "@prisma/client";
 import { z } from "zod";
 import { uploadEvidenciaToDrive } from "../utils/drive_evidencias";
 import fs from "fs";
-import { elementoParentChainInclude } from "../utils/elementoHierarchy";
+import {
+  elementoParentChainInclude,
+  operarioResumenSelect,
+  supervisorResumenSelect,
+} from "../utils/elementoHierarchy";
 
 const ConjuntoIdSchema = z.string().trim().min(1).optional();
 
@@ -56,8 +60,8 @@ export class JefeOperacionesService {
         },
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
-        operarios: { include: { usuario: true } },
-        supervisor: { include: { usuario: true } },
+        operarios: { select: operarioResumenSelect },
+        supervisor: { select: supervisorResumenSelect },
       },
     });
   }

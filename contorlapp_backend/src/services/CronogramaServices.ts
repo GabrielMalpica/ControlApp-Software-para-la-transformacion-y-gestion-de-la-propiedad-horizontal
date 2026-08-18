@@ -16,6 +16,7 @@ import {
 import {
   construirRutaElemento,
   elementoParentChainInclude,
+  operarioResumenSelect,
 } from "../utils/elementoHierarchy";
 import {
   validarIntervaloProgramacion,
@@ -256,23 +257,36 @@ export class CronogramaService {
     return total > 0;
   }
 
-  private async eliminarTareaPublicada(id: number) {
+  /**
+   * Elimina un lote de tareas publicadas (y sus registros relacionados) en
+   * una sola transaccion, en vez de una transaccion (con 6 sentencias cada
+   * una) por tarea. Para un mes de 300 tareas esto pasa de ~300 round-trips
+   * de transaccion a 1. Se conserva la misma secuencia de pasos (incluido el
+   * `operarios: { set: [] }` explicito antes de borrar, aunque la FK de la
+   * tabla _TareaOperarios ya tiene ON DELETE CASCADE) para no cambiar de
+   * comportamiento.
+   */
+  private async eliminarTareasPublicadas(ids: number[]) {
+    if (!ids.length) return;
+
     await this.prisma.$transaction(async (tx) => {
       await tx.maquinariaConjunto.updateMany({
-        where: { tareaId: id },
+        where: { tareaId: { in: ids } },
         data: { tareaId: null },
       });
 
-      await tx.usoMaquinaria.deleteMany({ where: { tareaId: id } });
-      await tx.usoHerramienta.deleteMany({ where: { tareaId: id } });
-      await tx.consumoInsumo.deleteMany({ where: { tareaId: id } });
+      await tx.usoMaquinaria.deleteMany({ where: { tareaId: { in: ids } } });
+      await tx.usoHerramienta.deleteMany({ where: { tareaId: { in: ids } } });
+      await tx.consumoInsumo.deleteMany({ where: { tareaId: { in: ids } } });
 
-      await tx.tarea.update({
-        where: { id },
-        data: { operarios: { set: [] } },
-      });
+      for (const id of ids) {
+        await tx.tarea.update({
+          where: { id },
+          data: { operarios: { set: [] } },
+        });
+      }
 
-      await tx.tarea.delete({ where: { id } });
+      await tx.tarea.deleteMany({ where: { id: { in: ids } } });
     });
   }
 
@@ -299,7 +313,7 @@ export class CronogramaService {
     return this.prisma.tarea.findMany({
       where,
       include: {
-        operarios: { include: { usuario: true } },
+        operarios: { select: operarioResumenSelect },
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
       },
@@ -1428,9 +1442,7 @@ export class CronogramaService {
 
     const tareaIds = tareas.map((tarea) => tarea.id);
 
-    for (const tareaId of tareaIds) {
-      await this.eliminarTareaPublicada(tareaId);
-    }
+    await this.eliminarTareasPublicadas(tareaIds);
 
     const restantes = await this.prisma.tarea.count({
       where: { id: { in: tareaIds } },
@@ -1470,7 +1482,7 @@ export class CronogramaService {
         operarios: { some: { id: operarioId.toString() } },
       },
       include: {
-        operarios: { include: { usuario: true } },
+        operarios: { select: operarioResumenSelect },
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
       },
@@ -1489,7 +1501,7 @@ export class CronogramaService {
         fechaFin: { gte: fecha },
       },
       include: {
-        operarios: { include: { usuario: true } },
+        operarios: { select: operarioResumenSelect },
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
       },
@@ -1509,7 +1521,7 @@ export class CronogramaService {
         fechaInicio: { lte: fechaFin },
       },
       include: {
-        operarios: { include: { usuario: true } },
+        operarios: { select: operarioResumenSelect },
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
       },
@@ -1530,7 +1542,7 @@ export class CronogramaService {
         ubicacion: { nombre: { equals: ubicacion, mode: "insensitive" } },
       },
       include: {
-        operarios: { include: { usuario: true } },
+        operarios: { select: operarioResumenSelect },
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
       },
@@ -1585,7 +1597,7 @@ export class CronogramaService {
           : undefined,
       },
       include: {
-        operarios: { include: { usuario: true } },
+        operarios: { select: operarioResumenSelect },
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
       },
@@ -1617,7 +1629,7 @@ export class CronogramaService {
         fechaInicio: { lte: finDia },
       },
       include: {
-        operarios: { include: { usuario: true } },
+        operarios: { select: operarioResumenSelect },
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
       },
@@ -1675,7 +1687,7 @@ export class CronogramaService {
         fechaInicio: { lte: domingo },
       },
       include: {
-        operarios: { include: { usuario: true } },
+        operarios: { select: operarioResumenSelect },
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
       },
@@ -1743,7 +1755,7 @@ export class CronogramaService {
           ? { funciones: { has: requiereFuncion as any } }
           : {}),
       },
-      include: { usuario: true },
+      select: { id: true, usuario: { select: { nombre: true } } },
     });
     if (operarios.length === 0) return [];
 
@@ -2006,7 +2018,7 @@ export class CronogramaService {
       include: {
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
-        operarios: { include: { usuario: true } },
+        operarios: { select: operarioResumenSelect },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });

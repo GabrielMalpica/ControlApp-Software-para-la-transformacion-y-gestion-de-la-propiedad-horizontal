@@ -22,6 +22,53 @@ export const elementoParentChainInclude = {
   },
 } as const;
 
+/**
+ * Selector minimo para mostrar un operario asignado a una tarea (nombre +
+ * cargo). Evita traer la fila Usuario completa (incluye el hash de
+ * contrasena y datos personales como EPS, tipo de sangre, direccion).
+ */
+export const operarioResumenSelect = {
+  id: true,
+  funciones: true,
+  usuario: { select: { nombre: true } },
+} as const;
+
+/** Equivalente a operarioResumenSelect para Supervisor (sin `funciones`). */
+export const supervisorResumenSelect = {
+  id: true,
+  usuario: { select: { nombre: true } },
+} as const;
+
+/**
+ * Todos los campos de Usuario que el frontend (Usuario.fromJson) puede leer,
+ * EXCEPTO `contrasena` (el hash bcrypt nunca debe salir de la API). Usar en
+ * lugar de `include: { usuario: true }` en pantallas que muestran el perfil
+ * completo (no solo el nombre) de administradores/operarios.
+ */
+export const usuarioSinContrasenaSelect = {
+  id: true,
+  nombre: true,
+  correo: true,
+  rol: true,
+  activo: true,
+  requiereCambioContrasena: true,
+  telefono: true,
+  fechaNacimiento: true,
+  direccion: true,
+  estadoCivil: true,
+  numeroHijos: true,
+  padresVivos: true,
+  tipoSangre: true,
+  eps: true,
+  fondoPensiones: true,
+  tallaCamisa: true,
+  tallaPantalon: true,
+  tallaCalzado: true,
+  tipoContrato: true,
+  jornadaLaboral: true,
+  patronJornada: true,
+} as const;
+
 type ElementoNode = {
   id: number;
   nombre: string;

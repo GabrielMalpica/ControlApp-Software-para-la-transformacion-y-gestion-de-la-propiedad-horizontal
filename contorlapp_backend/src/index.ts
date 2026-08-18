@@ -10,6 +10,7 @@ import express, {
 } from "express";
 import cors from "cors";
 import helmet from "helmet";
+import compression from "compression";
 import { rateLimit } from "express-rate-limit";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
@@ -70,6 +71,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(helmet());
+app.use(compression());
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
