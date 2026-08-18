@@ -6,6 +6,7 @@ import '../service/app_error.dart';
 import '../service/app_constants.dart';
 import '../service/api_exception.dart';
 import '../model/cronograma_actividad_informe_model.dart';
+import '../model/cronograma_informe_jerarquico_model.dart';
 import '../model/preventiva_excluida_borrador_model.dart';
 import '../model/tarea_model.dart';
 
@@ -197,6 +198,45 @@ class CronogramaApi {
           ),
         )
         .toList();
+  }
+
+  Future<CronogramaInformeJerarquicoModel> informeActividadJerarquico({
+    required String nit,
+    required int anio,
+    required int mes,
+    required bool borrador,
+    String? operarioId,
+    DateTime? semanaInicio,
+  }) async {
+    String dateKey(DateTime date) =>
+        '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+    final uri =
+        Uri.parse(
+          '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/informe-actividad-v2',
+        ).replace(
+          queryParameters: {
+            'anio': '$anio',
+            'mes': '$mes',
+            'borrador': borrador.toString(),
+            if (operarioId != null && operarioId.trim().isNotEmpty)
+              'operarioId': operarioId.trim(),
+            if (semanaInicio != null) 'semanaInicio': dateKey(semanaInicio),
+          },
+        );
+    final resp = await _client.get(uri.toString());
+    if (resp.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo cargar el informe de cumplimiento.',
+        ),
+      );
+    }
+    return CronogramaInformeJerarquicoModel.fromJson(
+      (jsonDecode(resp.body) as Map).cast<String, dynamic>(),
+    );
   }
 
   Future<List<PreventivaExcluidaBorradorModel>> listarExcluidasStandby({

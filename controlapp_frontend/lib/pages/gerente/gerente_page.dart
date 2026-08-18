@@ -43,6 +43,7 @@ import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import 'package:flutter_application_1/widgets/perfil_action.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 import '../../service/theme.dart';
 import '../inventario_page.dart';
@@ -657,7 +658,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         description:
             'Accede más rápido a la operación diaria, la planeación y el seguimiento del conjunto.',
         leadingBadge: 'Vision ejecutiva y operativa',
-        child: Center(child: CircularProgressIndicator()),
+        child: SkeletonDashboardGrid(tiles: 8, padding: EdgeInsets.zero),
       );
     }
 

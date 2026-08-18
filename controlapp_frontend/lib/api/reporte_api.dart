@@ -130,7 +130,7 @@ class ReporteApi {
   }
 
   Future<List<InsumoUsoRow>> usoInsumos({
-    required String conjuntoId,
+    String? conjuntoId,
     required DateTime desde,
     required DateTime hasta,
   }) async {

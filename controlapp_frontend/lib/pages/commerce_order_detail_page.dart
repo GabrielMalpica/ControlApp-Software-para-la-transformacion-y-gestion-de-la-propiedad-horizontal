@@ -7,6 +7,7 @@ import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/commerce_clay.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class CommerceOrderDetailPage extends StatefulWidget {
   const CommerceOrderDetailPage({super.key, required this.pedidoId});
@@ -354,7 +355,7 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
         ),
         body: CommerceClayBackground(
           child: _loading
-              ? const Center(child: CircularProgressIndicator())
+              ? const SkeletonList()
               : _error != null
               ? CommerceStateView(
                   icon: Icons.wifi_off_rounded,
@@ -586,6 +587,9 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
           const Positioned.fill(
             child: ColoredBox(
               color: Color(0x33000000),
+              // Overlay de accion en curso (no de carga de contenido): un
+              // spinner comunica "procesando" mejor que un skeleton, que
+              // sugeriria que va a aparecer contenido nuevo con esa forma.
               child: Center(child: CircularProgressIndicator()),
             ),
           ),

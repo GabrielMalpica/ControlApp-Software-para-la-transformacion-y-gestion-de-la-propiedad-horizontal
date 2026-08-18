@@ -20,6 +20,7 @@ import '../widgets/section_card.dart';
 import '../widgets/searchable_select_field.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class CrearTareaPage extends StatefulWidget {
   final String nit;
@@ -2183,7 +2184,7 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
   @override
   Widget build(BuildContext context) {
     if (_cargandoInicial) {
-      return const Center(child: CircularProgressIndicator());
+      return const SkeletonList();
     }
 
     final form = Form(

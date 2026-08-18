@@ -7,6 +7,7 @@ import '../../service/app_error.dart';
 import '../../service/app_feedback.dart';
 import '../../service/session_service.dart';
 import '../../service/theme.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class CompromisosPage extends StatefulWidget {
   final String nit;
@@ -265,7 +266,7 @@ class _CompromisosPageState extends State<CompromisosPage> {
         foregroundColor: Colors.white,
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : Padding(
               padding: const EdgeInsets.all(16),
               child: Column(

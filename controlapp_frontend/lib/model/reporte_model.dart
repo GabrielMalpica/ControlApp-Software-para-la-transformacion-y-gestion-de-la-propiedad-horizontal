@@ -822,6 +822,9 @@ class TareaDetalleRow {
   final DateTime fechaInicio;
   final DateTime fechaFin;
   final int duracionMinutos;
+  final DateTime? fechaObjetivoPlan;
+  final bool reubicadaPorPlanificacion;
+  final String? motivoPlanificacion;
 
   final String? ubicacion;
   final String? elemento;
@@ -850,6 +853,9 @@ class TareaDetalleRow {
     required this.fechaInicio,
     required this.fechaFin,
     required this.duracionMinutos,
+    this.fechaObjetivoPlan,
+    this.reubicadaPorPlanificacion = false,
+    this.motivoPlanificacion,
     required this.ubicacion,
     required this.elemento,
     required this.supervisor,
@@ -883,6 +889,21 @@ class TareaDetalleRow {
         duracionMinutos: (json['duracionMinutos'] is num)
             ? (json['duracionMinutos'] as num).toInt()
             : int.tryParse('${json['duracionMinutos']}') ?? 0,
+        fechaObjetivoPlan: (() {
+          final plan = json['planificacion'];
+          if (plan is! Map || plan['fechaObjetivo'] == null) return null;
+          return DateTime.tryParse(plan['fechaObjetivo'].toString())?.toLocal();
+        })(),
+        reubicadaPorPlanificacion:
+            json['planificacion'] is Map &&
+            (json['planificacion'] as Map)['reubicada'] == true,
+        motivoPlanificacion: (() {
+          final plan = json['planificacion'];
+          if (plan is! Map) return null;
+          final mensaje = (plan['motivoMensaje'] ?? '').toString().trim();
+          if (mensaje.isNotEmpty) return mensaje;
+          return plan['motivoCodigo']?.toString();
+        })(),
         ubicacion: (json['ubicacion'] is Map)
             ? ((json['ubicacion'] as Map)['nombre']?.toString())
             : json['ubicacionNombre']?.toString(),

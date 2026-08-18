@@ -10,6 +10,7 @@ import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import 'package:flutter_application_1/widgets/perfil_action.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 import '../service/theme.dart';
 
@@ -197,7 +198,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
         description:
             'Aqui puedes revisar tareas, solicitudes, cronogramas e inventario desde el conjunto activo.',
         leadingBadge: 'Operación en campo',
-        child: Center(child: CircularProgressIndicator()),
+        child: SkeletonDashboardGrid(tiles: 8, padding: EdgeInsets.zero),
       );
     }
 

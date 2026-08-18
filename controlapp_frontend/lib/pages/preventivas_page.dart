@@ -12,6 +12,7 @@ import '../service/theme.dart';
 import '../utils/frecuencia_utils.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'crear_preventiva_page.dart' as ce;
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class PreventivasPage extends StatefulWidget {
   final String nit;
@@ -792,7 +793,7 @@ class _PreventivasPageState extends State<PreventivasPage> {
         child: const Icon(Icons.add),
       ),
       body: _cargando
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : _items.isEmpty
           ? const Center(
               child: Text(

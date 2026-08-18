@@ -6,6 +6,7 @@ import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/commerce_clay.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class PointsPage extends StatefulWidget {
   const PointsPage({
@@ -455,7 +456,7 @@ class _PointsPageState extends State<PointsPage> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : _error != null
           ? Center(
               child: CommerceClayCard(
@@ -656,6 +657,9 @@ class _PointsPageState extends State<PointsPage> {
           const Positioned.fill(
             child: ColoredBox(
               color: Color(0x22000000),
+              // Overlay de accion en curso (no de carga de contenido): un
+              // spinner comunica "procesando" mejor que un skeleton, que
+              // sugeriria que va a aparecer contenido nuevo con esa forma.
               child: Center(child: CircularProgressIndicator()),
             ),
           ),

@@ -16,6 +16,7 @@ import 'package:flutter_application_1/utils/evidence_utils.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/permission_service.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class JefeOperacionesPendientesPage extends StatefulWidget {
   final String? conjuntoId; // opcional
@@ -104,7 +105,7 @@ class _JefeOperacionesPendientesPageState
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : _error != null
           ? _buildError()
           : _buildList(),

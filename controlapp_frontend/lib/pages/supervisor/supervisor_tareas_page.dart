@@ -12,6 +12,7 @@ import 'package:intl/intl.dart';
 import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class SupervisorTareasPage extends StatefulWidget {
   final String nit; // conjunto
@@ -414,7 +415,7 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : _error != null
           ? Center(
               child: Padding(

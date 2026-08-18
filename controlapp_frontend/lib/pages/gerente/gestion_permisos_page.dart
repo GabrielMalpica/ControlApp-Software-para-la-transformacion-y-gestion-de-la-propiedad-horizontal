@@ -4,6 +4,7 @@ import 'package:flutter_application_1/model/permission_models.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class GestionPermisosPage extends StatefulWidget {
   const GestionPermisosPage({super.key});
@@ -203,7 +204,7 @@ class _GestionPermisosPageState extends State<GestionPermisosPage> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : _error != null
           ? Center(
               child: Padding(

@@ -9,6 +9,7 @@ import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class MapaConjuntoPage extends StatefulWidget {
   const MapaConjuntoPage({
@@ -200,7 +201,7 @@ class _MapaConjuntoPageState extends State<MapaConjuntoPage> {
         future: _futureConjunto,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonList();
           }
           if (snapshot.hasError) {
             return Center(
@@ -469,7 +470,7 @@ class _MapaImagenCard extends StatelessWidget {
             child: Builder(
               builder: (context) {
                 if (subiendo && mapaBytes == null) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const SkeletonList();
                 }
                 if (errorMapa != null) {
                   return _MapaPlaceholder(

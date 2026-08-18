@@ -16,6 +16,7 @@ import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import 'package:flutter_application_1/widgets/perfil_action.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 import '../service/theme.dart';
 import 'compartidos/reportes_dashboard_page.dart';
 import 'cronograma_page.dart';
@@ -206,7 +207,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
         description:
             'Accede a inventario, PQRS y reportes del conjunto activo desde un tablero unificado.',
         leadingBadge: 'Operación administrativa',
-        child: Center(child: CircularProgressIndicator()),
+        child: SkeletonDashboardGrid(tiles: 6, padding: EdgeInsets.zero),
       );
     }
 

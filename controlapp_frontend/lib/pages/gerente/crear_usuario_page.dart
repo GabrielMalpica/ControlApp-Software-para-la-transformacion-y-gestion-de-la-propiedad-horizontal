@@ -10,6 +10,7 @@ import '../../utils/enums/usuario_enums.dart';
 import '../../utils/enums/usuario_enums_service.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class CrearUsuarioPage extends StatefulWidget {
   final String nit;
@@ -381,7 +382,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
   @override
   Widget build(BuildContext context) {
     if (_cargandoEnums) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: SkeletonList());
     }
 
     if (_errorEnums != null || _enums == null) {

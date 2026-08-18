@@ -5,6 +5,7 @@ import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/service/app_router.dart';
 import 'package:flutter_application_1/service/notificaciones_center.dart';
 import 'package:flutter_application_1/service/session_service.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class SplashDeciderPage extends StatefulWidget {
   const SplashDeciderPage({super.key});
@@ -47,9 +48,21 @@ class _SplashDeciderPageState extends State<SplashDeciderPage> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: Colors.white,
-      body: Center(child: CircularProgressIndicator()),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset('assets/logo.png', width: 120, height: 120),
+            const SizedBox(height: 24),
+            const SizedBox(
+              width: 120,
+              child: SkeletonLine(widthFactor: 1, height: 6),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

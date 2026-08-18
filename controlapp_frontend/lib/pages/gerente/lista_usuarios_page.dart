@@ -11,6 +11,7 @@ import 'detalle_usuario_page.dart';
 
 import '../../service/app_error.dart';
 import '../../service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class ListaUsuariosPage extends StatefulWidget {
   final String nit; // para crear admin vinculados al conjunto/empresa
@@ -317,7 +318,7 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
 
   Widget _cuerpo() {
     if (_cargando) {
-      return const Center(child: CircularProgressIndicator());
+      return const SkeletonList();
     }
 
     if (_error != null) {

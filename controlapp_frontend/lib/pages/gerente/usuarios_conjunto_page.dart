@@ -3,6 +3,7 @@ import '../../api/gerente_api.dart';
 import '../../model/conjunto_model.dart';
 import '../../service/app_error.dart';
 import '../../service/theme.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class UsuariosConjuntoPage extends StatefulWidget {
   final String conjuntoNit;
@@ -43,7 +44,7 @@ class _UsuariosConjuntoPageState extends State<UsuariosConjuntoPage> {
         future: _futureConjunto,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonList();
           }
           if (snapshot.hasError) {
             return Center(

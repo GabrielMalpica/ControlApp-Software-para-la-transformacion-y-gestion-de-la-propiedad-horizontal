@@ -9,6 +9,7 @@ import 'carga_conjunto_page.dart';
 import 'detalle_conjunto_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 const List<String> _diasSemana = <String>[
   'LUNES',
@@ -640,7 +641,7 @@ class _ListaConjuntosPageState extends State<ListaConjuntosPage> {
           future: _futureConjuntos,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return const SkeletonList();
             }
             if (snapshot.hasError) {
               return Center(

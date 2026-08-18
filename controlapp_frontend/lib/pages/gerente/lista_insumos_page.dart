@@ -5,6 +5,7 @@ import '../../model/insumo_model.dart';
 import '../../service/app_error.dart';
 import '../../service/theme.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class ListaInsumosPage extends StatefulWidget {
   const ListaInsumosPage({super.key});
@@ -313,7 +314,7 @@ class _ListaInsumosPageState extends State<ListaInsumosPage> {
             ),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const SkeletonList()
                   : _error != null
                   ? _StateCard(
                       icon: Icons.error_outline,

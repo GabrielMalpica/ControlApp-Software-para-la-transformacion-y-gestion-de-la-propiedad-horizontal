@@ -8,6 +8,7 @@ import 'package:flutter_application_1/pages/points_page.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class PerfilPage extends StatefulWidget {
   const PerfilPage({super.key});
@@ -88,7 +89,7 @@ class _PerfilPageState extends State<PerfilPage> {
         actions: const [CambiarContrasenaAction()],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : _error != null
           ? Center(
               child: Padding(

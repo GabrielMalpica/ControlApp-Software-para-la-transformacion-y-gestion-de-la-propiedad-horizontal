@@ -9,6 +9,7 @@ import '../../widgets/searchable_select_field.dart';
 import 'crear_maquinaria_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class ListaMaquinariaGlobalPage extends StatefulWidget {
   final String empresaNit;
@@ -375,7 +376,7 @@ class _ListaMaquinariaGlobalPageState extends State<ListaMaquinariaGlobalPage> {
           // 📄 Lista
           Expanded(
             child: _cargando
-                ? const Center(child: CircularProgressIndicator())
+                ? const SkeletonList()
                 : filteredItems.isEmpty
                 ? const Center(
                     child: Text('No hay maquinaria con esos filtros.'),

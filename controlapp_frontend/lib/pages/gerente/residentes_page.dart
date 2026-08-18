@@ -6,6 +6,7 @@ import 'package:flutter_application_1/model/residente_admin_models.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/permission_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class ResidentesPage extends StatefulWidget {
   const ResidentesPage({
@@ -298,7 +299,7 @@ class _ResidentesPageState extends State<ResidentesPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Gestion de residentes')),
       body: _loadingConjuntos
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : Column(
               children: [
                 Padding(
@@ -358,7 +359,7 @@ class _ResidentesPageState extends State<ResidentesPage> {
                 ),
                 Expanded(
                   child: _loading
-                      ? const Center(child: CircularProgressIndicator())
+                      ? const SkeletonList()
                       : _error != null
                       ? Center(child: Text(_error!))
                       : _residentes.isEmpty

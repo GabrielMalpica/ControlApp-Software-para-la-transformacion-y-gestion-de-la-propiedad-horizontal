@@ -5,6 +5,7 @@ import 'package:flutter_application_1/api/notificacion_api.dart';
 import 'package:flutter_application_1/model/cumpleanos_model.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class CumpleanosPage extends StatefulWidget {
   const CumpleanosPage({super.key});
@@ -108,7 +109,7 @@ class _CumpleanosPageState extends State<CumpleanosPage> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : _error != null
           ? Center(child: Text(_error!))
           : monthItems.isEmpty && _items.isEmpty

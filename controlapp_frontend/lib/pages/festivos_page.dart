@@ -5,6 +5,7 @@ import '../api/festivo_api.dart';
 import '../service/theme.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class FestivosPage extends StatefulWidget {
   const FestivosPage({super.key});
@@ -200,7 +201,7 @@ class _FestivosPageState extends State<FestivosPage> {
         ],
       ),
       body: _cargando
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : Column(
               children: [
                 // Controles

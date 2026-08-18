@@ -14,6 +14,7 @@ import 'package:flutter_application_1/utils/pickers/camera_capture_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 import 'package:flutter_application_1/widgets/star_rating.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class PlanEsperanzaPage extends StatefulWidget {
   final String nit;
@@ -642,7 +643,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
         ),
       ),
       body: _loadingPlan
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : _error != null
           ? Center(
               child: Padding(
@@ -922,7 +923,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
     }
 
     if (_allPlanes.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const SkeletonList();
     }
 
     return ListView.separated(

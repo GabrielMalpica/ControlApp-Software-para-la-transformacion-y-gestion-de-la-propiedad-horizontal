@@ -10,6 +10,7 @@ import '../model/usuario_model.dart';
 import '../service/theme.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class EditarTareaPage extends StatefulWidget {
   final String nit; // NIT del conjunto
@@ -334,7 +335,7 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
             style: TextStyle(color: Colors.white),
           ),
         ),
-        body: const Center(child: CircularProgressIndicator()),
+        body: const SkeletonList(),
       );
     }
 

@@ -8,6 +8,7 @@ import '../../service/app_error.dart';
 import '../../service/app_feedback.dart';
 import '../../service/theme.dart';
 import '../../widgets/maquinaria_conflict_dialog.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 /// Cronograma general de maquinaria de la empresa.
 ///
@@ -313,7 +314,7 @@ class _CronogramaMaquinariaPageState extends State<CronogramaMaquinariaPage> {
           if (_procesando) const LinearProgressIndicator(minHeight: 3),
           Expanded(
             child: _cargando
-                ? const Center(child: CircularProgressIndicator())
+                ? const SkeletonList()
                 : _error != null
                 ? _buildError()
                 : _buildLista(),

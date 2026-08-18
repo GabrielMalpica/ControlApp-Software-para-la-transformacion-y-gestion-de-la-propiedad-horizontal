@@ -1,11 +1,14 @@
 // lib/pages/cronograma_preventivas_borrador_page.dart
 // ignore_for_file: curly_braces_in_flow_control_structures
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:flutter_application_1/api/preventiva_api.dart';
 import 'package:flutter_application_1/model/cronograma_actividad_informe_model.dart';
+import 'package:flutter_application_1/model/cronograma_informe_jerarquico_model.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/novedad_cronograma_model.dart';
 import 'package:flutter_application_1/model/preventiva_excluida_borrador_model.dart';
@@ -20,6 +23,8 @@ import '../utils/schedule_utils.dart';
 import '../model/maquinaria_model.dart';
 import '../utils/frecuencia_utils.dart';
 import '../widgets/maquinaria_conflict_dialog.dart';
+import '../widgets/cronograma_informe_jerarquico.dart';
+import '../widgets/skeleton.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -106,7 +111,11 @@ class _CronogramaPreventivasBorradorPageState
   /// Todas las tareas preventivas en borrador de ese mes
   List<TareaModel> _tareasMes = [];
   List<PreventivaExcluidaBorradorModel> _excluidasMes = [];
-  List<CronogramaActividadInformeModel> _informeActividad = [];
+  final List<CronogramaActividadInformeModel> _informeActividad = const [];
+  CronogramaInformeJerarquicoModel? _informeJerarquico;
+  bool _cargandoInformeJerarquico = false;
+  String? _informeOperarioId;
+  bool _informeFiltrarSemana = false;
   List<HorarioConjunto> _horariosConjunto = const [];
 
   /// Resumen por día (mensual)
@@ -1290,6 +1299,7 @@ class _CronogramaPreventivasBorradorPageState
       _mesActual = nuevoMes;
       _initMes();
       _semanaBase = DateTime(_anioActual, _mesActual, 1);
+      _informeOperarioId = null;
     });
     _confirmacionesReemplazoPorCaso.clear();
 
@@ -2149,11 +2159,14 @@ class _CronogramaPreventivasBorradorPageState
           anio: _anioActual,
           mes: _mesActual,
         ),
-        _cronogramaApi.informeActividadMensual(
+        _cronogramaApi.informeActividadJerarquico(
           nit: widget.nit,
           anio: _anioActual,
           mes: _mesActual,
           borrador: true,
+          semanaInicio: _informeFiltrarSemana
+              ? _startOfWeekMonday(_semanaBase)
+              : null,
         ),
       ]);
 
@@ -2161,7 +2174,7 @@ class _CronogramaPreventivasBorradorPageState
       final festivos = results[1] as List<FestivoItem>;
       final horarios = results[2] as List<HorarioConjunto>;
       final excluidas = results[3] as List<PreventivaExcluidaBorradorModel>;
-      final informe = results[4] as List<CronogramaActividadInformeModel>;
+      final informe = results[4] as CronogramaInformeJerarquicoModel;
       final filtradas = lista
           .where((t) => _isInThisMonth(t.fechaInicio))
           .toList();
@@ -2181,7 +2194,7 @@ class _CronogramaPreventivasBorradorPageState
       setState(() {
         _tareasMes = filtradas;
         _excluidasMes = excluidas;
-        _informeActividad = informe;
+        _informeJerarquico = informe;
         _horariosConjunto = horarios;
         _reconstruirFiltrosDisponibles();
         _festivosYmd = setYmd;
@@ -2193,6 +2206,44 @@ class _CronogramaPreventivasBorradorPageState
       if (mounted) setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _cargarInformeJerarquico() async {
+    if (_cargandoInformeJerarquico) return;
+    setState(() => _cargandoInformeJerarquico = true);
+    try {
+      final informe = await _cronogramaApi.informeActividadJerarquico(
+        nit: widget.nit,
+        anio: _anioActual,
+        mes: _mesActual,
+        borrador: true,
+        operarioId: _informeOperarioId,
+        semanaInicio: _informeFiltrarSemana
+            ? _startOfWeekMonday(_semanaBase)
+            : null,
+      );
+      if (mounted) setState(() => _informeJerarquico = informe);
+    } catch (e) {
+      if (mounted) {
+        AppFeedback.showError(context, message: AppError.messageOf(e));
+      }
+    } finally {
+      if (mounted) setState(() => _cargandoInformeJerarquico = false);
+    }
+  }
+
+  void _cambiarSemanaInforme(int dias) {
+    setState(() => _semanaBase = _semanaBase.add(Duration(days: dias)));
+    if (_vista == _VistaCronograma.informe && _informeFiltrarSemana) {
+      unawaited(_cargarInformeJerarquico());
+    }
+  }
+
+  void _seleccionarVista(_VistaCronograma vista) {
+    setState(() => _vista = vista);
+    if (vista == _VistaCronograma.informe) {
+      unawaited(_cargarInformeJerarquico());
     }
   }
 
@@ -2439,12 +2490,6 @@ class _CronogramaPreventivasBorradorPageState
   Future<List<int>?> _pedirDivisionManualExcluida(
     PreventivaExcluidaBorradorModel excluida,
   ) {
-    final totalHoras = excluida.duracionMinutos / 60;
-    final horasEnteras = excluida.duracionMinutos ~/ 60;
-    final minutosRestantes = excluida.duracionMinutos % 60;
-    final totalHorasTexto = minutosRestantes == 0
-        ? '$horasEnteras h'
-        : '$horasEnteras h $minutosRestantes min';
     return showDialog<List<int>>(
       context: context,
       builder: (ctx) {
@@ -2471,22 +2516,17 @@ class _CronogramaPreventivasBorradorPageState
         return StatefulBuilder(
           builder: (context, setState) {
             final valores = controllers
-                .map(
-                  (item) =>
-                      double.tryParse(item.text.replaceAll(',', '.')) ?? 0,
-                )
+                .map((item) => int.tryParse(item.text.trim()) ?? 0)
                 .toList();
-            final totalDigitado = valores.fold<double>(0, (a, b) => a + b);
+            final totalDigitado = valores.fold<int>(0, (a, b) => a + b);
             return AlertDialog(
-              title: const Text('Dividir tarea en horas'),
+              title: const Text('Dividir tarea en minutos'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Duración total: $totalHorasTexto (${totalHoras.toStringAsFixed(2)} h)',
-                    ),
+                    Text('Duración total: ${excluida.duracionMinutos} minutos'),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<int>(
                       initialValue: cantidadBloques,
@@ -2513,21 +2553,19 @@ class _CronogramaPreventivasBorradorPageState
                         padding: const EdgeInsets.only(bottom: 10),
                         child: TextField(
                           controller: controllers[index],
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
+                          keyboardType: TextInputType.number,
                           decoration: InputDecoration(
-                            labelText: 'Bloque ${index + 1} (horas)',
-                            hintText: 'Ej. 2 o 1.5',
+                            labelText: 'Bloque ${index + 1} (minutos)',
+                            hintText: 'Ej. 90',
                             border: const OutlineInputBorder(),
                           ),
                         ),
                       );
                     }),
                     Text(
-                      'Total digitado: ${formatHoursMinutes((totalDigitado * 60).round())}',
+                      'Total digitado: $totalDigitado de ${excluida.duracionMinutos} minutos',
                       style: TextStyle(
-                        color: (totalDigitado - totalHoras).abs() < 0.01
+                        color: totalDigitado == excluida.duracionMinutos
                             ? Colors.green.shade700
                             : Colors.orange.shade800,
                         fontWeight: FontWeight.w600,
@@ -2544,43 +2582,20 @@ class _CronogramaPreventivasBorradorPageState
                 ElevatedButton(
                   onPressed: () {
                     final minutos = controllers
-                        .map(
-                          (item) =>
-                              ((double.tryParse(
-                                            item.text.replaceAll(',', '.'),
-                                          ) ??
-                                          0) *
-                                      60)
-                                  .round(),
-                        )
+                        .map((item) => int.tryParse(item.text.trim()) ?? 0)
                         .toList();
                     final total = minutos.fold<int>(0, (a, b) => a + b);
-                    final diff = excluida.duracionMinutos - total;
                     final tieneInvalidos = minutos.any((item) => item <= 0);
-                    if (tieneInvalidos || diff.abs() > 1) {
+                    if (tieneInvalidos || total != excluida.duracionMinutos) {
                       AppFeedback.showFromSnackBar(
                         context,
                         SnackBar(
                           content: Text(
-                            'La suma de bloques debe ser exactamente $totalHorasTexto y todos los bloques deben ser mayores a 0.',
+                            'La suma debe ser exactamente ${excluida.duracionMinutos} minutos y todos los bloques deben ser mayores a 0.',
                           ),
                         ),
                       );
                       return;
-                    }
-                    if (diff != 0) {
-                      minutos[minutos.length - 1] += diff;
-                      if (minutos.last <= 0) {
-                        AppFeedback.showFromSnackBar(
-                          context,
-                          const SnackBar(
-                            content: Text(
-                              'No se pudo ajustar los minutos finales de la división. Intenta de nuevo.',
-                            ),
-                          ),
-                        );
-                        return;
-                      }
                     }
                     Navigator.pop(ctx, minutos);
                   },
@@ -2594,7 +2609,7 @@ class _CronogramaPreventivasBorradorPageState
     );
   }
 
-  Future<void> _dividirExcluidaEnHoras(
+  Future<void> _dividirExcluidaEnMinutos(
     PreventivaExcluidaBorradorModel excluida,
   ) async {
     _marcarCambioManual();
@@ -2714,15 +2729,23 @@ class _CronogramaPreventivasBorradorPageState
     List<TareaModel> tareasOrdenadas,
   ) async {
     _marcarCambioManual();
-    await _preventivaApi.reordenarTareasDiaBorrador(
+    final resultado = await _preventivaApi.reordenarTareasDiaBorrador(
       nit: widget.nit,
       fecha: fecha,
       tareaIds: tareasOrdenadas.map((item) => item.id).toList(),
     );
     if (!mounted) return;
+    final ajustadas =
+        (resultado['ajustadasPorDependencia'] as num?)?.toInt() ?? 0;
     AppFeedback.showFromSnackBar(
       context,
-      const SnackBar(content: Text('Orden del día actualizado.')),
+      SnackBar(
+        content: Text(
+          ajustadas > 0
+              ? 'Orden actualizado. También se ajustaron $ajustadas tarea(s) de los operarios involucrados.'
+              : 'Orden del día actualizado.',
+        ),
+      ),
     );
     await _cargarDatos();
   }
@@ -4491,13 +4514,13 @@ class _CronogramaPreventivasBorradorPageState
                                   FilledButton.tonalIcon(
                                     onPressed: () {
                                       Navigator.pop(context);
-                                      _dividirExcluidaEnHoras(item);
+                                      _dividirExcluidaEnMinutos(item);
                                     },
                                     icon: const Icon(Icons.call_split),
                                     label: Text(
                                       item.tieneDivisionManual
                                           ? 'Redefinir división'
-                                          : 'Dividir en horas',
+                                          : 'Dividir en minutos',
                                     ),
                                   ),
                                   FilledButton.tonalIcon(
@@ -4870,7 +4893,7 @@ class _CronogramaPreventivasBorradorPageState
           ],
         ),
         body: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? const SkeletonTable(rows: 10, cols: 5)
             : _error != null
             ? _buildError()
             : _buildContenido(mesNombre),
@@ -5058,7 +5081,7 @@ class _CronogramaPreventivasBorradorPageState
                 ),
               ],
               selected: {_vista},
-              onSelectionChanged: (s) => setState(() => _vista = s.first),
+              onSelectionChanged: (s) => _seleccionarVista(s.first),
             ),
           ),
           const SizedBox(height: 8),
@@ -5098,11 +5121,7 @@ class _CronogramaPreventivasBorradorPageState
                 ] else ...[
                   IconButton(
                     tooltip: 'Semana anterior',
-                    onPressed: () => setState(
-                      () => _semanaBase = _semanaBase.subtract(
-                        const Duration(days: 7),
-                      ),
-                    ),
+                    onPressed: () => _cambiarSemanaInforme(-7),
                     icon: const Icon(Icons.chevron_left),
                   ),
                   Text(
@@ -5114,11 +5133,7 @@ class _CronogramaPreventivasBorradorPageState
                   ),
                   IconButton(
                     tooltip: 'Semana siguiente',
-                    onPressed: () => setState(
-                      () => _semanaBase = _semanaBase.add(
-                        const Duration(days: 7),
-                      ),
-                    ),
+                    onPressed: () => _cambiarSemanaInforme(7),
                     icon: const Icon(Icons.chevron_right),
                   ),
                 ],
@@ -5150,7 +5165,7 @@ class _CronogramaPreventivasBorradorPageState
             ),
           ],
           selected: {_vista},
-          onSelectionChanged: (s) => setState(() => _vista = s.first),
+          onSelectionChanged: (s) => _seleccionarVista(s.first),
         ),
         const Spacer(),
         if (_vista == _VistaCronograma.mensual) ...[
@@ -5182,9 +5197,7 @@ class _CronogramaPreventivasBorradorPageState
         ] else ...[
           IconButton(
             tooltip: 'Semana anterior',
-            onPressed: () => setState(
-              () => _semanaBase = _semanaBase.subtract(const Duration(days: 7)),
-            ),
+            onPressed: () => _cambiarSemanaInforme(-7),
             icon: const Icon(Icons.chevron_left),
           ),
           Text(
@@ -5193,9 +5206,7 @@ class _CronogramaPreventivasBorradorPageState
           ),
           IconButton(
             tooltip: 'Semana siguiente',
-            onPressed: () => setState(
-              () => _semanaBase = _semanaBase.add(const Duration(days: 7)),
-            ),
+            onPressed: () => _cambiarSemanaInforme(7),
             icon: const Icon(Icons.chevron_right),
           ),
           const SizedBox(width: 8),
@@ -5348,7 +5359,7 @@ class _CronogramaPreventivasBorradorPageState
             onTapExcluida: _mostrarDetalleExcluida,
             onDescartarExcluida: _descartarExcluidaBorrador,
             onAgendarExcluida: _agendarExcluida,
-            onDividirExcluida: _dividirExcluidaEnHoras,
+            onDividirExcluida: _dividirExcluidaEnMinutos,
             onAgendarBloqueExcluida: _agendarBloqueExcluida,
             onReemplazarConExcluida: _reemplazarTareaConExcluida,
             onReasignarOperario: _reasignarOperarioTarea,
@@ -5507,6 +5518,27 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   Widget _buildInformeActividad() {
+    return SingleChildScrollView(
+      child: CronogramaInformeJerarquico(
+        informe: _informeJerarquico,
+        loading: _cargandoInformeJerarquico,
+        operarioId: _informeOperarioId,
+        filtrarSemana: _informeFiltrarSemana,
+        onFiltrarSemanaChanged: (value) {
+          setState(() => _informeFiltrarSemana = value);
+          unawaited(_cargarInformeJerarquico());
+        },
+        onOperarioChanged: (operarioId) {
+          setState(() => _informeOperarioId = operarioId);
+          unawaited(_cargarInformeJerarquico());
+        },
+      ),
+    );
+  }
+
+  // Compatibilidad visual para periodos generados antes de la trazabilidad.
+  // ignore: unused_element
+  Widget _buildInformeActividadLegacy() {
     if (_informeActividad.isEmpty) {
       return const Center(
         child: Text('No hay actividades planificadas para este periodo.'),
@@ -7946,7 +7978,7 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                     label: Text(
                                       item.tieneDivisionManual
                                           ? 'Redefinir división'
-                                          : 'Dividir en horas',
+                                          : 'Dividir en minutos',
                                     ),
                                   ),
                                   FilledButton.tonalIcon(

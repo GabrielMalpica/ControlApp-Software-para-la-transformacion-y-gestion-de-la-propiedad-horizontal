@@ -7,6 +7,7 @@ import '../../service/app_error.dart';
 import '../../service/theme.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 const Map<String, int> _dayOrder = <String, int>{
   'LUNES': 1,
@@ -379,7 +380,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
           future: _futureConjunto,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return const SkeletonList();
             }
 
             if (snapshot.hasError || !snapshot.hasData) {
@@ -721,7 +722,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
     if (_cargandoCatalogos) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 8),
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        child: SkeletonLine(height: 48),
       );
     }
 
@@ -829,7 +830,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
     if (_cargandoCatalogos) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 8),
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        child: SkeletonLine(height: 48),
       );
     }
 

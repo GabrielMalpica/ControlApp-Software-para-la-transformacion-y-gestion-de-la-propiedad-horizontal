@@ -7,6 +7,7 @@ import '../../model/maquinaria_model.dart';
 import '../../service/theme.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class CrearMaquinariaPage extends StatefulWidget {
   final String nit; // nit empresa
@@ -265,7 +266,7 @@ class _CrearMaquinariaPageState extends State<CrearMaquinariaPage> {
               if (_prop == PropietarioMaquinaria.CONJUNTO) ...[
                 const SizedBox(height: 12),
                 _loadingConjuntos
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const SkeletonList()
                     : DropdownButtonFormField<String>(
                         initialValue: _conjuntoPropId,
                         decoration: const InputDecoration(

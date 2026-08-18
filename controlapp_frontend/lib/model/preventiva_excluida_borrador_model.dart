@@ -19,7 +19,7 @@ class PreventivaExcluidaBloqueModel {
     this.fechaFin,
   });
 
-  String get duracionLabel => formatHoursMinutes(duracionMinutos);
+  String get duracionLabel => '$duracionMinutos min';
   bool get agendado => estado.toUpperCase() == 'AGENDADO';
 
   factory PreventivaExcluidaBloqueModel.fromJson(Map<String, dynamic> json) {

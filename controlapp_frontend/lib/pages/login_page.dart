@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/service/app_error.dart';
@@ -18,9 +17,6 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  static const _logoUrl =
-      'https://controlsas.com.co/wp-content/uploads/2025/07/Mesa-de-trabajo-3@3x-1.png';
-
   final _correoCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _authApi = AuthApi();
@@ -88,7 +84,10 @@ class _LoginPageState extends State<LoginPage> {
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(24),
                     child: AnimatedFadeSlide(
-                      delay: const Duration(milliseconds: 110),
+                      // El formulario es el contenido principal de la
+                      // pantalla: se anima rapido y sin demora en vez de
+                      // hacer esperar al usuario para verlo.
+                      duration: const Duration(milliseconds: 200),
                       child: _buildLoginCard(context, theme),
                     ),
                   ),
@@ -147,19 +146,13 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       child: SizedBox(
                         height: 108,
-                        child: Image.network(
-                          _logoUrl,
+                        // Asset local en vez de una imagen remota: evita un
+                        // round-trip de red (y su posible fallo) solo para
+                        // mostrar el logo del login.
+                        child: Image.asset(
+                          'assets/logo.png',
                           fit: BoxFit.contain,
                           filterQuality: FilterQuality.medium,
-                          webHtmlElementStrategy: kIsWeb
-                              ? WebHtmlElementStrategy.prefer
-                              : WebHtmlElementStrategy.never,
-                          loadingBuilder: (context, child, progress) {
-                            if (progress == null) return child;
-                            return const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            );
-                          },
                           errorBuilder: (_, __, ___) => const Center(
                             child: Text(
                               'No se pudo cargar el logo',

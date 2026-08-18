@@ -16,6 +16,7 @@ import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/chart_capture.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/utils/duration_format.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -125,71 +126,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
 
   String? get _conjuntoId => _conjuntoIdFijo;
 
-  Future<List<InsumoUsoRow>> _cargarInsumosGlobal(
-    List<ResumenConjuntoRow> porConjunto,
-  ) async {
-    if (porConjunto.isEmpty) return <InsumoUsoRow>[];
-
-    Future<List<InsumoUsoRow>> fetchByRefs(List<String> refs) async {
-      for (final ref in refs) {
-        if (ref.trim().isEmpty) continue;
-        try {
-          return await _api.usoInsumos(
-            conjuntoId: ref.trim(),
-            desde: _desde,
-            hasta: _hasta,
-          );
-        } catch (_) {
-          // intenta con la siguiente referencia (id/nit)
-        }
-      }
-      return <InsumoUsoRow>[];
-    }
-
-    final futures = porConjunto.map((r) {
-      final refs = <String>{
-        r.conjuntoId.trim(),
-        r.nit.trim(),
-      }.where((e) => e.isNotEmpty).toList();
-      return fetchByRefs(refs);
-    }).toList();
-
-    final lotes = await Future.wait(futures);
-
-    final agg = <String, Map<String, dynamic>>{};
-    for (final lote in lotes) {
-      for (final item in lote) {
-        final key = item.insumoId > 0
-            ? 'id:${item.insumoId}'
-            : 'name:${item.nombre.trim().toUpperCase()}|${item.unidad.trim().toUpperCase()}';
-
-        final m = agg.putIfAbsent(
-          key,
-          () => <String, dynamic>{
-            'insumoId': item.insumoId,
-            'nombre': item.nombre,
-            'unidad': item.unidad,
-            'cantidad': 0.0,
-            'usos': 0,
-          },
-        );
-
-        m['cantidad'] = (m['cantidad'] as double) + item.cantidad;
-        m['usos'] = (m['usos'] as int) + item.usos;
-      }
-    }
-
-    return agg.values.map((m) {
-      return InsumoUsoRow(
-        insumoId: (m['insumoId'] as int?) ?? 0,
-        nombre: (m['nombre'] ?? '').toString(),
-        unidad: (m['unidad'] ?? '').toString(),
-        cantidad: (m['cantidad'] as double?) ?? 0.0,
-        usos: (m['usos'] as int?) ?? 0,
-      );
-    }).toList();
-  }
-
   Future<void> _cargarTodo() async {
     setState(() {
       _loading = true;
@@ -204,63 +140,72 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         );
       }
 
-      final kpis = await _api.kpis(
-        desde: _desde,
-        hasta: _hasta,
-        conjuntoId: _esReporteGeneral ? null : conjuntoId,
-      );
-      final serie = await _api.serieDiaria(
-        desde: _desde,
-        hasta: _hasta,
-        conjuntoId: _esReporteGeneral ? null : conjuntoId,
-      );
-      final compromisos = await _api.compromisosDashboard(
-        desde: _desde,
-        hasta: _hasta,
-        conjuntoId: _esReporteGeneral ? null : conjuntoId,
-      );
+      // Las 8 peticiones de abajo son independientes entre si (ninguna usa el
+      // resultado de otra), asi que se disparan en paralelo en vez de en
+      // cascada. Solo "insumos" depende de "porConjunto" (para el modo
+      // reporte general), por eso se pide despues.
+      final resultados = await Future.wait([
+        _api.kpis(
+          desde: _desde,
+          hasta: _hasta,
+          conjuntoId: _esReporteGeneral ? null : conjuntoId,
+        ),
+        _api.serieDiaria(
+          desde: _desde,
+          hasta: _hasta,
+          conjuntoId: _esReporteGeneral ? null : conjuntoId,
+        ),
+        _api.compromisosDashboard(
+          desde: _desde,
+          hasta: _hasta,
+          conjuntoId: _esReporteGeneral ? null : conjuntoId,
+        ),
+        _api.resumenPorConjunto(desde: _desde, hasta: _hasta),
+        _api.resumenPorOperario(
+          desde: _desde,
+          hasta: _hasta,
+          conjuntoId: _esReporteGeneral ? null : conjuntoId,
+        ),
+        _api.topMaquinaria(
+          desde: _desde,
+          hasta: _hasta,
+          conjuntoId: _esReporteGeneral ? null : conjuntoId,
+        ),
+        _api.topHerramientas(
+          desde: _desde,
+          hasta: _hasta,
+          conjuntoId: _esReporteGeneral ? null : conjuntoId,
+        ),
+        // ✅ NUEVO: tareas detalle (correctivas + preventivas)
+        _api.mensualDetalle(
+          desde: _desde,
+          hasta: _hasta,
+          conjuntoId: _esReporteGeneral ? null : conjuntoId,
+        ),
+      ]);
 
-      final porConjunto = await _api.resumenPorConjunto(
-        desde: _desde,
-        hasta: _hasta,
-      );
-      final porOperario = await _api.resumenPorOperario(
-        desde: _desde,
-        hasta: _hasta,
-        conjuntoId: _esReporteGeneral ? null : conjuntoId,
-      );
+      final kpis = resultados[0] as ReporteKpis;
+      final serie = resultados[1] as SerieDiariaPorEstado;
+      final compromisos = resultados[2] as ReporteCompromisosDashboard;
+      final porConjunto = resultados[3] as List<ResumenConjuntoRow>;
+      final porOperario = resultados[4] as List<ResumenOperarioRow>;
+      final maq = resultados[5] as List<UsoEquipoRow>;
+      final herr = resultados[6] as List<UsoEquipoRow>;
+      final tareasDetalle = resultados[7] as List<TareaDetalleRow>;
 
-      final maq = await _api.topMaquinaria(
+      // Sin conjuntoId, el backend agrega el uso de insumos de toda la
+      // empresa en una sola consulta (antes se pedia conjunto por conjunto).
+      final insumos = await _api.usoInsumos(
+        conjuntoId: _esReporteGeneral ? null : conjuntoId,
         desde: _desde,
         hasta: _hasta,
-        conjuntoId: _esReporteGeneral ? null : conjuntoId,
       );
-      final herr = await _api.topHerramientas(
-        desde: _desde,
-        hasta: _hasta,
-        conjuntoId: _esReporteGeneral ? null : conjuntoId,
-      );
-
-      final insumos = _esReporteGeneral
-          ? await _cargarInsumosGlobal(porConjunto)
-          : await _api.usoInsumos(
-              conjuntoId: conjuntoId!,
-              desde: _desde,
-              hasta: _hasta,
-            );
 
       final porConjuntoFiltrado = _esReporteGeneral
           ? porConjunto
           : porConjunto
                 .where((r) => _matchesConjuntoRef(r, conjuntoId!))
                 .toList();
-
-      // ✅ NUEVO: tareas detalle (correctivas + preventivas)
-      final tareasDetalle = await _api.mensualDetalle(
-        desde: _desde,
-        hasta: _hasta,
-        conjuntoId: _esReporteGeneral ? null : conjuntoId,
-      );
 
       if (!mounted) return;
       setState(() {
@@ -952,6 +897,24 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 pw.Text(
                   'Operarios: ${t.operarios.join(', ')}',
                   style: const pw.TextStyle(fontSize: 8),
+                ),
+              if (t.reubicadaPorPlanificacion && t.fechaObjetivoPlan != null)
+                pw.Container(
+                  margin: const pw.EdgeInsets.only(top: 4),
+                  padding: const pw.EdgeInsets.all(6),
+                  decoration: pw.BoxDecoration(
+                    color: PdfColor.fromHex('#EFF6FF'),
+                    border: pw.Border.all(color: PdfColor.fromHex('#93C5FD')),
+                    borderRadius: pw.BorderRadius.circular(4),
+                  ),
+                  child: pw.Text(
+                    'Reubicada por planificación: objetivo ${DateFormat('dd/MM/yyyy').format(t.fechaObjetivoPlan!)}; ejecución ${DateFormat('dd/MM/yyyy').format(t.fechaInicio)}. ${(t.motivoPlanificacion ?? '').trim()}',
+                    style: pw.TextStyle(
+                      fontSize: 8,
+                      color: PdfColor.fromHex('#1E3A8A'),
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
                 ),
               if (t.esTareaReemplazo)
                 pw.Container(
@@ -2507,7 +2470,22 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
 
                 Expanded(
                   child: _loading
-                      ? const Center(child: CircularProgressIndicator())
+                      ? const SingleChildScrollView(
+                          padding: EdgeInsets.all(16),
+                          child: Column(
+                            children: [
+                              SkeletonDashboardGrid(
+                                tiles: 4,
+                                crossAxisCount: 2,
+                                padding: EdgeInsets.zero,
+                              ),
+                              SizedBox(height: 16),
+                              SkeletonCard(height: 260, lines: 1),
+                              SizedBox(height: 16),
+                              SkeletonCard(lines: 4),
+                            ],
+                          ),
+                        )
                       : _error != null
                       ? _buildError()
                       : TabBarView(children: tabViews),
@@ -2515,7 +2493,14 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               ],
             ),
 
-            if (_permitirInformesPdf)
+            // Las 4 graficas offscreen solo se necesitan para capturarlas al
+            // generar el PDF de gestion (_captureChartsForPdf). Antes se
+            // montaban siempre que la pestaña de informes estaba habilitada,
+            // lo que las mantenia layouteadas y pintadas en cada frame sin
+            // usarlas. _captureChartsForPdf ya espera varios frames + un
+            // delay antes de capturar, tiempo suficiente para que esta
+            // rama recien montada tambien termine de layoutear/pintar.
+            if (_permitirInformesPdf && _generandoPdf)
               Positioned(
                 left: -5000,
                 top: 0,

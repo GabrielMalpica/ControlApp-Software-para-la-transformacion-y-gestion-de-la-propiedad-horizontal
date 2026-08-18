@@ -8,6 +8,7 @@ import 'package:flutter_application_1/pdf/cronograma_pdf.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class _PreviewAgendaBlock {
   final DateTime inicio;
@@ -934,7 +935,7 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : _error != null
           ? Center(
               child: Padding(

@@ -12,6 +12,7 @@ import '../model/herramienta_model.dart';
 import '../service/app_error.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 enum TipoInventario { INSUMOS, HERRAMIENTAS }
 
@@ -368,7 +369,7 @@ class _InventarioPageState extends State<InventarioPage> {
     final filtrados = _filtrados;
 
     if (_cargando) {
-      return const Center(child: CircularProgressIndicator());
+      return const SkeletonList();
     }
 
     if (filtrados.isEmpty) {
@@ -445,7 +446,7 @@ class _InventarioPageState extends State<InventarioPage> {
     final filtrados = _herrFiltrados;
 
     if (_cargandoHerr) {
-      return const Center(child: CircularProgressIndicator());
+      return const SkeletonList();
     }
 
     if (filtrados.isEmpty) {
@@ -1077,10 +1078,7 @@ class _AgregarHerramientaDialogState extends State<_AgregarHerramientaDialog> {
       content: SizedBox(
         width: 520,
         child: _loading
-            ? const Padding(
-                padding: EdgeInsets.all(12),
-                child: Center(child: CircularProgressIndicator()),
-              )
+            ? const Padding(padding: EdgeInsets.all(12), child: SkeletonList())
             : _error != null
             ? Column(
                 mainAxisSize: MainAxisSize.min,

@@ -286,7 +286,7 @@ class DefinicionPreventivaApi {
     return TareaModel.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
   }
 
-  Future<void> reordenarTareasDiaBorrador({
+  Future<Map<String, dynamic>> reordenarTareasDiaBorrador({
     required String nit,
     required DateTime fecha,
     required List<int> tareaIds,
@@ -301,6 +301,7 @@ class DefinicionPreventivaApi {
         fallback: 'No se pudo reordenar las tareas del día.',
       );
     }
+    return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
   }
 
   Future<void> eliminarBloqueBorrador({

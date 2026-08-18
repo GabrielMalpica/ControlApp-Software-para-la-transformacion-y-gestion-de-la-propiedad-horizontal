@@ -17,6 +17,7 @@ import '../widgets/cerrar_tarea_sheet.dart';
 import 'editar_tarea_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class TareasPage extends StatefulWidget {
   final String nit;
@@ -552,7 +553,7 @@ class _TareasPageState extends State<TareasPage> {
   }
 
   Widget _body() {
-    if (_cargando) return const Center(child: CircularProgressIndicator());
+    if (_cargando) return const SkeletonList();
 
     if (_error != null) {
       return Center(

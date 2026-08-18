@@ -7,6 +7,7 @@ import 'package:flutter_application_1/model/agenda_maquinaria_model.dart';
 import 'package:flutter_application_1/model/maquinaria_model.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class AgendaMaquinariaPage extends StatefulWidget {
   final String conjuntoId; // NIT del conjunto
@@ -280,7 +281,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
         future: _fMaquinas,
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonList();
           }
           if (snap.hasError) {
             return Center(
@@ -454,7 +455,7 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
                   ),
                 )
               : _cargandoAgenda
-              ? const Center(child: CircularProgressIndicator())
+              ? const SkeletonList()
               : _errorAgenda != null
               ? Center(child: Text('Error agenda: $_errorAgenda'))
               : _buildPlanilla(mesLabel);

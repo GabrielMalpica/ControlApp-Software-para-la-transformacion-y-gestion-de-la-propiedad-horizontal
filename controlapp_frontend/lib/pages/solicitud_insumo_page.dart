@@ -8,6 +8,7 @@ import '../model/solicitud_insumo_model.dart';
 import '../service/app_constants.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class SolicitudInsumoPage extends StatefulWidget {
   final String conjuntoNit;
@@ -186,7 +187,7 @@ class _SolicitudInsumoPageState extends State<SolicitudInsumoPage> {
         ),
       ),
       body: _cargando
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [

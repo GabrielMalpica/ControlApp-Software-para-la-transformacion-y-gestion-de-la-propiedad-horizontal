@@ -7,10 +7,13 @@ import 'package:intl/intl.dart';
 
 import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/api/inventario_api.dart';
+import 'package:flutter_application_1/model/cronograma_informe_jerarquico_model.dart';
 import 'package:flutter_application_1/model/cronograma_actividad_informe_model.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
+import 'package:flutter_application_1/widgets/cronograma_informe_jerarquico.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 import '../api/cronograma_api.dart';
 import '../model/preventiva_excluida_borrador_model.dart';
@@ -99,7 +102,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
   /// Todas las tareas PUBLICADAS (preventivas + correctivas) del mes
   List<TareaModel> _tareasMes = [];
   List<PreventivaExcluidaBorradorModel> _excluidasMes = [];
-  List<CronogramaActividadInformeModel> _informeActividad = [];
+  CronogramaInformeJerarquicoModel? _informeJerarquico;
+  final List<CronogramaActividadInformeModel> _informeActividad = const [];
+  bool _cargandoInformeJerarquico = false;
+  String? _informeOperarioId;
+  bool _informeFiltrarSemana = false;
   List<TareaModel> _tareasFiltradasCache = [];
   List<_FilaCrono> _filasCronoMensualCache = [];
 
@@ -178,7 +185,13 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     _initMes();
     _semanaBase = DateTime(_anioActual, _mesActual, 1);
-    _refreshSessionProfile().then((_) => _cargarSesion()).then((_) {
+
+    // La sesion/rol ya se cargo en el splash (GET /auth/me). Aqui solo se lee
+    // de almacenamiento local (rapido) y se arranca la carga de datos de una
+    // vez, en vez de esperar un round-trip de red redundante antes de pintar
+    // nada. El refresco de permisos sigue en segundo plano sin bloquear.
+    unawaited(_refreshSessionProfile());
+    _cargarSesion().then((_) {
       if (!mounted) return;
       _cargarDatos();
     });
@@ -753,6 +766,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       _mesActual = nuevoMes;
       _initMes();
       _semanaBase = DateTime(_anioActual, _mesActual, 1);
+      _informeOperarioId = null;
     });
 
     await _cargarDatos();
@@ -780,41 +794,38 @@ class _CronogramaPageState extends State<CronogramaPage> {
           : Future.value(const <PreventivaExcluidaBorradorModel>[]);
 
       final results = await Future.wait([
+        // El backend ignora el filtro `tipo` y siempre devuelve preventivas +
+        // correctivas juntas (ver CronogramaController.cronogramaMensual), asi
+        // que una sola llamada trae exactamente lo mismo que dos.
         _cronogramaApi.cronogramaMensual(
           nit: widget.nit,
           anio: _anioActual,
           mes: _mesActual,
           borrador: false,
-          tipo: 'PREVENTIVA',
-        ),
-        _cronogramaApi.cronogramaMensual(
-          nit: widget.nit,
-          anio: _anioActual,
-          mes: _mesActual,
-          borrador: false,
-          tipo: 'CORRECTIVA',
         ),
         _festivoApi.listarFestivosRango(desde: desde, hasta: hasta, pais: 'CO'),
         horariosFuture,
-        _cronogramaApi.informeActividadMensual(
+        _cronogramaApi.informeActividadJerarquico(
           nit: widget.nit,
           anio: _anioActual,
           mes: _mesActual,
           borrador: false,
+          semanaInicio: _informeFiltrarSemana
+              ? _startOfWeekMonday(_semanaBase)
+              : null,
         ),
         excluidasFuture,
       ]);
 
-      final prev = results[0] as List<TareaModel>;
-      final corr = results[1] as List<TareaModel>;
-      final festivos = results[2] as List<FestivoItem>;
-      final horarios = results[3] as List<HorarioConjunto>;
-      final informe = results[4] as List<CronogramaActividadInformeModel>;
-      final excluidas = results[5] as List<PreventivaExcluidaBorradorModel>;
+      final todas = results[0] as List<TareaModel>;
+      final festivos = results[1] as List<FestivoItem>;
+      final horarios = results[2] as List<HorarioConjunto>;
+      final informe = results[3] as CronogramaInformeJerarquicoModel;
+      final excluidas = results[4] as List<PreventivaExcluidaBorradorModel>;
 
       // unir y quitar duplicados por id (por si backend repite algo)
       final Map<int, TareaModel> porId = {};
-      for (final t in [...prev, ...corr]) {
+      for (final t in todas) {
         porId[t.id] = t;
       }
 
@@ -843,7 +854,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       setState(() {
         _tareasMes = filtradas;
         _excluidasMes = excluidas;
-        _informeActividad = informe;
+        _informeJerarquico = informe;
         _reconstruirFiltrosDisponibles();
         _recalcularColeccionesDerivadas();
         _festivosYmd = setYmd;
@@ -856,6 +867,44 @@ class _CronogramaPageState extends State<CronogramaPage> {
       setState(() => _error = AppError.messageOf(e));
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _cargarInformeJerarquico() async {
+    if (_cargandoInformeJerarquico) return;
+    setState(() => _cargandoInformeJerarquico = true);
+    try {
+      final informe = await _cronogramaApi.informeActividadJerarquico(
+        nit: widget.nit,
+        anio: _anioActual,
+        mes: _mesActual,
+        borrador: false,
+        operarioId: _informeOperarioId,
+        semanaInicio: _informeFiltrarSemana
+            ? _startOfWeekMonday(_semanaBase)
+            : null,
+      );
+      if (mounted) setState(() => _informeJerarquico = informe);
+    } catch (e) {
+      if (mounted) {
+        AppFeedback.showError(context, message: AppError.messageOf(e));
+      }
+    } finally {
+      if (mounted) setState(() => _cargandoInformeJerarquico = false);
+    }
+  }
+
+  void _cambiarSemanaInforme(int dias) {
+    setState(() => _semanaBase = _semanaBase.add(Duration(days: dias)));
+    if (_vista == _VistaCronograma.informe && _informeFiltrarSemana) {
+      unawaited(_cargarInformeJerarquico());
+    }
+  }
+
+  void _seleccionarVista(_VistaCronograma vista) {
+    setState(() => _vista = vista);
+    if (vista == _VistaCronograma.informe) {
+      unawaited(_cargarInformeJerarquico());
     }
   }
 
@@ -2587,7 +2636,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonTable(rows: 10, cols: 5)
           : _error != null
           ? _buildError()
           : _buildContenido(mesNombre),
@@ -2708,7 +2757,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 ),
               ],
               selected: {_vista},
-              onSelectionChanged: (s) => setState(() => _vista = s.first),
+              onSelectionChanged: (s) => _seleccionarVista(s.first),
             ),
           ),
           const SizedBox(height: 8),
@@ -2748,11 +2797,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 ] else ...[
                   IconButton(
                     tooltip: 'Semana anterior',
-                    onPressed: () => setState(
-                      () => _semanaBase = _semanaBase.subtract(
-                        const Duration(days: 7),
-                      ),
-                    ),
+                    onPressed: () => _cambiarSemanaInforme(-7),
                     icon: const Icon(Icons.chevron_left),
                   ),
                   Text(
@@ -2764,11 +2809,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                   ),
                   IconButton(
                     tooltip: 'Semana siguiente',
-                    onPressed: () => setState(
-                      () => _semanaBase = _semanaBase.add(
-                        const Duration(days: 7),
-                      ),
-                    ),
+                    onPressed: () => _cambiarSemanaInforme(7),
                     icon: const Icon(Icons.chevron_right),
                   ),
                   const SizedBox(width: 8),
@@ -2837,7 +2878,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
             ),
           ],
           selected: {_vista},
-          onSelectionChanged: (s) => setState(() => _vista = s.first),
+          onSelectionChanged: (s) => _seleccionarVista(s.first),
         ),
         const Spacer(),
         if (_vista == _VistaCronograma.mensual) ...[
@@ -2869,9 +2910,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
         ] else ...[
           IconButton(
             tooltip: 'Semana anterior',
-            onPressed: () => setState(
-              () => _semanaBase = _semanaBase.subtract(const Duration(days: 7)),
-            ),
+            onPressed: () => _cambiarSemanaInforme(-7),
             icon: const Icon(Icons.chevron_left),
           ),
           Text(
@@ -2880,9 +2919,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
           ),
           IconButton(
             tooltip: 'Semana siguiente',
-            onPressed: () => setState(
-              () => _semanaBase = _semanaBase.add(const Duration(days: 7)),
-            ),
+            onPressed: () => _cambiarSemanaInforme(7),
             icon: const Icon(Icons.chevron_right),
           ),
           const SizedBox(width: 8),
@@ -4293,6 +4330,28 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   Widget _buildInformeActividad() {
+    return SingleChildScrollView(
+      child: CronogramaInformeJerarquico(
+        informe: _informeJerarquico,
+        loading: _cargandoInformeJerarquico,
+        operarioId: _informeOperarioId,
+        filtrarSemana: _informeFiltrarSemana,
+        onFiltrarSemanaChanged: (value) {
+          setState(() => _informeFiltrarSemana = value);
+          unawaited(_cargarInformeJerarquico());
+        },
+        encabezado: _buildSeccionInformeExcluidas(),
+        onOperarioChanged: (operarioId) {
+          setState(() => _informeOperarioId = operarioId);
+          unawaited(_cargarInformeJerarquico());
+        },
+      ),
+    );
+  }
+
+  // Se conserva durante la transición de datos históricos sin ocurrencias.
+  // ignore: unused_element
+  Widget _buildInformeActividadLegacy() {
     if (_informeActividad.isEmpty) {
       return const Center(
         child: Text('No hay actividades planificadas para este periodo.'),

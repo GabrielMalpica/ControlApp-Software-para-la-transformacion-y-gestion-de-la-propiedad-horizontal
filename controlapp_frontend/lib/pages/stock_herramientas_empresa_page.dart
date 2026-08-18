@@ -6,6 +6,7 @@ import '../service/app_constants.dart';
 import '../service/app_error.dart';
 import '../service/theme.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class StockHerramientasEmpresaPage extends StatefulWidget {
   final String? empresaId;
@@ -357,7 +358,7 @@ class _StockHerramientasEmpresaPageState
             const SizedBox(height: 12),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const SkeletonList()
                   : _error != null
                   ? _StateView(message: _error!, onRetry: _load)
                   : filtrados.isEmpty

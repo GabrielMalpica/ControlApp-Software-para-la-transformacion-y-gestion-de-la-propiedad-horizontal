@@ -8,6 +8,7 @@ import 'package:flutter_application_1/service/app_error.dart';
 import 'package:intl/intl.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class EditarUsuarioPage extends StatefulWidget {
   final Usuario usuario;
@@ -278,7 +279,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
   @override
   Widget build(BuildContext context) {
     if (_cargandoEnums) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: SkeletonList());
     }
 
     if (_errorEnums != null || _enums == null) {

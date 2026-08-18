@@ -4,6 +4,7 @@ import 'package:flutter_application_1/model/reporte_model.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class ZonificacionPage extends StatefulWidget {
   const ZonificacionPage({super.key});
@@ -243,7 +244,7 @@ class _ZonificacionPageState extends State<ZonificacionPage> {
           ),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const SkeletonList()
                 : _error != null
                 ? Center(child: Text('Error: $_error'))
                 : resumen == null || _conjuntos.isEmpty

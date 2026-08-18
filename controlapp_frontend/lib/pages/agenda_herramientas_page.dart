@@ -5,6 +5,7 @@ import 'package:flutter_application_1/model/agenda_herramienta_model.dart';
 import 'package:flutter_application_1/model/herramienta_model.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class AgendaHerramientasPage extends StatefulWidget {
   final String conjuntoId;
@@ -175,7 +176,7 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonList();
           }
           if (snap.hasError) {
             return Center(

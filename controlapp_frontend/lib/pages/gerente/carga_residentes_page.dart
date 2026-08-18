@@ -11,6 +11,7 @@ import 'package:flutter_application_1/service/theme.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class CargaResidentesPage extends StatefulWidget {
   const CargaResidentesPage({
@@ -187,7 +188,7 @@ class _CargaResidentesPageState extends State<CargaResidentesPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Cargue masivo de residentes')),
       body: _loadingConjuntos
-          ? const Center(child: CircularProgressIndicator())
+          ? const SkeletonList()
           : ListView(
               padding: const EdgeInsets.all(20),
               children: [

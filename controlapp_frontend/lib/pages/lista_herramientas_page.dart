@@ -8,6 +8,7 @@ import '../service/theme.dart';
 import 'crear_herramienta_page.dart';
 import 'stock_herramientas_empresa_page.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class ListaHerramientasPage extends StatefulWidget {
   final String? empresaId;
@@ -190,7 +191,7 @@ class _ListaHerramientasPageState extends State<ListaHerramientasPage> {
             ),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const SkeletonList()
                   : _error != null
                   ? _StateCard(
                       icon: Icons.error_outline,

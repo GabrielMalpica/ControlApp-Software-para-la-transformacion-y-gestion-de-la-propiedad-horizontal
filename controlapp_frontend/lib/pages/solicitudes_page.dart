@@ -7,6 +7,7 @@ import '../service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/widgets/skeleton.dart';
 
 enum EstadoSolicitudUi { PENDIENTE, APROBADA }
 
@@ -290,7 +291,7 @@ class _SolicitudesPageState extends State<SolicitudesPage> {
 
           Expanded(
             child: _cargando
-                ? const Center(child: CircularProgressIndicator())
+                ? const SkeletonList()
                 : _error != null
                 ? Center(child: Text('Error: $_error'))
                 : _items.isEmpty
