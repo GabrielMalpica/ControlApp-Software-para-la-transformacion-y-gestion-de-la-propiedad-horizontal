@@ -27,6 +27,28 @@ function safeName(s: string) {
   return s.replace(/[\\/:*?"<>|]/g, "-").trim();
 }
 
+function fechaDDMMYYYY(d: Date) {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
+/** Nombre del archivo tal como se ve en Drive: quién lo subió, su rol y la fecha (sin hora). */
+export function buildEvidenciaFileName(params: {
+  subidoPor: string;
+  rol: string;
+  fecha: Date;
+  originalName: string;
+  indice?: number;
+}) {
+  const ext = path.extname(params.originalName || "") || "";
+  const sufijo = params.indice && params.indice > 1 ? `_${params.indice}` : "";
+  return safeName(
+    `${params.subidoPor}_${params.rol}_${fechaDDMMYYYY(params.fecha)}${sufijo}${ext}`,
+  );
+}
+
 function getDrive() {
   if (!process.env.GOOGLE_CREDENTIALS) {
     throw new Error("GOOGLE_CREDENTIALS no está definida");
@@ -116,19 +138,36 @@ export async function uploadEvidenciaToDrive(params: {
   const file = res.data as DriveFile;
   if (!file.id) throw new Error("No se pudo obtener id del archivo en Drive");
 
-  // Sin este permiso el archivo queda con ACL privada (solo la cuenta de servicio
-  // puede leerlo) y ninguna URL de Drive carga la imagen en la app o en el navegador.
-  try {
-    await drive.permissions.create({
-      fileId: file.id,
-      requestBody: { role: "reader", type: "anyone" },
-    });
-  } catch (err) {
-    console.error(
-      `No se pudo hacer público el archivo ${file.id} en Drive:`,
-      err,
-    );
-  }
-
   return `https://drive.google.com/file/d/${file.id}/view`;
+}
+
+/**
+ * Descarga el binario de una evidencia directamente desde Drive usando la
+ * cuenta de servicio. El scope es "drive.file", así que la cuenta solo puede
+ * leer archivos que ella misma creó (las evidencias) — no hay riesgo de
+ * exponer otros archivos de Drive aunque alguien adivine un fileId ajeno.
+ *
+ * Esto reemplaza el hotlink directo a drive.google.com: los enlaces de Drive
+ * (thumbnail/uc/googleusercontent) no traen cabecera Access-Control-Allow-Origin,
+ * así que el navegador los bloquea por CORS al intentar cargarlos desde la app.
+ * Sirviéndolos desde nuestro propio backend evitamos ese problema.
+ */
+export async function getEvidenciaStream(fileId: string) {
+  const drive = getDrive();
+
+  const meta = await drive.files.get({
+    fileId,
+    fields: "id, name, mimeType",
+  });
+
+  const media = await drive.files.get(
+    { fileId, alt: "media" },
+    { responseType: "stream" },
+  );
+
+  return {
+    stream: media.data as NodeJS.ReadableStream,
+    mimeType: (meta.data.mimeType as string) || "application/octet-stream",
+    name: (meta.data.name as string) || fileId,
+  };
 }

@@ -8,7 +8,7 @@ import {
 } from "@prisma/client";
 import { z } from "zod";
 import { InventarioService } from "./InventarioServices";
-import { uploadEvidenciaToDrive } from "../utils/drive_evidencias";
+import { buildEvidenciaFileName, uploadEvidenciaToDrive } from "../utils/drive_evidencias";
 import fs from "fs";
 import { NotificacionService } from "./NotificacionService";
 import {
@@ -631,14 +631,26 @@ export class SupervisorService {
     }
 
     // 2) Subir evidencias a Drive
+    const actor = await this.prisma.usuario.findUnique({
+      where: { id: this.supervisorId },
+      select: { nombre: true },
+    });
+    const subidoPor = actor?.nombre ?? this.supervisorId;
+
     const urls: string[] = [];
     try {
+      let indice = 0;
       for (const f of files ?? []) {
+        indice++;
         const url = await uploadEvidenciaToDrive({
           filePath: f.path,
-          fileName: `Tarea_${tareaId}_${fechaCierre
-            .toISOString()
-            .replace(/[:.]/g, "-")}_${f.originalname}`,
+          fileName: buildEvidenciaFileName({
+            subidoPor,
+            rol: this.actorRolDb(),
+            fecha: fechaCierre,
+            originalName: f.originalname,
+            indice,
+          }),
           mimeType: f.mimetype,
           conjuntoNit: tarea.conjunto?.nit ?? tarea.conjuntoId ?? "SIN_CONJUNTO",
           conjuntoNombre: tarea.conjunto?.nombre ?? undefined,

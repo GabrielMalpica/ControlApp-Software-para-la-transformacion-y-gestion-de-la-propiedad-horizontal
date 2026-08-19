@@ -10,8 +10,7 @@
     "test": "node --max-old-space-size=4096 ./node_modules/jest/bin/jest.js --runInBand",
     "test:watch": "jest --watch",
     "test-prisma": "ts-node test.ts",
-    "clear-maquinaria": "node ./scripts/clear-maquinaria.js",
-    "backfill-evidencias-publicas": "node ./scripts/backfill-evidencias-publicas.js"
+    "clear-maquinaria": "node ./scripts/clear-maquinaria.js"
   },
   "keywords": [],
   "author": "",

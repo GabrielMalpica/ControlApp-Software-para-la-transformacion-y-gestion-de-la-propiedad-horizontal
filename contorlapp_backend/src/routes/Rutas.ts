@@ -27,6 +27,7 @@ import JefeOperacionesRoutes from './JefeOperaciones'
 import NotificacionesRoutes from "./Notificaciones";
 import PlanEsperanzaRoutes from "./PlanEsperanza";
 import CommerceRoutes from "./Commerce";
+import EvidenciaRoutes from "./Evidencias";
 
 const rutas = Router();
 
@@ -58,5 +59,6 @@ rutas.use('/jefe-operaciones', JefeOperacionesRoutes);
 rutas.use('/notificaciones', NotificacionesRoutes);
 rutas.use('/plan-esperanza', PlanEsperanzaRoutes);
 rutas.use('/commerce', CommerceRoutes);
+rutas.use('/evidencias', EvidenciaRoutes);
 
 export default rutas;

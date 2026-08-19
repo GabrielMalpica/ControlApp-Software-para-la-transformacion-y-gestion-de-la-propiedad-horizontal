@@ -9,7 +9,7 @@ import {
 import { z } from "zod";
 import { TareaService } from "./TareaServices";
 import { InventarioService } from "./InventarioServices";
-import { uploadEvidenciaToDrive } from "../utils/drive_evidencias";
+import { buildEvidenciaFileName, uploadEvidenciaToDrive } from "../utils/drive_evidencias";
 import fs from "fs";
 import { NotificacionService } from "./NotificacionService";
 import { elementoParentChainInclude } from "../utils/elementoHierarchy";
@@ -284,14 +284,26 @@ export class OperarioService {
       }
     }
 
+    const actor = await this.prisma.usuario.findUnique({
+      where: { id: this.operarioId.toString() },
+      select: { nombre: true },
+    });
+    const subidoPor = actor?.nombre ?? this.operarioId.toString();
+
     const urls: string[] = [];
     try {
+      let indice = 0;
       for (const f of files ?? []) {
+        indice++;
         const url = await uploadEvidenciaToDrive({
           filePath: f.path,
-          fileName: `Tarea_${tareaId}_${fechaCierre
-            .toISOString()
-            .replace(/[:.]/g, "-")}_${f.originalname}`,
+          fileName: buildEvidenciaFileName({
+            subidoPor,
+            rol: "OPERARIO",
+            fecha: fechaCierre,
+            originalName: f.originalname,
+            indice,
+          }),
           mimeType: f.mimetype,
           conjuntoNit: tarea.conjunto?.nit ?? tarea.conjuntoId ?? "SIN_CONJUNTO",
           conjuntoNombre: tarea.conjunto?.nombre ?? undefined,
