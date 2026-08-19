@@ -1,6 +1,7 @@
 import 'package:flutter_application_1/model/insumo_usado_model.dart';
 import 'package:flutter_application_1/model/preventiva_model.dart';
 import 'package:flutter_application_1/utils/evidence_utils.dart';
+import 'package:flutter_application_1/model/zona_cronograma_model.dart';
 
 class InsumoProgramado {
   final int insumoId;
@@ -114,6 +115,11 @@ class TareaModel {
   final int ubicacionId;
   final int elementoId;
   final int prioridad;
+  final ZonaCronogramaModel? zonaCronograma;
+  final String? ocurrenciaPlanId;
+  final String? grupoPlanId;
+  final int? bloqueIndex;
+  final int? bloquesTotales;
 
   final List<String> operariosNombres;
   final List<String> operariosCargos;
@@ -154,6 +160,11 @@ class TareaModel {
     this.observacionesRechazo,
     this.tipo,
     this.prioridad = 2,
+    this.zonaCronograma,
+    this.ocurrenciaPlanId,
+    this.grupoPlanId,
+    this.bloqueIndex,
+    this.bloquesTotales,
     this.frecuencia,
     this.definicionId,
     this.diaSemanaProgramado,
@@ -350,6 +361,15 @@ class TareaModel {
       operariosNombres: opNombres,
       operariosCargos: opCargos,
       prioridad: prioridad,
+      zonaCronograma: json['zonaCronograma'] is Map
+          ? ZonaCronogramaModel.fromJson(
+              Map<String, dynamic>.from(json['zonaCronograma'] as Map),
+            )
+          : null,
+      ocurrenciaPlanId: json['ocurrenciaPlanId']?.toString(),
+      grupoPlanId: json['grupoPlanId']?.toString(),
+      bloqueIndex: int.tryParse(json['bloqueIndex']?.toString() ?? ''),
+      bloquesTotales: int.tryParse(json['bloquesTotales']?.toString() ?? ''),
       supervisorNombre: supervisorNombre,
       ubicacionNombre: ubicacionNombre,
       elementoNombre: elementoNombre,
@@ -393,6 +413,11 @@ class TareaModel {
     'elementoId': elementoId,
     'operariosIds': operariosIds, // ✅ List<String>
     'prioridad': prioridad,
+    'zonaCronograma': zonaCronograma?.toJson(),
+    'ocurrenciaPlanId': ocurrenciaPlanId,
+    'grupoPlanId': grupoPlanId,
+    'bloqueIndex': bloqueIndex,
+    'bloquesTotales': bloquesTotales,
     'operariosNombres': operariosNombres,
     'operariosCargos': operariosCargos,
     'supervisorNombre': supervisorNombre,
@@ -425,6 +450,11 @@ class TareaModel {
     String? estado,
     bool? borrador,
     int? prioridad,
+    ZonaCronogramaModel? zonaCronograma,
+    String? ocurrenciaPlanId,
+    String? grupoPlanId,
+    int? bloqueIndex,
+    int? bloquesTotales,
     String? tipo,
     String? frecuencia,
     int? definicionId,
@@ -473,6 +503,11 @@ class TareaModel {
       estado: estado ?? this.estado,
       borrador: borrador ?? this.borrador,
       prioridad: prioridad ?? this.prioridad,
+      zonaCronograma: zonaCronograma ?? this.zonaCronograma,
+      ocurrenciaPlanId: ocurrenciaPlanId ?? this.ocurrenciaPlanId,
+      grupoPlanId: grupoPlanId ?? this.grupoPlanId,
+      bloqueIndex: bloqueIndex ?? this.bloqueIndex,
+      bloquesTotales: bloquesTotales ?? this.bloquesTotales,
       tipo: tipo ?? this.tipo,
       frecuencia: frecuencia ?? this.frecuencia,
       definicionId: definicionId ?? this.definicionId,

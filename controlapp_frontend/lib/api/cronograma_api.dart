@@ -9,9 +9,70 @@ import '../model/cronograma_actividad_informe_model.dart';
 import '../model/cronograma_informe_jerarquico_model.dart';
 import '../model/preventiva_excluida_borrador_model.dart';
 import '../model/tarea_model.dart';
+import '../model/zona_cronograma_model.dart';
 
 class CronogramaApi {
   final ApiClient _client = ApiClient();
+
+  Future<List<ZonaCronogramaModel>> listarConfiguracionZonas({
+    required String nit,
+  }) async {
+    final resp = await _client.get(
+      '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/zonas-configuracion',
+    );
+    if (resp.statusCode != 200) {
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudo cargar la configuración de zonas.',
+      );
+    }
+    final data = jsonDecode(resp.body) as List<dynamic>;
+    return data
+        .map(
+          (item) => ZonaCronogramaModel.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+  }
+
+  Future<List<ZonaCronogramaModel>> guardarConfiguracionZonas({
+    required String nit,
+    required List<ZonaCronogramaModel> zonas,
+  }) async {
+    final resp = await _client.put(
+      '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/zonas-configuracion',
+      body: {
+        'zonas': zonas
+            .asMap()
+            .entries
+            .map(
+              (entry) => {
+                'elementoZonaId': entry.value.elementoZonaId,
+                'orden': (entry.key + 1) * 10,
+                'colorHex': entry.value.colorHex,
+              },
+            )
+            .toList(),
+      },
+    );
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudo guardar la configuración de zonas.',
+      );
+    }
+    final data = jsonDecode(resp.body) as List<dynamic>;
+    return data
+        .map(
+          (item) => ZonaCronogramaModel.fromJson(
+            Map<String, dynamic>.from(item as Map),
+          ),
+        )
+        .toList();
+  }
 
   /// Lista todas las tareas (preventivas + correctivas) del mes de un conjunto.
   /// GET /cronograma/conjuntos/:nit/cronograma?anio=&mes=&borrador=

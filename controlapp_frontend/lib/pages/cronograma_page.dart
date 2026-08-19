@@ -36,6 +36,7 @@ import '../model/maquinaria_model.dart';
 import '../utils/frecuencia_utils.dart';
 import '../widgets/section_card.dart';
 import '../widgets/maquinaria_conflict_dialog.dart';
+import '../widgets/evidencia_gallery.dart';
 import 'crear_tarea_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -1073,6 +1074,36 @@ class _CronogramaPageState extends State<CronogramaPage> {
     required DateTime nuevoInicio,
     required DateTime nuevoFin,
   }) async {
+    final cantidadOperarios = tarea.operariosIds.toSet().length;
+    if (cantidadOperarios > 1) {
+      final nombres = tarea.operariosNombres
+          .map((nombre) => nombre.trim())
+          .where((nombre) => nombre.isNotEmpty)
+          .toSet()
+          .join(', ');
+      final confirmado = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Mover tarea de equipo'),
+          content: Text(
+            'El nuevo horario se aplicará a los $cantidadOperarios operarios y '
+            'solo se guardará si todos están disponibles.'
+            '${nombres.isEmpty ? '' : '\n\n$nombres'}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Mover equipo'),
+            ),
+          ],
+        ),
+      );
+      if (confirmado != true || !mounted) return;
+    }
     final req = TareaRequest(
       descripcion: tarea.descripcion,
       fechaInicio: nuevoInicio,
@@ -1263,7 +1294,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
           content: Text(
             res.accion == 'NO_COMPLETADA'
                 ? '✅ Tarea marcada como no completada.'
-                : '✅ Tarea cerrada. Quedó PENDIENTE_APROBACION.',
+                : '✅ Tarea cerrada y aprobada.',
           ),
         ),
       );
@@ -2308,9 +2339,6 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final fechaIniStr = DateFormat('dd/MM/yyyy HH:mm', 'es').format(iniLocal);
     final fechaFinStr = DateFormat('dd/MM/yyyy HH:mm', 'es').format(finLocal);
 
-    final evidenciasTxt = (t.evidencias ?? []).isEmpty
-        ? 'Sin evidencias'
-        : t.evidencias!.join('\n');
     final insumosCount = (t.insumosUsados ?? []).length;
 
     final operarios = t.operariosNombres.isEmpty
@@ -2403,7 +2431,27 @@ class _CronogramaPageState extends State<CronogramaPage> {
                   'Obs. rechazo',
                   t.observacionesRechazo ?? '—',
                 );
-                addRow('evidencias', 'Evidencias', evidenciasTxt);
+                if (_detalleCamposVisibles.contains('evidencias')) {
+                  rows.add(
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Evidencias:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          EvidenciaGallery(evidencias: t.evidencias ?? const []),
+                        ],
+                      ),
+                    ),
+                  );
+                }
                 addRow(
                   'insumos',
                   'Insumos usados',
@@ -2468,14 +2516,6 @@ class _CronogramaPageState extends State<CronogramaPage> {
                                     },
                                     icon: const Icon(Icons.task_alt),
                                     label: const Text('Cerrar tarea'),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Nota: El veredicto (aprobar/rechazar) lo hace el Jefe de Operaciones.',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade600,
                                   ),
                                 ),
                               ],
@@ -4469,6 +4509,11 @@ Color _cronogramaColorBaseTareaSemana(TareaModel t) {
   final tipo = (t.tipo ?? '').toUpperCase().trim();
   if (tipo == 'CORRECTIVA') return Colors.red.shade500;
 
+  final colorZona = t.zonaCronograma?.colorHex.replaceFirst('#', '');
+  if (colorZona != null && RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(colorZona)) {
+    return Color(int.parse('FF$colorZona', radix: 16));
+  }
+
   final texto = '${t.ubicacionNombre ?? ''} ${t.elementoNombre ?? ''}'
       .toLowerCase();
   if (texto.contains('humed') || texto.contains('agua')) {
@@ -4705,6 +4750,18 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
       return _MinuteRange(start: descansoInicio, end: descansoFin);
     }
     return null;
+  }
+
+  /// Solo es "después del almuerzo" si el bloque realmente arranca justo al
+  /// terminar el almuerzo de ese día — nunca por su sola posición en la
+  /// serie de bloques (bloqueIndex), que puede no tener nada que ver con la
+  /// hora real (ej. divisiones antiguas entre días).
+  bool _esBloqueDespuesDeAlmuerzo(TareaModel t) {
+    if (t.bloqueIndex == null || t.bloqueIndex! <= 1) return false;
+    final descanso = _descansoDia(_dayIndex(t.fechaInicio));
+    if (descanso == null) return false;
+    final inicioMin = t.fechaInicio.hour * 60 + t.fechaInicio.minute;
+    return inicioMin == descanso.end;
   }
 
   int _minutesFromStart(DateTime d) {
@@ -5849,39 +5906,74 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                         final tiny = h < 26;
                                         final compact = h < 54;
 
-                                        return Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                                        final equipo =
+                                            t.operariosIds.toSet().length > 1;
+                                        final titulo =
+                                            _esBloqueDespuesDeAlmuerzo(t)
+                                            ? 'Después del almuerzo · ${t.descripcion}'
+                                            : t.descripcion;
+                                        return Stack(
+                                          fit: StackFit.expand,
                                           children: [
-                                            Tooltip(
-                                              message: t.descripcion,
-                                              waitDuration: const Duration(
-                                                milliseconds: 250,
+                                            Padding(
+                                              padding: EdgeInsets.only(
+                                                right: equipo ? 18 : 0,
                                               ),
-                                              child: Text(
-                                                t.descripcion,
-                                                maxLines: compact ? 1 : 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  color: text,
-                                                  fontSize: tiny
-                                                      ? 8
-                                                      : (compact ? 10 : 12),
-                                                  fontWeight: FontWeight.w700,
-                                                ),
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Tooltip(
+                                                    message: t.descripcion,
+                                                    waitDuration:
+                                                        const Duration(
+                                                          milliseconds: 250,
+                                                        ),
+                                                    child: Text(
+                                                      titulo,
+                                                      maxLines: compact ? 1 : 2,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        color: text,
+                                                        fontSize: tiny
+                                                            ? 8
+                                                            : (compact
+                                                                  ? 10
+                                                                  : 12),
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  if (!compact) ...[
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      '$horaIni - $horaFinStr',
+                                                      style: TextStyle(
+                                                        color: subtext,
+                                                        fontSize: 10,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
                                               ),
                                             ),
-                                            if (!compact) ...[
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                '$horaIni - $horaFinStr',
-                                                style: TextStyle(
-                                                  color: subtext,
-                                                  fontSize: 10,
+                                            if (equipo)
+                                              Positioned(
+                                                right: 0,
+                                                bottom: 0,
+                                                child: Tooltip(
+                                                  message:
+                                                      'Tarea compartida por ${t.operariosIds.toSet().length} operarios',
+                                                  child: Icon(
+                                                    Icons.groups_2_outlined,
+                                                    size: tiny ? 11 : 15,
+                                                    color: subtext,
+                                                  ),
                                                 ),
                                               ),
-                                            ],
                                           ],
                                         );
                                       },

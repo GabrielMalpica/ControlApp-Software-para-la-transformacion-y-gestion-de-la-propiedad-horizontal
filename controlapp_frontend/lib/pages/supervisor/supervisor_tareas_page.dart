@@ -176,7 +176,7 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
           content: Text(
             res.accion == 'NO_COMPLETADA'
                 ? '✅ Tarea marcada como no completada.'
-                : '✅ Tarea cerrada. Quedó PENDIENTE_APROBACION.',
+                : '✅ Tarea cerrada y aprobada.',
           ),
         ),
       );
@@ -369,11 +369,6 @@ class _SupervisorTareasPageState extends State<SupervisorTareasPage> {
                   label: const Text('Cerrar tarea'),
                 ),
               ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Nota: El veredicto (aprobar/rechazar) lo hace el Jefe de Operaciones.',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
             ),
           ],
         ),

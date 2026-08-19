@@ -72,10 +72,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   final _duracionFijaMinCtrl = TextEditingController();
 
-  // ✅ dividir en N días (opcional)
-  bool _dividirEnDias = false;
-  final _diasParaCompletarCtrl = TextEditingController();
-
   // Insumo principal
   int? _insumoPrincipalId;
   final _consumoPorUnidadCtrl = TextEditingController();
@@ -316,15 +312,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         _rendimientoTiempoBase = base;
       }
 
-      final dias = existente.diasParaCompletar;
-      if (dias != null && dias > 1) {
-        _dividirEnDias = true;
-        _diasParaCompletarCtrl.text = dias.toString();
-      } else {
-        _dividirEnDias = false;
-        _diasParaCompletarCtrl.text = '';
-      }
-
       _insumoPrincipalId = existente.insumoPrincipalId;
       if (existente.consumoPrincipalPorUnidad != null) {
         _consumoPorUnidadCtrl.text = existente.consumoPrincipalPorUnidad!
@@ -420,9 +407,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       _prioridadCtrl.text = '2';
       _usaRendimiento = true;
       _rendimientoTiempoBase = 'POR_MINUTO';
-
-      _dividirEnDias = false;
-      _diasParaCompletarCtrl.text = '';
     }
 
     if (_frecuenciaUsaDiaSemana) {
@@ -470,7 +454,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     _rendimientoCtrl.dispose();
     _duracionFijaMinCtrl.dispose();
     _consumoPorUnidadCtrl.dispose();
-    _diasParaCompletarCtrl.dispose();
 
     for (final r in _insumosPlanRows) {
       r.consumoCtrl.dispose();
@@ -527,18 +510,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       default:
         return null;
     }
-  }
-
-  int? _previewMinutosPorDia() {
-    final total = _previewMinutosBien();
-    if (!_dividirEnDias) return null;
-    if (total == null || total <= 0) return null;
-
-    final dias = _tryInt(_diasParaCompletarCtrl.text.trim());
-    if (dias == null || dias <= 1) return null;
-
-    final porDia = (total / dias).ceil();
-    return porDia > 0 ? porDia : null;
   }
 
   // ===========================
@@ -772,12 +743,6 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         )
         .toList();
 
-    int? diasParaCompletar;
-    if (_dividirEnDias) {
-      final d = _tryInt(_diasParaCompletarCtrl.text.trim());
-      if (d != null && d > 1) diasParaCompletar = d;
-    }
-
     final diasSemanaSeleccionados = _diasSemanaSeleccionadosOrdenados;
 
     DefinicionPreventivaRequest buildRequest({String? diaSemanaProgramado}) {
@@ -799,7 +764,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         rendimientoBase: rendimiento,
         duracionMinutosFija: duracionMinFija,
         rendimientoTiempoBase: _usaRendimiento ? _rendimientoTiempoBase : null,
-        diasParaCompletar: diasParaCompletar,
+        diasParaCompletar: null,
         insumoPrincipalId: _insumoPrincipalId,
         consumoPrincipalPorUnidad: consumoPrincipal,
         insumosPlan: insumosPlanRequests,
@@ -1472,7 +1437,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       ),
                     ],
 
-                    // ✅ Repartir en varios días
+                    // La ocurrencia debe finalizarse dentro de una jornada.
                     const SizedBox(height: 12),
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -1481,66 +1446,15 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.grey.shade200),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: const Row(
                         children: [
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Repartir en varios días'),
-                            subtitle: const Text(
-                              'Útil para actividades largas (ej: 10 horas en 5 días).',
+                          Icon(Icons.free_breakfast_outlined),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'La tarea debe completarse el mismo día. Solo se dividirá si una parte termina al iniciar el almuerzo y la otra continúa justo después.',
                             ),
-                            value: _dividirEnDias,
-                            onChanged: (v) => setState(() {
-                              _dividirEnDias = v;
-                              if (!v) _diasParaCompletarCtrl.text = '';
-                            }),
                           ),
-                          if (_dividirEnDias) ...[
-                            const SizedBox(height: 10),
-                            TextFormField(
-                              controller: _diasParaCompletarCtrl,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: '¿En cuántos días completar?',
-                                hintText: 'Ej: 5',
-                                border: OutlineInputBorder(),
-                              ),
-                              validator: (v) {
-                                if (!_dividirEnDias) return null;
-                                final n = _tryInt(v?.trim() ?? '');
-                                if (n == null)
-                                  return 'Ingresa un número válido';
-                                if (n < 2) return 'Debe ser 2 o más';
-                                if (n > 31) return 'Máximo 31 días';
-                                return null;
-                              },
-                              onChanged: (_) => setState(() {}),
-                            ),
-                            const SizedBox(height: 10),
-                            Builder(
-                              builder: (_) {
-                                final total = _previewMinutosBien();
-                                final porDia = _previewMinutosPorDia();
-
-                                if (total == null) {
-                                  return const Text(
-                                    '💡 Define primero la duración (o el rendimiento) para calcular el reparto.',
-                                  );
-                                }
-                                if (porDia == null)
-                                  return const SizedBox.shrink();
-
-                                return Text(
-                                  '📌 Total: $total min (~ ${(total / 60).toStringAsFixed(2)} h)\n'
-                                  '📅 Reparto: ~$porDia min/día (~ ${(porDia / 60).toStringAsFixed(2)} h/día)',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
                         ],
                       ),
                     ),

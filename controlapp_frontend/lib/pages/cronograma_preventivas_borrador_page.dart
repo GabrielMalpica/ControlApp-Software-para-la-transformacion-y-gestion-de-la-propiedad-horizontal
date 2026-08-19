@@ -22,8 +22,10 @@ import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
 import '../model/maquinaria_model.dart';
 import '../utils/frecuencia_utils.dart';
+import '../widgets/impacto_reordenamiento_dialog.dart';
 import '../widgets/maquinaria_conflict_dialog.dart';
 import '../widgets/cronograma_informe_jerarquico.dart';
+import '../widgets/evidencia_gallery.dart';
 import '../widgets/skeleton.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -266,6 +268,168 @@ class _CronogramaPreventivasBorradorPageState
 
     _hayCambiosManuales = false;
     await _generarYcargarAlEntrar(modo: 'RESET');
+  }
+
+  Color _colorDesdeHex(String value) {
+    final raw = value.replaceFirst('#', '');
+    return Color(int.parse('FF$raw', radix: 16));
+  }
+
+  Future<void> _configurarZonas() async {
+    try {
+      final iniciales = await _cronogramaApi.listarConfiguracionZonas(
+        nit: widget.nit,
+      );
+      if (!mounted) return;
+      final zonas = [...iniciales];
+      const paleta = [
+        '#2196F3',
+        '#43A047',
+        '#FB8C00',
+        '#8E24AA',
+        '#00897B',
+        '#6D4C41',
+        '#546E7A',
+        '#D81B60',
+      ];
+      var guardando = false;
+      final guardado = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Prioridad y colores de zonas'),
+            content: SizedBox(
+              width: 620,
+              height: 520,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Este orden se aplica a las horas de cada día después de distribuir el mes.',
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: ReorderableListView.builder(
+                      buildDefaultDragHandles: false,
+                      itemCount: zonas.length,
+                      onReorder: guardando
+                          ? (_, __) {}
+                          : (oldIndex, newIndex) {
+                              if (newIndex > oldIndex) newIndex--;
+                              setDialogState(() {
+                                final item = zonas.removeAt(oldIndex);
+                                zonas.insert(newIndex, item);
+                              });
+                            },
+                      itemBuilder: (context, index) {
+                        final zona = zonas[index];
+                        return Card(
+                          key: ValueKey(zona.elementoZonaId),
+                          child: ListTile(
+                            leading: PopupMenuButton<String>(
+                              tooltip: 'Cambiar color',
+                              onSelected: (colorHex) {
+                                setDialogState(
+                                  () => zonas[index] = zona.copyWith(
+                                    colorHex: colorHex,
+                                  ),
+                                );
+                              },
+                              itemBuilder: (_) => paleta
+                                  .map(
+                                    (colorHex) => PopupMenuItem(
+                                      value: colorHex,
+                                      child: Row(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 9,
+                                            backgroundColor: _colorDesdeHex(
+                                              colorHex,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(colorHex),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              child: CircleAvatar(
+                                backgroundColor: _colorDesdeHex(zona.colorHex),
+                                child: const Icon(
+                                  Icons.palette_outlined,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                              ),
+                            ),
+                            title: Text(zona.nombre),
+                            subtitle: Text(zona.ubicacionNombre ?? '—'),
+                            trailing: ReorderableDragStartListener(
+                              index: index,
+                              child: const Icon(Icons.drag_handle),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: guardando
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                onPressed: guardando
+                    ? null
+                    : () async {
+                        setDialogState(() => guardando = true);
+                        try {
+                          await _cronogramaApi.guardarConfiguracionZonas(
+                            nit: widget.nit,
+                            zonas: zonas,
+                          );
+                          if (dialogContext.mounted) {
+                            Navigator.of(dialogContext).pop(true);
+                          }
+                        } catch (e) {
+                          setDialogState(() => guardando = false);
+                          if (dialogContext.mounted) {
+                            AppFeedback.showFromSnackBar(
+                              dialogContext,
+                              SnackBar(content: Text(AppError.messageOf(e))),
+                            );
+                          }
+                        }
+                      },
+                icon: guardando
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined),
+                label: Text(guardando ? 'Guardando...' : 'Guardar'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (guardado == true) {
+        await _cargarDatos();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(e))),
+      );
+    }
   }
 
   /// Confirmación al salir: el borrador vive en BD, así que "guardar" es
@@ -2729,23 +2893,68 @@ class _CronogramaPreventivasBorradorPageState
     List<TareaModel> tareasOrdenadas,
   ) async {
     _marcarCambioManual();
-    final resultado = await _preventivaApi.reordenarTareasDiaBorrador(
+    final tareaIds = tareasOrdenadas.map((item) => item.id).toList();
+    var resultado = await _preventivaApi.reordenarTareasDiaBorrador(
       nit: widget.nit,
       fecha: fecha,
-      tareaIds: tareasOrdenadas.map((item) => item.id).toList(),
+      tareaIds: tareaIds,
     );
     if (!mounted) return;
-    final ajustadas =
-        (resultado['ajustadasPorDependencia'] as num?)?.toInt() ?? 0;
+
+    // Si la cascada de ajustes necesita excluir alguna tarea ajena para
+    // poder aplicar el nuevo orden, el backend no aplica nada todavía: hay
+    // que mostrar el impacto y pedir confirmación explícita primero.
+    if (resultado['requiereConfirmacion'] == true) {
+      final cambios = (resultado['cambiosCascada'] as List?) ?? const [];
+      final confirmado = await showImpactoReordenamientoDialog(
+        context,
+        cambios,
+      );
+      if (!confirmado) {
+        // El usuario canceló: no se aplicó nada en el servidor, solo se
+        // recarga para descartar el arrastre optimista visual.
+        await _cargarDatos();
+        return;
+      }
+      if (!mounted) return;
+      resultado = await _preventivaApi.reordenarTareasDiaBorrador(
+        nit: widget.nit,
+        fecha: fecha,
+        tareaIds: tareaIds,
+        confirmarExclusiones: true,
+      );
+      if (!mounted) return;
+    }
+
+    final omitidas =
+        (resultado['omitidasPorDivisionAlmuerzo'] as num?)?.toInt() ?? 0;
+    final cambiosCascada = ((resultado['cambiosCascada'] as List?) ?? const [])
+        .whereType<Map>();
+    final movidas = cambiosCascada
+        .where((c) => (c['accion'] ?? '').toString().toUpperCase() == 'MOVIDA')
+        .length;
+    final excluidas = cambiosCascada
+        .where(
+          (c) => (c['accion'] ?? '').toString().toUpperCase() == 'EXCLUIDA',
+        )
+        .length;
+
+    final mensaje = StringBuffer('Orden del día actualizado.');
+    if (movidas > 0) {
+      mensaje.write(' $movidas tarea(s) de otros operarios se reacomodaron.');
+    }
+    if (excluidas > 0) {
+      mensaje.write(' $excluidas tarea(s) quedaron excluidas.');
+    }
+    if (omitidas > 0) {
+      mensaje.write(
+        ' $omitidas tarea(s) de una división por almuerzo conservaron su horario.',
+      );
+    }
+
     AppFeedback.showFromSnackBar(
       context,
-      SnackBar(
-        content: Text(
-          ajustadas > 0
-              ? 'Orden actualizado. También se ajustaron $ajustadas tarea(s) de los operarios involucrados.'
-              : 'Orden del día actualizado.',
-        ),
-      ),
+      SnackBar(content: Text(mensaje.toString())),
     );
     await _cargarDatos();
   }
@@ -4512,15 +4721,10 @@ class _CronogramaPreventivasBorradorPageState
                                       },
                                     ),
                                   FilledButton.tonalIcon(
-                                    onPressed: () {
-                                      Navigator.pop(context);
-                                      _dividirExcluidaEnMinutos(item);
-                                    },
-                                    icon: const Icon(Icons.call_split),
-                                    label: Text(
-                                      item.tieneDivisionManual
-                                          ? 'Redefinir división'
-                                          : 'Dividir en minutos',
+                                    onPressed: null,
+                                    icon: const Icon(Icons.free_breakfast),
+                                    label: const Text(
+                                      'Solo división por almuerzo',
                                     ),
                                   ),
                                   FilledButton.tonalIcon(
@@ -4568,9 +4772,6 @@ class _CronogramaPreventivasBorradorPageState
     final fechaIniStr = DateFormat('dd/MM/yyyy HH:mm', 'es').format(iniLocal);
     final fechaFinStr = DateFormat('dd/MM/yyyy HH:mm', 'es').format(finLocal);
 
-    final evidenciasTxt = (t.evidencias ?? []).isEmpty
-        ? 'Sin evidencias'
-        : t.evidencias!.join('\n');
     final insumosCount = (t.insumosUsados ?? []).length;
 
     final operarios = t.operariosNombres.isEmpty
@@ -4652,7 +4853,27 @@ class _CronogramaPreventivasBorradorPageState
                   'Observaciones',
                   t.observaciones ?? '—',
                 );
-                addRow('evidencias', 'Evidencias', evidenciasTxt);
+                if (_detalleCamposVisibles.contains('evidencias')) {
+                  rows.add(
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Evidencias:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          EvidenciaGallery(evidencias: t.evidencias ?? const []),
+                        ],
+                      ),
+                    ),
+                  );
+                }
                 addRow(
                   'insumos',
                   'Insumos usados',
@@ -4863,6 +5084,8 @@ class _CronogramaPreventivasBorradorPageState
                   _incorporarPreventivasNuevas();
                 } else if (value == 'REGENERAR') {
                   _regenerarDesdeCero();
+                } else if (value == 'ZONAS') {
+                  _configurarZonas();
                 }
               },
               itemBuilder: (_) => [
@@ -4877,6 +5100,15 @@ class _CronogramaPreventivasBorradorPageState
                           ? '$_preventivasSinPlanificar sin planificar'
                           : 'Conserva lo que ya cuadraste',
                     ),
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'ZONAS',
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.palette_outlined),
+                    title: Text('Prioridad y colores de zonas'),
+                    subtitle: Text('Ordena las horas dentro de cada día'),
                   ),
                 ),
                 const PopupMenuItem<String>(
@@ -5691,6 +5923,11 @@ Color _cronogramaBorradorColorBaseTareaSemana(TareaModel t) {
   final tipo = (t.tipo ?? '').toUpperCase().trim();
   if (tipo == 'CORRECTIVA') return Colors.red.shade500;
 
+  final colorZona = t.zonaCronograma?.colorHex.replaceFirst('#', '');
+  if (colorZona != null && RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(colorZona)) {
+    return Color(int.parse('FF$colorZona', radix: 16));
+  }
+
   final texto = '${t.ubicacionNombre ?? ''} ${t.elementoNombre ?? ''}'
       .toLowerCase();
   if (texto.contains('humed') || texto.contains('agua')) {
@@ -5935,6 +6172,18 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     }
 
     return null;
+  }
+
+  /// Solo es "después del almuerzo" si el bloque realmente arranca justo al
+  /// terminar el almuerzo de ese día — nunca por su sola posición en la
+  /// serie de bloques (bloqueIndex), que puede no tener nada que ver con la
+  /// hora real (ej. divisiones antiguas entre días).
+  bool _esBloqueDespuesDeAlmuerzo(TareaModel t) {
+    if (t.bloqueIndex == null || t.bloqueIndex! <= 1) return false;
+    final descanso = _descansoDia(_dayIndex(t.fechaInicio));
+    if (descanso == null) return false;
+    final inicioMin = t.fechaInicio.hour * 60 + t.fechaInicio.minute;
+    return inicioMin == descanso.end;
   }
 
   int _minutesFromStart(DateTime d) {
@@ -6339,6 +6588,45 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     setState(() => _dropPreview = null);
   }
 
+  Future<bool> _confirmarMovimientoEquipo(TareaModel? tarea) async {
+    if (tarea == null) return true;
+    final nombres = tarea.operariosNombres
+        .map((nombre) => nombre.trim())
+        .where((nombre) => nombre.isNotEmpty)
+        .toSet()
+        .toList();
+    final cantidad = tarea.operariosIds.toSet().length;
+    if (cantidad < 2) return true;
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.groups_2_outlined),
+            SizedBox(width: 8),
+            Expanded(child: Text('Mover tarea de equipo')),
+          ],
+        ),
+        content: Text(
+          'Esta tarea está compartida por $cantidad operarios. El nuevo horario '
+          'se aplicará al equipo completo y solo se guardará si todos están '
+          'disponibles.${nombres.isEmpty ? '' : '\n\n${nombres.join(', ')}'}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Mover equipo'),
+          ),
+        ],
+      ),
+    );
+    return confirmado == true;
+  }
+
   Future<void> _intentarMoverTareaSemana({
     required _DraggedWeekTask dragged,
     required int dayIndex,
@@ -6390,6 +6678,10 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     final nuevoFin = nuevoInicio.add(
       Duration(minutes: dragged.duracionMinutos),
     );
+
+    if (!await _confirmarMovimientoEquipo(dragged.tarea) || !mounted) {
+      return;
+    }
 
     setState(() => _moviendoTarea = true);
     try {
@@ -6470,31 +6762,76 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
           final tiny = h < 26;
           final compact = h < 54;
 
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          final equipo = t.operariosIds.toSet().length > 1;
+          final esBloqueDespuesDeAlmuerzo = _esBloqueDespuesDeAlmuerzo(t);
+          final divisionAlmuerzo =
+              (t.bloquesTotales ?? 0) > 1 && esBloqueDespuesDeAlmuerzo;
+          final titulo = esBloqueDespuesDeAlmuerzo
+              ? 'Después del almuerzo · ${t.descripcion}'
+              : t.descripcion;
+          return Stack(
+            fit: StackFit.expand,
             children: [
-              Tooltip(
-                message: t.descripcion,
-                waitDuration: const Duration(milliseconds: 250),
-                child: Text(
-                  t.descripcion,
-                  maxLines: compact ? 1 : 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: text,
-                    fontSize: tiny ? 8 : (compact ? 10 : 12),
-                    fontWeight: FontWeight.w700,
-                  ),
+              Padding(
+                padding: EdgeInsets.only(
+                  right: equipo || divisionAlmuerzo ? 36 : 0,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Tooltip(
+                      message: t.descripcion,
+                      waitDuration: const Duration(milliseconds: 250),
+                      child: Text(
+                        titulo,
+                        maxLines: compact ? 1 : 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: text,
+                          fontSize: tiny ? 8 : (compact ? 10 : 12),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (!compact) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '$horaIni - $horaFinStr',
+                        style: TextStyle(color: subtext, fontSize: 10),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              if (!compact) ...[
-                const SizedBox(height: 2),
-                Text(
-                  '$horaIni - $horaFinStr',
-                  style: TextStyle(color: subtext, fontSize: 10),
+              if (equipo)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Tooltip(
+                    message:
+                        'Tarea compartida por ${t.operariosIds.toSet().length} operarios',
+                    child: Icon(
+                      Icons.groups_2_outlined,
+                      size: tiny ? 11 : 15,
+                      color: subtext,
+                    ),
+                  ),
                 ),
-              ],
+              if (divisionAlmuerzo)
+                Positioned(
+                  right: equipo ? 18 : 0,
+                  bottom: 0,
+                  child: Tooltip(
+                    message:
+                        'División automática por almuerzo; no se mueve por separado',
+                    child: Icon(
+                      Icons.free_breakfast,
+                      size: tiny ? 11 : 15,
+                      color: subtext,
+                    ),
+                  ),
+                ),
             ],
           );
         },
@@ -7243,6 +7580,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   tarea: t,
                                   duracionMinutos: durMin <= 0 ? 1 : durMin,
                                 );
+                                final divisionAlmuerzo =
+                                    (t.bloquesTotales ?? 0) > 1;
 
                                 return Positioned(
                                   left: left,
@@ -7253,7 +7592,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                     data: draggedData,
                                     dragAnchorStrategy:
                                         pointerDragAnchorStrategy,
-                                    maxSimultaneousDrags: _moviendoTarea
+                                    maxSimultaneousDrags:
+                                        _moviendoTarea || divisionAlmuerzo
                                         ? 0
                                         : 1,
                                     onDragStarted: () {
@@ -7969,17 +8309,12 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                       },
                                     ),
                                   FilledButton.tonalIcon(
-                                    onPressed: () =>
-                                        widget.onDividirExcluida(item),
+                                    onPressed: null,
                                     icon: const Icon(
-                                      Icons.call_split,
+                                      Icons.free_breakfast,
                                       size: 16,
                                     ),
-                                    label: Text(
-                                      item.tieneDivisionManual
-                                          ? 'Redefinir división'
-                                          : 'Dividir en minutos',
-                                    ),
+                                    label: const Text('Solo por almuerzo'),
                                   ),
                                   FilledButton.tonalIcon(
                                     onPressed: () => widget

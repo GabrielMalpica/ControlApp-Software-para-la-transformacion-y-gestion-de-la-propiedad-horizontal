@@ -290,10 +290,15 @@ class DefinicionPreventivaApi {
     required String nit,
     required DateTime fecha,
     required List<int> tareaIds,
+    bool confirmarExclusiones = false,
   }) async {
     final resp = await _client.post(
       '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/tareas/reordenar-dia',
-      body: {'fecha': fecha.toIso8601String(), 'tareaIds': tareaIds},
+      body: {
+        'fecha': fecha.toIso8601String(),
+        'tareaIds': tareaIds,
+        'confirmarExclusiones': confirmarExclusiones,
+      },
     );
     if (resp.statusCode != 200) {
       _throwCrudApiError(
