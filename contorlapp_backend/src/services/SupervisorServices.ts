@@ -21,8 +21,8 @@ import {
 /**
  * Supervisor Fase 1:
  * - Lista tareas por conjunto/operario/estado/rango fechas
- * - Cierra tarea (cuando el operario no usa app): guarda evidencias y deja PENDIENTE_APROBACION
- * - Veredicto: aprobar / rechazar / no_completada
+ * - Cierra tarea (cuando el operario no usa app): guarda evidencias y la deja APROBADA (cierre directo)
+ * - Veredicto: aprobar / rechazar / no_completada (solo aplica a tareas heredadas en PENDIENTE_APROBACION)
  *
  * IDs: supervisorId = string (cédula)
  */
@@ -378,7 +378,7 @@ export class SupervisorService {
    * Cerrar tarea por supervisor (operario SIN app):
    * - Solo si está ASIGNADA / EN_PROCESO / COMPLETADA
    * - Guarda evidencias
-   * - estado -> PENDIENTE_APROBACION
+   * - estado -> APROBADA (cierre directo, sin paso de aprobación)
    * - fechaFinalizarTarea -> now (o la enviada)
    * - descuenta insumos + registra usos de maquinaria/herramientas y libera lo prestado
    */
@@ -549,14 +549,15 @@ export class SupervisorService {
         });
       }
 
-      // 4) ✅ ACTUALIZAR TAREA: evidencias + observaciones + estado pendiente aprobación
+      // 4) ✅ ACTUALIZAR TAREA: evidencias + observaciones + estado aprobada (cierre directo)
       await tx.tarea.update({
         where: { id: tareaId },
         data: {
           evidencias: mergeEvidencias,
           observaciones: dto.observaciones ?? undefined,
-          estado: EstadoTarea.PENDIENTE_APROBACION,
+          estado: EstadoTarea.APROBADA,
           fechaFinalizarTarea: ahora,
+          fechaVerificacion: ahora,
           supervisorId:
             this.actorRol === "SUPERVISOR" ? this.supervisorId : undefined,
           finalizadaPorId: this.supervisorId,
@@ -754,8 +755,10 @@ export class SupervisorService {
           estado:
             accion === "NO_COMPLETADA"
               ? EstadoTarea.NO_COMPLETADA
-              : EstadoTarea.PENDIENTE_APROBACION,
+              : EstadoTarea.APROBADA,
           fechaFinalizarTarea: fechaCierre,
+          fechaVerificacion:
+            accion === "NO_COMPLETADA" ? undefined : fechaCierre,
           supervisorId:
             this.actorRol === "SUPERVISOR" ? this.supervisorId : undefined,
           finalizadaPorId: this.supervisorId,

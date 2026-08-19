@@ -104,7 +104,7 @@ export class OperarioService {
   /**
    * Marca tarea como completada y consume insumos.
    * - Usa InventarioService para registrar el consumo (con operarioId/tareaId si tu versión lo soporta).
-   * - Cambia estado a PENDIENTE_APROBACION (lo hace TareaService).
+   * - Cambia estado a APROBADA (lo hace TareaService, cierre directo sin aprobación).
    * - Actualiza evidencias.
    */
   async marcarComoCompletada(
@@ -404,8 +404,10 @@ export class OperarioService {
           estado:
             accion === "NO_COMPLETADA"
               ? EstadoTarea.NO_COMPLETADA
-              : EstadoTarea.PENDIENTE_APROBACION,
+              : EstadoTarea.APROBADA,
           fechaFinalizarTarea: fechaCierre,
+          fechaVerificacion:
+            accion === "NO_COMPLETADA" ? undefined : fechaCierre,
           finalizadaPorId: this.operarioId.toString(),
           finalizadaPorRol: "OPERARIO",
         },

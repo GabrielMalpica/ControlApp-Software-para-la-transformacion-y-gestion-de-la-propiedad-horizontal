@@ -4738,7 +4738,8 @@ export class GerenteService {
     // Ã°Å¸â€â€™ Reglas de negocio (ajÃƒÂºstalas a tu gusto)
     if (
       tarea.estado === EstadoTarea.COMPLETADA ||
-      tarea.estado === EstadoTarea.PENDIENTE_APROBACION
+      tarea.estado === EstadoTarea.PENDIENTE_APROBACION ||
+      tarea.estado === EstadoTarea.APROBADA
     ) {
       throw new Error(
         "No se puede eliminar una tarea que ya fue ejecutada o estÃƒÂ¡ en aprobaciÃƒÂ³n.",

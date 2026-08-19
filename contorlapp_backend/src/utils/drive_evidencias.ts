@@ -116,6 +116,19 @@ export async function uploadEvidenciaToDrive(params: {
   const file = res.data as DriveFile;
   if (!file.id) throw new Error("No se pudo obtener id del archivo en Drive");
 
-  // El archivo conserva ACL privada; esta URL solo funciona para identidades autorizadas en Drive.
+  // Sin este permiso el archivo queda con ACL privada (solo la cuenta de servicio
+  // puede leerlo) y ninguna URL de Drive carga la imagen en la app o en el navegador.
+  try {
+    await drive.permissions.create({
+      fileId: file.id,
+      requestBody: { role: "reader", type: "anyone" },
+    });
+  } catch (err) {
+    console.error(
+      `No se pudo hacer público el archivo ${file.id} en Drive:`,
+      err,
+    );
+  }
+
   return `https://drive.google.com/file/d/${file.id}/view`;
 }

@@ -161,13 +161,15 @@ export class TareaService {
         await inventarioService.consumirInsumoPorId({ insumoId, cantidad });
       }
 
-      // 2) Cambiar estado -> PENDIENTE_APROBACION y guardar snapshot de insumosUsados
+      // 2) Cambiar estado -> APROBADA (cierre directo, sin paso de aprobación) y guardar snapshot de insumosUsados
+      const ahora = new Date();
       await this.prisma.tarea.update({
         where: { id: this.tareaId },
         data: {
           insumosUsados, // Json
-          estado: EstadoTarea.PENDIENTE_APROBACION,
-          fechaFinalizarTarea: new Date(),
+          estado: EstadoTarea.APROBADA,
+          fechaFinalizarTarea: ahora,
+          fechaVerificacion: ahora,
         },
       });
     });
@@ -536,7 +538,8 @@ export class TareaService {
     // 🔒 Reglas de negocio (ajústalas a tu gusto)
     if (
       tarea.estado === EstadoTarea.COMPLETADA ||
-      tarea.estado === EstadoTarea.PENDIENTE_APROBACION
+      tarea.estado === EstadoTarea.PENDIENTE_APROBACION ||
+      tarea.estado === EstadoTarea.APROBADA
     ) {
       throw new Error(
         "No se puede eliminar una tarea que ya fue ejecutada o está en aprobación.",

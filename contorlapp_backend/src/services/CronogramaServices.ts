@@ -1557,7 +1557,8 @@ export class CronogramaService {
     const tareasBloqueadas = tareas.filter(
       (tarea) =>
         tarea.estado === EstadoTarea.COMPLETADA ||
-        tarea.estado === EstadoTarea.PENDIENTE_APROBACION,
+        tarea.estado === EstadoTarea.PENDIENTE_APROBACION ||
+        tarea.estado === EstadoTarea.APROBADA,
     );
 
     if (tareasBloqueadas.length > 0) {
