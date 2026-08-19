@@ -274,7 +274,7 @@ describe('generarBorradorMensual - fase de rescate', () => {
     ]);
   });
 
-  test('PU-R00B - deja para el final un dia con la misma tarea, sin descartarlo', () => {
+  test('PU-R00B - descarta por completo un dia que ya tiene la misma tarea', () => {
     const service = new DefinicionTareaPreventivaService({} as any) as any;
     service.registrarOcurrenciaDefinicionDiaScheduler({
       definicionId: 77,
@@ -293,7 +293,7 @@ describe('generarBorradorMensual - fase de rescate', () => {
       ocurrenciaPlanId: 'ocurrencia-nueva',
     });
 
-    expect(priorizados.map(ymd)).toEqual(['2026-03-04', '2026-03-03']);
+    expect(priorizados.map(ymd)).toEqual(['2026-03-04']);
   });
 
   test('PU-R0 - una P2 en festivo se rescata en otro día hábil del mes', async () => {
@@ -746,13 +746,15 @@ describe('generarBorradorMensual - fase de rescate', () => {
     });
   });
 
-  test('PU-R6 - reparte equitativamente varias P3 DIARIA de duracion muy distinta', async () => {
+  test('PU-R6 - nunca repite una P3 DIARIA el mismo dia aunque la jornada no alcance para las 5', async () => {
     // Reproduce el caso real reportado: 5 definiciones P3 DIARIA con el mismo
     // operario y jornada de 8h, con duraciones muy dispares (igual que
-    // "Aseo del ascensor" 10min vs "Lavado de baños" 90min). Antes del
-    // reparto por rondas, la definicion mas larga terminaba con muchas menos
-    // ocurrencias que las cortas porque el ciclo agotaba cada definicion
-    // (hasta ~22 dias) antes de pasar a la siguiente.
+    // "Aseo del ascensor" 10min vs "Lavado de baños" 90min), a proposito
+    // escaladas para que la suma (525min) supere la jornada (480min): ningun
+    // dia alcanza para las 5. El sistema ya no rellena ese deficit repitiendo
+    // una definicion el mismo dia (eso duplicaria la tarea para el operario);
+    // prefiere excluir esa definicion ese dia, aunque el reparto quede
+    // desparejo entre definiciones.
     const prisma = construirPrisma({
       diasOcupados: [],
       duracionMinutosFija: 480,
@@ -809,12 +811,16 @@ describe('generarBorradorMensual - fase de rescate', () => {
     for (const id of Object.keys(duraciones).map(Number)) {
       expect(conteosPorDefinicion.get(id) ?? 0).toBeGreaterThan(0);
     }
-    // ...y la diferencia entre la mas y la menos programada es pequeña: ya
-    // no debe repetirse el patron real (22 vs 11, casi el doble). Con
-    // contención real de capacidad el reparto queda ~19-23 por definición.
-    const conteos = Array.from(conteosPorDefinicion.values());
-    const spread = Math.max(...conteos) - Math.min(...conteos);
-    expect(spread).toBeLessThanOrEqual(5);
+
+    // ...pero sobre todo: ningun dia tiene la misma definicion dos veces.
+    const definicionesPorDia = new Map<string, Set<number>>();
+    for (const tarea of prisma.tareasCreadas) {
+      const dia = ymd(tarea.fechaInicio);
+      const set = definicionesPorDia.get(dia) ?? new Set<number>();
+      expect(set.has(tarea.definicionId)).toBe(false);
+      set.add(tarea.definicionId);
+      definicionesPorDia.set(dia, set);
+    }
   });
 
   test('PU-R7 - garantiza el minimo de una P2 aunque otra P2 DIARIA vaya primero', async () => {

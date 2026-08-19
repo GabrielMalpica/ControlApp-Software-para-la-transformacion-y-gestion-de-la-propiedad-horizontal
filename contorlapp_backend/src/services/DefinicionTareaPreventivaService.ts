@@ -535,29 +535,25 @@ export class DefinicionTareaPreventivaService {
   }
 
   /**
-   * Conserva el orden funcional recibido (proximidad, carga, etc.), pero deja
-   * para el final los dias que ya contienen otra ocurrencia de la misma
-   * definicion. Esos dias siguen disponibles como ultimo recurso para no
-   * sacrificar cobertura cuando el mes realmente no ofrece otra capacidad.
+   * Conserva el orden funcional recibido (proximidad, carga, etc.) mismo,
+   * pero descarta por completo los dias que ya contienen otra ocurrencia de
+   * la misma definicion: un operario no debe repetir la misma tarea dos
+   * veces el mismo dia. Si ningun dia del mes queda libre, se devuelve una
+   * lista vacia y la ocurrencia queda excluida en vez de duplicarse.
    */
   private priorizarDiasSinRepetirDefinicion(params: {
     dias: Date[];
     definicionId: number;
     ocurrenciaPlanId: string;
   }) {
-    const libres: Date[] = [];
-    const repetidos: Date[] = [];
-    for (const dia of params.dias) {
-      const destino = this.hayOtraOcurrenciaDefinicionEnDia({
-        definicionId: params.definicionId,
-        ocurrenciaPlanId: params.ocurrenciaPlanId,
-        fecha: dia,
-      })
-        ? repetidos
-        : libres;
-      destino.push(dia);
-    }
-    return [...libres, ...repetidos];
+    return params.dias.filter(
+      (dia) =>
+        !this.hayOtraOcurrenciaDefinicionEnDia({
+          definicionId: params.definicionId,
+          ocurrenciaPlanId: params.ocurrenciaPlanId,
+          fecha: dia,
+        }),
+    );
   }
 
   private async iniciarAgendaScheduler(params: {
@@ -2180,28 +2176,32 @@ export class DefinicionTareaPreventivaService {
     }));
     const objetivoKey = dayKey(params.fechaObjetivo);
 
-    conCarga.sort((a, b) => {
-      // Los dias con la misma ocurrencia quedan al final, pero siguen siendo
-      // candidatos de respaldo para conservar la cobertura del cronograma.
-      if (a.iguales !== b.iguales) return a.iguales - b.iguales;
-      const aObjetivo = dayKey(a.dia) === objetivoKey;
-      const bObjetivo = dayKey(b.dia) === objetivoKey;
-      if (aObjetivo !== bObjetivo) return aObjetivo ? -1 : 1;
+    const ordenar = (lista: typeof conCarga) =>
+      [...lista].sort((a, b) => {
+        const aObjetivo = dayKey(a.dia) === objetivoKey;
+        const bObjetivo = dayKey(b.dia) === objetivoKey;
+        if (aObjetivo !== bObjetivo) return aObjetivo ? -1 : 1;
 
-      const distanciaA = Math.abs(+a.dia - +params.fechaObjetivo);
-      const distanciaB = Math.abs(+b.dia - +params.fechaObjetivo);
-      if (distanciaA !== distanciaB) return distanciaA - distanciaB;
+        const distanciaA = Math.abs(+a.dia - +params.fechaObjetivo);
+        const distanciaB = Math.abs(+b.dia - +params.fechaObjetivo);
+        if (distanciaA !== distanciaB) return distanciaA - distanciaB;
 
-      if (a.carga !== b.carga) return a.carga - b.carga;
+        if (a.carga !== b.carga) return a.carga - b.carga;
 
-      // A igual distancia se usa primero el día futuro y luego el anterior.
-      const aFuturo = +a.dia >= +params.fechaObjetivo;
-      const bFuturo = +b.dia >= +params.fechaObjetivo;
-      if (aFuturo !== bFuturo) return aFuturo ? -1 : 1;
-      return +a.dia - +b.dia;
-    });
+        // A igual distancia se usa primero el día futuro y luego el anterior.
+        const aFuturo = +a.dia >= +params.fechaObjetivo;
+        const bFuturo = +b.dia >= +params.fechaObjetivo;
+        if (aFuturo !== bFuturo) return aFuturo ? -1 : 1;
+        return +a.dia - +b.dia;
+      });
 
-    return conCarga.map((item) => item.dia);
+    // Un día que ya tiene esta misma tarea queda descartado como candidato:
+    // un operario no debe repetir la misma tarea dos veces el mismo día. Si
+    // ningún día del mes queda libre, la ocurrencia queda excluida en vez de
+    // duplicarse.
+    const sinRepetir = conCarga.filter((item) => item.iguales === 0);
+
+    return ordenar(sinRepetir).map((item) => item.dia);
   }
 
   /** Elige el primer día balanceado que aloja la tarea con menos fragmentos. */

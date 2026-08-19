@@ -250,6 +250,7 @@ export class DefinicionTareaPreventivaController {
       conjuntoId,
       fecha: req.body?.fecha,
       tareaIds: req.body?.tareaIds,
+      confirmarExclusiones: req.body?.confirmarExclusiones,
     });
     res.json(out);
   };
