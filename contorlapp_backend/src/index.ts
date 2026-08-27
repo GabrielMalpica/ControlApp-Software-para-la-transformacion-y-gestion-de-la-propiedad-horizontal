@@ -20,6 +20,10 @@ import { prisma } from "./db/prisma";
 import { bootstrapNotificacionesSchema } from "./services/NotificacionService";
 import { authRequiredUnlessPublic } from "./middlewares/auth.middleware";
 import { distributedRateLimit } from "./middlewares/rate-limit.middleware";
+import {
+  isTaskClosingRequest,
+  taskClosingIpRateLimit,
+} from "./middlewares/task-closing-rate-limit.middleware";
 
 if (!process.env.JWT_SECRET) {
   throw new Error("Falta JWT_SECRET en el archivo .env");
@@ -72,10 +76,18 @@ app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(helmet());
 app.use(compression());
+app.use((req, res, next) => {
+  if (!isTaskClosingRequest(req)) {
+    next();
+    return;
+  }
+  taskClosingIpRateLimit(req, res, next);
+});
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 300,
+    skip: isTaskClosingRequest,
     standardHeaders: "draft-7",
     legacyHeaders: false,
     message: { ok: false, message: "Demasiadas solicitudes. Intenta nuevamente en unos minutos" },
@@ -142,7 +154,7 @@ app.get("/ping", async (_req: Request, res: Response, next: NextFunction) => {
 /* -------------------------------- rutas ---------------------------------- */
 app.use(authRequiredUnlessPublic);
 app.use((req, res, next) => {
-  if (!req.is("multipart/form-data")) {
+  if (!req.is("multipart/form-data") || isTaskClosingRequest(req)) {
     next();
     return;
   }
@@ -526,4 +538,3 @@ process.on("SIGTERM", async () => {
   await prisma.$disconnect();
   process.exit(0);
 });
-

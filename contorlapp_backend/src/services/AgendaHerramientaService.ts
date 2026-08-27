@@ -5,6 +5,7 @@ type AgendaParams = {
   anio: number;
   mes: number;
   categoria?: string;
+  conjuntoId?: string;
 };
 
 type HerrSel = {
@@ -137,7 +138,7 @@ export class AgendaHerramientaService {
   }
 
   async agendaGlobalPorHerramienta(params: AgendaParams) {
-    const { empresaNit, anio, mes, categoria } = params;
+    const { empresaNit, anio, mes, categoria, conjuntoId } = params;
     const iniMes = this.startOfMonth(anio, mes);
     const finMes = this.endOfMonth(anio, mes);
 
@@ -162,6 +163,7 @@ export class AgendaHerramientaService {
     const usos: UsoSel[] = await (this.prisma.usoHerramienta as any).findMany({
       where: {
         herramientaId: { in: ids },
+        ...(conjuntoId ? { tarea: { conjuntoId } } : {}),
         fechaInicio: { lt: finMes },
         OR: [{ fechaFin: null }, { fechaFin: { gt: iniMes } }],
       },

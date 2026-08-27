@@ -5,25 +5,43 @@ import { AgendaHerramientaController } from "../controller/AgendaHerramientaCont
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
 import { requireRoles } from "../middlewares/role.middleware";
-import { requireEmpresaScope } from "../middlewares/tenant.middleware";
+import {
+  requireConjuntoScope,
+  requireEmpresaScope,
+} from "../middlewares/tenant.middleware";
 
 const router = Router();
 const ctrl = new AgendaMaquinariaController();
 const ctrlHerr = new AgendaHerramientaController();
 
 router.use(authRequired);
-router.use(requireRoles("gerente", "jefe_operaciones"));
 router.use("/empresa/:empresaNit", requireEmpresaScope("empresaNit"));
+router.use("/conjunto/:conjuntoId", requireConjuntoScope("conjuntoId"));
 
 router.get(
   "/empresa/:empresaNit/maquinaria",
+  requireRoles("gerente", "jefe_operaciones"),
   requirePermission("maquinaria.ver"),
   ctrl.agendaGlobal,
 );
 router.get(
   "/empresa/:empresaNit/herramientas",
+  requireRoles("gerente", "jefe_operaciones"),
   requirePermission("herramientas.ver"),
   ctrlHerr.agendaGlobal,
+);
+
+router.get(
+  "/conjunto/:conjuntoId/maquinaria",
+  requireRoles("gerente", "jefe_operaciones", "supervisor"),
+  requirePermission("maquinaria.ver"),
+  ctrl.agendaConjunto,
+);
+router.get(
+  "/conjunto/:conjuntoId/herramientas",
+  requireRoles("gerente", "jefe_operaciones", "supervisor"),
+  requirePermission("herramientas.ver"),
+  ctrlHerr.agendaConjunto,
 );
 
 export default router;

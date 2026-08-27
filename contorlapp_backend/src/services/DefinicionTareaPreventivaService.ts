@@ -3954,39 +3954,9 @@ export class DefinicionTareaPreventivaService {
       return { ok: true, publicadas: 0, reservas: 0 };
     }
 
-    // rango del mes + buffer
-    const month0 = mes - 1;
-    const inicioMes = new Date(anio, month0, 1, 0, 0, 0, 0);
-    const finMes = new Date(anio, month0 + 1, 0, 23, 59, 59, 999);
-
-    const bufferDias = 20;
-    const inicioRangoFestivos = new Date(inicioMes);
-    inicioRangoFestivos.setDate(inicioRangoFestivos.getDate() - bufferDias);
-
-    const finRangoFestivos = new Date(finMes);
-    finRangoFestivos.setDate(finRangoFestivos.getDate() + bufferDias);
-
-    const festivosSet = await getFestivosSet({
-      prisma: this.prisma,
-      pais: "CO",
-      inicio: inicioRangoFestivos,
-      fin: finRangoFestivos,
-    });
-
-    const reservasResp = await this.crearReservasPlanificadasParaTareas({
-      conjuntoId,
-      tareas: borradores.map((t) => ({
-        id: t.id,
-        grupoPlanId: t.grupoPlanId ?? null,
-        fechaInicio: t.fechaInicio,
-        fechaFin: t.fechaFin,
-        maquinariaPlanJson: t.maquinariaPlanJson,
-        descripcion: t.descripcion,
-      })),
-      diasEntregaRecogida: DIAS_ENTREGA_RECOGIDA,
-      excluirTareaIds: [],
-      festivosSet,
-    });
+    // Publicar solo materializa las tareas y sus necesidades por tipo. La
+    // maquina concreta se reserva despues desde el cronograma de maquinaria,
+    // donde se valida disponibilidad entre todos los conjuntos de la empresa.
 
     await this.prisma.tarea.updateMany({
       where: {
@@ -4020,7 +3990,7 @@ export class DefinicionTareaPreventivaService {
       periodoMes: mes,
       metadataJson: {
         publicadas: borradores.length,
-        reservas: reservasResp?.creadas ?? 0,
+        reservas: 0,
         tareaIds: borradores.map((tarea: any) => tarea.id),
       },
     });
@@ -4028,7 +3998,7 @@ export class DefinicionTareaPreventivaService {
     return {
       ok: true,
       publicadas: borradores.length,
-      reservas: reservasResp?.creadas ?? 0,
+      reservas: 0,
       excluidasDescartadas: 0,
     };
   }
@@ -5766,32 +5736,6 @@ export class DefinicionTareaPreventivaService {
       if (conflicto) {
         const nombre = await getOperarioNombre(this.prisma, conflicto.opId);
         throw new Error(`Solape de agenda con operario ${nombre}`);
-      }
-    }
-
-    if (fechaInicio && fechaFin) {
-      const maqIds = Array.from(new Set(parseMaquinariaIdsComprometidos(tarea.maquinariaPlanJson)));
-      if (maqIds.length) {
-        const disponibilidad = await this.listarMaquinariaDisponible({
-          conjuntoId,
-          fechaInicioUso: fechaInicio,
-          fechaFinUso: fechaFin,
-          excluirTareaId: tareaId,
-          excluirGrupoPlanId: tarea.grupoPlanId ?? undefined,
-        });
-        if (disponibilidad.ok) {
-          const conflictos = (disponibilidad.conflictos ?? []).filter((item) =>
-            maqIds.includes(item.maquinariaId),
-          );
-          if (conflictos.length) {
-            const primero = conflictos[0];
-            throw buildMaquinariaNoDisponibleError({
-              maquinariaId: primero.maquinariaId,
-              maquinaNombre: primero.maquinaNombre ?? undefined,
-              conflictos,
-            });
-          }
-        }
       }
     }
 

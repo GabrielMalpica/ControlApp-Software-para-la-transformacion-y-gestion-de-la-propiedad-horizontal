@@ -300,12 +300,18 @@ export class CronogramaMaquinariaService {
       );
     }
 
-    const maquinaria = await this.prisma.maquinaria.findUnique({
-      where: { id: dto.maquinariaId },
+    const maquinaria = await this.prisma.maquinaria.findFirst({
+      where: {
+        id: dto.maquinariaId,
+        OR: [
+          { empresaId: this.empresaId },
+          { conjuntoPropietario: { empresaId: this.empresaId } },
+        ],
+      },
       select: { id: true, nombre: true, marca: true, tipo: true, estado: true },
     });
     if (!maquinaria) {
-      throw new Error("La maquinaria seleccionada no existe.");
+      throw new Error("La maquinaria seleccionada no existe para esta empresa.");
     }
     if (maquinaria.estado !== EstadoMaquinaria.OPERATIVA) {
       throw new Error(
@@ -324,6 +330,36 @@ export class CronogramaMaquinariaService {
       throw new Error(
         `${maquinaria.nombre} es de tipo ${maquinaria.tipo} y estas tareas no requieren ese tipo de máquina.`,
       );
+    }
+
+    const cantidadRequerida = tareas.reduce(
+      (total, tarea) =>
+        total +
+        parseNecesidadesMaquinaria(tarea.maquinariaPlanJson)
+          .filter((necesidad) => necesidad.tipo === maquinaria.tipo)
+          .reduce((suma, necesidad) => suma + necesidad.cantidad, 0),
+      0,
+    );
+    const [asignacionesExistentes, mismaMaquinaAsignada] = await Promise.all([
+      this.prisma.usoMaquinaria.count({
+        where: {
+          tareaId: { in: tareas.map((tarea) => tarea.id) },
+          maquinaria: { tipo: maquinaria.tipo },
+        },
+      }),
+      this.prisma.usoMaquinaria.count({
+        where: {
+          tareaId: { in: tareas.map((tarea) => tarea.id) },
+          maquinariaId: maquinaria.id,
+        },
+      }),
+    ]);
+
+    if (mismaMaquinaAsignada > 0) {
+      throw new Error(`${maquinaria.nombre} ya está asignada a esta necesidad.`);
+    }
+    if (asignacionesExistentes >= cantidadRequerida) {
+      throw new Error("La necesidad de maquinaria ya está completamente cubierta.");
     }
 
     const inicioUso = new Date(

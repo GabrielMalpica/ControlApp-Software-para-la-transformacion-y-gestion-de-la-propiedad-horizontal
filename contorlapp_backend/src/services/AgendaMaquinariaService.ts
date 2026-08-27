@@ -6,6 +6,7 @@ type AgendaParams = {
   anio: number;
   mes: number; // 1..12
   tipo?: string;
+  conjuntoId?: string;
 };
 
 type MaqSel = {
@@ -14,6 +15,9 @@ type MaqSel = {
   tipo: any;
   marca: string;
   estado: any;
+  propietarioTipo: any;
+  empresaId: string | null;
+  conjuntoPropietarioId: string | null;
 };
 
 type UsoSel = {
@@ -242,18 +246,42 @@ export class AgendaMaquinariaService {
   // ✅ AGENDA GLOBAL (CORRECTA)
   // =========================================================
   async agendaGlobalPorMaquina(params: AgendaParams) {
-    const { empresaNit, anio, mes, tipo } = params;
+    const { empresaNit, anio, mes, tipo, conjuntoId } = params;
 
     const iniMes = this.startOfMonth(anio, mes);
     const finMes = this.endOfMonth(anio, mes);
 
     const maquinas: MaqSel[] = await this.prisma.maquinaria.findMany({
       where: {
-        empresaId: empresaNit,
-        propietarioTipo: "EMPRESA",
+        OR: conjuntoId
+          ? [
+              { conjuntoPropietarioId: conjuntoId },
+              {
+                usoMaquinarias: {
+                  some: {
+                    tarea: { conjuntoId },
+                    fechaInicio: { lt: finMes },
+                    OR: [{ fechaFin: null }, { fechaFin: { gt: iniMes } }],
+                  },
+                },
+              },
+            ]
+          : [
+              { empresaId: empresaNit },
+              { conjuntoPropietario: { empresaId: empresaNit } },
+            ],
         ...(tipo ? { tipo: tipo as any } : {}),
       },
-      select: { id: true, nombre: true, tipo: true, marca: true, estado: true },
+      select: {
+        id: true,
+        nombre: true,
+        tipo: true,
+        marca: true,
+        estado: true,
+        propietarioTipo: true,
+        empresaId: true,
+        conjuntoPropietarioId: true,
+      },
       orderBy: [{ tipo: "asc" }, { nombre: "asc" }],
     });
 
@@ -265,6 +293,7 @@ export class AgendaMaquinariaService {
     const usos: UsoSel[] = await this.prisma.usoMaquinaria.findMany({
       where: {
         maquinariaId: { in: maqIds },
+        ...(conjuntoId ? { tarea: { conjuntoId } } : {}),
         fechaInicio: { lt: finMes },
         OR: [{ fechaFin: null }, { fechaFin: { gt: iniMes } }],
       },

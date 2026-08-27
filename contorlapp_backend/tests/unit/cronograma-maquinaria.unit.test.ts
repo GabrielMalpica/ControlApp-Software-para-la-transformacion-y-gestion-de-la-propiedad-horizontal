@@ -50,11 +50,12 @@ function construirPrisma(overrides: Record<string, any> = {}) {
     tarea: { findMany: jest.fn().mockResolvedValue([]) },
     maquinaria: {
       findMany: jest.fn().mockResolvedValue([]),
-      findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     usoMaquinaria: {
       findFirst: jest.fn().mockResolvedValue(null),
       findUnique: jest.fn().mockResolvedValue(null),
+      count: jest.fn().mockResolvedValue(0),
     },
     auditoriaEvento: {
       create: jest.fn(async ({ data }: any) => {
@@ -201,7 +202,7 @@ describe('CronogramaMaquinariaService', () => {
     test('PU-CM5 - crea un único uso sobre la tarea representante y audita', async () => {
       const prisma = construirPrisma();
       prisma.tarea.findMany.mockResolvedValue([tarea({ id: 501 }), tarea({ id: 502 })]);
-      prisma.maquinaria.findUnique.mockResolvedValue(maquinaGuadania);
+      prisma.maquinaria.findFirst.mockResolvedValue(maquinaGuadania);
 
       const service = new CronogramaMaquinariaService(prisma, EMPRESA, ACTOR);
       const out: any = await service.asignarMaquinaria({
@@ -227,7 +228,7 @@ describe('CronogramaMaquinariaService', () => {
     test('PU-CM6 - rechaza una máquina de tipo distinto al requerido', async () => {
       const prisma = construirPrisma();
       prisma.tarea.findMany.mockResolvedValue([tarea()]);
-      prisma.maquinaria.findUnique.mockResolvedValue({
+      prisma.maquinaria.findFirst.mockResolvedValue({
         ...maquinaGuadania,
         id: 30,
         nombre: 'Taladro',
@@ -244,7 +245,7 @@ describe('CronogramaMaquinariaService', () => {
     test('PU-CM7 - rechaza una máquina que no está operativa', async () => {
       const prisma = construirPrisma();
       prisma.tarea.findMany.mockResolvedValue([tarea()]);
-      prisma.maquinaria.findUnique.mockResolvedValue({
+      prisma.maquinaria.findFirst.mockResolvedValue({
         ...maquinaGuadania,
         estado: EstadoMaquinaria.EN_REPARACION,
       });
@@ -259,7 +260,7 @@ describe('CronogramaMaquinariaService', () => {
     test('PU-CM8 - un solape en la ventana logística lanza el error 409 de maquinaria', async () => {
       const prisma = construirPrisma();
       prisma.tarea.findMany.mockResolvedValue([tarea()]);
-      prisma.maquinaria.findUnique.mockResolvedValue(maquinaGuadania);
+      prisma.maquinaria.findFirst.mockResolvedValue(maquinaGuadania);
       prisma.usoMaquinaria.findFirst.mockResolvedValue({
         id: 88,
         fechaInicio: new Date(2026, 2, 4),
@@ -291,7 +292,7 @@ describe('CronogramaMaquinariaService', () => {
         tarea({ id: 501, conjuntoId: '9001' }),
         tarea({ id: 502, conjuntoId: '9002' }),
       ]);
-      prisma.maquinaria.findUnique.mockResolvedValue(maquinaGuadania);
+      prisma.maquinaria.findFirst.mockResolvedValue(maquinaGuadania);
 
       const service = new CronogramaMaquinariaService(prisma, EMPRESA, ACTOR);
 
@@ -299,10 +300,43 @@ describe('CronogramaMaquinariaService', () => {
         service.asignarMaquinaria({ tareaIds: [501, 502], maquinariaId: 12 }),
       ).rejects.toThrow(/mismo conjunto/i);
     });
+
+    test('PU-CM10 - rechaza maquinaria que no pertenece a la empresa', async () => {
+      const prisma = construirPrisma();
+      prisma.tarea.findMany.mockResolvedValue([tarea()]);
+      prisma.maquinaria.findFirst.mockResolvedValue(null);
+
+      const service = new CronogramaMaquinariaService(prisma, EMPRESA, ACTOR);
+
+      await expect(
+        service.asignarMaquinaria({ tareaIds: [501], maquinariaId: 999 }),
+      ).rejects.toThrow(/no existe para esta empresa/i);
+      expect(prisma.maquinaria.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 999 }),
+        }),
+      );
+    });
+
+    test('PU-CM11 - no permite sobreasignar una necesidad ya cubierta', async () => {
+      const prisma = construirPrisma();
+      prisma.tarea.findMany.mockResolvedValue([tarea()]);
+      prisma.maquinaria.findFirst.mockResolvedValue(maquinaGuadania);
+      prisma.usoMaquinaria.count
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(0);
+
+      const service = new CronogramaMaquinariaService(prisma, EMPRESA, ACTOR);
+
+      await expect(
+        service.asignarMaquinaria({ tareaIds: [501], maquinariaId: 12 }),
+      ).rejects.toThrow(/completamente cubierta/i);
+      expect(prisma.tx.usoMaquinaria.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('liberarAsignacion', () => {
-    test('PU-CM10 - borra el uso, suelta la asignación del conjunto y audita', async () => {
+    test('PU-CM12 - borra el uso, suelta la asignación del conjunto y audita', async () => {
       const prisma = construirPrisma();
       prisma.usoMaquinaria.findUnique.mockResolvedValue({
         id: 9001,
@@ -329,7 +363,7 @@ describe('CronogramaMaquinariaService', () => {
       expect(prisma.auditorias[0].accion).toBe('LIBERAR_MAQUINARIA');
     });
 
-    test('PU-CM11 - rechaza una asignación de otra empresa', async () => {
+    test('PU-CM13 - rechaza una asignación de otra empresa', async () => {
       const prisma = construirPrisma();
       prisma.usoMaquinaria.findUnique.mockResolvedValue({
         id: 9001,

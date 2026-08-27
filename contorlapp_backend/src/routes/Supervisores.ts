@@ -5,6 +5,7 @@ import { requirePermission } from "../middlewares/permission.middleware";
 import { requireRoles } from "../middlewares/role.middleware";
 import { uploadEvidencias } from "../middlewares/upload_evidencias";
 import { requireResourceScope } from "../middlewares/tenant.middleware";
+import { taskClosingRateLimit } from "../middlewares/task-closing-rate-limit.middleware";
 
 const router = Router();
 const ctrl = new SupervisorController();
@@ -22,6 +23,7 @@ router.post(
   requireRoles("supervisor", "gerente", "jefe_operaciones"),
   requirePermission("tareas.cerrar"),
   requireResourceScope("tarea", "id"),
+  taskClosingRateLimit,
   uploadEvidencias.array("files", 10),
   ctrl.cerrarTarea,
 );
