@@ -13,6 +13,7 @@ class CronogramaInformeJerarquico extends StatelessWidget {
   final bool filtrarSemana;
   final ValueChanged<bool> onFiltrarSemanaChanged;
   final Widget? encabezado;
+  final Widget? piePagina;
 
   const CronogramaInformeJerarquico({
     super.key,
@@ -23,6 +24,7 @@ class CronogramaInformeJerarquico extends StatelessWidget {
     required this.filtrarSemana,
     required this.onFiltrarSemanaChanged,
     this.encabezado,
+    this.piePagina,
   });
 
   Color _estadoColor(CronogramaInformeResumen resumen) {
@@ -775,6 +777,7 @@ class CronogramaInformeJerarquico extends StatelessWidget {
           emptyLabel: 'Sin trabajadores para los filtros seleccionados.',
         ),
         _arbolUbicaciones(data),
+        if (piePagina != null) piePagina!,
         const SizedBox(height: 16),
       ],
     );

@@ -42,6 +42,7 @@ class AuthApi {
       correo: result.user.correo,
       nombre: result.user.nombre,
       userId: result.user.id,
+      empresaId: result.user.empresaId,
       permissions: result.user.permissions,
       requiereCambioContrasena: result.user.requiereCambioContrasena,
     );
@@ -63,6 +64,7 @@ class AuthApi {
       correo: user.correo,
       nombre: user.nombre,
       userId: user.id,
+      empresaId: user.empresaId,
       permissions: user.permissions,
       requiereCambioContrasena: user.requiereCambioContrasena,
     );

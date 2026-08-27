@@ -3,7 +3,6 @@ import 'package:flutter_application_1/api/agenda_api.dart';
 import 'package:flutter_application_1/api/herramienta_api.dart';
 import 'package:flutter_application_1/model/agenda_herramienta_model.dart';
 import 'package:flutter_application_1/model/herramienta_model.dart';
-import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
@@ -43,8 +42,8 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
   Future<List<AgendaHerramientaLite>> _cargarCatalogo() async {
     final results = await Future.wait([
       _herrApi.listarStockConjunto(nitConjunto: widget.conjuntoId),
-      _agendaApi.agendaGlobalHerramientas(
-        empresaNit: AppConstants.empresaNit,
+      _agendaApi.agendaHerramientasConjunto(
+        conjuntoId: widget.conjuntoId,
         anio: _month.year,
         mes: _month.month,
       ),

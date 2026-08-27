@@ -142,6 +142,13 @@ String? extractDriveId(String input) {
   return null;
 }
 
+/// Los enlaces de Drive (thumbnail/uc/googleusercontent) no traen cabecera
+/// Access-Control-Allow-Origin, así que el navegador los bloquea por CORS al
+/// cargarlos directamente desde la app web. En su lugar, el backend expone
+/// un proxy autenticado que sí permite el origen de la app.
+String evidenciaProxyUrl(String driveId) =>
+    '${AppConstants.baseUrl}/evidencias/$driveId';
+
 List<String> evidenceUrlCandidates(String raw) {
   final clean = normalizeEvidenceRaw(raw);
   final out = <String>[];
@@ -155,32 +162,20 @@ List<String> evidenceUrlCandidates(String raw) {
     out.add(normalized);
   }
 
-  for (final url in extractEvidenceUrls(clean)) {
-    final absolute = _absoluteEvidenceUrl(url);
-    if (absolute != null) {
-      add(absolute);
-      continue;
+  void addForUrl(String url) {
+    final driveId = extractDriveId(url);
+    if (driveId != null) {
+      add(evidenciaProxyUrl(driveId));
+      return;
     }
-    if (extractDriveId(url) == null) add(url);
+    add(_absoluteEvidenceUrl(url));
   }
 
-  final absolute = _absoluteEvidenceUrl(clean);
-  add(absolute);
-
-  final driveId = extractDriveId(clean);
-  if (driveId != null) {
-    add('https://drive.google.com/thumbnail?id=$driveId&sz=w2000');
-    add('https://drive.google.com/uc?export=view&id=$driveId');
-    add('https://drive.google.com/uc?export=download&id=$driveId');
-    add('https://lh3.googleusercontent.com/d/$driveId=w2000');
-    add('https://lh3.googleusercontent.com/d/$driveId=s2000');
-    add(
-      'https://drive.usercontent.google.com/download?id=$driveId&export=view',
-    );
-    add(
-      'https://drive.usercontent.google.com/download?id=$driveId&export=download',
-    );
+  for (final url in extractEvidenceUrls(clean)) {
+    addForUrl(url);
   }
+
+  if (out.isEmpty) addForUrl(clean);
 
   return out;
 }

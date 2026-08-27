@@ -1,4 +1,4 @@
-// ignore_for_file: curly_braces_in_flow_control_structures, prefer_interpolation_to_compose_strings
+﻿// ignore_for_file: curly_braces_in_flow_control_structures, prefer_interpolation_to_compose_strings
 
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -14,8 +14,12 @@ import 'package:flutter_application_1/model/reporte_model.dart';
 import 'package:flutter_application_1/pdf/pdf_download.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/chart_capture.dart';
+import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/utils/duration_format.dart';
+import 'package:flutter_application_1/utils/evidence_utils.dart';
+import 'package:flutter_application_1/widgets/evidencia_gallery.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -431,88 +435,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     };
   }
 
-  String _normalizeEvidenceRaw(String raw) {
-    var s = raw.trim();
-    if ((s.startsWith('"') && s.endsWith('"')) ||
-        (s.startsWith("'") && s.endsWith("'"))) {
-      s = s.substring(1, s.length - 1).trim();
-    }
-    return s
-        .replaceAll(r'\u003d', '=')
-        .replaceAll(r'\u0026', '&')
-        .replaceAll('&amp;', '&')
-        .replaceAll('\\/', '/')
-        .replaceAll(RegExp(r'[,.;]+$'), '');
-  }
-
-  List<String> _extractHttpUrls(String text) {
-    final matches = RegExp(
-      r'https?:\/\/[^\s<>"\]\[)]+',
-      caseSensitive: false,
-    ).allMatches(text);
-    return matches.map((m) => text.substring(m.start, m.end)).toList();
-  }
-
-  String? _extractDriveId(String input) {
-    final s = _normalizeEvidenceRaw(input);
-    final directId = RegExp(r'^[a-zA-Z0-9_-]{20,}$').firstMatch(s);
-    if (directId != null) return directId.group(0);
-
-    final uri = Uri.tryParse(s);
-    final qpId = uri?.queryParameters['id'];
-    if (qpId != null && qpId.trim().isNotEmpty) return qpId.trim();
-
-    final patterns = [
-      RegExp(r'/d/([a-zA-Z0-9_-]{20,})'),
-      RegExp(r'id=([a-zA-Z0-9_-]{20,})'),
-      RegExp(r'file/d/([a-zA-Z0-9_-]{20,})'),
-    ];
-    for (final p in patterns) {
-      final m = p.firstMatch(s);
-      if (m != null && m.groupCount >= 1) return m.group(1);
-    }
-    return null;
-  }
-
-  List<String> _evidenceUrlCandidates(String raw) {
-    final clean = _normalizeEvidenceRaw(raw);
-    final out = <String>[];
-    final seen = <String>{};
-
-    void add(String? u) {
-      if (u == null) return;
-      final v = _normalizeEvidenceRaw(u);
-      if (v.isEmpty || seen.contains(v)) return;
-      seen.add(v);
-      out.add(v);
-    }
-
-    final urls = _extractHttpUrls(clean);
-    if (urls.isNotEmpty) {
-      for (final u in urls) {
-        add(u);
-      }
-    } else if (clean.startsWith('http://') || clean.startsWith('https://')) {
-      add(clean);
-    }
-
-    final driveId = _extractDriveId(clean);
-    if (driveId != null) {
-      add('https://drive.google.com/thumbnail?id=$driveId&sz=w2000');
-      add('https://drive.google.com/uc?export=view&id=$driveId');
-      add('https://drive.google.com/uc?export=download&id=$driveId');
-      add('https://lh3.googleusercontent.com/d/$driveId=w2000');
-      add('https://lh3.googleusercontent.com/d/$driveId=s2000');
-      add(
-        'https://drive.usercontent.google.com/download?id=$driveId&export=view',
-      );
-      add(
-        'https://drive.usercontent.google.com/download?id=$driveId&export=download',
-      );
-    }
-
-    return out;
-  }
+  List<String> _evidenceUrlCandidates(String raw) => evidenceUrlCandidates(raw);
 
   String _normalizeConjuntoRef(String value) {
     return value.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
@@ -595,12 +518,19 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       final imageCache = <String, pw.ImageProvider>{};
       final evidenceImageByRaw = <String, pw.ImageProvider?>{};
 
+      final evidenceAuthToken = await SessionService().getToken();
+
       Future<pw.ImageProvider?> loadEvidenceImage(String raw) async {
         final candidates = _evidenceUrlCandidates(raw);
         for (final u in candidates) {
           if (imageCache.containsKey(u)) return imageCache[u];
           try {
-            final img = await networkImage(u);
+            final img = await networkImage(
+              u,
+              headers: u.startsWith(AppConstants.baseUrl)
+                  ? {'Authorization': 'Bearer $evidenceAuthToken'}
+                  : null,
+            );
             imageCache[u] = img;
             return img;
           } catch (_) {
@@ -1742,12 +1672,19 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       final imageCache = <String, pw.ImageProvider>{};
       final evidenceImageByRaw = <String, pw.ImageProvider?>{};
 
+      final evidenceAuthToken = await SessionService().getToken();
+
       Future<pw.ImageProvider?> loadEvidenceImage(String raw) async {
         final candidates = _evidenceUrlCandidates(raw);
         for (final u in candidates) {
           if (imageCache.containsKey(u)) return imageCache[u];
           try {
-            final img = await networkImage(u);
+            final img = await networkImage(
+              u,
+              headers: u.startsWith(AppConstants.baseUrl)
+                  ? {'Authorization': 'Bearer $evidenceAuthToken'}
+                  : null,
+            );
             imageCache[u] = img;
             return img;
           } catch (_) {
@@ -5083,7 +5020,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                             context: context,
                             builder: (_) => Dialog(
                               child: InteractiveViewer(
-                                child: _EvidenceImage(
+                                child: EvidenceImage(
                                   urls: candidates,
                                   fit: BoxFit.contain,
                                   fallback: const Center(
@@ -5100,7 +5037,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                             width: 150,
                             height: 110,
                             color: Colors.black12,
-                            child: _EvidenceImage(
+                            child: EvidenceImage(
                               urls: candidates,
                               fit: BoxFit.cover,
                               fallback: const Center(
@@ -5367,42 +5304,6 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           color: Colors.black87,
         ),
       ),
-    );
-  }
-}
-
-class _EvidenceImage extends StatelessWidget {
-  final List<String> urls;
-  final BoxFit fit;
-  final Widget fallback;
-
-  const _EvidenceImage({
-    required this.urls,
-    required this.fit,
-    required this.fallback,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cleanUrls = urls
-        .map((u) => u.trim())
-        .where((u) => u.isNotEmpty)
-        .toList();
-
-    return _buildFromIndex(cleanUrls, 0);
-  }
-
-  Widget _buildFromIndex(List<String> cleanUrls, int index) {
-    if (cleanUrls.isEmpty || index >= cleanUrls.length) {
-      return fallback;
-    }
-
-    final url = cleanUrls[index];
-    return Image.network(
-      url,
-      fit: fit,
-      webHtmlElementStrategy: WebHtmlElementStrategy.never,
-      errorBuilder: (_, __, ___) => _buildFromIndex(cleanUrls, index + 1),
     );
   }
 }

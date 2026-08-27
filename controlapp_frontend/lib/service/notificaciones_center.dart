@@ -23,6 +23,12 @@ class NotificacionesCenter with WidgetsBindingObserver {
   Duration _interval = const Duration(seconds: 60);
 
   Future<void> start({Duration interval = const Duration(seconds: 60)}) async {
+    final token = (await _session.getToken())?.trim();
+    if (token == null || token.isEmpty) {
+      stop();
+      return;
+    }
+
     final usuario = (await _session.getUserId())?.trim();
     if (usuario == null || usuario.isEmpty) return;
 
@@ -62,6 +68,13 @@ class NotificacionesCenter with WidgetsBindingObserver {
 
   Future<void> refresh() async {
     if (_cargando) return;
+
+    final token = (await _session.getToken())?.trim();
+    if (token == null || token.isEmpty) {
+      stop();
+      return;
+    }
+
     _cargando = true;
 
     try {

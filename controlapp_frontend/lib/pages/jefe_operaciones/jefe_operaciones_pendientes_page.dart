@@ -16,6 +16,7 @@ import 'package:flutter_application_1/utils/evidence_utils.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/permission_service.dart';
+import 'package:flutter_application_1/widgets/evidencia_gallery.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class JefeOperacionesPendientesPage extends StatefulWidget {
@@ -466,7 +467,7 @@ class _JefeOperacionesPendientesPageState
                                         ? () => _mostrarEvidencia(candidates)
                                         : null,
                                     child: isImg
-                                        ? _EvidenceImage(
+                                        ? EvidenceImage(
                                             urls: candidates,
                                             fit: BoxFit.cover,
                                             fallback: Center(
@@ -809,7 +810,7 @@ class _JefeOperacionesPendientesPageState
                     width: double.infinity,
                     color: Colors.black,
                     alignment: Alignment.center,
-                    child: _EvidenceImage(
+                    child: EvidenceImage(
                       urls: urls,
                       fit: BoxFit.contain,
                       fallback: const Center(
@@ -861,80 +862,3 @@ class _JefeOperacionesPendientesPageState
   }
 }
 
-class _EvidenceImage extends StatefulWidget {
-  final List<String> urls;
-  final BoxFit fit;
-  final Widget fallback;
-
-  const _EvidenceImage({
-    required this.urls,
-    required this.fit,
-    required this.fallback,
-  });
-
-  @override
-  State<_EvidenceImage> createState() => _EvidenceImageState();
-}
-
-class _EvidenceImageState extends State<_EvidenceImage> {
-  int _index = 0;
-  bool _advanceScheduled = false;
-
-  void _tryNext() {
-    if (_advanceScheduled) return;
-    _advanceScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() {
-        _index++;
-        _advanceScheduled = false;
-      });
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cleanUrls = widget.urls
-        .map((url) => url.trim())
-        .where((url) => url.isNotEmpty)
-        .toList();
-
-    if (cleanUrls.isEmpty || _index >= cleanUrls.length) {
-      return widget.fallback;
-    }
-
-    final url = cleanUrls[_index];
-    final driveLike =
-        url.contains('drive.google.com') ||
-        url.contains('drive.usercontent.google.com') ||
-        url.contains('googleusercontent.com');
-
-    return Image.network(
-      url,
-      fit: widget.fit,
-      webHtmlElementStrategy: driveLike
-          ? WebHtmlElementStrategy.prefer
-          : WebHtmlElementStrategy.never,
-      loadingBuilder: (context, child, progress) {
-        if (progress == null) return child;
-        return const Center(
-          child: SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        );
-      },
-      errorBuilder: (_, __, ___) {
-        _tryNext();
-        return const Center(
-          child: SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        );
-      },
-    );
-  }
-}

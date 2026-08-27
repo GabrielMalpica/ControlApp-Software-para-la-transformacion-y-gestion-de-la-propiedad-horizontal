@@ -4721,10 +4721,15 @@ class _CronogramaPreventivasBorradorPageState
                                       },
                                     ),
                                   FilledButton.tonalIcon(
-                                    onPressed: null,
-                                    icon: const Icon(Icons.free_breakfast),
-                                    label: const Text(
-                                      'Solo división por almuerzo',
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      _dividirExcluidaEnMinutos(item);
+                                    },
+                                    icon: const Icon(Icons.call_split),
+                                    label: Text(
+                                      item.tieneDivisionManual
+                                          ? 'Redefinir división'
+                                          : 'Dividir en minutos',
                                     ),
                                   ),
                                   FilledButton.tonalIcon(
@@ -8309,12 +8314,17 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                       },
                                     ),
                                   FilledButton.tonalIcon(
-                                    onPressed: null,
+                                    onPressed: () =>
+                                        widget.onDividirExcluida(item),
                                     icon: const Icon(
-                                      Icons.free_breakfast,
+                                      Icons.call_split,
                                       size: 16,
                                     ),
-                                    label: const Text('Solo por almuerzo'),
+                                    label: Text(
+                                      item.tieneDivisionManual
+                                          ? 'Redefinir'
+                                          : 'Dividir',
+                                    ),
                                   ),
                                   FilledButton.tonalIcon(
                                     onPressed: () => widget

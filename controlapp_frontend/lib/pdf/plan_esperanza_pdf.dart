@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_application_1/model/plan_esperanza_model.dart';
+import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/utils/evidence_utils.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -360,10 +362,16 @@ Future<pw.ImageProvider?> _loadEvidenceImage(
   String raw,
   Map<String, pw.ImageProvider> imageCache,
 ) async {
+  final token = await SessionService().getToken();
   for (final url in _pdfEvidenceUrlCandidates(raw)) {
     if (imageCache.containsKey(url)) return imageCache[url];
     try {
-      final image = await networkImage(url);
+      final image = await networkImage(
+        url,
+        headers: url.startsWith(AppConstants.baseUrl)
+            ? {'Authorization': 'Bearer $token'}
+            : null,
+      );
       imageCache[url] = image;
       return image;
     } catch (_) {}
@@ -372,14 +380,6 @@ Future<pw.ImageProvider?> _loadEvidenceImage(
 }
 
 List<String> _pdfEvidenceUrlCandidates(String raw) {
-  final driveId = extractDriveId(raw);
-  if (driveId != null) {
-    return <String>[
-      'https://drive.google.com/thumbnail?id=$driveId&sz=w1000',
-      'https://lh3.googleusercontent.com/d/$driveId=w1000',
-      'https://drive.usercontent.google.com/download?id=$driveId&export=view',
-    ];
-  }
   final urls = evidenceUrlCandidates(raw);
   return urls.length <= 3 ? urls : urls.take(3).toList();
 }

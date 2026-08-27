@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/agenda_api.dart';
+import 'package:flutter_application_1/api/cronograma_maquinaria_api.dart';
 import 'package:flutter_application_1/model/agenda_model.dart';
 import 'package:flutter_application_1/model/maquinaria_model.dart';
+import 'package:flutter_application_1/model/necesidad_maquinaria_model.dart';
+import 'package:flutter_application_1/pages/gerente/cronograma_maquinaria_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -17,12 +20,14 @@ class AgendaMaquinariaGlobalExcelPage extends StatefulWidget {
 class _AgendaMaquinariaGlobalExcelPageState
     extends State<AgendaMaquinariaGlobalExcelPage> {
   final _api = AgendaApi();
+  final _cronogramaApi = CronogramaMaquinariaApi();
 
   late int _anio;
   late int _mes;
 
   bool _loading = false;
   AgendaGlobalResponse? _data;
+  int _necesidadesPendientes = 0;
 
   int _selectedIndex = 0;
   String _maquinariaQuery = '';
@@ -39,14 +44,29 @@ class _AgendaMaquinariaGlobalExcelPageState
   Future<void> _cargar() async {
     setState(() => _loading = true);
     try {
-      final r = await _api.agendaGlobalMaquinaria(
-        empresaNit: widget.empresaNit,
-        anio: _anio,
-        mes: _mes,
-      );
+      final results = await Future.wait([
+        _api.agendaGlobalMaquinaria(
+          empresaNit: widget.empresaNit,
+          anio: _anio,
+          mes: _mes,
+        ),
+        _cronogramaApi.listarNecesidades(
+          empresaNit: widget.empresaNit,
+          anio: _anio,
+          mes: _mes,
+          soloPendientes: true,
+        ),
+      ]);
+      final r = results[0] as AgendaGlobalResponse;
+      final necesidades =
+          (results[1] as CronogramaMaquinariaResponse).necesidades;
       if (!mounted) return;
       setState(() {
         _data = r;
+        _necesidadesPendientes = necesidades.fold<int>(
+          0,
+          (total, item) => total + item.pendientes,
+        );
         _selectedIndex = 0;
       });
     } catch (e) {
@@ -58,6 +78,15 @@ class _AgendaMaquinariaGlobalExcelPageState
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _abrirNecesidades() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => CronogramaMaquinariaPage(empresaNit: widget.empresaNit),
+      ),
+    );
+    if (mounted) await _cargar();
   }
 
   @override
@@ -77,10 +106,24 @@ class _AgendaMaquinariaGlobalExcelPageState
     if (_selectedIndex >= blocks.length) _selectedIndex = 0;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Agenda global de maquinaria')),
+      appBar: AppBar(
+        title: const Text('Agenda global de maquinaria'),
+        actions: [
+          TextButton.icon(
+            onPressed: _loading ? null : _abrirNecesidades,
+            icon: const Icon(Icons.assignment_outlined),
+            label: Text(
+              _necesidadesPendientes == 0
+                  ? 'Necesidades'
+                  : 'Necesidades ($_necesidadesPendientes)',
+            ),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           _filtros(),
+          _estadoNecesidades(),
           if (_loading) const LinearProgressIndicator(),
           Expanded(
             child: blocks.isEmpty
@@ -117,6 +160,49 @@ class _AgendaMaquinariaGlobalExcelPageState
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _estadoNecesidades() {
+    final pendientes = _necesidadesPendientes;
+    return InkWell(
+      onTap: _loading ? null : _abrirNecesidades,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: pendientes > 0
+              ? Colors.orange.withValues(alpha: 0.10)
+              : Colors.green.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: pendientes > 0
+                ? Colors.orange.shade300
+                : Colors.green.shade300,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              pendientes > 0 ? Icons.pending_actions : Icons.check_circle,
+              color: pendientes > 0
+                  ? Colors.orange.shade800
+                  : Colors.green.shade700,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                pendientes > 0
+                    ? '$pendientes necesidad(es) de maquinaria pendientes de asignar.'
+                    : 'Todas las necesidades de maquinaria del mes están cubiertas.',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
       ),
     );
   }

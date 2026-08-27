@@ -13,6 +13,7 @@ import 'package:flutter_application_1/utils/evidence_utils.dart';
 import 'package:flutter_application_1/utils/pickers/camera_capture_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
+import 'package:flutter_application_1/widgets/evidencia_gallery.dart';
 import 'package:flutter_application_1/widgets/star_rating.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
@@ -2181,25 +2182,9 @@ class _CandidateNetworkImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cleanUrls = urls
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    return _buildFromIndex(cleanUrls, 0);
-  }
-
-  Widget _buildFromIndex(List<String> cleanUrls, int index) {
-    if (cleanUrls.isEmpty || index >= cleanUrls.length) {
-      return fallback;
-    }
-
-    return Image.network(
-      cleanUrls[index],
-      width: width,
-      height: height,
-      fit: fit,
-      errorBuilder: (_, __, ___) => _buildFromIndex(cleanUrls, index + 1),
-    );
+    final image = EvidenceImage(urls: urls, fit: fit, fallback: fallback);
+    if (width == null && height == null) return image;
+    return SizedBox(width: width, height: height, child: image);
   }
 }
 

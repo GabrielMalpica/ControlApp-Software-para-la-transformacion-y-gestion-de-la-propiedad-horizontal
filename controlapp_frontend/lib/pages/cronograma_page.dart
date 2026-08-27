@@ -3419,8 +3419,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
     }
   }
 
-  /// Sección del informe con las excluidas programadas posteriormente, las
-  /// tareas que se desplazaron para dar espacio y quién ejecutó cada acción.
+  /// Sección del informe (al pie) con las excluidas programadas
+  /// posteriormente, los cambios de operario y las que siguen pendientes,
+  /// presentadas como una sola tabla resumen.
   Widget _buildSeccionInformeExcluidas() {
     final programadas =
         ((_informeExcluidas['programadasPosteriormente'] as List?) ?? const [])
@@ -3446,103 +3447,199 @@ class _CronogramaPageState extends State<CronogramaPage> {
       return rol == null || rol.isEmpty ? nombre : '$nombre ($rol)';
     }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+    final filas = <_FilaExcluidaInforme>[
+      for (final item in programadas)
+        _FilaExcluidaInforme(
+          descripcion: (item['descripcion'] ?? '—').toString(),
+          estado: 'Reprogramada',
+          color: Colors.blue.shade700,
+          detalle:
+              (() {
+                final desplazadas =
+                    ((item['tareasDesplazadas'] as List?) ?? const [])
+                        .map((e) => Map<String, dynamic>.from(e as Map))
+                        .toList();
+                if (desplazadas.isEmpty) {
+                  return 'Se ubicó en un hueco libre, sin desplazar tareas.';
+                }
+                return desplazadas
+                    .map(
+                      (d) =>
+                          '${d['descripcion'] ?? '—'} '
+                          '(${(d['accion'] ?? '').toString().toLowerCase()})',
+                    )
+                    .join(' · ');
+              })(),
+          responsable: actorDe(item),
+        ),
+      for (final item in excepciones)
+        _FilaExcluidaInforme(
+          descripcion: (item['descripcion'] ?? '—').toString(),
+          estado: 'Cambio de operario',
+          color: Colors.purple.shade700,
+          detalle:
+              '${((item['operariosOriginales'] as List?) ?? const []).join(', ')} '
+              '→ ${((item['operariosNuevos'] as List?) ?? const []).join(', ')}',
+          responsable: actorDe(item),
+        ),
+      for (final item in pendientes)
+        _FilaExcluidaInforme(
+          descripcion: (item['descripcion'] ?? '—').toString(),
+          estado: 'Pendiente',
+          color: Colors.red.shade700,
+          detalle:
+              (item['motivoMensaje'] ?? item['motivoTipo'] ?? '—').toString(),
+          responsable: '—',
+        ),
+    ];
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade300),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .025),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Tareas excluidas del periodo',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-          ),
-          const SizedBox(height: 8),
-          if (programadas.isNotEmpty) ...[
-            const Text(
-              'Programadas posteriormente',
-              style: TextStyle(fontWeight: FontWeight.w700),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.withValues(alpha: .08),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(
+                    Icons.event_busy_outlined,
+                    color: Colors.indigo.shade700,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Tareas excluidas del periodo (${filas.length})',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Tareas que no quedaron programadas en su fecha original: cómo se resolvieron o por qué siguen pendientes.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            ...programadas.map((item) {
-              final desplazadas =
-                  ((item['tareasDesplazadas'] as List?) ?? const [])
-                      .map((e) => Map<String, dynamic>.from(e as Map))
-                      .toList();
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '• ${item['descripcion'] ?? '—'} — programada por ${actorDe(item)}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    if (desplazadas.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 14, top: 2),
+          ),
+          const Divider(height: 1),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowColor: WidgetStatePropertyAll(
+                Colors.blueGrey.shade50,
+              ),
+              headingTextStyle: TextStyle(
+                color: Colors.blueGrey.shade900,
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+              dataTextStyle: const TextStyle(fontSize: 12),
+              horizontalMargin: 16,
+              columnSpacing: 24,
+              border: TableBorder(
+                horizontalInside: BorderSide(color: Colors.grey.shade200),
+              ),
+              columns: const [
+                DataColumn(label: Text('Tarea')),
+                DataColumn(label: Text('Estado')),
+                DataColumn(label: Text('Detalle')),
+                DataColumn(label: Text('Responsable')),
+              ],
+              rows: filas.indexed.map((entry) {
+                final index = entry.$1;
+                final fila = entry.$2;
+                return DataRow(
+                  color: WidgetStatePropertyAll(
+                    index.isEven
+                        ? Colors.white
+                        : Colors.blueGrey.withValues(alpha: .025),
+                  ),
+                  cells: [
+                    DataCell(
+                      SizedBox(
+                        width: 220,
                         child: Text(
-                          'Se ubicó en un hueco libre, sin desplazar tareas.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade700,
+                          fila.descripcion,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                    DataCell(
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: fila.color.withValues(alpha: .09),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: fila.color.withValues(alpha: .28),
                           ),
                         ),
-                      )
-                    else
-                      ...desplazadas.map(
-                        (d) => Padding(
-                          padding: const EdgeInsets.only(left: 14, top: 2),
-                          child: Text(
-                            '↳ ${d['descripcion'] ?? '—'} — ${(d['accion'] ?? '').toString().toLowerCase()}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade800,
-                            ),
+                        child: Text(
+                          fila.estado,
+                          style: TextStyle(
+                            color: fila.color,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
+                    ),
+                    DataCell(
+                      SizedBox(
+                        width: 320,
+                        child: Text(
+                          fila.detalle,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                    DataCell(Text(fila.responsable)),
                   ],
-                ),
-              );
-            }),
-          ],
-          if (excepciones.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Excepciones de operario',
-              style: TextStyle(fontWeight: FontWeight.w700),
+                );
+              }).toList(),
             ),
-            const SizedBox(height: 4),
-            ...excepciones.map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  '• ${item['descripcion'] ?? '—'}: '
-                  '${((item['operariosOriginales'] as List?) ?? const []).join(', ')} → '
-                  '${((item['operariosNuevos'] as List?) ?? const []).join(', ')} '
-                  '(aplicado por ${actorDe(item)})',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            ),
-          ],
-          if (pendientes.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Pendientes por programar (${pendientes.length})',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-            ...pendientes.map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Text(
-                  '• ${item['descripcion'] ?? '—'} — ${item['motivoMensaje'] ?? item['motivoTipo'] ?? ''}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            ),
-          ],
-          const Divider(height: 24),
+          ),
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -4380,7 +4477,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
           setState(() => _informeFiltrarSemana = value);
           unawaited(_cargarInformeJerarquico());
         },
-        encabezado: _buildSeccionInformeExcluidas(),
+        piePagina: _buildSeccionInformeExcluidas(),
         onOperarioChanged: (operarioId) {
           setState(() => _informeOperarioId = operarioId);
           unawaited(_cargarInformeJerarquico());
@@ -4478,6 +4575,22 @@ class _CronogramaPageState extends State<CronogramaPage> {
       ),
     );
   }
+}
+
+class _FilaExcluidaInforme {
+  final String descripcion;
+  final String estado;
+  final Color color;
+  final String detalle;
+  final String responsable;
+
+  const _FilaExcluidaInforme({
+    required this.descripcion,
+    required this.estado,
+    required this.color,
+    required this.detalle,
+    required this.responsable,
+  });
 }
 
 class _HorasGrupoResumen {

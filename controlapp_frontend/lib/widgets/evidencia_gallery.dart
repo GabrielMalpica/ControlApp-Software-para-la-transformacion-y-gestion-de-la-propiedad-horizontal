@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../service/app_constants.dart';
+import '../service/session_service.dart';
 import '../utils/evidence_utils.dart';
 
 /// Carga una imagen probando, en orden, cada URL candidata en [urls].
@@ -24,6 +26,19 @@ class EvidenceImage extends StatefulWidget {
 class _EvidenceImageState extends State<EvidenceImage> {
   int _index = 0;
   bool _advanceScheduled = false;
+  String? _token;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadToken();
+  }
+
+  Future<void> _loadToken() async {
+    final token = await SessionService().getToken();
+    if (!mounted) return;
+    setState(() => _token = token);
+  }
 
   void _tryNext() {
     if (_advanceScheduled) return;
@@ -56,18 +71,24 @@ class _EvidenceImageState extends State<EvidenceImage> {
       return widget.fallback;
     }
 
+    // El proxy de evidencias vive en nuestro propio backend y requiere el
+    // bearer token de sesión; las URLs externas (si las hay) no lo llevan.
     final url = cleanUrls[_index];
-    final driveLike =
-        url.contains('drive.google.com') ||
-        url.contains('drive.usercontent.google.com') ||
-        url.contains('googleusercontent.com');
+    final needsAuth = url.startsWith(AppConstants.baseUrl);
+    if (needsAuth && _token == null) {
+      return const Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
 
     return Image.network(
       url,
       fit: widget.fit,
-      webHtmlElementStrategy: driveLike
-          ? WebHtmlElementStrategy.prefer
-          : WebHtmlElementStrategy.never,
+      headers: needsAuth ? {'Authorization': 'Bearer $_token'} : null,
       loadingBuilder: (context, child, progress) {
         if (progress == null) return child;
         return const Center(

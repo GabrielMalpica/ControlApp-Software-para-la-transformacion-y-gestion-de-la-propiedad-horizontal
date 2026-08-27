@@ -11,6 +11,7 @@ class SessionService {
   static const _kCorreo = 'auth_correo';
   static const _kNombre = 'auth_nombre';
   static const _kUserId = 'auth_user_id';
+  static const _kEmpresaId = 'auth_empresa_id';
   static const _kPermissions = 'auth_permissions';
   static const _kRequirePasswordChange = 'auth_require_password_change';
 
@@ -20,6 +21,7 @@ class SessionService {
   static String? _memToken;
   static String? _memUserId;
   static String? _memRol;
+  static String? _memEmpresaId;
   static List<String>? _memPermissions;
   static bool? _memRequirePasswordChange;
 
@@ -29,6 +31,7 @@ class SessionService {
     required String correo,
     required String nombre,
     required String userId,
+    required String empresaId,
     List<String> permissions = const [],
     bool requiereCambioContrasena = false,
   }) async {
@@ -36,6 +39,7 @@ class SessionService {
     _memToken = token;
     _memRol = rol;
     _memUserId = userId;
+    _memEmpresaId = empresaId.trim();
     _memPermissions = [...permissions];
     _memRequirePasswordChange = requiereCambioContrasena;
 
@@ -43,13 +47,15 @@ class SessionService {
 
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
-      // El JWT web vive solo en memoria. Limpiamos cualquier valor legado que
-      // hubiera quedado expuesto en localStorage por versiones anteriores.
-      await prefs.remove(_kToken);
+      // El backend autentica con bearer token y no ofrece una cookie de
+      // renovacion. Persistirlo evita que una recarga conserve el perfil pero
+      // deje todas las peticiones sin Authorization.
+      await prefs.setString(_kToken, token);
       await prefs.setString(_kRol, rol);
       await prefs.setString(_kCorreo, correo);
       await prefs.setString(_kNombre, nombre);
       await prefs.setString(_kUserId, userId);
+      await prefs.setString(_kEmpresaId, empresaId.trim());
       await prefs.setString(_kPermissions, permissionsJson);
       await prefs.setBool(_kRequirePasswordChange, requiereCambioContrasena);
       return;
@@ -60,6 +66,7 @@ class SessionService {
     await _secure.write(key: _kCorreo, value: correo);
     await _secure.write(key: _kNombre, value: nombre);
     await _secure.write(key: _kUserId, value: userId);
+    await _secure.write(key: _kEmpresaId, value: empresaId.trim());
     await _secure.write(key: _kPermissions, value: permissionsJson);
     await _secure.write(
       key: _kRequirePasswordChange,
@@ -72,11 +79,13 @@ class SessionService {
     required String correo,
     required String nombre,
     required String userId,
+    required String empresaId,
     List<String> permissions = const [],
     bool requiereCambioContrasena = false,
   }) async {
     _memRol = rol;
     _memUserId = userId;
+    _memEmpresaId = empresaId.trim();
     _memPermissions = [...permissions];
     _memRequirePasswordChange = requiereCambioContrasena;
 
@@ -88,6 +97,7 @@ class SessionService {
       await prefs.setString(_kCorreo, correo);
       await prefs.setString(_kNombre, nombre);
       await prefs.setString(_kUserId, userId);
+      await prefs.setString(_kEmpresaId, empresaId.trim());
       await prefs.setString(_kPermissions, permissionsJson);
       await prefs.setBool(_kRequirePasswordChange, requiereCambioContrasena);
       return;
@@ -97,6 +107,7 @@ class SessionService {
     await _secure.write(key: _kCorreo, value: correo);
     await _secure.write(key: _kNombre, value: nombre);
     await _secure.write(key: _kUserId, value: userId);
+    await _secure.write(key: _kEmpresaId, value: empresaId.trim());
     await _secure.write(key: _kPermissions, value: permissionsJson);
     await _secure.write(
       key: _kRequirePasswordChange,
@@ -137,8 +148,8 @@ class SessionService {
     if (_memToken != null && _memToken!.isNotEmpty) return _memToken;
 
     if (kIsWeb) {
-      // Sin cookie HttpOnly/refresh token en el backend, una recarga exige login.
-      // Nunca se recupera el bearer token desde SharedPreferences/localStorage.
+      final prefs = await SharedPreferences.getInstance();
+      _memToken = prefs.getString(_kToken);
       return _memToken;
     }
 
@@ -157,6 +168,21 @@ class SessionService {
 
     _memUserId = await _secure.read(key: _kUserId);
     return _memUserId;
+  }
+
+  Future<String?> getEmpresaId() async {
+    if (_memEmpresaId != null && _memEmpresaId!.isNotEmpty) {
+      return _memEmpresaId;
+    }
+
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      _memEmpresaId = prefs.getString(_kEmpresaId)?.trim();
+      return _memEmpresaId;
+    }
+
+    _memEmpresaId = (await _secure.read(key: _kEmpresaId))?.trim();
+    return _memEmpresaId;
   }
 
   Future<String?> getRol() async {
@@ -212,6 +238,7 @@ class SessionService {
     _memToken = null;
     _memRol = null;
     _memUserId = null;
+    _memEmpresaId = null;
     _memPermissions = null;
     _memRequirePasswordChange = null;
 
@@ -222,6 +249,7 @@ class SessionService {
       await prefs.remove(_kCorreo);
       await prefs.remove(_kNombre);
       await prefs.remove(_kUserId);
+      await prefs.remove(_kEmpresaId);
       await prefs.remove(_kPermissions);
       await prefs.remove(_kRequirePasswordChange);
       return;
@@ -232,6 +260,7 @@ class SessionService {
     await _secure.delete(key: _kCorreo);
     await _secure.delete(key: _kNombre);
     await _secure.delete(key: _kUserId);
+    await _secure.delete(key: _kEmpresaId);
     await _secure.delete(key: _kPermissions);
     await _secure.delete(key: _kRequirePasswordChange);
   }
