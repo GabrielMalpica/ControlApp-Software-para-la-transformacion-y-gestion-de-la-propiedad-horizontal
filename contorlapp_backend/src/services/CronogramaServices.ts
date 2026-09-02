@@ -789,6 +789,12 @@ export class CronogramaService {
       const reubicada =
         fechaRealInicio != null &&
         dateKeyLocal(fechaRealInicio) !== dateKeyLocal(ocurrencia.fechaObjetivo);
+      const operariosEsperadosInforme = ocurrencia.operariosEsperadosIds
+        .map((id, index) => ({
+          id,
+          nombre: ocurrencia.operariosEsperadosNombres[index] ?? id,
+        }))
+        .filter((item) => !operarioId || item.id === operarioId);
 
       const ubicacion = ubicacionesMap.get(ocurrencia.ubicacionId) ?? {
         id: ocurrencia.ubicacionId,
@@ -823,20 +829,19 @@ export class CronogramaService {
         motivoCodigo:
           ocurrencia.motivoCodigo ?? (reubicada ? "REUBICADA_EN_PERIODO" : null),
         motivoMensaje: ocurrencia.motivoMensaje,
-        operariosEsperados: ocurrencia.operariosEsperadosIds.map((id, index) => ({
-          id,
-          nombre: ocurrencia.operariosEsperadosNombres[index] ?? id,
-        })),
+        operariosEsperados: operariosEsperadosInforme,
         bloques: bloques.map((tarea) => ({
           tareaId: tarea.id,
           fechaInicio: tarea.fechaInicio,
           fechaFin: tarea.fechaFin,
           duracionMinutos: tarea.duracionMinutos,
           estado: tarea.estado,
-          operarios: tarea.operarios.map((item) => ({
-            id: item.id,
-            nombre: item.usuario?.nombre ?? item.id,
-          })),
+          operarios: tarea.operarios
+            .filter((item) => !operarioId || item.id === operarioId)
+            .map((item) => ({
+              id: item.id,
+              nombre: item.usuario?.nombre ?? item.id,
+            })),
         })),
       });
     }

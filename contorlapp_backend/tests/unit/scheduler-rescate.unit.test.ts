@@ -746,6 +746,40 @@ describe('generarBorradorMensual - fase de rescate', () => {
     });
   });
 
+  test('PU-R5A - DIARIA genera una ocurrencia por jornada configurada, no por dia calendario', async () => {
+    const prisma = construirPrisma({
+      diasOcupados: [],
+      duracionMinutosFija: 60,
+      prioridad: 2,
+      diaMesProgramado: 2,
+    });
+    const [base] = await prisma.definicionTareaPreventiva.findMany();
+    prisma.definicionTareaPreventiva.findMany.mockResolvedValue([
+      {
+        ...base,
+        frecuencia: Frecuencia.DIARIA,
+        duracionMinutosFija: 60,
+      },
+    ]);
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    });
+
+    // Marzo de 2026 tiene 22 dias de lunes a viernes.
+    expect(prisma.tareasCreadas).toHaveLength(22);
+    expect(prisma.excluidasCreadas).toHaveLength(0);
+    expect(
+      prisma.tareasCreadas.every(
+        (tarea: any) =>
+          tarea.fechaInicio.getDay() >= 1 && tarea.fechaInicio.getDay() <= 5,
+      ),
+    ).toBe(true);
+  });
+
   test('PU-R6 - nunca repite una P3 DIARIA el mismo dia aunque la jornada no alcance para las 5', async () => {
     // Reproduce el caso real reportado: 5 definiciones P3 DIARIA con el mismo
     // operario y jornada de 8h, con duraciones muy dispares (igual que

@@ -4351,13 +4351,28 @@ export class DefinicionTareaPreventivaService {
     });
 
     const construirInfo = (lista: typeof defs): InfoDefinicion[] =>
-      lista.map((def) => ({
-        def,
-        prioridad: Number((def as any).prioridad ?? 2),
-        operariosIds: def.operarios.map((o) => o.id),
-        dias: pickDaysByFrecuencia(fechasDelMes, def),
-        durMin: estimarDuracionDefinicionMin(def, tamanoBloqueMinutos),
-      }));
+      lista.map((def) => {
+        const diasFrecuencia = pickDaysByFrecuencia(fechasDelMes, def);
+        // Una preventiva DIARIA representa una ejecucion por cada jornada
+        // laborable configurada. Generarla tambien en dias sin horario (por
+        // ejemplo sabado y domingo) creaba ocurrencias extra que luego
+        // intentaban repetirse en los dias habiles y terminaban excluidas.
+        const dias =
+          def.frecuencia === Frecuencia.DIARIA
+            ? diasFrecuencia.filter(
+                (dia) =>
+                  horariosPorDia.has(dateToDiaSemana(dia)) &&
+                  !festivosSet.has(dayKey(dia)),
+              )
+            : diasFrecuencia;
+        return {
+          def,
+          prioridad: Number((def as any).prioridad ?? 2),
+          operariosIds: def.operarios.map((o) => o.id),
+          dias,
+          durMin: estimarDuracionDefinicionMin(def, tamanoBloqueMinutos),
+        };
+      });
 
     const p1Info = construirInfo(
       defsValidas.filter((def) => Number((def as any).prioridad ?? 2) === 1),

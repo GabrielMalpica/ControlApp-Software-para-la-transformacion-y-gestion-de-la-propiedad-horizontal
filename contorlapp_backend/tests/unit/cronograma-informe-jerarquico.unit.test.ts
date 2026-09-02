@@ -129,5 +129,49 @@ describe("Informe jerárquico de cumplimiento", () => {
     expect(out.resumen.esperadas).toBe(1);
     expect(out.resumen.sinProgramar).toBe(1);
     expect(out.ubicaciones[0].definiciones[0].ocurrencias[0].id).toBe("occ-2");
+    expect(out.ubicaciones[0].definiciones[0].ocurrencias[0].operariosEsperados)
+      .toEqual([{ id: "op-2", nombre: "Luis" }]);
+  });
+
+  test("el filtro no conserva otros integrantes de una tarea compartida", async () => {
+    const compartida = {
+      ...ocurrencias[0],
+      operariosEsperadosIds: ["op-1", "op-2"],
+      operariosEsperadosNombres: ["Ana", "Luis"],
+    };
+    const prisma = prismaMock();
+    prisma.preventivaOcurrenciaPlan.findMany.mockResolvedValue([compartida]);
+    prisma.tarea.findMany.mockImplementation(async ({ where }: any) =>
+      where?.ocurrenciaPlanId === null
+        ? []
+        : [{
+            id: 100,
+            ocurrenciaPlanId: "occ-1",
+            fechaInicio: new Date(2026, 7, 3, 8),
+            fechaFin: new Date(2026, 7, 3, 9),
+            duracionMinutos: 60,
+            estado: "ASIGNADA",
+            operarios: [
+              { id: "op-1", usuario: { nombre: "Ana" } },
+              { id: "op-2", usuario: { nombre: "Luis" } },
+            ],
+          }],
+    );
+    const service = new CronogramaService(prisma, "C-1");
+
+    const out = await service.informeActividadJerarquico({
+      anio: 2026,
+      mes: 8,
+      borrador: true,
+      operarioId: "op-1",
+    });
+    const ocurrencia = out.ubicaciones[0].definiciones[0].ocurrencias[0];
+
+    expect(ocurrencia.operariosEsperados).toEqual([
+      { id: "op-1", nombre: "Ana" },
+    ]);
+    expect(ocurrencia.bloques[0].operarios).toEqual([
+      { id: "op-1", nombre: "Ana" },
+    ]);
   });
 });
