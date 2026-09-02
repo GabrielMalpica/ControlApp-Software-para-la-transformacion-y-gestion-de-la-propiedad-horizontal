@@ -121,6 +121,9 @@ void main() {
       expect(find.text('Torre A'), findsWidgets);
       expect(find.textContaining('Programadas 1/2'), findsWidgets);
       expect(find.text('Sin programar'), findsWidgets);
+      expect(find.text('Horas tarea'), findsOneWidget);
+      expect(find.text('Horas requeridas'), findsNWidgets(2));
+      expect(find.text('Programadas semana'), findsNWidgets(3));
       expect(find.text('Limpieza zona común'), findsWidgets);
       expect(find.text('Limpieza zona com\u00C3\u00BAn'), findsNothing);
       expect(find.textContaining('0.0'), findsWidgets);

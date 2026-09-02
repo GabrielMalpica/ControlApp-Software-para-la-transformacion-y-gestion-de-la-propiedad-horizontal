@@ -284,7 +284,8 @@ class CronogramaInformeJerarquico extends StatelessWidget {
       filas.add(
         _FilaHoras(
           nombre: ubicacion.nombre,
-          minutosTotal: ubicacion.resumen.minutosProgramados,
+          minutosEsperados: ubicacion.resumen.minutosEsperados,
+          minutosProgramados: ubicacion.resumen.minutosProgramados,
           minutosSemanas: semanas,
         ),
       );
@@ -306,7 +307,7 @@ class CronogramaInformeJerarquico extends StatelessWidget {
         key,
         () => _AcumuladoHoras(operario.nombre),
       );
-      item.total += minutos;
+      item.programados += minutos;
       final indice = _indiceSemana(fecha, data);
       if (indice != null) item.semanas[indice] += minutos;
     }
@@ -316,7 +317,11 @@ class CronogramaInformeJerarquico extends StatelessWidget {
         for (final ocurrencia in definicion.ocurrencias) {
           for (final operario in ocurrencia.operariosEsperados) {
             final key = operario.id.isEmpty ? operario.nombre : operario.id;
-            acumulado.putIfAbsent(key, () => _AcumuladoHoras(operario.nombre));
+            final item = acumulado.putIfAbsent(
+              key,
+              () => _AcumuladoHoras(operario.nombre),
+            );
+            item.esperados += ocurrencia.duracionEsperadaMin;
           }
           if (ocurrencia.bloques.isNotEmpty) {
             for (final bloque in ocurrencia.bloques) {
@@ -344,7 +349,8 @@ class CronogramaInformeJerarquico extends StatelessWidget {
         .map(
           (item) => _FilaHoras(
             nombre: item.nombre,
-            minutosTotal: item.total,
+            minutosEsperados: item.esperados,
+            minutosProgramados: item.programados,
             minutosSemanas: item.semanas,
           ),
         )
@@ -354,7 +360,7 @@ class CronogramaInformeJerarquico extends StatelessWidget {
   }
 
   int _ordenarFilasHoras(_FilaHoras a, _FilaHoras b) {
-    final porHoras = b.minutosTotal.compareTo(a.minutosTotal);
+    final porHoras = b.minutosProgramados.compareTo(a.minutosProgramados);
     if (porHoras != 0) return porHoras;
     return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
   }
@@ -405,23 +411,19 @@ class CronogramaInformeJerarquico extends StatelessWidget {
   }
 
   Widget _contenedorSeccion({required Widget child}) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(top: 14),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Material(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade300),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .025),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        elevation: 1,
+        shadowColor: Colors.black.withValues(alpha: .2),
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: Colors.grey.shade300),
+        ),
+        child: SizedBox(width: double.infinity, child: child),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: child,
     );
   }
 
@@ -472,8 +474,11 @@ class CronogramaInformeJerarquico extends StatelessWidget {
                   const DataColumn(label: Text('Ubicación')),
                   const DataColumn(label: Text('Programadas')),
                   const DataColumn(label: Text('Estado')),
+                  const DataColumn(label: Text('Horas tarea'), numeric: true),
                   DataColumn(
-                    label: Text(filtrarSemana ? 'Horas semana' : 'Horas mes'),
+                    label: Text(
+                      filtrarSemana ? 'Programadas semana' : 'Programadas mes',
+                    ),
                     numeric: true,
                   ),
                   ...semanas.map(
@@ -521,6 +526,12 @@ class CronogramaInformeJerarquico extends StatelessWidget {
                         ),
                       ),
                       DataCell(_estadoBadge(fila.resumen)),
+                      DataCell(
+                        Text(
+                          _horas(fila.resumen.minutosEsperados),
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
                       DataCell(
                         Text(
                           _horas(fila.resumen.minutosProgramados),
@@ -585,8 +596,14 @@ class CronogramaInformeJerarquico extends StatelessWidget {
                 ),
                 columns: [
                   DataColumn(label: Text(columnaPrincipal)),
+                  const DataColumn(
+                    label: Text('Horas requeridas'),
+                    numeric: true,
+                  ),
                   DataColumn(
-                    label: Text(filtrarSemana ? 'Horas semana' : 'Horas mes'),
+                    label: Text(
+                      filtrarSemana ? 'Programadas semana' : 'Programadas mes',
+                    ),
                     numeric: true,
                   ),
                   ...semanas.map(
@@ -616,7 +633,13 @@ class CronogramaInformeJerarquico extends StatelessWidget {
                       ),
                       DataCell(
                         Text(
-                          _horas(fila.minutosTotal),
+                          _horas(fila.minutosEsperados),
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          _horas(fila.minutosProgramados),
                           style: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ),
@@ -800,19 +823,22 @@ class _FilaActividad {
 
 class _FilaHoras {
   final String nombre;
-  final int minutosTotal;
+  final int minutosEsperados;
+  final int minutosProgramados;
   final List<int> minutosSemanas;
 
   const _FilaHoras({
     required this.nombre,
-    required this.minutosTotal,
+    required this.minutosEsperados,
+    required this.minutosProgramados,
     required this.minutosSemanas,
   });
 }
 
 class _AcumuladoHoras {
   final String nombre;
-  int total = 0;
+  int esperados = 0;
+  int programados = 0;
   final List<int> semanas = List<int>.filled(5, 0);
 
   _AcumuladoHoras(this.nombre);

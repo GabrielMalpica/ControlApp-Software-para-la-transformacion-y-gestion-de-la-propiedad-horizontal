@@ -4873,7 +4873,9 @@ class _CronogramaPreventivasBorradorPageState
                             ),
                           ),
                           const SizedBox(height: 6),
-                          EvidenciaGallery(evidencias: t.evidencias ?? const []),
+                          EvidenciaGallery(
+                            evidencias: t.evidencias ?? const [],
+                          ),
                         ],
                       ),
                     ),
@@ -5497,6 +5499,7 @@ class _CronogramaPreventivasBorradorPageState
         weekStart: weekStart,
         tareas: tareas,
         tareasCompletas: tareasCompletas,
+        agruparSuperposiciones: _filtroOperario == 'TODOS',
         horariosConjunto: _horariosConjunto,
         scaleMinutes: _escalaSemanalMinutos,
         horaInicio: _horaInicioJornada,
@@ -5556,6 +5559,7 @@ class _CronogramaPreventivasBorradorPageState
             weekStart: weekStart,
             tareas: tareas,
             tareasCompletas: tareasCompletas,
+            agruparSuperposiciones: _filtroOperario == 'TODOS',
             horariosConjunto: _horariosConjunto,
             scaleMinutes: _escalaSemanalMinutos,
             horaInicio: _horaInicioJornada,
@@ -5956,6 +5960,7 @@ class _WeekScheduleView extends StatefulWidget {
   final DateTime weekStart; // lunes 00:00
   final List<TareaModel> tareas;
   final List<TareaModel> tareasCompletas;
+  final bool agruparSuperposiciones;
   final List<HorarioConjunto> horariosConjunto;
   final int scaleMinutes;
   final int horaInicio;
@@ -5991,6 +5996,7 @@ class _WeekScheduleView extends StatefulWidget {
     required this.weekStart,
     required this.tareas,
     required this.tareasCompletas,
+    required this.agruparSuperposiciones,
     required this.horariosConjunto,
     required this.scaleMinutes,
     required this.horaInicio,
@@ -6236,7 +6242,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
   String _buildTasksSignature() {
     final buffer = StringBuffer(
-      '${widget.weekStart.toIso8601String()}|${widget.scaleMinutes}|',
+      '${widget.weekStart.toIso8601String()}|${widget.scaleMinutes}|'
+      '${widget.agruparSuperposiciones}|',
     );
     for (final tarea in widget.tareas) {
       buffer
@@ -6948,6 +6955,22 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     List<_WeekTaskSpan> group,
     int dayIndex,
   ) {
+    if (!widget.agruparSuperposiciones) {
+      return group
+          .map(
+            (span) => _WeekTaskPlacement(
+              tarea: span.tarea,
+              dayIndex: dayIndex,
+              inicio: span.inicio,
+              fin: span.fin,
+              groupEnd: span.fin,
+              groupSize: 1,
+              orderInGroup: 0,
+              groupTitles: const [],
+            ),
+          )
+          .toList();
+    }
     final groupEnd = group
         .map((e) => e.fin)
         .reduce((a, b) => a.isAfter(b) ? a : b);
@@ -8073,6 +8096,12 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                         final t = tareasDia[index];
                         final ini = t.fechaInicio.toLocal();
                         final fin = t.fechaFin.toLocal();
+                        final ubicacion = t.ubicacionNombre?.trim() ?? '';
+                        final zonaFinal = t.elementoNombre?.trim() ?? '';
+                        final contextoUbicacion = [
+                          if (ubicacion.isNotEmpty) 'Ubicación: $ubicacion',
+                          if (zonaFinal.isNotEmpty) 'Zona final: $zonaFinal',
+                        ].join(' · ');
                         return Padding(
                           key: ValueKey('task-${t.id}'),
                           padding: const EdgeInsets.only(bottom: 8),
@@ -8117,6 +8146,19 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                       ),
                                     ],
                                   ),
+                                  if (contextoUbicacion.isNotEmpty) ...[
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      contextoUbicacion,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade700,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
                                   const SizedBox(height: 6),
                                   Text(
                                     "${DateFormat('HH:mm').format(ini)} - ${DateFormat('HH:mm').format(fin)}",
