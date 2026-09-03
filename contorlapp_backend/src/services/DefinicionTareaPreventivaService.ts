@@ -45,12 +45,12 @@ import {
   buildAgendaPorOperarioDia,
   buscarHuecoDiaConSplitEarliest,
   buscarHuecoDiaEarliest,
-  findNextValidDay,
   freeFromOccupied,
   getFestivosSet,
   intentarReemplazoPorPrioridadBaja,
   isFestivoDate,
   mergeIntervalos,
+  splitMinutes,
   toDateAtMin,
   toMinOfDay,
   toMinOfDaySafe,
@@ -4164,24 +4164,12 @@ export class DefinicionTareaPreventivaService {
       fin: finMes,
     });
 
-    const resolverDiaProgramable = (start: Date, prioridad: number) => {
-      return findNextValidDay({
-        start,
-        periodoAnio,
-        periodoMes,
-        prioridad,
-        horariosPorDia,
-        festivosSet,
-      });
-    };
-
-    // P1 y P2 conservan la fecha contemplada como referencia aunque sea
-    // festivo o no tenga jornada. Sus fases de rescate recorren después todos
-    // los días válidos del mes, hacia adelante y hacia atrás.
-    const resolverDiaObjetivo = (start: Date, prioridad: number) => {
-      if (prioridad !== 1 && prioridad !== 2) {
-        return resolverDiaProgramable(start, prioridad);
-      }
+    // Todas las prioridades conservan su fecha contemplada como referencia,
+    // aunque sea festivo o no tenga jornada. El rescate posterior recorre los
+    // días válidos del mes hacia adelante y hacia atrás. Resolver P3 aquí con
+    // `findNextValidDay` hacía que una ocurrencia festiva se descartara antes
+    // de llegar a esa búsqueda mensual.
+    const resolverDiaObjetivo = (start: Date, _prioridad: number) => {
       if (
         start.getFullYear() !== periodoAnio ||
         start.getMonth() + 1 !== periodoMes
@@ -4265,12 +4253,12 @@ export class DefinicionTareaPreventivaService {
 
     let creadas = 0;
 
-    // 6️⃣ Cola de trabajo: nunca se agota una definición repetitiva antes de
-    // darles turno a las demás. La jerarquía efectiva es:
-    //  1) primera ocurrencia de cada P1 y después todas sus repeticiones;
-    //  2) primera ocurrencia de cada P2;
-    //  3) cobertura mínima de una ocurrencia por cada definición P3;
-    //  4) repeticiones de P2 y, al final, repeticiones de P3.
+    // 6️⃣ Cola de trabajo. La jerarquía efectiva es:
+    //  1) todas las P1 de una jornada, desde las que requieren más fechas;
+    //  2) todas las P1 multidía, distribuidas en fechas distintas;
+    //  3) primera ocurrencia de cada P2;
+    //  4) cobertura mínima de una ocurrencia por cada definición P3;
+    //  5) repeticiones de P2 y, al final, repeticiones de P3.
     //
     // La cobertura mínima P3 se intercala únicamente después de que todas las
     // definiciones P2 tuvieron su primera oportunidad. Es la reserva necesaria
@@ -4384,9 +4372,25 @@ export class DefinicionTareaPreventivaService {
       defsValidas.filter((def) => Number((def as any).prioridad ?? 2) === 3),
     );
 
-    // Escasez primero (menos días candidatos = menos oportunidades), luego
-    // mayor duración: una MENSUAL de 8h debe reservar su único día antes que
-    // una DIARIA de 10 min.
+    // Una P1 repetitiva de una sola jornada tiene fechas mucho menos flexibles:
+    // si una P1 de varios días ocupa primero el tope semanal, las ocurrencias
+    // DIARIAS desplazadas terminan sin una fecha distinta disponible al final
+    // del mes. Se reservan primero todas las P1 de una jornada y luego se
+    // reparten las partes de las P1 multidía por los huecos restantes. Ambas
+    // fases siguen ejecutándose antes de permitir cualquier P2/P3.
+    const esDefinicionMultiDia = (info: InfoDefinicion) =>
+      Math.max(
+        1,
+        Math.floor(Number((info.def as any).diasParaCompletar ?? 1)),
+      ) > 1;
+    const p1UnaJornada = p1Info.filter(
+      (info) => !esDefinicionMultiDia(info),
+    );
+    const p1MultiDia = p1Info.filter(esDefinicionMultiDia);
+
+    // En las garantías P2/P3 (y dentro de un mismo nivel P1), escasez primero
+    // y luego mayor duración. El orden especial entre niveles P1 se construye
+    // más abajo para no sacrificar ocurrencias DIARIAS al final del mes.
     const ordenGarantia = (lista: InfoDefinicion[]) =>
       [...lista].sort(
         (a, b) =>
@@ -4440,8 +4444,24 @@ export class DefinicionTareaPreventivaService {
     };
 
     const trabajos: TrabajoOcurrencia[] = [];
-    trabajos.push(...construirGarantia(p1Info, false));
-    trabajos.push(...construirRondas(p1Info));
+    // Dentro de las P1 de una jornada se atienden primero las definiciones
+    // que necesitan más fechas distintas en el mes. Una DIARIA no puede
+    // recuperar al final una fecha ocupada creando dos ocurrencias el mismo
+    // día; en cambio una MENSUAL todavía puede moverse a cualquiera de los
+    // huecos restantes. Las definiciones con igual cantidad de ocurrencias
+    // siguen repartiéndose por rondas para que ninguna acapare la capacidad.
+    const cantidadesOcurrenciasP1 = [
+      ...new Set(p1UnaJornada.map((info) => info.dias.length)),
+    ].sort((a, b) => b - a);
+    for (const cantidad of cantidadesOcurrenciasP1) {
+      const mismoNivelDeRigidez = p1UnaJornada.filter(
+        (info) => info.dias.length === cantidad,
+      );
+      trabajos.push(...construirGarantia(mismoNivelDeRigidez, false));
+      trabajos.push(...construirRondas(mismoNivelDeRigidez));
+    }
+    trabajos.push(...construirGarantia(p1MultiDia, false));
+    trabajos.push(...construirRondas(p1MultiDia));
     trabajos.push(...construirGarantia(p2Info, false));
     trabajos.push(...construirGarantia(p3Info, true));
     trabajos.push(...construirRondas(p2Info));
@@ -4486,8 +4506,6 @@ export class DefinicionTareaPreventivaService {
           duracionEsperadaMin: durMinTotal,
           operariosIds,
         });
-        const creadasAntesOcurrencia = creadas;
-
         const esCoberturaMinimaP3 =
           prioridad === 3 && trabajo.esRondaGarantia;
         const diaProgramable = esCoberturaMinimaP3
@@ -4600,15 +4618,24 @@ export class DefinicionTareaPreventivaService {
           });
         }
 
-        // ✅ Duración real, siempre dentro de una sola jornada.
-        // Una ocurrencia siempre se completa en una sola jornada. El campo
-        // histórico diasParaCompletar se conserva en BD por compatibilidad,
-        // pero ya no divide automáticamente una tarea entre días distintos.
-        const partesMin = [durMinTotal];
-        const grupoPlanId = null;
+        // `durMinTotal` es la duración total de la ocurrencia. Cuando la
+        // definición indica varios días, se divide en partes equilibradas y
+        // cada parte se ubica en un día distinto. Dentro de uno de esos días
+        // todavía puede partirse antes/después del almuerzo.
+        const diasParaCompletar = Math.max(
+          1,
+          Math.floor(Number((def as any).diasParaCompletar ?? 1)),
+        );
+        const partesMin = splitMinutes(durMinTotal, diasParaCompletar);
+        const grupoPlanId =
+          partesMin.length > 1
+            ? `BOR-${def.id}-${periodoAnio}-${periodoMes}-${randomUUID()}`
+            : null;
 
         const totalBloquesEsperados = partesMin.length;
         let bloqueIndexCursor = 1;
+        let partesAgendadas = 0;
+        const diasUsadosPorPartes = new Set<string>();
 
         // cursor de día para las partes
         let cursorDia = new Date(diaProgramable);
@@ -4628,30 +4655,13 @@ export class DefinicionTareaPreventivaService {
               )
             : resolverDiaObjetivo(cursorDia, prioridad);
           if (!diaParte) {
-            if (prioridad === 1) {
-              const mensaje =
-                `No hay un día hábil restante para completar la tarea obligatoria '${def.descripcion}'.`;
-              novedades.push({
-                tipo: "SIN_HUECO",
-                defId: def.id,
-                descripcion: def.descripcion,
-                prioridad,
-                fecha: dayKey(cursorDia),
-                mensaje,
-              });
-              await this.crearExcluidaDesdeDefinicion({
-                conjuntoId,
-                periodoAnio,
-                periodoMes,
-                ocurrenciaPlanId,
-                defId: def.id,
-                fechaObjetivo: cursorDia,
-                duracionMinutos: durMinParte,
-                motivoTipo: "SIN_CAPACIDAD_P1",
-                motivoMensaje: mensaje,
-              });
-            }
-            break;
+            // Si una tarea de varios días llega al borde del mes, continúa
+            // buscando hacia atrás dentro del mismo periodo en vez de quedar
+            // excluida inmediatamente por haber avanzado al mes siguiente.
+            const referencia =
+              +cursorDia < +inicioMes ? new Date(inicioMes) : new Date(finMes);
+            referencia.setHours(0, 0, 0, 0);
+            diaParte = referencia;
           }
 
           // Fecha objetivo real de esta parte: la fase de rescate busca a partir de aqui.
@@ -4713,6 +4723,7 @@ export class DefinicionTareaPreventivaService {
 
             const diaParteKey = dayKey(diaParte);
             if (
+              diasUsadosPorPartes.has(diaParteKey) ||
               this.hayOtraOcurrenciaDefinicionEnDia({
                 definicionId: def.id,
                 ocurrenciaPlanId,
@@ -4861,7 +4872,7 @@ export class DefinicionTareaPreventivaService {
               dias: diasP1PorProximidad,
               definicionId: def.id,
               ocurrenciaPlanId,
-            });
+            }).filter((dia) => !diasUsadosPorPartes.has(dayKey(dia)));
 
             // Se mantiene cada parte de la P1 en un solo día: primero un bloque
             // continuo y, si no existe, dos bloques pegados al descanso. Una
@@ -5064,8 +5075,8 @@ export class DefinicionTareaPreventivaService {
           }
 
           // ============================================================
-          // Fase B - rescate mensual para P2/P3. P1 queda anclada a su fecha
-          // prevista (o al siguiente hábil cuando la prevista es festiva).
+          // Fase B - rescate mensual para P2/P3. P1 ya tuvo arriba su rescate
+          // por proximidad y sus intentos de reemplazo de prioridades menores.
           // ============================================================
           if (!agendada && prioridad !== 1) {
             const diasRescate = await this.diasMesPorAprovechamiento({
@@ -5344,6 +5355,11 @@ export class DefinicionTareaPreventivaService {
             });
           }
 
+          if (agendada && diaParte) {
+            diasUsadosPorPartes.add(dayKey(diaParte));
+            partesAgendadas++;
+          }
+
           // mover cursor al siguiente día (para la siguiente parte)
           cursorDia = new Date(diaParte ?? cursorDia);
           cursorDia.setDate(cursorDia.getDate() + 1);
@@ -5353,7 +5369,7 @@ export class DefinicionTareaPreventivaService {
         if (
           trabajo.esRondaGarantia &&
           prioridad === 3 &&
-          creadas > creadasAntesOcurrencia
+          partesAgendadas === partesMin.length
         ) {
           ocurrenciasP3MinimasProtegidas.add(ocurrenciaPlanId);
         }

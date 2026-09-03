@@ -700,6 +700,165 @@ describe('generarBorradorMensual - fase de rescate', () => {
     expect(prisma.excluidasCreadas).toHaveLength(1);
   });
 
+  test('PU-R4B - una P1 de varios dias se completa dentro del mes incluso cerca del cierre', async () => {
+    const prisma = construirPrisma({
+      diasOcupados: [],
+      duracionMinutosFija: 960,
+      prioridad: 1,
+      diaMesProgramado: 29,
+    });
+    const [base] = await prisma.definicionTareaPreventiva.findMany();
+    prisma.definicionTareaPreventiva.findMany.mockResolvedValue([
+      {
+        ...base,
+        descripcion: 'Pintura de parqueaderos',
+        diasParaCompletar: 4,
+      },
+    ]);
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    });
+
+    expect(prisma.excluidasCreadas).toHaveLength(0);
+    expect(prisma.tareasCreadas).toHaveLength(4);
+    expect(
+      prisma.tareasCreadas.reduce(
+        (total: number, tarea: any) => total + tarea.duracionMinutos,
+        0,
+      ),
+    ).toBe(960);
+    expect(
+      new Set(prisma.tareasCreadas.map((tarea: any) => ymd(tarea.fechaInicio)))
+        .size,
+    ).toBe(4);
+    expect(
+      prisma.tareasCreadas.every(
+        (tarea: any) =>
+          tarea.fechaInicio.getFullYear() === 2026 &&
+          tarea.fechaInicio.getMonth() === 2 &&
+          tarea.grupoPlanId != null,
+      ),
+    ).toBe(true);
+  });
+
+  test('PU-R4C - reserva las P1 diarias antes de repartir una P1 multidia', async () => {
+    const prisma = construirPrisma({
+      diasOcupados: [],
+      duracionMinutosFija: 2100,
+      prioridad: 1,
+      diaMesProgramado: 2,
+    });
+    const [base] = await prisma.definicionTareaPreventiva.findMany();
+    prisma.definicionTareaPreventiva.findMany.mockResolvedValue([
+      {
+        ...base,
+        id: 201,
+        descripcion: 'P1 multidia flexible',
+        duracionMinutosFija: 2100,
+        diasParaCompletar: 5,
+      },
+      {
+        ...base,
+        id: 202,
+        descripcion: 'P1 diaria rigida',
+        frecuencia: Frecuencia.DIARIA,
+        duracionMinutosFija: 30,
+        diasParaCompletar: 1,
+      },
+    ]);
+    prisma.operario.findUnique.mockResolvedValue({
+      usuario: { jornadaLaboral: 'COMPLETA', patronJornada: null },
+      empresa: { limiteHorasSemana: 35 },
+    });
+    prisma.conjunto.findUnique.mockResolvedValue({
+      limiteHorasSemanaOverride: null,
+      empresa: { limiteHorasSemana: 35 },
+    });
+    prisma.empresa.findFirst.mockResolvedValue({ limiteHorasSemana: 35 });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    });
+
+    const diarias = prisma.tareasCreadas.filter(
+      (tarea: any) => tarea.definicionId === 202,
+    );
+    const partesMultiDia = prisma.tareasCreadas.filter(
+      (tarea: any) => tarea.definicionId === 201,
+    );
+    expect(diarias).toHaveLength(22);
+    expect(new Set(diarias.map((tarea: any) => ymd(tarea.fechaInicio))).size).toBe(
+      22,
+    );
+    expect(partesMultiDia).toHaveLength(5);
+    expect(
+      partesMultiDia.reduce(
+        (total: number, tarea: any) => total + tarea.duracionMinutos,
+        0,
+      ),
+    ).toBe(2100);
+    expect(prisma.excluidasCreadas).toHaveLength(0);
+  });
+
+  test('PU-R4D - reserva todas las fechas P1 diarias antes de las P1 mensuales', async () => {
+    const prisma = construirPrisma({
+      diasOcupados: [],
+      duracionMinutosFija: 240,
+      prioridad: 1,
+      diaMesProgramado: 2,
+    });
+    const [base] = await prisma.definicionTareaPreventiva.findMany();
+    prisma.definicionTareaPreventiva.findMany.mockResolvedValue([
+      {
+        ...base,
+        id: 301,
+        descripcion: 'P1 mensual A',
+        duracionMinutosFija: 240,
+      },
+      {
+        ...base,
+        id: 302,
+        descripcion: 'P1 mensual B',
+        duracionMinutosFija: 240,
+      },
+      {
+        ...base,
+        id: 303,
+        descripcion: 'P1 diaria',
+        frecuencia: Frecuencia.DIARIA,
+        duracionMinutosFija: 60,
+      },
+    ]);
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    });
+
+    const diarias = prisma.tareasCreadas.filter(
+      (tarea: any) => tarea.definicionId === 303,
+    );
+    const mensuales = prisma.tareasCreadas.filter(
+      (tarea: any) =>
+        tarea.definicionId === 301 || tarea.definicionId === 302,
+    );
+    expect(diarias).toHaveLength(22);
+    expect(new Set(diarias.map((tarea: any) => ymd(tarea.fechaInicio))).size).toBe(
+      22,
+    );
+    expect(mensuales).toHaveLength(2);
+    expect(prisma.excluidasCreadas).toHaveLength(0);
+  });
+
   test('PU-R5 - da turno a P2 antes de reservar el minimo P3', async () => {
     const diasOcupados = Array.from({ length: 31 }, (_, index) => {
       const fecha = new Date(2026, 2, index + 1);
