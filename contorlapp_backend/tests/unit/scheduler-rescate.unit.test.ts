@@ -700,14 +700,17 @@ describe('generarBorradorMensual - fase de rescate', () => {
     expect(prisma.excluidasCreadas).toHaveLength(1);
   });
 
-  test('PU-R5 - reserva el minimo P3 antes de consumir capacidad con P2', async () => {
+  test('PU-R5 - da turno a P2 antes de reservar el minimo P3', async () => {
     const diasOcupados = Array.from({ length: 31 }, (_, index) => {
       const fecha = new Date(2026, 2, index + 1);
       return { fecha, key: ymd(fecha) };
     })
       .filter(
         ({ fecha, key }) =>
-          fecha.getDay() >= 1 && fecha.getDay() <= 5 && key !== '2026-03-02',
+          fecha.getDay() >= 1 &&
+          fecha.getDay() <= 5 &&
+          key !== '2026-03-02' &&
+          key !== '2026-03-03',
       )
       .map(({ key }) => key);
     const prisma = construirPrisma({
@@ -718,7 +721,13 @@ describe('generarBorradorMensual - fase de rescate', () => {
     });
     const [base] = await prisma.definicionTareaPreventiva.findMany();
     prisma.definicionTareaPreventiva.findMany.mockResolvedValue([
-      { ...base, id: 78, descripcion: 'P2 repetitiva', prioridad: 2 },
+      {
+        ...base,
+        id: 78,
+        descripcion: 'P2 repetitiva',
+        prioridad: 2,
+        frecuencia: Frecuencia.DIARIA,
+      },
       { ...base, id: 77, descripcion: 'P3 mínima', prioridad: 3 },
     ]);
     prisma.operario.findUnique.mockResolvedValue({
@@ -738,12 +747,125 @@ describe('generarBorradorMensual - fase de rescate', () => {
       periodoMes: 3,
     });
 
-    expect(prisma.tareasCreadas).toHaveLength(1);
+    expect(prisma.tareasCreadas).toHaveLength(2);
     expect(prisma.tareasCreadas[0]).toMatchObject({
+      definicionId: 78,
+      prioridad: 2,
+      descripcion: 'P2 repetitiva',
+    });
+    expect(prisma.tareasCreadas[1]).toMatchObject({
       definicionId: 77,
       prioridad: 3,
       descripcion: 'P3 mínima',
     });
+  });
+
+  test('PU-R5B - reparte P1 en rondas para que una DIARIA no deje otra P1 en cero', async () => {
+    const diasOcupados = Array.from({ length: 31 }, (_, index) => {
+      const fecha = new Date(2026, 2, index + 1);
+      return { fecha, key: ymd(fecha) };
+    })
+      .filter(
+        ({ fecha, key }) =>
+          fecha.getDay() >= 1 &&
+          fecha.getDay() <= 5 &&
+          key !== '2026-03-02' &&
+          key !== '2026-03-03',
+      )
+      .map(({ key }) => key);
+    const prisma = construirPrisma({
+      diasOcupados,
+      duracionMinutosFija: 480,
+      prioridad: 1,
+      diaMesProgramado: 2,
+    });
+    const [base] = await prisma.definicionTareaPreventiva.findMany();
+    prisma.definicionTareaPreventiva.findMany.mockResolvedValue([
+      {
+        ...base,
+        id: 91,
+        descripcion: 'P1 diaria A',
+        prioridad: 1,
+        frecuencia: Frecuencia.DIARIA,
+      },
+      {
+        ...base,
+        id: 92,
+        descripcion: 'P1 diaria B',
+        prioridad: 1,
+        frecuencia: Frecuencia.DIARIA,
+      },
+    ]);
+    prisma.operario.findUnique.mockResolvedValue({
+      usuario: { jornadaLaboral: 'COMPLETA', patronJornada: null },
+      empresa: { limiteHorasSemana: 1000 },
+    });
+    prisma.conjunto.findUnique.mockResolvedValue({
+      limiteHorasSemanaOverride: 1000,
+      empresa: { limiteHorasSemana: 1000 },
+    });
+    prisma.empresa.findFirst.mockResolvedValue({ limiteHorasSemana: 1000 });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    });
+
+    expect(
+      prisma.tareasCreadas.filter((tarea: any) => tarea.definicionId === 91),
+    ).toHaveLength(1);
+    expect(
+      prisma.tareasCreadas.filter((tarea: any) => tarea.definicionId === 92),
+    ).toHaveLength(1);
+  });
+
+  test('PU-R5C - completa todas las P1 antes de pasar a P2 y deja P3 al final', async () => {
+    const prisma = construirPrisma({
+      diasOcupados: [],
+      duracionMinutosFija: 60,
+      prioridad: 3,
+      diaMesProgramado: 2,
+    });
+    const [base] = await prisma.definicionTareaPreventiva.findMany();
+    prisma.definicionTareaPreventiva.findMany.mockResolvedValue([
+      {
+        ...base,
+        id: 103,
+        descripcion: 'P3 mensual',
+        prioridad: 3,
+      },
+      {
+        ...base,
+        id: 101,
+        descripcion: 'P1 diaria',
+        prioridad: 1,
+        frecuencia: Frecuencia.DIARIA,
+      },
+      {
+        ...base,
+        id: 102,
+        descripcion: 'P2 mensual',
+        prioridad: 2,
+      },
+    ]);
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    });
+
+    const prioridades = prisma.tareasCreadas.map(
+      (tarea: any) => tarea.prioridad,
+    );
+    expect(
+      prioridades.filter((prioridad: number) => prioridad === 1),
+    ).toHaveLength(22);
+    expect(prioridades.lastIndexOf(1)).toBeLessThan(prioridades.indexOf(2));
+    expect(prioridades.indexOf(2)).toBeLessThan(prioridades.indexOf(3));
   });
 
   test('PU-R5A - DIARIA genera una ocurrencia por jornada configurada, no por dia calendario', async () => {

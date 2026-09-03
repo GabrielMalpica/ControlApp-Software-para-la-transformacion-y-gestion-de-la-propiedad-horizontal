@@ -4265,19 +4265,19 @@ export class DefinicionTareaPreventivaService {
 
     let creadas = 0;
 
-    // 6️⃣ Cola de trabajo: en vez de agotar cada definición (hasta ~30 días
-    // si es DIARIA) antes de pasar a la siguiente —lo que dejaba a las
-    // definiciones tardías sin capacidad y acaparaba el mes en la definición
-    // más corta—, se arma una lista ordenada de (definición, día) que:
-    //  1) programa todas las P1 igual que antes (ancladas a su fecha);
-    //  2) da a cada P3 su ocurrencia mínima garantizada ANTES que las P2,
-    //     empezando por las definiciones con menos días candidatos y mayor
-    //     duración (las más difíciles de ubicar, antes de que se llene el mes);
-    //  3) da a cada P2 su ocurrencia mínima garantizada;
-    //  4) reparte las repeticiones de P2 en rondas: la ronda 1 de TODAS las
-    //     definiciones antes que la ronda 2 de cualquiera, así ninguna
-    //     acapara el mes mientras otra se queda en cero;
-    //  5) reparte igual las repeticiones de P3.
+    // 6️⃣ Cola de trabajo: nunca se agota una definición repetitiva antes de
+    // darles turno a las demás. La jerarquía efectiva es:
+    //  1) primera ocurrencia de cada P1 y después todas sus repeticiones;
+    //  2) primera ocurrencia de cada P2;
+    //  3) cobertura mínima de una ocurrencia por cada definición P3;
+    //  4) repeticiones de P2 y, al final, repeticiones de P3.
+    //
+    // La cobertura mínima P3 se intercala únicamente después de que todas las
+    // definiciones P2 tuvieron su primera oportunidad. Es la reserva necesaria
+    // para que una P2 DIARIA no consuma el mes entero y deje una actividad P3
+    // en cero. Fuera de esa garantía, P2 siempre se programa antes que P3.
+    // Las rondas también evitan que una P1/P2/P3 corta acapare todos los días
+    // antes de que otra definición de la misma prioridad reciba un turno.
     // Dentro de cada ronda la definición de mayor duración entra primero: es
     // la que antes perdía frente a tareas cortas que liberaban su turno rápido.
     const ocurrenciasP3MinimasProtegidas = new Set<string>();
@@ -4421,40 +4421,29 @@ export class DefinicionTareaPreventivaService {
       return out;
     };
 
+    const construirGarantia = (
+      lista: InfoDefinicion[],
+      esGarantiaP3: boolean,
+    ): TrabajoOcurrencia[] => {
+      const out: TrabajoOcurrencia[] = [];
+      for (const info of ordenGarantia(lista)) {
+        if (!info.dias.length) continue;
+        out.push({
+          def: info.def,
+          prioridad: info.prioridad,
+          operariosIds: info.operariosIds,
+          dia: info.dias[0],
+          esRondaGarantia: esGarantiaP3,
+        });
+      }
+      return out;
+    };
+
     const trabajos: TrabajoOcurrencia[] = [];
-    for (const info of p1Info) {
-      for (const dia of info.dias) {
-        trabajos.push({
-          def: info.def,
-          prioridad: info.prioridad,
-          operariosIds: info.operariosIds,
-          dia,
-          esRondaGarantia: false,
-        });
-      }
-    }
-    for (const info of ordenGarantia(p3Info)) {
-      if (info.dias.length) {
-        trabajos.push({
-          def: info.def,
-          prioridad: info.prioridad,
-          operariosIds: info.operariosIds,
-          dia: info.dias[0],
-          esRondaGarantia: true,
-        });
-      }
-    }
-    for (const info of ordenGarantia(p2Info)) {
-      if (info.dias.length) {
-        trabajos.push({
-          def: info.def,
-          prioridad: info.prioridad,
-          operariosIds: info.operariosIds,
-          dia: info.dias[0],
-          esRondaGarantia: false,
-        });
-      }
-    }
+    trabajos.push(...construirGarantia(p1Info, false));
+    trabajos.push(...construirRondas(p1Info));
+    trabajos.push(...construirGarantia(p2Info, false));
+    trabajos.push(...construirGarantia(p3Info, true));
     trabajos.push(...construirRondas(p2Info));
     trabajos.push(...construirRondas(p3Info));
 
