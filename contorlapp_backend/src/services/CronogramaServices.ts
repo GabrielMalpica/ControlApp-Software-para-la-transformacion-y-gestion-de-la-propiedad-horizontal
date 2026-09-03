@@ -276,12 +276,11 @@ export class CronogramaService {
 
   /**
    * Elimina un lote de tareas publicadas (y sus registros relacionados) en
-   * una sola transaccion, en vez de una transaccion (con 6 sentencias cada
-   * una) por tarea. Para un mes de 300 tareas esto pasa de ~300 round-trips
-   * de transaccion a 1. Se conserva la misma secuencia de pasos (incluido el
-   * `operarios: { set: [] }` explicito antes de borrar, aunque la FK de la
-   * tabla _TareaOperarios ya tiene ON DELETE CASCADE) para no cambiar de
-   * comportamiento.
+   * una sola transaccion y con una cantidad constante de consultas. La tabla
+   * implicita `_TareaOperarios` tiene una FK hacia `Tarea` con ON DELETE
+   * CASCADE, por lo que `deleteMany` desconecta los operarios sin ejecutar un
+   * `update` individual por tarea. Esto evita agotar el timeout de la
+   * transaccion en cronogramas grandes.
    */
   private async eliminarTareasPublicadas(ids: number[]) {
     if (!ids.length) return;
@@ -295,13 +294,6 @@ export class CronogramaService {
       await tx.usoMaquinaria.deleteMany({ where: { tareaId: { in: ids } } });
       await tx.usoHerramienta.deleteMany({ where: { tareaId: { in: ids } } });
       await tx.consumoInsumo.deleteMany({ where: { tareaId: { in: ids } } });
-
-      for (const id of ids) {
-        await tx.tarea.update({
-          where: { id },
-          data: { operarios: { set: [] } },
-        });
-      }
 
       await tx.tarea.deleteMany({ where: { id: { in: ids } } });
     });
