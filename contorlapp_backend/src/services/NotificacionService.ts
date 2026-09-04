@@ -258,7 +258,12 @@ export class NotificacionService {
     descripcionTarea: string;
     conjuntoId: string;
     actorId: string;
-    actorRol: "SUPERVISOR" | "OPERARIO" | "GERENTE" | "JEFE_OPERACIONES";
+    actorRol:
+      | "SUPERVISOR"
+      | "OPERARIO"
+      | "GERENTE"
+      | "JEFE_OPERACIONES"
+      | "ADMINISTRADOR";
     supervisorId?: string | null;
   }): Promise<void> {
     const [actor, conjunto] = await Promise.all([
@@ -307,7 +312,9 @@ export class NotificacionService {
             ? "Un operario"
             : input.actorRol === "GERENTE"
               ? "Un gerente"
-              : "Un jefe de operaciones";
+              : input.actorRol === "JEFE_OPERACIONES"
+                ? "Un jefe de operaciones"
+                : "Un administrador";
 
     const nombreConjunto = conjunto.nombre ?? input.conjuntoId;
     const mensaje =

@@ -357,6 +357,15 @@ export class GerenteController {
     }
   };
 
+  listarConjuntosSelector: RequestHandler = async (req, res, next) => {
+    try {
+      const out = await serviceFor(req).listarConjuntosSelector();
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   obtenerConjunto: RequestHandler = async (req, res, next) => {
     try {
       const { conjuntoId } = ConjuntoIdParam.parse(req.params);

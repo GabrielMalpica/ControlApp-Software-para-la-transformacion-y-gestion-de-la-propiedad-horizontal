@@ -2,6 +2,7 @@ import { RequestHandler } from "express";
 import { z } from "zod";
 
 import { prisma } from "../db/prisma";
+import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
 import { CompromisoConjuntoService } from "../services/CompromisoConjuntoService";
 
 const service = new CompromisoConjuntoService(prisma);
@@ -15,9 +16,10 @@ const ActualizarBody = z.object({
 });
 
 export class CompromisoConjuntoController {
-  listarGlobal: RequestHandler = async (_req, res, next) => {
+  listarGlobal: RequestHandler = async (req, res, next) => {
     try {
-      const items = await service.listarGlobal();
+      const empresaId = await empresaIdAutenticada(req);
+      const items = await service.listarGlobal(empresaId);
       res.json(items);
     } catch (err) {
       next(err);

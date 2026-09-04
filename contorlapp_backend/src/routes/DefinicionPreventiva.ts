@@ -5,7 +5,6 @@ import {
   asyncHandler,
 } from "../controller/DefinicionTareaPreventivaController";
 import { authRequired } from "../middlewares/auth.middleware";
-import { requireRoles } from "../middlewares/role.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
 import { requireConjuntoScope } from "../middlewares/tenant.middleware";
 
@@ -13,7 +12,6 @@ const router = Router();
 const ctrl = new DefinicionTareaPreventivaController();
 
 router.use(authRequired);
-router.use(requireRoles("gerente"));
 router.use("/conjuntos/:nit", requireConjuntoScope("nit"));
 router.use("/conjuntos/:nit", requirePermission("cronograma.publicar"));
 

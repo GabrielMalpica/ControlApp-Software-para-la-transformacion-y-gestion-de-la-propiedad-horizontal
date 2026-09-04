@@ -2,7 +2,6 @@ import { Router } from "express";
 import { SupervisorController } from "../controller/SupervisorController";
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
-import { requireRoles } from "../middlewares/role.middleware";
 import { uploadEvidencias } from "../middlewares/upload_evidencias";
 import { requireResourceScope } from "../middlewares/tenant.middleware";
 import { taskClosingRateLimit } from "../middlewares/task-closing-rate-limit.middleware";
@@ -14,13 +13,11 @@ router.use(authRequired);
 
 router.get(
   "/tareas",
-  requireRoles("supervisor"),
   requirePermission("tareas.ver"),
   ctrl.listarTareas,
 );
 router.post(
   "/tareas/:id/cerrar",
-  requireRoles("supervisor", "gerente", "jefe_operaciones"),
   requirePermission("tareas.cerrar"),
   requireResourceScope("tarea", "id"),
   taskClosingRateLimit,
@@ -29,14 +26,12 @@ router.post(
 );
 router.post(
   "/tareas/:id/veredicto",
-  requireRoles("supervisor"),
   requirePermission("tareas.veredicto"),
   requireResourceScope("tarea", "id"),
   ctrl.veredicto,
 );
 router.get(
   "/cronograma-imprimible",
-  requireRoles("supervisor"),
   requirePermission("cronograma.imprimir"),
   ctrl.cronogramaImprimible,
 );

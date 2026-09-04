@@ -19,7 +19,11 @@ const ListarSchema = z.object({
     .transform((v) => (v == null ? undefined : v === "true")),
 });
 
-type ActorRolCierre = "SUPERVISOR" | "GERENTE" | "JEFE_OPERACIONES";
+type ActorRolCierre =
+  | "SUPERVISOR"
+  | "GERENTE"
+  | "JEFE_OPERACIONES"
+  | "ADMINISTRADOR";
 
 function forbiddenError(message = "No autorizado para este recurso") {
   const err: any = new Error(message);
@@ -42,24 +46,23 @@ function getActorFromReq(req: any): { id: string; rol: ActorRolCierre } {
       return { id: String(id), rol: "GERENTE" };
     case "jefe_operaciones":
       return { id: String(id), rol: "JEFE_OPERACIONES" };
+    case "administrador":
+      return { id: String(id), rol: "ADMINISTRADOR" };
     default:
       throw forbiddenError();
   }
 }
 
-function getSupervisorIdFromReq(req: any): string {
+function getScopedActorIdFromReq(req: any): string {
   const actor = getActorFromReq(req);
-  if (actor.rol !== "SUPERVISOR") {
-    throw forbiddenError();
-  }
   return actor.id;
 }
 
 export class SupervisorController {
   listarTareas: RequestHandler = async (req, res, next) => {
     try {
-      const supervisorId = getSupervisorIdFromReq(req);
-      const svc = new SupervisorService(prisma, supervisorId);
+      const actor = getActorFromReq(req);
+      const svc = new SupervisorService(prisma, actor.id, actor.rol);
 
       const q = ListarSchema.parse(req.query);
       const payload = {
@@ -80,7 +83,7 @@ export class SupervisorController {
 
   cronogramaImprimible: RequestHandler = async (req, res, next) => {
     try {
-      const supervisorId = getSupervisorIdFromReq(req);
+      const supervisorId = getScopedActorIdFromReq(req);
 
       const conjuntoId = String(req.query.conjuntoId ?? "");
       const operarioId = String(req.query.operarioId ?? "");
@@ -197,8 +200,8 @@ export class SupervisorController {
 
   veredicto: RequestHandler = async (req, res, next) => {
     try {
-      const supervisorId = getSupervisorIdFromReq(req);
-      const svc = new SupervisorService(prisma, supervisorId);
+      const actor = getActorFromReq(req);
+      const svc = new SupervisorService(prisma, actor.id, actor.rol);
 
       const { id } = IdParamSchema.parse(req.params);
       await svc.veredicto(id, req.body);

@@ -123,8 +123,14 @@ export class CompromisoConjuntoService {
     return items.map((item) => this.serializeCompromiso(item));
   }
 
-  async listarGlobal() {
+  async listarGlobal(empresaId: string) {
+    const empresa = empresaId.trim();
+    if (!empresa) {
+      throw makeHttpError(401, "No se pudo identificar la empresa autenticada");
+    }
+
     const items = await this.prisma.compromisoConjunto.findMany({
+      where: { conjunto: { empresaId: empresa } },
       orderBy: [
         { completado: "asc" },
         { conjunto: { nombre: "asc" } },

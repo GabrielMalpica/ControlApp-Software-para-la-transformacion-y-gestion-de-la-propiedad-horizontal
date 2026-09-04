@@ -103,6 +103,20 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: "Permite consultar solicitudes de tareas, insumos y maquinaria.",
   },
   {
+    key: "solicitudes.crear",
+    module: "solicitudes",
+    moduleLabel: "Solicitudes",
+    label: "Crear solicitudes",
+    description: "Permite solicitar tareas, insumos, maquinaria y herramientas.",
+  },
+  {
+    key: "solicitudes.gestionar",
+    module: "solicitudes",
+    moduleLabel: "Solicitudes",
+    label: "Gestionar solicitudes",
+    description: "Permite aprobar, rechazar, editar o eliminar solicitudes.",
+  },
+  {
     key: "inventario.ver",
     module: "inventario",
     moduleLabel: "Inventario",
@@ -179,6 +193,13 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
     moduleLabel: "Mapa de areas",
     label: "Ver mapa de areas",
     description: "Permite consultar el mapa e informacion visual del conjunto.",
+  },
+  {
+    key: "mapa_areas.gestionar",
+    module: "mapa_areas",
+    moduleLabel: "Mapa de areas",
+    label: "Gestionar mapa de areas",
+    description: "Permite cargar el plano y modificar ubicaciones o areas.",
   },
   {
     key: "compromisos.ver",
@@ -268,10 +289,39 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
 
 const ALL_PERMISSION_KEYS = new Set(PERMISSION_CATALOG.map((item) => item.key));
 
+// Un permiso de accion incluye el acceso de lectura minimo necesario para
+// poder ejecutar esa accion. La matriz conserva los interruptores separados:
+// desactivar "ver" sigue ocultando el modulo si tampoco hay una accion activa.
+const PERMISSIONS_THAT_GRANT_ACCESS: Readonly<Record<string, readonly string[]>> = {
+  "tareas.ver": ["tareas.crear", "tareas.cerrar", "tareas.veredicto"],
+  "cronograma.ver": [
+    "cronograma.imprimir",
+    "cronograma.publicar",
+    "cronograma.eliminar_publicado",
+    "cronograma.correctivas_programar",
+    "cronograma.excluidas_ver",
+  ],
+  "solicitudes.ver": ["solicitudes.crear", "solicitudes.gestionar"],
+  "inventario.ver": ["inventario.gestionar"],
+  "maquinaria.ver": ["maquinaria.asignar"],
+  "herramientas.ver": ["herramientas.gestionar"],
+  "conjuntos.ver": ["conjuntos.gestionar"],
+  "mapa_areas.ver": ["mapa_areas.gestionar"],
+  "compromisos.ver": ["compromisos.gestionar"],
+  "residentes.ver": [
+    "residentes.crear",
+    "residentes.editar",
+    "residentes.eliminar",
+    "residentes.cargar_masivo",
+  ],
+  "plan_esperanza.acceso": ["plan_esperanza.configurar"],
+};
+
 const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
   [Rol.gerente]: new Set(PERMISSION_CATALOG.map((item) => item.key)),
   [Rol.administrador]: new Set([
     "residentes.ver",
+    "solicitudes.crear",
     "cronograma.ver",
     "inventario.ver",
     "mapa_areas.ver",
@@ -292,6 +342,8 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "cronograma.ver",
     "cronograma.imprimir",
     "solicitudes.ver",
+    "solicitudes.crear",
+    "solicitudes.gestionar",
     "inventario.ver",
     "inventario.gestionar",
     "maquinaria.ver",
@@ -299,6 +351,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "herramientas.ver",
     "herramientas.gestionar",
     "mapa_areas.ver",
+    "mapa_areas.gestionar",
     "compromisos.ver",
     "compromisos.gestionar",
     "compromisos.globales_ver",
@@ -313,6 +366,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "cronograma.imprimir",
     "cronograma.correctivas_programar",
     "solicitudes.ver",
+    "solicitudes.crear",
     "inventario.ver",
     "maquinaria.ver",
     "herramientas.ver",
@@ -327,6 +381,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "tareas.ver",
     "tareas.cerrar",
     "solicitudes.ver",
+    "solicitudes.crear",
     "mapa_areas.ver",
     "cumpleanos.ver",
   ]),
@@ -365,6 +420,18 @@ export class PermissionService {
 
   static isValidPermission(permission: string): boolean {
     return ALL_PERMISSION_KEYS.has(permission);
+  }
+
+  static hasAnyPermission(
+    effectivePermissions: ReadonlySet<string>,
+    requiredPermissions: readonly string[],
+  ): boolean {
+    return requiredPermissions.some((required) => {
+      if (effectivePermissions.has(required)) return true;
+      return (PERMISSIONS_THAT_GRANT_ACCESS[required] ?? []).some((grant) =>
+        effectivePermissions.has(grant),
+      );
+    });
   }
 
   static defaultPermissionsForRole(role: Rol): Set<string> {

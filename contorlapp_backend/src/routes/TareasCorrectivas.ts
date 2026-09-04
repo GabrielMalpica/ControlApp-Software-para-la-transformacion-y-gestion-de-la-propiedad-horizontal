@@ -3,13 +3,11 @@ import { GerenteService } from "../services/GerenteServices";
 import { prisma } from "../db/prisma";
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
-import { requireRoles } from "../middlewares/role.middleware";
 import { requireConjuntoScope, requireResourceScope } from "../middlewares/tenant.middleware";
 
 const router = Router();
 
 router.use(authRequired);
-router.use(requireRoles("gerente", "jefe_operaciones", "supervisor"));
 
 // Crear correctiva
 router.post("/conjuntos/:nit/tareas", requirePermission("tareas.crear", "cronograma.correctivas_programar"), requireConjuntoScope("nit"), async (req, res, next) => {

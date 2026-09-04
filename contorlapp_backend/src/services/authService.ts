@@ -64,12 +64,27 @@ export class AuthService {
       permissions = Array.from(PermissionService.defaultPermissionsForRole(Rol.gerente));
     }
 
+    let conjuntoId = "";
+    if (normalizedRole === Rol.operario && empresaId) {
+      const conjunto = await this.prisma.conjunto.findFirst({
+        where: {
+          empresaId,
+          activo: true,
+          operarios: { some: { id: usuario.id } },
+        },
+        select: { nit: true },
+        orderBy: { nit: "asc" },
+      });
+      conjuntoId = conjunto?.nit ?? "";
+    }
+
     return {
       id: usuario.id,
       nombre: usuario.nombre,
       correo: usuario.correo,
       rol: usuario.rol,
       empresaId,
+      conjuntoId,
       permissions,
       requiereCambioContrasena: usuario.requiereCambioContrasena,
     };
@@ -258,7 +273,7 @@ export class AuthService {
     const [actor, usuario] = await Promise.all([
       this.prisma.usuario.findUnique({
         where: { id: actorUserId },
-        select: { id: true, rol: true, activo: true },
+        select: { id: true, activo: true },
       }),
       this.prisma.usuario.findUnique({
         where: { id: targetUserId },
@@ -268,10 +283,6 @@ export class AuthService {
 
     if (!actor) throw makeHttpError(404, "Usuario solicitante no encontrado");
     if (!actor.activo) throw makeHttpError(403, "Usuario solicitante inactivo");
-    if (String(actor.rol).trim().toLowerCase() != "gerente") {
-      throw makeHttpError(403, "Solo el gerente puede cambiar contrasenas de otros usuarios");
-    }
-
     if (!usuario) throw makeHttpError(404, "Usuario no encontrado");
     if (!usuario.activo) throw makeHttpError(403, "El usuario objetivo esta inactivo");
 

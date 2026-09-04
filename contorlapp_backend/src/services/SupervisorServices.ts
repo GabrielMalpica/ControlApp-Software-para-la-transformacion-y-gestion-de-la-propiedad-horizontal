@@ -39,7 +39,11 @@ type InsumoPlan = {
   cantidad?: number;
 };
 
-type ActorRolCierre = "SUPERVISOR" | "GERENTE" | "JEFE_OPERACIONES";
+type ActorRolCierre =
+  | "SUPERVISOR"
+  | "GERENTE"
+  | "JEFE_OPERACIONES"
+  | "ADMINISTRADOR";
 
 function parseInsumosPlanJson(raw: any): InsumoPlan[] {
   if (!raw) return [];
@@ -141,6 +145,8 @@ export class SupervisorService {
         return "gerente";
       case "JEFE_OPERACIONES":
         return "jefe de operaciones";
+      case "ADMINISTRADOR":
+        return "administrador";
       default:
         return "supervisor";
     }

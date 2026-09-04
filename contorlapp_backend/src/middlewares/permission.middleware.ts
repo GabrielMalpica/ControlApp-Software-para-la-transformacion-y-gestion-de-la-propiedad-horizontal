@@ -29,7 +29,7 @@ export function requirePermission(...permissions: string[]): RequestHandler {
         (await permissionService.resolveEmpresaIdForUser(userId, role));
 
       const effective = await permissionService.getEffectivePermissionsForRole(empresaId, role);
-      const allowed = permissions.some((permission) => effective.has(permission));
+      const allowed = PermissionService.hasAnyPermission(effective, permissions);
 
       if (!allowed) {
         res.status(403).json({

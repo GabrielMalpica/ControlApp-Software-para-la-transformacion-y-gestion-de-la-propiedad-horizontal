@@ -123,6 +123,18 @@ export class CumpleanosService {
       return empresaId;
     }
 
+    if (rol === "residente") {
+      const residente = await this.db.residente.findUnique({
+        where: { id: actorUserId },
+        select: { conjunto: { select: { empresaId: true } } },
+      });
+      const empresaId = residente?.conjunto?.empresaId;
+      if (!empresaId) {
+        throw makeHttpError(400, "El residente no tiene empresa asociada");
+      }
+      return empresaId;
+    }
+
     throw makeHttpError(403, "Rol no autorizado para consultar cumpleanos");
   }
 
@@ -174,23 +186,11 @@ export class CumpleanosService {
   }
 
   async listarCumpleanosMesActor(actorUserId: string): Promise<CumpleaneroItem[]> {
-    const actor = await this.obtenerUsuarioActor(actorUserId);
-    const rol = String(actor.rol).trim().toLowerCase();
-    if (!["gerente", "jefe_operaciones"].includes(rol)) {
-      throw makeHttpError(403, "No autorizado para consultar cumpleanos del equipo");
-    }
-
     const empresaId = await this.obtenerEmpresaIdActor(actorUserId);
     return this.listarCumpleanosEmpresa(empresaId, this.hoyBogota().mes);
   }
 
   async listarCumpleanosAnioActor(actorUserId: string): Promise<CumpleaneroItem[]> {
-    const actor = await this.obtenerUsuarioActor(actorUserId);
-    const rol = String(actor.rol).trim().toLowerCase();
-    if (!['gerente', 'jefe_operaciones'].includes(rol)) {
-      throw makeHttpError(403, 'No autorizado para consultar cumpleanos del equipo');
-    }
-
     const empresaId = await this.obtenerEmpresaIdActor(actorUserId);
     const items = await Promise.all(
       Array.from({ length: 12 }, (_, index) =>

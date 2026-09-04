@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { AuthController } from "../controller/AuthController";
 import { authRequired } from "../middlewares/auth.middleware";
-import { requireRoles } from "../middlewares/role.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
 import { requireResourceScope } from "../middlewares/tenant.middleware";
 
@@ -22,7 +21,6 @@ router.post(
 router.post(
   "/usuarios/:userId/cambiar-contrasena",
   authRequired,
-  requireRoles("gerente"),
   requirePermission("usuarios.gestionar"),
   requireResourceScope("usuario", "userId"),
   controller.cambiarContrasenaUsuario

@@ -3,7 +3,6 @@ import { Router } from "express";
 import { CronogramaController } from "../controller/CronogramaController";
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
-import { requireRoles } from "../middlewares/role.middleware";
 import { requireConjuntoScope, requireResourceScope } from "../middlewares/tenant.middleware";
 
 const router = Router();
@@ -102,7 +101,6 @@ router.post(
 router.delete(
   "/conjuntos/:nit/cronograma/publicado",
   authRequired,
-  requireRoles("gerente"),
   requirePermission("cronograma.eliminar_publicado"),
   controller.eliminarCronogramaPublicado,
 );

@@ -1565,6 +1565,25 @@ export class GerenteService {
     return conjuntos;
   }
 
+  async listarConjuntosSelector() {
+    return this.prisma.conjunto.findMany({
+      where: {
+        empresaId: await this.resolverEmpresaNit(),
+      },
+      select: {
+        nit: true,
+        nombre: true,
+        direccion: true,
+        correo: true,
+        activo: true,
+        tipoServicio: true,
+        consignasEspeciales: true,
+        valorAgregado: true,
+      },
+      orderBy: { nombre: "asc" },
+    });
+  }
+
   async obtenerConjunto(conjuntoId: string) {
     const conjunto = await this.prisma.conjunto.findUnique({
       where: { nit: conjuntoId },

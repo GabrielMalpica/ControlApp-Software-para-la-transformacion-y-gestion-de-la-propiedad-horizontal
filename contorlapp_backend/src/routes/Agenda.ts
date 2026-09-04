@@ -4,7 +4,6 @@ import { AgendaMaquinariaController } from "../controller/AgendaMaquinariaContro
 import { AgendaHerramientaController } from "../controller/AgendaHerramientaController";
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
-import { requireRoles } from "../middlewares/role.middleware";
 import {
   requireConjuntoScope,
   requireEmpresaScope,
@@ -20,26 +19,22 @@ router.use("/conjunto/:conjuntoId", requireConjuntoScope("conjuntoId"));
 
 router.get(
   "/empresa/:empresaNit/maquinaria",
-  requireRoles("gerente", "jefe_operaciones"),
   requirePermission("maquinaria.ver"),
   ctrl.agendaGlobal,
 );
 router.get(
   "/empresa/:empresaNit/herramientas",
-  requireRoles("gerente", "jefe_operaciones"),
   requirePermission("herramientas.ver"),
   ctrlHerr.agendaGlobal,
 );
 
 router.get(
   "/conjunto/:conjuntoId/maquinaria",
-  requireRoles("gerente", "jefe_operaciones", "supervisor"),
   requirePermission("maquinaria.ver"),
   ctrl.agendaConjunto,
 );
 router.get(
   "/conjunto/:conjuntoId/herramientas",
-  requireRoles("gerente", "jefe_operaciones", "supervisor"),
   requirePermission("herramientas.ver"),
   ctrlHerr.agendaConjunto,
 );

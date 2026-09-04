@@ -3,7 +3,6 @@ import { Router } from "express";
 import { JefeOperacionesController } from "../controller/JefeOperacionesController";
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
-import { requireRoles } from "../middlewares/role.middleware";
 import { requireResourceScope } from "../middlewares/tenant.middleware";
 import { uploadEvidencias } from "../middlewares/upload_evidencias";
 
@@ -11,9 +10,9 @@ const router = Router();
 const controller = new JefeOperacionesController();
 
 router.use(authRequired);
-router.use(requireRoles("jefe_operaciones"));
 
-// ✅ Endpoints
+// El prefijo conserva el nombre historico del perfil, pero el acceso depende
+// del permiso efectivo y del tenant, no de un rol fijo.
 router.get("/tareas/pendientes", requirePermission("tareas.ver"), controller.listarPendientes);
 
 // JSON veredicto

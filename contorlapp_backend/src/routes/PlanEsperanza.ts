@@ -4,14 +4,12 @@ import { PlanEsperanzaController } from "../controller/PlanEsperanzaController";
 import { uploadEvidencias } from "../middlewares/upload_evidencias";
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
-import { requireRoles } from "../middlewares/role.middleware";
 import { requireConjuntoScope, requireResourceScope } from "../middlewares/tenant.middleware";
 
 const router = Router();
 const ctrl = new PlanEsperanzaController();
 
 router.use(authRequired);
-router.use(requireRoles("gerente", "supervisor"));
 
 router.get("/conjuntos/:nit/config", requirePermission("plan_esperanza.acceso", "plan_esperanza.configurar"), requireConjuntoScope("nit"), ctrl.getConfig);
 router.put("/conjuntos/:nit/config", requirePermission("plan_esperanza.configurar"), requireConjuntoScope("nit"), ctrl.updateConfig);

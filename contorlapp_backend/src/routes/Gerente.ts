@@ -6,6 +6,7 @@ import { GerenteController } from "../controller/GerenteController";
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
 import { requireRoles } from "../middlewares/role.middleware";
+import { PermissionService } from "../services/PermissionService";
 import {
   requireConjuntoScope,
   requireResourceScope,
@@ -14,6 +15,9 @@ import {
 const router = Router();
 const ctrl = new GerenteController();
 const compromisosCtrl = new CompromisoConjuntoController();
+const anyConfiguredPermission = PermissionService.catalog().map(
+  (permission) => permission.key,
+);
 const uploadResidentes = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024, files: 1 },
@@ -54,14 +58,18 @@ const uploadConjuntos = multer({
 
 router.use(authRequired);
 
-// Lectura de conjuntos: supervisor y jefe de operaciones también la
-// necesitan (ven todos los conjuntos de su empresa junto a lo que sus
-// permisos les habiliten), no solo gerente. Por eso estas dos rutas se
-// registran ANTES del gate de rol exclusivo de gerente de más abajo — así
-// no lo heredan — y quedan controladas únicamente por "conjuntos.ver"/
-// "conjuntos.gestionar". Deben ir en este orden (la ruta literal antes que
-// la de parámetro) para que "/conjuntos/plantilla" no quede interceptada
-// por "/conjuntos/:conjuntoId".
+// Este router conserva el nombre historico "/gerente", pero sus recursos
+// operativos se autorizan por permiso. Un gate global de rol aqui hacia que
+// la matriz mostrara accesos habilitados para otros perfiles y luego los
+// rechazara antes de evaluar requirePermission.
+//
+// Las operaciones exclusivas del gerente mantienen un gate de rol en la
+// ruta concreta. La plantilla debe ir antes de "/conjuntos/:conjuntoId".
+router.get(
+  "/conjuntos-selector",
+  requirePermission(...anyConfiguredPermission),
+  ctrl.listarConjuntosSelector,
+);
 router.get(
   "/conjuntos/plantilla",
   requirePermission("conjuntos.gestionar"),
@@ -79,21 +87,26 @@ router.get(
   ctrl.obtenerConjunto,
 );
 
-router.use(requireRoles("gerente"));
-
 /* Empresa */
 router.get(
   "/permisos",
+  requireRoles("gerente"),
   requirePermission("usuarios.gestionar"),
   ctrl.obtenerCatalogoPermisos,
 );
 router.put(
   "/permisos",
+  requireRoles("gerente"),
   requirePermission("usuarios.gestionar"),
   ctrl.actualizarMatrizPermisos,
 );
 
-router.post("/empresa", requirePermission("empresa.gestionar"), ctrl.crearEmpresa);
+router.post(
+  "/empresa",
+  requireRoles("gerente"),
+  requirePermission("empresa.gestionar"),
+  ctrl.crearEmpresa,
+);
 router.patch(
   "/empresa/limite-horas",
   requirePermission("empresa.gestionar"),
@@ -154,7 +167,7 @@ router.get("/supervisores", requirePermission("usuarios.gestionar"), ctrl.listar
 
 /* Conjuntos */
 // GET /conjuntos, GET /conjuntos/plantilla y GET /conjuntos/:conjuntoId se
-// registran más arriba, antes del gate de rol exclusivo de gerente.
+// registran mas arriba para respetar el orden de las rutas.
 router.post("/conjuntos", requirePermission("conjuntos.gestionar"), ctrl.crearConjunto);
 router.post(
   "/conjuntos/carga-masiva",
