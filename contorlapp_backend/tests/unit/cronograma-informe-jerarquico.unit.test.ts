@@ -81,6 +81,12 @@ describe("Informe jerárquico de cumplimiento", () => {
       preventivaOcurrenciaPlan: {
         findMany: jest.fn().mockResolvedValue(ocurrencias),
       },
+      preventivaExcluidaBorrador: {
+        findMany: jest.fn().mockResolvedValue([
+          { ocurrenciaPlanId: "occ-2" },
+          { ocurrenciaPlanId: "occ-fuera" },
+        ]),
+      },
       tarea: {
         findMany: jest.fn().mockImplementation(async ({ where }: any) =>
           where?.ocurrenciaPlanId === null
@@ -173,5 +179,32 @@ describe("Informe jerárquico de cumplimiento", () => {
     expect(ocurrencia.bloques[0].operarios).toEqual([
       { id: "op-1", nombre: "Ana" },
     ]);
+  });
+
+  test("ignora trazabilidad huerfana de cronogramas eliminados anteriormente", async () => {
+    const huerfana = {
+      ...ocurrencias[0],
+      id: "occ-antigua",
+      fechaRealInicio: new Date(2026, 7, 4, 8),
+      fechaRealFin: new Date(2026, 7, 4, 9),
+    };
+    const prisma = prismaMock();
+    prisma.preventivaOcurrenciaPlan.findMany.mockResolvedValue([
+      ocurrencias[0],
+      huerfana,
+    ]);
+    prisma.preventivaExcluidaBorrador.findMany.mockResolvedValue([]);
+    const service = new CronogramaService(prisma, "C-1");
+
+    const out = await service.informeActividadJerarquico({
+      anio: 2026,
+      mes: 8,
+      borrador: true,
+    });
+
+    expect(out.resumen.esperadas).toBe(1);
+    expect(out.resumen.conProgramacion).toBe(1);
+    expect(out.resumen.completas).toBe(1);
+    expect(out.resumen.sinProgramar).toBe(0);
   });
 });

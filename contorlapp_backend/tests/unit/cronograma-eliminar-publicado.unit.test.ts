@@ -19,6 +19,9 @@ describe("Eliminacion de cronograma publicado", () => {
       consumoInsumo: {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
+      preventivaOcurrenciaPlan: {
+        deleteMany: jest.fn().mockResolvedValue({ count: tareas.length }),
+      },
       tarea: {
         update: tareaUpdate,
         deleteMany: jest.fn().mockResolvedValue({ count: tareas.length }),
@@ -71,6 +74,14 @@ describe("Eliminacion de cronograma publicado", () => {
     expect(tareaUpdate).not.toHaveBeenCalled();
     expect(tx.tarea.deleteMany).toHaveBeenCalledWith({
       where: { id: { in: ids } },
+    });
+    expect(tx.preventivaOcurrenciaPlan.deleteMany).toHaveBeenCalledWith({
+      where: {
+        conjuntoId,
+        periodoAnio: 2026,
+        periodoMes: 9,
+        borrador: false,
+      },
     });
     expect(prisma.auditoriaEvento.create).toHaveBeenCalledTimes(1);
   });

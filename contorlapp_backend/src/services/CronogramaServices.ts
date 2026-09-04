@@ -282,7 +282,10 @@ export class CronogramaService {
    * `update` individual por tarea. Esto evita agotar el timeout de la
    * transaccion en cronogramas grandes.
    */
-  private async eliminarTareasPublicadas(ids: number[]) {
+  private async eliminarTareasPublicadas(
+    ids: number[],
+    periodo: { anio: number; mes: number },
+  ) {
     if (!ids.length) return;
 
     await this.prisma.$transaction(async (tx) => {
@@ -296,6 +299,14 @@ export class CronogramaService {
       await tx.consumoInsumo.deleteMany({ where: { tareaId: { in: ids } } });
 
       await tx.tarea.deleteMany({ where: { id: { in: ids } } });
+      await tx.preventivaOcurrenciaPlan.deleteMany({
+        where: {
+          conjuntoId: this.conjuntoId,
+          periodoAnio: periodo.anio,
+          periodoMes: periodo.mes,
+          borrador: false,
+        },
+      });
     });
   }
 
@@ -664,6 +675,43 @@ export class CronogramaService {
         ocurrenciaPlanId: `legacy:${tarea.id}`,
       }));
     }
+
+    // Una ocurrencia vigente siempre debe estar respaldada por al menos un
+    // bloque programado o por una fila de excluida. Versiones anteriores de la
+    // eliminacion de cronogramas borraban las tareas definitivas, pero dejaban
+    // su trazabilidad; al volver a publicar, el informe contaba esas filas
+    // huerfanas como pendientes (por ejemplo 22/88 sin ninguna excluida).
+    // Filtrarlas aqui corrige tambien los periodos que ya quedaron afectados.
+    const idsOcurrenciasPersistidas = ocurrencias
+      .map((ocurrencia) => String(ocurrencia.id))
+      .filter((id) => !id.startsWith("legacy:"));
+    const excluidasRepo = (this.prisma as any).preventivaExcluidaBorrador;
+    const excluidasConOcurrencia =
+      idsOcurrenciasPersistidas.length > 0 && excluidasRepo?.findMany
+        ? await excluidasRepo.findMany({
+            where: {
+              conjuntoId: this.conjuntoId,
+              periodoAnio: anio,
+              periodoMes: mes,
+              ocurrenciaPlanId: { in: idsOcurrenciasPersistidas },
+            },
+            select: { ocurrenciaPlanId: true },
+          })
+        : [];
+    const ocurrenciasRespaldadas = new Set<string>([
+      ...tareas
+        .map((tarea) => tarea.ocurrenciaPlanId)
+        .filter((id): id is string => typeof id === "string"),
+      ...excluidasConOcurrencia
+        .map((excluida: { ocurrenciaPlanId: string | null }) =>
+          excluida.ocurrenciaPlanId,
+        )
+        .filter((id: string | null): id is string => id != null),
+    ]);
+    ocurrencias = ocurrencias.filter((ocurrencia) => {
+      const id = String(ocurrencia.id);
+      return id.startsWith("legacy:") || ocurrenciasRespaldadas.has(id);
+    });
 
     const tareasPorOcurrencia = new Map<string, typeof tareas>();
     for (const tarea of tareas) {
@@ -1566,7 +1614,7 @@ export class CronogramaService {
 
     const tareaIds = tareas.map((tarea) => tarea.id);
 
-    await this.eliminarTareasPublicadas(tareaIds);
+    await this.eliminarTareasPublicadas(tareaIds, { anio, mes });
 
     const restantes = await this.prisma.tarea.count({
       where: { id: { in: tareaIds } },
