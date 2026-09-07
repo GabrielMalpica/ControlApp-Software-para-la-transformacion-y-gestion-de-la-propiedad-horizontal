@@ -4,6 +4,7 @@ class AuthUser {
   final String correo;
   final String rol;
   final String empresaId;
+  final String conjuntoId;
   final List<String> permissions;
   final bool requiereCambioContrasena;
 
@@ -13,6 +14,7 @@ class AuthUser {
     required this.correo,
     required this.rol,
     this.empresaId = '',
+    this.conjuntoId = '',
     this.permissions = const [],
     this.requiereCambioContrasena = false,
   });
@@ -24,6 +26,7 @@ class AuthUser {
       correo: json['correo']?.toString() ?? '',
       rol: json['rol']?.toString() ?? '',
       empresaId: json['empresaId']?.toString() ?? '',
+      conjuntoId: json['conjuntoId']?.toString() ?? '',
       permissions: (json['permissions'] as List<dynamic>? ?? const [])
           .map((item) => item.toString())
           .toList(),

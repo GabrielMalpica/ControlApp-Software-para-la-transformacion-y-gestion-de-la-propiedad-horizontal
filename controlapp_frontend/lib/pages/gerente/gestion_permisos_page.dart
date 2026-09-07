@@ -255,6 +255,10 @@ class _GestionPermisosPageState extends State<GestionPermisosPage> {
                       Text(
                         'Desde aqui el gerente define que pantallas y acciones internas puede usar cada rol. La columna del gerente queda fija para evitar bloquear la administracion del sistema.',
                       ),
+                      SizedBox(height: 6),
+                      Text(
+                        'Los permisos de crear, gestionar, cerrar o configurar incluyen la consulta minima del modulo necesaria para realizar esa accion.',
+                      ),
                     ],
                   ),
                 ),

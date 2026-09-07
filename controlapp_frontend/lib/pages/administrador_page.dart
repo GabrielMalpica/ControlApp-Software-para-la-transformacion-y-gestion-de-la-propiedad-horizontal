@@ -19,11 +19,23 @@ import 'package:flutter_application_1/widgets/perfil_action.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 import '../service/theme.dart';
 import 'compartidos/reportes_dashboard_page.dart';
+import 'agenda_herramientas_page.dart';
+import 'agenda_maquinaria_page.dart';
+import 'cronograma_impresion_page.dart';
 import 'cronograma_page.dart';
 import 'inventario_page.dart';
+import 'jefe_operaciones/jefe_operaciones_pendientes_page.dart';
+import 'plan_esperanza_page.dart';
+import 'solicitudes_page.dart';
+import 'stock_herramientas_empresa_page.dart';
+import 'tareas_page.dart';
 import 'gerente/compromisos_page.dart';
+import 'gerente/compromisos_por_conjunto_page.dart';
 import 'gerente/carga_residentes_page.dart';
 import 'gerente/crear_residente_page.dart';
+import 'gerente/cronograma_maquinaria_page.dart';
+import 'gerente/lista_insumos_page.dart';
+import 'gerente/lista_maquinaria_page.dart';
 import 'gerente/residentes_page.dart';
 import 'gerente/mapa_conjunto_page.dart';
 
@@ -245,6 +257,41 @@ class _AdministradorPageState extends State<AdministradorPage> {
     final conjunto = _conjuntoSeleccionado!;
     final sections = <_AdminSection>[
       _AdminSection('Operación diaria', [
+        if (_can('plan_esperanza.acceso'))
+          _AdminTile(
+            'Plan Esperanza',
+            Icons.health_and_safety,
+            AppTheme.primary,
+            () => _go(
+              PlanEsperanzaPage(
+                nit: conjunto.nit,
+                nombreConjunto: conjunto.nombre,
+              ),
+            ),
+          ),
+        if (_can('tareas.ver'))
+          _AdminTile(
+            'Tareas',
+            Icons.assignment,
+            AppTheme.green,
+            () => _go(TareasPage(nit: conjunto.nit)),
+          ),
+        if (_can('tareas.veredicto'))
+          _AdminTile(
+            'Veredictos de tareas',
+            Icons.fact_check_outlined,
+            AppTheme.green,
+            () => _go(
+              JefeOperacionesPendientesPage(conjuntoId: conjunto.nit),
+            ),
+          ),
+        if (_can('solicitudes.ver'))
+          _AdminTile(
+            'Solicitudes',
+            Icons.pending_actions,
+            AppTheme.primary,
+            () => _go(SolicitudesPage(nit: conjunto.nit)),
+          ),
         if (_can('compromisos.ver'))
           _AdminTile(
             'PQRS',
@@ -289,6 +336,52 @@ class _AdministradorPageState extends State<AdministradorPage> {
             Colors.teal,
             () => _go(MapaConjuntoPage(conjuntoNit: conjunto.nit)),
           ),
+        if (_can('maquinaria.ver'))
+          _AdminTile(
+            'Maquinaria',
+            Icons.precision_manufacturing,
+            AppTheme.red,
+            () => _go(AgendaMaquinariaPage(conjuntoId: conjunto.nit)),
+          ),
+        if (_can('herramientas.ver'))
+          _AdminTile(
+            'Herramientas',
+            Icons.handyman,
+            Colors.orange,
+            () => _go(AgendaHerramientasPage(conjuntoId: conjunto.nit)),
+          ),
+        if (_can('inventario.gestionar'))
+          _AdminTile(
+            'Gestionar insumos',
+            Icons.inventory_outlined,
+            AppTheme.yellow,
+            () => _go(const ListaInsumosPage()),
+          ),
+        if (_can('maquinaria.asignar')) ...[
+          _AdminTile(
+            'Gestionar maquinaria',
+            Icons.construction,
+            AppTheme.red,
+            () => _go(
+              ListaMaquinariaGlobalPage(empresaNit: AppConstants.empresaNit),
+            ),
+          ),
+          _AdminTile(
+            'Cronograma maquinaria',
+            Icons.event_repeat,
+            AppTheme.red,
+            () => _go(
+              CronogramaMaquinariaPage(empresaNit: AppConstants.empresaNit),
+            ),
+          ),
+        ],
+        if (_can('herramientas.gestionar'))
+          _AdminTile(
+            'Stock de herramientas',
+            Icons.home_repair_service_outlined,
+            Colors.orange,
+            () => _go(const StockHerramientasEmpresaPage()),
+          ),
       ]),
       _AdminSection('Analisis y control', [
         if (_can('reportes.ver'))
@@ -303,6 +396,20 @@ class _AdministradorPageState extends State<AdministradorPage> {
                 soloResumenTipos: true,
               ),
             ),
+          ),
+        if (_can('cronograma.imprimir'))
+          _AdminTile(
+            'Imprimir cronograma',
+            Icons.print,
+            Colors.deepOrange,
+            () => _go(CronogramaImpresionPage(nit: conjunto.nit)),
+          ),
+        if (_can('compromisos.globales_ver'))
+          _AdminTile(
+            'Compromisos globales',
+            Icons.rule_folder_outlined,
+            Colors.indigo.shade300,
+            () => _go(const CompromisosPorConjuntoPage()),
           ),
       ]),
       _AdminSection('Comunidad y ventas', [

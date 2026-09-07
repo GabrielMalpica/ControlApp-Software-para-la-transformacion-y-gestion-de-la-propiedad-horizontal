@@ -9,8 +9,14 @@ import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_p
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
+import 'package:flutter_application_1/pages/gerente/lista_insumos_page.dart';
+import 'package:flutter_application_1/pages/gerente/lista_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/cronograma_impresion_page.dart';
 import 'package:flutter_application_1/pages/cumpleanos_page.dart';
+import 'package:flutter_application_1/pages/plan_esperanza_page.dart';
+import 'package:flutter_application_1/pages/reportes_page.dart';
+import 'package:flutter_application_1/pages/stock_herramientas_empresa_page.dart';
+import 'package:flutter_application_1/pages/tareas_page.dart';
 import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
 import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
@@ -95,7 +101,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
     });
 
     try {
-      final lista = await _api.listarConjuntos();
+      final lista = await _api.listarConjuntosSelector();
       setState(() {
         _conjuntos = lista;
         _conjuntoSeleccionadoNit = lista.isNotEmpty ? lista.first.nit : null;
@@ -236,6 +242,23 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
     final nit = conjunto.nit;
     final sections = <_JefeSection>[
       _JefeSection('Operación diaria', [
+        if (_can('plan_esperanza.acceso'))
+          _JefeTile(
+            'Plan Esperanza',
+            Icons.health_and_safety,
+            AppTheme.primary,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PlanEsperanzaPage(
+                    nit: nit,
+                    nombreConjunto: conjunto.nombre,
+                  ),
+                ),
+              );
+            },
+          ),
         if (_can('tareas.ver'))
           _JefeTile('Tareas', Icons.assignment, AppTheme.green, () {
             Navigator.push(
@@ -245,6 +268,18 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
               ),
             );
           }),
+        if (_can('tareas.crear'))
+          _JefeTile(
+            'Crear y editar tareas',
+            Icons.add_task,
+            AppTheme.green,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => TareasPage(nit: nit)),
+              );
+            },
+          ),
         if (_can('solicitudes.ver'))
           _JefeTile('Solicitudes', Icons.pending_actions, AppTheme.primary, () {
             Navigator.push(
@@ -280,7 +315,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
               );
             },
           ),
-        if (_can('maquinaria.ver'))
+        if (_can('maquinaria.asignar'))
           _JefeTile(
             'Cronograma maquinaria',
             Icons.event_repeat,
@@ -307,6 +342,48 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
               ),
             );
           }),
+        if (_can('inventario.gestionar'))
+          _JefeTile(
+            'Gestionar insumos',
+            Icons.inventory_outlined,
+            AppTheme.yellow,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ListaInsumosPage()),
+              );
+            },
+          ),
+        if (_can('maquinaria.asignar'))
+          _JefeTile(
+            'Gestionar maquinaria',
+            Icons.construction,
+            AppTheme.red,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ListaMaquinariaGlobalPage(
+                    empresaNit: AppConstants.empresaNit,
+                  ),
+                ),
+              );
+            },
+          ),
+        if (_can('herramientas.gestionar'))
+          _JefeTile(
+            'Stock de herramientas',
+            Icons.home_repair_service_outlined,
+            Colors.orange,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const StockHerramientasEmpresaPage(),
+                ),
+              );
+            },
+          ),
         if (_can('inventario.ver'))
           _JefeTile('Inventario', Icons.inventory, AppTheme.yellow, () {
             Navigator.push(
@@ -385,6 +462,15 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
         ),
       ]),
       _JefeSection('Analisis y control', [
+        if (_can('reportes.ver'))
+          _JefeTile('Reportes', Icons.bar_chart, Colors.teal, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ReportesPage(nit: nit, soloResumenTipos: true),
+              ),
+            );
+          }),
         if (_can('compromisos.globales_ver'))
           _JefeTile(
             'Compromisos globales',

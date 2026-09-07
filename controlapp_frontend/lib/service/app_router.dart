@@ -12,6 +12,7 @@ import 'package:flutter_application_1/pages/perfil_page.dart';
 import 'package:flutter_application_1/pages/splash_decider_page.dart';
 import 'package:flutter_application_1/pages/supervisor_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/service/session_service.dart';
 
 class AppRouter {
   static const splash = '/';
@@ -33,8 +34,9 @@ class AppRouter {
     homeGerente: (_) => const GerenteDashboardPage(),
     homeSupervisor: (_) => const SupervisorPage(),
     homeAdmin: (_) => const AdministradorPage(),
-    homeOperario: (_) =>
-        const OperarioDashboardPage(nit: AppConstants.empresaNit),
+    homeOperario: (_) => OperarioDashboardPage(
+      nit: SessionService().getConjuntoIdSync() ?? AppConstants.empresaNit,
+    ),
     homeJefeOperaciones: (_) => const JefeOperacionesPage(),
     homeResidente: (_) => const PerfilPage(),
     commerceCatalog: (_) => const CommerceCatalogPage(),

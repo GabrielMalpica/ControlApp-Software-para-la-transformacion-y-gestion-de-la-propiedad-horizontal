@@ -581,7 +581,7 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         return;
 
       case _QuickAction.crearMaquinaria:
-        await go(const CrearMaquinariaPage(nit: AppConstants.empresaNit));
+        await go(CrearMaquinariaPage(nit: AppConstants.empresaNit));
         return;
 
       case _QuickAction.crearHerramienta:

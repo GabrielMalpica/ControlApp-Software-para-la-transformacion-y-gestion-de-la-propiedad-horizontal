@@ -75,6 +75,7 @@ class TareaCierreService {
     switch (rolNormalizado) {
       case 'gerente':
       case 'jefe_operaciones':
+      case 'administrador':
         return null;
       case 'supervisor':
         final supervisorAsignado = _id(tarea.supervisorId);
@@ -93,8 +94,6 @@ class TareaCierreService {
           return 'Solo puedes cerrar las tareas que tienes asignadas.';
         }
         return null;
-      case 'administrador':
-        return 'Los administradores no pueden cerrar tareas.';
       default:
         return 'Tu rol no tiene permiso para cerrar tareas.';
     }
@@ -176,6 +175,7 @@ class TareaCierreService {
         );
         return;
       case 'supervisor':
+      case 'administrador':
         await _supervisorApi.cerrarTareaConEvidencias(
           tareaId: tarea.id,
           accion: accion,

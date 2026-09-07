@@ -4,6 +4,7 @@ import '../api/herramienta_api.dart';
 import '../model/herramienta_model.dart';
 import '../service/app_constants.dart';
 import '../service/app_error.dart';
+import '../service/permission_service.dart';
 import '../service/theme.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
@@ -21,6 +22,9 @@ class StockHerramientasEmpresaPage extends StatefulWidget {
 class _StockHerramientasEmpresaPageState
     extends State<StockHerramientasEmpresaPage> {
   final _api = HerramientaApi();
+
+  bool get _canManage =>
+      PermissionService.instance.can('herramientas.gestionar');
 
   bool _loading = false;
   String? _error;
@@ -80,6 +84,7 @@ class _StockHerramientasEmpresaPageState
     HerramientaStockResponse item, {
     required bool sumar,
   }) async {
+    if (!_canManage) return;
     final ctrl = TextEditingController();
 
     try {
@@ -157,6 +162,7 @@ class _StockHerramientasEmpresaPageState
   }
 
   Future<void> _cambiarEstado(HerramientaStockResponse item) async {
+    if (!_canManage) return;
     final cantidadCtrl = TextEditingController(text: item.cantidad.toString());
     final estadosDisponibles = EstadoHerramientaStock.values
         .where((estado) => estado != item.estado)
@@ -401,11 +407,15 @@ class _StockHerramientasEmpresaPageState
                               ],
                               source: _EmpresaHerramientaDataSource(
                                 data: filtrados,
-                                onAgregar: (item) =>
-                                    _ajustar(item, sumar: true),
-                                onDescontar: (item) =>
-                                    _ajustar(item, sumar: false),
-                                onCambiarEstado: _cambiarEstado,
+                                onAgregar: _canManage
+                                    ? (item) => _ajustar(item, sumar: true)
+                                    : null,
+                                onDescontar: _canManage
+                                    ? (item) => _ajustar(item, sumar: false)
+                                    : null,
+                                onCambiarEstado: _canManage
+                                    ? _cambiarEstado
+                                    : null,
                               ),
                             ),
                           ),
@@ -422,9 +432,9 @@ class _StockHerramientasEmpresaPageState
 
 class _EmpresaHerramientaDataSource extends DataTableSource {
   final List<HerramientaStockResponse> data;
-  final Future<void> Function(HerramientaStockResponse item) onAgregar;
-  final Future<void> Function(HerramientaStockResponse item) onDescontar;
-  final Future<void> Function(HerramientaStockResponse item) onCambiarEstado;
+  final Future<void> Function(HerramientaStockResponse item)? onAgregar;
+  final Future<void> Function(HerramientaStockResponse item)? onDescontar;
+  final Future<void> Function(HerramientaStockResponse item)? onCambiarEstado;
 
   _EmpresaHerramientaDataSource({
     required this.data,
@@ -472,26 +482,28 @@ class _EmpresaHerramientaDataSource extends DataTableSource {
           ),
         ),
         DataCell(
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                tooltip: 'Descontar',
-                onPressed: () => onDescontar(item),
-                icon: const Icon(Icons.remove_circle_outline),
-              ),
-              IconButton(
-                tooltip: 'Agregar',
-                onPressed: () => onAgregar(item),
-                icon: const Icon(Icons.add_circle_outline),
-              ),
-              IconButton(
-                tooltip: 'Cambiar estado',
-                onPressed: () => onCambiarEstado(item),
-                icon: const Icon(Icons.sync_alt_outlined),
-              ),
-            ],
-          ),
+          onAgregar == null || onDescontar == null || onCambiarEstado == null
+              ? const Text('-')
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Descontar',
+                      onPressed: () => onDescontar!(item),
+                      icon: const Icon(Icons.remove_circle_outline),
+                    ),
+                    IconButton(
+                      tooltip: 'Agregar',
+                      onPressed: () => onAgregar!(item),
+                      icon: const Icon(Icons.add_circle_outline),
+                    ),
+                    IconButton(
+                      tooltip: 'Cambiar estado',
+                      onPressed: () => onCambiarEstado!(item),
+                      icon: const Icon(Icons.sync_alt_outlined),
+                    ),
+                  ],
+                ),
         ),
       ],
     );

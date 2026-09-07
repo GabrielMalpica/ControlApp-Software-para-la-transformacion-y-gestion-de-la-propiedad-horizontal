@@ -71,10 +71,22 @@ class AppConstants {
   // 🔹 Prefijo de todo lo que maneja el GerenteController
   static String get gerenteBase => "$baseUrl/gerente";
   static String get administradorBase => "$baseUrl/administrador";
-  static const empresaNit = String.fromEnvironment(
+  static const String _empresaNitFromEnv = String.fromEnvironment(
     'EMPRESA_NIT',
     defaultValue: '',
   );
+  static String _empresaNitFromSession = '';
+
+  /// La empresa es parte de la sesion autenticada. EMPRESA_NIT se conserva
+  /// solo como respaldo para builds antiguos; no debe decidir el tenant de un
+  /// usuario que ya inicio sesion.
+  static String get empresaNit => _empresaNitFromSession.trim().isNotEmpty
+      ? _empresaNitFromSession.trim()
+      : _empresaNitFromEnv.trim();
+
+  static void setEmpresaNitFromSession(String value) {
+    _empresaNitFromSession = value.trim();
+  }
 
   static String get empresaBase => "$baseUrl/empresa";
   static String maquinariaEmpresa(String nit) => "$empresaBase/$nit/maquinaria";

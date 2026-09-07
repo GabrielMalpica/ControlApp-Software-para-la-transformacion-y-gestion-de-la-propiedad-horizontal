@@ -278,6 +278,21 @@ class GerenteApi {
         .toList();
   }
 
+  Future<List<Conjunto>> listarConjuntosSelector() async {
+    final resp = await _apiClient.get(
+      '${AppConstants.baseUrl}/gerente/conjuntos-selector',
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception('Error al listar conjuntos disponibles: ${resp.body}');
+    }
+
+    final List<dynamic> data = jsonDecode(resp.body);
+    return data
+        .map((e) => Conjunto.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<Map<String, dynamic>>> listarCompromisosConjunto(
     String conjuntoId,
   ) async {

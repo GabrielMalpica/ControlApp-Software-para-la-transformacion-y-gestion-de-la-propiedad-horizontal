@@ -8,12 +8,27 @@ import '../service/permission_service.dart';
 import '../service/theme.dart';
 import 'tareas_page.dart';
 import 'solicitudes_page.dart';
+import 'agenda_herramientas_page.dart';
+import 'agenda_maquinaria_page.dart';
+import 'cronograma_impresion_page.dart';
+import 'cronograma_page.dart';
+import 'inventario_page.dart';
+import 'jefe_operaciones/jefe_operaciones_pendientes_page.dart';
+import 'plan_esperanza_page.dart';
+import 'reportes_page.dart';
+import 'stock_herramientas_empresa_page.dart';
 import 'package:flutter_application_1/service/logout.dart';
+import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import 'package:flutter_application_1/widgets/perfil_action.dart';
 import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
+import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
+import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
+import 'package:flutter_application_1/pages/gerente/cronograma_maquinaria_page.dart';
+import 'package:flutter_application_1/pages/gerente/lista_insumos_page.dart';
+import 'package:flutter_application_1/pages/gerente/lista_maquinaria_page.dart';
 
 class OperarioDashboardPage extends StatefulWidget {
   final String nit;
@@ -215,6 +230,22 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                           );
                         },
                       ),
+                    if (_can('tareas.veredicto'))
+                      _simpleCard(
+                        'Veredictos de tareas',
+                        AppTheme.green,
+                        Icons.fact_check_outlined,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => JefeOperacionesPendientesPage(
+                                conjuntoId: widget.nit,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     if (_can('solicitudes.ver'))
                       _simpleCard(
                         'Solicitudes',
@@ -240,6 +271,210 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                             MaterialPageRoute(
                               builder: (_) =>
                                   MapaConjuntoPage(conjuntoNit: widget.nit),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('compromisos.ver'))
+                      _simpleCard(
+                        'Compromisos',
+                        Colors.indigo,
+                        Icons.checklist_rounded,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CompromisosPage(
+                                nit: widget.nit,
+                                nombreConjunto: 'Conjunto asignado',
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('cronograma.ver'))
+                      _simpleCard(
+                        'Cronograma',
+                        Colors.purple,
+                        Icons.calendar_month,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CronogramaPage(nit: widget.nit),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('inventario.ver'))
+                      _simpleCard(
+                        'Inventario',
+                        AppTheme.yellow,
+                        Icons.inventory_2_outlined,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => InventarioPage(
+                                nit: widget.nit,
+                                empresaId: AppConstants.empresaNit,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('maquinaria.ver'))
+                      _simpleCard(
+                        'Maquinaria',
+                        AppTheme.red,
+                        Icons.precision_manufacturing,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  AgendaMaquinariaPage(conjuntoId: widget.nit),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('herramientas.ver'))
+                      _simpleCard(
+                        'Herramientas',
+                        Colors.orange,
+                        Icons.handyman,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AgendaHerramientasPage(
+                                conjuntoId: widget.nit,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('plan_esperanza.acceso'))
+                      _simpleCard(
+                        'Plan Esperanza',
+                        AppTheme.primary,
+                        Icons.health_and_safety,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PlanEsperanzaPage(
+                                nit: widget.nit,
+                                nombreConjunto: 'Conjunto asignado',
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('reportes.ver'))
+                      _simpleCard(
+                        'Reportes',
+                        Colors.teal,
+                        Icons.bar_chart,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ReportesPage(
+                                nit: widget.nit,
+                                soloResumenTipos: true,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('cronograma.imprimir'))
+                      _simpleCard(
+                        'Imprimir cronograma',
+                        Colors.deepOrange,
+                        Icons.print,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  CronogramaImpresionPage(nit: widget.nit),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('compromisos.globales_ver'))
+                      _simpleCard(
+                        'Compromisos globales',
+                        Colors.indigo.shade300,
+                        Icons.rule_folder_outlined,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const CompromisosPorConjuntoPage(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('inventario.gestionar'))
+                      _simpleCard(
+                        'Gestionar insumos',
+                        AppTheme.yellow,
+                        Icons.inventory_outlined,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ListaInsumosPage(),
+                            ),
+                          );
+                        },
+                      ),
+                    if (_can('maquinaria.asignar')) ...[
+                      _simpleCard(
+                        'Gestionar maquinaria',
+                        AppTheme.red,
+                        Icons.construction,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ListaMaquinariaGlobalPage(
+                                empresaNit: AppConstants.empresaNit,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      _simpleCard(
+                        'Cronograma maquinaria',
+                        AppTheme.red,
+                        Icons.event_repeat,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CronogramaMaquinariaPage(
+                                empresaNit: AppConstants.empresaNit,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                    if (_can('herramientas.gestionar'))
+                      _simpleCard(
+                        'Stock de herramientas',
+                        Colors.orange,
+                        Icons.home_repair_service_outlined,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const StockHerramientasEmpresaPage(),
                             ),
                           );
                         },

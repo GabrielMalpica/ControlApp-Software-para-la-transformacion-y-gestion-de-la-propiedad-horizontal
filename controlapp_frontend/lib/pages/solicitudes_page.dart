@@ -5,6 +5,7 @@ import '../service/theme.dart';
 import '../api/solicitud_insumo_api.dart';
 import '../service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
+import 'package:flutter_application_1/service/permission_service.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
@@ -33,6 +34,9 @@ class _SolicitudesPageState extends State<SolicitudesPage> {
   List<SolicitudInsumoResponse> _items = [];
 
   EstadoSolicitudUi? _estadoFiltro; // null = todos
+
+  bool get _canManage =>
+      PermissionService.instance.can('solicitudes.gestionar');
 
   @override
   void initState() {
@@ -183,7 +187,7 @@ class _SolicitudesPageState extends State<SolicitudesPage> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Cerrar'),
           ),
-          if (estado == EstadoSolicitudUi.PENDIENTE) ...[
+          if (estado == EstadoSolicitudUi.PENDIENTE && _canManage) ...[
             TextButton(
               onPressed: () {
                 Navigator.pop(context);

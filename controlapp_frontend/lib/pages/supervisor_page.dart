@@ -18,12 +18,18 @@ import 'solicitudes_page.dart';
 import 'agenda_maquinaria_page.dart';
 import 'agenda_herramientas_page.dart';
 import 'inventario_page.dart';
+import 'jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'cronograma_page.dart';
 import 'cronograma_impresion_page.dart';
+import 'crear_tarea_page.dart';
 import 'plan_esperanza_page.dart';
 import 'reportes_page.dart';
+import 'stock_herramientas_empresa_page.dart';
 import 'gerente/compromisos_page.dart';
 import 'gerente/compromisos_por_conjunto_page.dart';
+import 'gerente/cronograma_maquinaria_page.dart';
+import 'gerente/lista_insumos_page.dart';
+import 'gerente/lista_maquinaria_page.dart';
 import 'gerente/mapa_conjunto_page.dart';
 import '../service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
@@ -101,7 +107,7 @@ class _SupervisorPageState extends State<SupervisorPage> {
     });
 
     try {
-      final lista = await _api.listarConjuntos();
+      final lista = await _api.listarConjuntosSelector();
       if (!mounted) return;
       setState(() {
         _conjuntos = lista;
@@ -253,6 +259,18 @@ class _SupervisorPageState extends State<SupervisorPage> {
             if (!_requiereConjuntoOrWarn()) return;
             _go(SupervisorTareasPage(nit: nit));
           }),
+        if (_can('tareas.crear'))
+          _SupervisorTile('Crear tarea', Icons.add_task, AppTheme.green, () {
+            if (!_requiereConjuntoOrWarn()) return;
+            _go(CrearTareaPage(nit: nit));
+          }),
+        if (_can('tareas.veredicto'))
+          _SupervisorTile(
+            'Veredictos de tareas',
+            Icons.fact_check_outlined,
+            AppTheme.green,
+            () => _go(JefeOperacionesPendientesPage(conjuntoId: nit)),
+          ),
         if (_can('solicitudes.ver'))
           _SupervisorTile(
             'Solicitudes',
@@ -310,6 +328,38 @@ class _SupervisorPageState extends State<SupervisorPage> {
             if (!_requiereConjuntoOrWarn()) return;
             _go(AgendaHerramientasPage(conjuntoId: nit));
           }),
+        if (_can('inventario.gestionar'))
+          _SupervisorTile(
+            'Gestionar insumos',
+            Icons.inventory_outlined,
+            AppTheme.yellow,
+            () => _go(const ListaInsumosPage()),
+          ),
+        if (_can('maquinaria.asignar')) ...[
+          _SupervisorTile(
+            'Gestionar maquinaria',
+            Icons.construction,
+            AppTheme.red,
+            () => _go(
+              ListaMaquinariaGlobalPage(empresaNit: AppConstants.empresaNit),
+            ),
+          ),
+          _SupervisorTile(
+            'Cronograma maquinaria',
+            Icons.event_repeat,
+            AppTheme.red,
+            () => _go(
+              CronogramaMaquinariaPage(empresaNit: AppConstants.empresaNit),
+            ),
+          ),
+        ],
+        if (_can('herramientas.gestionar'))
+          _SupervisorTile(
+            'Stock de herramientas',
+            Icons.home_repair_service_outlined,
+            Colors.orange,
+            () => _go(const StockHerramientasEmpresaPage()),
+          ),
         if (_can('mapa_areas.ver'))
           _SupervisorTile(
             'Mapa de áreas',

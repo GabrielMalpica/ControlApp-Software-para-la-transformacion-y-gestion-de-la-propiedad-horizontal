@@ -8,6 +8,7 @@ import 'package:flutter_application_1/pdf/pdf_actions.dart';
 import 'package:flutter_application_1/pdf/plan_esperanza_pdf.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/service/permission_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/utils/evidence_utils.dart';
 import 'package:flutter_application_1/utils/pickers/camera_capture_bridge.dart';
@@ -31,6 +32,9 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
     with SingleTickerProviderStateMixin {
   final PlanEsperanzaApi _api = PlanEsperanzaApi();
   late TabController _tabController;
+
+  bool get _canConfigure =>
+      PermissionService.instance.can('plan_esperanza.configurar');
 
   bool _loadingPlan = true;
   bool _saving = false;
@@ -513,6 +517,7 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
   }
 
   Future<void> _showConfigDialog() async {
+    if (!_canConfigure) return;
     final controller = TextEditingController(
       text: (_config?.intervaloMeses ?? 3).toString(),
     );
@@ -613,11 +618,12 @@ class _PlanEsperanzaPageState extends State<PlanEsperanzaPage>
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white70),
-            tooltip: 'Configurar periodicidad',
-            onPressed: _showConfigDialog,
-          ),
+          if (_canConfigure)
+            IconButton(
+              icon: const Icon(Icons.settings, color: Colors.white70),
+              tooltip: 'Configurar periodicidad',
+              onPressed: _showConfigDialog,
+            ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),

@@ -6,6 +6,7 @@ import '../../model/maquinaria_model.dart';
 import '../../model/necesidad_maquinaria_model.dart';
 import '../../service/app_error.dart';
 import '../../service/app_feedback.dart';
+import '../../service/permission_service.dart';
 import '../../service/theme.dart';
 import '../../widgets/maquinaria_conflict_dialog.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
@@ -27,6 +28,8 @@ class CronogramaMaquinariaPage extends StatefulWidget {
 
 class _CronogramaMaquinariaPageState extends State<CronogramaMaquinariaPage> {
   final _api = CronogramaMaquinariaApi();
+
+  bool get _canManage => PermissionService.instance.can('maquinaria.asignar');
 
   late int _anio;
   late int _mes;
@@ -163,62 +166,68 @@ class _CronogramaMaquinariaPageState extends State<CronogramaMaquinariaPage> {
                       'Entrega ${DateFormat('dd/MM').format(asignacion.entrega)} · '
                       'Recogida ${DateFormat('dd/MM').format(asignacion.recogida)}',
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.link_off, color: Colors.red),
-                      tooltip: 'Liberar',
-                      onPressed: () {
-                        Navigator.of(ctx).pop();
-                        _liberar(asignacion.usoId);
-                      },
-                    ),
+                    trailing: _canManage
+                        ? IconButton(
+                            icon: const Icon(Icons.link_off, color: Colors.red),
+                            tooltip: 'Liberar',
+                            onPressed: () {
+                              Navigator.of(ctx).pop();
+                              _liberar(asignacion.usoId);
+                            },
+                          )
+                        : null,
                   ),
                 ),
               ],
 
-              const SizedBox(height: 12),
-              Text(
-                necesidad.pendientes > 0
-                    ? 'Asignar máquina (faltan ${necesidad.pendientes})'
-                    : 'Asignar otra máquina',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 4),
-              if (candidatas.isEmpty)
+              if (_canManage) ...[
+                const SizedBox(height: 12),
                 Text(
-                  'No hay máquinas operativas de este tipo en la empresa.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                )
-              else
-                Flexible(
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: candidatas.map((maquina) {
-                      final sugerida =
-                          maquina.id == necesidad.maquinariaSugeridaId;
-                      final yaAsignada = necesidad.asignaciones.any(
-                        (item) => item.maquinariaId == maquina.id,
-                      );
-                      return ListTile(
-                        dense: true,
-                        leading: Icon(
-                          sugerida ? Icons.star : Icons.precision_manufacturing,
-                          color: sugerida ? Colors.amber.shade800 : null,
-                        ),
-                        title: Text(maquina.etiqueta),
-                        subtitle: sugerida
-                            ? const Text('Sugerida por la preventiva')
-                            : null,
-                        enabled: !yaAsignada,
-                        onTap: yaAsignada
-                            ? null
-                            : () {
-                                Navigator.of(ctx).pop();
-                                _asignar(necesidad, maquina);
-                              },
-                      );
-                    }).toList(),
-                  ),
+                  necesidad.pendientes > 0
+                      ? 'Asignar máquina (faltan ${necesidad.pendientes})'
+                      : 'Asignar otra máquina',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
+                const SizedBox(height: 4),
+                if (candidatas.isEmpty)
+                  Text(
+                    'No hay máquinas operativas de este tipo en la empresa.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  )
+                else
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: candidatas.map((maquina) {
+                        final sugerida =
+                            maquina.id == necesidad.maquinariaSugeridaId;
+                        final yaAsignada = necesidad.asignaciones.any(
+                          (item) => item.maquinariaId == maquina.id,
+                        );
+                        return ListTile(
+                          dense: true,
+                          leading: Icon(
+                            sugerida
+                                ? Icons.star
+                                : Icons.precision_manufacturing,
+                            color: sugerida ? Colors.amber.shade800 : null,
+                          ),
+                          title: Text(maquina.etiqueta),
+                          subtitle: sugerida
+                              ? const Text('Sugerida por la preventiva')
+                              : null,
+                          enabled: !yaAsignada,
+                          onTap: yaAsignada
+                              ? null
+                              : () {
+                                  Navigator.of(ctx).pop();
+                                  _asignar(necesidad, maquina);
+                                },
+                        );
+                      }).toList(),
+                    ),
+                  ),
+              ],
             ],
           ),
         ),
@@ -230,7 +239,7 @@ class _CronogramaMaquinariaPageState extends State<CronogramaMaquinariaPage> {
     NecesidadMaquinaria necesidad,
     MaquinaCandidata maquina,
   ) async {
-    if (_procesando) return;
+    if (_procesando || !_canManage) return;
     setState(() => _procesando = true);
     try {
       await _api.asignarMaquinaria(
@@ -264,7 +273,7 @@ class _CronogramaMaquinariaPageState extends State<CronogramaMaquinariaPage> {
   }
 
   Future<void> _liberar(int usoId) async {
-    if (_procesando) return;
+    if (_procesando || !_canManage) return;
     setState(() => _procesando = true);
     try {
       await _api.liberarAsignacion(empresaNit: widget.empresaNit, usoId: usoId);
@@ -502,7 +511,9 @@ class _CronogramaMaquinariaPageState extends State<CronogramaMaquinariaPage> {
         style: const TextStyle(fontSize: 12),
       ),
       trailing: Icon(
-        cubierta ? Icons.check_circle : Icons.add_circle_outline,
+        cubierta || !_canManage
+            ? Icons.check_circle_outline
+            : Icons.add_circle_outline,
         color: cubierta ? Colors.green.shade700 : Colors.orange.shade800,
       ),
     );

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../service/theme.dart';
-import '../service/session_service.dart';
+import '../service/permission_service.dart';
 import '../api/inventario_api.dart';
 import '../model/inventario_item_model.dart';
 import 'solicitud_insumo_page.dart';
@@ -28,11 +28,18 @@ class InventarioPage extends StatefulWidget {
 
 class _InventarioPageState extends State<InventarioPage> {
   final InventarioApi _api = InventarioApi();
-  final SessionService _session = SessionService();
 
   // ✅ Tipo actual
   TipoInventario _tipoInventario = TipoInventario.INSUMOS;
-  bool _esGerente = false;
+
+  bool get _canCreateRequests =>
+      PermissionService.instance.can('solicitudes.crear');
+  bool get _canViewTools => PermissionService.instance.canAny([
+    'herramientas.ver',
+    'herramientas.gestionar',
+  ]);
+  bool get _canManageTools =>
+      PermissionService.instance.can('herramientas.gestionar');
 
   // =============================
   // Herramientas
@@ -58,20 +65,12 @@ class _InventarioPageState extends State<InventarioPage> {
   @override
   void initState() {
     super.initState();
-    _cargarRolUsuario();
     _cargar();
   }
 
   @override
   void dispose() {
     super.dispose();
-  }
-
-  // ✅ carga según tipo
-  Future<void> _cargarRolUsuario() async {
-    final rol = (await _session.getRol() ?? '').trim().toLowerCase();
-    if (!mounted) return;
-    setState(() => _esGerente = rol == 'gerente');
   }
 
   Future<void> _cargar() async {
@@ -490,8 +489,10 @@ class _InventarioPageState extends State<InventarioPage> {
               ],
               source: _HerramientaDataSource(
                 data: filtrados,
-                onDevolver: _esGerente ? _devolverHerramientaPrestada : null,
-                onCambiarEstado: _esGerente
+                onDevolver: _canManageTools
+                    ? _devolverHerramientaPrestada
+                    : null,
+                onCambiarEstado: _canManageTools
                     ? _cambiarEstadoHerramientaPropia
                     : null,
               ),
@@ -606,7 +607,8 @@ class _InventarioPageState extends State<InventarioPage> {
             Row(
               children: [
                 const Spacer(),
-                if (_tipoInventario == TipoInventario.INSUMOS)
+                if (_tipoInventario == TipoInventario.INSUMOS &&
+                    _canCreateRequests)
                   _ghostButton(
                     icon: Icons.add_shopping_cart_outlined,
                     label: "Solicitar insumos",
@@ -622,7 +624,7 @@ class _InventarioPageState extends State<InventarioPage> {
                     },
                   ),
                 if (_tipoInventario == TipoInventario.HERRAMIENTAS &&
-                    _esGerente)
+                    _canManageTools)
                   _ghostButton(
                     icon: Icons.add,
                     label: "Registrar herramienta propia",
@@ -661,18 +663,20 @@ class _InventarioPageState extends State<InventarioPage> {
                     _cargar();
                   },
                 ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text("Herramientas"),
-                  selected: _tipoInventario == TipoInventario.HERRAMIENTAS,
-                  onSelected: (_) {
-                    setState(() {
-                      _tipoInventario = TipoInventario.HERRAMIENTAS;
-                      _q = '';
-                    });
-                    _cargar();
-                  },
-                ),
+                if (_canViewTools) ...[
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text("Herramientas"),
+                    selected: _tipoInventario == TipoInventario.HERRAMIENTAS,
+                    onSelected: (_) {
+                      setState(() {
+                        _tipoInventario = TipoInventario.HERRAMIENTAS;
+                        _q = '';
+                      });
+                      _cargar();
+                    },
+                  ),
+                ],
               ],
             ),
 

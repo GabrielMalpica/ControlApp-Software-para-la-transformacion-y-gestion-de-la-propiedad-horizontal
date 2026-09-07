@@ -14,6 +14,7 @@ import '../service/theme.dart';
 import '../service/permission_service.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import '../widgets/cerrar_tarea_sheet.dart';
+import 'crear_tarea_page.dart';
 import 'editar_tarea_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -617,6 +618,21 @@ class _TareasPageState extends State<TareasPage> {
         ],
       ),
       body: _body(),
+      floatingActionButton: _canManageTasks
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                final created = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CrearTareaPage(nit: widget.nit),
+                  ),
+                );
+                if (created == true) await _cargarTareas();
+              },
+              icon: const Icon(Icons.add_task),
+              label: const Text('Crear tarea'),
+            )
+          : null,
     );
   }
 }

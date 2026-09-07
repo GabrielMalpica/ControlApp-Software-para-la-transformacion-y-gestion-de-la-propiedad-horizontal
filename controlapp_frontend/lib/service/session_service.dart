@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_constants.dart';
+
 class SessionService {
   // Keys
   static const _kToken = 'auth_token';
@@ -12,6 +14,7 @@ class SessionService {
   static const _kNombre = 'auth_nombre';
   static const _kUserId = 'auth_user_id';
   static const _kEmpresaId = 'auth_empresa_id';
+  static const _kConjuntoId = 'auth_conjunto_id';
   static const _kPermissions = 'auth_permissions';
   static const _kRequirePasswordChange = 'auth_require_password_change';
 
@@ -22,6 +25,7 @@ class SessionService {
   static String? _memUserId;
   static String? _memRol;
   static String? _memEmpresaId;
+  static String? _memConjuntoId;
   static List<String>? _memPermissions;
   static bool? _memRequirePasswordChange;
 
@@ -32,6 +36,7 @@ class SessionService {
     required String nombre,
     required String userId,
     required String empresaId,
+    String conjuntoId = '',
     List<String> permissions = const [],
     bool requiereCambioContrasena = false,
   }) async {
@@ -40,6 +45,8 @@ class SessionService {
     _memRol = rol;
     _memUserId = userId;
     _memEmpresaId = empresaId.trim();
+    _memConjuntoId = conjuntoId.trim();
+    AppConstants.setEmpresaNitFromSession(empresaId);
     _memPermissions = [...permissions];
     _memRequirePasswordChange = requiereCambioContrasena;
 
@@ -56,6 +63,7 @@ class SessionService {
       await prefs.setString(_kNombre, nombre);
       await prefs.setString(_kUserId, userId);
       await prefs.setString(_kEmpresaId, empresaId.trim());
+      await prefs.setString(_kConjuntoId, conjuntoId.trim());
       await prefs.setString(_kPermissions, permissionsJson);
       await prefs.setBool(_kRequirePasswordChange, requiereCambioContrasena);
       return;
@@ -67,6 +75,7 @@ class SessionService {
     await _secure.write(key: _kNombre, value: nombre);
     await _secure.write(key: _kUserId, value: userId);
     await _secure.write(key: _kEmpresaId, value: empresaId.trim());
+    await _secure.write(key: _kConjuntoId, value: conjuntoId.trim());
     await _secure.write(key: _kPermissions, value: permissionsJson);
     await _secure.write(
       key: _kRequirePasswordChange,
@@ -80,12 +89,15 @@ class SessionService {
     required String nombre,
     required String userId,
     required String empresaId,
+    String conjuntoId = '',
     List<String> permissions = const [],
     bool requiereCambioContrasena = false,
   }) async {
     _memRol = rol;
     _memUserId = userId;
     _memEmpresaId = empresaId.trim();
+    _memConjuntoId = conjuntoId.trim();
+    AppConstants.setEmpresaNitFromSession(empresaId);
     _memPermissions = [...permissions];
     _memRequirePasswordChange = requiereCambioContrasena;
 
@@ -98,6 +110,7 @@ class SessionService {
       await prefs.setString(_kNombre, nombre);
       await prefs.setString(_kUserId, userId);
       await prefs.setString(_kEmpresaId, empresaId.trim());
+      await prefs.setString(_kConjuntoId, conjuntoId.trim());
       await prefs.setString(_kPermissions, permissionsJson);
       await prefs.setBool(_kRequirePasswordChange, requiereCambioContrasena);
       return;
@@ -108,6 +121,7 @@ class SessionService {
     await _secure.write(key: _kNombre, value: nombre);
     await _secure.write(key: _kUserId, value: userId);
     await _secure.write(key: _kEmpresaId, value: empresaId.trim());
+    await _secure.write(key: _kConjuntoId, value: conjuntoId.trim());
     await _secure.write(key: _kPermissions, value: permissionsJson);
     await _secure.write(
       key: _kRequirePasswordChange,
@@ -172,18 +186,23 @@ class SessionService {
 
   Future<String?> getEmpresaId() async {
     if (_memEmpresaId != null && _memEmpresaId!.isNotEmpty) {
+      AppConstants.setEmpresaNitFromSession(_memEmpresaId!);
       return _memEmpresaId;
     }
 
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
       _memEmpresaId = prefs.getString(_kEmpresaId)?.trim();
+      AppConstants.setEmpresaNitFromSession(_memEmpresaId ?? '');
       return _memEmpresaId;
     }
 
     _memEmpresaId = (await _secure.read(key: _kEmpresaId))?.trim();
+    AppConstants.setEmpresaNitFromSession(_memEmpresaId ?? '');
     return _memEmpresaId;
   }
+
+  String? getConjuntoIdSync() => _memConjuntoId;
 
   Future<String?> getRol() async {
     if (_memRol != null && _memRol!.isNotEmpty) return _memRol;
@@ -239,6 +258,8 @@ class SessionService {
     _memRol = null;
     _memUserId = null;
     _memEmpresaId = null;
+    _memConjuntoId = null;
+    AppConstants.setEmpresaNitFromSession('');
     _memPermissions = null;
     _memRequirePasswordChange = null;
 
@@ -250,6 +271,7 @@ class SessionService {
       await prefs.remove(_kNombre);
       await prefs.remove(_kUserId);
       await prefs.remove(_kEmpresaId);
+      await prefs.remove(_kConjuntoId);
       await prefs.remove(_kPermissions);
       await prefs.remove(_kRequirePasswordChange);
       return;
@@ -261,6 +283,7 @@ class SessionService {
     await _secure.delete(key: _kNombre);
     await _secure.delete(key: _kUserId);
     await _secure.delete(key: _kEmpresaId);
+    await _secure.delete(key: _kConjuntoId);
     await _secure.delete(key: _kPermissions);
     await _secure.delete(key: _kRequirePasswordChange);
   }

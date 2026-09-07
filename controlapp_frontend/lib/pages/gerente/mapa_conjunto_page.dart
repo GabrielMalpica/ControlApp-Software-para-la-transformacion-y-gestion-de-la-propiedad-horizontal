@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/service/app_error.dart';
-import 'package:flutter_application_1/service/session_service.dart';
+import 'package:flutter_application_1/service/permission_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
@@ -27,37 +27,28 @@ class MapaConjuntoPage extends StatefulWidget {
 
 class _MapaConjuntoPageState extends State<MapaConjuntoPage> {
   final ConjuntoApi _api = ConjuntoApi();
-  final SessionService _session = SessionService();
   final TextEditingController _busquedaCtrl = TextEditingController();
 
   late Future<Conjunto> _futureConjunto;
   String _busqueda = '';
-  String _rolActual = '';
   bool _subiendoMapa = false;
   bool _cargandoMapa = false;
   Uint8List? _mapaBytes;
   String? _errorMapa;
 
   bool get _puedeEditarMapa =>
-      _rolActual == 'gerente' || _rolActual == 'jefe_operaciones';
+      PermissionService.instance.can('mapa_areas.gestionar');
 
   @override
   void initState() {
     super.initState();
     _futureConjunto = _api.obtenerDetalleMapaConjunto(widget.conjuntoNit);
-    _cargarRolActual();
   }
 
   @override
   void dispose() {
     _busquedaCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _cargarRolActual() async {
-    final rol = (await _session.getRol())?.trim().toLowerCase() ?? '';
-    if (!mounted) return;
-    setState(() => _rolActual = rol);
   }
 
   Future<void> _refresh() async {

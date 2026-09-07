@@ -5,6 +5,7 @@ import '../../api/gerente_api.dart';
 import '../../model/compromiso_model.dart';
 import '../../service/app_error.dart';
 import '../../service/app_feedback.dart';
+import '../../service/permission_service.dart';
 import '../../service/session_service.dart';
 import '../../service/theme.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
@@ -45,6 +46,9 @@ class _CompromisosPageState extends State<CompromisosPage> {
   bool _loading = true;
   String? _adminId;
   _CompromisoFilter _filter = _CompromisoFilter.todos;
+
+  bool get _canManage =>
+      PermissionService.instance.can('compromisos.gestionar');
 
   @override
   void initState() {
@@ -311,32 +315,34 @@ class _CompromisosPageState extends State<CompromisosPage> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _controller,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _agregar(),
-                          decoration: InputDecoration(
-                            labelText: widget.inputLabel,
-                            hintText: widget.inputHint,
-                            border: OutlineInputBorder(),
+                  if (_canManage) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _controller,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _agregar(),
+                            decoration: InputDecoration(
+                              labelText: widget.inputLabel,
+                              hintText: widget.inputHint,
+                              border: const OutlineInputBorder(),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        height: 54,
-                        child: ElevatedButton.icon(
-                          onPressed: _agregar,
-                          icon: const Icon(Icons.add_task),
-                          label: Text(widget.addButtonLabel),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 54,
+                          child: ElevatedButton.icon(
+                            onPressed: _agregar,
+                            icon: const Icon(Icons.add_task),
+                            label: Text(widget.addButtonLabel),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                   SizedBox(
                     height: 40,
                     child: ListView(
@@ -434,12 +440,15 @@ class _CompromisosPageState extends State<CompromisosPage> {
                                     children: [
                                       Checkbox(
                                         value: item.completado,
-                                        onChanged: (v) =>
-                                            _toggle(item, v ?? false),
+                                        onChanged: _canManage
+                                            ? (v) => _toggle(item, v ?? false)
+                                            : null,
                                       ),
                                       Expanded(
                                         child: InkWell(
-                                          onTap: () => _editarTitulo(item),
+                                          onTap: _canManage
+                                              ? () => _editarTitulo(item)
+                                              : null,
                                           child: Padding(
                                             padding: const EdgeInsets.symmetric(
                                               vertical: 10,
@@ -510,16 +519,20 @@ class _CompromisosPageState extends State<CompromisosPage> {
                                           ),
                                         ),
                                       ),
-                                      IconButton(
-                                        tooltip: 'Editar',
-                                        onPressed: () => _editarTitulo(item),
-                                        icon: const Icon(Icons.edit_outlined),
-                                      ),
-                                      IconButton(
-                                        tooltip: 'Eliminar',
-                                        onPressed: () => _eliminar(item),
-                                        icon: const Icon(Icons.delete_outline),
-                                      ),
+                                      if (_canManage) ...[
+                                        IconButton(
+                                          tooltip: 'Editar',
+                                          onPressed: () => _editarTitulo(item),
+                                          icon: const Icon(Icons.edit_outlined),
+                                        ),
+                                        IconButton(
+                                          tooltip: 'Eliminar',
+                                          onPressed: () => _eliminar(item),
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 ),

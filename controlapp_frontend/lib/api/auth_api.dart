@@ -43,6 +43,7 @@ class AuthApi {
       nombre: result.user.nombre,
       userId: result.user.id,
       empresaId: result.user.empresaId,
+      conjuntoId: result.user.conjuntoId,
       permissions: result.user.permissions,
       requiereCambioContrasena: result.user.requiereCambioContrasena,
     );
@@ -65,6 +66,7 @@ class AuthApi {
       nombre: user.nombre,
       userId: user.id,
       empresaId: user.empresaId,
+      conjuntoId: user.conjuntoId,
       permissions: user.permissions,
       requiereCambioContrasena: user.requiereCambioContrasena,
     );

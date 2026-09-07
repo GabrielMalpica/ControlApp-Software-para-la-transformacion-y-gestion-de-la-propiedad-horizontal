@@ -153,18 +153,15 @@ class _CronogramaPageState extends State<CronogramaPage> {
   bool get _puedeEliminarCronogramaPublicado =>
       !widget.soloLectura &&
       PermissionService.instance.can('cronograma.eliminar_publicado') &&
-      _rolActual == 'gerente' &&
       _tareasMes.isNotEmpty &&
       !_loading;
 
   bool get _canViewCronograma =>
-      _rolActual == 'gerente' ||
       PermissionService.instance.can('cronograma.ver');
 
   bool get _canScheduleCorrectivasInCronograma =>
       !widget.soloLectura &&
-      (_rolActual == 'gerente' ||
-          PermissionService.instance.can('cronograma.correctivas_programar'));
+      PermissionService.instance.can('cronograma.correctivas_programar');
 
   /// Evita disparar dos acciones simultaneas sobre la misma excluida.
   bool _accionExcluidaEnCurso = false;
@@ -173,7 +170,6 @@ class _CronogramaPageState extends State<CronogramaPage> {
   bool _verExcluidasEnMatriz = true;
 
   bool get _canViewExcluidasStandby =>
-      _rolActual == 'gerente' ||
       PermissionService.instance.can('cronograma.excluidas_ver');
 
   @override
@@ -4203,6 +4199,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
             child: _WeekScheduleView(
               weekStart: weekStart,
               tareas: tareas,
+              agruparSuperposiciones: _filtroOperario == 'TODOS',
               horariosConjunto: _horariosConjunto,
               scaleMinutes: _escalaSemanalMinutos,
               horaInicio: _horaInicioJornada,
@@ -4271,6 +4268,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
           child: _WeekScheduleView(
             weekStart: weekStart,
             tareas: tareas,
+            agruparSuperposiciones: _filtroOperario == 'TODOS',
             horariosConjunto: _horariosConjunto,
             scaleMinutes: _escalaSemanalMinutos,
             horaInicio: _horaInicioJornada,
@@ -4649,6 +4647,7 @@ Color _cronogramaColorBaseTareaSemana(TareaModel t) {
 class _WeekScheduleView extends StatefulWidget {
   final DateTime weekStart; // lunes 00:00
   final List<TareaModel> tareas;
+  final bool agruparSuperposiciones;
   final List<HorarioConjunto> horariosConjunto;
   final int scaleMinutes;
   final int horaInicio;
@@ -4676,6 +4675,7 @@ class _WeekScheduleView extends StatefulWidget {
   const _WeekScheduleView({
     required this.weekStart,
     required this.tareas,
+    required this.agruparSuperposiciones,
     required this.horariosConjunto,
     required this.scaleMinutes,
     required this.horaInicio,
@@ -4776,7 +4776,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
 
   String _buildTasksSignature() {
     final buffer = StringBuffer(
-      '${widget.weekStart.toIso8601String()}|${widget.scaleMinutes}|',
+      '${widget.weekStart.toIso8601String()}|${widget.scaleMinutes}|'
+      '${widget.agruparSuperposiciones}|',
     );
     for (final tarea in widget.tareas) {
       buffer
@@ -5507,6 +5508,22 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     List<_WeekTaskSpan> group,
     int dayIndex,
   ) {
+    if (!widget.agruparSuperposiciones) {
+      return group
+          .map(
+            (span) => _WeekTaskPlacement(
+              tarea: span.tarea,
+              dayIndex: dayIndex,
+              inicio: span.inicio,
+              fin: span.fin,
+              groupEnd: span.fin,
+              groupSize: 1,
+              orderInGroup: 0,
+              groupTitles: const [],
+            ),
+          )
+          .toList();
+    }
     final groupEnd = group
         .map((e) => e.fin)
         .reduce((a, b) => a.isAfter(b) ? a : b);
