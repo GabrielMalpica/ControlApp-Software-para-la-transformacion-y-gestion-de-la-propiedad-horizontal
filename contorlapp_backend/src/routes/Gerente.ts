@@ -77,12 +77,22 @@ router.get(
 );
 router.get(
   "/conjuntos",
-  requirePermission("conjuntos.ver", "conjuntos.gestionar"),
+  requirePermission(
+    "conjuntos.ver",
+    "conjuntos.gestionar",
+    "tareas.crear",
+    "cronograma.correctivas_programar",
+  ),
   ctrl.listarConjuntos,
 );
 router.get(
   "/conjuntos/:conjuntoId",
-  requirePermission("conjuntos.ver", "conjuntos.gestionar"),
+  requirePermission(
+    "conjuntos.ver",
+    "conjuntos.gestionar",
+    "tareas.crear",
+    "cronograma.correctivas_programar",
+  ),
   requireConjuntoScope("conjuntoId"),
   ctrl.obtenerConjunto,
 );
@@ -163,7 +173,15 @@ router.post("/administradores", requirePermission("usuarios.gestionar"), ctrl.as
 router.post("/jefes-operaciones", requirePermission("usuarios.gestionar"), ctrl.asignarJefeOperaciones);
 router.post("/supervisores", requirePermission("usuarios.gestionar"), ctrl.asignarSupervisor);
 router.post("/operarios", requirePermission("usuarios.gestionar"), ctrl.asignarOperario);
-router.get("/supervisores", requirePermission("usuarios.gestionar"), ctrl.listarSupervisores);
+router.get(
+  "/supervisores",
+  requirePermission(
+    "usuarios.gestionar",
+    "tareas.crear",
+    "cronograma.correctivas_programar",
+  ),
+  ctrl.listarSupervisores,
+);
 
 /* Conjuntos */
 // GET /conjuntos, GET /conjuntos/plantilla y GET /conjuntos/:conjuntoId se

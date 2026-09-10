@@ -3,6 +3,7 @@ import AdministradorRoutes from "./Administradores"
 import ConjuntoRoutes from "./Conjuntos"
 import CronogramaRoutes from "./Cronograma"
 import CronogramaMaquinariaRoutes from "./CronogramaMaquinaria"
+import CronogramaHerramientaRoutes from "./CronogramaHerramienta"
 import DefinicionPreventivaRoutes from "./DefinicionPreventiva"
 import EmpresaRoutes from "./Empresa"
 import GerenteRoutes from "./Gerente"
@@ -35,6 +36,7 @@ rutas.use('/administrador', AdministradorRoutes);
 rutas.use('/conjunto', ConjuntoRoutes);
 rutas.use('/cronograma', CronogramaRoutes);
 rutas.use('/cronograma-maquinaria', CronogramaMaquinariaRoutes);
+rutas.use('/cronograma-herramienta', CronogramaHerramientaRoutes);
 rutas.use('/definicion-preventiva', DefinicionPreventivaRoutes);
 rutas.use('/empresa', EmpresaRoutes);
 rutas.use('/gerente', GerenteRoutes);

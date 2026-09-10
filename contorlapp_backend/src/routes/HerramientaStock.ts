@@ -35,7 +35,17 @@ router.delete(
 
 // estilo “por conjunto”
 router.get("/conjunto/:nit/stock", requirePermission("herramientas.ver", "herramientas.gestionar"), requireConjuntoScope("nit"), controller.listarStockConjunto);
-router.get("/conjunto/:nit/disponibles", requirePermission("herramientas.ver", "herramientas.gestionar"), requireConjuntoScope("nit"), controller.listarDisponibilidadConjunto);
+router.get(
+  "/conjunto/:nit/disponibles",
+  requirePermission(
+    "herramientas.ver",
+    "herramientas.gestionar",
+    "tareas.crear",
+    "cronograma.correctivas_programar",
+  ),
+  requireConjuntoScope("nit"),
+  controller.listarDisponibilidadConjunto,
+);
 router.post("/conjunto/:nit/stock", requirePermission("herramientas.gestionar"), requireConjuntoScope("nit"), controller.upsertStockConjunto);
 router.patch("/conjunto/:nit/stock/:herramientaId/ajustar", requirePermission("herramientas.gestionar"), requireConjuntoScope("nit"), requireResourceScope("herramienta", "herramientaId"), controller.ajustarStockConjunto);
 router.patch("/conjunto/:nit/stock/:herramientaId/estado", requirePermission("herramientas.gestionar"), requireConjuntoScope("nit"), requireResourceScope("herramienta", "herramientaId"), controller.cambiarEstadoStockConjunto);

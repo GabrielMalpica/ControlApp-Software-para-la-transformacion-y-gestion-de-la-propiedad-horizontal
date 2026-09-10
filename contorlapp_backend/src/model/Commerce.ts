@@ -59,6 +59,9 @@ export const CambiarEstadoPedidoDTO = z.object({
 
 export const MapearPedidoItemDTO = z.object({
   insumoId: z.coerce.number().int().positive(),
+  // Cuantas unidades de inventario trae CADA unidad comprada en la tienda
+  // (ej: insumo en litros, producto Woo es una garrafa de 3L => 3).
+  factorConversion: z.coerce.number().positive().max(100000).optional(),
 });
 
 export const PuntosContextoDTO = z.object({

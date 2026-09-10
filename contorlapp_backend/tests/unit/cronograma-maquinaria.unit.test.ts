@@ -318,6 +318,38 @@ describe('CronogramaMaquinariaService', () => {
       );
     });
 
+    test('PU-CM10A - exige que la maquinaria consultada esté aprobada', async () => {
+      const prisma = construirPrisma();
+      prisma.tarea.findMany.mockResolvedValue([tarea()]);
+      prisma.maquinaria.findFirst.mockResolvedValue(null);
+
+      const service = new CronogramaMaquinariaService(prisma, EMPRESA, ACTOR);
+      await expect(
+        service.asignarMaquinaria({ tareaIds: [501], maquinariaId: 12 }),
+      ).rejects.toThrow();
+
+      expect(prisma.maquinaria.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ estadoAprobacion: 'APROBADA' }),
+        }),
+      );
+    });
+
+    test('PU-CM10B - una máquina propia no puede salir de su conjunto', async () => {
+      const prisma = construirPrisma();
+      prisma.tarea.findMany.mockResolvedValue([tarea({ conjuntoId: '9001' })]);
+      prisma.maquinaria.findFirst.mockResolvedValue({
+        ...maquinaGuadania,
+        propietarioTipo: 'CONJUNTO',
+        conjuntoPropietarioId: '9002',
+      });
+
+      const service = new CronogramaMaquinariaService(prisma, EMPRESA, ACTOR);
+      await expect(
+        service.asignarMaquinaria({ tareaIds: [501], maquinariaId: 12 }),
+      ).rejects.toThrow(/no se puede asignar a otro conjunto/i);
+    });
+
     test('PU-CM11 - no permite sobreasignar una necesidad ya cubierta', async () => {
       const prisma = construirPrisma();
       prisma.tarea.findMany.mockResolvedValue([tarea()]);

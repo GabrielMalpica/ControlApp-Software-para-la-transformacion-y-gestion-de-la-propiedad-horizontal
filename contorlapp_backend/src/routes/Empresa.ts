@@ -19,7 +19,17 @@ router.put("/festivos/rango", requirePermission("cronograma.publicar"), controll
 
 // Maquinaria
 router.post("/:nit/maquinaria", requirePermission("maquinaria.asignar"), requireEmpresaScope("nit"), controller.agregarMaquinaria);
-router.get("/:nit/maquinaria/disponible", requirePermission("maquinaria.ver", "maquinaria.asignar"), requireEmpresaScope("nit"), controller.listarMaquinariaDisponible);
+router.get(
+  "/:nit/maquinaria/disponible",
+  requirePermission(
+    "maquinaria.ver",
+    "maquinaria.asignar",
+    "tareas.crear",
+    "cronograma.correctivas_programar",
+  ),
+  requireEmpresaScope("nit"),
+  controller.listarMaquinariaDisponible,
+);
 router.get("/:nit/maquinaria/prestada", requirePermission("maquinaria.ver", "maquinaria.asignar"), requireEmpresaScope("nit"), controller.obtenerMaquinariaPrestada);
 router.get("/:nit/maquinaria", requirePermission("maquinaria.ver", "maquinaria.asignar"), requireEmpresaScope("nit"), controller.listarMaquinariaCatalogo);
 router.patch("/:nit/maquinaria/:id", requirePermission("maquinaria.asignar"), requireEmpresaScope("nit"), requireResourceScope("maquinaria", "id"), controller.editarMaquinaria);

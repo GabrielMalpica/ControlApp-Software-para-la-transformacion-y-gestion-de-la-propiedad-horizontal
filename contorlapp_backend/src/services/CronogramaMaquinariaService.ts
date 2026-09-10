@@ -240,6 +240,7 @@ export class CronogramaMaquinariaService {
     const maquinas = await this.prisma.maquinaria.findMany({
       where: {
         estado: EstadoMaquinaria.OPERATIVA,
+        estadoAprobacion: "APROBADA",
         OR: [
           { empresaId: this.empresaId },
           { conjuntoPropietarioId: { in: nits } },
@@ -252,8 +253,22 @@ export class CronogramaMaquinariaService {
         tipo: true,
         propietarioTipo: true,
         conjuntoPropietarioId: true,
+        asignaciones: {
+          where: { estado: { in: ["RESERVADA", "ACTIVA"] } },
+          select: { conjuntoId: true },
+          take: 1,
+        },
       },
       orderBy: [{ tipo: "asc" }, { nombre: "asc" }],
+    });
+
+    // Conjunto-propias primero (facilita ofrecer "lo que ya tiene el conjunto"
+    // antes que el préstamo de la empresa); el orden alfabético de arriba se
+    // conserva dentro de cada grupo.
+    maquinas.sort((a, b) => {
+      const pesoA = a.propietarioTipo === "CONJUNTO" ? 0 : 1;
+      const pesoB = b.propietarioTipo === "CONJUNTO" ? 0 : 1;
+      return pesoA - pesoB;
     });
 
     const salida: Record<string, typeof maquinas> = {};
@@ -303,12 +318,26 @@ export class CronogramaMaquinariaService {
     const maquinaria = await this.prisma.maquinaria.findFirst({
       where: {
         id: dto.maquinariaId,
+        estadoAprobacion: "APROBADA",
         OR: [
           { empresaId: this.empresaId },
           { conjuntoPropietario: { empresaId: this.empresaId } },
         ],
       },
-      select: { id: true, nombre: true, marca: true, tipo: true, estado: true },
+      select: {
+        id: true,
+        nombre: true,
+        marca: true,
+        tipo: true,
+        estado: true,
+        propietarioTipo: true,
+        conjuntoPropietarioId: true,
+        asignaciones: {
+          where: { estado: { in: ["RESERVADA", "ACTIVA"] } },
+          select: { conjuntoId: true },
+          take: 1,
+        },
+      },
     });
     if (!maquinaria) {
       throw new Error("La maquinaria seleccionada no existe para esta empresa.");
@@ -316,6 +345,20 @@ export class CronogramaMaquinariaService {
     if (maquinaria.estado !== EstadoMaquinaria.OPERATIVA) {
       throw new Error(
         `${maquinaria.nombre} no está operativa y no se puede asignar.`,
+      );
+    }
+    if (
+      maquinaria.propietarioTipo === "CONJUNTO" &&
+      maquinaria.conjuntoPropietarioId !== conjuntoId
+    ) {
+      throw new Error(
+        "La maquinaria propia de un conjunto no se puede asignar a otro conjunto.",
+      );
+    }
+    const conjuntoCustodio = maquinaria.asignaciones?.[0]?.conjuntoId;
+    if (conjuntoCustodio && conjuntoCustodio !== conjuntoId) {
+      throw new Error(
+        "La maquinaria está prestada a otro conjunto y no puede asignarse a esta tarea.",
       );
     }
 

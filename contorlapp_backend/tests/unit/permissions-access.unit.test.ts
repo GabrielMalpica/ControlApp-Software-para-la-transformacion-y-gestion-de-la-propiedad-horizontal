@@ -56,6 +56,29 @@ describe("Permisos efectivos por modulo", () => {
     expect(operario.has("solicitudes.crear")).toBe(true);
     expect(operario.has("solicitudes.gestionar")).toBe(false);
   });
+
+  test("inventario físico separa registro administrativo y aprobación", () => {
+    const gerente = PermissionService.defaultPermissionsForRole(Rol.gerente);
+    const jefe = PermissionService.defaultPermissionsForRole(
+      Rol.jefe_operaciones,
+    );
+    const administrador = PermissionService.defaultPermissionsForRole(
+      Rol.administrador,
+    );
+
+    expect(gerente.has("maquinaria.aprobar")).toBe(true);
+    expect(gerente.has("herramientas.aprobar")).toBe(true);
+    expect(jefe.has("maquinaria.aprobar")).toBe(true);
+    expect(jefe.has("herramientas.aprobar")).toBe(true);
+    expect(administrador.has("maquinaria.crear")).toBe(true);
+    expect(administrador.has("herramientas.crear")).toBe(true);
+    expect(administrador.has("maquinaria.aprobar")).toBe(false);
+    expect(administrador.has("herramientas.aprobar")).toBe(false);
+    expect(administrador.has("maquinaria.gestionar_estado")).toBe(false);
+    expect(administrador.has("herramientas.prestar")).toBe(false);
+    expect(jefe.has("maquinaria.gestionar_estado")).toBe(true);
+    expect(jefe.has("herramientas.prestar")).toBe(true);
+  });
 });
 
 describe("Aislamiento de compromisos globales", () => {

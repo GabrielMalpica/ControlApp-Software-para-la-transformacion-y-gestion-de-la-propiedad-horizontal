@@ -24,6 +24,7 @@ type ScopedResource =
   | "tarea"
   | "ubicacion"
   | "usoMaquinaria"
+  | "usoHerramienta"
   | "usuario";
 
 type HttpError = Error & { status: number };
@@ -76,7 +77,13 @@ export function requireConjuntoScope(paramName: string): RequestHandler {
       const empresaId = await empresaIdAutenticada(req);
       const conjuntoId = param(req, paramName);
       const conjunto = await prisma.conjunto.findFirst({
-        where: { nit: conjuntoId, empresaId },
+        where: {
+          nit: conjuntoId,
+          empresaId,
+          ...(req.user?.rol === "administrador"
+            ? { administradorId: String(req.user.sub) }
+            : {}),
+        },
         select: { nit: true },
       });
       if (!conjunto) throw httpError(404, "Recurso no encontrado");
@@ -94,7 +101,13 @@ export function requireBodyConjuntoScope(fieldName = "conjuntoId"): RequestHandl
       const conjuntoId = String(req.body?.[fieldName] ?? "").trim();
       if (!conjuntoId) throw httpError(400, `Falta el campo ${fieldName}`);
       const conjunto = await prisma.conjunto.findFirst({
-        where: { nit: conjuntoId, empresaId },
+        where: {
+          nit: conjuntoId,
+          empresaId,
+          ...(req.user?.rol === "administrador"
+            ? { administradorId: String(req.user.sub) }
+            : {}),
+        },
         select: { nit: true },
       });
       if (!conjunto) throw httpError(404, "Recurso no encontrado");
@@ -218,6 +231,13 @@ async function resourceBelongsToEmpresa(
     case "usoMaquinaria":
       return Boolean(
         await prisma.usoMaquinaria.findFirst({
+          where: { id: numericId, tarea: { conjunto: { empresaId } } },
+          select: { id: true },
+        }),
+      );
+    case "usoHerramienta":
+      return Boolean(
+        await prisma.usoHerramienta.findFirst({
           where: { id: numericId, tarea: { conjunto: { empresaId } } },
           select: { id: true },
         }),

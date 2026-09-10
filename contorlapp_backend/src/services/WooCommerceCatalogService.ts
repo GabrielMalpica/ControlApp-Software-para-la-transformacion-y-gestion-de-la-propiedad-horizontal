@@ -43,7 +43,8 @@ type WooStoreProduct = {
   permalink?: string;
   on_sale?: boolean;
   prices?: WooStorePriceBlock;
-  stock_status?: string;
+  is_in_stock?: boolean;
+  is_on_backorder?: boolean;
   low_stock_remaining?: number | null;
   is_purchasable?: boolean;
   images?: WooStoreImage[];
@@ -54,6 +55,10 @@ type WooStoreProduct = {
   extensions?: {
     clx?: {
       clsr_config?: unknown;
+    };
+    clx_catalogo?: {
+      only_conjunto?: boolean;
+      only_public?: boolean;
     };
   };
 };
@@ -262,6 +267,8 @@ export class WooCommerceCatalogService {
     categories: Array<{ slug: string; name: string; link: string }>;
     tags: Array<{ slug: string }>;
     service: CommerceServiceConfig | null;
+    onlyConjunto: boolean;
+    onlyPublic: boolean;
   }) {
     const slugs = new Set([
       ...product.categories.map((item) => normalizeSlug(item.slug)),
@@ -286,7 +293,26 @@ export class WooCommerceCatalogService {
         );
       });
 
-    const esServicio = product.service?.enabled ?? (hasServicioMatch || inferredService);
+    // "service.enabled" indica si el producto usa el widget de RESERVA (fecha
+    // + turno), no si es o no un servicio. Un servicio "de cotizar" (sin
+    // calendario) trae service.enabled=false explicito, y con "??" ese false
+    // saltaba el respaldo por categoria/nombre (?? solo cae en null/undefined,
+    // no en false), clasificandolo como si fuera un insumo. Por eso solo se
+    // usa como override cuando es true; en cualquier otro caso manda la
+    // categoria/nombre.
+    const esServicio =
+      product.service?.enabled === true || hasServicioMatch || inferredService;
+
+    // El checkbox "Solo Conjuntos" / "Solo Público" del plugin de WooCommerce
+    // es la forma en que el equipo realmente clasifica los productos desde el
+    // admin. Cuando esta presente manda sobre las categorias/tags, que quedan
+    // como respaldo para productos que nunca se marcaron con el checkbox.
+    if (product.onlyConjunto) {
+      return { paraResidente: false, paraConjunto: true, esServicio };
+    }
+    if (product.onlyPublic) {
+      return { paraResidente: true, paraConjunto: false, esServicio };
+    }
 
     return {
       paraResidente: hasAnyConfiguredAudienceMatch ? hasResidentMatch : true,
@@ -315,6 +341,8 @@ export class WooCommerceCatalogService {
       categories,
       tags,
       service,
+      onlyConjunto: product.extensions?.clx_catalogo?.only_conjunto === true,
+      onlyPublic: product.extensions?.clx_catalogo?.only_public === true,
     });
 
     return {
@@ -327,8 +355,19 @@ export class WooCommerceCatalogService {
       description,
       permalink: String(product.permalink ?? "").trim(),
       onSale: product.on_sale === true,
-      purchasable: product.is_purchasable !== false,
-      stockStatus: String(product.stock_status ?? "unknown").trim(),
+      // La Store API de Woo no expone "stock_status" (ese campo es de la REST
+      // API v3); expone is_in_stock/is_on_backorder. Ademas "is_purchasable"
+      // refleja restricciones de la vitrina publica (p.ej. modo catalogo o
+      // "solicitar cotizacion") que no aplican a esta app: los pedidos se
+      // crean por REST v3 con credenciales propias, no por el carrito publico.
+      // Por eso la disponibilidad se calcula solo a partir del stock real.
+      purchasable: product.is_on_backorder === true || product.is_in_stock !== false,
+      stockStatus:
+        product.is_on_backorder === true
+          ? "onbackorder"
+          : product.is_in_stock === false
+            ? "outofstock"
+            : "instock",
       lowStockRemaining:
         typeof product.low_stock_remaining === "number" ? product.low_stock_remaining : null,
       price: {
@@ -416,10 +455,19 @@ export class WooCommerceCatalogService {
 
     const normalized = productsRaw.map((item) => this.normalizeProduct(item));
     const filtered = this.applyFilters(normalized, filters);
-    const total = filtered.length;
+    // A los conjuntos se les quiere vender insumos antes que servicios: los
+    // insumos van primero. Woo devuelve todo por fecha de creacion, y como
+    // los servicios se cargaron despues, sin este orden explicito quedaban
+    // todos antes que los insumos (y estos ni siquiera entraban en la
+    // primera pagina del catalogo). Sort estable: no altera el orden dentro
+    // de cada grupo.
+    const sorted = [...filtered].sort(
+      (a, b) => Number(a.audience.esServicio) - Number(b.audience.esServicio),
+    );
+    const total = sorted.length;
     const totalPages = Math.max(1, Math.ceil(total / perPage));
     const start = (page - 1) * perPage;
-    const items = filtered.slice(start, start + perPage);
+    const items = sorted.slice(start, start + perPage);
 
     const categoryMap = new Map<string, { id: number; name: string; slug: string }>();
     for (const raw of categoriesRaw) {

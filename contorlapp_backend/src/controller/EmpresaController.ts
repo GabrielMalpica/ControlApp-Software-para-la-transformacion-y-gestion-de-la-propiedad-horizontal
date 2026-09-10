@@ -4,6 +4,9 @@ import { z } from "zod";
 import { prisma } from "../db/prisma";
 import { EmpresaService } from "../services/EmpresaServices";
 import { GerenteService } from "../services/GerenteServices";
+import { CrearMaquinariaDTO } from "../model/Maquinaria";
+import { InventarioActivoService } from "../services/InventarioActivoService";
+import { extraerActorAuditoriaConNombre } from "../utils/auditoria";
 
 const IdParamSchema = z.object({ id: z.coerce.number().int().positive() });
 const NitHeaderSchema = z.object({ nit: z.string().min(3) });
@@ -79,8 +82,38 @@ export class EmpresaController {
   agregarMaquinaria: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = resolveEmpresaId(req);
-      const service = new EmpresaService(empresaId);
-      const creada = await service.agregarMaquinaria(req.body);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      if (!actor) {
+        throw Object.assign(new Error("No autenticado"), { status: 401 });
+      }
+      const dto = CrearMaquinariaDTO.parse(req.body);
+      if (
+        dto.propietarioTipo === "CONJUNTO" &&
+        !dto.conjuntoPropietarioId
+      ) {
+        throw Object.assign(
+          new Error("Debes indicar el conjunto propietario."),
+          { status: 400 },
+        );
+      }
+      const service = new InventarioActivoService(prisma, empresaId, actor);
+      const creada = await service.crearMaquinaria(
+        {
+          tipoPropuesto: { nombre: dto.nombre, tipoLegacy: dto.tipo },
+          marca: dto.marca,
+          modelo: null,
+          serial: null,
+          alias: null,
+          estado: dto.estado,
+        },
+        {
+          propietarioTipo: dto.propietarioTipo,
+          conjuntoId:
+            dto.propietarioTipo === "CONJUNTO"
+              ? dto.conjuntoPropietarioId ?? null
+              : null,
+        },
+      );
       res.status(201).json(creada);
     } catch (err) {
       next(err);
@@ -100,11 +133,14 @@ export class EmpresaController {
 
   editarMaquinaria: RequestHandler = async (req, res, next) => {
     try {
-      const empresaId = resolveEmpresaId(req);
-      const { id } = IdParamSchema.parse(req.params);
-      const service = new EmpresaService(empresaId);
-      const upd = await service.editarMaquinaria(id, req.body);
-      res.json(upd);
+      resolveEmpresaId(req);
+      IdParamSchema.parse(req.params);
+      throw Object.assign(
+        new Error(
+          "Esta edición fue reemplazada por el inventario físico. Edita la unidad desde Inventario.",
+        ),
+        { status: 409 },
+      );
     } catch (err) {
       next(err);
     }
@@ -112,11 +148,14 @@ export class EmpresaController {
 
   eliminarMaquinaria: RequestHandler = async (req, res, next) => {
     try {
-      const empresaId = resolveEmpresaId(req);
-      const { id } = IdParamSchema.parse(req.params);
-      const service = new EmpresaService(empresaId);
-      await service.eliminarMaquinaria(id);
-      res.status(204).send();
+      resolveEmpresaId(req);
+      IdParamSchema.parse(req.params);
+      throw Object.assign(
+        new Error(
+          "La maquinaria no se elimina porque debe conservar su historial. Cámbiala a estado Retirada desde Inventario.",
+        ),
+        { status: 409 },
+      );
     } catch (err) {
       next(err);
     }

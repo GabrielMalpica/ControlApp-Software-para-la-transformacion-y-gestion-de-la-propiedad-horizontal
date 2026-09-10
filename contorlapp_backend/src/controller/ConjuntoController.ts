@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../db/prisma";
 import { ConjuntoService } from "../services/ConjuntoServices";
 import { CronogramaService } from "../services/CronogramaServices";
+import { extraerActorAuditoriaConNombre } from "../utils/auditoria";
 
 /* ===================== Schemas mínimos ===================== */
 const NitSchema = z.object({ nit: z.string().min(3) });
@@ -122,7 +123,11 @@ export class ConjuntoController {
   agregarMaquinaria: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(prisma, conjuntoId);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      if (!actor) {
+        throw Object.assign(new Error("No autenticado"), { status: 401 });
+      }
+      const service = new ConjuntoService(prisma, conjuntoId, actor);
       const body = MaquinariaIdSchema.parse(req.body);
       await service.agregarMaquinaria(body);
       res.status(204).send();
@@ -135,7 +140,11 @@ export class ConjuntoController {
   entregarMaquinaria: RequestHandler = async (req, res, next) => {
     try {
       const conjuntoId = resolveConjuntoId(req);
-      const service = new ConjuntoService(prisma, conjuntoId);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      if (!actor) {
+        throw Object.assign(new Error("No autenticado"), { status: 401 });
+      }
+      const service = new ConjuntoService(prisma, conjuntoId, actor);
       const body = MaquinariaIdSchema.parse(req.body);
       await service.entregarMaquinaria(body);
       res.status(204).send();

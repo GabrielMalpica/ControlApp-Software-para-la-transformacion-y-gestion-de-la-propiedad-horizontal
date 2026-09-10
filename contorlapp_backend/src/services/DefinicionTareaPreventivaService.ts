@@ -1374,6 +1374,8 @@ export class DefinicionTareaPreventivaService {
     motivoTipo: ExclusionMotivoTipo;
     motivoMensaje?: string;
     metadataJson?: Prisma.InputJsonValue;
+    duracionMinutos?: number;
+    fechaObjetivo?: Date;
   }) {
     const tarea = await this.prisma.tarea.findUnique({
       where: { id: params.tareaId },
@@ -1397,8 +1399,9 @@ export class DefinicionTareaPreventivaService {
       frecuencia: tarea.frecuencia,
       diaSemanaProgramado: tarea.diaSemanaProgramado ?? null,
       prioridad: tarea.prioridad,
-      duracionMinutos: tarea.duracionMinutos,
-      fechaObjetivo: tarea.fechaInicioOriginal ?? tarea.fechaInicio,
+      duracionMinutos: params.duracionMinutos ?? tarea.duracionMinutos,
+      fechaObjetivo:
+        params.fechaObjetivo ?? tarea.fechaInicioOriginal ?? tarea.fechaInicio,
       ubicacionId: tarea.ubicacionId,
       ubicacionNombre: tarea.ubicacion?.nombre ?? null,
       elementoId: tarea.elementoId,
@@ -6067,11 +6070,6 @@ export class DefinicionTareaPreventivaService {
 
   async dividirExcluidaManual(payload: unknown) {
     const dto = DividirExcluidaManualDTO.parse(payload);
-    if (dto.bloques.length > 0) {
-      throw new Error(
-        "La división manual está deshabilitada: una tarea solo puede separarse automáticamente alrededor del almuerzo y completarse el mismo día.",
-      );
-    }
     const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
       where: { id: dto.excluidaId },
       select: {
@@ -6405,17 +6403,28 @@ export class DefinicionTareaPreventivaService {
     // incluir tareas cuya posición relativa no cambió: eso está bien, se
     // recalculan igual pero terminan en el mismo lugar.
     //
-    // Los bloques de una división por almuerzo (mismo grupoPlanId, dos
-    // tramos con un hueco fijo entre ellos) se excluyen del reflote: igual
+    // Los bloques de una división por almuerzo (mismo grupoPlanId y varios
+    // tramos presentes en este mismo día) se excluyen del reflote: igual
     // que reordenarBorradorGeneradoPorZonas, se dejan fijos en su horario
     // actual en vez de reempacarlos con el mismo cursor secuencial que las
     // demás tareas, lo que podría romper el hueco fijo del almuerzo si se
     // intercalan con otra tarea solicitada. Su horario original sigue
     // protegido por la validación de solapes de más abajo.
+    const bloquesPorGrupoEnElDia = new Map<string, number>();
+    for (const tarea of tareasDiaDisponibles) {
+      if (!tarea.grupoPlanId) continue;
+      bloquesPorGrupoEnElDia.set(
+        tarea.grupoPlanId,
+        (bloquesPorGrupoEnElDia.get(tarea.grupoPlanId) ?? 0) + 1,
+      );
+    }
     const idsReordenables = new Set(
       Array.from(idsSolicitados).filter((id) => {
         const tarea = tareasPorId.get(id)!;
-        return !tarea.grupoPlanId || (tarea.bloquesTotales ?? 1) <= 1;
+        return (
+          !tarea.grupoPlanId ||
+          (bloquesPorGrupoEnElDia.get(tarea.grupoPlanId) ?? 0) <= 1
+        );
       }),
     );
     if (!idsReordenables.size) {
@@ -7714,32 +7723,100 @@ export class DefinicionTareaPreventivaService {
         fechaFin: true,
         periodoAnio: true,
         periodoMes: true,
+        ocurrenciaPlanId: true,
+        grupoPlanId: true,
       },
     });
     if (!tarea) {
       throw new Error("Bloque no encontrado o no es borrador preventivo.");
     }
 
-    await this.crearExcluidaDesdeTarea({
-      tareaId,
-      motivoTipo: "MANUAL_ELIMINADA",
-      motivoMensaje: "La tarea fue retirada manualmente del borrador.",
-    });
-
-    await this.auditarTarea({
-      tareaId,
-      conjuntoId,
-      accion: AccionAuditoria.ELIMINAR,
-      descripcion: `Se retiro manualmente la tarea '${tarea.descripcion}' del borrador y paso a excluidas.`,
-      periodoAnio: tarea.periodoAnio,
-      periodoMes: tarea.periodoMes,
-      datosAntes: {
-        fechaInicio: tarea.fechaInicio,
-        fechaFin: tarea.fechaFin,
+    const filtroTareaLogica = tarea.ocurrenciaPlanId
+      ? { ocurrenciaPlanId: tarea.ocurrenciaPlanId }
+      : tarea.grupoPlanId
+        ? { grupoPlanId: tarea.grupoPlanId }
+        : { id: tarea.id };
+    const bloques = await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId,
+        borrador: true,
+        tipo: TipoTarea.PREVENTIVA,
+        ...filtroTareaLogica,
       },
+      select: {
+        id: true,
+        fechaInicio: true,
+        fechaFin: true,
+        duracionMinutos: true,
+      },
+      orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
+    const bloquesObjetivo = bloques.length
+      ? bloques
+      : [
+          {
+            id: tarea.id,
+            fechaInicio: tarea.fechaInicio,
+            fechaFin: tarea.fechaFin,
+            duracionMinutos: Math.max(
+              1,
+              Math.round((+tarea.fechaFin - +tarea.fechaInicio) / 60000),
+            ),
+          },
+        ];
+    const tareaIds = bloquesObjetivo.map((bloque) => bloque.id);
+    const duracionTotal = bloquesObjetivo.reduce(
+      (total, bloque) => total + Math.max(1, bloque.duracionMinutos),
+      0,
+    );
+    const fechaObjetivo = bloquesObjetivo[0].fechaInicio;
 
-    await this.prisma.tarea.delete({ where: { id: tareaId } });
+    await this.prisma.$transaction(async (tx) => {
+      const serviceTx = new DefinicionTareaPreventivaService(
+        tx as unknown as PrismaClient,
+        this.actor,
+      );
+      const excluida = await serviceTx.crearExcluidaDesdeTarea({
+        tareaId,
+        motivoTipo: "MANUAL_ELIMINADA",
+        motivoMensaje: "La tarea fue retirada manualmente del borrador.",
+        duracionMinutos: duracionTotal,
+        fechaObjetivo,
+        metadataJson: {
+          tareaIdsOriginales: tareaIds,
+          bloquesEliminados: bloquesObjetivo.length,
+        },
+      });
+      if (!excluida) {
+        throw new Error("No se pudo conservar la tarea en la lista de excluidas.");
+      }
+
+      // Las asignaciones reales de maquinaria referencian la tarea sin
+      // borrado en cascada. Al excluir el borrador deben liberarse junto con
+      // todos sus bloques para que la eliminacion no falle por la FK.
+      await tx.usoMaquinaria.deleteMany({
+        where: { tareaId: { in: tareaIds } },
+      });
+
+      await serviceTx.auditarTarea({
+        tareaId,
+        conjuntoId,
+        accion: AccionAuditoria.ELIMINAR,
+        descripcion:
+          bloquesObjetivo.length > 1
+            ? `Se retiro manualmente la tarea agrupada '${tarea.descripcion}' (${bloquesObjetivo.length} bloques) del borrador y paso a excluidas.`
+            : `Se retiro manualmente la tarea '${tarea.descripcion}' del borrador y paso a excluidas.`,
+        periodoAnio: tarea.periodoAnio,
+        periodoMes: tarea.periodoMes,
+        datosAntes: {
+          fechaInicio: bloquesObjetivo[0].fechaInicio,
+          fechaFin: bloquesObjetivo[bloquesObjetivo.length - 1].fechaFin,
+          tareaIds,
+        },
+      });
+
+      await tx.tarea.deleteMany({ where: { id: { in: tareaIds } } });
+    });
   }
 
   async listarBorrador(params: {

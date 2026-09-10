@@ -79,7 +79,7 @@ const validateMagicBytes: RequestHandler = async (req, _res, next) => {
   }
 };
 
-function matchesDeclaredType(file: Express.Multer.File, bytes: Buffer): boolean {
+export function matchesDeclaredType(file: Express.Multer.File, bytes: Buffer): boolean {
   const isJpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   const isPng =
     bytes.length >= 8 &&
@@ -118,6 +118,22 @@ const validateImageBuffer: RequestHandler = (req, _res, next) => {
   next(new Error("El contenido del mapa no coincide con una imagen JPG o PNG valida."));
 };
 
+const inventoryPhotoUpload = multer({
+  storage,
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    const valid =
+      (file.mimetype === "image/jpeg" && [".jpg", ".jpeg"].includes(ext)) ||
+      (file.mimetype === "image/png" && ext === ".png");
+    if (!valid) {
+      cb(new Error("Solo se permiten fotografías JPG, JPEG o PNG."));
+      return;
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+});
+
 export const uploadEvidencias = {
   single: (fieldName: string): RequestHandler[] => [
     baseUpload.single(fieldName),
@@ -133,5 +149,12 @@ export const uploadImagenMemoria = {
   single: (fieldName: string): RequestHandler[] => [
     imageMemoryUpload.single(fieldName),
     validateImageBuffer,
+  ],
+};
+
+export const uploadFotoInventario = {
+  single: (fieldName: string): RequestHandler[] => [
+    inventoryPhotoUpload.single(fieldName),
+    validateMagicBytes,
   ],
 };

@@ -7,6 +7,8 @@ import {
   elementoTreeInclude,
   usuarioSinContrasenaSelect,
 } from "../utils/elementoHierarchy";
+import type { ActorAuditoria } from "../model/Auditoria";
+import { AuditoriaService } from "./AuditoriaService";
 
 // DTOs locales
 const AsignarOperarioDTO = z.object({
@@ -40,7 +42,8 @@ const TareasPorUbicacionDTO = z.object({
 export class ConjuntoService {
   constructor(
     private prisma: PrismaClient,
-    private conjuntoId: string // nit
+    private conjuntoId: string, // nit
+    private actor?: ActorAuditoria,
   ) {}
 
   private async empresaIdDelConjunto(): Promise<string> {
@@ -126,6 +129,7 @@ export class ConjuntoService {
         where: {
           propietarioTipo: "CONJUNTO",
           conjuntoPropietarioId: this.conjuntoId,
+          estadoAprobacion: "APROBADA",
         },
         select: {
           id: true,
@@ -143,6 +147,7 @@ export class ConjuntoService {
         where: {
           conjuntoId: this.conjuntoId,
           estado: "ACTIVA",
+          maquinaria: { estadoAprobacion: "APROBADA" },
         },
         select: {
           tipoTenencia: true,
@@ -232,13 +237,15 @@ export class ConjuntoService {
 
   async agregarMaquinaria(payload: unknown) {
     const { maquinariaId } = AgregarMaquinariaDTO.parse(payload);
-
-    try {
-      const empresaId = await this.empresaIdDelConjunto();
+    const empresaId = await this.empresaIdDelConjunto();
+    return this.prisma.$transaction(async (tx) => {
       // 1) validar que la maquinaria exista
-      const maq = await this.prisma.maquinaria.findFirst({
+      const maq = await tx.maquinaria.findFirst({
         where: {
           id: maquinariaId,
+          propietarioTipo: "EMPRESA",
+          estado: "OPERATIVA",
+          estadoAprobacion: "APROBADA",
           OR: [{ empresaId }, { conjuntoPropietario: { empresaId } }],
         },
         select: { id: true },
@@ -246,8 +253,8 @@ export class ConjuntoService {
       if (!maq) throw new Error("Maquinaria no encontrada.");
 
       // 2) validar que no esté ACTIVA en otro conjunto
-      const asignacionActiva = await this.prisma.maquinariaConjunto.findFirst({
-        where: { maquinariaId, estado: "ACTIVA" },
+      const asignacionActiva = await tx.maquinariaConjunto.findFirst({
+        where: { maquinariaId, estado: { in: ["RESERVADA", "ACTIVA"] } },
         select: { id: true, conjuntoId: true },
       });
 
@@ -259,7 +266,7 @@ export class ConjuntoService {
       }
 
       // 3) crear asignación (inventario de maquinaria del conjunto)
-      await this.prisma.maquinariaConjunto.create({
+      const asignacion = await tx.maquinariaConjunto.create({
         data: {
           conjunto: { connect: { nit: this.conjuntoId } },
           maquinaria: { connect: { id: maquinariaId } },
@@ -268,17 +275,28 @@ export class ConjuntoService {
           fechaInicio: new Date(),
         },
       });
-    } catch (error) {
-      console.error("Error al agregar maquinaria al conjunto:", error);
-      throw new Error("No se pudo asignar la maquinaria al conjunto.");
-    }
+      if (this.actor) {
+        await new AuditoriaService(tx).registrarEstricto({
+          modulo: "INVENTARIO_MAQUINARIA",
+          entidad: "Maquinaria",
+          entidadId: maquinariaId,
+          accion: "PRESTAR",
+          empresaId,
+          conjuntoId: this.conjuntoId,
+          actor: this.actor,
+          datosDespues: asignacion,
+          metadataJson: { origen: "ENDPOINT_LEGACY_COMPATIBLE" },
+        });
+      }
+      return asignacion;
+    });
   }
 
   async entregarMaquinaria(payload: unknown) {
     const { maquinariaId } = AgregarMaquinariaDTO.parse(payload);
-
-    try {
-      const asignacion = await this.prisma.maquinariaConjunto.findFirst({
+    const empresaId = await this.empresaIdDelConjunto();
+    return this.prisma.$transaction(async (tx) => {
+      const asignacion = await tx.maquinariaConjunto.findFirst({
         where: {
           maquinariaId,
           conjuntoId: this.conjuntoId,
@@ -293,17 +311,29 @@ export class ConjuntoService {
         );
       }
 
-      await this.prisma.maquinariaConjunto.update({
+      const cerrada = await tx.maquinariaConjunto.update({
         where: { id: asignacion.id },
         data: {
           estado: "DEVUELTA",
           fechaFin: new Date(),
         },
       });
-    } catch (error) {
-      console.error("Error al devolver maquinaria:", error);
-      throw new Error("No se pudo devolver la maquinaria.");
-    }
+      if (this.actor) {
+        await new AuditoriaService(tx).registrarEstricto({
+          modulo: "INVENTARIO_MAQUINARIA",
+          entidad: "Maquinaria",
+          entidadId: maquinariaId,
+          accion: "DEVOLVER",
+          empresaId,
+          conjuntoId: this.conjuntoId,
+          actor: this.actor,
+          datosAntes: asignacion,
+          datosDespues: cerrada,
+          metadataJson: { origen: "ENDPOINT_LEGACY_COMPATIBLE" },
+        });
+      }
+      return cerrada;
+    });
   }
 
   async agregarUbicacion(payload: unknown) {

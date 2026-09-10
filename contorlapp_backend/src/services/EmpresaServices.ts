@@ -484,7 +484,9 @@ export class EmpresaService {
       where: {
         propietarioTipo: "EMPRESA",
         empresaId: this.empresaNit,
-        asignaciones: { none: { estado: "ACTIVA" } },
+        estado: "OPERATIVA",
+        estadoAprobacion: "APROBADA",
+        asignaciones: { none: { estado: { in: ["RESERVADA", "ACTIVA"] } } },
       },
       select: maquinariaCatalogoSelect,
       orderBy: { nombre: "asc" },

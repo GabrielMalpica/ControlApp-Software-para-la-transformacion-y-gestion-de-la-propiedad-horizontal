@@ -51,6 +51,7 @@ function conjuntoOrder(overrides: Record<string, unknown> = {}) {
           empresaId: "EMP-1",
           wooSku: "DET-72",
           wooProductId: 72,
+          wooFactorConversion: new Prisma.Decimal(1),
         },
       },
     ],

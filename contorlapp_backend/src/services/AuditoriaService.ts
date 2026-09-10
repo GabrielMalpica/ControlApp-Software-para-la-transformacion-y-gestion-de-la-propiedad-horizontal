@@ -123,6 +123,14 @@ const eventoPublicSelect = {
 export class AuditoriaService {
   constructor(private prisma: ClientePrisma) {}
 
+  /**
+   * Variante transaccional para dominios donde la trazabilidad es parte de la
+   * operación. A diferencia de `registrar`, propaga el error al llamador.
+   */
+  async registrarEstricto(evento: RegistroAuditoria): Promise<void> {
+    await this.prisma.auditoriaEvento.create({ data: aDatosCreate(evento) });
+  }
+
   async registrar(evento: RegistroAuditoria): Promise<void> {
     try {
       await this.prisma.auditoriaEvento.create({ data: aDatosCreate(evento) });

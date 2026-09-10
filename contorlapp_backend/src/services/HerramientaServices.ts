@@ -1,4 +1,6 @@
-import type{ PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
+
+import { normalizarNombreCatalogo } from "../utils/catalogoInventario";
 
 export class HerramientaService {
   constructor(private prisma: PrismaClient) {}
@@ -13,10 +15,29 @@ export class HerramientaService {
     umbralBajo?: number | null;
   }) {
     return this.prisma.$transaction(async (tx) => {
+      const nombre = data.nombre.trim();
+      const nombreNormalizado = normalizarNombreCatalogo(nombre);
+      const existente = await tx.herramienta.findFirst({
+        where: {
+          empresaId: data.empresaId,
+          nombreNormalizado,
+          canonicaId: null,
+          activo: true,
+        },
+        select: { id: true },
+      });
+      if (existente) {
+        const error: any = new Error(
+          "Ya existe ese tipo de herramienta en el catálogo de la empresa.",
+        );
+        error.status = 409;
+        throw error;
+      }
       const creada = await tx.herramienta.create({
         data: {
           empresaId: data.empresaId,
-          nombre: data.nombre.trim(),
+          nombre,
+          nombreNormalizado,
           unidad: data.unidad.trim(),
           categoria: data.categoria,
           modoControl: data.modoControl,
@@ -52,7 +73,12 @@ export class HerramientaService {
     take: number;
     skip: number;
   }) {
-    const where: any = { empresaId: params.empresaId };
+    const where: any = {
+      empresaId: params.empresaId,
+      activo: true,
+      canonicaId: null,
+      estadoAprobacion: "APROBADA",
+    };
 
     if (params.nombre?.trim()) {
       where.nombre = { contains: params.nombre.trim(), mode: "insensitive" };
@@ -111,12 +137,37 @@ export class HerramientaService {
       umbralBajo: number | null;
     }>
   ) {
-    await this.obtenerPorId(herramientaId);
+    const actual = await this.obtenerPorId(herramientaId);
+    const nombre = data.nombre?.trim();
+    if (nombre) {
+      const repetida = await this.prisma.herramienta.findFirst({
+        where: {
+          id: { not: herramientaId },
+          empresaId: actual.empresaId,
+          canonicaId: null,
+          activo: true,
+          nombreNormalizado: normalizarNombreCatalogo(nombre),
+        },
+        select: { id: true },
+      });
+      if (repetida) {
+        const error: any = new Error(
+          "Ya existe ese tipo de herramienta en el catálogo de la empresa.",
+        );
+        error.status = 409;
+        throw error;
+      }
+    }
 
     return this.prisma.herramienta.update({
       where: { id: herramientaId },
       data: {
-        ...(data.nombre !== undefined ? { nombre: data.nombre.trim() } : {}),
+        ...(nombre !== undefined
+          ? {
+              nombre,
+              nombreNormalizado: normalizarNombreCatalogo(nombre),
+            }
+          : {}),
         ...(data.unidad !== undefined ? { unidad: data.unidad.trim() } : {}),
         ...(data.categoria !== undefined ? { categoria: data.categoria } : {}),
         ...(data.modoControl !== undefined

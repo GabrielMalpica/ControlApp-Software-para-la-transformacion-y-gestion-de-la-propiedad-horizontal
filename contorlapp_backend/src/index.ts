@@ -11,6 +11,7 @@ import express, {
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
+import multer from "multer";
 import { rateLimit } from "express-rate-limit";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
@@ -387,6 +388,20 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     sendError(res, 400, primaryMessage, {
       code: "VALIDATION_ERROR",
       details,
+    });
+    return;
+  }
+
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      sendError(res, 413, "La fotografía supera el tamaño máximo permitido de 5 MB.", {
+        code: err.code,
+      });
+      return;
+    }
+
+    sendError(res, 400, "No se pudo procesar la fotografía enviada.", {
+      code: err.code,
     });
     return;
   }

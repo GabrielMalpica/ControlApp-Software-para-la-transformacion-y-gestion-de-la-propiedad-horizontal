@@ -4739,7 +4739,21 @@ export class GerenteService {
   }
 
   async eliminarMaquinaria(maquinariaId: number) {
-    await this.prisma.maquinaria.delete({ where: { id: maquinariaId } });
+    const existente = await this.prisma.maquinaria.findUnique({
+      where: { id: maquinariaId },
+      select: { id: true },
+    });
+    if (!existente) {
+      throw Object.assign(new Error("Maquinaria no encontrada."), {
+        status: 404,
+      });
+    }
+    throw Object.assign(
+      new Error(
+        "La maquinaria no se elimina porque debe conservar su historial. Cámbiala a estado Retirada desde Inventario.",
+      ),
+      { status: 409 },
+    );
   }
 
   async eliminarTarea(prisma: PrismaClient, id: number) {

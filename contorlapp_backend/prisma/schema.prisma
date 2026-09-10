@@ -314,7 +314,11 @@ enum TipoMaquinaria {
 enum EstadoMaquinaria {
   OPERATIVA
   EN_REPARACION
+  EN_MANTENIMIENTO
+  DANADA
   FUERA_DE_SERVICIO
+  PERDIDA
+  RETIRADA
 }
 
 enum PropietarioMaquinaria {
@@ -350,9 +354,18 @@ enum ModoControlHerramienta {
 
 enum EstadoHerramienta {
   OPERATIVA
+  EN_MANTENIMIENTO
   DANADA
+  FUERA_DE_SERVICIO
   PERDIDA
   BAJA
+  RETIRADA
+}
+
+enum EstadoAprobacionActivo {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
 }
 
 /**
@@ -394,10 +407,10 @@ model ConfiguracionLaboral {
  */
 
 model Usuario {
-  id         String  @id
-  nombre     String
-  correo     String  @unique
-  contrasena String
+  id                       String  @id
+  nombre                   String
+  correo                   String  @unique
+  contrasena               String
   rol                      String
   activo                   Boolean @default(true)
   requiereCambioContrasena Boolean @default(false)
@@ -419,16 +432,36 @@ model Usuario {
   jornadaLaboral JornadaLaboral?
   patronJornada  PatronJornada?
 
-  gerente            Gerente?
-  jefeOperaciones    JefeOperaciones?
-  supervisor         Supervisor?
-  operario           Operario?
-  administrador      Administrador?
-  residente          Residente?
-  compromisosCreados CompromisoConjunto[] @relation("CompromisoCreadoPor")
-  pedidos            PedidoApp[]
-  movimientosPuntos  MovimientoPuntos[]
+  gerente             Gerente?
+  jefeOperaciones     JefeOperaciones?
+  supervisor          Supervisor?
+  operario            Operario?
+  administrador       Administrador?
+  residente           Residente?
+  compromisosCreados  CompromisoConjunto[]       @relation("CompromisoCreadoPor")
+  pedidos             PedidoApp[]
+  movimientosPuntos   MovimientoPuntos[]
   cambiosEstadoPedido PedidoAppEstadoHistorico[] @relation("PedidoEstadoCambiadoPor")
+  notificaciones      Notificacion[]
+}
+
+model Notificacion {
+  id             Int       @id @default(autoincrement())
+  usuarioId      String
+  usuario        Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tipo           String
+  titulo         String
+  mensaje        String
+  referenciaTipo String?
+  referenciaId   Int?
+  data           Json?
+  leida          Boolean   @default(false)
+  leidaEn        DateTime? @db.Timestamptz(6)
+  creadaEn       DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([usuarioId, leida], map: "idx_notificacion_usuario_leida")
+  @@index([usuarioId, creadaEn(sort: Desc)], map: "idx_notificacion_usuario_creada")
+  @@map("Notificacion")
 }
 
 model Empresa {
@@ -448,6 +481,7 @@ model Empresa {
 
   // Catálogos/Stock
   stockMaquinaria Maquinaria[]
+  tiposMaquinaria TipoMaquinariaCatalogo[]
   catalogoInsumos Insumo[]
 
   // Solicitudes
@@ -463,6 +497,7 @@ model Empresa {
   insumosConsumidos       InsumoConsumoEmpresa[]
   Rendimiento             Rendimiento[]
   catalogoHerramientas    Herramienta[]
+  herramientasItems       HerramientaItem[]
   stockHerramientas       EmpresaHerramientaStock[]
   solicitudesHerramientas SolicitudHerramienta[]
   prestamosHerramientas   PrestamoHerramientaConjunto[]
@@ -623,22 +658,24 @@ model Conjunto {
   solicitudesMaquinaria SolicitudMaquinaria[]
 
   // Config/agenda
-  horarios                  ConjuntoHorario[]
-  DefinicionTareaPreventiva DefinicionTareaPreventiva[]
+  horarios                      ConjuntoHorario[]
+  DefinicionTareaPreventiva     DefinicionTareaPreventiva[]
   configuracionesZonaCronograma ConfiguracionZonaCronograma[]
 
   // Overrides / maquinaria
-  limiteHorasSemanaOverride Int?
-  maquinariaConjuntos       MaquinariaConjunto[]
-  maquinarias               Maquinaria[]
-  herramientasStock         ConjuntoHerramientaStock[]
-  solicitudHerramientas     SolicitudHerramienta[]
-  prestamosHerramientas     PrestamoHerramientaConjunto[]
-  compromisos               CompromisoConjunto[]
-  residentes                Residente[]
-  pedidos                   PedidoApp[]
-  configPuntos              ConfigPuntosConjunto?
-  movimientosPuntos         MovimientoPuntos[]
+  limiteHorasSemanaOverride  Int?
+  maquinariaConjuntos        MaquinariaConjunto[]
+  maquinarias                Maquinaria[]
+  herramientasItemsPropios   HerramientaItem[]             @relation("HerramientaItemPropietario")
+  herramientasItemsPrestados HerramientaItemConjunto[]
+  herramientasStock          ConjuntoHerramientaStock[]
+  solicitudHerramientas      SolicitudHerramienta[]
+  prestamosHerramientas      PrestamoHerramientaConjunto[]
+  compromisos                CompromisoConjunto[]
+  residentes                 Residente[]
+  pedidos                    PedidoApp[]
+  configPuntos               ConfigPuntosConjunto?
+  movimientosPuntos          MovimientoPuntos[]
 
   // Plan Esperanza
   planEsperanzaConfig PlanEsperanzaConfig?
@@ -659,9 +696,9 @@ model CompromisoConjunto {
   creadoPor   Usuario? @relation("CompromisoCreadoPor", fields: [creadoPorId], references: [id], onDelete: SetNull)
   creadoPorId String?
 
-  creadaEn      DateTime @default(now())
+  creadaEn      DateTime  @default(now())
   cerradaEn     DateTime?
-  actualizadaEn DateTime @updatedAt
+  actualizadaEn DateTime  @updatedAt
 
   @@index([conjuntoId, completado])
   @@index([conjuntoId, creadaEn])
@@ -763,8 +800,12 @@ model Insumo {
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
   empresaId String
 
-  wooSku       String?
-  wooProductId Int?
+  wooSku              String?
+  wooProductId        Int?
+  // Cuantas unidades de "unidad" trae CADA unidad comprada en la tienda Woo.
+  // Ej: el insumo se mide en litros y la tienda vende una garrafa de 3L =>
+  // wooFactorConversion = 3. Comprar 2 garrafas suma 6, no 2, al inventario.
+  wooFactorConversion Decimal @default(1) @db.Decimal(12, 4)
 
   inventarios                InventarioInsumo[]
   consumos                   ConsumoInsumo[]
@@ -793,14 +834,108 @@ model Herramienta {
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
   empresaId String
 
+  nombreNormalizado String?
+  activo            Boolean                @default(true)
+  estadoAprobacion  EstadoAprobacionActivo @default(APROBADA)
+  creadoPorId       String?
+  creadoEn          DateTime               @default(now())
+  aprobadoPorId     String?
+  aprobadoEn        DateTime?
+  rechazadoPorId    String?
+  rechazadoEn       DateTime?
+  motivoRechazo     String?
+  actualizadoPorId  String?
+  actualizadoEn     DateTime               @default(now()) @updatedAt
+
+  canonicaId Int?
+  canonica   Herramienta?  @relation("HerramientaCanonica", fields: [canonicaId], references: [id], onDelete: SetNull)
+  aliases    Herramienta[] @relation("HerramientaCanonica")
+
   stocksEmpresa  EmpresaHerramientaStock[]
   stocksConjunto ConjuntoHerramientaStock[]
   prestamos      PrestamoHerramientaConjunto[]
   usosTarea      UsoHerramienta[]
   solicitudItems SolicitudHerramientaItem[]
+  itemsFisicos   HerramientaItem[]
 
   @@unique([empresaId, nombre, unidad])
+  @@index([empresaId, nombreNormalizado])
+  @@index([empresaId, activo, estadoAprobacion])
   @@map("Herramienta")
+}
+
+model HerramientaItem {
+  id            Int     @id @default(autoincrement())
+  codigoInterno String
+  alias         String?
+  marca         String?
+  modelo        String?
+  serial        String?
+
+  empresa   Empresa @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
+  empresaId String
+
+  herramienta   Herramienta @relation(fields: [herramientaId], references: [id])
+  herramientaId Int
+
+  propietarioTipo       PropietarioMaquinaria
+  conjuntoPropietario   Conjunto?             @relation("HerramientaItemPropietario", fields: [conjuntoPropietarioId], references: [nit])
+  conjuntoPropietarioId String?
+
+  estado           EstadoHerramienta      @default(OPERATIVA)
+  estadoAprobacion EstadoAprobacionActivo @default(PENDIENTE)
+  registroLoteId   String?
+
+  creadoPorId      String?
+  creadoEn         DateTime  @default(now())
+  aprobadoPorId    String?
+  aprobadoEn       DateTime?
+  rechazadoPorId   String?
+  rechazadoEn      DateTime?
+  motivoRechazo    String?
+  actualizadoPorId String?
+  actualizadoEn    DateTime  @default(now()) @updatedAt
+  retiradoPorId    String?
+  retiradoEn       DateTime?
+
+  fotoDriveId       String?
+  fotoNombre        String?
+  fotoMimeType      String?
+  fotoTamano        Int?
+  fotoActualizadaEn DateTime?
+
+  asignaciones HerramientaItemConjunto[]
+  usos         UsoHerramienta[]
+
+  @@unique([empresaId, codigoInterno])
+  @@index([empresaId, herramientaId, estadoAprobacion, estado])
+  @@index([conjuntoPropietarioId, estadoAprobacion, estado])
+  @@index([registroLoteId])
+  @@map("HerramientaItem")
+}
+
+model HerramientaItemConjunto {
+  id Int @id @default(autoincrement())
+
+  herramientaItem   HerramientaItem @relation(fields: [herramientaItemId], references: [id])
+  herramientaItemId Int
+
+  conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit])
+  conjuntoId String
+
+  fechaInicio             DateTime                   @default(now())
+  fechaFin                DateTime?
+  fechaDevolucionEstimada DateTime?
+  estado                  EstadoAsignacionMaquinaria @default(ACTIVA)
+  responsableId           String?
+  tareaId                 Int?
+  creadoPorId             String?
+  creadoEn                DateTime                   @default(now())
+
+  @@index([herramientaItemId, estado])
+  @@index([conjuntoId, estado])
+  @@index([tareaId])
+  @@map("HerramientaItemConjunto")
 }
 
 model EmpresaHerramientaStock {
@@ -881,6 +1016,9 @@ model UsoHerramienta {
   herramienta   Herramienta @relation(fields: [herramientaId], references: [id])
   herramientaId Int
 
+  herramientaItem   HerramientaItem? @relation(fields: [herramientaItemId], references: [id])
+  herramientaItemId Int?
+
   cantidad Decimal @default(1) @db.Decimal(14, 4)
 
   origenStock OrigenHerramientaStock @default(CONJUNTO)
@@ -896,6 +1034,7 @@ model UsoHerramienta {
 
   @@index([tareaId])
   @@index([herramientaId])
+  @@index([herramientaItemId])
   @@map("UsoHerramienta")
 }
 
@@ -1013,9 +1152,36 @@ model Maquinaria {
   tipo   TipoMaquinaria
   estado EstadoMaquinaria @default(OPERATIVA)
 
+  tipoCatalogo   TipoMaquinariaCatalogo? @relation(fields: [tipoCatalogoId], references: [id])
+  tipoCatalogoId Int?
+  codigoInterno  String?
+  alias          String?
+  modelo         String?
+  serial         String?
+
+  estadoAprobacion EstadoAprobacionActivo @default(APROBADA)
+  registroLoteId   String?
+  creadoPorId      String?
+  creadoEn         DateTime               @default(now())
+  aprobadoPorId    String?
+  aprobadoEn       DateTime?
+  rechazadoPorId   String?
+  rechazadoEn      DateTime?
+  motivoRechazo    String?
+  actualizadoPorId String?
+  actualizadoEn    DateTime               @default(now()) @updatedAt
+  retiradoPorId    String?
+  retiradoEn       DateTime?
+
+  fotoDriveId       String?
+  fotoNombre        String?
+  fotoMimeType      String?
+  fotoTamano        Int?
+  fotoActualizadaEn DateTime?
+
   propietarioTipo       PropietarioMaquinaria
-  empresa               Empresa?              @relation(fields: [empresaId], references: [nit])
-  empresaId             String?
+  empresa               Empresa               @relation(fields: [empresaId], references: [nit])
+  empresaId             String
   conjuntoPropietario   Conjunto?             @relation(fields: [conjuntoPropietarioId], references: [nit])
   conjuntoPropietarioId String?
 
@@ -1025,7 +1191,42 @@ model Maquinaria {
   solicitudMaquinarias SolicitudMaquinaria[]
   usoMaquinarias       UsoMaquinaria[]
 
+  @@unique([empresaId, codigoInterno])
+  @@index([empresaId, tipoCatalogoId, estadoAprobacion, estado])
+  @@index([conjuntoPropietarioId, estadoAprobacion, estado])
+  @@index([registroLoteId])
   @@map("Maquinaria")
+}
+
+model TipoMaquinariaCatalogo {
+  id                Int             @id @default(autoincrement())
+  nombre            String
+  nombreNormalizado String
+  tipoLegacy        TipoMaquinaria?
+  activo            Boolean         @default(true)
+
+  empresa   Empresa @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
+  empresaId String
+
+  estadoAprobacion EstadoAprobacionActivo @default(APROBADA)
+  creadoPorId      String?
+  creadoEn         DateTime               @default(now())
+  aprobadoPorId    String?
+  aprobadoEn       DateTime?
+  rechazadoPorId   String?
+  rechazadoEn      DateTime?
+  motivoRechazo    String?
+  actualizadoPorId String?
+  actualizadoEn    DateTime               @default(now()) @updatedAt
+
+  fusionadoEnId Int?
+  fusionadoEn   TipoMaquinariaCatalogo?  @relation("TipoMaquinariaFusion", fields: [fusionadoEnId], references: [id], onDelete: SetNull)
+  aliases       TipoMaquinariaCatalogo[] @relation("TipoMaquinariaFusion")
+  maquinarias   Maquinaria[]
+
+  @@unique([empresaId, nombreNormalizado])
+  @@index([empresaId, activo, estadoAprobacion])
+  @@map("TipoMaquinariaCatalogo")
 }
 
 model MaquinariaConjunto {
@@ -1051,7 +1252,6 @@ model MaquinariaConjunto {
   tareaId Int?
   tarea   Tarea? @relation(fields: [tareaId], references: [id], onDelete: SetNull)
 
-  @@unique([conjuntoId, maquinariaId, estado])
   @@index([conjuntoId, estado])
   @@index([maquinariaId, estado])
   @@index([tareaId])
@@ -1184,12 +1384,12 @@ model Tarea {
   diaSemanaProgramado DiaSemana?
 
   // Planificación / cronograma
-  borrador       Boolean @default(false)
-  periodoAnio    Int?
-  periodoMes     Int?
-  grupoPlanId    String?
-  bloqueIndex    Int?
-  bloquesTotales Int?
+  borrador         Boolean @default(false)
+  periodoAnio      Int?
+  periodoMes       Int?
+  grupoPlanId      String?
+  bloqueIndex      Int?
+  bloquesTotales   Int?
   ocurrenciaPlanId String?
 
   // Rendimientos / estimaciones
@@ -1286,22 +1486,22 @@ model PreventivaOcurrenciaPlan {
   periodoMes  Int
   borrador    Boolean @default(true)
 
-  defId                Int?
-  descripcion          String
-  frecuencia           Frecuencia?
-  prioridad            Int       @default(2)
-  fechaObjetivo        DateTime
-  duracionEsperadaMin  Int
-  ubicacionId          Int
-  ubicacionNombre      String?
-  elementoId           Int
-  elementoNombre       String?
-  operariosEsperadosIds     String[] @default([])
-  operariosEsperadosNombres String[] @default([])
+  defId                     Int?
+  descripcion               String
+  frecuencia                Frecuencia?
+  prioridad                 Int         @default(2)
+  fechaObjetivo             DateTime
+  duracionEsperadaMin       Int
+  ubicacionId               Int
+  ubicacionNombre           String?
+  elementoId                Int
+  elementoNombre            String?
+  operariosEsperadosIds     String[]    @default([])
+  operariosEsperadosNombres String[]    @default([])
 
-  estado        String @default("PENDIENTE")
-  motivoCodigo  String?
-  motivoMensaje String?
+  estado          String    @default("PENDIENTE")
+  motivoCodigo    String?
+  motivoMensaje   String?
   fechaRealInicio DateTime?
   fechaRealFin    DateTime?
 
@@ -1345,7 +1545,7 @@ model PreventivaBorradorEvento {
 model AuditoriaEvento {
   id BigInt @id @default(autoincrement())
 
-  empresaId  Int?
+  empresaId  String?
   conjuntoId String?
 
   modulo    String
@@ -1369,6 +1569,7 @@ model AuditoriaEvento {
   creadoEn DateTime @default(now())
 
   @@index([modulo, entidad, entidadId], map: "AUD_entidad_idx")
+  @@index([empresaId, modulo, entidad, entidadId], map: "AUD_empresa_entidad_idx")
   @@index([conjuntoId, periodoAnio, periodoMes, modulo], map: "AUD_periodo_idx")
   @@index([creadoEn], map: "AUD_creado_idx")
   @@map("AuditoriaEvento")
@@ -1541,9 +1742,9 @@ model Festivo {
  */
 
 model Residente {
-  id        String               @id
-  usuario   Usuario              @relation(fields: [id], references: [id], onDelete: Cascade)
-  conjunto  Conjunto             @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
+  id         String   @id
+  usuario    Usuario  @relation(fields: [id], references: [id], onDelete: Cascade)
+  conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
   conjuntoId String
 
   tipoUnidad TipoUnidadResidencial
@@ -1563,23 +1764,23 @@ model Residente {
 }
 
 model PedidoApp {
-  id        Int      @id @default(autoincrement())
+  id        Int                 @id @default(autoincrement())
   tipo      TipoPedidoApp
   estado    EstadoPedidoInterno @default(BORRADOR)
   estadoWoo String?
 
-  wooOrderId String?  @unique
+  wooOrderId String?   @unique
   usuarioId  String
-  usuario    Usuario  @relation(fields: [usuarioId], references: [id])
+  usuario    Usuario   @relation(fields: [usuarioId], references: [id])
   conjuntoId String?
   conjunto   Conjunto? @relation(fields: [conjuntoId], references: [nit])
 
   residenteId String?
   residente   Residente? @relation("PedidoAppResidente", fields: [residenteId], references: [id])
 
-  total   Decimal @db.Decimal(14, 2)
-  moneda  String  @default("COP")
-  pagarAhora         Decimal  @default(0) @db.Decimal(14, 2)
+  total              Decimal   @db.Decimal(14, 2)
+  moneda             String    @default("COP")
+  pagarAhora         Decimal   @default(0) @db.Decimal(14, 2)
   fechaServicio      DateTime? @db.Date
   turnoServicio      String?
   opcionPagoServicio String?
@@ -1601,7 +1802,7 @@ model PedidoApp {
   items              PedidoAppItem[]
   movimientosPuntos  MovimientoPuntos[]
   historialEstados   PedidoAppEstadoHistorico[]
-  consumosInventario ConsumoInsumo[] @relation("PedidoInventarioEntradas")
+  consumosInventario ConsumoInsumo[]            @relation("PedidoInventarioEntradas")
 
   @@index([usuarioId])
   @@index([usuarioId, estado])
@@ -1611,18 +1812,18 @@ model PedidoApp {
 }
 
 model PedidoAppItem {
-  id        Int       @id @default(autoincrement())
-  pedido    PedidoApp @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
-  pedidoId  Int
+  id       Int       @id @default(autoincrement())
+  pedido   PedidoApp @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  pedidoId Int
 
-  wooProductId    Int?
-  wooVariationId  Int?
-  nombreProducto  String
-  sku             String?
-  cantidad        Decimal @db.Decimal(14, 4)
-  precioUnitario  Decimal @db.Decimal(14, 2)
-  subtotal        Decimal @db.Decimal(14, 2)
-  pagarAhora         Decimal  @default(0) @db.Decimal(14, 2)
+  wooProductId       Int?
+  wooVariationId     Int?
+  nombreProducto     String
+  sku                String?
+  cantidad           Decimal   @db.Decimal(14, 4)
+  precioUnitario     Decimal   @db.Decimal(14, 2)
+  subtotal           Decimal   @db.Decimal(14, 2)
+  pagarAhora         Decimal   @default(0) @db.Decimal(14, 2)
   fechaServicio      DateTime? @db.Date
   turnoServicio      String?
   opcionPagoServicio String?
@@ -1645,7 +1846,7 @@ model PedidoAppEstadoHistorico {
   estadoAnterior EstadoPedidoInterno?
   estadoNuevo    EstadoPedidoInterno
 
-  cambiadoPor    Usuario @relation("PedidoEstadoCambiadoPor", fields: [cambiadoPorId], references: [id])
+  cambiadoPor    Usuario  @relation("PedidoEstadoCambiadoPor", fields: [cambiadoPorId], references: [id])
   cambiadoPorId  String
   cambiadoPorRol String
   motivo         String?
@@ -1662,14 +1863,14 @@ model ConfigPuntosConjunto {
   conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
   conjuntoId String   @unique
 
-  activo                  Boolean @default(false)
-  montoPorPuntoResidente  Decimal @default(1000) @db.Decimal(14, 2)
-  montoPorPuntoConjunto   Decimal @default(1000) @db.Decimal(14, 2)
-  minimoRedencionPuntos   Int     @default(100)
+  activo                 Boolean @default(false)
+  montoPorPuntoResidente Decimal @default(1000) @db.Decimal(14, 2)
+  montoPorPuntoConjunto  Decimal @default(1000) @db.Decimal(14, 2)
+  minimoRedencionPuntos  Int     @default(100)
 
-  beneficios  BeneficioPuntos[]
-  creadoEn    DateTime @default(now())
-  actualizadoEn DateTime @updatedAt
+  beneficios    BeneficioPuntos[]
+  creadoEn      DateTime          @default(now())
+  actualizadoEn DateTime          @updatedAt
 
   @@map("ConfigPuntosConjunto")
 }
@@ -1683,21 +1884,21 @@ model BeneficioPuntos {
   nombre         String
   descripcion    String?
   puntosCosto    Int
-  valorDescuento Decimal @default(0) @db.Decimal(14, 2)
-  activo         Boolean @default(true)
+  valorDescuento Decimal  @default(0) @db.Decimal(14, 2)
+  activo         Boolean  @default(true)
   creadoEn       DateTime @default(now())
   actualizadoEn  DateTime @updatedAt
 
   movimientos MovimientoPuntos[]
-  pedidos     PedidoApp[] @relation("PedidoBeneficioPuntos")
+  pedidos     PedidoApp[]        @relation("PedidoBeneficioPuntos")
 
   @@index([configId, activo])
   @@map("BeneficioPuntos")
 }
 
 model MovimientoPuntos {
-  id        Int      @id @default(autoincrement())
-  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+  id        Int     @id @default(autoincrement())
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
   usuarioId String
 
   pedido   PedidoApp? @relation(fields: [pedidoId], references: [id])

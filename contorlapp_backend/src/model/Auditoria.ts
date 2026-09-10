@@ -40,6 +40,8 @@ export const AccionAuditoria = {
   PROGRAMAR_CORRECTIVA: "PROGRAMAR_CORRECTIVA",
   ASIGNAR_MAQUINARIA: "ASIGNAR_MAQUINARIA",
   LIBERAR_MAQUINARIA: "LIBERAR_MAQUINARIA",
+  ASIGNAR_HERRAMIENTA: "ASIGNAR_HERRAMIENTA",
+  LIBERAR_HERRAMIENTA: "LIBERAR_HERRAMIENTA",
 } as const;
 
 export type AccionAuditoria = (typeof AccionAuditoria)[keyof typeof AccionAuditoria];
@@ -66,7 +68,7 @@ export type RegistroAuditoria = {
   accion: string;
 
   conjuntoId?: string | null;
-  empresaId?: number | null;
+  empresaId?: string | null;
 
   actor?: ActorAuditoria | null;
   origen?: string;

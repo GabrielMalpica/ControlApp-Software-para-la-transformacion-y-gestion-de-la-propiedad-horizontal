@@ -73,9 +73,11 @@ type PedidoRecepcion = Prisma.PedidoAppGetPayload<{
   };
 }>;
 
+type MappedInsumo = { id: number; nombre: string; unidad: string; wooFactorConversion: Prisma.Decimal };
+
 type ItemMapping = {
   item: PedidoRecepcion["items"][number];
-  insumo: { id: number; nombre: string; unidad: string } | null;
+  insumo: MappedInsumo | null;
   origen: "MANUAL" | "WOO_PRODUCT_ID" | "SKU" | "SIN_MAPEO";
 };
 
@@ -223,7 +225,7 @@ export class CommerceLifecycleService {
       if (item.wooProductId) {
         const byProduct = await client.insumo.findFirst({
           where: { empresaId, wooProductId: item.wooProductId },
-          select: { id: true, nombre: true, unidad: true },
+          select: { id: true, nombre: true, unidad: true, wooFactorConversion: true },
         });
         if (byProduct) {
           mappings.push({ item, insumo: byProduct, origen: "WOO_PRODUCT_ID" });
@@ -236,7 +238,7 @@ export class CommerceLifecycleService {
             empresaId,
             wooSku: { equals: item.sku.trim(), mode: "insensitive" },
           },
-          select: { id: true, nombre: true, unidad: true },
+          select: { id: true, nombre: true, unidad: true, wooFactorConversion: true },
         });
         if (bySku) {
           mappings.push({ item, insumo: bySku, origen: "SKU" });
@@ -267,13 +269,24 @@ export class CommerceLifecycleService {
     await this.access.assertConjuntoAccess(actor, pedido.conjuntoId);
 
     const mappings = await this.resolveMappings(this.prisma, pedido);
-    const insumosDisponibles = pedido.conjunto?.empresaId
+    const insumosDisponiblesRaw = pedido.conjunto?.empresaId
       ? await this.prisma.insumo.findMany({
           where: { empresaId: pedido.conjunto.empresaId },
-          select: { id: true, nombre: true, unidad: true, wooSku: true, wooProductId: true },
+          select: {
+            id: true,
+            nombre: true,
+            unidad: true,
+            wooSku: true,
+            wooProductId: true,
+            wooFactorConversion: true,
+          },
           orderBy: { nombre: "asc" },
         })
       : [];
+    const insumosDisponibles = insumosDisponiblesRaw.map((insumo) => ({
+      ...insumo,
+      wooFactorConversion: Number(insumo.wooFactorConversion),
+    }));
     return {
       pedidoId,
       puedeAplicar:
@@ -286,20 +299,28 @@ export class CommerceLifecycleService {
         : mappings.some((mapping) => !mapping.insumo)
           ? "Mapea todos los productos antes de confirmar la recepcion"
           : "La confirmacion sumara estas cantidades al inventario de forma definitiva",
-      items: mappings.map((mapping) => ({
-        itemId: mapping.item.id,
-        producto: mapping.item.nombreProducto,
-        sku: mapping.item.sku,
-        cantidad: Number(mapping.item.cantidad),
-        insumo: mapping.insumo,
-        origenMapeo: mapping.origen,
-      })),
+      items: mappings.map((mapping) => {
+        const factor = mapping.insumo ? Number(mapping.insumo.wooFactorConversion ?? 1) : 1;
+        return {
+          itemId: mapping.item.id,
+          producto: mapping.item.nombreProducto,
+          sku: mapping.item.sku,
+          cantidad: Number(mapping.item.cantidad),
+          insumo: mapping.insumo
+            ? { ...mapping.insumo, wooFactorConversion: factor }
+            : null,
+          // Cantidad que realmente entrara al inventario (cantidad comprada x
+          // factor de conversion del insumo mapeado).
+          cantidadInventario: Number(mapping.item.cantidad) * factor,
+          origenMapeo: mapping.origen,
+        };
+      }),
       insumosDisponibles,
     };
   }
 
   async mapearItem(userId: string, pedidoId: number, itemId: number, payload: unknown) {
-    const { insumoId } = MapearPedidoItemDTO.parse(payload);
+    const { insumoId, factorConversion } = MapearPedidoItemDTO.parse(payload);
     const actor = await this.access.getActor(userId);
     if (!this.access.esRolOperativo(actor)) {
       throw commerceHttpError(403, "Tu rol no puede mapear productos a insumos");
@@ -355,6 +376,7 @@ export class CommerceLifecycleService {
             ? { wooProductId: item.wooProductId }
             : {}),
           ...(item.sku?.trim() && !insumo.wooSku ? { wooSku: item.sku.trim() } : {}),
+          ...(factorConversion != null ? { wooFactorConversion: new Prisma.Decimal(factorConversion) } : {}),
         },
       });
       await tx.pedidoAppItem.update({ where: { id: itemId }, data: { insumoId } });
@@ -380,9 +402,15 @@ export class CommerceLifecycleService {
     for (const mapping of mappings) {
       const insumo = mapping.insumo!;
       const current = grouped.get(insumo.id);
+      // La cantidad comprada esta en "unidades de la tienda" (ej: garrafas);
+      // se convierte a "unidades de inventario" (ej: litros) con el factor
+      // definido en el mapeo, para no descuadrar el stock del conjunto.
+      const cantidadInventario = new Prisma.Decimal(mapping.item.cantidad).times(
+        insumo.wooFactorConversion ?? 1,
+      );
       grouped.set(insumo.id, {
         nombre: insumo.nombre,
-        cantidad: new Prisma.Decimal(current?.cantidad ?? 0).plus(mapping.item.cantidad),
+        cantidad: new Prisma.Decimal(current?.cantidad ?? 0).plus(cantidadInventario),
       });
     }
 

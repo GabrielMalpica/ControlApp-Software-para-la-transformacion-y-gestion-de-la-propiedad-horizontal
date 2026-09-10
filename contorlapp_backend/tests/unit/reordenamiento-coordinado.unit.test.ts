@@ -541,4 +541,68 @@ describe('reordenamiento coordinado del borrador', () => {
       prisma.tarea.update.mock.calls.some(([args]: any[]) => args.where.id === 21),
     ).toBe(false);
   });
+
+  test('permite reordenar un bloque de tarea multidia cuando es el unico bloque del grupo en ese dia', async () => {
+    const fecha = new Date(2026, 2, 4);
+    const tareas: any[] = [
+      {
+        id: 40,
+        descripcion: 'Tarea multidia - parte uno',
+        fechaInicio: new Date(2026, 2, 4, 8),
+        fechaFin: new Date(2026, 2, 4, 9),
+        duracionMinutos: 60,
+        ocurrenciaPlanId: 'OC-MULTIDIA',
+        grupoPlanId: 'GRP-MULTIDIA',
+        bloqueIndex: 1,
+        bloquesTotales: 2,
+        operarios: [
+          { id: 'op-1', usuario: { nombre: 'Ana' } },
+          { id: 'op-2', usuario: { nombre: 'Luis' } },
+        ],
+      },
+      {
+        id: 41,
+        descripcion: 'Tarea del mismo dia',
+        fechaInicio: new Date(2026, 2, 4, 9),
+        fechaFin: new Date(2026, 2, 4, 10),
+        duracionMinutos: 60,
+        ocurrenciaPlanId: null,
+        grupoPlanId: null,
+        operarios: [{ id: 'op-1', usuario: { nombre: 'Ana' } }],
+      },
+      {
+        id: 42,
+        descripcion: 'Tarea multidia - parte dos',
+        fechaInicio: new Date(2026, 2, 5, 8),
+        fechaFin: new Date(2026, 2, 5, 9),
+        duracionMinutos: 60,
+        ocurrenciaPlanId: 'OC-MULTIDIA',
+        grupoPlanId: 'GRP-MULTIDIA',
+        bloqueIndex: 2,
+        bloquesTotales: 2,
+        operarios: [
+          { id: 'op-1', usuario: { nombre: 'Ana' } },
+          { id: 'op-2', usuario: { nombre: 'Luis' } },
+        ],
+      },
+    ];
+    const prisma = construirPrisma(tareas);
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    const resultado = await service.reordenarTareasBorradorDia({
+      conjuntoId: '9001',
+      fecha,
+      tareaIds: [41, 40],
+    });
+
+    expect(resultado).toMatchObject({
+      ok: true,
+      aplicado: true,
+      reordenadas: 2,
+      omitidasPorDivisionAlmuerzo: 0,
+    });
+    expect(tareas.find((tarea) => tarea.id === 41)?.fechaInicio.getHours()).toBe(8);
+    expect(tareas.find((tarea) => tarea.id === 40)?.fechaInicio.getHours()).toBe(9);
+    expect(tareas.find((tarea) => tarea.id === 42)?.fechaInicio.getHours()).toBe(8);
+  });
 });
