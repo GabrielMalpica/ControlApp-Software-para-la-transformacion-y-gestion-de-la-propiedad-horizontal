@@ -172,6 +172,23 @@ enum TipoFuncion {
   ASEO
 }
 
+enum OrigenRegistroAsistencia {
+  QR
+  MANUAL
+}
+
+enum TipoTurnoExtra {
+  TURNO
+  NOVENA
+  OTRO
+}
+
+enum EstadoTurnoExtra {
+  PENDIENTE
+  PAGADO
+  CANCELADO
+}
+
 /**
  * =========================================
  * ENUMS - OPERACIÓN / SERVICIOS / AGENDA
@@ -503,6 +520,10 @@ model Empresa {
   prestamosHerramientas   PrestamoHerramientaConjunto[]
   permisosRol             PermisoRol[]
 
+  // Asistencia / novedades
+  conceptosAsistencia ConceptoAsistencia[]
+  turnosExtra         TurnoExtra[]
+
   @@map("Empresa")
 }
 
@@ -593,6 +614,11 @@ model Operario {
   usoHerramientas         UsoHerramienta[]
   disponibilidadPeriodos  OperarioDisponibilidadPeriodo[]
 
+  // Asistencia / novedades
+  registrosAsistencia        RegistroAsistencia[]
+  turnosExtra                TurnoExtra[]         @relation("TurnoExtraOperario")
+  turnosExtraComoReemplazado TurnoExtra[]         @relation("TurnoExtraReemplazado")
+
   @@map("Operario")
 }
 
@@ -614,6 +640,114 @@ model OperarioDisponibilidadPeriodo {
 
   @@index([operarioId, fechaInicio, fechaFin])
   @@map("OperarioDisponibilidadPeriodo")
+}
+
+/**
+ * =========================================
+ * MODELOS - ASISTENCIA / NOVEDADES
+ * =========================================
+ */
+
+/// Catalogo de conceptos de asistencia por empresa (A, F, V, PR, PNR, EG, AT, ...).
+/// Editable por empresa en vez de enum fijo para poder ajustar codigos/colores
+/// sin migracion, igual que TipoMaquinariaCatalogo/Herramienta.
+model ConceptoAsistencia {
+  id Int @id @default(autoincrement())
+
+  empresa   Empresa @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
+  empresaId String
+
+  codigo              String
+  nombre              String
+  cuentaComoTrabajado Boolean @default(false)
+  colorHex            String  @default("#9E9E9E")
+  activo              Boolean @default(true)
+  orden               Int     @default(0)
+
+  registros RegistroAsistencia[]
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@unique([empresaId, codigo])
+  @@index([empresaId, activo, orden])
+  @@map("ConceptoAsistencia")
+}
+
+/// Una fila por operario+fecha: el equivalente a una celda del grid mensual
+/// del Excel de asistencia. Se llena por check-in QR (concepto A/DFC/DFP) o
+/// manualmente (permisos, faltas, vacaciones, incapacidades, etc).
+model RegistroAsistencia {
+  id Int @id @default(autoincrement())
+
+  operario   Operario @relation(fields: [operarioId], references: [id], onDelete: Cascade)
+  operarioId String
+
+  conjunto   Conjunto? @relation(fields: [conjuntoId], references: [nit], onDelete: SetNull)
+  conjuntoId String?
+
+  fecha DateTime @db.Date
+
+  concepto   ConceptoAsistencia @relation(fields: [conceptoId], references: [id])
+  conceptoId Int
+
+  horaEntrada DateTime?
+  horaSalida  DateTime?
+
+  origen OrigenRegistroAsistencia @default(MANUAL)
+
+  observacion String?
+
+  registradoPorId  String?
+  actualizadoPorId String?
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@unique([operarioId, fecha])
+  @@index([conjuntoId, fecha])
+  @@index([operarioId, fecha])
+  @@map("RegistroAsistencia")
+}
+
+/// Refleja la hoja "TURNOS" del Excel: turnos adicionales y reemplazos que no
+/// caben en el grid diario (persona extra cubriendo a otra, novenas, etc).
+model TurnoExtra {
+  id Int @id @default(autoincrement())
+
+  empresa   Empresa @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
+  empresaId String
+
+  operario   Operario @relation("TurnoExtraOperario", fields: [operarioId], references: [id], onDelete: Cascade)
+  operarioId String
+
+  conjunto   Conjunto? @relation(fields: [conjuntoId], references: [nit], onDelete: SetNull)
+  conjuntoId String?
+
+  fecha DateTime       @db.Date
+  tipo  TipoTurnoExtra @default(TURNO)
+
+  esReemplazo Boolean @default(false)
+
+  operarioReemplazado    Operario? @relation("TurnoExtraReemplazado", fields: [operarioReemplazadoId], references: [id], onDelete: SetNull)
+  operarioReemplazadoId  String?
+  reemplazadoNombreLibre String?
+
+  motivo            String?
+  valorNegociado    Decimal?         @db.Decimal(14, 2)
+  turnosOrdinarios  Int              @default(0)
+  turnosDominicales Int              @default(0)
+  estado            EstadoTurnoExtra @default(PENDIENTE)
+
+  registradoPorId String?
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@index([empresaId, fecha])
+  @@index([operarioId, fecha])
+  @@index([conjuntoId, fecha])
+  @@map("TurnoExtra")
 }
 
 /**
@@ -661,6 +795,12 @@ model Conjunto {
   horarios                      ConjuntoHorario[]
   DefinicionTareaPreventiva     DefinicionTareaPreventiva[]
   configuracionesZonaCronograma ConfiguracionZonaCronograma[]
+
+  // Asistencia / novedades
+  qrAsistenciaToken       String?              @unique
+  qrAsistenciaActualizado DateTime?
+  registrosAsistencia     RegistroAsistencia[]
+  turnosExtra             TurnoExtra[]
 
   // Overrides / maquinaria
   limiteHorasSemanaOverride  Int?

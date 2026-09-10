@@ -363,6 +363,49 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
     label: "Configurar periodicidad",
     description: "Permite cambiar el intervalo de meses del Plan Esperanza.",
   },
+  {
+    key: "asistencia.marcar",
+    module: "asistencia",
+    moduleLabel: "Asistencia",
+    label: "Marcar asistencia por QR",
+    description: "Permite al operario registrar su propia entrada y salida escaneando el QR del conjunto.",
+  },
+  {
+    key: "asistencia.ver",
+    module: "asistencia",
+    moduleLabel: "Asistencia",
+    label: "Ver reporte de asistencia",
+    description: "Permite consultar el grid mensual y el resumen de asistencia de los operarios.",
+  },
+  {
+    key: "asistencia.registrar_manual",
+    module: "asistencia",
+    moduleLabel: "Asistencia",
+    label: "Asignar novedades manualmente",
+    description:
+      "Permite asignar o corregir el concepto de un dia (falta, permiso, vacaciones, incapacidad, etc).",
+  },
+  {
+    key: "asistencia.qr.gestionar",
+    module: "asistencia",
+    moduleLabel: "Asistencia",
+    label: "Gestionar QR de asistencia",
+    description: "Permite ver y regenerar el codigo QR de asistencia de un conjunto.",
+  },
+  {
+    key: "asistencia.turnos_extra.gestionar",
+    module: "asistencia",
+    moduleLabel: "Asistencia",
+    label: "Gestionar turnos extra",
+    description: "Permite registrar, editar y eliminar turnos extra y reemplazos.",
+  },
+  {
+    key: "asistencia.exportar",
+    module: "asistencia",
+    moduleLabel: "Asistencia",
+    label: "Exportar reporte de asistencia",
+    description: "Permite exportar el reporte mensual de asistencia a Excel.",
+  },
 ];
 
 const ALL_PERMISSION_KEYS = new Set(PERMISSION_CATALOG.map((item) => item.key));
@@ -408,6 +451,12 @@ const PERMISSIONS_THAT_GRANT_ACCESS: Readonly<Record<string, readonly string[]>>
     "residentes.cargar_masivo",
   ],
   "plan_esperanza.acceso": ["plan_esperanza.configurar"],
+  "asistencia.ver": [
+    "asistencia.registrar_manual",
+    "asistencia.qr.gestionar",
+    "asistencia.turnos_extra.gestionar",
+    "asistencia.exportar",
+  ],
 };
 
 const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
@@ -464,6 +513,11 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "compromisos.gestionar",
     "compromisos.globales_ver",
     "cumpleanos.ver",
+    "asistencia.ver",
+    "asistencia.registrar_manual",
+    "asistencia.qr.gestionar",
+    "asistencia.turnos_extra.gestionar",
+    "asistencia.exportar",
   ]),
   [Rol.supervisor]: new Set([
     "conjuntos.ver",
@@ -484,6 +538,9 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "compromisos.globales_ver",
     "reportes.ver",
     "plan_esperanza.acceso",
+    "asistencia.ver",
+    "asistencia.registrar_manual",
+    "asistencia.turnos_extra.gestionar",
   ]),
   [Rol.operario]: new Set([
     "tareas.ver",
@@ -492,6 +549,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "solicitudes.crear",
     "mapa_areas.ver",
     "cumpleanos.ver",
+    "asistencia.marcar",
   ]),
   [Rol.residente]: new Set([
   ]),

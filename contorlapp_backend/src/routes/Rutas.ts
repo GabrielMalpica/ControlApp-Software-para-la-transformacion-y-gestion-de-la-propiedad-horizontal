@@ -1,5 +1,6 @@
 import { Router } from "express";
 import AdministradorRoutes from "./Administradores"
+import AsistenciaRoutes from "./Asistencia"
 import ConjuntoRoutes from "./Conjuntos"
 import CronogramaRoutes from "./Cronograma"
 import CronogramaMaquinariaRoutes from "./CronogramaMaquinaria"
@@ -33,6 +34,7 @@ import EvidenciaRoutes from "./Evidencias";
 const rutas = Router();
 
 rutas.use('/administrador', AdministradorRoutes);
+rutas.use('/asistencia', AsistenciaRoutes);
 rutas.use('/conjunto', ConjuntoRoutes);
 rutas.use('/cronograma', CronogramaRoutes);
 rutas.use('/cronograma-maquinaria', CronogramaMaquinariaRoutes);
