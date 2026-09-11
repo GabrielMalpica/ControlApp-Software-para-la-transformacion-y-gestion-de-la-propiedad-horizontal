@@ -20,8 +20,22 @@ class PermissionService {
     },
     'solicitudes.ver': {'solicitudes.crear', 'solicitudes.gestionar'},
     'inventario.ver': {'inventario.gestionar'},
-    'maquinaria.ver': {'maquinaria.asignar'},
-    'herramientas.ver': {'herramientas.gestionar'},
+    'maquinaria.ver': {
+      'maquinaria.asignar',
+      'maquinaria.crear',
+      'maquinaria.editar',
+      'maquinaria.aprobar',
+      'maquinaria.gestionar_estado',
+      'maquinaria.prestar',
+    },
+    'herramientas.ver': {
+      'herramientas.gestionar',
+      'herramientas.crear',
+      'herramientas.editar',
+      'herramientas.aprobar',
+      'herramientas.gestionar_estado',
+      'herramientas.prestar',
+    },
     'conjuntos.ver': {'conjuntos.gestionar'},
     'mapa_areas.ver': {'mapa_areas.gestionar'},
     'compromisos.ver': {'compromisos.gestionar'},
@@ -32,6 +46,12 @@ class PermissionService {
       'residentes.cargar_masivo',
     },
     'plan_esperanza.acceso': {'plan_esperanza.configurar'},
+    'asistencia.ver': {
+      'asistencia.registrar_manual',
+      'asistencia.qr.gestionar',
+      'asistencia.turnos_extra.gestionar',
+      'asistencia.exportar',
+    },
   };
 
   static String normalize(String value) => value.trim().toLowerCase();
@@ -53,6 +73,11 @@ class PermissionService {
       if (can(permission)) return true;
     }
     return false;
+  }
+
+  bool hasAnyRole(Iterable<String> roles) {
+    final currentRole = normalize(_session.getRolSync() ?? '');
+    return roles.map(normalize).contains(currentRole);
   }
 
   Future<void> refresh() async {

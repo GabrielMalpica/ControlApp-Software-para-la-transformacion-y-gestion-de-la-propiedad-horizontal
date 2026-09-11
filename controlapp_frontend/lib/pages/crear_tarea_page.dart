@@ -196,7 +196,9 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
 
   Future<void> _cargarInicial() async {
     try {
-      final conjuntos = await _gerenteApi.listarConjuntos();
+      final conjuntos = widget.embedded
+          ? <Conjunto>[await _gerenteApi.obtenerConjunto(widget.nit)]
+          : await _gerenteApi.listarConjuntos();
       final supervisores = await _gerenteApi.listarSupervisores();
       final maquinariaDisp = await _empresaApi.listarMaquinariaDisponible();
 

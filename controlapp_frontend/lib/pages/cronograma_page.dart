@@ -161,7 +161,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   bool get _canScheduleCorrectivasInCronograma =>
       !widget.soloLectura &&
-      PermissionService.instance.can('cronograma.correctivas_programar');
+      PermissionService.instance.canAny(const [
+        'tareas.crear',
+        'cronograma.correctivas_programar',
+      ]);
 
   /// Evita disparar dos acciones simultaneas sobre la misma excluida.
   bool _accionExcluidaEnCurso = false;
@@ -197,6 +200,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
   Future<void> _refreshSessionProfile() async {
     try {
       await _authApi.me();
+      if (mounted) setState(() {});
     } catch (_) {}
   }
 
@@ -2801,6 +2805,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
+                if (_canScheduleCorrectivasInCronograma) ...[
+                  _buildNuevaCorrectivaButton(compact: true),
+                  const SizedBox(width: 8),
+                ],
                 if (_vista == _VistaCronograma.mensual) ...[
                   IconButton(
                     tooltip: 'Mes anterior',
@@ -2916,6 +2924,10 @@ class _CronogramaPageState extends State<CronogramaPage> {
           selected: {_vista},
           onSelectionChanged: (s) => _seleccionarVista(s.first),
         ),
+        if (_canScheduleCorrectivasInCronograma) ...[
+          const SizedBox(width: 12),
+          _buildNuevaCorrectivaButton(),
+        ],
         const Spacer(),
         if (_vista == _VistaCronograma.mensual) ...[
           IconButton(
@@ -2988,6 +3000,69 @@ class _CronogramaPageState extends State<CronogramaPage> {
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildNuevaCorrectivaButton({bool compact = false}) {
+    return FilledButton.tonalIcon(
+      onPressed: () =>
+          _abrirProgramarCorrectivaModal(_inicioSugeridoNuevaCorrectiva()),
+      icon: const Icon(Icons.add_task_rounded, size: 18),
+      label: Text(compact ? 'Correctiva' : 'Nueva correctiva'),
+    );
+  }
+
+  DateTime _inicioSugeridoNuevaCorrectiva() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final weekStart = _startOfWeekMonday(_semanaBase);
+    final weekEnd = weekStart.add(const Duration(days: 7));
+
+    DateTime firstDay;
+    int daysToCheck;
+    if (_vista == _VistaCronograma.semanal) {
+      firstDay = !today.isBefore(weekStart) && today.isBefore(weekEnd)
+          ? today
+          : weekStart;
+      daysToCheck = 7;
+    } else {
+      final viewingCurrentMonth =
+          now.year == _anioActual && now.month == _mesActual;
+      firstDay = viewingCurrentMonth ? today : _inicioMes;
+      daysToCheck = _daysInMonth;
+    }
+
+    for (var offset = 0; offset < daysToCheck; offset++) {
+      final day = firstDay.add(Duration(days: offset));
+      if (_vista != _VistaCronograma.semanal && day.month != _mesActual) {
+        break;
+      }
+
+      final ranges = _rangosDisponiblesDia(day);
+      for (final range in ranges) {
+        var minute = range.start;
+        if (DateUtils.isSameDay(day, today)) {
+          final currentMinute = now.hour * 60 + now.minute;
+          minute = ((currentMinute + 14) ~/ 15) * 15;
+          if (minute < range.start) minute = range.start;
+        }
+        if (minute + 60 > range.end) continue;
+
+        return DateTime(
+          day.year,
+          day.month,
+          day.day,
+          minute ~/ 60,
+          minute % 60,
+        );
+      }
+    }
+
+    return DateTime(
+      firstDay.year,
+      firstDay.month,
+      firstDay.day,
+      _horaInicioJornada,
     );
   }
 

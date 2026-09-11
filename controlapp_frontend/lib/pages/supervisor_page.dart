@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
 import '../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/model/inventario_activo_model.dart';
 import 'package:flutter_application_1/pages/supervisor/supervisor_tareas_page.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
@@ -17,20 +18,23 @@ import '../service/theme.dart';
 import 'solicitudes_page.dart';
 import 'agenda_maquinaria_page.dart';
 import 'agenda_herramientas_page.dart';
-import 'inventario_page.dart';
+import 'inventario_resumen_page.dart';
+import 'inventario_activos_page.dart';
 import 'jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'cronograma_page.dart';
 import 'cronograma_impresion_page.dart';
 import 'crear_tarea_page.dart';
 import 'plan_esperanza_page.dart';
 import 'reportes_page.dart';
-import 'stock_herramientas_empresa_page.dart';
 import 'gerente/compromisos_page.dart';
 import 'gerente/compromisos_por_conjunto_page.dart';
-import 'gerente/cronograma_maquinaria_page.dart';
+import '../model/recurso_calendario_item.dart';
+import 'gerente/agenda_recursos_page.dart';
 import 'gerente/lista_insumos_page.dart';
-import 'gerente/lista_maquinaria_page.dart';
 import 'gerente/mapa_conjunto_page.dart';
+import 'asistencia_grid_page.dart';
+import 'asistencia_qr_page.dart';
+import 'turnos_extra_page.dart';
 import '../service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 
@@ -310,7 +314,12 @@ class _SupervisorPageState extends State<SupervisorPage> {
             AppTheme.yellow,
             () {
               if (!_requiereConjuntoOrWarn()) return;
-              _go(InventarioPage(nit: nit, empresaId: AppConstants.empresaNit));
+              _go(
+                InventarioResumenPage(
+                  nit: nit,
+                  empresaId: AppConstants.empresaNit,
+                ),
+              );
             },
           ),
         if (_can('maquinaria.ver'))
@@ -341,15 +350,22 @@ class _SupervisorPageState extends State<SupervisorPage> {
             Icons.construction,
             AppTheme.red,
             () => _go(
-              ListaMaquinariaGlobalPage(empresaNit: AppConstants.empresaNit),
+              InventarioActivosPage(
+                empresaId: AppConstants.empresaNit,
+                conjuntoId: nit,
+              ),
             ),
           ),
           _SupervisorTile(
-            'Cronograma maquinaria',
+            'Agenda de recursos',
             Icons.event_repeat,
             AppTheme.red,
             () => _go(
-              CronogramaMaquinariaPage(empresaNit: AppConstants.empresaNit),
+              AgendaRecursosPage(
+                empresaNit: AppConstants.empresaNit,
+                conjuntoId: nit,
+                tipoInicial: TipoRecursoCal.maquinaria,
+              ),
             ),
           ),
         ],
@@ -358,7 +374,13 @@ class _SupervisorPageState extends State<SupervisorPage> {
             'Stock de herramientas',
             Icons.home_repair_service_outlined,
             Colors.orange,
-            () => _go(const StockHerramientasEmpresaPage()),
+            () => _go(
+              InventarioActivosPage(
+                empresaId: AppConstants.empresaNit,
+                conjuntoId: nit,
+                initialClase: ClaseActivoInventario.herramienta,
+              ),
+            ),
           ),
         if (_can('mapa_areas.ver'))
           _SupervisorTile(
@@ -370,6 +392,23 @@ class _SupervisorPageState extends State<SupervisorPage> {
               _go(MapaConjuntoPage(conjuntoNit: nit));
             },
           ),
+      ]),
+      _SupervisorSection('Asistencia', [
+        if (_can('asistencia.ver'))
+          _SupervisorTile('Asistencia', Icons.fact_check_outlined, AppTheme.green, () {
+            if (!_requiereConjuntoOrWarn()) return;
+            _go(AsistenciaGridPage(conjuntoId: nit, conjuntoNombre: nombreConjunto));
+          }),
+        if (_can('asistencia.turnos_extra.gestionar'))
+          _SupervisorTile('Turnos extra', Icons.swap_horiz_rounded, AppTheme.primary, () {
+            if (!_requiereConjuntoOrWarn()) return;
+            _go(TurnosExtraPage(conjuntoId: nit, conjuntoNombre: nombreConjunto));
+          }),
+        if (_can('asistencia.qr.gestionar'))
+          _SupervisorTile('QR de asistencia', Icons.qr_code_2_rounded, Colors.teal, () {
+            if (!_requiereConjuntoOrWarn()) return;
+            _go(AsistenciaQrPage(conjuntoId: nit, conjuntoNombre: nombreConjunto));
+          }),
       ]),
       _SupervisorSection('Analisis y control', [
         if (_can('reportes.ver'))

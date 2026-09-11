@@ -823,7 +823,16 @@ class _ProductCard extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
-                CommerceNetworkImage(url: imageUrl),
+                // BoxFit.contain: las fotos de producto vienen con
+                // proporciones muy distintas (botellas altas, equipos
+                // anchos); con "cover" se recortaban bordes importantes.
+                // preferHtmlElement:false porque hay una insignia superpuesta
+                // (ver CommerceNetworkImage) y con el <img> nativo la tapaba.
+                CommerceNetworkImage(
+                  url: imageUrl,
+                  fit: BoxFit.contain,
+                  preferHtmlElement: false,
+                ),
                 Positioned(
                   left: 9,
                   top: 9,
@@ -1812,6 +1821,7 @@ class _ProductGalleryState extends State<_ProductGallery> {
             itemBuilder: (_, index) => CommerceNetworkImage(
               url: widget.images[index].src,
               fit: BoxFit.contain,
+              preferHtmlElement: false,
             ),
           ),
           if (widget.images.length > 1)

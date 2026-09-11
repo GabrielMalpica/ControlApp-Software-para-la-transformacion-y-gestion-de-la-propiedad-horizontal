@@ -134,6 +134,7 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
 
   Future<void> _showReceiptPreview() async {
     setState(() => _acting = true);
+    final factorControllers = <int, TextEditingController>{};
     try {
       var preview = await _api.vistaPreviaRecepcion(widget.pedidoId);
       if (!mounted) return;
@@ -166,8 +167,39 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
                     const SizedBox(height: 8),
                     Text(preview.mensaje),
                     const SizedBox(height: 16),
-                    ...preview.items.map(
-                      (item) => CommerceClayCard(
+                    ...preview.items.map((item) {
+                      final factorController = factorControllers.putIfAbsent(
+                        item.itemId,
+                        () => TextEditingController(
+                          text: _factorText(
+                            item.insumo?.wooFactorConversion ?? 1,
+                          ),
+                        ),
+                      );
+                      Future<void> applyMapping(int insumoId) async {
+                        final factor =
+                            double.tryParse(
+                              factorController.text.replaceAll(',', '.'),
+                            ) ??
+                            1;
+                        try {
+                          final updated = await _api.mapearItem(
+                            pedidoId: widget.pedidoId,
+                            itemId: item.itemId,
+                            insumoId: insumoId,
+                            factorConversion: factor > 0 ? factor : 1,
+                          );
+                          setSheetState(() => preview = updated);
+                        } catch (error) {
+                          if (!context.mounted) return;
+                          AppFeedback.showError(
+                            context,
+                            message: AppError.messageOf(error),
+                          );
+                        }
+                      }
+
+                      return CommerceClayCard(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(14),
                         child: Column(
@@ -178,7 +210,10 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             Text(
-                              'Entrarán ${_quantity(item.cantidad)} unidades',
+                              item.insumo != null &&
+                                      item.cantidadInventario != item.cantidad
+                                  ? 'Entrarán ${_quantity(item.cantidad)} unidades de la tienda = ${_quantity(item.cantidadInventario)} ${item.insumo!.unidad} en inventario'
+                                  : 'Entrarán ${_quantity(item.cantidad)} unidades',
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                             const SizedBox(height: 10),
@@ -207,26 +242,42 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
                                   .toList(),
                               onChanged: (insumoId) async {
                                 if (insumoId == null) return;
-                                try {
-                                  final updated = await _api.mapearItem(
-                                    pedidoId: widget.pedidoId,
-                                    itemId: item.itemId,
-                                    insumoId: insumoId,
-                                  );
-                                  setSheetState(() => preview = updated);
-                                } catch (error) {
-                                  if (!context.mounted) return;
-                                  AppFeedback.showError(
-                                    context,
-                                    message: AppError.messageOf(error),
-                                  );
-                                }
+                                final selected = preview.insumosDisponibles
+                                    .where((i) => i.id == insumoId)
+                                    .firstOrNull;
+                                factorController.text = _factorText(
+                                  selected?.wooFactorConversion ?? 1,
+                                );
+                                await applyMapping(insumoId);
                               },
                             ),
+                            if (item.insumo != null) ...<Widget>[
+                              const SizedBox(height: 10),
+                              TextField(
+                                controller: factorController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: InputDecoration(
+                                  labelText:
+                                      'Unidades de ${item.insumo!.unidad} por unidad comprada',
+                                  helperText:
+                                      'Ej: si el insumo se mide en L y compras una garrafa de 3L, escribe 3',
+                                  prefixIcon: const Icon(
+                                    Icons.straighten_rounded,
+                                  ),
+                                ),
+                                onSubmitted: (_) =>
+                                    applyMapping(item.insumo!.id),
+                                onTapOutside: (_) =>
+                                    applyMapping(item.insumo!.id),
+                              ),
+                            ],
                           ],
                         ),
-                      ),
-                    ),
+                      );
+                    }),
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -279,11 +330,19 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
       if (!mounted) return;
       setState(() => _acting = false);
       AppFeedback.showError(context, message: AppError.messageOf(error));
+    } finally {
+      for (final controller in factorControllers.values) {
+        controller.dispose();
+      }
     }
   }
 
   String _quantity(double value) {
     return value.toStringAsFixed(value % 1 == 0 ? 0 : 2);
+  }
+
+  String _factorText(double value) {
+    return value % 1 == 0 ? value.toStringAsFixed(0) : value.toString();
   }
 
   String _serviceDateLabel(String? value) {

@@ -55,4 +55,13 @@ class InventarioItemResponse {
       umbralUsado: _parseIntNullable(json['umbralUsado']),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'insumoId': insumoId,
+    'nombre': nombre,
+    'unidad': unidad,
+    'categoria': categoria,
+    'cantidad': cantidad,
+    'umbralUsado': umbralUsado,
+  };
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/model/inventario_activo_model.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 
@@ -12,11 +13,11 @@ import 'agenda_herramientas_page.dart';
 import 'agenda_maquinaria_page.dart';
 import 'cronograma_impresion_page.dart';
 import 'cronograma_page.dart';
-import 'inventario_page.dart';
+import 'inventario_resumen_page.dart';
+import 'inventario_activos_page.dart';
 import 'jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'plan_esperanza_page.dart';
 import 'reportes_page.dart';
-import 'stock_herramientas_empresa_page.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
@@ -26,9 +27,10 @@ import 'package:flutter_application_1/widgets/perfil_action.dart';
 import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
-import 'package:flutter_application_1/pages/gerente/cronograma_maquinaria_page.dart';
+import 'package:flutter_application_1/model/recurso_calendario_item.dart';
+import 'package:flutter_application_1/pages/gerente/agenda_recursos_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_insumos_page.dart';
-import 'package:flutter_application_1/pages/gerente/lista_maquinaria_page.dart';
+import 'package:flutter_application_1/pages/asistencia_checkin_page.dart';
 
 class OperarioDashboardPage extends StatefulWidget {
   final String nit;
@@ -69,9 +71,23 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
 
   int _gridCountForWidth(double w) {
     if (w >= 1100) return 4;
-    if (w >= 800) return 4;
-    if (w >= 520) return 3;
-    return 2;
+    if (w >= 820) return 3;
+    if (w >= 560) return 2;
+    return 1;
+  }
+
+  double _gridAspectRatioForCount(int cols) {
+    // Con 1 sola columna la tarjeta ocupa todo el ancho, así que se ve
+    // mejor (y evita overflow en celulares angostos) con una relación más
+    // apaisada en vez del cuadrado usado para 3-4 columnas.
+    switch (cols) {
+      case 1:
+        return 2.4;
+      case 2:
+        return 1.5;
+      default:
+        return 1.05;
+    }
   }
 
   /// 🔹 Tarjeta simple
@@ -216,6 +232,20 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                 builder: (context, c) {
                   final cols = _gridCountForWidth(c.maxWidth);
                   final cards = <Widget>[
+                    if (_can('asistencia.marcar'))
+                      _simpleCard(
+                        'Marcar asistencia',
+                        AppTheme.green,
+                        Icons.qr_code_scanner_rounded,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AsistenciaCheckinPage(),
+                            ),
+                          );
+                        },
+                      ),
                     if (_can('tareas.ver'))
                       _simpleCard(
                         'Tareas',
@@ -315,7 +345,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => InventarioPage(
+                              builder: (_) => InventarioResumenPage(
                                 nit: widget.nit,
                                 empresaId: AppConstants.empresaNit,
                               ),
@@ -441,23 +471,26 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => ListaMaquinariaGlobalPage(
-                                empresaNit: AppConstants.empresaNit,
+                              builder: (_) => InventarioActivosPage(
+                                empresaId: AppConstants.empresaNit,
+                                conjuntoId: widget.nit,
                               ),
                             ),
                           );
                         },
                       ),
                       _simpleCard(
-                        'Cronograma maquinaria',
+                        'Agenda de recursos',
                         AppTheme.red,
                         Icons.event_repeat,
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => CronogramaMaquinariaPage(
+                              builder: (_) => AgendaRecursosPage(
                                 empresaNit: AppConstants.empresaNit,
+                                conjuntoId: widget.nit,
+                                tipoInicial: TipoRecursoCal.maquinaria,
                               ),
                             ),
                           );
@@ -473,8 +506,11 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  const StockHerramientasEmpresaPage(),
+                              builder: (_) => InventarioActivosPage(
+                                empresaId: AppConstants.empresaNit,
+                                conjuntoId: widget.nit,
+                                initialClase: ClaseActivoInventario.herramienta,
+                              ),
                             ),
                           );
                         },
@@ -500,7 +536,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                         crossAxisCount: cols,
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
-                        childAspectRatio: 1.05,
+                        childAspectRatio: _gridAspectRatioForCount(cols),
                         children: cards,
                       ),
                     ],

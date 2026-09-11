@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Se usa la camara para escanear el codigo QR de asistencia del conjunto.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Se usa tu ubicacion para verificar que marcaste asistencia desde el conjunto.</string>
 </dict>
 </plist>

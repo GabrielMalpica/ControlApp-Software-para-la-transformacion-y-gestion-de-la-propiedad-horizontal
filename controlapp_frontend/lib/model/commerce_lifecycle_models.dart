@@ -5,17 +5,22 @@ class CommerceInsumoRef {
     required this.id,
     required this.nombre,
     required this.unidad,
+    this.wooFactorConversion = 1,
   });
 
   final int id;
   final String nombre;
   final String unidad;
+  // Cuantas unidades de "unidad" trae cada unidad comprada en la tienda.
+  final double wooFactorConversion;
 
   factory CommerceInsumoRef.fromJson(Map<String, dynamic> json) {
     return CommerceInsumoRef(
       id: (json['id'] as num?)?.toInt() ?? 0,
       nombre: repairCommerceText(json['nombre']),
       unidad: json['unidad']?.toString() ?? '',
+      wooFactorConversion:
+          (json['wooFactorConversion'] as num?)?.toDouble() ?? 1,
     );
   }
 }
@@ -229,6 +234,7 @@ class ReceiptPreviewItem {
     required this.cantidad,
     required this.insumo,
     required this.origenMapeo,
+    required this.cantidadInventario,
   });
 
   final int itemId;
@@ -237,18 +243,24 @@ class ReceiptPreviewItem {
   final double cantidad;
   final CommerceInsumoRef? insumo;
   final String origenMapeo;
+  // cantidad x factor de conversion del insumo: lo que realmente sumara al
+  // inventario del conjunto.
+  final double cantidadInventario;
 
   factory ReceiptPreviewItem.fromJson(Map<String, dynamic> json) {
     final rawInsumo = json['insumo'];
+    final cantidad = (json['cantidad'] as num?)?.toDouble() ?? 0;
     return ReceiptPreviewItem(
       itemId: (json['itemId'] as num?)?.toInt() ?? 0,
       producto: json['producto']?.toString() ?? '',
       sku: json['sku']?.toString(),
-      cantidad: (json['cantidad'] as num?)?.toDouble() ?? 0,
+      cantidad: cantidad,
       insumo: rawInsumo is Map<String, dynamic>
           ? CommerceInsumoRef.fromJson(rawInsumo)
           : null,
       origenMapeo: json['origenMapeo']?.toString() ?? '',
+      cantidadInventario:
+          (json['cantidadInventario'] as num?)?.toDouble() ?? cantidad,
     );
   }
 }

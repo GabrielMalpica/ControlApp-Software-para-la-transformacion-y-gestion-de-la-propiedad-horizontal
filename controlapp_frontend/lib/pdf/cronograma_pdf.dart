@@ -632,7 +632,7 @@ pw.Widget _buildPreviewLikePdf({
                         crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
                           pw.Text(
-                            'Hueco para correctiva',
+                            'Actividades especiales',
                             style: pw.TextStyle(
                               fontSize: sparse ? titleFont : bodyFont - 0.2,
                               fontWeight: pw.FontWeight.bold,

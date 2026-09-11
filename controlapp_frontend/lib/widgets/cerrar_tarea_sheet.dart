@@ -58,7 +58,13 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
       defaultTargetPlatform == TargetPlatform.android ||
       defaultTargetPlatform == TargetPlatform.iOS;
 
-  bool get _puedeTomarFoto => _esMovil;
+  // En web (celular/tablet abriendo la app desde el navegador) usamos un
+  // <input type="file" capture="environment"> que abre la cámara trasera
+  // directamente; si el dispositivo no tiene cámara, el navegador degrada
+  // solo a un selector de archivos normal. No podemos confiar en
+  // `defaultTargetPlatform` aquí: iPadOS reporta un user-agent de
+  // escritorio por defecto y se detecta como macOS, ocultando el botón.
+  bool get _puedeTomarFoto => kIsWeb || _esMovil;
   bool get _puedePegarImagen => kIsWeb && ClipboardImageCapture.isSupported;
 
   ClipboardImageDispose? _disposeClipboardListener;

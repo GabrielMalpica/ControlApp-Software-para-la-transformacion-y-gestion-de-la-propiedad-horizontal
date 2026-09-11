@@ -2,9 +2,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/agenda_api.dart';
 import 'package:flutter_application_1/api/conjunto_api.dart';
+import 'package:flutter_application_1/api/cronograma_maquinaria_api.dart';
 import 'package:flutter_application_1/model/agenda_model.dart';
 import 'package:flutter_application_1/model/agenda_maquinaria_model.dart';
 import 'package:flutter_application_1/model/maquinaria_model.dart';
+import 'package:flutter_application_1/model/necesidad_maquinaria_model.dart';
+import 'package:flutter_application_1/model/recurso_calendario_item.dart';
+import 'package:flutter_application_1/pages/gerente/agenda_recursos_page.dart';
+import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
@@ -19,9 +24,11 @@ class AgendaMaquinariaPage extends StatefulWidget {
 class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
   final _conjuntoApi = ConjuntoApi();
   final _agendaApi = AgendaApi();
+  final _cronogramaApi = CronogramaMaquinariaApi();
 
   late Future<List<MaquinariaResponse>> _fMaquinas;
   final Map<int, AgendaMaquinaBlock> _bloquesAgendaPorMaquina = {};
+  int _necesidadesPendientes = 0;
 
   MaquinariaResponse? _seleccionada;
 
@@ -127,10 +134,23 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
         anio: _month.year,
         mes: _month.month,
       ),
+      _cronogramaApi.listarNecesidades(
+        empresaNit: AppConstants.empresaNit,
+        anio: _month.year,
+        mes: _month.month,
+        conjuntoId: widget.conjuntoId,
+        soloPendientes: true,
+      ),
     ]);
 
     final maquinariaConjunto = results[0] as List<MaquinariaResponse>;
     final agendaGlobal = results[1] as AgendaGlobalResponse;
+    final necesidades =
+        (results[2] as CronogramaMaquinariaResponse).necesidades;
+    _necesidadesPendientes = necesidades.fold<int>(
+      0,
+      (total, item) => total + item.pendientes,
+    );
     final bloquesGlobales = {
       for (final block in agendaGlobal.data) block.maquinaria.id: block,
     };
@@ -221,6 +241,65 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
 
   static bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
+
+  Future<void> _abrirNecesidades() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => AgendaRecursosPage(
+          empresaNit: AppConstants.empresaNit,
+          conjuntoId: widget.conjuntoId,
+          tipoInicial: TipoRecursoCal.maquinaria,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _fMaquinas = _cargarCatalogoAgendaConjunto();
+    });
+  }
+
+  Widget _bannerNecesidades() {
+    final pendientes = _necesidadesPendientes;
+    return InkWell(
+      onTap: _abrirNecesidades,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: pendientes > 0
+              ? Colors.orange.withValues(alpha: 0.10)
+              : Colors.green.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: pendientes > 0
+                ? Colors.orange.shade300
+                : Colors.green.shade300,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              pendientes > 0 ? Icons.pending_actions : Icons.check_circle,
+              color: pendientes > 0
+                  ? Colors.orange.shade800
+                  : Colors.green.shade700,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                pendientes > 0
+                    ? '$pendientes necesidad(es) de maquinaria pendientes de asignar. Toca para asignar.'
+                    : 'Todas las necesidades de maquinaria del mes están cubiertas.',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildDetalleAgenda(String mesLabel) {
     if (_seleccionada == null) {
@@ -459,27 +538,34 @@ class _AgendaMaquinariaPageState extends State<AgendaMaquinariaPage> {
               ? Center(child: Text('Error agenda: $_errorAgenda'))
               : _buildPlanilla(mesLabel);
 
-          return LayoutBuilder(
-            builder: (context, c) {
-              final mobile = c.maxWidth < 980;
-              if (!mobile) {
-                return Row(
-                  children: [
-                    SizedBox(width: 360, child: catalogo()),
-                    const VerticalDivider(width: 1),
-                    Expanded(child: _buildDetalleAgenda(mesLabel)),
-                  ],
-                );
-              }
+          return Column(
+            children: [
+              _bannerNecesidades(),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, c) {
+                    final mobile = c.maxWidth < 980;
+                    if (!mobile) {
+                      return Row(
+                        children: [
+                          SizedBox(width: 360, child: catalogo()),
+                          const VerticalDivider(width: 1),
+                          Expanded(child: _buildDetalleAgenda(mesLabel)),
+                        ],
+                      );
+                    }
 
-              return Column(
-                children: [
-                  SizedBox(height: 260, child: catalogo()),
-                  const Divider(height: 1),
-                  Expanded(child: _buildDetalleAgenda(mesLabel)),
-                ],
-              );
-            },
+                    return Column(
+                      children: [
+                        SizedBox(height: 260, child: catalogo()),
+                        const Divider(height: 1),
+                        Expanded(child: _buildDetalleAgenda(mesLabel)),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
           );
         },
       ),

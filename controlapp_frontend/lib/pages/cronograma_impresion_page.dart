@@ -816,7 +816,7 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                                               CrossAxisAlignment.start,
                                           children: [
                                             const Text(
-                                              'Hueco para correctiva',
+                                              'Actividades especiales',
                                               style: TextStyle(
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.w700,

@@ -550,11 +550,19 @@ class CommerceNetworkImage extends StatelessWidget {
     required this.url,
     this.fit = BoxFit.cover,
     this.fallbackIcon = Icons.inventory_2_outlined,
+    this.preferHtmlElement = true,
   });
 
   final String url;
   final BoxFit fit;
   final IconData fallbackIcon;
+  // En Flutter Web, un <img> nativo (WebHtmlElementStrategy.prefer) se
+  // compone en su propia capa del navegador POR ENCIMA de lo que Flutter
+  // dibuja en canvas, sin importar el orden dentro de un Stack. Donde se
+  // superpone una insignia/indicador sobre la foto, hay que apagarlo para
+  // que ese overlay sea visible; el host de las fotos ya manda CORS
+  // permisivo asi que decodificar por canvas no rompe la carga.
+  final bool preferHtmlElement;
 
   @override
   Widget build(BuildContext context) {
@@ -563,7 +571,7 @@ class CommerceNetworkImage extends StatelessWidget {
     return Image.network(
       url,
       fit: fit,
-      webHtmlElementStrategy: kIsWeb
+      webHtmlElementStrategy: kIsWeb && preferHtmlElement
           ? WebHtmlElementStrategy.prefer
           : WebHtmlElementStrategy.never,
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {

@@ -54,7 +54,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   final _herramientaApi = HerramientaApi();
 
   List<InsumoResponse> _catalogoInsumos = [];
-  List<HerramientaDisponibilidadResponse> _catalogoHerramientas = [];
+  List<HerramientaResponse> _catalogoHerramientas = [];
   List<Usuario> _supervisores = [];
 
   // Controllers básicos
@@ -223,31 +223,41 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   Future<void> _cargarCatalogoHerramientas() async {
     try {
-      final raw = await _herramientaApi.listarDisponibilidadConjunto(
-        nitConjunto: widget.nit,
-        empresaId: AppConstants.empresaNit,
-      );
+      // Catálogo completo de la empresa: aquí se declara la NECESIDAD (que
+      // herramienta y cuánta cantidad), sin importar si hoy hay stock o no.
+      // La herramienta real (del conjunto o prestada por la empresa) se cubre
+      // después desde el cronograma de herramientas.
+      // El backend limita "take" a 100 por página, así que se pagina hasta
+      // traer todo el catálogo.
+      const pageSize = 100;
+      final acumulado = <HerramientaResponse>[];
+      var skip = 0;
+      while (true) {
+        final raw = await _herramientaApi.listarHerramientas(
+          empresaId: AppConstants.empresaNit,
+          take: pageSize,
+          skip: skip,
+        );
+        final pagina = ((raw['data'] as List?) ?? const [])
+            .map(
+              (e) =>
+                  HerramientaResponse.fromJson((e as Map).cast<String, dynamic>()),
+            )
+            .toList();
+        acumulado.addAll(pagina);
+        final total = (raw['total'] as num?)?.toInt() ?? acumulado.length;
+        skip += pageSize;
+        if (pagina.length < pageSize || acumulado.length >= total) break;
+      }
 
-      final lista =
-          raw
-              .map(
-                (e) => HerramientaDisponibilidadResponse.fromJson(
-                  (e as Map).cast<String, dynamic>(),
-                ),
-              )
-              .where((h) => h.totalDisponible > 0)
-              .toList()
-            ..sort((a, b) {
-              final aConjunto = a.disponibleConjunto > 0 ? 1 : 0;
-              final bConjunto = b.disponibleConjunto > 0 ? 1 : 0;
-              if (aConjunto != bConjunto) return bConjunto.compareTo(aConjunto);
-              return a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase());
-            });
+      acumulado.sort(
+        (a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()),
+      );
 
       if (!mounted) return;
 
       setState(() {
-        _catalogoHerramientas = lista;
+        _catalogoHerramientas = acumulado;
       });
     } catch (e) {
       if (!mounted) return;
@@ -977,19 +987,13 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   List<SearchableSelectOption<int>> _buildHerramientaOptions() {
     return _catalogoHerramientas
-        .map((h) {
-          final esConjunto = h.disponibleConjunto > 0;
-          final tag = esConjunto ? '[CONJUNTO]' : '[EMPRESA]';
-          final detalle = esConjunto
-              ? 'disponible conjunto: ${h.disponibleConjunto}'
-              : 'disponible empresa: ${h.disponibleEmpresa}';
-
-          return SearchableSelectOption<int>(
-            value: h.herramientaId,
-            label: '$tag ${h.nombre} (${h.unidad})',
-            subtitle: '${h.categoria.label} · $detalle',
-          );
-        })
+        .map(
+          (h) => SearchableSelectOption<int>(
+            value: h.id,
+            label: '${h.nombre} (${h.unidad})',
+            subtitle: '${h.categoria.label} · ${h.modoControl.label}',
+          ),
+        )
         .toList(growable: false);
   }
 
@@ -1582,7 +1586,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
               const SizedBox(height: 12),
 
               _sectionCard(
-                title: '4.2) Herramientas planificadas',
+                title: '4.2) Herramientas necesarias',
                 child: Column(
                   children: [
                     ListView.builder(
@@ -1807,8 +1811,8 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     final seleccionada = row.herramientaId == null
         ? null
         : _catalogoHerramientas
-              .where((h) => h.herramientaId == row.herramientaId)
-              .cast<HerramientaDisponibilidadResponse?>()
+              .where((h) => h.id == row.herramientaId)
+              .cast<HerramientaResponse?>()
               .firstWhere((h) => h != null, orElse: () => null);
 
     return Padding(
@@ -1862,7 +1866,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Disponible ahora -> conjunto: ${seleccionada.disponibleConjunto} · empresa: ${seleccionada.disponibleEmpresa}. Al crear la tarea se reserva primero del conjunto y, si no alcanza, desde empresa.',
+                  'La herramienta real se cubre después desde el cronograma de '
+                  'herramientas: primero con el stock del conjunto y, si no alcanza, '
+                  'en préstamo automático de la empresa.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                 ),
               ),
             ),
@@ -1892,6 +1899,9 @@ class _MaquinariaPlanRow {
   _MaquinariaPlanRow({this.tipo, this.cantidad = 1, this.maquinariaSugeridaId});
 }
 
+/// Necesidad de herramienta de la preventiva: que herramienta del catálogo y
+/// cuanta cantidad. De donde sale (stock del conjunto o préstamo de empresa)
+/// se decide despues desde el cronograma de herramientas.
 class _HerramientaPlanRow {
   int? herramientaId;
   final TextEditingController cantidadCtrl;

@@ -4,7 +4,8 @@ import 'package:flutter_application_1/api/cronograma_maquinaria_api.dart';
 import 'package:flutter_application_1/model/agenda_model.dart';
 import 'package:flutter_application_1/model/maquinaria_model.dart';
 import 'package:flutter_application_1/model/necesidad_maquinaria_model.dart';
-import 'package:flutter_application_1/pages/gerente/cronograma_maquinaria_page.dart';
+import 'package:flutter_application_1/model/recurso_calendario_item.dart';
+import 'package:flutter_application_1/pages/gerente/agenda_recursos_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -83,7 +84,10 @@ class _AgendaMaquinariaGlobalExcelPageState
   Future<void> _abrirNecesidades() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => CronogramaMaquinariaPage(empresaNit: widget.empresaNit),
+        builder: (_) => AgendaRecursosPage(
+          empresaNit: widget.empresaNit,
+          tipoInicial: TipoRecursoCal.maquinaria,
+        ),
       ),
     );
     if (mounted) await _cargar();

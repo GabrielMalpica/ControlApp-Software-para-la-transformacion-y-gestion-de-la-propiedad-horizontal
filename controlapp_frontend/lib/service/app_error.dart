@@ -33,8 +33,12 @@ class AppError {
 
     text = text
         .replaceFirst(
+          // El Exception(...) generico de Dart produce literalmente
+          // "Exception: mensaje" (sin nada antes de "Exception:"), por eso
+          // el identificador previo es opcional: tambien cubre variantes
+          // como "FormatException:" o "SocketException:".
           RegExp(
-            r'^(?:[A-Za-z_][A-Za-z0-9_]*Exception:\s*)+',
+            r'^(?:(?:[A-Za-z_][A-Za-z0-9_]*)?Exception:\s*)+',
             caseSensitive: false,
           ),
           '',

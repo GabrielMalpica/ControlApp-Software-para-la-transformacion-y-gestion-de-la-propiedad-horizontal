@@ -313,10 +313,9 @@ class _CronogramaPreventivasBorradorPageState
                     child: ReorderableListView.builder(
                       buildDefaultDragHandles: false,
                       itemCount: zonas.length,
-                      onReorder: guardando
+                      onReorderItem: guardando
                           ? (_, __) {}
                           : (oldIndex, newIndex) {
-                              if (newIndex > oldIndex) newIndex--;
                               setDialogState(() {
                                 final item = zonas.removeAt(oldIndex);
                                 zonas.insert(newIndex, item);
@@ -435,7 +434,7 @@ class _CronogramaPreventivasBorradorPageState
   /// Confirmación al salir: el borrador vive en BD, así que "guardar" es
   /// simplemente no descartarlo.
   Future<bool> _confirmarSalida() async {
-    if (!_hayCambiosManuales && !_hayTareas) return true;
+    if (!_hayCambiosManuales) return true;
 
     final decision = await showDialog<String>(
       context: context,
@@ -2429,7 +2428,6 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   Future<void> _eliminarTareaBorrador(TareaModel tarea) async {
-    _marcarCambioManual();
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -2451,16 +2449,26 @@ class _CronogramaPreventivasBorradorPageState
     );
     if (ok != true) return;
 
-    await _preventivaApi.eliminarBloqueBorrador(
-      nit: widget.nit,
-      tareaId: tarea.id,
-    );
-    if (!mounted) return;
-    AppFeedback.showFromSnackBar(
-      context,
-      const SnackBar(content: Text('Tarea enviada a excluidas.')),
-    );
-    await _cargarDatos();
+    try {
+      await _preventivaApi.eliminarBloqueBorrador(
+        nit: widget.nit,
+        tareaId: tarea.id,
+      );
+      if (!mounted) return;
+      _marcarCambioManual();
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(content: Text('Tarea enviada a excluidas.')),
+      );
+      await _cargarDatos();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showError(
+        context,
+        message: AppError.messageOf(e),
+        title: 'No se pudo excluir la tarea',
+      );
+    }
   }
 
   Future<void> _descartarExcluidaBorrador(
@@ -2493,6 +2501,7 @@ class _CronogramaPreventivasBorradorPageState
       excluidaId: excluida.id,
     );
     if (!mounted) return;
+    _marcarCambioManual();
     AppFeedback.showFromSnackBar(
       context,
       const SnackBar(content: Text('Tarea excluida descartada.')),
@@ -2503,7 +2512,6 @@ class _CronogramaPreventivasBorradorPageState
   Future<void> _agendarExcluida(
     PreventivaExcluidaBorradorModel excluida,
   ) async {
-    _marcarCambioManual();
     final clave = _claveExcluida(excluida.id);
     if (_accionEnCurso(_accionesExcluidaNotifier.value, clave)) return;
     _marcarAccionExcluida(clave, true);
@@ -2637,6 +2645,7 @@ class _CronogramaPreventivasBorradorPageState
                 .toList(),
     );
     if (!mounted) return;
+    _marcarCambioManual();
     final tareasCreadas = (res['tareas'] as List?)?.length ?? 1;
     AppFeedback.showFromSnackBar(
       context,
@@ -2776,31 +2785,39 @@ class _CronogramaPreventivasBorradorPageState
   Future<void> _dividirExcluidaEnMinutos(
     PreventivaExcluidaBorradorModel excluida,
   ) async {
-    _marcarCambioManual();
     final minutos = await _pedirDivisionManualExcluida(excluida);
     if (minutos == null || minutos.isEmpty) return;
-    await _preventivaApi.dividirExcluidaManual(
-      nit: widget.nit,
-      excluidaId: excluida.id,
-      bloquesDuracionMinutos: minutos,
-    );
-    if (!mounted) return;
-    AppFeedback.showFromSnackBar(
-      context,
-      SnackBar(
-        content: Text(
-          'Tarea dividida manualmente en ${minutos.length} bloques.',
+    try {
+      await _preventivaApi.dividirExcluidaManual(
+        nit: widget.nit,
+        excluidaId: excluida.id,
+        bloquesDuracionMinutos: minutos,
+      );
+      if (!mounted) return;
+      _marcarCambioManual();
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            'Tarea dividida manualmente en ${minutos.length} bloques.',
+          ),
         ),
-      ),
-    );
-    await _cargarDatos();
+      );
+      await _cargarDatos();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showError(
+        context,
+        message: AppError.messageOf(e),
+        title: 'No se pudo dividir la tarea',
+      );
+    }
   }
 
   Future<void> _agendarBloqueExcluida(
     PreventivaExcluidaBorradorModel excluida,
     PreventivaExcluidaBloqueModel bloque,
   ) async {
-    _marcarCambioManual();
     final clave = _claveBloqueExcluida(excluida.id, bloque.id);
     if (_accionEnCurso(_accionesExcluidaNotifier.value, clave)) return;
     _marcarAccionExcluida(clave, true);
@@ -2881,6 +2898,7 @@ class _CronogramaPreventivasBorradorPageState
       fechaFin: DateTime.parse(seleccion['fechaFin'].toString()),
     );
     if (!mounted) return;
+    _marcarCambioManual();
     AppFeedback.showFromSnackBar(
       context,
       SnackBar(content: Text('Bloque ${bloque.orden} agendado.')),
@@ -2892,7 +2910,6 @@ class _CronogramaPreventivasBorradorPageState
     DateTime fecha,
     List<TareaModel> tareasOrdenadas,
   ) async {
-    _marcarCambioManual();
     final tareaIds = tareasOrdenadas.map((item) => item.id).toList();
     var resultado = await _preventivaApi.reordenarTareasDiaBorrador(
       nit: widget.nit,
@@ -2924,6 +2941,10 @@ class _CronogramaPreventivasBorradorPageState
         confirmarExclusiones: true,
       );
       if (!mounted) return;
+    }
+
+    if (resultado['aplicado'] == true) {
+      _marcarCambioManual();
     }
 
     final omitidas =
@@ -2964,7 +2985,6 @@ class _CronogramaPreventivasBorradorPageState
     required DateTime nuevoInicio,
     required DateTime nuevoFin,
   }) async {
-    _marcarCambioManual();
     final actualizada = await _preventivaApi.editarBloqueBorrador(
       nit: widget.nit,
       tareaId: tarea.id,
@@ -2972,6 +2992,7 @@ class _CronogramaPreventivasBorradorPageState
       fechaFin: nuevoFin,
     );
     if (!mounted) return;
+    _marcarCambioManual();
     _aplicarTareaActualizadaEnMemoria(actualizada);
     AppFeedback.showFromSnackBar(
       context,
@@ -2985,7 +3006,6 @@ class _CronogramaPreventivasBorradorPageState
     required DateTime nuevoInicio,
     required DateTime nuevoFin,
   }) async {
-    _marcarCambioManual();
     final clave = _claveExcluida(excluida.id);
     if (_accionEnCurso(_accionesExcluidaNotifier.value, clave)) return;
     _marcarAccionExcluida(clave, true);
@@ -2997,6 +3017,7 @@ class _CronogramaPreventivasBorradorPageState
         fechaFin: nuevoFin,
       );
       if (!mounted) return;
+      _marcarCambioManual();
       AppFeedback.showFromSnackBar(
         context,
         const SnackBar(content: Text('Tarea excluida agendada en la grilla.')),
@@ -3019,7 +3040,6 @@ class _CronogramaPreventivasBorradorPageState
     required DateTime nuevoInicio,
     required DateTime nuevoFin,
   }) async {
-    _marcarCambioManual();
     final clave = _claveBloqueExcluida(excluida.id, bloque.id);
     if (_accionEnCurso(_accionesExcluidaNotifier.value, clave)) return;
     _marcarAccionExcluida(clave, true);
@@ -3032,6 +3052,7 @@ class _CronogramaPreventivasBorradorPageState
         fechaFin: nuevoFin,
       );
       if (!mounted) return;
+      _marcarCambioManual();
       AppFeedback.showFromSnackBar(
         context,
         SnackBar(
@@ -3051,7 +3072,6 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   Future<void> _reemplazarTareaConExcluida(TareaModel tarea) async {
-    _marcarCambioManual();
     if (_excluidasMes.isEmpty) {
       AppFeedback.showFromSnackBar(
         context,
@@ -3095,6 +3115,7 @@ class _CronogramaPreventivasBorradorPageState
       excluidaId: excluida.id,
     );
     if (!mounted) return;
+    _marcarCambioManual();
     AppFeedback.showFromSnackBar(
       context,
       const SnackBar(content: Text('Reemplazo manual aplicado.')),
@@ -4372,7 +4393,6 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   Future<void> _reasignarOperarioTarea(TareaModel tarea) async {
-    _marcarCambioManual();
     final actualIds = tarea.operariosIds.toSet();
     final seleccionado = await _seleccionarOperarioDelConjunto(
       inicio: tarea.fechaInicio,
@@ -4411,6 +4431,7 @@ class _CronogramaPreventivasBorradorPageState
       aplicarADefinicion: modo == _ModoCambioOperario.tambienDefinicion,
     );
     if (!mounted) return;
+    _marcarCambioManual();
 
     final warning = (res['warning'] ?? '').toString().trim();
     final definicionActualizada = res['definicionActualizada'] == true;
@@ -4431,7 +4452,6 @@ class _CronogramaPreventivasBorradorPageState
   Future<void> _reasignarOperarioExcluida(
     PreventivaExcluidaBorradorModel excluida,
   ) async {
-    _marcarCambioManual();
     final actualIds = excluida.operariosIds.toSet();
     final finReferencia = excluida.fechaObjetivo.add(
       Duration(minutes: excluida.duracionMinutos),
@@ -4473,6 +4493,7 @@ class _CronogramaPreventivasBorradorPageState
       aplicarADefinicion: modo == _ModoCambioOperario.tambienDefinicion,
     );
     if (!mounted) return;
+    _marcarCambioManual();
 
     final warning = (res['warning'] ?? '').toString().trim();
     final definicionActualizada = res['definicionActualizada'] == true;
@@ -8074,9 +8095,8 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: tareasDia.length,
                       buildDefaultDragHandles: false,
-                      onReorder: (oldIndex, newIndex) async {
+                      onReorderItem: (oldIndex, newIndex) async {
                         if (_reordenandoDia) return;
-                        if (newIndex > oldIndex) newIndex -= 1;
                         final nuevas = [...tareasDia];
                         final item = nuevas.removeAt(oldIndex);
                         nuevas.insert(newIndex, item);

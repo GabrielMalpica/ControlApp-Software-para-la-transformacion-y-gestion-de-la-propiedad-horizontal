@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,14 +7,18 @@ import 'package:http/http.dart' as http;
 
 import '../service/app_constants.dart';
 import '../api/tarea_api.dart';
+import '../model/cierre_tarea_pendiente_model.dart';
 import '../model/inventario_item_model.dart';
 import '../model/tarea_model.dart';
+import '../service/offline/cierre_tarea_offline_store.dart';
+import '../service/offline/tarea_sync_engine.dart';
 import '../service/session_service.dart';
 import '../service/tarea_cierre_service.dart';
 import '../service/theme.dart';
 import '../service/permission_service.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import '../widgets/cerrar_tarea_sheet.dart';
+import '../widgets/cierres_pendientes_sheet.dart';
 import 'crear_tarea_page.dart';
 import 'editar_tarea_page.dart';
 
@@ -38,11 +43,16 @@ class _TareasPageState extends State<TareasPage> {
   bool _cargando = true;
   String? _error;
   List<TareaModel> _tareas = [];
+  DateTime? _tareasDesdeCache;
 
   // sesión
   String? _rol;
   String? _usuarioId;
   int? _operarioId;
+
+  // cola offline de cierres del operario
+  List<CierreTareaPendiente> _cierresPendientes = [];
+  StreamSubscription<void>? _syncSub;
 
   bool get _canViewTasks => PermissionService.instance.can('tareas.ver');
   bool get _canManageTasks => PermissionService.instance.can('tareas.crear');
@@ -55,11 +65,40 @@ class _TareasPageState extends State<TareasPage> {
   void initState() {
     super.initState();
     _init();
+    _syncSub = TareaSyncEngine.instance.onCambios.listen((_) {
+      _cargarCierresPendientes();
+    });
+  }
+
+  @override
+  void dispose() {
+    _syncSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _init() async {
     await _cargarSesion();
     await _cargarTareas();
+    if (_esOperario()) {
+      await _cargarCierresPendientes();
+      unawaited(TareaSyncEngine.instance.sincronizarAhora());
+    }
+  }
+
+  Future<void> _cargarCierresPendientes() async {
+    final uid = _usuarioId;
+    if (uid == null || uid.isEmpty) return;
+    final lista = await CierreTareaOfflineStore.instance.listarCierres(
+      usuarioId: uid,
+    );
+    if (!mounted) return;
+    setState(() => _cierresPendientes = lista);
+  }
+
+  bool _tieneCierrePendiente(int tareaId) {
+    return _cierresPendientes.any(
+      (c) => c.tareaId == tareaId && c.estadoSync != CierreSyncEstado.sincronizado,
+    );
   }
 
   Future<void> _cargarSesion() async {
@@ -92,13 +131,44 @@ class _TareasPageState extends State<TareasPage> {
           throw Exception('No se pudo identificar el operario en sesión.');
         }
         lista = await _listarTareasOperarioDirecto(_operarioId!);
+        final uid = _usuarioId;
+        if (uid != null && uid.isNotEmpty) {
+          unawaited(
+            CierreTareaOfflineStore.instance.cachearLectura(
+              CierreTareaOfflineStore.claveTareasOperario(uid),
+              lista.map((t) => t.toJson()).toList(),
+            ),
+          );
+        }
       } else {
         lista = await _tareaApi.listarTareasPorConjunto(widget.nit);
       }
 
       if (!mounted) return;
-      setState(() => _tareas = lista);
+      setState(() {
+        _tareas = lista;
+        _tareasDesdeCache = null;
+      });
     } catch (e) {
+      // Sin conexión: si es el operario, intenta mostrar la última lista
+      // de sus actividades que se guardó localmente en vez de dejarlo sin
+      // poder ver (y por lo tanto cerrar) ninguna tarea.
+      final uid = _usuarioId;
+      if (_esOperario() && uid != null && uid.isNotEmpty) {
+        final cache = await CierreTareaOfflineStore.instance
+            .obtenerLecturaCacheada(
+              CierreTareaOfflineStore.claveTareasOperario(uid),
+            );
+        if (cache != null) {
+          if (!mounted) return;
+          setState(() {
+            _tareas = cache.datos.map(TareaModel.fromJson).toList();
+            _tareasDesdeCache = cache.actualizadoEn;
+            _error = null;
+          });
+          return;
+        }
+      }
       if (!mounted) return;
       setState(() => _error = AppError.messageOf(e));
     } finally {
@@ -132,9 +202,20 @@ class _TareasPageState extends State<TareasPage> {
     final decoded = jsonDecode(resp.body);
     if (decoded is! List) return [];
 
+    final operarioIdStr = operarioId.toString();
+
     return decoded
         .map((e) => TareaModel.fromJson((e as Map).cast<String, dynamic>()))
         .where((t) => !t.borrador)
+        // El endpoint de "mis actividades" ya filtra por operario pero no
+        // siempre trae operariosIds en el payload; sin ese dato la
+        // validación de "tarea asignada a mí" (TareaCierreService) falla
+        // siempre y el operario nunca puede cerrar sus propias tareas.
+        .map(
+          (t) => t.operariosIds.contains(operarioIdStr)
+              ? t
+              : t.copyWith(operariosIds: [...t.operariosIds, operarioIdStr]),
+        )
         .toList();
   }
 
@@ -232,11 +313,39 @@ class _TareasPageState extends State<TareasPage> {
 
   bool _puedeCerrar(TareaModel t) {
     if (!PermissionService.instance.can('tareas.cerrar')) return false;
+    if (_esOperario() && _tieneCierrePendiente(t.id)) return false;
     return _tareaCierreService.puedeCerrar(
       rol: _rol,
       usuarioId: _usuarioId,
       tarea: t,
     );
+  }
+
+  Future<List<InventarioItemResponse>> _inventarioParaCierre(
+    String inventarioNit,
+  ) async {
+    try {
+      final inventario = await _inventarioApi.listarInventarioConjunto(
+        inventarioNit,
+      );
+      unawaited(
+        CierreTareaOfflineStore.instance.cachearLectura(
+          CierreTareaOfflineStore.claveInventarioConjunto(inventarioNit),
+          inventario.map((i) => i.toJson()).toList(),
+        ),
+      );
+      return inventario;
+    } catch (_) {
+      // Sin conexión: usa el último inventario conocido para que el
+      // operario pueda seguir registrando insumos. El stock puede estar
+      // desactualizado; el backend valida el stock real al sincronizar.
+      final cache = await CierreTareaOfflineStore.instance
+          .obtenerLecturaCacheada(
+            CierreTareaOfflineStore.claveInventarioConjunto(inventarioNit),
+          );
+      if (cache == null) return [];
+      return cache.datos.map(InventarioItemResponse.fromJson).toList();
+    }
   }
 
   Future<void> _cerrarComoOperario(TareaModel t) async {
@@ -258,12 +367,7 @@ class _TareasPageState extends State<TareasPage> {
         ? t.conjuntoId!
         : widget.nit;
 
-    List<InventarioItemResponse> inventario = [];
-    try {
-      inventario = await _inventarioApi.listarInventarioConjunto(inventarioNit);
-    } catch (_) {
-      // no bloqueamos el cierre si falla inventario
-    }
+    final inventario = await _inventarioParaCierre(inventarioNit);
 
     if (!mounted) return;
     final result = await showModalBottomSheet<CerrarTareaResult>(
@@ -275,7 +379,7 @@ class _TareasPageState extends State<TareasPage> {
     if (result == null) return;
 
     try {
-      await _tareaCierreService.cerrarTarea(
+      final resultado = await _tareaCierreService.cerrarTarea(
         rol: _rol,
         usuarioId: _usuarioId,
         tarea: t,
@@ -286,16 +390,13 @@ class _TareasPageState extends State<TareasPage> {
       );
 
       if (!mounted) return;
-      AppFeedback.showFromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            result.accion == 'NO_COMPLETADA'
+      final mensaje = resultado == CierreTareaResultado.guardadoLocalPendiente
+          ? '📶 Sin conexión: la tarea se guardó en este dispositivo y se enviará sola cuando vuelva la señal.'
+          : (result.accion == 'NO_COMPLETADA'
                 ? '✅ Tarea marcada como no completada.'
-                : '✅ Tarea cerrada. Quedó pendiente aprobación.',
-          ),
-        ),
-      );
+                : '✅ Tarea cerrada. Quedó pendiente aprobación.');
+      AppFeedback.showFromSnackBar(context, SnackBar(content: Text(mensaje)));
+      await _cargarCierresPendientes();
       await _cargarTareas();
     } catch (e) {
       if (!mounted) return;
@@ -306,44 +407,85 @@ class _TareasPageState extends State<TareasPage> {
     }
   }
 
+  Widget _infoRow(IconData icon, String text, {Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 15, color: color ?? Colors.black54),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: color,
+                fontWeight: color != null ? FontWeight.bold : null,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _taskTile(TareaModel t) {
     final c = _estadoColor(t.estado);
     final estado = (t.estado ?? 'SIN_ESTADO').replaceAll('_', ' ');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.10)),
+      ),
       child: ListTile(
+        contentPadding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
         title: Text(
           t.descripcion,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '🕒 ${_fmtDateTime(t.fechaInicio)} → ${_fmtDateTime(t.fechaFin)}',
+            _infoRow(
+              Icons.access_time,
+              '${_fmtDateTime(t.fechaInicio)} → ${_fmtDateTime(t.fechaFin)}',
             ),
             if (t.ubicacionNombre != null || t.elementoNombre != null)
-              Text(
-                '📍 ${t.ubicacionNombre ?? '-'} / ${t.elementoNombre ?? '-'}',
+              _infoRow(
+                Icons.place_outlined,
+                '${t.ubicacionNombre ?? '-'} / ${t.elementoNombre ?? '-'}',
               ),
             if (_esVencida(t))
-              const Text(
-                '⚠️ Vencida',
-                style: TextStyle(
-                  color: Colors.red,
-                  fontWeight: FontWeight.bold,
-                ),
+              _infoRow(
+                Icons.warning_amber_rounded,
+                'Vencida',
+                color: Colors.red,
               ),
-            Row(
-              children: [
-                Icon(Icons.circle, size: 9, color: c),
-                const SizedBox(width: 6),
-                Text(
-                  estado,
-                  style: TextStyle(color: c, fontWeight: FontWeight.bold),
-                ),
-              ],
+            if (_esOperario() && _tieneCierrePendiente(t.id))
+              _infoRow(
+                Icons.cloud_off,
+                'Cierre pendiente de sincronizar',
+                color: Colors.orange.shade800,
+              ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.circle, size: 9, color: c),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      estado,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: c, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -354,7 +496,7 @@ class _TareasPageState extends State<TareasPage> {
                       icon: const Icon(Icons.task_alt, color: Colors.green),
                       onPressed: () => _cerrarComoOperario(t),
                     )
-                  : null)
+                  : const Icon(Icons.chevron_right, color: Colors.black38))
             : (_canManageTasks
                   ? IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
@@ -362,7 +504,7 @@ class _TareasPageState extends State<TareasPage> {
                     )
                   : null),
         onTap: _esOperario()
-            ? null
+            ? () => _abrirDetalleTarea(t)
             : (_canManageTasks
                   ? () async {
                       final updated = await Navigator.push<bool>(
@@ -375,6 +517,178 @@ class _TareasPageState extends State<TareasPage> {
                       if (updated == true) _cargarTareas();
                     }
                   : null),
+      ),
+    );
+  }
+
+  Future<void> _abrirDetalleTarea(TareaModel t) async {
+    final c = _estadoColor(t.estado);
+    final estado = (t.estado ?? 'SIN_ESTADO').replaceAll('_', ' ');
+    final puedeCerrar = _puedeCerrar(t);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          minChildSize: 0.35,
+          maxChildSize: 0.92,
+          builder: (_, scrollController) {
+            return SingleChildScrollView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.black12,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    t.descripcion,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(Icons.circle, size: 10, color: c),
+                      const SizedBox(width: 6),
+                      Text(
+                        estado,
+                        style: TextStyle(color: c, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 28),
+                  _detalleRow(
+                    Icons.play_circle_outline,
+                    'Inicio',
+                    _fmtDateTime(t.fechaInicio),
+                  ),
+                  _detalleRow(
+                    Icons.flag_outlined,
+                    'Fin',
+                    _fmtDateTime(t.fechaFin),
+                  ),
+                  if (t.ubicacionNombre != null)
+                    _detalleRow(
+                      Icons.location_on_outlined,
+                      'Ubicación',
+                      t.ubicacionNombre!,
+                    ),
+                  if (t.elementoNombre != null)
+                    _detalleRow(
+                      Icons.category_outlined,
+                      'Elemento',
+                      t.elementoNombre!,
+                    ),
+                  if (t.tipo != null && t.tipo!.trim().isNotEmpty)
+                    _detalleRow(Icons.label_outline, 'Tipo', t.tipo!),
+                  if (t.observaciones != null &&
+                      t.observaciones!.trim().isNotEmpty)
+                    _detalleRow(
+                      Icons.notes_outlined,
+                      'Observaciones',
+                      t.observaciones!,
+                    ),
+                  if (t.observacionesRechazo != null &&
+                      t.observacionesRechazo!.trim().isNotEmpty)
+                    _detalleRow(
+                      Icons.report_gmailerrorred_outlined,
+                      'Motivo de rechazo',
+                      t.observacionesRechazo!,
+                      color: Colors.red,
+                    ),
+                  if (_esVencida(t))
+                    _detalleRow(
+                      Icons.warning_amber_rounded,
+                      'Estado de tiempo',
+                      'Vencida',
+                      color: Colors.red,
+                    ),
+                  const SizedBox(height: 20),
+                  if (puedeCerrar)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          _cerrarComoOperario(t);
+                        },
+                        icon: const Icon(Icons.task_alt),
+                        label: const Text('Cerrar tarea'),
+                      ),
+                    )
+                  else
+                    Text(
+                      _esOperario() && _tieneCierrePendiente(t.id)
+                          ? 'Ya registraste el cierre de esta tarea y quedó guardado en este dispositivo. Se enviará solo cuando haya conexión.'
+                          : (_tareaCierreService.motivoNoPuedeCerrar(
+                                  rol: _rol,
+                                  usuarioId: _usuarioId,
+                                  tarea: t,
+                                ) ??
+                                'Esta tarea no está disponible para cierre.'),
+                      style: const TextStyle(color: Colors.black54),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _detalleRow(
+    IconData icon,
+    String label,
+    String value, {
+    Color? color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: color ?? AppTheme.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(color: color, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -468,14 +782,106 @@ class _TareasPageState extends State<TareasPage> {
     );
   }
 
+  List<Widget> _bannersOfflineOperario() {
+    final banners = <Widget>[];
+
+    if (_tareasDesdeCache != null) {
+      banners.add(
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.blueGrey.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.cloud_off, size: 18, color: Colors.blueGrey),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Sin conexión: mostrando tus actividades guardadas de '
+                  '${_fmtDateTime(_tareasDesdeCache!)}.',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final pendientes = _cierresPendientes
+        .where((c) => c.estadoSync != CierreSyncEstado.sincronizado)
+        .toList();
+    if (pendientes.isNotEmpty) {
+      final conError = pendientes
+          .where((c) => c.estadoSync == CierreSyncEstado.error)
+          .length;
+      banners.add(
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: (conError > 0 ? Colors.red : Colors.orange).withValues(
+              alpha: 0.08,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                conError > 0 ? Icons.error_outline : Icons.cloud_upload,
+                size: 18,
+                color: conError > 0 ? Colors.red : Colors.orange.shade800,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  conError > 0
+                      ? '${pendientes.length} cierre(s) guardado(s) sin enviar, $conError con error.'
+                      : '${pendientes.length} cierre(s) guardado(s) esperando conexión para enviarse.',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+              TextButton(
+                onPressed: _abrirCierresPendientes,
+                child: const Text('Ver'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return banners;
+  }
+
+  Future<void> _abrirCierresPendientes() async {
+    if (_usuarioId == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => CierresPendientesSheet(usuarioId: _usuarioId!),
+    );
+    await _cargarCierresPendientes();
+  }
+
   Widget _buildOperarioBody() {
     final list = _tareasFiltradasOperario;
+    final banners = _bannersOfflineOperario();
 
     if (list.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
+          ...banners,
           _filters(),
           const SizedBox(height: 10),
           _searchBox(),
@@ -491,6 +897,7 @@ class _TareasPageState extends State<TareasPage> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(12),
       children: [
+        ...banners,
         _filters(),
         const SizedBox(height: 10),
         _searchBox(),

@@ -146,6 +146,7 @@ class MaquinaCandidata {
   final String marca;
   final String tipo;
   final String propietarioTipo;
+  final String? conjuntoPropietarioId;
 
   const MaquinaCandidata({
     required this.id,
@@ -153,6 +154,7 @@ class MaquinaCandidata {
     required this.marca,
     required this.tipo,
     required this.propietarioTipo,
+    this.conjuntoPropietarioId,
   });
 
   factory MaquinaCandidata.fromJson(Map<String, dynamic> json) {
@@ -162,7 +164,15 @@ class MaquinaCandidata {
       marca: json['marca']?.toString() ?? '',
       tipo: json['tipo']?.toString() ?? '',
       propietarioTipo: json['propietarioTipo']?.toString() ?? '',
+      conjuntoPropietarioId: json['conjuntoPropietarioId']?.toString(),
     );
+  }
+
+  /// Disponible para asignar al conjunto [conjuntoId]: es de la empresa (se
+  /// puede prestar a cualquiera) o es propia de ese mismo conjunto.
+  bool disponibleParaConjunto(String conjuntoId) {
+    if (propietarioTipo != 'CONJUNTO') return true;
+    return conjuntoPropietarioId == conjuntoId;
   }
 
   String get etiqueta {

@@ -19,8 +19,14 @@ enum TipoInventario { INSUMOS, HERRAMIENTAS }
 class InventarioPage extends StatefulWidget {
   final String nit; // NIT conjunto
   final String empresaId; // ✅ NIT empresa (para catálogo)
+  final bool soloInsumos;
 
-  const InventarioPage({super.key, required this.nit, required this.empresaId});
+  const InventarioPage({
+    super.key,
+    required this.nit,
+    required this.empresaId,
+    this.soloInsumos = false,
+  });
 
   @override
   State<InventarioPage> createState() => _InventarioPageState();
@@ -663,7 +669,7 @@ class _InventarioPageState extends State<InventarioPage> {
                     _cargar();
                   },
                 ),
-                if (_canViewTools) ...[
+                if (!widget.soloInsumos && _canViewTools) ...[
                   const SizedBox(width: 8),
                   ChoiceChip(
                     label: const Text("Herramientas"),

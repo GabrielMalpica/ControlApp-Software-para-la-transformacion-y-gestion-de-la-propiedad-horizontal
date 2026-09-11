@@ -51,6 +51,9 @@ class OperarioApi {
     String? observaciones,
     List<Map<String, num>> insumosUsados = const [],
     List<EvidenciaAdjunto> evidencias = const [],
+    String? clienteCierreId,
+    DateTime? fechaFinalizarTarea,
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     final token = await _session.getToken();
     if (token == null || token.isEmpty) {
@@ -69,6 +72,12 @@ class OperarioApi {
     });
 
     req.fields['accion'] = accion;
+    if (clienteCierreId != null && clienteCierreId.trim().isNotEmpty) {
+      req.fields['clienteCierreId'] = clienteCierreId.trim();
+    }
+    if (fechaFinalizarTarea != null) {
+      req.fields['fechaFinalizarTarea'] = fechaFinalizarTarea.toIso8601String();
+    }
 
     if (observaciones != null && observaciones.trim().isNotEmpty) {
       req.fields['observaciones'] = observaciones.trim();
@@ -114,11 +123,23 @@ class OperarioApi {
       }
     }
 
-    final streamed = await req.send();
-    final body = await streamed.stream.bytesToString();
+    final streamed = await req.send().timeout(timeout);
+    final body = await streamed.stream.bytesToString().timeout(timeout);
 
     if (streamed.statusCode != 200) {
-      throw Exception('Error cerrando tarea: ${streamed.statusCode} - $body');
+      throw ApiError(streamed.statusCode, body);
     }
   }
+}
+
+/// Error con el código HTTP real, para poder distinguir en el motor de
+/// sincronización offline entre fallas transitorias (red, 5xx) y fallas de
+/// negocio (4xx) que no deben reintentarse indefinidamente.
+class ApiError implements Exception {
+  final int statusCode;
+  final String body;
+  ApiError(this.statusCode, this.body);
+
+  @override
+  String toString() => 'ApiError($statusCode): $body';
 }

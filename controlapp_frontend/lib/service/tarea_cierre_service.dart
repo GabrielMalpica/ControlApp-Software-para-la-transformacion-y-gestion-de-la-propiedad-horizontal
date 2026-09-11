@@ -2,9 +2,19 @@ import 'package:flutter_application_1/api/jefe_operaciones_api.dart';
 import 'package:flutter_application_1/api/operario_api.dart';
 import 'package:flutter_application_1/api/supervisor_api.dart';
 import 'package:flutter_application_1/api/tarea_api.dart';
+import 'package:flutter_application_1/model/cierre_tarea_pendiente_model.dart';
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
+import 'package:flutter_application_1/service/offline/cierre_tarea_offline_store.dart';
+import 'package:flutter_application_1/service/offline/error_classifier.dart';
+import 'package:flutter_application_1/service/offline/evidencia_persistencia.dart';
+import 'package:flutter_application_1/service/offline/uuid_v4.dart';
 import 'package:flutter_application_1/service/permission_service.dart';
+
+/// Resultado de intentar cerrar una tarea: si el operario está sin
+/// conexión, el cierre queda [guardadoLocalPendiente] en vez de fallar —
+/// nunca se pierde el trabajo, se sincroniza solo cuando vuelva la señal.
+enum CierreTareaResultado { enviadoAlServidor, guardadoLocalPendiente }
 
 class TareaCierreService {
   TareaCierreService({
@@ -99,7 +109,7 @@ class TareaCierreService {
     }
   }
 
-  Future<void> cerrarTarea({
+  Future<CierreTareaResultado> cerrarTarea({
     required String? rol,
     required String? usuarioId,
     required TareaModel tarea,
@@ -123,15 +133,15 @@ class TareaCierreService {
         if (operarioId == null) {
           throw Exception('No se pudo identificar el operario actual.');
         }
-        await _operarioApi.cerrarTareaConEvidencias(
+        return _cerrarComoOperarioOfflineFirst(
           operarioId: operarioId,
-          tareaId: tarea.id,
+          usuarioId: _id(usuarioId),
+          tarea: tarea,
           accion: accion,
           observaciones: observaciones,
           insumosUsados: insumosUsados,
           evidencias: evidencias,
         );
-        return;
       case 'gerente':
         try {
           await _tareaApi.cerrarTareaConEvidencias(
@@ -141,7 +151,7 @@ class TareaCierreService {
             insumosUsados: insumosUsados,
             evidencias: evidencias,
           );
-          return;
+          return CierreTareaResultado.enviadoAlServidor;
         } catch (e) {
           if (!_esRutaNoDisponible(e)) rethrow;
         }
@@ -152,7 +162,7 @@ class TareaCierreService {
           insumosUsados: insumosUsados,
           evidencias: evidencias,
         );
-        return;
+        return CierreTareaResultado.enviadoAlServidor;
       case 'jefe_operaciones':
         try {
           await _jefeOperacionesApi.cerrarTareaConEvidencias(
@@ -162,7 +172,7 @@ class TareaCierreService {
             insumosUsados: insumosUsados,
             evidencias: evidencias,
           );
-          return;
+          return CierreTareaResultado.enviadoAlServidor;
         } catch (e) {
           if (!_esRutaNoDisponible(e)) rethrow;
         }
@@ -173,7 +183,7 @@ class TareaCierreService {
           insumosUsados: insumosUsados,
           evidencias: evidencias,
         );
-        return;
+        return CierreTareaResultado.enviadoAlServidor;
       case 'supervisor':
       case 'administrador':
         await _supervisorApi.cerrarTareaConEvidencias(
@@ -183,9 +193,68 @@ class TareaCierreService {
           insumosUsados: insumosUsados,
           evidencias: evidencias,
         );
-        return;
+        return CierreTareaResultado.enviadoAlServidor;
       default:
         throw Exception('Tu rol no tiene permiso para cerrar tareas.');
+    }
+  }
+
+  /// Cierre de tarea para el rol operario: intenta enviarlo al backend de
+  /// inmediato (camino de siempre, igual de rápido cuando hay conexión).
+  /// Si la falla es de conectividad (timeout, sin red, 5xx, sesión
+  /// expirada), en vez de perder el trabajo del operario se persiste
+  /// localmente y queda pendiente de sincronizar. Si la falla es de
+  /// negocio (datos inválidos, tarea ya cerrada, stock insuficiente), se
+  /// relanza tal cual para que el operario la corrija — no tiene sentido
+  /// encolar algo que el backend ya rechazó por su contenido.
+  Future<CierreTareaResultado> _cerrarComoOperarioOfflineFirst({
+    required int operarioId,
+    required String usuarioId,
+    required TareaModel tarea,
+    required String accion,
+    required String? observaciones,
+    required List<Map<String, num>> insumosUsados,
+    required List<EvidenciaAdjunto> evidencias,
+  }) async {
+    final clienteCierreId = generarUuidV4();
+    final fechaCierre = DateTime.now();
+
+    try {
+      await _operarioApi.cerrarTareaConEvidencias(
+        operarioId: operarioId,
+        tareaId: tarea.id,
+        accion: accion,
+        observaciones: observaciones,
+        insumosUsados: insumosUsados,
+        evidencias: evidencias,
+        clienteCierreId: clienteCierreId,
+        fechaFinalizarTarea: fechaCierre,
+      );
+      return CierreTareaResultado.enviadoAlServidor;
+    } catch (e) {
+      if (clasificarError(e) == ClaseError.negocio) rethrow;
+
+      final evidenciasPersistidas = await EvidenciaPersistencia.persistir(
+        clienteCierreId: clienteCierreId,
+        evidencias: evidencias,
+      );
+
+      await CierreTareaOfflineStore.instance.guardarCierre(
+        CierreTareaPendiente(
+          clienteCierreId: clienteCierreId,
+          tareaId: tarea.id,
+          rol: 'operario',
+          usuarioId: usuarioId,
+          accion: accion,
+          observaciones: observaciones,
+          insumosUsados: insumosUsados,
+          fechaCierreLocal: fechaCierre,
+          evidencias: evidenciasPersistidas,
+          creadoEn: fechaCierre,
+        ),
+      );
+
+      return CierreTareaResultado.guardadoLocalPendiente;
     }
   }
 }

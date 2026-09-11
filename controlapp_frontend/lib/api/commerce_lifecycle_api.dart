@@ -46,10 +46,14 @@ class CommerceLifecycleApi {
     required int pedidoId,
     required int itemId,
     required int insumoId,
+    double? factorConversion,
   }) async {
     final response = await _client.post(
       '${AppConstants.commerceBase}/pedidos/$pedidoId/items/$itemId/mapeo',
-      body: {'insumoId': insumoId},
+      body: {
+        'insumoId': insumoId,
+        if (factorConversion != null) 'factorConversion': factorConversion,
+      },
     );
     _ensureSuccess(response.statusCode, response.body);
     return ReceiptPreview.fromJson(

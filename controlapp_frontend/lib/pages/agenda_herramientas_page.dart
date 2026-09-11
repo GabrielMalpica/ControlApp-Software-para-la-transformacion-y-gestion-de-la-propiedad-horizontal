@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/agenda_api.dart';
+import 'package:flutter_application_1/api/cronograma_herramienta_api.dart';
 import 'package:flutter_application_1/api/herramienta_api.dart';
 import 'package:flutter_application_1/model/agenda_herramienta_model.dart';
 import 'package:flutter_application_1/model/herramienta_model.dart';
+import 'package:flutter_application_1/model/necesidad_herramienta_model.dart';
+import 'package:flutter_application_1/model/recurso_calendario_item.dart';
+import 'package:flutter_application_1/pages/gerente/agenda_recursos_page.dart';
+import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
@@ -18,12 +23,14 @@ class AgendaHerramientasPage extends StatefulWidget {
 class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
   final _herrApi = HerramientaApi();
   final _agendaApi = AgendaApi();
+  final _cronogramaApi = CronogramaHerramientaApi();
 
   late Future<List<AgendaHerramientaLite>> _future;
   final Map<int, AgendaHerramientaBlock> _blocks = {};
   AgendaHerramientaLite? _seleccionada;
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month, 1);
   String _query = '';
+  int _necesidadesPendientes = 0;
 
   @override
   void initState() {
@@ -47,10 +54,20 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
         anio: _month.year,
         mes: _month.month,
       ),
+      _cronogramaApi.listarNecesidades(
+        empresaNit: AppConstants.empresaNit,
+        anio: _month.year,
+        mes: _month.month,
+        conjuntoId: widget.conjuntoId,
+        soloPendientes: true,
+      ),
     ]);
 
     final stockRaw = results[0] as List<dynamic>;
     final agenda = results[1] as AgendaHerramientaResponse;
+    final necesidades =
+        (results[2] as CronogramaHerramientaResponse).necesidades;
+    _necesidadesPendientes = necesidades.length;
 
     final stock = stockRaw
         .whereType<Map>()
@@ -135,6 +152,65 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
     );
   }
 
+  Future<void> _abrirNecesidades() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => AgendaRecursosPage(
+          empresaNit: AppConstants.empresaNit,
+          conjuntoId: widget.conjuntoId,
+          tipoInicial: TipoRecursoCal.herramienta,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _future = _cargarCatalogo();
+    });
+  }
+
+  Widget _bannerNecesidades() {
+    final pendientes = _necesidadesPendientes;
+    return InkWell(
+      onTap: _abrirNecesidades,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: pendientes > 0
+              ? Colors.orange.withValues(alpha: 0.10)
+              : Colors.green.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: pendientes > 0
+                ? Colors.orange.shade300
+                : Colors.green.shade300,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              pendientes > 0 ? Icons.pending_actions : Icons.check_circle,
+              color: pendientes > 0
+                  ? Colors.orange.shade800
+                  : Colors.green.shade700,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                pendientes > 0
+                    ? '$pendientes necesidad(es) de herramientas pendientes de asignar. Toca para asignar.'
+                    : 'Todas las necesidades de herramientas del mes están cubiertas.',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final mesLabel =
@@ -196,44 +272,55 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
             ].join(' ').toLowerCase().contains(q);
           }).toList();
 
-          return Row(
+          return Column(
             children: [
-              SizedBox(
-                width: 320,
-                child: Column(
+              _bannerNecesidades(),
+              Expanded(
+                child: Row(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'Buscar herramienta',
-                          prefixIcon: Icon(Icons.search),
-                        ),
-                        onChanged: (value) => setState(() => _query = value),
+                    SizedBox(
+                      width: 320,
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: TextField(
+                              decoration: const InputDecoration(
+                                labelText: 'Buscar herramienta',
+                                prefixIcon: Icon(Icons.search),
+                              ),
+                              onChanged: (value) =>
+                                  setState(() => _query = value),
+                            ),
+                          ),
+                          Expanded(
+                            child: ListView.builder(
+                              itemCount: items.length,
+                              itemBuilder: (_, index) {
+                                final h = items[index];
+                                final block = _blocks[h.id];
+                                final selected = _seleccionada?.id == h.id;
+                                return ListTile(
+                                  selected: selected,
+                                  title: Text(h.nombre),
+                                  subtitle: Text(
+                                    '${h.unidad} • ${h.categoria}',
+                                  ),
+                                  trailing: Text('${block?.reservasMes ?? 0}'),
+                                  onTap: () =>
+                                      setState(() => _seleccionada = h),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: items.length,
-                        itemBuilder: (_, index) {
-                          final h = items[index];
-                          final block = _blocks[h.id];
-                          final selected = _seleccionada?.id == h.id;
-                          return ListTile(
-                            selected: selected,
-                            title: Text(h.nombre),
-                            subtitle: Text('${h.unidad} • ${h.categoria}'),
-                            trailing: Text('${block?.reservasMes ?? 0}'),
-                            onTap: () => setState(() => _seleccionada = h),
-                          );
-                        },
-                      ),
-                    ),
+                    const VerticalDivider(width: 1),
+                    Expanded(child: _buildDetalle()),
                   ],
                 ),
               ),
-              const VerticalDivider(width: 1),
-              Expanded(child: _buildDetalle()),
             ],
           );
         },

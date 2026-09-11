@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/administrador_api.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/model/inventario_activo_model.dart';
 import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
 import 'package:flutter_application_1/pages/conjunto_cart_page.dart';
 import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
@@ -23,19 +24,18 @@ import 'agenda_herramientas_page.dart';
 import 'agenda_maquinaria_page.dart';
 import 'cronograma_impresion_page.dart';
 import 'cronograma_page.dart';
-import 'inventario_page.dart';
+import 'inventario_resumen_page.dart';
+import 'inventario_activos_page.dart';
 import 'jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'plan_esperanza_page.dart';
 import 'solicitudes_page.dart';
-import 'stock_herramientas_empresa_page.dart';
 import 'tareas_page.dart';
 import 'gerente/compromisos_page.dart';
 import 'gerente/compromisos_por_conjunto_page.dart';
 import 'gerente/carga_residentes_page.dart';
 import 'gerente/crear_residente_page.dart';
-import 'gerente/cronograma_maquinaria_page.dart';
+import 'gerente/agenda_recursos_page.dart';
 import 'gerente/lista_insumos_page.dart';
-import 'gerente/lista_maquinaria_page.dart';
 import 'gerente/residentes_page.dart';
 import 'gerente/mapa_conjunto_page.dart';
 
@@ -281,9 +281,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
             'Veredictos de tareas',
             Icons.fact_check_outlined,
             AppTheme.green,
-            () => _go(
-              JefeOperacionesPendientesPage(conjuntoId: conjunto.nit),
-            ),
+            () => _go(JefeOperacionesPendientesPage(conjuntoId: conjunto.nit)),
           ),
         if (_can('solicitudes.ver'))
           _AdminTile(
@@ -316,7 +314,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
             Icons.inventory_2_outlined,
             AppTheme.yellow,
             () => _go(
-              InventarioPage(
+              InventarioResumenPage(
                 nit: conjunto.nit,
                 empresaId: AppConstants.empresaNit,
               ),
@@ -363,15 +361,21 @@ class _AdministradorPageState extends State<AdministradorPage> {
             Icons.construction,
             AppTheme.red,
             () => _go(
-              ListaMaquinariaGlobalPage(empresaNit: AppConstants.empresaNit),
+              InventarioActivosPage(
+                empresaId: AppConstants.empresaNit,
+                conjuntoId: conjunto.nit,
+              ),
             ),
           ),
           _AdminTile(
-            'Cronograma maquinaria',
+            'Agenda de recursos',
             Icons.event_repeat,
             AppTheme.red,
             () => _go(
-              CronogramaMaquinariaPage(empresaNit: AppConstants.empresaNit),
+              AgendaRecursosPage(
+                empresaNit: AppConstants.empresaNit,
+                conjuntoId: conjunto.nit,
+              ),
             ),
           ),
         ],
@@ -380,7 +384,13 @@ class _AdministradorPageState extends State<AdministradorPage> {
             'Stock de herramientas',
             Icons.home_repair_service_outlined,
             Colors.orange,
-            () => _go(const StockHerramientasEmpresaPage()),
+            () => _go(
+              InventarioActivosPage(
+                empresaId: AppConstants.empresaNit,
+                conjuntoId: conjunto.nit,
+                initialClase: ClaseActivoInventario.herramienta,
+              ),
+            ),
           ),
       ]),
       _AdminSection('Analisis y control', [

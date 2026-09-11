@@ -2,20 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
 import '../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/model/inventario_activo_model.dart';
 import 'package:flutter_application_1/pages/jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
-import 'package:flutter_application_1/pages/gerente/cronograma_maquinaria_page.dart';
+import 'package:flutter_application_1/pages/gerente/agenda_recursos_page.dart';
+import 'package:flutter_application_1/pages/gerente/agenda_general_recursos_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_insumos_page.dart';
-import 'package:flutter_application_1/pages/gerente/lista_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/cronograma_impresion_page.dart';
 import 'package:flutter_application_1/pages/cumpleanos_page.dart';
 import 'package:flutter_application_1/pages/plan_esperanza_page.dart';
 import 'package:flutter_application_1/pages/reportes_page.dart';
-import 'package:flutter_application_1/pages/stock_herramientas_empresa_page.dart';
+import 'package:flutter_application_1/pages/inventario_activos_page.dart';
 import 'package:flutter_application_1/pages/tareas_page.dart';
 import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
 import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
@@ -32,9 +33,12 @@ import 'package:flutter_application_1/widgets/perfil_action.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
 import '../service/theme.dart';
-import 'inventario_page.dart';
+import 'inventario_resumen_page.dart';
 import 'solicitudes_page.dart';
 import 'cronograma_page.dart';
+import 'asistencia_grid_page.dart';
+import 'asistencia_qr_page.dart';
+import 'turnos_extra_page.dart';
 
 class _JefeTile {
   final String title;
@@ -315,22 +319,6 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
               );
             },
           ),
-        if (_can('maquinaria.asignar'))
-          _JefeTile(
-            'Cronograma maquinaria',
-            Icons.event_repeat,
-            AppTheme.red,
-            () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CronogramaMaquinariaPage(
-                    empresaNit: AppConstants.empresaNit,
-                  ),
-                ),
-              );
-            },
-          ),
         if (_can('herramientas.ver'))
           _JefeTile('Herramientas', Icons.handyman, Colors.orange, () {
             Navigator.push(
@@ -342,6 +330,38 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
               ),
             );
           }),
+        if (_can('maquinaria.asignar') || _can('herramientas.asignar'))
+          _JefeTile(
+            'Agenda de recursos',
+            Icons.event_repeat,
+            AppTheme.red,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AgendaRecursosPage(
+                    empresaNit: AppConstants.empresaNit,
+                  ),
+                ),
+              );
+            },
+          ),
+        if (_can('maquinaria.asignar') || _can('herramientas.asignar'))
+          _JefeTile(
+            'Agenda general de recursos',
+            Icons.calendar_view_month,
+            AppTheme.primary,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AgendaGeneralRecursosPage(
+                    empresaNit: AppConstants.empresaNit,
+                  ),
+                ),
+              );
+            },
+          ),
         if (_can('inventario.gestionar'))
           _JefeTile(
             'Gestionar insumos',
@@ -363,8 +383,9 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => ListaMaquinariaGlobalPage(
-                    empresaNit: AppConstants.empresaNit,
+                  builder: (_) => InventarioActivosPage(
+                    empresaId: AppConstants.empresaNit,
+                    soloEmpresa: true,
                   ),
                 ),
               );
@@ -379,7 +400,11 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const StockHerramientasEmpresaPage(),
+                  builder: (_) => InventarioActivosPage(
+                    empresaId: AppConstants.empresaNit,
+                    initialClase: ClaseActivoInventario.herramienta,
+                    soloEmpresa: true,
+                  ),
                 ),
               );
             },
@@ -389,7 +414,7 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => InventarioPage(
+                builder: (_) => InventarioResumenPage(
                   nit: nit,
                   empresaId: AppConstants.empresaNit,
                 ),
@@ -490,6 +515,42 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const CumpleanosPage()),
+            );
+          }),
+      ]),
+      _JefeSection('Asistencia', [
+        if (_can('asistencia.ver'))
+          _JefeTile(
+            'Asistencia (todos los conjuntos)',
+            Icons.fact_check_outlined,
+            AppTheme.green,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AsistenciaGridPage()),
+              );
+            },
+          ),
+        if (_can('asistencia.turnos_extra.gestionar'))
+          _JefeTile(
+            'Turnos extra',
+            Icons.swap_horiz_rounded,
+            AppTheme.primary,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const TurnosExtraPage()),
+              );
+            },
+          ),
+        if (_can('asistencia.qr.gestionar'))
+          _JefeTile('QR de asistencia', Icons.qr_code_2_rounded, Colors.teal, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    AsistenciaQrPage(conjuntoId: nit, conjuntoNombre: conjunto.nombre),
+              ),
             );
           }),
       ]),

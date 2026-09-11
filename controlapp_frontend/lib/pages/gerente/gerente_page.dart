@@ -2,17 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
-import 'package:flutter_application_1/pages/agenda_herramientas_page.dart';
+import 'package:flutter_application_1/model/inventario_activo_model.dart';
 import 'package:flutter_application_1/pages/cumpleanos_page.dart';
-import 'package:flutter_application_1/pages/agenda_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
 import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
 import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.dart';
-import 'package:flutter_application_1/pages/crear_herramienta_page.dart';
 import 'package:flutter_application_1/pages/festivos_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
-import 'package:flutter_application_1/pages/gerente/cronograma_maquinaria_page.dart';
+import 'package:flutter_application_1/pages/gerente/agenda_recursos_page.dart';
+import 'package:flutter_application_1/pages/gerente/agenda_general_recursos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/consignas_valor_agregado_page.dart';
@@ -23,17 +22,14 @@ import 'package:flutter_application_1/pages/gerente/carga_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_insumo_page.dart';
 import 'package:flutter_application_1/pages/gerente/crear_residente_page.dart';
 import 'package:flutter_application_1/pages/gerente/residentes_page.dart';
-import 'package:flutter_application_1/pages/gerente/crear_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_conjuntos_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_insumos_page.dart';
-import 'package:flutter_application_1/pages/gerente/lista_maquinaria_page.dart';
 import 'package:flutter_application_1/pages/gerente/reportes_general_dashboard_page.dart';
 import 'package:flutter_application_1/pages/gerente/usuarios_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/zonificacion_page.dart';
-import 'package:flutter_application_1/pages/lista_herramientas_page.dart';
-import 'package:flutter_application_1/pages/stock_herramientas_empresa_page.dart';
+import 'package:flutter_application_1/pages/inventario_activos_page.dart';
+import 'package:flutter_application_1/pages/inventario_page.dart';
 import 'package:flutter_application_1/pages/preventivas_page.dart';
-import 'package:flutter_application_1/pages/tareas_page.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
@@ -46,15 +42,16 @@ import 'package:flutter_application_1/widgets/perfil_action.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
 import '../../service/theme.dart';
-import '../inventario_page.dart';
 import 'crear_usuario_page.dart';
 import 'lista_usuarios_page.dart';
-import '../solicitudes_page.dart';
 import '../cronograma_page.dart';
 import '../cronograma_impresion_page.dart';
 import '../crear_cronograma_page.dart';
 import '../plan_esperanza_page.dart';
 import 'crear_conjunto_page.dart';
+import '../asistencia_grid_page.dart';
+import '../asistencia_qr_page.dart';
+import '../turnos_extra_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -108,7 +105,8 @@ enum _QuickAction {
   // Planeación y tareas
   tareaCrear,
   cronogramaCrear,
-  cronogramaMaquinaria,
+  agendaRecursos,
+  agendaGeneralRecursos,
   festivosCrear,
 
   // Solicitudes y agenda
@@ -118,6 +116,7 @@ enum _QuickAction {
 
   // Extras
   cumpleanos,
+  asistenciaGeneral,
 }
 
 class GerenteDashboardPage extends StatefulWidget {
@@ -439,9 +438,14 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         enabled: enabledNit,
       ),
       item(
-        _QuickAction.cronogramaMaquinaria,
-        "Cronograma maquinaria",
+        _QuickAction.agendaRecursos,
+        "Agenda de recursos",
         Icons.event_repeat,
+      ),
+      item(
+        _QuickAction.agendaGeneralRecursos,
+        "Agenda general de recursos (todos los conjuntos)",
+        Icons.calendar_view_month,
       ),
       item(_QuickAction.festivosCrear, "Crear días festivos", Icons.event),
 
@@ -474,6 +478,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         _QuickAction.cumpleanos,
         "Cumpleaños del mes",
         Icons.cake_outlined,
+        enabled: true,
+      ),
+      item(
+        _QuickAction.asistenciaGeneral,
+        "Asistencia (todos los conjuntos)",
+        Icons.fact_check_outlined,
         enabled: true,
       ),
     ];
@@ -581,11 +591,24 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         return;
 
       case _QuickAction.crearMaquinaria:
-        await go(CrearMaquinariaPage(nit: AppConstants.empresaNit));
+        await go(
+          InventarioActivosPage(
+            empresaId: AppConstants.empresaNit,
+            soloEmpresa: true,
+            abrirCreacionInicial: true,
+          ),
+        );
         return;
 
       case _QuickAction.crearHerramienta:
-        await go(const CrearHerramientaPage());
+        await go(
+          InventarioActivosPage(
+            empresaId: AppConstants.empresaNit,
+            initialClase: ClaseActivoInventario.herramienta,
+            soloEmpresa: true,
+            abrirCreacionInicial: true,
+          ),
+        );
         return;
 
       case _QuickAction.catalogoInsumos:
@@ -594,16 +617,31 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
       case _QuickAction.catalogoMaquinaria:
         await go(
-          ListaMaquinariaGlobalPage(empresaNit: AppConstants.empresaNit),
+          InventarioActivosPage(
+            empresaId: AppConstants.empresaNit,
+            soloEmpresa: true,
+          ),
         );
         return;
 
       case _QuickAction.catalogoHerramientas:
-        await go(const ListaHerramientasPage());
+        await go(
+          InventarioActivosPage(
+            empresaId: AppConstants.empresaNit,
+            initialClase: ClaseActivoInventario.herramienta,
+            soloEmpresa: true,
+          ),
+        );
         return;
 
       case _QuickAction.stockHerramientasEmpresa:
-        await go(const StockHerramientasEmpresaPage());
+        await go(
+          InventarioActivosPage(
+            empresaId: AppConstants.empresaNit,
+            initialClase: ClaseActivoInventario.herramienta,
+            soloEmpresa: true,
+          ),
+        );
         return;
 
       case _QuickAction.tareaCrear:
@@ -623,9 +661,14 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         );
         return;
 
-      // No depende de un conjunto: agrega las necesidades de toda la empresa.
-      case _QuickAction.cronogramaMaquinaria:
-        await go(CronogramaMaquinariaPage(empresaNit: AppConstants.empresaNit));
+      case _QuickAction.agendaRecursos:
+        await go(AgendaRecursosPage(empresaNit: AppConstants.empresaNit));
+        return;
+
+      case _QuickAction.agendaGeneralRecursos:
+        await go(
+          AgendaGeneralRecursosPage(empresaNit: AppConstants.empresaNit),
+        );
         return;
 
       case _QuickAction.agendaHerramientas:
@@ -646,6 +689,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
 
       case _QuickAction.festivosCrear:
         await go(FestivosPage());
+        return;
+
+      case _QuickAction.asistenciaGeneral:
+        await go(const AsistenciaGridPage());
         return;
     }
   }
@@ -707,9 +754,6 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             PlanEsperanzaPage(nit: nit, nombreConjunto: nombreConjunto),
           ),
         ),
-        _Tile("Tareas", Icons.assignment, AppTheme.green, () {
-          _abrirYRecargar(TareasPage(nit: nit));
-        }),
         _Tile("Compromisos", Icons.checklist_rounded, Colors.indigo, () {
           Navigator.push(
             context,
@@ -717,12 +761,6 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
               builder: (_) =>
                   CompromisosPage(nit: nit, nombreConjunto: nombreConjunto),
             ),
-          );
-        }),
-        _Tile("Solicitudes", Icons.pending_actions, AppTheme.green, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => SolicitudesPage(nit: nit)),
           );
         }),
       ]),
@@ -736,31 +774,64 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         _Tile("Cronograma", Icons.calendar_month, Colors.purple, () {
           _abrirYRecargar(CronogramaPage(nit: nit));
         }),
-        _Tile("Maquinaria", Icons.precision_manufacturing, AppTheme.yellow, () {
+        _Tile("Agenda de recursos", Icons.event_repeat, AppTheme.yellow, () {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => AgendaMaquinariaPage(conjuntoId: nit),
+              builder: (_) => AgendaRecursosPage(
+                empresaNit: AppConstants.empresaNit,
+                conjuntoId: nit,
+              ),
             ),
           );
         }),
-        _Tile("Herramientas", Icons.handyman, Colors.orange, () {
+        _Tile("Inventario de insumos", Icons.inventory_2_outlined, Colors.teal, () {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => AgendaHerramientasPage(conjuntoId: nit),
+              builder: (_) => InventarioPage(
+                nit: nit,
+                empresaId: AppConstants.empresaNit,
+                soloInsumos: true,
+              ),
             ),
           );
         }),
-        _Tile("Inventario", Icons.inventory_2_outlined, AppTheme.yellow, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  InventarioPage(nit: nit, empresaId: AppConstants.empresaNit),
-            ),
-          );
-        }),
+        _Tile(
+          "Inventario de maquinaria",
+          Icons.precision_manufacturing_outlined,
+          AppTheme.yellow,
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => InventarioActivosPage(
+                  empresaId: AppConstants.empresaNit,
+                  conjuntoId: nit,
+                  claseFija: true,
+                ),
+              ),
+            );
+          },
+        ),
+        _Tile(
+          "Inventario de herramientas",
+          Icons.handyman_outlined,
+          Colors.orange,
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => InventarioActivosPage(
+                  empresaId: AppConstants.empresaNit,
+                  conjuntoId: nit,
+                  initialClase: ClaseActivoInventario.herramienta,
+                  claseFija: true,
+                ),
+              ),
+            );
+          },
+        ),
       ]),
       _TileSection("Gestion de conjunto", [
         _Tile("Usuarios", Icons.people_outline, AppTheme.green, () {
@@ -889,6 +960,37 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const CumpleanosPage()),
+          );
+        }),
+      ]),
+      _TileSection("Asistencia", [
+        _Tile(
+          "Asistencia",
+          Icons.fact_check_outlined,
+          AppTheme.green,
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    AsistenciaGridPage(conjuntoId: nit, conjuntoNombre: nombreConjunto),
+              ),
+            );
+          },
+        ),
+        _Tile("Turnos extra", Icons.swap_horiz_rounded, AppTheme.primary, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const TurnosExtraPage()),
+          );
+        }),
+        _Tile("QR de asistencia", Icons.qr_code_2_rounded, Colors.teal, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  AsistenciaQrPage(conjuntoId: nit, conjuntoNombre: nombreConjunto),
+            ),
           );
         }),
       ]),
