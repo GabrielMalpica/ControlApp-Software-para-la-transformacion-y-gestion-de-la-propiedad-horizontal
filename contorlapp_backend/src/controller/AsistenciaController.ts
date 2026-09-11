@@ -29,6 +29,8 @@ const ActualizarConceptoBody = z.object({
 const CheckinBody = z.object({
   conjuntoId: z.string().min(1),
   qrPayload: z.string().min(1),
+  latitud: z.coerce.number().min(-90).max(90).optional().nullable(),
+  longitud: z.coerce.number().min(-180).max(180).optional().nullable(),
 });
 
 const UpsertRegistroBody = z.object({
@@ -136,6 +138,8 @@ export class AsistenciaController {
         operarioId,
         conjuntoId: body.conjuntoId,
         qrPayload: body.qrPayload,
+        latitud: body.latitud ?? null,
+        longitud: body.longitud ?? null,
       });
       res.json(resultado);
     } catch (err) {

@@ -57,10 +57,24 @@ const CONCEPTOS_DEFAULT: Array<{
 
 const QR_PREFIX = "CTRLAPP-ASISTENCIA";
 
+// Para el "hoy" de negocio: usa componentes LOCALES (proceso corre con
+// TZ=America/Bogota), asi "hoy" siempre es el dia calendario real del pais.
 function toYmd(d: Date): string {
   return `${d.getFullYear().toString().padStart(4, "0")}-${(d.getMonth() + 1)
     .toString()
     .padStart(2, "0")}-${d.getDate().toString().padStart(2, "0")}`;
+}
+
+// Para fechas "marcador de dia" (columna @db.Date, o construidas con
+// Date.UTC(...)): SIEMPRE usa componentes UTC. Estas fechas no representan un
+// instante real, son un dia puro a medianoche UTC; leerlas con getters locales
+// en un huso negativo (ej. America/Bogota, UTC-5) las corre un dia hacia
+// atras y desalinea el grid (una celda del dia 8 terminaba mostrando fecha
+// "...-07", y al guardar esa fecha devuelta se acumulaba el corrimiento).
+function toYmdUtc(d: Date): string {
+  return `${d.getUTCFullYear().toString().padStart(4, "0")}-${(d.getUTCMonth() + 1)
+    .toString()
+    .padStart(2, "0")}-${d.getUTCDate().toString().padStart(2, "0")}`;
 }
 
 function parseYmdAsUtcDate(ymd: string): Date {
@@ -76,15 +90,28 @@ function nombreCompletoOperario(operario: { usuario?: { nombre: string } | null 
   return operario.usuario?.nombre ?? "";
 }
 
+type DecimalLike = { toNumber?: () => number } | number | string | null;
+
 type RegistroConConcepto = {
   id: number;
   conceptoId: number;
   origen: string;
   horaEntrada: Date | null;
   horaSalida: Date | null;
+  latitudEntrada: DecimalLike;
+  longitudEntrada: DecimalLike;
+  latitudSalida: DecimalLike;
+  longitudSalida: DecimalLike;
   observacion: string | null;
   concepto: { codigo: string; nombre: string; colorHex: string };
 };
+
+function toNumberOrNull(value: DecimalLike): number | null {
+  if (value == null) return null;
+  if (typeof value === "number") return value;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
 
 function serializeRegistro(registro: RegistroConConcepto) {
   return {
@@ -96,6 +123,14 @@ function serializeRegistro(registro: RegistroConConcepto) {
     origen: registro.origen,
     horaEntrada: registro.horaEntrada,
     horaSalida: registro.horaSalida,
+    ubicacionEntrada:
+      toNumberOrNull(registro.latitudEntrada) != null
+        ? { lat: toNumberOrNull(registro.latitudEntrada)!, lng: toNumberOrNull(registro.longitudEntrada)! }
+        : null,
+    ubicacionSalida:
+      toNumberOrNull(registro.latitudSalida) != null
+        ? { lat: toNumberOrNull(registro.latitudSalida)!, lng: toNumberOrNull(registro.longitudSalida)! }
+        : null,
     observacion: registro.observacion,
   };
 }
@@ -211,7 +246,13 @@ export class AsistenciaService {
 
   /* ------------------------------- check-in -------------------------------- */
 
-  async checkin(input: { operarioId: string; conjuntoId: string; qrPayload: string }) {
+  async checkin(input: {
+    operarioId: string;
+    conjuntoId: string;
+    qrPayload: string;
+    latitud?: number | null;
+    longitud?: number | null;
+  }) {
     const conjunto = await this.prisma.conjunto.findUnique({
       where: { nit: input.conjuntoId },
       select: { nit: true, nombre: true, qrAsistenciaToken: true },
@@ -262,6 +303,8 @@ export class AsistenciaService {
           fecha,
           conceptoId: conceptoAsistencia.id,
           horaEntrada: ahora,
+          latitudEntrada: input.latitud ?? null,
+          longitudEntrada: input.longitud ?? null,
           origen: "QR",
           observacion,
         },
@@ -278,7 +321,11 @@ export class AsistenciaService {
     if (existente.horaEntrada && !existente.horaSalida) {
       const actualizado = await this.prisma.registroAsistencia.update({
         where: { id: existente.id },
-        data: { horaSalida: ahora },
+        data: {
+          horaSalida: ahora,
+          latitudSalida: input.latitud ?? null,
+          longitudSalida: input.longitud ?? null,
+        },
         include: { concepto: true },
       });
 
@@ -419,8 +466,19 @@ export class AsistenciaService {
     const primerDia = new Date(Date.UTC(input.anio, input.mes - 1, 1));
     const ultimoDia = new Date(Date.UTC(input.anio, input.mes - 1, totalDias));
 
+    if (input.conjuntoId) {
+      const conjuntoActivo = await this.prisma.conjunto.findFirst({
+        where: { nit: input.conjuntoId, empresaId: input.empresaId, activo: true },
+        select: { nit: true },
+      });
+      if (!conjuntoActivo) {
+        return { anio: input.anio, mes: input.mes, totalDias, operarios: [], gruposPorConjunto: null };
+      }
+    }
+
     const operarioWhere: Prisma.OperarioWhereInput = {
       empresaId: input.empresaId,
+      usuario: { activo: true },
       AND: [
         { fechaIngreso: { lte: ultimoDia } },
         { OR: [{ fechaSalida: null }, { fechaSalida: { gte: primerDia } }] },
@@ -428,7 +486,7 @@ export class AsistenciaService {
           ? [
               {
                 OR: [
-                  { conjuntos: { some: { nit: input.conjuntoId } } },
+                  { conjuntos: { some: { nit: input.conjuntoId, activo: true } } },
                   {
                     registrosAsistencia: {
                       some: { conjuntoId: input.conjuntoId, fecha: { gte: primerDia, lte: ultimoDia } },
@@ -447,7 +505,7 @@ export class AsistenciaService {
         id: true,
         funciones: true,
         usuario: { select: { nombre: true, rol: true } },
-        conjuntos: { select: { nit: true, nombre: true } },
+        conjuntos: { where: { activo: true }, select: { nit: true, nombre: true } },
       },
       orderBy: { usuario: { nombre: "asc" } },
     });
@@ -462,7 +520,7 @@ export class AsistenciaService {
 
     const registrosPorOperario = new Map<string, Map<string, (typeof registros)[number]>>();
     for (const registro of registros) {
-      const key = toYmd(registro.fecha);
+      const key = toYmdUtc(registro.fecha);
       if (!registrosPorOperario.has(registro.operarioId)) {
         registrosPorOperario.set(registro.operarioId, new Map());
       }
@@ -476,28 +534,25 @@ export class AsistenciaService {
       const dias = Array.from({ length: totalDias }, (_, idx) => {
         const dia = idx + 1;
         const fechaObj = new Date(Date.UTC(input.anio, input.mes - 1, dia));
-        const ymd = toYmd(fechaObj);
+        const ymd = toYmdUtc(fechaObj);
         const registro = registrosOp.get(ymd);
         const esFuturo = ymd > hoy;
+        const esPasado = ymd < hoy;
+        const incompleto = Boolean(
+          registro &&
+            registro.origen === "QR" &&
+            registro.horaEntrada &&
+            !registro.horaSalida &&
+            esPasado,
+        );
 
         return {
           dia,
           fecha: ymd,
           diaSemana: fechaObj.getUTCDay(),
           pendiente: !registro && !esFuturo,
-          registro: registro
-            ? {
-                id: registro.id,
-                conceptoId: registro.conceptoId,
-                conceptoCodigo: registro.concepto.codigo,
-                conceptoNombre: registro.concepto.nombre,
-                colorHex: registro.concepto.colorHex,
-                origen: registro.origen,
-                horaEntrada: registro.horaEntrada,
-                horaSalida: registro.horaSalida,
-                observacion: registro.observacion,
-              }
-            : null,
+          incompleto,
+          registro: registro ? serializeRegistro(registro) : null,
         };
       });
 
@@ -511,12 +566,53 @@ export class AsistenciaService {
       };
     });
 
+    const conjuntoOrdenKey = (fila: (typeof filas)[number]) =>
+      fila.conjuntos[0]?.nombre ?? "￿"; // sin conjunto -> al final
+
+    filas.sort((a, b) => {
+      const porConjunto = conjuntoOrdenKey(a).localeCompare(conjuntoOrdenKey(b));
+      if (porConjunto !== 0) return porConjunto;
+      return a.nombre.localeCompare(b.nombre);
+    });
+
+    const gruposPorConjunto = input.conjuntoId ? null : this.agruparPorConjunto(filas);
+
     return {
       anio: input.anio,
       mes: input.mes,
       totalDias,
       operarios: filas,
+      gruposPorConjunto,
     };
+  }
+
+  private agruparPorConjunto<T extends { conjuntos: { nit: string; nombre: string }[] }>(
+    filas: T[],
+  ): Array<{ conjuntoId: string; conjuntoNombre: string; operarios: T[] }> {
+    const grupos: Array<{ conjuntoId: string; conjuntoNombre: string; operarios: T[] }> = [];
+    const indicePorConjunto = new Map<string, number>();
+    const sinConjunto: T[] = [];
+
+    for (const fila of filas) {
+      const principal = fila.conjuntos[0];
+      if (!principal) {
+        sinConjunto.push(fila);
+        continue;
+      }
+      let idx = indicePorConjunto.get(principal.nit);
+      if (idx == null) {
+        idx = grupos.length;
+        indicePorConjunto.set(principal.nit, idx);
+        grupos.push({ conjuntoId: principal.nit, conjuntoNombre: principal.nombre, operarios: [] });
+      }
+      grupos[idx].operarios.push(fila);
+    }
+
+    if (sinConjunto.length > 0) {
+      grupos.push({ conjuntoId: "", conjuntoNombre: "Sin conjunto asignado", operarios: sinConjunto });
+    }
+
+    return grupos;
   }
 
   /* -------------------------------- resumen --------------------------------- */
@@ -543,10 +639,13 @@ export class AsistenciaService {
         nombre: fila.nombre,
         cedula: fila.cedula,
         cargo: fila.cargo,
+        conjuntos: fila.conjuntos,
         pendientes,
         conteoPorConcepto: Object.fromEntries(conteoPorConcepto),
       };
     });
+
+    const gruposPorConjunto = input.conjuntoId ? null : this.agruparPorConjunto(resumen);
 
     const primerDia = new Date(Date.UTC(input.anio, input.mes - 1, 1));
     const ultimoDia = new Date(Date.UTC(input.anio, input.mes - 1, grid.totalDias));
@@ -568,9 +667,10 @@ export class AsistenciaService {
       anio: input.anio,
       mes: input.mes,
       operarios: resumen,
+      gruposPorConjunto,
       turnosExtra: turnosExtra.map((t) => ({
         id: t.id,
-        fecha: toYmd(t.fecha),
+        fecha: toYmdUtc(t.fecha),
         operarioId: t.operarioId,
         operarioNombre: t.operario.usuario?.nombre ?? "",
         conjuntoId: t.conjuntoId,

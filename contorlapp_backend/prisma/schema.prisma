@@ -694,6 +694,11 @@ model RegistroAsistencia {
   horaEntrada DateTime?
   horaSalida  DateTime?
 
+  latitudEntrada  Decimal? @db.Decimal(10, 7)
+  longitudEntrada Decimal? @db.Decimal(10, 7)
+  latitudSalida   Decimal? @db.Decimal(10, 7)
+  longitudSalida  Decimal? @db.Decimal(10, 7)
+
   origen OrigenRegistroAsistencia @default(MANUAL)
 
   observacion String?
