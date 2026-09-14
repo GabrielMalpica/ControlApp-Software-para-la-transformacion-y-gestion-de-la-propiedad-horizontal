@@ -36,6 +36,7 @@ const CerrarMultipartDTO = z.object({
   observaciones: z.string().optional(),
   fechaFinalizarTarea: z.string().optional(),
   insumosUsados: z.string().optional(),
+  clienteCierreId: z.string().uuid().optional(),
 });
 
 export class OperarioService {
@@ -223,6 +224,25 @@ export class OperarioService {
       ? new Date(dto.fechaFinalizarTarea)
       : new Date();
 
+    // La cola offline del operario puede reenviar el mismo cierre si nunca
+    // llegó la confirmación (timeout, app cerrada, etc.). Si ya se procesó
+    // este clienteCierreId, es un replay: no se vuelve a subir evidencias
+    // ni se reprocesa inventario, solo se limpian los archivos temporales
+    // que multer ya escribió a disco para esta petición.
+    if (dto.clienteCierreId) {
+      const yaProcesado = await this.prisma.cierreTareaIdempotencia.findUnique({
+        where: { clienteCierreId: dto.clienteCierreId },
+      });
+      if (yaProcesado) {
+        for (const f of files ?? []) {
+          try {
+            if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+          } catch {}
+        }
+        return;
+      }
+    }
+
     const tarea = await this.prisma.tarea.findUnique({
       where: { id: tareaId },
       select: {
@@ -407,16 +427,18 @@ export class OperarioService {
         throw new Error("Debes indicar el motivo u observación de por qué no se realizó la tarea.");
       }
 
+      const estadoResultante =
+        accion === "NO_COMPLETADA"
+          ? EstadoTarea.NO_COMPLETADA
+          : EstadoTarea.APROBADA;
+
       await tx.tarea.update({
         where: { id: tareaId },
         data: {
           evidencias: evidenciasMerge,
           observaciones: dto.observaciones ?? undefined,
           insumosUsados: accion === "COMPLETADA" ? (insumosUsados as any) : undefined,
-          estado:
-            accion === "NO_COMPLETADA"
-              ? EstadoTarea.NO_COMPLETADA
-              : EstadoTarea.APROBADA,
+          estado: estadoResultante,
           fechaFinalizarTarea: fechaCierre,
           fechaVerificacion:
             accion === "NO_COMPLETADA" ? undefined : fechaCierre,
@@ -424,6 +446,16 @@ export class OperarioService {
           finalizadaPorRol: "OPERARIO",
         },
       });
+
+      if (dto.clienteCierreId) {
+        await tx.cierreTareaIdempotencia.create({
+          data: {
+            clienteCierreId: dto.clienteCierreId,
+            tareaId,
+            estadoResultante,
+          },
+        });
+      }
     });
 
     try {

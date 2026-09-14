@@ -1563,6 +1563,8 @@ model Tarea {
   fechaInicioOriginal    DateTime?
   fechaFinOriginal       DateTime?
 
+  cierresIdempotencia CierreTareaIdempotencia[]
+
   @@index([conjuntoId, fechaInicio])
   @@index([conjuntoId, fechaFin])
   @@index([periodoAnio, periodoMes, conjuntoId])
@@ -1573,6 +1575,20 @@ model Tarea {
   @@index([definicionId], map: "Tarea_definicionId_idx")
   @@index([ocurrenciaPlanId], map: "Tarea_ocurrenciaPlanId_idx")
   @@map("Tarea")
+}
+
+/// Marca de deduplicacion para cierres de tarea reenviados desde la cola
+/// offline del operario (mismo clienteCierreId => misma operacion, no se
+/// reprocesa evidencias ni inventario en el reintento).
+model CierreTareaIdempotencia {
+  clienteCierreId  String      @id
+  tarea            Tarea       @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+  tareaId          Int
+  estadoResultante EstadoTarea
+  creadoEn         DateTime    @default(now())
+
+  @@index([tareaId])
+  @@map("CierreTareaIdempotencia")
 }
 
 model PreventivaExcluidaBorrador {

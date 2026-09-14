@@ -137,6 +137,7 @@ export class OperarioController {
           observaciones: req.body.observaciones,
           fechaFinalizarTarea: req.body.fechaFinalizarTarea,
           insumosUsados: req.body.insumosUsados,
+          clienteCierreId: req.body.clienteCierreId,
         },
         files,
       );
