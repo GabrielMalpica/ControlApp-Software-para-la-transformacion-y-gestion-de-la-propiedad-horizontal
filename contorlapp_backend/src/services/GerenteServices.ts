@@ -1479,7 +1479,7 @@ export class GerenteService {
     const empresaId = await this.resolverEmpresaNit();
     const [insumos, herramientas, supervisores] = await Promise.all([
       this.prisma.insumo.findMany({
-        where: { empresaId },
+        where: { empresaId, conjuntoId: "" },
         select: { id: true, nombre: true, unidad: true },
         orderBy: [{ nombre: "asc" }, { unidad: "asc" }],
       }),

@@ -22,6 +22,7 @@ const InsumoIdParam = z.object({
 const AgregarInsumoBody = z.object({
   insumoId: z.number().int().positive(),
   cantidad: z.coerce.number().positive(),
+  observacion: z.string().max(500).optional(),
 });
 
 const ConsumirBody = z.object({
@@ -101,6 +102,50 @@ export class InventarioController {
     }
   };
 
+  // POST /inventario/conjunto/:nit/insumos-personalizados
+  crearInsumoPersonalizadoConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const { nit } = ConjuntoNitParam.parse(req.params);
+
+      const service = new ConjuntoService(prisma, nit);
+      const out = await service.crearInsumoPersonalizado(req.body);
+
+      res.status(201).json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // PATCH /inventario/conjunto/:nit/insumos-personalizados/:insumoId
+  editarInsumoPersonalizadoConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const { nit } = ConjuntoNitParam.parse(req.params);
+      const { insumoId } = InsumoIdParam.parse(req.params);
+
+      const service = new ConjuntoService(prisma, nit);
+      const out = await service.editarInsumoPersonalizado(insumoId, req.body);
+
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // DELETE /inventario/conjunto/:nit/insumos-personalizados/:insumoId
+  eliminarInsumoPersonalizadoConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const { nit } = ConjuntoNitParam.parse(req.params);
+      const { insumoId } = InsumoIdParam.parse(req.params);
+
+      const service = new ConjuntoService(prisma, nit);
+      await service.eliminarInsumoPersonalizado(insumoId);
+
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  };
+
   // POST /inventario/conjunto/:nit/agregar-stock
   agregarStockConjunto: RequestHandler = async (req, res, next) => {
     try {
@@ -145,6 +190,21 @@ export class InventarioController {
         return;
       }
       res.json(item);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /inventario/conjunto/:nit/insumos/:insumoId/movimientos
+  listarMovimientosInsumoConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const { nit } = ConjuntoNitParam.parse(req.params);
+      const { insumoId } = InsumoIdParam.parse(req.params);
+
+      const service = new ConjuntoService(prisma, nit);
+      const out = await service.listarMovimientosInsumo(insumoId);
+
+      res.json(out);
     } catch (err) {
       next(err);
     }

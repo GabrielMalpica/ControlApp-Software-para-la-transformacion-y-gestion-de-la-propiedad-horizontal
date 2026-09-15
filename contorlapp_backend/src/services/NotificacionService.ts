@@ -407,6 +407,105 @@ export class NotificacionService {
     });
   }
 
+  /**
+   * Notifica a gerentes/jefes de operaciones/supervisores de la empresa y al
+   * administrador del conjunto que uno o mas insumos quedaron en (o debajo
+   * de) su umbral bajo configurado, para que sepan que hay que comprar mas.
+   * Se llama al detectar el cruce del umbral (no cada vez que sigue bajo),
+   * para no saturar de notificaciones repetidas.
+   */
+  async notificarInsumoStockBajo(input: {
+    conjuntoId: string;
+    items: Array<{
+      insumoId: number;
+      nombre: string;
+      unidad: string;
+      cantidad: number;
+      umbral: number | null;
+      agotado?: boolean;
+      contenidoPorUnidad: number | null;
+      unidadContenido: string | null;
+    }>;
+  }): Promise<void> {
+    if (input.items.length === 0) return;
+
+    const conjunto = await this.db.conjunto.findUnique({
+      where: { nit: input.conjuntoId },
+      select: { nombre: true, empresaId: true, administradorId: true },
+    });
+    if (!conjunto) return;
+
+    const destinatarios = new Set<string>();
+    if (conjunto.administradorId) destinatarios.add(conjunto.administradorId);
+
+    if (conjunto.empresaId) {
+      const [gerentes, jefes, supervisores] = await Promise.all([
+        this.db.gerente.findMany({
+          where: { empresaId: conjunto.empresaId },
+          select: { id: true },
+        }),
+        this.db.jefeOperaciones.findMany({
+          where: { empresaId: conjunto.empresaId },
+          select: { id: true },
+        }),
+        this.db.supervisor.findMany({
+          where: { empresaId: conjunto.empresaId },
+          select: { id: true },
+        }),
+      ]);
+
+      for (const g of gerentes) destinatarios.add(g.id);
+      for (const j of jefes) destinatarios.add(j.id);
+      for (const s of supervisores) destinatarios.add(s.id);
+    }
+
+    if (destinatarios.size === 0) return;
+
+    const nombreConjunto = conjunto.nombre ?? input.conjuntoId;
+    const cantidadTexto = (it: (typeof input.items)[number]) => {
+      if (!it.contenidoPorUnidad || !it.unidadContenido) {
+        return `${it.cantidad} ${it.unidad}`;
+      }
+      const total = it.cantidad * it.contenidoPorUnidad;
+      const totalTxt = Number.isInteger(total)
+        ? total.toFixed(0)
+        : total.toFixed(2);
+      return `${totalTxt} ${it.unidadContenido}`;
+    };
+    const etiquetaItem = (it: (typeof input.items)[number]) =>
+      `${it.agotado ? "AGOTADO: " : ""}${it.nombre} (${cantidadTexto(it)})`;
+
+    const hayAgotados = input.items.some((it) => it.agotado);
+    const todosAgotados = input.items.every((it) => it.agotado);
+
+    const mensaje =
+      input.items.length === 1
+        ? `${input.items[0].nombre} ${
+            input.items[0].agotado ? "se agoto" : "esta bajo de stock"
+          } (${cantidadTexto(input.items[0])}) en ${nombreConjunto}. Hay que comprar mas.`
+        : `${input.items.length} insumos ${
+            todosAgotados
+              ? "estan agotados"
+              : hayAgotados
+                ? "estan bajos de stock (alguno ya agotado)"
+                : "estan bajos de stock"
+          } en ${nombreConjunto}: ${input.items.map(etiquetaItem).join(", ")}.`;
+
+    await this.crearParaUsuarios({
+      usuarioIds: Array.from(destinatarios),
+      tipo: "INSUMO_STOCK_BAJO",
+      titulo: hayAgotados
+        ? (input.items.length === 1 ? "Insumo agotado" : "Insumos con stock bajo/agotado")
+        : (input.items.length === 1 ? "Insumo con stock bajo" : "Insumos con stock bajo"),
+      mensaje,
+      referenciaTipo: "CONJUNTO",
+      data: {
+        conjuntoId: input.conjuntoId,
+        items: input.items,
+      },
+    });
+  }
+
   async notificarPqrsCreadaPorAdministrador(input: {
     compromisoId: number;
     conjuntoId: string;

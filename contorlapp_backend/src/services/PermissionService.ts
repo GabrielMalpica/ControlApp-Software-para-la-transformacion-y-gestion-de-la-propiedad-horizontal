@@ -466,6 +466,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "solicitudes.crear",
     "cronograma.ver",
     "inventario.ver",
+    "inventario.gestionar",
     "maquinaria.ver",
     "maquinaria.crear",
     "herramientas.ver",

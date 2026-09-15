@@ -57,6 +57,27 @@ router.get(
   requireConjuntoScope("nit"),
   c.listarInsumosBajosConjunto,
 );
+router.post(
+  "/conjunto/:nit/insumos-personalizados",
+  requireRoles("gerente", "jefe_operaciones"),
+  requirePermission("inventario.gestionar"),
+  requireConjuntoScope("nit"),
+  c.crearInsumoPersonalizadoConjunto,
+);
+router.patch(
+  "/conjunto/:nit/insumos-personalizados/:insumoId",
+  requireRoles("gerente", "jefe_operaciones"),
+  requirePermission("inventario.gestionar"),
+  requireConjuntoScope("nit"),
+  c.editarInsumoPersonalizadoConjunto,
+);
+router.delete(
+  "/conjunto/:nit/insumos-personalizados/:insumoId",
+  requireRoles("gerente", "jefe_operaciones"),
+  requirePermission("inventario.gestionar"),
+  requireConjuntoScope("nit"),
+  c.eliminarInsumoPersonalizadoConjunto,
+);
 router.post("/conjunto/:nit/agregar-stock", requirePermission("inventario.gestionar"), requireConjuntoScope("nit"), c.agregarStockConjunto);
 router.post(
   "/conjunto/:nit/consumir-stock",
@@ -65,6 +86,12 @@ router.post(
   c.consumirStockConjunto,
 );
 router.get("/conjunto/:nit/insumos/:insumoId", requirePermission("inventario.ver"), requireConjuntoScope("nit"), c.buscarInsumoConjunto);
+router.get(
+  "/conjunto/:nit/insumos/:insumoId/movimientos",
+  requirePermission("inventario.ver"),
+  requireConjuntoScope("nit"),
+  c.listarMovimientosInsumoConjunto,
+);
 
 // ✅ legacy por inventarioId (si aún los usas)
 router.post("/:inventarioId/insumos", requirePermission("inventario.gestionar"), requireResourceScope("inventario", "inventarioId"), c.agregarInsumo);

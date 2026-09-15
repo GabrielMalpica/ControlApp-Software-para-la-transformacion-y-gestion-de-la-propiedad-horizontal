@@ -945,12 +945,27 @@ model Insumo {
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
   empresaId String
 
+  // "" (default) = insumo del catalogo de empresa (compra/Woo).
+  // nit de un conjunto = insumo personalizado, creado y visible solo para ese
+  // conjunto (no aparece en el catalogo de empresa ni es comprable via Woo).
+  // No es una relacion formal de Prisma porque "" no corresponde a ningun
+  // Conjunto real; el conjunto (si aplica) se valida en la capa de servicio.
+  conjuntoId String @default("")
+
   wooSku              String?
   wooProductId        Int?
   // Cuantas unidades de "unidad" trae CADA unidad comprada en la tienda Woo.
   // Ej: el insumo se mide en litros y la tienda vende una garrafa de 3L =>
   // wooFactorConversion = 3. Comprar 2 garrafas suma 6, no 2, al inventario.
   wooFactorConversion Decimal @default(1) @db.Decimal(12, 4)
+
+  // Contenido medible de CADA "unidad" contada en inventario, para mostrar el
+  // total real en stock sin cambiar como se cuenta. Ej: unidad = "tarro",
+  // contenidoPorUnidad = 1.8, unidadContenido = "L" => 4 tarros = 7.2 L.
+  // Ambos opcionales y van juntos: si no se conoce el contenido (ej. escobas,
+  // que se cuentan por unidad simple) se dejan null y no se muestra total.
+  contenidoPorUnidad Decimal? @db.Decimal(12, 4)
+  unidadContenido    String?
 
   inventarios                InventarioInsumo[]
   consumos                   ConsumoInsumo[]
@@ -960,9 +975,10 @@ model Insumo {
   tareas                     Tarea[]
   pedidoAppItems             PedidoAppItem[]
 
-  @@unique([empresaId, nombre, unidad])
+  @@unique([empresaId, conjuntoId, nombre, unidad])
   @@unique([empresaId, wooSku])
   @@unique([empresaId, wooProductId])
+  @@index([empresaId, conjuntoId])
   @@map("Insumo")
 }
 

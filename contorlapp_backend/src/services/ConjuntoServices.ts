@@ -83,6 +83,40 @@ export class ConjuntoService {
     return invService.agregarStock(payload);
   }
 
+  async crearInsumoPersonalizado(payload: unknown) {
+    const empresaId = await this.empresaIdDelConjunto();
+    const inventarioId = await this.getOrCreateInventarioId();
+    const invService = new InventarioService(this.prisma, inventarioId);
+    return invService.crearInsumoPersonalizado(payload, {
+      empresaId,
+      conjuntoId: this.conjuntoId,
+    });
+  }
+
+  async editarInsumoPersonalizado(insumoId: number, payload: unknown) {
+    const empresaId = await this.empresaIdDelConjunto();
+    const inventarioId = await this.getOrCreateInventarioId();
+    const invService = new InventarioService(this.prisma, inventarioId);
+    return invService.editarInsumoPersonalizado(insumoId, payload, {
+      empresaId,
+      conjuntoId: this.conjuntoId,
+    });
+  }
+
+  async eliminarInsumoPersonalizado(insumoId: number) {
+    const inventarioId = await this.getOrCreateInventarioId();
+    const invService = new InventarioService(this.prisma, inventarioId);
+    return invService.eliminarInsumoPersonalizado(insumoId, {
+      conjuntoId: this.conjuntoId,
+    });
+  }
+
+  async listarMovimientosInsumo(insumoId: number) {
+    const inventarioId = await this.getOrCreateInventarioId();
+    const invService = new InventarioService(this.prisma, inventarioId);
+    return invService.listarMovimientos(insumoId);
+  }
+
   async consumirStock(payload: unknown) {
     const inventarioId = await this.getOrCreateInventarioId();
     const invService = new InventarioService(this.prisma, inventarioId);

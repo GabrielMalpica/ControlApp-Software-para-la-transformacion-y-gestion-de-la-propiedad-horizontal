@@ -1,8 +1,12 @@
 // src/services/InventarioService.ts
-import { TipoMovimientoInsumo } from "@prisma/client";
+import { TipoMovimientoInsumo, CategoriaInsumo } from "@prisma/client";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { decToNumber, toDec } from "../utils/decimal";
+import {
+  CrearInsumoPersonalizadoDTO,
+  EditarInsumoPersonalizadoDTO,
+} from "../model/Insumo";
 
 const AgregarInsumoDTO = z.object({
   insumoId: z.number().int().positive(),
@@ -39,7 +43,9 @@ const AgregarStockDTO = z.object({
 });
 
 const ConsumirDTO = z.object({
-  conjuntoId: z.string().min(1),
+  // Solo lo necesita consumirInsumoPorId (busca el inventario por conjunto).
+  // consumirStock no lo usa: ya opera sobre this.inventarioId.
+  conjuntoId: z.string().min(1).optional(),
   insumoId: z.number().int().positive(),
   cantidad: z.coerce.number().positive(), // 👈 decimal ok
   operarioId: z.string().min(1).optional(),
@@ -52,6 +58,22 @@ export const SetUmbralDTO = z.object({
   umbralMinimo: z.coerce.number().int().min(0),
 });
 
+/**
+ * cantidad (num. de "unidad" contadas, ej. tarros) * contenidoPorUnidad
+ * (ej. 1.8 L por tarro) = total real disponible en unidadContenido.
+ * Null cuando no se conoce el contenido por unidad (ej. items que se
+ * cuentan por unidad simple, como escobas).
+ */
+function calcularTotalDisponible(
+  cantidad: number,
+  contenidoPorUnidad: Prisma.Decimal | number | null | undefined,
+): number | null {
+  if (contenidoPorUnidad === null || contenidoPorUnidad === undefined) {
+    return null;
+  }
+  return cantidad * decToNumber(contenidoPorUnidad);
+}
+
 export class InventarioService {
   constructor(
     private prisma: PrismaClient,
@@ -59,6 +81,262 @@ export class InventarioService {
   ) {}
 
   /* ========= Stock básico ========= */
+
+  /**
+   * Crea un insumo "personalizado" (no pasa por el catálogo de empresa, no es
+   * comprable via Woo) y lo agrega de una vez al inventario de este conjunto
+   * con su stock inicial. Pensado para presentaciones propias del conjunto
+   * (ej. "Clorox galón" en vez del "Clorox 1L x6" del catálogo) o para
+   * insumos que la empresa no vende pero el cliente quiere controlar.
+   */
+  async crearInsumoPersonalizado(
+    payload: unknown,
+    ctx: { empresaId: string; conjuntoId: string },
+  ) {
+    const dto = CrearInsumoPersonalizadoDTO.parse(payload);
+    const cantidadInicial = dto.cantidadInicial ?? 0;
+
+    return this.prisma.$transaction(async (tx) => {
+      // Puede existir un Insumo huérfano con el mismo nombre/unidad si antes
+      // se eliminó del inventario (eliminarInsumo solo borra el vínculo
+      // InventarioInsumo, no el catálogo). En ese caso lo reutilizamos en vez
+      // de fallar por duplicado.
+      const existente = await tx.insumo.findFirst({
+        where: {
+          empresaId: ctx.empresaId,
+          conjuntoId: ctx.conjuntoId,
+          nombre: dto.nombre,
+          unidad: dto.unidad,
+        },
+        select: { id: true },
+      });
+
+      if (existente) {
+        const vinculado = await tx.inventarioInsumo.findUnique({
+          where: {
+            inventarioId_insumoId: {
+              inventarioId: this.inventarioId,
+              insumoId: existente.id,
+            },
+          },
+          select: { id: true },
+        });
+        if (vinculado) {
+          throw new Error(
+            "Ya existe un insumo personalizado con ese nombre y unidad en este conjunto.",
+          );
+        }
+      }
+
+      const contenidoPorUnidad = dto.contenidoPorUnidad
+        ? toDec(dto.contenidoPorUnidad)
+        : null;
+      const unidadContenido = dto.unidadContenido ?? null;
+
+      const insumo = existente
+        ? await tx.insumo.update({
+            where: { id: existente.id },
+            data: {
+              categoria: dto.categoria,
+              umbralBajo: dto.umbralBajo ?? null,
+              contenidoPorUnidad,
+              unidadContenido,
+            },
+          })
+        : await tx.insumo.create({
+            data: {
+              nombre: dto.nombre,
+              unidad: dto.unidad,
+              categoria: dto.categoria,
+              umbralBajo: dto.umbralBajo ?? null,
+              empresaId: ctx.empresaId,
+              conjuntoId: ctx.conjuntoId,
+              contenidoPorUnidad,
+              unidadContenido,
+            },
+          });
+
+      const inventarioInsumo = await tx.inventarioInsumo.create({
+        data: {
+          inventarioId: this.inventarioId,
+          insumoId: insumo.id,
+          cantidad: toDec(cantidadInicial),
+        },
+      });
+
+      if (cantidadInicial > 0) {
+        await tx.consumoInsumo.create({
+          data: {
+            inventarioId: this.inventarioId,
+            insumoId: insumo.id,
+            tipo: TipoMovimientoInsumo.ENTRADA,
+            cantidad: toDec(cantidadInicial),
+            fecha: new Date(),
+            observacion: "Stock inicial - insumo personalizado",
+          },
+        });
+      }
+
+      return {
+        inventarioInsumoId: inventarioInsumo.id,
+        insumoId: insumo.id,
+        nombre: insumo.nombre,
+        unidad: insumo.unidad,
+        categoria: insumo.categoria as CategoriaInsumo,
+        umbralBajo: insumo.umbralBajo,
+        umbralMinimo: inventarioInsumo.umbralMinimo ?? null,
+        cantidad: cantidadInicial,
+        personalizado: true,
+        contenidoPorUnidad: insumo.contenidoPorUnidad
+          ? decToNumber(insumo.contenidoPorUnidad)
+          : null,
+        unidadContenido: insumo.unidadContenido,
+        totalDisponible: calcularTotalDisponible(
+          cantidadInicial,
+          insumo.contenidoPorUnidad,
+        ),
+      };
+    });
+  }
+
+  /**
+   * Edita un insumo personalizado de este conjunto (nombre, unidad,
+   * categoria, umbral, contenido medible). No permite tocar el catálogo de
+   * empresa (conjuntoId "") ni insumos personalizados de otro conjunto.
+   */
+  async editarInsumoPersonalizado(
+    insumoId: number,
+    payload: unknown,
+    ctx: { empresaId: string; conjuntoId: string },
+  ) {
+    const dto = EditarInsumoPersonalizadoDTO.parse(payload);
+
+    return this.prisma.$transaction(async (tx) => {
+      const actual = await tx.insumo.findUnique({ where: { id: insumoId } });
+      if (
+        !actual ||
+        actual.empresaId !== ctx.empresaId ||
+        actual.conjuntoId !== ctx.conjuntoId
+      ) {
+        throw new Error(
+          "Este insumo no es un insumo personalizado de este conjunto.",
+        );
+      }
+
+      const nombre = dto.nombre ?? actual.nombre;
+      const unidad = dto.unidad ?? actual.unidad;
+
+      if (nombre !== actual.nombre || unidad !== actual.unidad) {
+        const duplicado = await tx.insumo.findFirst({
+          where: {
+            empresaId: ctx.empresaId,
+            conjuntoId: ctx.conjuntoId,
+            nombre,
+            unidad,
+            NOT: { id: insumoId },
+          },
+          select: { id: true },
+        });
+        if (duplicado) {
+          throw new Error(
+            "Ya existe otro insumo personalizado con ese nombre y unidad en este conjunto.",
+          );
+        }
+      }
+
+      const insumo = await tx.insumo.update({
+        where: { id: insumoId },
+        data: {
+          nombre,
+          unidad,
+          categoria: dto.categoria ?? actual.categoria,
+          umbralBajo:
+            dto.umbralBajo === undefined ? actual.umbralBajo : dto.umbralBajo,
+          contenidoPorUnidad:
+            dto.contenidoPorUnidad === undefined
+              ? actual.contenidoPorUnidad
+              : dto.contenidoPorUnidad
+                ? toDec(dto.contenidoPorUnidad)
+                : null,
+          unidadContenido:
+            dto.unidadContenido === undefined
+              ? actual.unidadContenido
+              : dto.unidadContenido,
+        },
+      });
+
+      const inventarioInsumo = await tx.inventarioInsumo.findUnique({
+        where: {
+          inventarioId_insumoId: {
+            inventarioId: this.inventarioId,
+            insumoId,
+          },
+        },
+      });
+      const cantidad = decToNumber(inventarioInsumo?.cantidad ?? 0);
+
+      return {
+        inventarioInsumoId: inventarioInsumo?.id ?? null,
+        insumoId: insumo.id,
+        nombre: insumo.nombre,
+        unidad: insumo.unidad,
+        categoria: insumo.categoria as CategoriaInsumo,
+        umbralBajo: insumo.umbralBajo,
+        umbralMinimo: inventarioInsumo?.umbralMinimo ?? null,
+        cantidad,
+        personalizado: true,
+        contenidoPorUnidad: insumo.contenidoPorUnidad
+          ? decToNumber(insumo.contenidoPorUnidad)
+          : null,
+        unidadContenido: insumo.unidadContenido,
+        totalDisponible: calcularTotalDisponible(
+          cantidad,
+          insumo.contenidoPorUnidad,
+        ),
+      };
+    });
+  }
+
+  /**
+   * Elimina un insumo personalizado del inventario de este conjunto. Si no
+   * tiene historial de movimientos, borra tambien el registro del insumo;
+   * si tiene historial (ConsumoInsumo, etc.) solo se desvincula del
+   * inventario para no perder ese historial, igual que eliminarInsumo.
+   */
+  async eliminarInsumoPersonalizado(
+    insumoId: number,
+    ctx: { conjuntoId: string },
+  ) {
+    const insumo = await this.prisma.insumo.findUnique({
+      where: { id: insumoId },
+      select: { id: true, conjuntoId: true },
+    });
+    if (!insumo || insumo.conjuntoId !== ctx.conjuntoId) {
+      throw new Error(
+        "Este insumo no es un insumo personalizado de este conjunto.",
+      );
+    }
+
+    await this.prisma.inventarioInsumo.delete({
+      where: {
+        inventarioId_insumoId: { inventarioId: this.inventarioId, insumoId },
+      },
+    });
+
+    // Solo se borra el registro del insumo si no tiene historial (evita
+    // depender de como cada driver reporta la violacion de FK). Si tiene
+    // movimientos u otras referencias, se deja huerfano: crearInsumoPersonalizado
+    // lo reutiliza si se vuelve a crear con el mismo nombre/unidad.
+    const [consumos, otrosInventarios] = await Promise.all([
+      this.prisma.consumoInsumo.count({ where: { insumoId } }),
+      this.prisma.inventarioInsumo.count({ where: { insumoId } }),
+    ]);
+    if (consumos === 0 && otrosInventarios === 0) {
+      await this.prisma.insumo
+        .delete({ where: { id: insumoId } })
+        .catch(() => undefined);
+    }
+  }
 
   async agregarInsumo(payload: unknown) {
     const { insumoId, cantidad } = AgregarInsumoDTO.parse(payload);
@@ -98,17 +376,30 @@ export class InventarioService {
         const categoriaOk = !categoria || cat === categoria;
         return nombreOk && categoriaOk;
       })
-      .map((r) => ({
-        inventarioInsumoId: r.id,
-        insumoId: r.insumoId,
-        nombre: r.insumo.nombre,
-        unidad: r.insumo.unidad,
-        categoria: ((r.insumo as any).categoria as string | undefined) ?? null,
-        umbralBajo:
-          ((r.insumo as any).umbralBajo as number | undefined) ?? null,
-        umbralMinimo: r.umbralMinimo ?? null,
-        cantidad: decToNumber(r.cantidad),
-      }));
+      .map((r) => {
+        const cantidad = decToNumber(r.cantidad);
+        return {
+          inventarioInsumoId: r.id,
+          insumoId: r.insumoId,
+          nombre: r.insumo.nombre,
+          unidad: r.insumo.unidad,
+          categoria:
+            ((r.insumo as any).categoria as string | undefined) ?? null,
+          umbralBajo:
+            ((r.insumo as any).umbralBajo as number | undefined) ?? null,
+          umbralMinimo: r.umbralMinimo ?? null,
+          cantidad,
+          personalizado: Boolean((r.insumo as any).conjuntoId),
+          contenidoPorUnidad: r.insumo.contenidoPorUnidad
+            ? decToNumber(r.insumo.contenidoPorUnidad)
+            : null,
+          unidadContenido: r.insumo.unidadContenido,
+          totalDisponible: calcularTotalDisponible(
+            cantidad,
+            r.insumo.contenidoPorUnidad,
+          ),
+        };
+      });
   }
 
   async agregarStock(payload: unknown) {
@@ -174,6 +465,7 @@ export class InventarioService {
 
     if (!row) return null;
 
+    const cantidad = decToNumber(row.cantidad);
     return {
       inventarioInsumoId: row.id,
       insumoId: row.insumoId,
@@ -183,12 +475,24 @@ export class InventarioService {
       umbralBajo:
         ((row.insumo as any).umbralBajo as number | undefined) ?? null,
       umbralMinimo: row.umbralMinimo ?? null,
-      cantidad: decToNumber(row.cantidad),
+      cantidad,
+      personalizado: Boolean((row.insumo as any).conjuntoId),
+      contenidoPorUnidad: row.insumo.contenidoPorUnidad
+        ? decToNumber(row.insumo.contenidoPorUnidad)
+        : null,
+      unidadContenido: row.insumo.unidadContenido,
+      totalDisponible: calcularTotalDisponible(
+        cantidad,
+        row.insumo.contenidoPorUnidad,
+      ),
     };
   }
 
   async consumirInsumoPorId(payload: unknown) {
     const dto = ConsumirDTO.parse(payload);
+    if (!dto.conjuntoId) {
+      throw new Error("conjuntoId es requerido para consumirInsumoPorId.");
+    }
 
     const cant = new Prisma.Decimal(dto.cantidad);
 
@@ -316,6 +620,42 @@ export class InventarioService {
     });
   }
 
+  /**
+   * Kardex: historial de entradas/salidas de un insumo en este inventario,
+   * con saldo corriente calculado desde el primer movimiento. Requiere que
+   * todo ingreso/salida se registre como ConsumoInsumo (ya es el caso: stock
+   * inicial, agregarStock, consumirStock y el consumo al cerrar tareas).
+   */
+  async listarMovimientos(insumoId: number) {
+    const movimientos = await this.prisma.consumoInsumo.findMany({
+      where: { inventarioId: this.inventarioId, insumoId },
+      orderBy: { fecha: "asc" },
+      include: {
+        operario: { select: { usuario: { select: { nombre: true } } } },
+        tarea: { select: { id: true, descripcion: true } },
+      },
+    });
+
+    let saldo = 0;
+    const conSaldo = movimientos.map((m) => {
+      const cantidad = decToNumber(m.cantidad);
+      saldo += m.tipo === TipoMovimientoInsumo.ENTRADA ? cantidad : -cantidad;
+      return {
+        id: m.id,
+        tipo: m.tipo as TipoMovimientoInsumo,
+        cantidad,
+        saldo,
+        fecha: m.fecha,
+        observacion: m.observacion,
+        operario: m.operario?.usuario.nombre ?? null,
+        tareaId: m.tareaId,
+        tareaDescripcion: m.tarea?.descripcion ?? null,
+      };
+    });
+
+    return conSaldo.reverse(); // más reciente primero
+  }
+
   async listarInsumos(): Promise<string[]> {
     const insumos = await this.prisma.inventarioInsumo.findMany({
       where: { inventarioId: this.inventarioId },
@@ -349,6 +689,10 @@ export class InventarioService {
       umbralUsado: number;
       umbralMinimo: number | null;
       umbralBajo: number | null;
+      personalizado: boolean;
+      contenidoPorUnidad: number | null;
+      unidadContenido: string | null;
+      totalDisponible: number | null;
     }> = [];
 
     for (const r of rows) {
@@ -382,6 +726,15 @@ export class InventarioService {
           umbralUsado: umbralEfectivo,
           umbralMinimo: r.umbralMinimo ?? null,
           umbralBajo: umbralGlobal ?? null,
+          personalizado: Boolean((r.insumo as any).conjuntoId),
+          contenidoPorUnidad: r.insumo.contenidoPorUnidad
+            ? decToNumber(r.insumo.contenidoPorUnidad)
+            : null,
+          unidadContenido: r.insumo.unidadContenido,
+          totalDisponible: calcularTotalDisponible(
+            cant,
+            r.insumo.contenidoPorUnidad,
+          ),
         });
       }
     }

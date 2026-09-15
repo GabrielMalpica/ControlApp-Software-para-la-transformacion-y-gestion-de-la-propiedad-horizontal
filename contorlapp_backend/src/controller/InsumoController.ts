@@ -18,6 +18,7 @@ export class InsumoController {
     const existe = await prisma.insumo.findFirst({
       where: {
         empresaId,
+        conjuntoId: "",
         nombre: dto.nombre,
         unidad: dto.unidad,
       },
@@ -45,6 +46,7 @@ export class InsumoController {
 
     const where = {
       empresaId: (f.empresaId ?? EMPRESA_CORPORATIVA),
+      conjuntoId: "",
       nombre: f.nombre ? { contains: f.nombre, mode: "insensitive" as const } : undefined,
       categoria: f.categoria ?? undefined,
     };

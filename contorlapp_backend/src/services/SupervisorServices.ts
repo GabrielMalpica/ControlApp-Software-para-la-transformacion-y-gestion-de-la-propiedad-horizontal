@@ -674,6 +674,20 @@ export class SupervisorService {
 
     const evidenciasMerge = [...(tarea.evidencias ?? []), ...urls];
 
+    // Insumos que cruzan el umbral bajo, o que llegan a 0, durante este
+    // cierre (para notificar una sola vez por cruce, no en cada consumo
+    // mientras siguen bajos).
+    const stockBajoDetectado: Array<{
+      insumoId: number;
+      nombre: string;
+      unidad: string;
+      cantidad: number;
+      umbral: number | null;
+      agotado: boolean;
+      contenidoPorUnidad: number | null;
+      unidadContenido: string | null;
+    }> = [];
+
     // 3) Transacción: descontar inventario + registrar consumo + liberar usos + cerrar tarea
     await this.prisma.$transaction(async (tx) => {
       const inventario = accion === "COMPLETADA"
@@ -696,7 +710,20 @@ export class SupervisorService {
               insumoId: item.insumoId,
             },
           },
-          select: { id: true, cantidad: true },
+          select: {
+            id: true,
+            cantidad: true,
+            umbralMinimo: true,
+            insumo: {
+              select: {
+                nombre: true,
+                unidad: true,
+                umbralBajo: true,
+                contenidoPorUnidad: true,
+                unidadContenido: true,
+              },
+            },
+          },
         });
 
         if (!invItem) {
@@ -715,10 +742,40 @@ export class SupervisorService {
           );
         }
 
+        const nuevaCantidad = actual.minus(usar);
+
         await tx.inventarioInsumo.update({
           where: { id: invItem.id },
-          data: { cantidad: actual.minus(usar) },
+          data: { cantidad: nuevaCantidad },
         });
+
+        // Umbral efectivo: el propio del conjunto para este insumo, o si no
+        // hay, el del insumo. Sin umbral configurado, no se notifica.
+        const umbralEfectivo =
+          invItem.umbralMinimo ?? invItem.insumo.umbralBajo ?? null;
+        const cruzoUmbral =
+          umbralEfectivo != null &&
+          actual.greaterThan(umbralEfectivo) &&
+          nuevaCantidad.lessThanOrEqualTo(umbralEfectivo);
+        // Llegar a 0 siempre se avisa aparte, aunque ya se hubiera avisado
+        // por umbral antes: es el punto en el que de verdad toca comprar.
+        const seAgoto =
+          actual.greaterThan(0) && nuevaCantidad.lessThanOrEqualTo(0);
+
+        if (cruzoUmbral || seAgoto) {
+          stockBajoDetectado.push({
+            insumoId: item.insumoId,
+            nombre: invItem.insumo.nombre,
+            unidad: invItem.insumo.unidad,
+            cantidad: nuevaCantidad.toNumber(),
+            umbral: umbralEfectivo,
+            agotado: seAgoto,
+            contenidoPorUnidad: invItem.insumo.contenidoPorUnidad
+              ? invItem.insumo.contenidoPorUnidad.toNumber()
+              : null,
+            unidadContenido: invItem.insumo.unidadContenido,
+          });
+        }
 
         await tx.consumoInsumo.create({
           data: {
@@ -796,6 +853,13 @@ export class SupervisorService {
           actorRol: this.actorRolDb(),
           supervisorId: tarea.supervisorId,
         });
+
+        if (stockBajoDetectado.length > 0) {
+          await notificaciones.notificarInsumoStockBajo({
+            conjuntoId: tarea.conjuntoId,
+            items: stockBajoDetectado,
+          });
+        }
       }
     } catch (e) {
       console.error("No se pudo notificar cierre de tarea (supervisor):", e);

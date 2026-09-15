@@ -587,6 +587,7 @@ export class EmpresaService {
     const existe = await prisma.insumo.findFirst({
       where: {
         empresaId: this.empresaNit,
+        conjuntoId: "",
         nombre: dto.nombre,
         unidad: dto.unidad,
       },
@@ -618,6 +619,7 @@ export class EmpresaService {
     const insumos = await prisma.insumo.findMany({
       where: {
         empresaId: filtro.empresaId ?? this.empresaNit,
+        conjuntoId: "",
         categoria: filtro.categoria ?? undefined,
         nombre: filtro.nombre
           ? { contains: filtro.nombre, mode: "insensitive" }
@@ -634,7 +636,7 @@ export class EmpresaService {
     const { id } = IdNumericoDTO.parse(payload);
 
     const insumo = await prisma.insumo.findFirst({
-      where: { id, empresaId: this.empresaNit },
+      where: { id, empresaId: this.empresaNit, conjuntoId: "" },
       select: insumoPublicSelect,
     });
 
@@ -645,7 +647,7 @@ export class EmpresaService {
     const dto = EditarInsumoDTO.parse(payload);
 
     const existente = await prisma.insumo.findFirst({
-      where: { id, empresaId: this.empresaNit },
+      where: { id, empresaId: this.empresaNit, conjuntoId: "" },
       select: { id: true },
     });
     if (!existente) throw new Error("Insumo no encontrado para esta empresa.");
@@ -667,7 +669,7 @@ export class EmpresaService {
 
   async eliminarInsumoCatalogo(id: number) {
     const existente = await prisma.insumo.findFirst({
-      where: { id, empresaId: this.empresaNit },
+      where: { id, empresaId: this.empresaNit, conjuntoId: "" },
       select: { id: true },
     });
     if (!existente) throw new Error("Insumo no encontrado para esta empresa.");

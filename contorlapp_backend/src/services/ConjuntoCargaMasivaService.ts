@@ -193,7 +193,7 @@ export class ConjuntoCargaMasivaService {
 
     const [insumosCatalogo, herramientasCatalogo] = await Promise.all([
       this.prisma.insumo.findMany({
-        where: { empresaId },
+        where: { empresaId, conjuntoId: "" },
         select: { id: true, nombre: true, unidad: true },
       }),
       this.prisma.herramienta.findMany({
