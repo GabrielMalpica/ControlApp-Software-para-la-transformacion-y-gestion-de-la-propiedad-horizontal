@@ -170,6 +170,7 @@ enum TipoFuncion {
   TODERO
   SALVAVIDAS
   ASEO
+  PISCINERO
 }
 
 enum OrigenRegistroAsistencia {
@@ -614,6 +615,12 @@ model Operario {
   usoHerramientas         UsoHerramienta[]
   disponibilidadPeriodos  OperarioDisponibilidadPeriodo[]
 
+  // Necesidades operativas: la(s) plaza(s) de conjunto que ocupa actualmente.
+  // En la práctica una sola (ver @@unique([conjuntoId, operarioId]) en
+  // ConjuntoNecesidadOperario), pero se modela como lista para permitir
+  // varios conjuntos sin restricción adicional aquí.
+  necesidadesOcupadas ConjuntoNecesidadOperario[] @relation("NecesidadOperarioActual")
+
   // Asistencia / novedades
   registrosAsistencia        RegistroAsistencia[]
   turnosExtra                TurnoExtra[]         @relation("TurnoExtraOperario")
@@ -801,6 +808,9 @@ model Conjunto {
   DefinicionTareaPreventiva     DefinicionTareaPreventiva[]
   configuracionesZonaCronograma ConfiguracionZonaCronograma[]
 
+  // Necesidades operativas (plazas/cargos): ver ConjuntoNecesidadOperario.
+  necesidades ConjuntoNecesidadOperario[]
+
   // Asistencia / novedades
   qrAsistenciaToken       String?              @unique
   qrAsistenciaActualizado DateTime?
@@ -863,6 +873,66 @@ model ConjuntoHorario {
   descansoFin    String?
 
   @@unique([conjuntoId, dia])
+}
+
+/// Necesidad operativa (plaza/cargo) del conjunto: p.ej. "Todero #1". Es
+/// independiente de la persona que la ocupa. Si `horarioEspecial` es true,
+/// sus `horarios` (mismo shape que ConjuntoHorario) SOBRESCRIBEN el horario
+/// general del conjunto para ese operario, incluso si exceden su ventana o
+/// cubren días en que el conjunto no opera. Si es false, la plaza hereda el
+/// horario general del conjunto sin cambios (comportamiento actual).
+model ConjuntoNecesidadOperario {
+  id Int @id @default(autoincrement())
+
+  conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
+  conjuntoId String
+
+  rol      TipoFuncion
+  etiqueta String
+  orden    Int         @default(0)
+
+  horarioEspecial Boolean                    @default(false)
+  horarios        ConjuntoNecesidadHorario[]
+
+  // Operario que ocupa ACTUALMENTE la plaza (0..1). Un operario solo puede
+  // ocupar una plaza por conjunto (ver @@unique abajo); dejar la plaza
+  // vacante (null) es un estado válido y soportado.
+  operario   Operario? @relation("NecesidadOperarioActual", fields: [operarioId], references: [id], onDelete: SetNull)
+  operarioId String?
+
+  activo        Boolean  @default(true)
+  observaciones String?
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  definiciones DefinicionTareaPreventiva[] @relation("DefinicionNecesidades")
+  tareas       Tarea[]                     @relation("TareaNecesidades")
+
+  @@unique([conjuntoId, etiqueta])
+  @@unique([conjuntoId, operarioId])
+  @@index([conjuntoId, activo])
+  @@index([operarioId])
+  @@map("ConjuntoNecesidadOperario")
+}
+
+/// Horario propio de una ConjuntoNecesidadOperario. Mismo shape que
+/// ConjuntoHorario a propósito: permite reutilizar HorarioDTO y
+/// workIntervalsFromHorario() sin cambios.
+model ConjuntoNecesidadHorario {
+  id Int @id @default(autoincrement())
+
+  necesidad   ConjuntoNecesidadOperario @relation(fields: [necesidadId], references: [id], onDelete: Cascade)
+  necesidadId Int
+
+  dia          DiaSemana
+  horaApertura String
+  horaCierre   String
+
+  descansoInicio String?
+  descansoFin    String?
+
+  @@unique([necesidadId, dia])
+  @@map("ConjuntoNecesidadHorario")
 }
 
 /**
@@ -1478,8 +1548,15 @@ model DefinicionTareaPreventiva {
   maquinariaPlanJson        Json?
   herramientasPlanJson      Json?
 
-  // Operarios sugeridos (M:N)
+  // Operarios sugeridos (M:N). Se conserva como fallback: si `necesidades`
+  // está vacío, el generador sigue resolviendo por estos operarios directos.
   operarios Operario[] @relation("DefinicionOperarios")
+
+  // Necesidades/cargos requeridos (M:N). Si hay al menos una, el generador
+  // resuelve el operario por la plaza (necesidad.operarioId) en vez de usar
+  // `operarios` directamente. Una plaza vacante excluye la ocurrencia con
+  // motivo NECESIDAD_SIN_OPERARIO.
+  necesidades ConjuntoNecesidadOperario[] @relation("DefinicionNecesidades")
 
   // Supervisor responsable
   supervisorId String?
@@ -1520,8 +1597,16 @@ model Tarea {
   finalizadaPorId      String?
   finalizadaPorRol     String?
 
-  operarios    Operario[]  @relation("TareaOperarios")
-  supervisor   Supervisor? @relation(fields: [supervisorId], references: [id])
+  // Snapshot resuelto: operario(s) que efectivamente ejecutan la tarea. Se
+  // conserva siempre, venga la tarea de una necesidad o de operarios
+  // directos, para no romper los ~40 sitios (informes, asistencia, app del
+  // operario, PDF) que ya consultan Tarea.operarios.
+  operarios    Operario[]                  @relation("TareaOperarios")
+  // Vínculo durable a la(s) plaza(s) que originó la tarea (si vino de una
+  // DefinicionTareaPreventiva con necesidades). Permite que reasignar el
+  // titular de la plaza no requiera editar tareas ya generadas.
+  necesidades  ConjuntoNecesidadOperario[] @relation("TareaNecesidades")
+  supervisor   Supervisor?                 @relation(fields: [supervisorId], references: [id])
   supervisorId String?
 
   ubicacion   Ubicacion @relation(fields: [ubicacionId], references: [id])
