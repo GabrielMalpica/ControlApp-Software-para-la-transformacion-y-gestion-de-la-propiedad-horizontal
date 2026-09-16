@@ -2093,9 +2093,20 @@ export class GerenteService {
       throw err;
     }
 
-    await this.prisma.operario.update({
-      where: { id: operarioId },
-      data: { conjuntos: { set: [{ nit: dto.conjuntoId }] } },
+    await this.prisma.$transaction(async (tx) => {
+      // El operario deja TODOS sus conjuntos actuales (el `set` de abajo los
+      // reemplaza por solo el destino): libera cualquier plaza/necesidad que
+      // ocupara en ellos para que quede vacante en vez de asignada a alguien
+      // que ya no está ahí. La tarea/definición vinculada a esa plaza sigue
+      // intacta; solo queda sin operario hasta que se reasigne.
+      await tx.conjuntoNecesidadOperario.updateMany({
+        where: { operarioId, activo: true },
+        data: { operarioId: null },
+      });
+      await tx.operario.update({
+        where: { id: operarioId },
+        data: { conjuntos: { set: [{ nit: dto.conjuntoId }] } },
+      });
     });
 
     return { ok: true as const };
@@ -4997,23 +5008,43 @@ export class GerenteService {
 
   async editarOperario(operarioId: number, payload: unknown) {
     const dto = EditarOperarioDTO.parse(payload);
+    const idOperario = operarioId.toString();
 
     const data: any = {};
-    if (dto.funciones) data.funciones = dto.funciones as TipoFuncion[];
+    if (dto.funciones) {
+      // No se puede quitar un rol que una plaza ocupada actualmente exige:
+      // dejaría una ConjuntoNecesidadOperario "ocupada" por alguien que ya
+      // no cumple su rol. Primero hay que liberar esa plaza (o reasignarle
+      // otro rol desde ConjuntoNecesidadService).
+      const plazaIncompatible = await this.prisma.conjuntoNecesidadOperario.findFirst({
+        where: {
+          operarioId: idOperario,
+          activo: true,
+          rol: { notIn: dto.funciones as TipoFuncion[] },
+        },
+        select: { etiqueta: true, rol: true },
+      });
+      if (plazaIncompatible) {
+        throw new Error(
+          `El operario ocupa la plaza "${plazaIncompatible.etiqueta}" (${plazaIncompatible.rol}); libérala antes de quitarle ese rol.`,
+        );
+      }
+      data.funciones = dto.funciones as TipoFuncion[];
+    }
 
     if ((payload as any).nombre || (payload as any).correo) {
       const uData: any = {};
       if ((payload as any).nombre) uData.nombre = (payload as any).nombre;
       if ((payload as any).correo) uData.correo = (payload as any).correo;
       await this.prisma.usuario.update({
-        where: { id: operarioId.toString() },
+        where: { id: idOperario },
         data: uData,
       });
     }
 
     if (Object.keys(data).length === 0) return;
     await this.prisma.operario.update({
-      where: { id: operarioId.toString() },
+      where: { id: idOperario },
       data,
     });
   }
