@@ -1,0 +1,694 @@
+import 'package:flutter/material.dart';
+
+import 'package:flutter_application_1/api/conjunto_api.dart';
+import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/model/necesidad_operario_model.dart';
+import 'package:flutter_application_1/model/usuario_model.dart';
+import 'package:flutter_application_1/service/app_error.dart';
+import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/service/theme.dart';
+
+const _diasSemanaNecesidad = <String>[
+  'LUNES',
+  'MARTES',
+  'MIERCOLES',
+  'JUEVES',
+  'VIERNES',
+  'SABADO',
+  'DOMINGO',
+];
+
+const _rolesNecesidad = <String>['TODERO', 'SALVAVIDAS', 'ASEO', 'PISCINERO'];
+
+const _etiquetaRol = <String, String>{
+  'TODERO': 'Todero',
+  'SALVAVIDAS': 'Salvavidas',
+  'ASEO': 'Aseo',
+  'PISCINERO': 'Piscinero',
+};
+
+/// Sección "Necesidades de operarios" del detalle del conjunto: lista las
+/// plazas/cargos (ConjuntoNecesidadOperario), permite crearlas, editarlas,
+/// eliminarlas y asignar/liberar al operario que las ocupa. Ver la sección
+/// E del plan de necesidades operativas.
+class NecesidadesOperativasCard extends StatefulWidget {
+  final String conjuntoNit;
+  final List<Usuario> operariosCatalogo;
+
+  const NecesidadesOperativasCard({
+    super.key,
+    required this.conjuntoNit,
+    required this.operariosCatalogo,
+  });
+
+  @override
+  State<NecesidadesOperativasCard> createState() =>
+      _NecesidadesOperativasCardState();
+}
+
+class _NecesidadesOperativasCardState
+    extends State<NecesidadesOperativasCard> {
+  final ConjuntoApi _api = ConjuntoApi();
+  late Future<List<NecesidadOperario>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _api.listarNecesidades(widget.conjuntoNit);
+  }
+
+  void _reload() {
+    setState(() {
+      _future = _api.listarNecesidades(widget.conjuntoNit);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE4ECE8)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x11000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.badge_outlined, color: AppTheme.primary),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Necesidades de operarios',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+              PopupMenuButton<String>(
+                onSelected: (value) {
+                  if (value == 'agregar') _mostrarFormulario();
+                  if (value == 'migrar') _migrarDesdeOperarios();
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: 'agregar',
+                    child: Text('Agregar necesidad'),
+                  ),
+                  PopupMenuItem(
+                    value: 'migrar',
+                    child: Text('Crear plazas desde operarios actuales'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Cargos que necesita el conjunto (ej. Todero #1, Salvavidas #1). '
+            'El operario que la ocupa se asigna aquí; las preventivas que '
+            'apunten a esta plaza seguirán resolviendo a quien la ocupe.',
+            style: TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          const SizedBox(height: 12),
+          FutureBuilder<List<NecesidadOperario>>(
+            future: _future,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (snapshot.hasError) {
+                return Text(
+                  'No se pudieron cargar las necesidades: ${AppError.messageOf(snapshot.error)}',
+                  style: const TextStyle(color: Colors.red),
+                );
+              }
+              final necesidades = snapshot.data ?? const [];
+              if (necesidades.isEmpty) {
+                return Text(
+                  'Este conjunto todavía no tiene necesidades configuradas.',
+                  style: TextStyle(color: Colors.grey.shade600),
+                );
+              }
+              return Column(
+                children: necesidades
+                    .map((n) => _necesidadTile(n))
+                    .toList(growable: false),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _necesidadTile(NecesidadOperario n) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBF9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE6EEEA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Text(
+                      n.etiqueta,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        _etiquetaRol[n.rol] ?? n.rol,
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                    ),
+                    if (n.horarioEspecial) ...[
+                      const SizedBox(width: 6),
+                      Tooltip(
+                        message: 'Tiene horario especial propio',
+                        child: Icon(
+                          Icons.schedule,
+                          size: 16,
+                          color: Colors.orange.shade700,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 20),
+                onPressed: () => _mostrarFormulario(existente: n),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20),
+                onPressed: () => _confirmarEliminar(n),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Icon(
+                n.ocupada ? Icons.person : Icons.person_off_outlined,
+                size: 16,
+                color: n.ocupada ? AppTheme.primary : Colors.grey,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  n.ocupada ? (n.operarioNombre ?? n.operarioId!) : 'Vacante',
+                  style: TextStyle(
+                    color: n.ocupada ? Colors.black87 : Colors.grey.shade600,
+                    fontStyle: n.ocupada ? FontStyle.normal : FontStyle.italic,
+                  ),
+                ),
+              ),
+              if (n.ocupada)
+                TextButton(
+                  onPressed: () => _liberar(n),
+                  child: const Text('Liberar'),
+                )
+              else
+                TextButton(
+                  onPressed: () => _mostrarAsignarOperario(n),
+                  child: const Text('Asignar'),
+                ),
+            ],
+          ),
+          if (n.horarioEspecial && n.horarios.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: n.horarios
+                  .map(
+                    (h) => Chip(
+                      visualDensity: VisualDensity.compact,
+                      label: Text(
+                        '${h.dia.substring(0, 3)} ${h.horaApertura}-${h.horaCierre}',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _liberar(NecesidadOperario n) async {
+    try {
+      await _api.liberarNecesidad(
+        conjuntoNit: widget.conjuntoNit,
+        necesidadId: n.id,
+      );
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text('No se pudo liberar la plaza: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _mostrarAsignarOperario(NecesidadOperario n) async {
+    final candidatos = widget.operariosCatalogo
+        .where((o) => (o.tipoFunciones ?? const []).contains(n.rol))
+        .toList();
+
+    if (candidatos.isEmpty) {
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            'Ningún operario tiene el rol ${_etiquetaRol[n.rol] ?? n.rol}.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    String? seleccionado;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Asignar operario a ${n.etiqueta}'),
+          content: DropdownButtonFormField<String>(
+            initialValue: seleccionado,
+            items: candidatos
+                .map(
+                  (o) => DropdownMenuItem(
+                    value: o.cedula,
+                    child: Text('${o.nombre} (${o.cedula})'),
+                  ),
+                )
+                .toList(),
+            onChanged: (v) => setDialogState(() => seleccionado = v),
+            decoration: const InputDecoration(
+              labelText: 'Operario',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: seleccionado == null
+                  ? null
+                  : () => Navigator.pop(context, true),
+              child: const Text('Asignar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok != true || seleccionado == null) return;
+    try {
+      await _api.asignarOperarioNecesidad(
+        conjuntoNit: widget.conjuntoNit,
+        necesidadId: n.id,
+        operarioId: seleccionado!,
+      );
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text('No se pudo asignar el operario: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmarEliminar(NecesidadOperario n) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Eliminar ${n.etiqueta}'),
+        content: const Text(
+          '¿Eliminar esta necesidad? Si está ocupada o tiene preventivas '
+          'vinculadas, se pedirá confirmación adicional.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+
+    try {
+      await _api.eliminarNecesidad(
+        conjuntoNit: widget.conjuntoNit,
+        necesidadId: n.id,
+      );
+      _reload();
+    } on EliminarNecesidadConfirmationRequired catch (e) {
+      if (!mounted) return;
+      final reconfirmar = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Confirmar eliminación'),
+          content: Text(e.mensaje),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Eliminar de todas formas'),
+            ),
+          ],
+        ),
+      );
+      if (reconfirmar != true) return;
+      try {
+        await _api.eliminarNecesidad(
+          conjuntoNit: widget.conjuntoNit,
+          necesidadId: n.id,
+          confirmar: true,
+        );
+        _reload();
+      } catch (e2) {
+        if (!mounted) return;
+        AppFeedback.showFromSnackBar(
+          context,
+          SnackBar(
+            content: Text('No se pudo eliminar: $e2'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text('No se pudo eliminar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _migrarDesdeOperarios() async {
+    try {
+      final creadas = await _api.migrarNecesidadesDesdeOperarios(
+        widget.conjuntoNit,
+      );
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            creadas.isEmpty
+                ? 'No había operarios sin plaza asignada.'
+                : 'Se crearon ${creadas.length} plaza(s): ${creadas.join(', ')}.',
+          ),
+        ),
+      );
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text('No se pudo migrar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _mostrarFormulario({NecesidadOperario? existente}) async {
+    final rolInicial = existente?.rol ?? _rolesNecesidad[0];
+    final etiquetaCtrl = TextEditingController(
+      text: existente?.etiqueta ?? '',
+    );
+    String rol = rolInicial;
+    bool horarioEspecial = existente?.horarioEspecial ?? false;
+    final horariosPorDia = <String, _DiaHorarioEdit>{
+      for (final d in _diasSemanaNecesidad) d: _DiaHorarioEdit(),
+    };
+    for (final h in existente?.horarios ?? const <HorarioConjunto>[]) {
+      final entry = horariosPorDia[h.dia];
+      if (entry == null) continue;
+      entry.activo = true;
+      entry.apertura = _parseHora(h.horaApertura);
+      entry.cierre = _parseHora(h.horaCierre);
+    }
+
+    final guardado = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(existente == null ? 'Agregar necesidad' : 'Editar necesidad'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: rol,
+                  items: _rolesNecesidad
+                      .map(
+                        (r) => DropdownMenuItem(
+                          value: r,
+                          child: Text(_etiquetaRol[r] ?? r),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setDialogState(() => rol = v);
+                  },
+                  decoration: const InputDecoration(
+                    labelText: 'Rol',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: etiquetaCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Etiqueta (ej. "Todero #1")',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Horario especial'),
+                  value: horarioEspecial,
+                  onChanged: (v) => setDialogState(() => horarioEspecial = v),
+                ),
+                if (horarioEspecial)
+                  ..._diasSemanaNecesidad.map((dia) {
+                    final h = horariosPorDia[dia]!;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: h.activo,
+                            onChanged: (v) =>
+                                setDialogState(() => h.activo = v ?? false),
+                          ),
+                          SizedBox(
+                            width: 80,
+                            child: Text(
+                              dia,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: !h.activo
+                                  ? null
+                                  : () async {
+                                      final picked = await showTimePicker(
+                                        context: context,
+                                        initialTime:
+                                            h.apertura ??
+                                            const TimeOfDay(hour: 8, minute: 0),
+                                      );
+                                      if (picked != null) {
+                                        setDialogState(() => h.apertura = picked);
+                                      }
+                                    },
+                              child: Text(
+                                h.apertura == null
+                                    ? 'Entrada'
+                                    : _formatHora(h.apertura!),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: !h.activo
+                                  ? null
+                                  : () async {
+                                      final picked = await showTimePicker(
+                                        context: context,
+                                        initialTime:
+                                            h.cierre ??
+                                            const TimeOfDay(hour: 17, minute: 0),
+                                      );
+                                      if (picked != null) {
+                                        setDialogState(() => h.cierre = picked);
+                                      }
+                                    },
+                              child: Text(
+                                h.cierre == null ? 'Salida' : _formatHora(h.cierre!),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (guardado != true) return;
+    final etiqueta = etiquetaCtrl.text.trim();
+    if (etiqueta.isEmpty) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text('La etiqueta es obligatoria.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    final horarios = horarioEspecial
+        ? horariosPorDia.entries
+              .where((e) => e.value.activo && e.value.apertura != null && e.value.cierre != null)
+              .map(
+                (e) => HorarioConjunto(
+                  dia: e.key,
+                  horaApertura: _formatHora(e.value.apertura!),
+                  horaCierre: _formatHora(e.value.cierre!),
+                ),
+              )
+              .toList()
+        : const <HorarioConjunto>[];
+
+    try {
+      if (existente == null) {
+        await _api.crearNecesidad(
+          conjuntoNit: widget.conjuntoNit,
+          rol: rol,
+          etiqueta: etiqueta,
+          horarioEspecial: horarioEspecial,
+          horarios: horarios,
+        );
+      } else {
+        await _api.editarNecesidad(
+          conjuntoNit: widget.conjuntoNit,
+          necesidadId: existente.id,
+          rol: rol,
+          etiqueta: etiqueta,
+          horarioEspecial: horarioEspecial,
+          horarios: horarios,
+        );
+      }
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text('No se pudo guardar la necesidad: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  TimeOfDay? _parseHora(String value) {
+    final parts = value.split(':');
+    if (parts.length != 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    return TimeOfDay(hour: h, minute: m);
+  }
+
+  String _formatHora(TimeOfDay t) {
+    final h = t.hour.toString().padLeft(2, '0');
+    final m = t.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+}
+
+class _DiaHorarioEdit {
+  bool activo = false;
+  TimeOfDay? apertura;
+  TimeOfDay? cierre;
+}

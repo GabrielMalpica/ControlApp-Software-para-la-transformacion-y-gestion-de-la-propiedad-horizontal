@@ -8,6 +8,7 @@ import '../../service/theme.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
+import 'package:flutter_application_1/widgets/necesidades_operativas_card.dart';
 
 const Map<String, int> _dayOrder = <String, int>{
   'LUNES': 1,
@@ -428,6 +429,11 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
                   _administradorCard(c),
                   const SizedBox(height: 12),
                   _operariosCard(c),
+                  const SizedBox(height: 12),
+                  NecesidadesOperativasCard(
+                    conjuntoNit: c.nit,
+                    operariosCatalogo: _operariosCatalogo,
+                  ),
                   const SizedBox(height: 12),
                   _horariosCard(c),
                   const SizedBox(height: 12),
