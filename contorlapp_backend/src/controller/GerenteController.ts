@@ -695,4 +695,43 @@ export class GerenteController {
       next(err);
     }
   };
+
+  listarTareasAbiertasOperario: RequestHandler = async (req, res, next) => {
+    try {
+      const { operarioId } = OperarioIdParam.parse(req.params);
+      const out = await serviceFor(req).listarTareasAbiertasOperario(
+        operarioId.toString(),
+      );
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  cerrarTareasAbiertasOperario: RequestHandler = async (req, res, next) => {
+    try {
+      const { operarioId } = OperarioIdParam.parse(req.params);
+      const out = await serviceFor(req).cerrarTareasAbiertasOperario(
+        operarioId.toString(),
+        req.body,
+        { id: String(req.user?.sub ?? ""), rol: String(req.user?.rol ?? "") },
+      );
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  trasladarOperario: RequestHandler = async (req, res, next) => {
+    try {
+      const { operarioId } = OperarioIdParam.parse(req.params);
+      const out = await serviceFor(req).trasladarOperario(
+        operarioId.toString(),
+        req.body,
+      );
+      res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
 }

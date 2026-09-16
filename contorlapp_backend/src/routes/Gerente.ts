@@ -273,4 +273,9 @@ router.patch("/administradores/:adminId", requirePermission("usuarios.gestionar"
 router.patch("/operarios/:operarioId", requirePermission("usuarios.gestionar"), requireResourceScope("operario", "operarioId"), ctrl.editarOperario);
 router.patch("/supervisores/:supervisorId", requirePermission("usuarios.gestionar"), requireResourceScope("supervisor", "supervisorId"), ctrl.editarSupervisor);
 
+/* Traslado de operarios entre conjuntos */
+router.get("/operarios/:operarioId/tareas-abiertas", requirePermission("usuarios.gestionar"), requireResourceScope("operario", "operarioId"), ctrl.listarTareasAbiertasOperario);
+router.post("/operarios/:operarioId/tareas-abiertas/cerrar", requirePermission("usuarios.gestionar"), requireResourceScope("operario", "operarioId"), ctrl.cerrarTareasAbiertasOperario);
+router.post("/operarios/:operarioId/trasladar", requirePermission("usuarios.gestionar"), requireResourceScope("operario", "operarioId"), ctrl.trasladarOperario);
+
 export default router;

@@ -214,6 +214,15 @@ function normalizeBusinessMessage(rawMessage: string) {
     };
   }
 
+  if (/^TAREAS_ABIERTAS_\d+$/i.test(clean)) {
+    const count = Number(clean.match(/\d+/)?.[0] ?? "0");
+    return {
+      code: "TAREAS_ABIERTAS",
+      message: `El operario tiene ${count} tarea(s) abierta(s). Cierralas antes de trasladarlo de conjunto.`,
+      details: { tareasAbiertas: count },
+    };
+  }
+
   switch (clean.toUpperCase()) {
     case "EMAIL_YA_REGISTRADO":
       return {
@@ -504,7 +513,7 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
       res,
       rawStatus,
       normalized.message || "No se pudo completar la solicitud.",
-      { code: normalized.code },
+      { code: normalized.code, details: normalized.details },
     );
     return;
   }

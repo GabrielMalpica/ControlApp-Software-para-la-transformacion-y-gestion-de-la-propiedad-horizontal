@@ -103,6 +103,17 @@ export const EditarOperarioDTO = z.object({
     .optional(),
 });
 
+/** Cierre en bloque de tareas abiertas (previo a un traslado de conjunto) */
+export const CerrarTareasAbiertasDTO = z.object({
+  resultado: z.enum(["COMPLETADA", "NO_COMPLETADA"]),
+  observaciones: z.string().trim().max(500).optional(),
+});
+
+/** Traslado de un operario a otro conjunto (reemplaza sus conjuntos actuales) */
+export const TrasladarOperarioDTO = z.object({
+  conjuntoId: z.string().min(1, "El conjunto destino es obligatorio"),
+});
+
 /* ============== Select estándar para Prisma ============== */
 /**
  * Úsalo en services para no traer relaciones ni campos extra.

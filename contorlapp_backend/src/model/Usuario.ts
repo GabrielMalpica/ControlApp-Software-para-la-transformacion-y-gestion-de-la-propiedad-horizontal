@@ -181,6 +181,7 @@ export const usuarioPublicSelect = {
     select: {
       conjuntos: {
         select: {
+          nit: true,
           nombre: true,
         },
         orderBy: [{ nombre: "asc" as const }],

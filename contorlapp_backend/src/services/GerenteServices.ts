@@ -3,6 +3,7 @@ import {
   Rol,
   TipoFuncion,
   EstadoTarea,
+  EstadoUsoHerramienta,
   JornadaLaboral,
   PatronJornada,
   TipoUnidadResidencial,
@@ -33,6 +34,8 @@ import { CrearSupervisorDTO } from "../model/Supervisor";
 import {
   CrearOperarioDTO,
   EditarOperarioDTO,
+  CerrarTareasAbiertasDTO,
+  TrasladarOperarioDTO,
   operarioPublicSelect,
 } from "../model/Operario";
 
@@ -1935,6 +1938,167 @@ export class GerenteService {
         },
       },
     });
+  }
+
+  /**
+   * Tareas de un operario que todavía requieren acción (no fueron aprobadas
+   * ni cerradas como no completadas). Bloquean el traslado a otro conjunto.
+   */
+  async listarTareasAbiertasOperario(operarioId: string) {
+    const empresaId = await this.resolverEmpresaNit();
+    const operario = await this.prisma.operario.findFirst({
+      where: { id: operarioId, empresaId },
+      select: { id: true },
+    });
+    if (!operario) throw new Error("Operario no encontrado.");
+
+    return this.prisma.tarea.findMany({
+      where: {
+        operarios: { some: { id: operarioId } },
+        borrador: false,
+        estado: { notIn: [EstadoTarea.APROBADA, EstadoTarea.NO_COMPLETADA] },
+      },
+      select: {
+        id: true,
+        descripcion: true,
+        estado: true,
+        fechaInicio: true,
+        fechaFin: true,
+        conjunto: { select: { nit: true, nombre: true } },
+      },
+      orderBy: { fechaInicio: "asc" },
+    });
+  }
+
+  /**
+   * Cierre administrativo en bloque de las tareas abiertas de un operario
+   * (usado cuando el gerente necesita liberarlo para trasladarlo de conjunto).
+   */
+  async cerrarTareasAbiertasOperario(
+    operarioId: string,
+    payload: unknown,
+    actor: { id: string; rol: string },
+  ) {
+    const dto = CerrarTareasAbiertasDTO.parse(payload);
+    const empresaId = await this.resolverEmpresaNit();
+    const operario = await this.prisma.operario.findFirst({
+      where: { id: operarioId, empresaId },
+      select: { id: true },
+    });
+    if (!operario) throw new Error("Operario no encontrado.");
+
+    const tareasAbiertas = await this.prisma.tarea.findMany({
+      where: {
+        operarios: { some: { id: operarioId } },
+        borrador: false,
+        estado: { notIn: [EstadoTarea.APROBADA, EstadoTarea.NO_COMPLETADA] },
+      },
+      select: { id: true },
+    });
+    if (!tareasAbiertas.length) return { cerradas: 0 };
+
+    const ids = tareasAbiertas.map((t) => t.id);
+    const ahora = new Date();
+    const estadoDestino =
+      dto.resultado === "COMPLETADA"
+        ? EstadoTarea.APROBADA
+        : EstadoTarea.NO_COMPLETADA;
+    const observaciones =
+      dto.observaciones && dto.observaciones.length
+        ? dto.observaciones
+        : `Tarea cerrada automáticamente (${
+            dto.resultado === "COMPLETADA" ? "completada" : "no completada"
+          }) por traslado del operario a otro conjunto.`;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.usoMaquinaria.updateMany({
+        where: { tareaId: { in: ids }, fechaFin: null },
+        data: {
+          fechaFin: ahora,
+          operarioId,
+          observacion: "Devuelta por traslado del operario a otro conjunto",
+        },
+      });
+
+      await tx.usoHerramienta.updateMany({
+        where: { tareaId: { in: ids }, fechaFin: null },
+        data: {
+          fechaFin: ahora,
+          operarioId,
+          estado: EstadoUsoHerramienta.DEVUELTA,
+          observacion: "Devuelta por traslado del operario a otro conjunto",
+        },
+      });
+
+      await tx.maquinariaConjunto.updateMany({
+        where: { tareaId: { in: ids } },
+        data: { tareaId: null, operarioId: null, fechaDevolucionEstimada: null },
+      });
+
+      await tx.tarea.updateMany({
+        where: { id: { in: ids } },
+        data: {
+          estado: estadoDestino,
+          observaciones,
+          fechaFinalizarTarea: ahora,
+          fechaVerificacion: dto.resultado === "COMPLETADA" ? ahora : null,
+          finalizadaPorId: actor.id,
+          finalizadaPorRol: actor.rol,
+        },
+      });
+    });
+
+    return { cerradas: ids.length };
+  }
+
+  /**
+   * Traslada un operario a otro conjunto, reemplazando su(s) conjunto(s)
+   * actual(es). Se bloquea si aún tiene tareas abiertas: primero deben
+   * cerrarse (ver cerrarTareasAbiertasOperario) o reasignarse.
+   */
+  async trasladarOperario(operarioId: string, payload: unknown) {
+    const dto = TrasladarOperarioDTO.parse(payload);
+    const empresaId = await this.resolverEmpresaNit();
+
+    const [operario, conjuntoDestino] = await Promise.all([
+      this.prisma.operario.findFirst({
+        where: { id: operarioId, empresaId },
+        select: { id: true, conjuntos: { select: { nit: true } } },
+      }),
+      this.prisma.conjunto.findFirst({
+        where: { nit: dto.conjuntoId, empresaId },
+        select: { nit: true },
+      }),
+    ]);
+    if (!operario) throw new Error("Operario no encontrado.");
+    if (!conjuntoDestino) throw new Error("Conjunto destino no encontrado.");
+
+    const yaEstaSoloAhi =
+      operario.conjuntos.length === 1 &&
+      operario.conjuntos[0]?.nit === dto.conjuntoId;
+    if (yaEstaSoloAhi) {
+      throw new Error("El operario ya pertenece a ese conjunto.");
+    }
+
+    const tareasAbiertas = await this.prisma.tarea.count({
+      where: {
+        operarios: { some: { id: operarioId } },
+        borrador: false,
+        estado: { notIn: [EstadoTarea.APROBADA, EstadoTarea.NO_COMPLETADA] },
+      },
+    });
+    if (tareasAbiertas > 0) {
+      const err: any = new Error(`TAREAS_ABIERTAS_${tareasAbiertas}`);
+      err.status = 409;
+      throw err;
+    }
+
+    await this.prisma.operario.update({
+      where: { id: operarioId },
+      data: { conjuntos: { set: [{ nit: dto.conjuntoId }] } },
+    });
+
+    return { ok: true as const };
   }
 
   /* ===================== INVENTARIO / INSUMOS ===================== */
