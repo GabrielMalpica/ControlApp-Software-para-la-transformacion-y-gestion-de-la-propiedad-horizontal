@@ -1,4 +1,5 @@
 import 'usuario_model.dart';
+import 'necesidad_operario_model.dart';
 
 class HorarioConjunto {
   final String dia;
@@ -23,6 +24,20 @@ class HorarioConjunto {
       descansoInicio: json['descansoInicio'] as String?,
       descansoFin: json['descansoFin'] as String?,
     );
+  }
+
+  /// Mismo shape que espera HorarioDTO en el backend (Conjunto.ts y, por
+  /// extensión, ConjuntoNecesidad.ts). Se usa tanto para el horario general
+  /// del conjunto como para el horario especial de una necesidad/plaza.
+  Map<String, dynamic> toJson() {
+    final map = <String, dynamic>{
+      'dia': dia,
+      'horaApertura': horaApertura,
+      'horaCierre': horaCierre,
+    };
+    if (descansoInicio != null) map['descansoInicio'] = descansoInicio;
+    if (descansoFin != null) map['descansoFin'] = descansoFin;
+    return map;
   }
 }
 
@@ -115,6 +130,7 @@ class Conjunto {
   final List<Usuario> operarios;
   final List<HorarioConjunto> horarios;
   final List<UbicacionConElementos> ubicaciones;
+  final List<NecesidadOperario> necesidades;
   final String? mapaConjuntoNombreArchivo;
   final String? mapaConjuntoMimeType;
   final DateTime? mapaConjuntoActualizadoEn;
@@ -136,6 +152,7 @@ class Conjunto {
     this.operarios = const [],
     this.horarios = const [],
     this.ubicaciones = const [],
+    this.necesidades = const [],
     this.mapaConjuntoNombreArchivo,
     this.mapaConjuntoMimeType,
     this.mapaConjuntoActualizadoEn,
@@ -162,6 +179,7 @@ class Conjunto {
     final operariosJson = (json['operarios'] as List?) ?? [];
     final horariosJson = (json['horarios'] as List?) ?? [];
     final ubicacionesJson = (json['ubicaciones'] as List?) ?? [];
+    final necesidadesJson = (json['necesidades'] as List?) ?? [];
 
     return Conjunto(
       nit: json['nit'] as String,
@@ -202,6 +220,9 @@ class Conjunto {
           .toList(),
       ubicaciones: ubicacionesJson
           .map((u) => UbicacionConElementos.fromJson(u as Map<String, dynamic>))
+          .toList(),
+      necesidades: necesidadesJson
+          .map((n) => NecesidadOperario.fromJson(n as Map<String, dynamic>))
           .toList(),
       mapaConjuntoNombreArchivo: json['mapaConjuntoNombreArchivo'] as String?,
       mapaConjuntoMimeType: json['mapaConjuntoMimeType'] as String?,
