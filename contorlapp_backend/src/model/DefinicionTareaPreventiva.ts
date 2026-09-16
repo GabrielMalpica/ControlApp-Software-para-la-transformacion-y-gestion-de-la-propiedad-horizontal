@@ -11,6 +11,9 @@ const UsuarioIdDTO = z
   .union([z.string().trim().min(1), z.number().int().positive()])
   .transform((value) => String(value));
 
+/** Id de una ConjuntoNecesidadOperario (plaza/cargo del conjunto). */
+const NecesidadIdDTO = z.coerce.number().int().positive();
+
 /** Dominio base 1:1 (aprox) con Prisma */
 export interface DefinicionTareaPreventivaDominio {
   id: number;
@@ -146,6 +149,11 @@ export const CrearDefinicionPreventivaDTO = z
     herramientasPlanJson: z.array(HerramientaPlanItemDTO).optional(),
 
     responsableSugeridoId: UsuarioIdDTO.optional(),
+    // Necesidad primero, operario como respaldo: si se envían necesidadesIds,
+    // el generador resuelve el operario por la plaza en vez de por
+    // operariosIds/responsableSugeridoId (que se conservan como fallback
+    // para definiciones que no usan el modelo de necesidades).
+    necesidadesIds: z.array(NecesidadIdDTO).optional(),
     operariosIds: z.array(UsuarioIdDTO).optional(),
 
     supervisorId: UsuarioIdDTO.optional(),
@@ -207,6 +215,9 @@ export const EditarDefinicionPreventivaDTO = z.object({
   herramientasPlanJson: z.array(HerramientaPlanItemDTO).optional().nullable(),
 
   responsableSugeridoId: UsuarioIdDTO.optional().nullable(),
+  // null/[] libera todas las necesidades vinculadas (vuelve al camino de
+  // operarios directos); omitido no toca la relación actual.
+  necesidadesIds: z.array(NecesidadIdDTO).optional().nullable(),
   operariosIds: z.array(UsuarioIdDTO).optional().nullable(),
 
   supervisorId: UsuarioIdDTO.optional().nullable(),

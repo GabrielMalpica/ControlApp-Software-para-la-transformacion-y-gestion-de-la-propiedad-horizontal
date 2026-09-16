@@ -3310,12 +3310,30 @@ export class DefinicionTareaPreventivaService {
     return this.crearConCliente(tx, payload);
   }
 
+  /** Confirma que todas las necesidades pertenecen a ese conjunto (tenant scope). */
+  private async validarNecesidadesDelConjunto(
+    conjuntoId: string,
+    necesidadesIds: number[],
+  ): Promise<void> {
+    if (!necesidadesIds.length) return;
+    const encontradas = await this.prisma.conjuntoNecesidadOperario.findMany({
+      where: { id: { in: necesidadesIds }, conjuntoId },
+      select: { id: true },
+    });
+    if (encontradas.length !== new Set(necesidadesIds).size) {
+      throw new Error("Alguna de las necesidades indicadas no pertenece a este conjunto.");
+    }
+  }
+
   private async crearConCliente(
     client: PrismaClient | Prisma.TransactionClient,
     payload: unknown,
   ) {
     const dto = CrearDefinicionPreventivaDTO.parse(payload);
     this.validarProgramacionFrecuencia(dto);
+    if (dto.necesidadesIds?.length) {
+      await this.validarNecesidadesDelConjunto(dto.conjuntoId, dto.necesidadesIds);
+    }
 
     const supervisorIdResuelto =
       dto.supervisorId != null
@@ -3384,7 +3402,7 @@ export class DefinicionTareaPreventivaService {
       activo: dto.activo ?? true,
     };
 
-    // Operarios: operariosIds > responsableSugeridoId
+    // Operarios: operariosIds > responsableSugeridoId (fallback si no hay necesidades)
     if (dto.operariosIds?.length) {
       (data as any).operarios = {
         connect: dto.operariosIds.map((id) => ({ id })),
@@ -3392,6 +3410,14 @@ export class DefinicionTareaPreventivaService {
     } else if (dto.responsableSugeridoId != null) {
       (data as any).operarios = {
         connect: { id: dto.responsableSugeridoId },
+      };
+    }
+
+    // Necesidad primero: si se vinculan plazas, el generador las prioriza
+    // sobre `operarios` (ver operariosIdsDeDefinicion).
+    if (dto.necesidadesIds?.length) {
+      (data as any).necesidades = {
+        connect: dto.necesidadesIds.map((id) => ({ id })),
       };
     }
 
@@ -3414,6 +3440,9 @@ export class DefinicionTareaPreventivaService {
         // El frontend (DefinicionPreventiva.fromJson) solo lee operarios[].id
         // y el supervisorId plano; no necesita la fila Usuario completa.
         operarios: { select: { id: true } },
+        necesidades: {
+          select: { id: true, etiqueta: true, rol: true, operarioId: true },
+        },
       },
       orderBy: [{ prioridad: "asc" }, { id: "asc" }],
     });
@@ -3426,6 +3455,9 @@ export class DefinicionTareaPreventivaService {
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
         operarios: { select: { id: true } },
+        necesidades: {
+          select: { id: true, etiqueta: true, rol: true, operarioId: true },
+        },
       },
       orderBy: [{ prioridad: "asc" }, { id: "asc" }],
     });
@@ -3440,6 +3472,9 @@ export class DefinicionTareaPreventivaService {
     });
     if (!def || def.conjuntoId !== conjuntoId) {
       throw new Error("Definición no encontrada para este conjunto.");
+    }
+    if (dto.necesidadesIds?.length) {
+      await this.validarNecesidadesDelConjunto(conjuntoId, dto.necesidadesIds);
     }
 
     const actual: any = await this.prisma.definicionTareaPreventiva.findUnique({
@@ -3569,7 +3604,7 @@ export class DefinicionTareaPreventivaService {
               },
     };
 
-    // relaciones operarios
+    // relaciones operarios (fallback si no hay necesidades)
     if ((dto as any).operariosIds !== undefined) {
       const operariosIds: number[] = (dto as any).operariosIds ?? [];
       (data as any).operarios = {
@@ -3579,6 +3614,15 @@ export class DefinicionTareaPreventivaService {
       const value = (dto as any).responsableSugeridoId;
       (data as any).operarios =
         value === null ? { set: [] } : { set: [{ id: value.toString() }] };
+    }
+
+    // relación necesidades: `set` reemplaza el vínculo completo (null/[] lo
+    // vacía y hace que la definición vuelva a resolver por `operarios`).
+    if (dto.necesidadesIds !== undefined) {
+      const necesidadesIds = dto.necesidadesIds ?? [];
+      (data as any).necesidades = {
+        set: necesidadesIds.map((necId) => ({ id: necId })),
+      };
     }
 
     return this.prisma.definicionTareaPreventiva.update({
