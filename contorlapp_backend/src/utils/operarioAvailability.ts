@@ -1,5 +1,8 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { DiaSemana, EstadoTarea } from "@prisma/client";
+// Mismo tipo que usa el generador de cronograma (DefinicionTareaPreventivaService.ts).
+// Se reutiliza en vez de duplicarlo: son estructuralmente idénticos.
+import type { HorarioDia } from "./agenda";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
@@ -11,13 +14,6 @@ export type MotivoIntervaloInvalido =
   | "SIN_HORARIO_CONJUNTO"
   | "FUERA_HORARIO_CONJUNTO"
   | "FUERA_HORARIO_OPERARIO";
-
-type HorarioDia = {
-  startMin: number;
-  endMin: number;
-  descansoStartMin?: number;
-  descansoEndMin?: number;
-};
 
 export function diaSemanaFromDate(date: Date): DiaSemana {
   const js = date.getDay();
@@ -197,7 +193,6 @@ async function capacidadSemanalOperario(params: {
 }) {
   const { prisma, conjuntoId, operarioId, fechaReferencia } = params;
   const monday = inicioSemana(fechaReferencia);
-  const horarios = await prisma.conjuntoHorario.findMany({ where: { conjuntoId } });
   const jornadas = await prisma.operario.findUnique({
     where: { id: operarioId },
     select: {
@@ -221,32 +216,26 @@ async function capacidadSemanalOperario(params: {
       42) * 60;
   let total = 0;
 
-  const toMin = (value: unknown) => {
-    const text = String(value ?? "").trim();
-    const match = text.match(/(\d{1,2}):(\d{2})/);
-    if (!match) return null;
-    return Number(match[1]) * 60 + Number(match[2]);
-  };
-
   for (let offset = 0; offset < 7; offset++) {
     const fecha = new Date(monday);
     fecha.setDate(monday.getDate() + offset);
     const ds = diaSemanaFromDate(fecha);
-    const horario = horarios.find((h) => String(h.dia) === String(ds));
-    if (!horario) continue;
-    const startMin = toMin(horario.horaApertura);
-    const endMin = toMin(horario.horaCierre);
-    if (startMin == null || endMin == null || endMin <= startMin) continue;
+    // Horario efectivo del operario ese día: el de su plaza si tiene horario
+    // especial, o el heredado del conjunto (comportamiento previo intacto
+    // cuando no hay necesidades configuradas).
+    const horarioEfectivo = await obtenerHorarioEfectivoOperario({
+      prisma,
+      conjuntoId,
+      operarioId,
+      dia: ds,
+    });
+    if (!horarioEfectivo) continue;
 
     const periodo = await obtenerPeriodoDisponibilidadActivo({ prisma, operarioId, fecha });
     const allowed = allowedIntervalsForUserWithAvailability({
       dia: ds,
-      horario: {
-        startMin,
-        endMin,
-        descansoStartMin: horario.descansoInicio ? toMin(horario.descansoInicio) ?? undefined : undefined,
-        descansoEndMin: horario.descansoFin ? toMin(horario.descansoFin) ?? undefined : undefined,
-      },
+      horario: horarioEfectivo,
+      horarioEfectivo,
       jornadaLaboral,
       patronJornada,
       disponibilidad: periodo
@@ -313,10 +302,24 @@ export function allowedIntervalsForUserWithAvailability(params: {
   jornadaLaboral: string | null;
   patronJornada: string | null;
   disponibilidad?: { trabajaDomingo: boolean; diaDescanso: DiaSemana | null } | null;
+  /**
+   * Ventana base efectiva del operario para este día: el horario de su plaza
+   * (ConjuntoNecesidadOperario) si tiene horario especial, o el heredado del
+   * conjunto en caso contrario. Si se omite (undefined), se usa `horario` tal
+   * cual — idéntico al comportamiento previo a las necesidades operativas. Si
+   * se pasa `null` explícito, el operario no tiene ventana ese día (p.ej. su
+   * plaza no trabaja ese día) y no hay intervalos permitidos.
+   */
+  horarioEfectivo?: HorarioDia | null;
 }) {
-  const { dia, horario, jornadaLaboral, patronJornada, disponibilidad } = params;
+  const { dia, jornadaLaboral, patronJornada, disponibilidad } = params;
+  const horario =
+    params.horarioEfectivo === undefined ? params.horario : params.horarioEfectivo;
 
   if (!disponibilidadPermiteDia({ dia, periodo: disponibilidad })) {
+    return [] as Array<{ i: number; f: number }>;
+  }
+  if (!horario) {
     return [] as Array<{ i: number; f: number }>;
   }
 
@@ -463,63 +466,29 @@ export function parseHorarioMinutos(value: unknown): number | null {
   return horas * 60 + minutos;
 }
 
-export async function obtenerIntervalosEfectivosProgramacion(params: {
-  prisma: DbClient;
-  conjuntoId: string;
-  fecha: Date;
-  operariosIds?: string[];
-}): Promise<{
-  dia: DiaSemana;
-  horario: HorarioDia | null;
-  intervalosConjunto: IntervaloLaboral[];
-  intervalosEfectivos: IntervaloLaboral[];
-  operariosSinConfiguracion: string[];
-}> {
-  const { prisma, conjuntoId, fecha } = params;
-  const operariosIds = Array.from(new Set((params.operariosIds ?? []).map(String)));
-  const dia = diaSemanaFromDate(fecha);
-  const horarioRepo = (prisma as any).conjuntoHorario;
-  const horarioSelect = {
-    horaApertura: true,
-    horaCierre: true,
-    descansoInicio: true,
-    descansoFin: true,
-  };
-  const row = horarioRepo?.findUnique
-    ? await horarioRepo.findUnique({
-        where: { conjuntoId_dia: { conjuntoId, dia } },
-        select: horarioSelect,
-      })
-    : horarioRepo?.findFirst
-      ? await horarioRepo.findFirst({
-          where: { conjuntoId, dia },
-          select: horarioSelect,
-        })
-      : null;
+const horarioColumnasSelect = {
+  horaApertura: true,
+  horaCierre: true,
+  descansoInicio: true,
+  descansoFin: true,
+} as const;
 
-  if (!row) {
-    return {
-      dia,
-      horario: null,
-      intervalosConjunto: [],
-      intervalosEfectivos: [],
-      operariosSinConfiguracion: [],
-    };
-  }
-
+function rowToHorarioDia(
+  row:
+    | {
+        horaApertura: unknown;
+        horaCierre: unknown;
+        descansoInicio?: unknown;
+        descansoFin?: unknown;
+      }
+    | null
+    | undefined,
+): HorarioDia | null {
+  if (!row) return null;
   const startMin = parseHorarioMinutos(row.horaApertura);
   const endMin = parseHorarioMinutos(row.horaCierre);
-  if (startMin == null || endMin == null || endMin <= startMin) {
-    return {
-      dia,
-      horario: null,
-      intervalosConjunto: [],
-      intervalosEfectivos: [],
-      operariosSinConfiguracion: [],
-    };
-  }
-
-  const horario: HorarioDia = {
+  if (startMin == null || endMin == null || endMin <= startMin) return null;
+  return {
     startMin,
     endMin,
     descansoStartMin: row.descansoInicio
@@ -529,18 +498,161 @@ export async function obtenerIntervalosEfectivosProgramacion(params: {
       ? parseHorarioMinutos(row.descansoFin) ?? undefined
       : undefined,
   };
-  const intervalosConjunto = workIntervalsFromHorario(horario);
+}
+
+async function obtenerHorarioGeneralConjunto(params: {
+  prisma: DbClient;
+  conjuntoId: string;
+  dia: DiaSemana;
+}): Promise<HorarioDia | null> {
+  const { prisma, conjuntoId, dia } = params;
+  const horarioRepo = (prisma as any).conjuntoHorario;
+  const row = horarioRepo?.findUnique
+    ? await horarioRepo.findUnique({
+        where: { conjuntoId_dia: { conjuntoId, dia } },
+        select: horarioColumnasSelect,
+      })
+    : horarioRepo?.findFirst
+      ? await horarioRepo.findFirst({
+          where: { conjuntoId, dia },
+          select: horarioColumnasSelect,
+        })
+      : null;
+  return rowToHorarioDia(row);
+}
+
+/**
+ * Horario efectivo de un operario para un día: el de su plaza
+ * (ConjuntoNecesidadOperario) si tiene horario especial activo, o el
+ * heredado del conjunto en caso contrario (comportamiento actual). `null`
+ * significa que ese operario no tiene ventana ese día (p.ej. su plaza tiene
+ * horario especial pero no configuró ese día, o el conjunto tampoco opera).
+ * Resuelve varios operarios en una sola consulta por tabla para evitar N+1
+ * dentro del generador de cronograma.
+ */
+export async function obtenerHorariosEfectivosOperarios(params: {
+  prisma: DbClient;
+  conjuntoId: string;
+  operariosIds: string[];
+  dia: DiaSemana;
+}): Promise<Map<string, HorarioDia | null>> {
+  const { prisma, conjuntoId, dia } = params;
+  const operariosIds = Array.from(new Set(params.operariosIds.map(String)));
+  const resultado = new Map<string, HorarioDia | null>();
+  if (!operariosIds.length) return resultado;
+
+  const necesidadRepo = (prisma as any).conjuntoNecesidadOperario;
+  const necesidades = necesidadRepo?.findMany
+    ? await necesidadRepo.findMany({
+        where: { conjuntoId, operarioId: { in: operariosIds }, activo: true },
+        select: {
+          operarioId: true,
+          horarioEspecial: true,
+          horarios: { where: { dia }, select: horarioColumnasSelect },
+        },
+      })
+    : [];
+  const necesidadPorOperario = new Map<string, (typeof necesidades)[number]>(
+    necesidades
+      .filter((n: any) => n.operarioId)
+      .map((n: any) => [n.operarioId as string, n]),
+  );
+
+  // El horario general se consulta como máximo una vez, aunque varios
+  // operarios caigan en el fallback (sin plaza o sin horario especial).
+  let horarioGeneral: HorarioDia | null | undefined;
+  const resolverHorarioGeneral = async () => {
+    if (horarioGeneral === undefined) {
+      horarioGeneral = await obtenerHorarioGeneralConjunto({ prisma, conjuntoId, dia });
+    }
+    return horarioGeneral;
+  };
+
+  for (const operarioId of operariosIds) {
+    const necesidad = necesidadPorOperario.get(operarioId);
+    if (necesidad?.horarioEspecial) {
+      // Plaza con horario propio: sobrescribe, incluso si excede o no
+      // coincide con el horario general del conjunto (puede no tener fila
+      // ese día -> null -> la plaza no trabaja ese día).
+      resultado.set(operarioId, rowToHorarioDia(necesidad.horarios[0] ?? null));
+      continue;
+    }
+    resultado.set(operarioId, await resolverHorarioGeneral());
+  }
+  return resultado;
+}
+
+/** Variante para un solo operario; delega en la versión en lote. */
+export async function obtenerHorarioEfectivoOperario(params: {
+  prisma: DbClient;
+  conjuntoId: string;
+  operarioId: string;
+  dia: DiaSemana;
+}): Promise<HorarioDia | null> {
+  const mapa = await obtenerHorariosEfectivosOperarios({
+    prisma: params.prisma,
+    conjuntoId: params.conjuntoId,
+    operariosIds: [params.operarioId],
+    dia: params.dia,
+  });
+  return mapa.get(params.operarioId) ?? null;
+}
+
+/** Unión de intervalos (a diferencia de intersectIntervals, que es AND). */
+function unionIntervals(
+  left: IntervaloLaboral[],
+  right: IntervaloLaboral[],
+): IntervaloLaboral[] {
+  const ordenados = [...left, ...right].sort((a, b) => a.i - b.i);
+  const fusionados: IntervaloLaboral[] = [];
+  for (const actual of ordenados) {
+    const ultimo = fusionados[fusionados.length - 1];
+    if (ultimo && actual.i <= ultimo.f) {
+      ultimo.f = Math.max(ultimo.f, actual.f);
+    } else {
+      fusionados.push({ ...actual });
+    }
+  }
+  return fusionados;
+}
+
+export async function obtenerIntervalosEfectivosProgramacion(params: {
+  prisma: DbClient;
+  conjuntoId: string;
+  fecha: Date;
+  operariosIds?: string[];
+}): Promise<{
+  dia: DiaSemana;
+  /** Horario general del CONJUNTO ese día (sin cambios de significado). */
+  horario: HorarioDia | null;
+  /**
+   * Ventana de búsqueda: el horario del conjunto si no se pasan operarios,
+   * o la UNIÓN de las ventanas efectivas de los operarios (conjunto o plaza
+   * con horario especial) si se pasan. Puede exceder el horario del
+   * conjunto cuando una plaza tiene horario especial más amplio.
+   */
+  intervalosConjunto: IntervaloLaboral[];
+  /** Intersección tras aplicar jornada/patrón/disponibilidad de cada operario. */
+  intervalosEfectivos: IntervaloLaboral[];
+  operariosSinConfiguracion: string[];
+}> {
+  const { prisma, conjuntoId, fecha } = params;
+  const operariosIds = Array.from(new Set((params.operariosIds ?? []).map(String)));
+  const dia = diaSemanaFromDate(fecha);
+  const horarioGeneral = await obtenerHorarioGeneralConjunto({ prisma, conjuntoId, dia });
+
   if (!operariosIds.length) {
+    const intervalosConjunto = horarioGeneral ? workIntervalsFromHorario(horarioGeneral) : [];
     return {
       dia,
-      horario,
+      horario: horarioGeneral,
       intervalosConjunto,
       intervalosEfectivos: intervalosConjunto,
       operariosSinConfiguracion: [],
     };
   }
 
-  const [operarios, disponibilidad] = await Promise.all([
+  const [operarios, disponibilidad, horariosEfectivos] = await Promise.all([
     prisma.operario.findMany({
       where: { id: { in: operariosIds } },
       select: {
@@ -549,10 +661,13 @@ export async function obtenerIntervalosEfectivosProgramacion(params: {
       },
     }),
     obtenerDisponibilidadActivaOperarios({ prisma, operariosIds, fecha }),
+    obtenerHorariosEfectivosOperarios({ prisma, conjuntoId, operariosIds, dia }),
   ]);
   const byId = new Map(operarios.map((operario) => [operario.id, operario]));
   const operariosSinConfiguracion = operariosIds.filter((id) => !byId.has(id));
-  let intervalosEfectivos = intervalosConjunto;
+
+  let intervalosConjunto: IntervaloLaboral[] = [];
+  let intervalosEfectivos: IntervaloLaboral[] | null = null;
 
   for (const operarioId of operariosIds) {
     const operario = byId.get(operarioId);
@@ -560,10 +675,19 @@ export async function obtenerIntervalosEfectivosProgramacion(params: {
       intervalosEfectivos = [];
       continue;
     }
+    const horarioEfectivo = horariosEfectivos.get(operarioId) ?? null;
+    intervalosConjunto = unionIntervals(
+      intervalosConjunto,
+      horarioEfectivo ? workIntervalsFromHorario(horarioEfectivo) : [],
+    );
+
     const periodo = disponibilidad.get(operarioId);
     const permitidos = allowedIntervalsForUserWithAvailability({
       dia,
-      horario,
+      // `horario` no se usa cuando horarioEfectivo viene explícito (siempre
+      // aquí); se pasa el mismo valor por completar el tipo requerido.
+      horario: horarioEfectivo ?? { startMin: 0, endMin: 0 },
+      horarioEfectivo,
       jornadaLaboral: operario.usuario?.jornadaLaboral ?? null,
       patronJornada: operario.usuario?.patronJornada ?? null,
       disponibilidad: periodo
@@ -573,15 +697,16 @@ export async function obtenerIntervalosEfectivosProgramacion(params: {
           }
         : null,
     });
-    intervalosEfectivos = intersectIntervals(intervalosEfectivos, permitidos);
+    intervalosEfectivos =
+      intervalosEfectivos == null ? permitidos : intersectIntervals(intervalosEfectivos, permitidos);
     if (!intervalosEfectivos.length) break;
   }
 
   return {
     dia,
-    horario,
+    horario: horarioGeneral,
     intervalosConjunto,
-    intervalosEfectivos,
+    intervalosEfectivos: intervalosEfectivos ?? [],
     operariosSinConfiguracion,
   };
 }
@@ -622,11 +747,15 @@ export async function validarIntervaloProgramacion(params: {
     fecha: fechaInicio,
     operariosIds: params.operariosIds,
   });
-  if (!disponibilidad.horario) {
+  // `intervalosConjunto` ya contempla el horario de una plaza con horario
+  // especial (puede tener ventana un día en que el conjunto no opera), así
+  // que el rechazo se basa en la ventana de búsqueda real, no solo en si el
+  // conjunto tiene fila ese día.
+  if (!disponibilidad.intervalosConjunto.length) {
     return {
       ok: false,
       motivo: "SIN_HORARIO_CONJUNTO",
-      mensaje: "El conjunto no tiene un horario laboral válido para ese día.",
+      mensaje: "Ni el conjunto ni los operarios asignados tienen un horario laboral válido para ese día.",
     };
   }
   const inicioMin = fechaInicio.getHours() * 60 + fechaInicio.getMinutes();
