@@ -77,6 +77,7 @@ import {
   allowedIntervalsForUserWithAvailability,
   diaSemanaFromDate,
   obtenerIntervalosEfectivosProgramacion,
+  obtenerHorariosEfectivosOperarios,
   validarIntervaloProgramacion,
   validarLimiteSemanalOperarios,
   obtenerDisponibilidadActivaOperarios,
@@ -190,7 +191,10 @@ type ExclusionMotivoTipo =
   | "REEMPLAZO_PRIORIDAD"
   | "MANUAL_REEMPLAZADA"
   | "MANUAL_ELIMINADA"
-  | "REORDEN_MANUAL_SIN_HUECO";
+  | "REORDEN_MANUAL_SIN_HUECO"
+  // La definición requiere una necesidad/plaza (ConjuntoNecesidadOperario)
+  // que actualmente no tiene operario asignado: no se agenda a medias.
+  | "NECESIDAD_SIN_OPERARIO";
 
 type ExcluidaSnapshot = {
   conjuntoId: string;
@@ -417,6 +421,10 @@ export class DefinicionTareaPreventivaService {
   private bloqueosPatronSchedulerCache = new Map<string, Bloqueo[]>();
   private limiteSemanalSchedulerCache = new Map<string, number>();
   private minutosSemanaSchedulerCache = new Map<string, number>();
+  // Necesidades operativas: horariosPorDia resuelto para un conjunto de
+  // operarios concreto (la(s) plaza(s) de una definición, o el conjunto
+  // completo cuando no hay necesidades). Clave: `${conjuntoId}|${idsOrdenados}`.
+  private horariosPorOperariosCache = new Map<string, Map<DiaSemana, HorarioDia>>();
   private agendaSchedulerActiva = false;
   private agendaScheduler = new Map<string, IntervaloAgendaScheduler[]>();
   private ocurrenciasDefinicionDiaScheduler = new Map<string, Set<string>>();
@@ -431,6 +439,138 @@ export class DefinicionTareaPreventivaService {
 
   private claveOperariosDia(fecha: Date, operariosIds: string[]) {
     return `${dayKey(fecha)}|${[...operariosIds].sort().join(",")}`;
+  }
+
+  /**
+   * Necesidad primero, operario como respaldo: si la definición tiene
+   * plazas (necesidades) vinculadas, el operario a agendar es el que
+   * ocupa cada plaza (puede haber plazas vacantes -> se filtran, y el
+   * llamador decide qué hacer si el resultado queda incompleto). Si no
+   * tiene ninguna, se conserva el camino directo `operarios` de siempre.
+   */
+  private operariosIdsDeDefinicion(def: {
+    operarios: Array<{ id: string }>;
+    necesidades?: Array<{ operarioId: string | null }>;
+  }): { operariosIds: string[]; necesidadesVacantes: boolean } {
+    if (!def.necesidades?.length) {
+      return { operariosIds: def.operarios.map((o) => o.id), necesidadesVacantes: false };
+    }
+    const operariosIds = def.necesidades
+      .map((n) => n.operarioId)
+      .filter((id): id is string => !!id);
+    return {
+      operariosIds,
+      necesidadesVacantes: operariosIds.length < def.necesidades.length,
+    };
+  }
+
+  /**
+   * Igual que operariosIdsDeDefinicion pero para snapshots de excluidas
+   * (necesita también los nombres). Una plaza vacante simplemente no
+   * aporta id/nombre: no hay nadie que mostrar en esa posición.
+   */
+  private operariosSnapshotDeDefinicion(def: {
+    operarios: Array<{ id: string; usuario?: { nombre?: string | null } | null }>;
+    necesidades?: Array<{
+      operarioId: string | null;
+      operario?: { id: string; usuario?: { nombre?: string | null } | null } | null;
+    }>;
+  }): { ids: string[]; nombres: string[] } {
+    if (!def.necesidades?.length) {
+      return {
+        ids: def.operarios.map((o) => o.id),
+        nombres: def.operarios
+          .map((o) => o.usuario?.nombre ?? "")
+          .filter((name) => name.trim().length > 0),
+      };
+    }
+    const ocupadas = def.necesidades.filter((n) => n.operarioId && n.operario);
+    return {
+      ids: ocupadas.map((n) => n.operarioId as string),
+      nombres: ocupadas
+        .map((n) => n.operario?.usuario?.nombre ?? "")
+        .filter((name) => name.trim().length > 0),
+    };
+  }
+
+  /**
+   * Horario base para buscar hueco, resuelto para un conjunto concreto de
+   * operarios (típicamente los que ocupan la(s) plaza(s) de una
+   * definición). Es la ventana ENVOLVENTE (mínimo inicio, máximo cierre)
+   * de la ventana efectiva de cada operario ese día -la misma composición
+   * que ya usa el resto del algoritmo: horario amplio + bloqueosPatron
+   * (derivados de la intersección real) recortan el resto-. Sin
+   * operariosIds, es el horario general del conjunto de siempre.
+   */
+  private async horariosPorDiaParaOperarios(
+    conjuntoId: string,
+    operariosIds: string[],
+  ): Promise<Map<DiaSemana, HorarioDia>> {
+    const idsUnicos = Array.from(new Set(operariosIds));
+    const clave = `${conjuntoId}|${idsUnicos.slice().sort().join(",")}`;
+    const cacheada = this.horariosPorOperariosCache.get(clave);
+    if (cacheada) return cacheada;
+
+    const mapa = new Map<DiaSemana, HorarioDia>();
+
+    if (!idsUnicos.length) {
+      // Sin operarios ni necesidades: comportamiento actual intacto.
+      const horarios = await this.prisma.conjuntoHorario.findMany({ where: { conjuntoId } });
+      for (const h of horarios) {
+        mapa.set(h.dia, {
+          startMin: toMin(h.horaApertura),
+          endMin: toMin(h.horaCierre),
+          descansoStartMin: h.descansoInicio ? toMin(h.descansoInicio) : undefined,
+          descansoEndMin: h.descansoFin ? toMin(h.descansoFin) : undefined,
+        });
+      }
+      this.horariosPorOperariosCache.set(clave, mapa);
+      return mapa;
+    }
+
+    for (const dia of Object.values(DiaSemana)) {
+      const horariosEfectivos = await obtenerHorariosEfectivosOperarios({
+        prisma: this.prisma,
+        conjuntoId,
+        operariosIds: idsUnicos,
+        dia,
+      });
+
+      let startMin: number | null = null;
+      let endMin: number | null = null;
+      const descansos: Array<{ i: number; f: number }> = [];
+      for (const id of idsUnicos) {
+        const h = horariosEfectivos.get(id);
+        if (!h) continue;
+        startMin = startMin == null ? h.startMin : Math.min(startMin, h.startMin);
+        endMin = endMin == null ? h.endMin : Math.max(endMin, h.endMin);
+        if (h.descansoStartMin != null && h.descansoEndMin != null) {
+          descansos.push({ i: h.descansoStartMin, f: h.descansoEndMin });
+        }
+      }
+      // Ningún operario tiene ventana ese día (p.ej. su plaza no lo cubre) -> sin fila.
+      if (startMin == null || endMin == null) continue;
+
+      // El descanso de la envolvente solo se conserva si TODOS los
+      // operarios con ventana ese día comparten exactamente el mismo
+      // horario de descanso; si difieren se omite aquí (los bloqueos por
+      // patrón/disponibilidad, derivados de la intersección real, se
+      // encargan del recorte fino de cada operario).
+      let descansoStartMin: number | undefined;
+      let descansoEndMin: number | undefined;
+      if (
+        descansos.length > 0 &&
+        descansos.every((d) => d.i === descansos[0].i && d.f === descansos[0].f)
+      ) {
+        descansoStartMin = descansos[0].i;
+        descansoEndMin = descansos[0].f;
+      }
+
+      mapa.set(dia, { startMin, endMin, descansoStartMin, descansoEndMin });
+    }
+
+    this.horariosPorOperariosCache.set(clave, mapa);
+    return mapa;
   }
 
   private async disponibilidadScheduler(params: {
@@ -1317,6 +1457,9 @@ export class DefinicionTareaPreventivaService {
       where: { id: defId, conjuntoId },
       include: {
         operarios: { include: { usuario: { select: { nombre: true } } } },
+        necesidades: {
+          include: { operario: { include: { usuario: { select: { nombre: true } } } } },
+        },
         supervisor: { include: { usuario: { select: { nombre: true } } } },
         ubicacion: { select: { nombre: true } },
         elemento: { include: elementoParentChainInclude },
@@ -1341,6 +1484,9 @@ export class DefinicionTareaPreventivaService {
     const def = await this.cargarSnapshotDefinicion(params.defId, params.conjuntoId);
     if (!def) return null;
 
+    const { ids: operariosIds, nombres: operariosNombres } =
+      this.operariosSnapshotDeDefinicion(def as any);
+
     return this.crearExcluida({
       conjuntoId: params.conjuntoId,
       periodoAnio: params.periodoAnio,
@@ -1359,10 +1505,8 @@ export class DefinicionTareaPreventivaService {
       elementoNombre: construirRutaElemento(def.elemento as any) ?? null,
       supervisorId: def.supervisorId ?? null,
       supervisorNombre: def.supervisor?.usuario?.nombre ?? null,
-      operariosIds: def.operarios.map((o) => o.id),
-      operariosNombres: def.operarios
-        .map((o) => o.usuario?.nombre ?? "")
-        .filter((name) => name.trim().length > 0),
+      operariosIds,
+      operariosNombres,
       motivoTipo: params.motivoTipo,
       motivoMensaje: params.motivoMensaje,
       metadataJson: params.metadataJson,
@@ -1641,16 +1785,13 @@ export class DefinicionTareaPreventivaService {
       permitirDivisionFlexible = true,
     } = params;
 
-    const horarios = await this.prisma.conjuntoHorario.findMany({ where: { conjuntoId } });
-    const horariosPorDia = new Map<DiaSemana, HorarioDia>();
-    for (const h of horarios) {
-      horariosPorDia.set(h.dia, {
-        startMin: toMin(h.horaApertura),
-        endMin: toMin(h.horaCierre),
-        descansoStartMin: h.descansoInicio ? toMin(h.descansoInicio) : undefined,
-        descansoEndMin: h.descansoFin ? toMin(h.descansoFin) : undefined,
-      });
-    }
+    // Ventana de búsqueda: la de la(s) plaza(s) de los operarios de la
+    // excluida (o el horario general del conjunto si ninguno tiene plaza
+    // con horario especial -> comportamiento previo intacto).
+    const horariosPorDia = await this.horariosPorDiaParaOperarios(
+      conjuntoId,
+      excluida.operariosIds,
+    );
 
     const inicioMes = new Date(excluida.periodoAnio, excluida.periodoMes - 1, 1, 0, 0, 0, 0);
     const finMes = new Date(excluida.periodoAnio, excluida.periodoMes, 0, 23, 59, 59, 999);
@@ -2910,6 +3051,12 @@ export class DefinicionTareaPreventivaService {
           operarios: operariosIds.length
             ? { connect: operariosIds.map((id) => ({ id })) }
             : undefined,
+          // Vínculo durable a la(s) plaza(s) de origen (si la definición
+          // resolvió por necesidad): permite que reasignar el titular de la
+          // plaza no requiera editar esta tarea ya creada.
+          necesidades: def.necesidades?.length
+            ? { connect: def.necesidades.map((n: { id: number }) => ({ id: n.id })) }
+            : undefined,
         },
         select: { id: true },
       });
@@ -4044,6 +4191,7 @@ export class DefinicionTareaPreventivaService {
     this.bloqueosPatronSchedulerCache.clear();
     this.limiteSemanalSchedulerCache.clear();
     this.minutosSemanaSchedulerCache.clear();
+    this.horariosPorOperariosCache.clear();
     this.agendaSchedulerActiva = false;
     this.agendaScheduler.clear();
     this.ocurrenciasDefinicionDiaScheduler.clear();
@@ -4061,6 +4209,13 @@ export class DefinicionTareaPreventivaService {
       where: { conjuntoId, activo: true },
       include: {
         operarios: { include: { usuario: { select: { nombre: true } } } },
+        // Necesidad primero, operario como respaldo (ver
+        // operariosIdsDeDefinicion): solo se usa si la definición tiene
+        // al menos una plaza vinculada.
+        necesidades: {
+          where: { activo: true },
+          include: { operario: { include: { usuario: { select: { nombre: true } } } } },
+        },
         supervisor: true,
         ubicacion: { select: { nombre: true } },
         elemento: { include: elementoParentChainInclude },
@@ -4080,8 +4235,10 @@ export class DefinicionTareaPreventivaService {
       const ordenA = ordenPrioridad(prioridadA);
       const ordenB = ordenPrioridad(prioridadB);
       if (ordenA !== ordenB) return ordenA - ordenB;
-      if (a.operarios.length !== b.operarios.length) {
-        return b.operarios.length - a.operarios.length;
+      const operariosA = this.operariosIdsDeDefinicion(a).operariosIds.length;
+      const operariosB = this.operariosIdsDeDefinicion(b).operariosIds.length;
+      if (operariosA !== operariosB) {
+        return operariosB - operariosA;
       }
       return a.id - b.id;
     });
@@ -4309,6 +4466,10 @@ export class DefinicionTareaPreventivaService {
       def: (typeof defs)[number];
       prioridad: number;
       operariosIds: string[];
+      // Ventana de búsqueda resuelta para operariosIds: la(s) plaza(s) de la
+      // definición si tienen horario especial, o el horario general del
+      // conjunto (idéntico al comportamiento previo) en cualquier otro caso.
+      horariosPorDiaDef: Map<DiaSemana, HorarioDia>;
       dias: Date[];
       durMin: number;
     };
@@ -4316,6 +4477,7 @@ export class DefinicionTareaPreventivaService {
       def: (typeof defs)[number];
       prioridad: number;
       operariosIds: string[];
+      horariosPorDiaDef: Map<DiaSemana, HorarioDia>;
       dia: Date;
       esRondaGarantia: boolean;
     };
@@ -4341,8 +4503,50 @@ export class DefinicionTareaPreventivaService {
       return true;
     });
 
-    const construirInfo = (lista: typeof defs): InfoDefinicion[] =>
-      lista.map((def) => {
+    const construirInfo = async (lista: typeof defs): Promise<InfoDefinicion[]> => {
+      const out: InfoDefinicion[] = [];
+      for (const def of lista) {
+        // Necesidad primero, operario como respaldo. Una plaza vacante deja
+        // la definición completa sin agendar este mes (no a medias): se
+        // excluye una vez por cada ocurrencia esperada, igual que el resto
+        // de motivos de exclusión.
+        const { operariosIds, necesidadesVacantes } = this.operariosIdsDeDefinicion(def);
+        if (necesidadesVacantes) {
+          const diasEsperados = pickDaysByFrecuencia(fechasDelMes, def);
+          const prioridadDef = Number((def as any).prioridad ?? 2);
+          const durMinDef = estimarDuracionDefinicionMin(def, tamanoBloqueMinutos);
+          const mensaje = `La(s) plaza(s) requeridas por '${def.descripcion}' no tienen operario asignado.`;
+          for (const diaEsperado of diasEsperados.length ? diasEsperados : [inicioMes]) {
+            novedades.push({
+              tipo: "SIN_CANDIDATAS",
+              defId: def.id,
+              descripcion: def.descripcion,
+              prioridad: prioridadDef,
+              fecha: dayKey(diaEsperado),
+              mensaje,
+            });
+            await this.crearExcluidaDesdeDefinicion({
+              conjuntoId,
+              periodoAnio,
+              periodoMes,
+              defId: def.id,
+              fechaObjetivo: diaEsperado,
+              duracionMinutos: Math.max(1, durMinDef),
+              motivoTipo: "NECESIDAD_SIN_OPERARIO",
+              motivoMensaje: mensaje,
+            });
+          }
+          continue;
+        }
+
+        // Ventana de búsqueda de esta definición: la(s) plaza(s) si tienen
+        // horario especial, o el horario general del conjunto (idéntico al
+        // comportamiento previo cuando no hay necesidades involucradas).
+        const horariosPorDiaDef = await this.horariosPorDiaParaOperarios(
+          conjuntoId,
+          operariosIds,
+        );
+
         const diasFrecuencia = pickDaysByFrecuencia(fechasDelMes, def);
         // Una preventiva DIARIA representa una ejecucion por cada jornada
         // laborable configurada. Generarla tambien en dias sin horario (por
@@ -4352,26 +4556,29 @@ export class DefinicionTareaPreventivaService {
           def.frecuencia === Frecuencia.DIARIA
             ? diasFrecuencia.filter(
                 (dia) =>
-                  horariosPorDia.has(dateToDiaSemana(dia)) &&
+                  horariosPorDiaDef.has(dateToDiaSemana(dia)) &&
                   !festivosSet.has(dayKey(dia)),
               )
             : diasFrecuencia;
-        return {
+        out.push({
           def,
           prioridad: Number((def as any).prioridad ?? 2),
-          operariosIds: def.operarios.map((o) => o.id),
+          operariosIds,
+          horariosPorDiaDef,
           dias,
           durMin: estimarDuracionDefinicionMin(def, tamanoBloqueMinutos),
-        };
-      });
+        });
+      }
+      return out;
+    };
 
-    const p1Info = construirInfo(
+    const p1Info = await construirInfo(
       defsValidas.filter((def) => Number((def as any).prioridad ?? 2) === 1),
     );
-    const p2Info = construirInfo(
+    const p2Info = await construirInfo(
       defsValidas.filter((def) => Number((def as any).prioridad ?? 2) === 2),
     );
-    const p3Info = construirInfo(
+    const p3Info = await construirInfo(
       defsValidas.filter((def) => Number((def as any).prioridad ?? 2) === 3),
     );
 
@@ -4419,6 +4626,7 @@ export class DefinicionTareaPreventivaService {
               def: info.def,
               prioridad: info.prioridad,
               operariosIds: info.operariosIds,
+              horariosPorDiaDef: info.horariosPorDiaDef,
               dia: info.dias[ronda],
               esRondaGarantia: false,
             });
@@ -4439,6 +4647,7 @@ export class DefinicionTareaPreventivaService {
           def: info.def,
           prioridad: info.prioridad,
           operariosIds: info.operariosIds,
+          horariosPorDiaDef: info.horariosPorDiaDef,
           dia: info.dias[0],
           esRondaGarantia: esGarantiaP3,
         });
@@ -4474,6 +4683,10 @@ export class DefinicionTareaPreventivaService {
       const def = trabajo.def;
       const prioridad = trabajo.prioridad;
       const operariosIds = trabajo.operariosIds;
+      // Ventana de búsqueda de ESTA definición (plaza con horario especial,
+      // o el horario general del conjunto). Sustituye al `horariosPorDia`
+      // conjunto-wide en todo el cuerpo de este bucle.
+      const horariosPorDiaDef = trabajo.horariosPorDiaDef;
       const diasValidos = [trabajo.dia];
 
       for (const diaBase of diasValidos) {
@@ -4747,7 +4960,7 @@ export class DefinicionTareaPreventivaService {
             // y se delega en la fase de rescate, que barre el resto del periodo.
             if (esFestivo || !disponibilidadOperarios.ok) break;
 
-            const horario = horariosPorDia.get(dateToDiaSemana(diaParte));
+            const horario = horariosPorDiaDef.get(dateToDiaSemana(diaParte));
             if (!horario) break;
 
             // ✅ 1) Descanso
@@ -4818,7 +5031,7 @@ export class DefinicionTareaPreventivaService {
                 operariosIds,
                 fechaReferencia: toDateAtMin(diaParte, bloquesFound[0].i),
                 minutosAdicionales: durMinParte,
-                horariosPorDia,
+                horariosPorDia: horariosPorDiaDef,
                 incluirPublicadasEnAgenda,
               });
 
@@ -4865,7 +5078,7 @@ export class DefinicionTareaPreventivaService {
               dias: enumerateDays(inicioMes, finMes).filter(
                 (dia) =>
                   !festivosSet.has(dayKey(dia)) &&
-                  horariosPorDia.has(dateToDiaSemana(dia)),
+                  horariosPorDiaDef.has(dateToDiaSemana(dia)),
               ),
               fechaObjetivo: diaObjetivoParte,
               periodoAnio,
@@ -4887,7 +5100,7 @@ export class DefinicionTareaPreventivaService {
                 duracionMinutos: durMinParte,
                 operariosIds,
                 dias: [diaCandidato],
-                horariosPorDia,
+                horariosPorDia: horariosPorDiaDef,
                 festivosSet,
                 maxBloquesPorDia: 2,
                 permitirMultiDia: false,
@@ -4969,7 +5182,7 @@ export class DefinicionTareaPreventivaService {
                   : { ok: true, noDisponibles: [] as string[] };
                 if (!disponibilidad.ok) continue;
 
-                const horario = horariosPorDia.get(
+                const horario = horariosPorDiaDef.get(
                   dateToDiaSemana(diaAlternativo),
                 );
                 if (!horario) continue;
@@ -5088,7 +5301,7 @@ export class DefinicionTareaPreventivaService {
               periodoAnio,
               periodoMes,
               operariosIds,
-              horariosPorDia,
+              horariosPorDia: horariosPorDiaDef,
               festivosSet,
               definicionId: def.id,
               descripcion: def.descripcion,
@@ -5105,7 +5318,7 @@ export class DefinicionTareaPreventivaService {
                 duracionMinutos: durMinParte,
                 operariosIds,
                 dias: diasRescate,
-                horariosPorDia,
+                horariosPorDia: horariosPorDiaDef,
                 festivosSet,
                 incluirPublicadasEnAgenda,
               });
@@ -5196,7 +5409,7 @@ export class DefinicionTareaPreventivaService {
                 : { ok: true, noDisponibles: [] as string[] };
               if (!disponibilidad.ok) continue;
 
-              const horario = horariosPorDia.get(
+              const horario = horariosPorDiaDef.get(
                 dateToDiaSemana(diaAlternativo),
               );
               if (!horario) continue;
@@ -5379,6 +5592,14 @@ export class DefinicionTareaPreventivaService {
       }
     }
 
+    // Reempaquetado por zonas: pasada global que mezcla tareas de varias
+    // definiciones/plazas por día. Usa deliberadamente el horario general
+    // del conjunto (no el de cada plaza): si un día no tiene fila en
+    // ConjuntoHorario, esa fecha simplemente se salta del reordenamiento
+    // (ver reordenarBorradorGeneradoPorZonas) sin tocar las tareas ya
+    // creadas -las de plazas con horario especial ya quedaron agendadas
+    // correctamente en las fases anteriores; solo no se benefician de este
+    // reempaquetado estético cuando caen fuera del horario del conjunto.
     const ordenamientoZonas =
       modo === "RESET"
         ? await this.reordenarBorradorGeneradoPorZonas({
@@ -6914,16 +7135,11 @@ export class DefinicionTareaPreventivaService {
       throw new Error("No es una preventiva en borrador valida para reprogramar.");
     }
 
-    const horarios = await this.prisma.conjuntoHorario.findMany({ where: { conjuntoId } });
-    const horariosPorDia = new Map<DiaSemana, HorarioDia>();
-    for (const h of horarios) {
-      horariosPorDia.set(h.dia, {
-        startMin: toMin(h.horaApertura),
-        endMin: toMin(h.horaCierre),
-        descansoStartMin: h.descansoInicio ? toMin(h.descansoInicio) : undefined,
-        descansoEndMin: h.descansoFin ? toMin(h.descansoFin) : undefined,
-      });
-    }
+    const operariosIds = tarea.operarios.map((o) => o.id);
+    // Ventana de búsqueda: la(s) plaza(s) de estos operarios si tienen
+    // horario especial, o el horario general del conjunto (comportamiento
+    // previo intacto cuando ninguno tiene plaza con horario propio).
+    const horariosPorDia = await this.horariosPorDiaParaOperarios(conjuntoId, operariosIds);
 
     const inicioBase = new Date(tarea.fechaInicioOriginal ?? tarea.fechaInicio);
     const finBusqueda = new Date(inicioBase);
@@ -6934,8 +7150,6 @@ export class DefinicionTareaPreventivaService {
       inicio: inicioBase,
       fin: finBusqueda,
     });
-
-    const operariosIds = tarea.operarios.map((o) => o.id);
     const opciones: Array<{ fecha: string; fechaInicio: string; fechaFin: string; duracionMinutos: number }> = [];
 
     let dia = new Date(inicioBase);
