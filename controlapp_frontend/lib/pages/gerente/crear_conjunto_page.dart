@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../api/gerente_api.dart';
+import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
+import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/service/theme.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -15,6 +17,17 @@ const _diasSemana = <String>[
   'DOMINGO',
 ];
 
+/// Roles disponibles para una necesidad/plaza. Coincide con el enum
+/// TipoFuncion del backend (schema.prisma).
+const _rolesNecesidad = <String>['TODERO', 'SALVAVIDAS', 'ASEO', 'PISCINERO'];
+
+const _etiquetaRol = <String, String>{
+  'TODERO': 'Todero',
+  'SALVAVIDAS': 'Salvavidas',
+  'ASEO': 'Aseo',
+  'PISCINERO': 'Piscinero',
+};
+
 class _HorarioDia {
   TimeOfDay? apertura;
   TimeOfDay? cierre;
@@ -24,6 +37,34 @@ class _HorarioDia {
   bool get completo => apertura != null && cierre != null;
 
   bool get descansoCompleto => descansoInicio != null && descansoFin != null;
+}
+
+/// Horario especial de una necesidad para un día concreto: más simple que
+/// _HorarioDia del conjunto (sin descanso) para mantener manejable el
+/// formulario cuando se editan varias plazas a la vez.
+class _NecesidadHorarioDia {
+  bool activo = false;
+  TimeOfDay? apertura;
+  TimeOfDay? cierre;
+
+  bool get completo => activo && apertura != null && cierre != null;
+}
+
+/// Necesidad operativa (plaza/cargo) capturada localmente durante la
+/// creación del conjunto. Se envía al backend (POST .../necesidades) recién
+/// después de que el conjunto exista, igual que el mapa (ver F.3 del plan).
+class _NecesidadForm {
+  String rol;
+  final TextEditingController etiquetaCtrl;
+  bool horarioEspecial = false;
+  final Map<String, _NecesidadHorarioDia> horariosPorDia = {
+    for (final d in _diasSemana) d: _NecesidadHorarioDia(),
+  };
+
+  _NecesidadForm({required this.rol, required String etiquetaInicial})
+    : etiquetaCtrl = TextEditingController(text: etiquetaInicial);
+
+  void dispose() => etiquetaCtrl.dispose();
 }
 
 class CrearConjuntoPage extends StatefulWidget {
@@ -47,6 +88,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
   final _valorAgregadoCtrl = TextEditingController();
 
   final GerenteApi _gerenteApi = GerenteApi();
+  final ConjuntoApi _conjuntoApi = ConjuntoApi();
   bool _isSaving = false;
 
   // Admin seleccionado
@@ -64,6 +106,9 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
 
   // ubicaciones (nombre + lista de elementos simples)
   final List<_UbicacionForm> _ubicaciones = [];
+
+  // necesidades operativas (plazas/cargos)
+  final List<_NecesidadForm> _necesidades = [];
 
   @override
   void initState() {
@@ -226,6 +271,85 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     });
   }
 
+  // Necesidades operativas (plazas/cargos)
+  String _etiquetaSugerida(String rol) {
+    final base = _etiquetaRol[rol] ?? rol;
+    final existentes = _necesidades.where((n) => n.rol == rol).length;
+    return '$base #${existentes + 1}';
+  }
+
+  void _agregarNecesidad() {
+    setState(() {
+      final rolInicial = _rolesNecesidad[0];
+      _necesidades.add(
+        _NecesidadForm(
+          rol: rolInicial,
+          etiquetaInicial: _etiquetaSugerida(rolInicial),
+        ),
+      );
+    });
+  }
+
+  void _eliminarNecesidad(int index) {
+    setState(() {
+      _necesidades.removeAt(index).dispose();
+    });
+  }
+
+  Future<void> _seleccionarHoraNecesidad({
+    required _NecesidadHorarioDia horario,
+    required bool esApertura,
+  }) async {
+    final initial =
+        (esApertura ? horario.apertura : horario.cierre) ??
+        TimeOfDay(hour: esApertura ? 8 : 17, minute: 0);
+    final picked = await showTimePicker(context: context, initialTime: initial);
+    if (picked != null) {
+      setState(() {
+        if (esApertura) {
+          horario.apertura = picked;
+        } else {
+          horario.cierre = picked;
+        }
+      });
+    }
+  }
+
+  /// Crea las necesidades ya cargadas contra el conjunto recién creado. Es
+  /// una llamada de seguimiento (igual que el mapa, ver F.3 del plan): si
+  /// alguna falla no revierte la creación del conjunto, solo se avisa.
+  Future<List<String>> _crearNecesidadesPendientes(String conjuntoNit) async {
+    final errores = <String>[];
+    for (final n in _necesidades) {
+      final etiqueta = n.etiquetaCtrl.text.trim();
+      if (etiqueta.isEmpty) continue;
+      final horarios = n.horarioEspecial
+          ? n.horariosPorDia.entries
+                .where((e) => e.value.completo)
+                .map(
+                  (e) => HorarioConjunto(
+                    dia: e.key,
+                    horaApertura: _formatTimeOfDay(e.value.apertura!),
+                    horaCierre: _formatTimeOfDay(e.value.cierre!),
+                  ),
+                )
+                .toList()
+          : const <HorarioConjunto>[];
+      try {
+        await _conjuntoApi.crearNecesidad(
+          conjuntoNit: conjuntoNit,
+          rol: n.rol,
+          etiqueta: etiqueta,
+          horarioEspecial: n.horarioEspecial,
+          horarios: horarios,
+        );
+      } catch (e) {
+        errores.add('$etiqueta: $e');
+      }
+    }
+    return errores;
+  }
+
   Future<void> _guardarConjunto() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -301,8 +425,9 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     setState(() => _isSaving = true);
 
     try {
+      final nitConjunto = _nitConjuntoCtrl.text.trim();
       await _gerenteApi.crearConjunto(
-        nitConjunto: _nitConjuntoCtrl.text.trim(),
+        nitConjunto: nitConjunto,
         nombre: _nombreCtrl.text.trim(),
         direccion: _direccionCtrl.text.trim(),
         correo: _correoCtrl.text.trim(),
@@ -316,6 +441,27 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
         horarios: horariosPayload,
         ubicaciones: ubicacionesPayload,
       );
+
+      // El conjunto ya existe: las necesidades se crean en llamadas de
+      // seguimiento (igual que el mapa) porque ConjuntoNecesidadService
+      // exige que el conjunto exista antes de aceptar una plaza.
+      final erroresNecesidades = _necesidades.isEmpty
+          ? const <String>[]
+          : await _crearNecesidadesPendientes(nitConjunto);
+
+      if (!mounted) return;
+      if (erroresNecesidades.isNotEmpty) {
+        AppFeedback.showFromSnackBar(
+          context,
+          SnackBar(
+            content: Text(
+              'Conjunto creado, pero ${erroresNecesidades.length} necesidad(es) no se pudieron guardar. '
+              'Agrégalas desde el detalle del conjunto.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
 
       if (!mounted) return;
       await _mostrarGuardadoYVolverMenu();
@@ -346,6 +492,9 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     _valorAgregadoCtrl.dispose();
     for (final u in _ubicaciones) {
       u.dispose();
+    }
+    for (final n in _necesidades) {
+      n.dispose();
     }
     super.dispose();
   }
@@ -699,6 +848,69 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
 
               const SizedBox(height: 12),
 
+              // NECESIDADES OPERATIVAS (PLAZAS/CARGOS)
+              Card(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.badge_outlined, color: AppTheme.primary),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Necesidades de operarios (opcional)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Define los cargos que necesita el conjunto (ej. Todero #1, '
+                          'Salvavidas #1). Sin horario especial, cada plaza usa el '
+                          'horario general de arriba; el operario que la ocupe se '
+                          'asigna después, desde el detalle del conjunto.',
+                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      for (int i = 0; i < _necesidades.length; i++)
+                        _NecesidadWidget(
+                          necesidad: _necesidades[i],
+                          onEliminar: () => _eliminarNecesidad(i),
+                          onChanged: () => setState(() {}),
+                          onSeleccionarHora: (h, esApertura) =>
+                              _seleccionarHoraNecesidad(
+                                horario: h,
+                                esApertura: esApertura,
+                              ),
+                        ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _agregarNecesidad,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Agregar necesidad'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
               // CONSIGNAS Y VALOR AGREGADO + UBICACIONES
               Card(
                 shape: RoundedRectangleBorder(
@@ -882,6 +1094,150 @@ class _UbicacionForm {
     for (final zona in zonas) {
       zona.dispose();
     }
+  }
+}
+
+class _NecesidadWidget extends StatelessWidget {
+  final _NecesidadForm necesidad;
+  final VoidCallback onEliminar;
+  final VoidCallback onChanged;
+  final void Function(_NecesidadHorarioDia horario, bool esApertura)
+  onSeleccionarHora;
+
+  const _NecesidadWidget({
+    required this.necesidad,
+    required this.onEliminar,
+    required this.onChanged,
+    required this.onSeleccionarHora,
+  });
+
+  String _formatHora(TimeOfDay t) {
+    final h = t.hour.toString().padLeft(2, '0');
+    final m = t.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      color: const Color(0xFFF7FAF8),
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: necesidad.rol,
+                    items: _rolesNecesidad
+                        .map(
+                          (r) => DropdownMenuItem(
+                            value: r,
+                            child: Text(_etiquetaRol[r] ?? r),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      necesidad.rol = v;
+                      onChanged();
+                    },
+                    decoration: const InputDecoration(
+                      labelText: 'Rol',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: onEliminar,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: necesidad.etiquetaCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Etiqueta (ej. "Todero #1")',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 4),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Horario especial'),
+              subtitle: const Text(
+                'Sobrescribe el horario general del conjunto para esta plaza '
+                '(puede exceder su horario o cubrir días en que no opera).',
+                style: TextStyle(fontSize: 11),
+              ),
+              value: necesidad.horarioEspecial,
+              onChanged: (v) {
+                necesidad.horarioEspecial = v;
+                onChanged();
+              },
+            ),
+            if (necesidad.horarioEspecial)
+              Column(
+                children: _diasSemana.map((dia) {
+                  final h = necesidad.horariosPorDia[dia]!;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 28,
+                          child: Checkbox(
+                            value: h.activo,
+                            onChanged: (v) {
+                              h.activo = v ?? false;
+                              onChanged();
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: 84,
+                          child: Text(dia, style: const TextStyle(fontSize: 12)),
+                        ),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: h.activo
+                                ? () => onSeleccionarHora(h, true)
+                                : null,
+                            child: Text(
+                              h.apertura == null
+                                  ? 'Entrada'
+                                  : _formatHora(h.apertura!),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: h.activo
+                                ? () => onSeleccionarHora(h, false)
+                                : null,
+                            child: Text(
+                              h.cierre == null ? 'Salida' : _formatHora(h.cierre!),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
