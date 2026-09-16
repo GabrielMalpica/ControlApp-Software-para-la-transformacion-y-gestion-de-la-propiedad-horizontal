@@ -4,6 +4,8 @@ import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
+import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 
@@ -109,6 +111,9 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
 
   // necesidades operativas (plazas/cargos)
   final List<_NecesidadForm> _necesidades = [];
+
+  // mapa del conjunto (opcional, ver F.3 del plan)
+  SelectedUploadFile? _mapaSeleccionado;
 
   @override
   void initState() {
@@ -315,6 +320,15 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     }
   }
 
+  Future<void> _seleccionarMapa() async {
+    final archivos = await UniversalFilePick.pick(
+      allowMultiple: false,
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+    );
+    if (archivos.isEmpty) return;
+    setState(() => _mapaSeleccionado = archivos.first);
+  }
+
   /// Crea las necesidades ya cargadas contra el conjunto recién creado. Es
   /// una llamada de seguimiento (igual que el mapa, ver F.3 del plan): si
   /// alguna falla no revierte la creación del conjunto, solo se avisa.
@@ -449,14 +463,31 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
           ? const <String>[]
           : await _crearNecesidadesPendientes(nitConjunto);
 
+      String? errorMapa;
+      if (_mapaSeleccionado != null) {
+        try {
+          await _conjuntoApi.subirMapaConjunto(
+            conjuntoNit: nitConjunto,
+            archivo: _mapaSeleccionado!,
+          );
+        } catch (e) {
+          errorMapa = e.toString();
+        }
+      }
+
       if (!mounted) return;
-      if (erroresNecesidades.isNotEmpty) {
+      if (erroresNecesidades.isNotEmpty || errorMapa != null) {
+        final partes = <String>[
+          if (erroresNecesidades.isNotEmpty)
+            '${erroresNecesidades.length} necesidad(es) no se pudieron guardar',
+          if (errorMapa != null) 'el mapa no se pudo subir',
+        ];
         AppFeedback.showFromSnackBar(
           context,
           SnackBar(
             content: Text(
-              'Conjunto creado, pero ${erroresNecesidades.length} necesidad(es) no se pudieron guardar. '
-              'Agrégalas desde el detalle del conjunto.',
+              'Conjunto creado, pero ${partes.join(' y ')}. '
+              'Complétalo desde el detalle del conjunto o Mapa de Áreas.',
             ),
             backgroundColor: Colors.orange,
           ),
@@ -902,6 +933,68 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                           onPressed: _agregarNecesidad,
                           icon: const Icon(Icons.add),
                           label: const Text('Agregar necesidad'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // MAPA DEL CONJUNTO (opcional)
+              Card(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.map_outlined, color: AppTheme.primary),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Mapa del conjunto (opcional)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _mapaSeleccionado?.name ??
+                                  'Ningún archivo seleccionado',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            onPressed: _seleccionarMapa,
+                            icon: const Icon(Icons.upload_file),
+                            label: Text(
+                              _mapaSeleccionado == null
+                                  ? 'Adjuntar imagen'
+                                  : 'Cambiar',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'También puedes cargarlo después desde Mapa de Áreas.',
+                          style: TextStyle(fontSize: 12, color: Colors.black54),
                         ),
                       ),
                     ],
