@@ -1544,7 +1544,13 @@ export class GerenteService {
           select: { id: true, usuario: { select: usuarioSinContrasenaSelect } },
         },
         operarios: {
-          select: { id: true, usuario: { select: usuarioSinContrasenaSelect } },
+          // `funciones` es necesario para filtrar, en el frontend, qué
+          // operarios pueden ocupar una necesidad según su rol.
+          select: {
+            id: true,
+            funciones: true,
+            usuario: { select: usuarioSinContrasenaSelect },
+          },
         },
         horarios: true,
         ubicaciones: {
@@ -1606,7 +1612,13 @@ export class GerenteService {
           select: { id: true, usuario: { select: usuarioSinContrasenaSelect } },
         },
         operarios: {
-          select: { id: true, usuario: { select: usuarioSinContrasenaSelect } },
+          // `funciones` es necesario para filtrar, en el frontend, qué
+          // operarios pueden ocupar una necesidad según su rol.
+          select: {
+            id: true,
+            funciones: true,
+            usuario: { select: usuarioSinContrasenaSelect },
+          },
         },
         horarios: true,
         ubicaciones: {

@@ -179,6 +179,7 @@ export const usuarioPublicSelect = {
   patronJornada: true,
   operario: {
     select: {
+      funciones: true,
       conjuntos: {
         select: {
           nit: true,
