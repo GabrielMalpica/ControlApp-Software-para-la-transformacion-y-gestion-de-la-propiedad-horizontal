@@ -339,6 +339,9 @@ export class CronogramaService {
           operarios: { select: operarioResumenSelect },
           ubicacion: true,
           elemento: { include: elementoParentChainInclude },
+          // Distintivo visual: la tarea viene de una plaza con horario
+          // especial (puede caer fuera del horario general del conjunto).
+          necesidades: { select: { id: true, etiqueta: true, horarioEspecial: true } },
         },
         orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
       }),

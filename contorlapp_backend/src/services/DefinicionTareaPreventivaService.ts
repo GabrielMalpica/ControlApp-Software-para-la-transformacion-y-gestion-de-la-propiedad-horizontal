@@ -376,6 +376,9 @@ const tareaBorradorDetalleInclude = {
   ubicacion: true,
   elemento: { include: elementoParentChainInclude },
   supervisor: { select: supervisorResumenSelect },
+  // Distintivo visual: la tarea viene de una plaza con horario especial
+  // (puede caer fuera del horario general del conjunto).
+  necesidades: { select: { id: true, etiqueta: true, horarioEspecial: true } },
 } satisfies Prisma.TareaInclude;
 
 const DividirExcluidaManualDTO = z.object({

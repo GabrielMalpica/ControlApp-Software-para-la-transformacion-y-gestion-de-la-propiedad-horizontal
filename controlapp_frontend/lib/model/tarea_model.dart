@@ -123,6 +123,12 @@ class TareaModel {
 
   final List<String> operariosNombres;
   final List<String> operariosCargos;
+  // Necesidades/plazas vinculadas (necesidades operativas del conjunto).
+  // No vacío si la tarea viene de una plaza con horario especial: se usa
+  // como distintivo visual en el cronograma (puede caer fuera del horario
+  // general del conjunto).
+  final List<String> necesidadesEtiquetas;
+  final bool tieneHorarioEspecial;
   final String? supervisorNombre;
   final String? ubicacionNombre;
   final String? elementoNombre;
@@ -176,6 +182,8 @@ class TareaModel {
     this.operariosIds = const [],
     this.operariosNombres = const [],
     this.operariosCargos = const [],
+    this.necesidadesEtiquetas = const [],
+    this.tieneHorarioEspecial = false,
     this.supervisorNombre,
     this.ubicacionNombre,
     this.elementoNombre,
@@ -246,6 +254,17 @@ class TareaModel {
           )
           .toList();
     }
+
+    // --- Necesidades/plazas vinculadas (distintivo de horario especial) ---
+    final necesidadesJson = (json['necesidades'] as List?) ?? const [];
+    final necesidadesEtiquetas = necesidadesJson
+        .whereType<Map>()
+        .map((n) => (n['etiqueta'] ?? '').toString())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final tieneHorarioEspecial = necesidadesJson
+        .whereType<Map>()
+        .any((n) => n['horarioEspecial'] == true);
 
     // --- Supervisor nombre: plano o anidado ---
     String? supervisorNombre;
@@ -360,6 +379,8 @@ class TareaModel {
       operariosIds: opIds,
       operariosNombres: opNombres,
       operariosCargos: opCargos,
+      necesidadesEtiquetas: necesidadesEtiquetas,
+      tieneHorarioEspecial: tieneHorarioEspecial,
       prioridad: prioridad,
       zonaCronograma: json['zonaCronograma'] is Map
           ? ZonaCronogramaModel.fromJson(
@@ -420,6 +441,8 @@ class TareaModel {
     'bloquesTotales': bloquesTotales,
     'operariosNombres': operariosNombres,
     'operariosCargos': operariosCargos,
+    'necesidadesEtiquetas': necesidadesEtiquetas,
+    'tieneHorarioEspecial': tieneHorarioEspecial,
     'supervisorNombre': supervisorNombre,
     'ubicacionNombre': ubicacionNombre,
     'elementoNombre': elementoNombre,
@@ -473,6 +496,8 @@ class TareaModel {
 
     List<String>? operariosNombres,
     List<String>? operariosCargos,
+    List<String>? necesidadesEtiquetas,
+    bool? tieneHorarioEspecial,
     String? supervisorNombre,
     String? ubicacionNombre,
     String? elementoNombre,
@@ -520,6 +545,8 @@ class TareaModel {
       operariosIds: operariosIds ?? this.operariosIds,
       operariosNombres: operariosNombres ?? this.operariosNombres,
       operariosCargos: operariosCargos ?? this.operariosCargos,
+      necesidadesEtiquetas: necesidadesEtiquetas ?? this.necesidadesEtiquetas,
+      tieneHorarioEspecial: tieneHorarioEspecial ?? this.tieneHorarioEspecial,
       supervisorNombre: supervisorNombre ?? this.supervisorNombre,
       ubicacionNombre: ubicacionNombre ?? this.ubicacionNombre,
       elementoNombre: elementoNombre ?? this.elementoNombre,

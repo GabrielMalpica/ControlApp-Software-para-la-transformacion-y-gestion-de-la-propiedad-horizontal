@@ -311,21 +311,24 @@ class _CronogramaPageState extends State<CronogramaPage> {
           : (dFinMin > maxDescanso ? dFinMin : maxDescanso);
     }
 
-    if (minApertura == null || maxCierre == null) {
-      for (final t in tareasMes) {
-        final ini = t.fechaInicio.toLocal();
-        final fin = t.fechaFin.toLocal();
-        final iniMin = ini.hour * 60 + ini.minute;
-        final finMin = fin.hour * 60 + fin.minute;
-        if (finMin <= iniMin) continue;
+    // Amplía (nunca reduce) el horario del conjunto con las horas reales de
+    // las tareas del mes: una plaza con horario especial (necesidad
+    // operativa) puede empezar antes o terminar después que el horario
+    // general -o el conjunto puede no tener horario configurado ese día- y
+    // la rejilla debe mostrar esas tareas completas en vez de recortarlas.
+    for (final t in tareasMes) {
+      final ini = t.fechaInicio.toLocal();
+      final fin = t.fechaFin.toLocal();
+      final iniMin = ini.hour * 60 + ini.minute;
+      final finMin = fin.hour * 60 + fin.minute;
+      if (finMin <= iniMin) continue;
 
-        minApertura = minApertura == null
-            ? iniMin
-            : (iniMin < minApertura ? iniMin : minApertura);
-        maxCierre = maxCierre == null
-            ? finMin
-            : (finMin > maxCierre ? finMin : maxCierre);
-      }
+      minApertura = minApertura == null
+          ? iniMin
+          : (iniMin < minApertura ? iniMin : minApertura);
+      maxCierre = maxCierre == null
+          ? finMin
+          : (finMin > maxCierre ? finMin : maxCierre);
     }
 
     minApertura ??= 8 * 60;
@@ -5908,6 +5911,11 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 final border = colorBase.withValues(
                                   alpha: 0.55,
                                 );
+                                // Distintivo visual (necesidades operativas):
+                                // la tarea viene de una plaza con horario
+                                // especial, puede caer fuera del horario
+                                // general del conjunto.
+                                final horarioEspecial = t.tieneHorarioEspecial;
 
                                 final horaIni = DateFormat('HH:mm').format(ini);
                                 final horaFinStr = DateFormat(
@@ -6101,8 +6109,10 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                       color: fill,
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(
-                                        color: border,
-                                        width: 1,
+                                        color: horarioEspecial
+                                            ? Colors.orange.shade700
+                                            : border,
+                                        width: horarioEspecial ? 2 : 1,
                                       ),
                                     ),
                                     child: LayoutBuilder(
@@ -6176,6 +6186,24 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                     Icons.groups_2_outlined,
                                                     size: tiny ? 11 : 15,
                                                     color: subtext,
+                                                  ),
+                                                ),
+                                              ),
+                                            if (horarioEspecial)
+                                              Positioned(
+                                                right: 0,
+                                                top: 0,
+                                                child: Tooltip(
+                                                  message: t
+                                                          .necesidadesEtiquetas
+                                                          .isEmpty
+                                                      ? 'Plaza con horario especial'
+                                                      : 'Plaza con horario especial: ${t.necesidadesEtiquetas.join(', ')}',
+                                                  child: Icon(
+                                                    Icons.schedule,
+                                                    size: tiny ? 11 : 15,
+                                                    color:
+                                                        Colors.orange.shade700,
                                                   ),
                                                 ),
                                               ),
