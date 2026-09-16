@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { ConjuntoController } from "../controller/ConjuntoController";
+import { ConjuntoNecesidadController } from "../controller/ConjuntoNecesidadController";
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
 import { requireConjuntoScope, requireResourceScope } from "../middlewares/tenant.middleware";
@@ -7,6 +8,7 @@ import { uploadImagenMemoria } from "../middlewares/upload_evidencias";
 
 
 const c = new ConjuntoController();
+const necesidades = new ConjuntoNecesidadController();
 export const conjuntoRouter = Router();
 
 conjuntoRouter.use(authRequired);
@@ -42,6 +44,15 @@ conjuntoRouter.put(
 
 conjuntoRouter.post("/conjuntos/:nit/ubicaciones", requirePermission("mapa_areas.gestionar"), requireConjuntoScope("nit"), c.agregarUbicacion);
 conjuntoRouter.get("/conjuntos/:nit/ubicaciones/buscar", requirePermission("mapa_areas.ver"), requireConjuntoScope("nit"), c.buscarUbicacion);
+
+/* Necesidades operativas (plazas/cargos) del conjunto */
+conjuntoRouter.get("/conjuntos/:nit/necesidades", requirePermission("conjuntos.ver", "conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.listar);
+conjuntoRouter.post("/conjuntos/:nit/necesidades", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.crear);
+conjuntoRouter.patch("/conjuntos/:nit/necesidades/:necesidadId", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.editar);
+conjuntoRouter.delete("/conjuntos/:nit/necesidades/:necesidadId", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.eliminar);
+conjuntoRouter.post("/conjuntos/:nit/necesidades/:necesidadId/operario", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.asignarOperario);
+conjuntoRouter.delete("/conjuntos/:nit/necesidades/:necesidadId/operario", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.liberarOperario);
+conjuntoRouter.post("/conjuntos/:nit/necesidades/migrar-desde-operarios", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.migrarDesdeOperariosActuales);
 
 conjuntoRouter.post("/conjuntos/:nit/cronograma/tareas", requirePermission("tareas.crear", "cronograma.correctivas_programar"), requireConjuntoScope("nit"), c.agregarTareaACronograma);
 conjuntoRouter.get("/conjuntos/:nit/tareas/por-fecha", requirePermission("tareas.ver", "cronograma.ver"), requireConjuntoScope("nit"), c.tareasPorFecha);
