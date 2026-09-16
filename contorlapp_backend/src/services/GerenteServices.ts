@@ -46,6 +46,7 @@ import {
   HorarioDTO,
   toConjuntoPublico,
 } from "../model/Conjunto";
+import { necesidadPublicSelect } from "../model/ConjuntoNecesidad";
 import { ConjuntoExcelTemplateService } from "./ConjuntoExcelTemplateService";
 import { ConjuntoCargaMasivaService } from "./ConjuntoCargaMasivaService";
 
@@ -1630,6 +1631,10 @@ export class GerenteService {
             },
           },
         },
+        // Necesidades operativas (plazas/cargos): las consume tanto el
+        // detalle del conjunto como el selector "Cargo requerido" al crear
+        // una preventiva.
+        necesidades: { select: necesidadPublicSelect },
         // Nunca se selecciona mapaConjuntoBytes aqui: es un blob binario que
         // solo se sirve por separado via obtenerMapaArchivo().
         mapaConjuntoNombreArchivo: true,
