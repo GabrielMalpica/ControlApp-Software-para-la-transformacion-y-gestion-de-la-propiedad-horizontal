@@ -147,8 +147,13 @@ class DefinicionPreventiva {
 
   final List<HerramientaPlanItem> herramientasPlan;
 
-  /// Operarios asignados
+  /// Operarios asignados directamente (fallback si no hay necesidades)
   final List<int> operariosIds;
+
+  /// Necesidad(es)/plaza(s) requerida(s) (ConjuntoNecesidadOperario.id).
+  /// Cuando no está vacía, el generador resuelve el operario por la plaza
+  /// en vez de por operariosIds.
+  final List<int> necesidadesIds;
 
   // Responsable sugerido (principal)
   final int? responsableSugeridoId;
@@ -184,6 +189,7 @@ class DefinicionPreventiva {
     this.maquinariaPlan = const [],
     this.herramientasPlan = const [],
     this.operariosIds = const [],
+    this.necesidadesIds = const [],
     this.responsableSugeridoId,
     this.supervisorId,
     this.activo = true,
@@ -206,6 +212,11 @@ class DefinicionPreventiva {
           .whereType<int>()
           .toList();
     }
+
+    final necesidadesIds = ((json['necesidades'] as List?) ?? const [])
+        .map((e) => _toInt((e as Map)['id']))
+        .whereType<int>()
+        .toList();
 
     final durMin =
         _toInt(json['duracionMinutosFija']) ??
@@ -253,6 +264,7 @@ class DefinicionPreventiva {
           .toList(),
 
       operariosIds: opIds,
+      necesidadesIds: necesidadesIds,
       responsableSugeridoId: _toInt(json['responsableSugeridoId']),
       supervisorId: _toInt(json['supervisorId']),
       activo: json['activo'] as bool? ?? true,
@@ -355,6 +367,10 @@ class DefinicionPreventivaRequest {
 
   final List<int>? operariosIds;
 
+  /// Necesidad(es)/plaza(s) requerida(s). Si se envía (incluso vacía []),
+  /// reemplaza el vínculo completo en el backend; null lo deja intacto.
+  final List<int>? necesidadesIds;
+
   final bool? activo;
 
   DefinicionPreventivaRequest({
@@ -384,6 +400,7 @@ class DefinicionPreventivaRequest {
     this.responsableSugeridoId,
     this.supervisorId,
     this.operariosIds,
+    this.necesidadesIds,
     this.activo,
   });
 
@@ -434,6 +451,7 @@ class DefinicionPreventivaRequest {
       'responsableSugeridoId': responsableSugeridoId,
     if (supervisorId != null) 'supervisorId': supervisorId,
     if (operariosIds != null) 'operariosIds': operariosIds,
+    if (necesidadesIds != null) 'necesidadesIds': necesidadesIds,
     if (activo != null) 'activo': activo,
   };
 }

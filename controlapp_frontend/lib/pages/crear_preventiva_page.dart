@@ -14,6 +14,7 @@ import '../api/gerente_api.dart';
 
 import '../model/preventiva_model.dart';
 import '../model/conjunto_model.dart';
+import '../model/necesidad_operario_model.dart';
 import '../model/usuario_model.dart';
 import '../model/insumo_model.dart';
 import '../model/maquinaria_model.dart';
@@ -86,6 +87,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   final List<DateTime> _fechasProgramadas = [];
 
   final List<String> _operariosSeleccionadosCedulas = [];
+  final List<int> _necesidadesSeleccionadasIds = [];
   Usuario? _supervisorResponsable;
 
   bool _activo = true;
@@ -97,6 +99,12 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   List<UbicacionConElementos> get _ubicaciones => widget.conjunto.ubicaciones;
   List<Usuario> get _operarios => widget.conjunto.operarios;
+  List<NecesidadOperario> get _necesidades => widget.conjunto.necesidades;
+
+  /// Necesidad primero, operario como respaldo: si el conjunto tiene
+  /// plazas configuradas, la preventiva se vincula a la(s) plaza(s) en vez
+  /// de a operarios directos (ver sección 7 del plan de necesidades).
+  bool get _usaNecesidades => _necesidades.isNotEmpty;
 
   /// SEMANAL y QUINCENAL se programan eligiendo uno o varios dias de la semana.
   bool get _frecuenciaUsaDiaSemana =>
@@ -378,6 +386,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         }
       }
 
+      _necesidadesSeleccionadasIds
+        ..clear()
+        ..addAll(existente.necesidadesIds);
+
       if (existente.supervisorId != null) {
         final targetCedula = existente.supervisorId!.toString();
         _supervisorResponsable = _supervisores.firstWhere(
@@ -592,6 +604,79 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     }
   }
 
+  String _etiquetaNecesidad(NecesidadOperario n) {
+    final ocupante = n.ocupada ? (n.operarioNombre ?? n.operarioId!) : 'vacante';
+    return '${n.etiqueta} · $ocupante';
+  }
+
+  Future<void> _mostrarSelectorNecesidades() async {
+    if (_necesidades.isEmpty) {
+      _snack('Este conjunto no tiene necesidades/plazas configuradas');
+      return;
+    }
+
+    final seleccionTemp = Set<int>.from(_necesidadesSeleccionadasIds);
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (_, setStateDialog) {
+            return AlertDialog(
+              title: const Text('Seleccionar cargo(s) requerido(s)'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _necesidades.length,
+                  itemBuilder: (_, index) {
+                    final n = _necesidades[index];
+                    final checked = seleccionTemp.contains(n.id);
+                    return CheckboxListTile(
+                      value: checked,
+                      title: Text(n.etiqueta),
+                      subtitle: Text(
+                        n.ocupada
+                            ? 'Ocupada por ${n.operarioNombre ?? n.operarioId}'
+                            : 'Vacante',
+                      ),
+                      onChanged: (v) {
+                        if (v == true) {
+                          seleccionTemp.add(n.id);
+                        } else {
+                          seleccionTemp.remove(n.id);
+                        }
+                        setStateDialog(() {});
+                      },
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Aceptar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (ok == true) {
+      setState(() {
+        _necesidadesSeleccionadasIds
+          ..clear()
+          ..addAll(seleccionTemp);
+      });
+    }
+  }
+
   // ===========================
   // guardar
   // ===========================
@@ -646,22 +731,36 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       return;
     }
 
-    if (_operariosSeleccionadosCedulas.isEmpty) {
-      _snack('Selecciona al menos un operario');
-      return;
+    // Necesidad primero, operario como respaldo (ver _usaNecesidades):
+    // si el conjunto tiene plazas, la preventiva se valida y envía por
+    // necesidadesIds; si no, se conserva el camino de operarios directos
+    // de siempre (con su conversión cédula -> int, ya existente).
+    List<int> operariosIdsInt = const [];
+    int? responsableId;
+
+    if (_usaNecesidades) {
+      if (_necesidadesSeleccionadasIds.isEmpty) {
+        _snack('Selecciona al menos un cargo (necesidad)');
+        return;
+      }
+    } else {
+      if (_operariosSeleccionadosCedulas.isEmpty) {
+        _snack('Selecciona al menos un operario');
+        return;
+      }
+
+      operariosIdsInt = _operariosSeleccionadosCedulas
+          .map((ced) => int.tryParse(_soloDigitos(ced)))
+          .whereType<int>()
+          .toList();
+
+      if (operariosIdsInt.isEmpty) {
+        _snack('No se pudieron interpretar las cédulas de operarios');
+        return;
+      }
+
+      responsableId = operariosIdsInt.first;
     }
-
-    final operariosIdsInt = _operariosSeleccionadosCedulas
-        .map((ced) => int.tryParse(_soloDigitos(ced)))
-        .whereType<int>()
-        .toList();
-
-    if (operariosIdsInt.isEmpty) {
-      _snack('No se pudieron interpretar las cédulas de operarios');
-      return;
-    }
-
-    final responsableId = operariosIdsInt.first;
 
     if (_supervisorResponsable == null) {
       _snack('Selecciona un supervisor responsable');
@@ -780,8 +879,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         insumosPlan: insumosPlanRequests,
         maquinariaPlan: maquinariaPlanRequests,
         herramientasPlan: herramientasPlanRequests,
-        operariosIds: operariosIdsInt,
-        responsableSugeridoId: responsableId,
+        operariosIds: _usaNecesidades ? null : operariosIdsInt,
+        responsableSugeridoId: _usaNecesidades ? null : responsableId,
+        necesidadesIds: _usaNecesidades ? _necesidadesSeleccionadasIds : null,
         supervisorId: supervisorId,
         activo: _activo,
       );
@@ -1616,27 +1716,66 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                 title: '5) Equipo responsable',
                 child: Column(
                   children: [
-                    InkWell(
-                      onTap: _mostrarSelectorOperarios,
-                      child: InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Operarios responsables',
-                          border: OutlineInputBorder(),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                _operariosSeleccionadosCedulas.isEmpty
-                                    ? 'Seleccionar operarios'
-                                    : '${_operariosSeleccionadosCedulas.length} operario(s) seleccionado(s)',
+                    if (_usaNecesidades) ...[
+                      InkWell(
+                        onTap: _mostrarSelectorNecesidades,
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Cargo(s) requerido(s)',
+                            border: OutlineInputBorder(),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _necesidadesSeleccionadasIds.isEmpty
+                                      ? 'Seleccionar cargo(s)'
+                                      : _necesidades
+                                            .where(
+                                              (n) => _necesidadesSeleccionadasIds
+                                                  .contains(n.id),
+                                            )
+                                            .map(_etiquetaNecesidad)
+                                            .join(', '),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                            const Icon(Icons.people_alt_outlined),
-                          ],
+                              const Icon(Icons.badge_outlined),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4, left: 4),
+                        child: Text(
+                          'La tarea se asigna a quien ocupe este cargo. Si se '
+                          'reemplaza al operario de la plaza, no hace falta '
+                          'editar esta preventiva.',
+                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                      ),
+                    ] else
+                      InkWell(
+                        onTap: _mostrarSelectorOperarios,
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Operarios responsables',
+                            border: OutlineInputBorder(),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _operariosSeleccionadosCedulas.isEmpty
+                                      ? 'Seleccionar operarios'
+                                      : '${_operariosSeleccionadosCedulas.length} operario(s) seleccionado(s)',
+                                ),
+                              ),
+                              const Icon(Icons.people_alt_outlined),
+                            ],
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       decoration: const InputDecoration(
