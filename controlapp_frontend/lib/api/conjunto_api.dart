@@ -329,7 +329,7 @@ class ConjuntoApi {
   /// POST /conjunto/conjuntos/:nit/necesidades
   Future<NecesidadOperario> crearNecesidad({
     required String conjuntoNit,
-    required String rol,
+    required List<String> roles,
     required String etiqueta,
     int orden = 0,
     bool horarioEspecial = false,
@@ -338,7 +338,7 @@ class ConjuntoApi {
     String? operarioId,
   }) async {
     final body = <String, dynamic>{
-      'rol': rol,
+      'roles': roles,
       'etiqueta': etiqueta,
       'orden': orden,
       'horarioEspecial': horarioEspecial,
@@ -362,7 +362,7 @@ class ConjuntoApi {
   Future<NecesidadOperario> editarNecesidad({
     required String conjuntoNit,
     required int necesidadId,
-    String? rol,
+    List<String>? roles,
     String? etiqueta,
     int? orden,
     bool? horarioEspecial,
@@ -371,7 +371,7 @@ class ConjuntoApi {
     bool? activo,
   }) async {
     final body = <String, dynamic>{
-      if (rol != null) 'rol': rol,
+      if (roles != null) 'roles': roles,
       if (etiqueta != null) 'etiqueta': etiqueta,
       if (orden != null) 'orden': orden,
       if (horarioEspecial != null) 'horarioEspecial': horarioEspecial,

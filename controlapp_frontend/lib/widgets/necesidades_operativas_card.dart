@@ -18,14 +18,25 @@ const _diasSemanaNecesidad = <String>[
   'DOMINGO',
 ];
 
-const _rolesNecesidad = <String>['TODERO', 'SALVAVIDAS', 'ASEO', 'PISCINERO'];
+const _rolesNecesidad = <String>[
+  'TODERO',
+  'SALVAVIDAS',
+  'ASEO',
+  'PISCINERO',
+  'JARDINERO',
+];
 
 const _etiquetaRol = <String, String>{
   'TODERO': 'Todero',
   'SALVAVIDAS': 'Salvavidas',
   'ASEO': 'Aseo',
   'PISCINERO': 'Piscinero',
+  'JARDINERO': 'Jardinero',
 };
+
+/// "Todero-Salvavidas" para una plaza combinada; "Todero" para una sola.
+String _etiquetaRoles(Iterable<String> roles) =>
+    roles.map((r) => _etiquetaRol[r] ?? r).join('-');
 
 /// Sección "Necesidades de operarios" del detalle del conjunto: lista las
 /// plazas/cargos (ConjuntoNecesidadOperario), permite crearlas, editarlas,
@@ -184,7 +195,7 @@ class _NecesidadesOperativasCardState
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        _etiquetaRol[n.rol] ?? n.rol,
+                        _etiquetaRoles(n.roles),
                         style: const TextStyle(fontSize: 11),
                       ),
                     ),
@@ -285,8 +296,12 @@ class _NecesidadesOperativasCardState
   }
 
   Future<void> _mostrarAsignarOperario(NecesidadOperario n) async {
+    // La plaza puede exigir varios roles combinados: el candidato debe
+    // tenerlos TODOS (igual que valida el backend).
     final candidatos = widget.operariosCatalogo
-        .where((o) => (o.tipoFunciones ?? const []).contains(n.rol))
+        .where(
+          (o) => n.roles.every((r) => (o.tipoFunciones ?? const []).contains(r)),
+        )
         .toList();
 
     if (candidatos.isEmpty) {
@@ -294,7 +309,7 @@ class _NecesidadesOperativasCardState
         context,
         SnackBar(
           content: Text(
-            'Ningún operario tiene el rol ${_etiquetaRol[n.rol] ?? n.rol}.',
+            'Ningún operario tiene el rol ${_etiquetaRoles(n.roles)}.',
           ),
           backgroundColor: Colors.orange,
         ),
@@ -470,11 +485,10 @@ class _NecesidadesOperativasCardState
   }
 
   Future<void> _mostrarFormulario({NecesidadOperario? existente}) async {
-    final rolInicial = existente?.rol ?? _rolesNecesidad[0];
     final etiquetaCtrl = TextEditingController(
       text: existente?.etiqueta ?? '',
     );
-    String rol = rolInicial;
+    final roles = <String>{...(existente?.roles ?? [_rolesNecesidad[0]])};
     bool horarioEspecial = existente?.horarioEspecial ?? false;
     final horariosPorDia = <String, _DiaHorarioEdit>{
       for (final d in _diasSemanaNecesidad) d: _DiaHorarioEdit(),
@@ -497,24 +511,34 @@ class _NecesidadesOperativasCardState
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                DropdownButtonFormField<String>(
-                  initialValue: rol,
-                  items: _rolesNecesidad
-                      .map(
-                        (r) => DropdownMenuItem(
-                          value: r,
-                          child: Text(_etiquetaRol[r] ?? r),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setDialogState(() => rol = v);
-                  },
-                  decoration: const InputDecoration(
-                    labelText: 'Rol',
-                    border: OutlineInputBorder(),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Rol(es): puedes combinar varios (ej. Todero + Salvavidas)',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: _rolesNecesidad.map((r) {
+                    final selected = roles.contains(r);
+                    return FilterChip(
+                      label: Text(_etiquetaRol[r] ?? r),
+                      selected: selected,
+                      onSelected: (v) {
+                        if (v) {
+                          roles.add(r);
+                        } else if (roles.length > 1) {
+                          roles.remove(r);
+                        } else {
+                          return; // al menos un rol debe quedar seleccionado
+                        }
+                        setDialogState(() {});
+                      },
+                    );
+                  }).toList(),
                 ),
                 const SizedBox(height: 8),
                 TextField(
@@ -643,7 +667,7 @@ class _NecesidadesOperativasCardState
       if (existente == null) {
         await _api.crearNecesidad(
           conjuntoNit: widget.conjuntoNit,
-          rol: rol,
+          roles: roles.toList(),
           etiqueta: etiqueta,
           horarioEspecial: horarioEspecial,
           horarios: horarios,
@@ -652,7 +676,7 @@ class _NecesidadesOperativasCardState
         await _api.editarNecesidad(
           conjuntoNit: widget.conjuntoNit,
           necesidadId: existente.id,
-          rol: rol,
+          roles: roles.toList(),
           etiqueta: etiqueta,
           horarioEspecial: horarioEspecial,
           horarios: horarios,

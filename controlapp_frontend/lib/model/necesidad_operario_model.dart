@@ -1,12 +1,16 @@
 import 'conjunto_model.dart';
 
-/// Necesidad operativa (plaza/cargo) de un conjunto, p.ej. "Todero #1".
-/// Espeja ConjuntoNecesidadOperario del backend: pertenece al conjunto, y
+/// Necesidad operativa (plaza/cargo) de un conjunto, p.ej. "Todero #1" o
+/// una plaza combinada "Todero-Salvavidas #1". Espeja
+/// ConjuntoNecesidadOperario del backend: pertenece al conjunto, y
 /// [operarioId] es quien la ocupa actualmente (puede estar vacante).
 class NecesidadOperario {
   final int id;
   final String conjuntoId;
-  final String rol; // TODERO | SALVAVIDAS | ASEO | PISCINERO
+  // TODERO | SALVAVIDAS | ASEO | PISCINERO | JARDINERO. Casi siempre uno
+  // solo, pero admite combinaciones: quien ocupe la plaza debe tener
+  // TODOS los roles de esta lista (lo valida el backend).
+  final List<String> roles;
   final String etiqueta;
   final int orden;
   final bool horarioEspecial;
@@ -19,7 +23,7 @@ class NecesidadOperario {
   NecesidadOperario({
     required this.id,
     required this.conjuntoId,
-    required this.rol,
+    required this.roles,
     required this.etiqueta,
     required this.orden,
     required this.horarioEspecial,
@@ -36,11 +40,12 @@ class NecesidadOperario {
     final operarioJson = json['operario'] as Map<String, dynamic>?;
     final usuarioJson = operarioJson?['usuario'] as Map<String, dynamic>?;
     final horariosJson = (json['horarios'] as List?) ?? const [];
+    final rolesJson = (json['roles'] as List?) ?? const [];
 
     return NecesidadOperario(
       id: json['id'] as int,
       conjuntoId: json['conjuntoId'] as String,
-      rol: json['rol'] as String,
+      roles: rolesJson.map((r) => r.toString()).toList(),
       etiqueta: json['etiqueta'] as String,
       orden: json['orden'] as int? ?? 0,
       horarioEspecial: json['horarioEspecial'] as bool? ?? false,
@@ -59,7 +64,7 @@ class NecesidadOperario {
   /// endpoint aparte (asignarOperarioNecesidad/liberarNecesidad).
   Map<String, dynamic> toJson() {
     return {
-      'rol': rol,
+      'roles': roles,
       'etiqueta': etiqueta,
       'orden': orden,
       'horarioEspecial': horarioEspecial,

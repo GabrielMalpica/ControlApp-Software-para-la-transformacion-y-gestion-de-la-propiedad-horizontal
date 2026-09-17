@@ -21,14 +21,25 @@ const _diasSemana = <String>[
 
 /// Roles disponibles para una necesidad/plaza. Coincide con el enum
 /// TipoFuncion del backend (schema.prisma).
-const _rolesNecesidad = <String>['TODERO', 'SALVAVIDAS', 'ASEO', 'PISCINERO'];
+const _rolesNecesidad = <String>[
+  'TODERO',
+  'SALVAVIDAS',
+  'ASEO',
+  'PISCINERO',
+  'JARDINERO',
+];
 
 const _etiquetaRol = <String, String>{
   'TODERO': 'Todero',
   'SALVAVIDAS': 'Salvavidas',
   'ASEO': 'Aseo',
   'PISCINERO': 'Piscinero',
+  'JARDINERO': 'Jardinero',
 };
+
+/// "Todero-Salvavidas" para una plaza combinada; "Todero" para una sola.
+String _etiquetaRoles(Iterable<String> roles) =>
+    roles.map((r) => _etiquetaRol[r] ?? r).join('-');
 
 class _HorarioDia {
   TimeOfDay? apertura;
@@ -56,14 +67,17 @@ class _NecesidadHorarioDia {
 /// creación del conjunto. Se envía al backend (POST .../necesidades) recién
 /// después de que el conjunto exista, igual que el mapa (ver F.3 del plan).
 class _NecesidadForm {
-  String rol;
+  // Casi siempre un solo rol, pero admite combinaciones (ej.
+  // Todero-Salvavidas): quien ocupe la plaza debe tener TODOS los roles
+  // seleccionados aquí.
+  final Set<String> roles;
   final TextEditingController etiquetaCtrl;
   bool horarioEspecial = false;
   final Map<String, _NecesidadHorarioDia> horariosPorDia = {
     for (final d in _diasSemana) d: _NecesidadHorarioDia(),
   };
 
-  _NecesidadForm({required this.rol, required String etiquetaInicial})
+  _NecesidadForm({required this.roles, required String etiquetaInicial})
     : etiquetaCtrl = TextEditingController(text: etiquetaInicial);
 
   void dispose() => etiquetaCtrl.dispose();
@@ -277,19 +291,23 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
   }
 
   // Necesidades operativas (plazas/cargos)
-  String _etiquetaSugerida(String rol) {
-    final base = _etiquetaRol[rol] ?? rol;
-    final existentes = _necesidades.where((n) => n.rol == rol).length;
-    return '$base #${existentes + 1}';
+  String _claveRoles(Set<String> roles) => (roles.toList()..sort()).join('+');
+
+  String _etiquetaSugerida(Set<String> roles) {
+    final clave = _claveRoles(roles);
+    final existentes = _necesidades
+        .where((n) => _claveRoles(n.roles) == clave)
+        .length;
+    return '${_etiquetaRoles(roles)} #${existentes + 1}';
   }
 
   void _agregarNecesidad() {
     setState(() {
-      final rolInicial = _rolesNecesidad[0];
+      final rolesIniciales = {_rolesNecesidad[0]};
       _necesidades.add(
         _NecesidadForm(
-          rol: rolInicial,
-          etiquetaInicial: _etiquetaSugerida(rolInicial),
+          roles: rolesIniciales,
+          etiquetaInicial: _etiquetaSugerida(rolesIniciales),
         ),
       );
     });
@@ -336,7 +354,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     final errores = <String>[];
     for (final n in _necesidades) {
       final etiqueta = n.etiquetaCtrl.text.trim();
-      if (etiqueta.isEmpty) continue;
+      if (etiqueta.isEmpty || n.roles.isEmpty) continue;
       final horarios = n.horarioEspecial
           ? n.horariosPorDia.entries
                 .where((e) => e.value.completo)
@@ -352,7 +370,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
       try {
         await _conjuntoApi.crearNecesidad(
           conjuntoNit: conjuntoNit,
-          rol: n.rol,
+          roles: n.roles.toList(),
           etiqueta: etiqueta,
           horarioEspecial: n.horarioEspecial,
           horarios: horarios,
@@ -1246,50 +1264,60 @@ class _NecesidadRolWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE0E0E0)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            flex: 2,
-            child: DropdownButtonFormField<String>(
-              initialValue: necesidad.rol,
-              items: _rolesNecesidad
-                  .map(
-                    (r) => DropdownMenuItem(
-                      value: r,
-                      child: Text(_etiquetaRol[r] ?? r),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) {
-                if (v == null) return;
-                necesidad.rol = v;
-                onChanged();
-              },
-              decoration: const InputDecoration(
-                labelText: 'Rol',
-                border: OutlineInputBorder(),
-                isDense: true,
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Rol(es): puedes combinar varios (ej. Todero + Salvavidas)',
+                  style: TextStyle(fontSize: 12, color: Colors.black54),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 3,
-            child: TextField(
-              controller: necesidad.etiquetaCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Etiqueta (ej. "Todero #1")',
-                border: OutlineInputBorder(),
-                isDense: true,
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: onEliminar,
               ),
-            ),
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: onEliminar,
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: _rolesNecesidad.map((r) {
+              final selected = necesidad.roles.contains(r);
+              return FilterChip(
+                label: Text(_etiquetaRol[r] ?? r),
+                selected: selected,
+                onSelected: (v) {
+                  if (v) {
+                    necesidad.roles.add(r);
+                  } else if (necesidad.roles.length > 1) {
+                    necesidad.roles.remove(r);
+                  } else {
+                    // Al menos un rol debe quedar seleccionado.
+                    return;
+                  }
+                  onChanged();
+                },
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: necesidad.etiquetaCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Etiqueta (ej. "Todero-Salvavidas #1")',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
           ),
         ],
       ),
@@ -1340,8 +1368,7 @@ class _NecesidadHorarioEspecialWidget extends StatelessWidget {
                     listenable: necesidad.etiquetaCtrl,
                     builder: (context, _) {
                       final etiqueta = necesidad.etiquetaCtrl.text.trim();
-                      final rolLabel =
-                          _etiquetaRol[necesidad.rol] ?? necesidad.rol;
+                      final rolLabel = _etiquetaRoles(necesidad.roles);
                       return Text(
                         etiqueta.isEmpty ? rolLabel : '$etiqueta · $rolLabel',
                         style: const TextStyle(fontWeight: FontWeight.w600),
