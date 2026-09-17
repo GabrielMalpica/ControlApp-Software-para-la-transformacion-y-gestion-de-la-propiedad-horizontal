@@ -690,11 +690,12 @@ export class GerenteService {
   }
 
   private async sincronizarArbolElementos(
+    client: PrismaWriteClient,
     ubicacionId: number,
     nodos: Array<{ id?: number; nombre: string; hijos?: Array<any> }>,
     padreId: number | null = null,
   ) {
-    const existentes = await this.prisma.elemento.findMany({
+    const existentes = await client.elemento.findMany({
       where: { ubicacionId, padreId },
       select: { id: true, nombre: true },
     });
@@ -710,12 +711,12 @@ export class GerenteService {
       if (nodo.id != null && existentesById.has(nodo.id)) {
         elementoId = nodo.id;
         retainedIds.add(elementoId);
-        await this.prisma.elemento.update({
+        await client.elemento.update({
           where: { id: elementoId },
           data: { nombre },
         });
       } else {
-        const creado = await this.prisma.elemento.create({
+        const creado = await client.elemento.create({
           data: { nombre, ubicacionId, padreId },
           select: { id: true },
         });
@@ -724,6 +725,7 @@ export class GerenteService {
       }
 
       await this.sincronizarArbolElementos(
+        client,
         ubicacionId,
         nodo.hijos ?? [],
         elementoId,
@@ -733,7 +735,7 @@ export class GerenteService {
     for (const existente of existentes) {
       if (!retainedIds.has(existente.id)) {
         try {
-          await this.prisma.elemento.delete({ where: { id: existente.id } });
+          await client.elemento.delete({ where: { id: existente.id } });
         } catch {
           throw new Error(
             `No se puede eliminar la zona o area "${existente.nombre}" porque ya tiene informacion operativa asociada.`,
@@ -1737,59 +1739,73 @@ export class GerenteService {
     }
 
     if (dto.ubicaciones !== undefined) {
-      const ubicacionesActuales = await this.prisma.ubicacion.findMany({
-        where: { conjuntoId },
-        select: {
-          id: true,
-          nombre: true,
-          elementos: {
-            where: { padreId: null },
-            select: { id: true, nombre: true, padreId: true },
-          },
-        },
-      });
-
-      const byId = new Map(ubicacionesActuales.map((u) => [u.id, u]));
-      const retainedUbicaciones = new Set<number>();
-
-      for (const u of dto.ubicaciones) {
-        const existente = u.id != null ? byId.get(u.id) : undefined;
-
-        if (!existente) {
-          const creada = await this.prisma.ubicacion.create({
-            data: {
-              nombre: u.nombre,
-              conjunto: { connect: { nit: conjuntoId } },
+      await this.prisma.$transaction(async (tx) => {
+        const ubicacionesActuales = await tx.ubicacion.findMany({
+          where: { conjuntoId },
+          select: {
+            id: true,
+            nombre: true,
+            elementos: {
+              where: { padreId: null },
+              select: { id: true, nombre: true, padreId: true },
             },
-            select: { id: true },
-          });
-          retainedUbicaciones.add(creada.id);
-          if (u.elementos?.length) {
-            await this.sincronizarArbolElementos(creada.id, u.elementos);
-          }
-          continue;
-        }
-
-        retainedUbicaciones.add(existente.id);
-        await this.prisma.ubicacion.update({
-          where: { id: existente.id },
-          data: { nombre: u.nombre },
+          },
         });
 
-        await this.sincronizarArbolElementos(existente.id, u.elementos ?? []);
-      }
+        const byId = new Map(ubicacionesActuales.map((u) => [u.id, u]));
+        const retainedUbicaciones = new Set<number>();
 
-      for (const ubicacion of ubicacionesActuales) {
-        if (!retainedUbicaciones.has(ubicacion.id)) {
-          try {
-            await this.prisma.ubicacion.delete({ where: { id: ubicacion.id } });
-          } catch {
-            throw new Error(
-              `No se puede eliminar la ubicacion "${ubicacion.nombre}" porque ya tiene informacion operativa asociada.`,
-            );
+        for (const u of dto.ubicaciones!) {
+          const existente = u.id != null ? byId.get(u.id) : undefined;
+
+          if (!existente) {
+            const creada = await tx.ubicacion.create({
+              data: {
+                nombre: u.nombre,
+                conjunto: { connect: { nit: conjuntoId } },
+              },
+              select: { id: true },
+            });
+            retainedUbicaciones.add(creada.id);
+            if (u.elementos?.length) {
+              await this.sincronizarArbolElementos(tx, creada.id, u.elementos);
+            }
+            continue;
+          }
+
+          retainedUbicaciones.add(existente.id);
+          await tx.ubicacion.update({
+            where: { id: existente.id },
+            data: { nombre: u.nombre },
+          });
+
+          await this.sincronizarArbolElementos(
+            tx,
+            existente.id,
+            u.elementos ?? [],
+          );
+        }
+
+        // Todo o nada: si alguna ubicacion no se puede eliminar (porque ya
+        // tiene informacion operativa asociada), se revierte la transaccion
+        // completa en vez de dejar borrados solo algunos elementos del lote.
+        const noEliminables: string[] = [];
+        for (const ubicacion of ubicacionesActuales) {
+          if (!retainedUbicaciones.has(ubicacion.id)) {
+            try {
+              await tx.ubicacion.delete({ where: { id: ubicacion.id } });
+            } catch {
+              noEliminables.push(ubicacion.nombre);
+            }
           }
         }
-      }
+
+        if (noEliminables.length > 0) {
+          throw new Error(
+            `No se puede eliminar la(s) ubicacion(es) "${noEliminables.join('", "')}" porque ya tiene(n) informacion operativa asociada. No se guardo ningun cambio de ubicaciones.`,
+          );
+        }
+      });
     }
 
     await this.prisma.conjunto.update({

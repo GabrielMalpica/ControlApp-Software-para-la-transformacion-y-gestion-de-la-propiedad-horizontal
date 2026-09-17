@@ -71,6 +71,10 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
   String? _adminSeleccionadoId;
   Set<String> _operariosSeleccionadosIds = <String>{};
   List<Map<String, dynamic>> _ubicacionesEditables = <Map<String, dynamic>>[];
+  int _proximaClaveEditable = 0;
+  bool _ordenUbicacionesAsc = true;
+
+  int _nuevaClaveEditable() => _proximaClaveEditable++;
 
   @override
   void initState() {
@@ -126,11 +130,13 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
           (u) => <String, dynamic>{
             'id': u.id,
             'nombre': u.nombre,
+            '_key': _nuevaClaveEditable(),
             'zonas': u.elementos
                 .map(
                   (e) => <String, dynamic>{
                     'id': e.id,
                     'nombre': e.nombre,
+                    '_key': _nuevaClaveEditable(),
                     'areas': e.hijos
                         .map(
                           (h) => <String, dynamic>{
@@ -194,6 +200,36 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
         .map((item) => item.trim())
         .where((item) => item.isNotEmpty)
         .toList();
+  }
+
+  void _ordenarUbicaciones() {
+    setState(() {
+      _ubicacionesEditables.sort((a, b) {
+        final an = (a['nombre'] ?? '').toString().toLowerCase();
+        final bn = (b['nombre'] ?? '').toString().toLowerCase();
+        final cmp = an.compareTo(bn);
+        return _ordenUbicacionesAsc ? cmp : -cmp;
+      });
+      _ordenUbicacionesAsc = !_ordenUbicacionesAsc;
+    });
+  }
+
+  void _ordenarZonas(int ubicacionIndex) {
+    setState(() {
+      final raw = _ubicacionesEditables[ubicacionIndex];
+      final zonasList = ((raw['zonas'] as List?) ?? const [])
+          .whereType<Map>()
+          .toList();
+      final asc = (raw['_zonasOrdenAsc'] as bool?) ?? true;
+      zonasList.sort((a, b) {
+        final an = (a['nombre'] ?? '').toString().toLowerCase();
+        final bn = (b['nombre'] ?? '').toString().toLowerCase();
+        final cmp = an.compareTo(bn);
+        return asc ? cmp : -cmp;
+      });
+      raw['zonas'] = zonasList;
+      raw['_zonasOrdenAsc'] = !asc;
+    });
   }
 
   void _showSnack(String text, {Color color = Colors.green}) {
@@ -1041,6 +1077,25 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
   Widget _ubicacionesEditor() {
     return Column(
       children: [
+        if (_ubicacionesEditables.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${_ubicacionesEditables.length} ubicación(es). Toca una para expandirla.',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _ordenarUbicaciones,
+                  icon: const Icon(Icons.sort_by_alpha, size: 18),
+                  label: const Text('Ordenar'),
+                ),
+              ],
+            ),
+          ),
         if (_ubicacionesEditables.isEmpty)
           Align(
             alignment: Alignment.centerLeft,
@@ -1058,204 +1113,249 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
               .toList(growable: false);
 
           return Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 10),
             decoration: BoxDecoration(
               color: const Color(0xFFF8FBF9),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: const Color(0xFFE3ECE7)),
             ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        initialValue: nombre,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre de ubicación',
-                          border: OutlineInputBorder(),
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+              ),
+              child: ExpansionTile(
+                key: ValueKey(raw['_key'] ?? index),
+                initiallyExpanded: nombre.trim().isEmpty,
+                tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                leading: IconButton(
+                  onPressed: () async {
+                    final confirmado = await _confirmarEliminacion(
+                      'la ubicación "$nombre"',
+                    );
+                    if (!confirmado || !mounted) return;
+                    setState(() => _ubicacionesEditables.removeAt(index));
+                  },
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  tooltip: 'Borrar ubicación',
+                ),
+                title: Text(
+                  nombre.isEmpty ? 'Ubicación sin nombre' : nombre,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  zonas.isEmpty
+                      ? 'Sin subzonas'
+                      : '${zonas.length} subzona(s)',
+                ),
+                children: [
+                  TextFormField(
+                    initialValue: nombre,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre de ubicación',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      _ubicacionesEditables[index]['nombre'] = value;
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Subzonas',
+                          style: TextStyle(
+                            color: Colors.grey.shade800,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                        onChanged: (value) {
-                          _ubicacionesEditables[index]['nombre'] = value;
-                        },
+                      ),
+                      if (zonas.length > 1)
+                        TextButton.icon(
+                          onPressed: () => _ordenarZonas(index),
+                          icon: const Icon(Icons.sort_by_alpha, size: 16),
+                          label: const Text('Ordenar'),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  if (zonas.isEmpty)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Sin subzonas.',
+                        style: TextStyle(color: Colors.grey.shade600),
                       ),
                     ),
-                    IconButton(
-                      onPressed: () async {
-                        final confirmado = await _confirmarEliminacion(
-                          'la ubicación "$nombre"',
-                        );
-                        if (!confirmado || !mounted) return;
-                        setState(() => _ubicacionesEditables.removeAt(index));
-                      },
-                      icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Subzonas',
-                    style: TextStyle(
-                      color: Colors.grey.shade800,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                if (zonas.isEmpty)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Sin subzonas.',
-                      style: TextStyle(color: Colors.grey.shade600),
-                    ),
-                  ),
-                ...zonas.asMap().entries.map((item) {
-                  final i = item.key;
-                  final zona = item.value;
-                  final text = (zona['nombre'] ?? '').toString();
-                  final areas = ((zona['areas'] as List?) ?? const [])
-                      .whereType<Map>()
-                      .toList(growable: false);
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE3ECE7)),
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  initialValue: text,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Nombre de subzona',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  onChanged: (value) {
-                                    ((_ubicacionesEditables[index]['zonas']
-                                                as List)[i]
-                                            as Map)['nombre'] =
-                                        value;
-                                  },
-                                ),
+                  ...zonas.asMap().entries.map((item) {
+                    final i = item.key;
+                    final zona = item.value;
+                    final text = (zona['nombre'] ?? '').toString();
+                    final areas = ((zona['areas'] as List?) ?? const [])
+                        .whereType<Map>()
+                        .toList(growable: false);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE3ECE7)),
+                        ),
+                        child: Theme(
+                          data: Theme.of(context).copyWith(
+                            dividerColor: Colors.transparent,
+                          ),
+                          child: ExpansionTile(
+                            key: ValueKey(zona['_key'] ?? '$index-$i'),
+                            initiallyExpanded: text.trim().isEmpty,
+                            tilePadding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                            ),
+                            childrenPadding: const EdgeInsets.fromLTRB(
+                              10,
+                              0,
+                              10,
+                              10,
+                            ),
+                            leading: IconButton(
+                              onPressed: () async {
+                                final confirmado = await _confirmarEliminacion(
+                                  'la subzona "$text"',
+                                );
+                                if (!confirmado || !mounted) return;
+                                setState(() {
+                                  (_ubicacionesEditables[index]['zonas']
+                                          as List)
+                                      .removeAt(i);
+                                });
+                              },
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.redAccent,
                               ),
-                              IconButton(
-                                onPressed: () async {
-                                  final confirmado =
-                                      await _confirmarEliminacion(
-                                        'la subzona "$text"',
-                                      );
-                                  if (!confirmado || !mounted) return;
-                                  setState(() {
-                                    (_ubicacionesEditables[index]['zonas']
-                                            as List)
-                                        .removeAt(i);
-                                  });
+                              tooltip: 'Borrar subzona',
+                            ),
+                            title: Text(
+                              text.isEmpty ? 'Subzona sin nombre' : text,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              areas.isEmpty
+                                  ? 'Sin áreas finales'
+                                  : '${areas.length} área(s) final(es)',
+                            ),
+                            children: [
+                              TextFormField(
+                                initialValue: text,
+                                decoration: const InputDecoration(
+                                  labelText: 'Nombre de subzona',
+                                  border: OutlineInputBorder(),
+                                ),
+                                onChanged: (value) {
+                                  ((_ubicacionesEditables[index]['zonas']
+                                              as List)[i]
+                                          as Map)['nombre'] =
+                                      value;
                                 },
-                                icon: const Icon(
-                                  Icons.close,
-                                  color: Colors.redAccent,
+                              ),
+                              const SizedBox(height: 8),
+                              ...areas.asMap().entries.map((areaItem) {
+                                final areaIndex = areaItem.key;
+                                final area = areaItem.value;
+                                final areaText = (area['nombre'] ?? '')
+                                    .toString();
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextFormField(
+                                          initialValue: areaText,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Area final',
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          onChanged: (value) {
+                                            ((((_ubicacionesEditables[index]['zonas']
+                                                                as List)[i]
+                                                            as Map)['areas']
+                                                        as List)[areaIndex]
+                                                    as Map)['nombre'] =
+                                                value;
+                                          },
+                                        ),
+                                      ),
+                                      IconButton(
+                                        onPressed: () async {
+                                          final confirmado =
+                                              await _confirmarEliminacion(
+                                                'el area final "$areaText"',
+                                              );
+                                          if (!confirmado || !mounted) return;
+                                          setState(() {
+                                            ((((_ubicacionesEditables[index]['zonas']
+                                                            as List)[i]
+                                                        as Map)['areas']
+                                                    as List))
+                                                .removeAt(areaIndex);
+                                          });
+                                        },
+                                        icon: const Icon(
+                                          Icons.remove_circle_outline,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: TextButton.icon(
+                                  onPressed: () {
+                                    setState(() {
+                                      ((((_ubicacionesEditables[index]['zonas']
+                                                      as List)[i]
+                                                  as Map)['areas']
+                                              as List))
+                                          .add(<String, dynamic>{
+                                            'nombre': '',
+                                          });
+                                    });
+                                  },
+                                  icon: const Icon(Icons.add),
+                                  label: const Text('Agregar area final'),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          ...areas.asMap().entries.map((areaItem) {
-                            final areaIndex = areaItem.key;
-                            final area = areaItem.value;
-                            final areaText = (area['nombre'] ?? '').toString();
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: TextFormField(
-                                      initialValue: areaText,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Area final',
-                                        border: OutlineInputBorder(),
-                                      ),
-                                      onChanged: (value) {
-                                        ((((_ubicacionesEditables[index]['zonas']
-                                                            as List)[i]
-                                                        as Map)['areas']
-                                                    as List)[areaIndex]
-                                                as Map)['nombre'] =
-                                            value;
-                                      },
-                                    ),
-                                  ),
-                                  IconButton(
-                                    onPressed: () async {
-                                      final confirmado =
-                                          await _confirmarEliminacion(
-                                            'el area final "$areaText"',
-                                          );
-                                      if (!confirmado || !mounted) return;
-                                      setState(() {
-                                        ((((_ubicacionesEditables[index]['zonas']
-                                                        as List)[i]
-                                                    as Map)['areas']
-                                                as List))
-                                            .removeAt(areaIndex);
-                                      });
-                                    },
-                                    icon: const Icon(
-                                      Icons.remove_circle_outline,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
-                              onPressed: () {
-                                setState(() {
-                                  ((((_ubicacionesEditables[index]['zonas']
-                                                  as List)[i]
-                                              as Map)['areas']
-                                          as List))
-                                      .add(<String, dynamic>{'nombre': ''});
-                                });
-                              },
-                              icon: const Icon(Icons.add),
-                              label: const Text('Agregar area final'),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
+                    );
+                  }),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          (_ubicacionesEditables[index]['zonas'] as List).add(
+                            <String, dynamic>{
+                              'nombre': '',
+                              '_key': _nuevaClaveEditable(),
+                              'areas': <Map<String, dynamic>>[],
+                            },
+                          );
+                        });
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('Agregar subzona'),
                     ),
-                  );
-                }),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        (_ubicacionesEditables[index]['zonas'] as List).add(
-                          <String, dynamic>{
-                            'nombre': '',
-                            'areas': <Map<String, dynamic>>[],
-                          },
-                        );
-                      });
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('Agregar subzona'),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         }),
@@ -1266,6 +1366,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
               setState(() {
                 _ubicacionesEditables.add(<String, dynamic>{
                   'nombre': '',
+                  '_key': _nuevaClaveEditable(),
                   'zonas': <Map<String, dynamic>>[],
                 });
               });
