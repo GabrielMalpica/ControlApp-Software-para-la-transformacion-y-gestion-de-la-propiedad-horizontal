@@ -5031,22 +5031,24 @@ export class GerenteService {
     if (dto.funciones) {
       // No se puede quitar un rol que una plaza ocupada actualmente exige:
       // dejaría una ConjuntoNecesidadOperario "ocupada" por alguien que ya
-      // no cumple su rol. Primero hay que liberar esa plaza (o reasignarle
-      // otro rol desde ConjuntoNecesidadService).
-      const plazaIncompatible = await this.prisma.conjuntoNecesidadOperario.findFirst({
-        where: {
-          operarioId: idOperario,
-          activo: true,
-          rol: { notIn: dto.funciones as TipoFuncion[] },
-        },
-        select: { etiqueta: true, rol: true },
+      // no cumple todos sus roles (una plaza puede exigir una combinación,
+      // p.ej. "Todero-Salvavidas"). Primero hay que liberar esa plaza (o
+      // reasignarle otros roles desde ConjuntoNecesidadService). Se filtra
+      // en memoria porque Prisma no tiene un "NOT hasEvery" para arrays.
+      const funcionesNuevas = dto.funciones as TipoFuncion[];
+      const plazasOcupadas = await this.prisma.conjuntoNecesidadOperario.findMany({
+        where: { operarioId: idOperario, activo: true },
+        select: { etiqueta: true, roles: true },
       });
+      const plazaIncompatible = plazasOcupadas.find((p) =>
+        p.roles.some((r) => !funcionesNuevas.includes(r)),
+      );
       if (plazaIncompatible) {
         throw new Error(
-          `El operario ocupa la plaza "${plazaIncompatible.etiqueta}" (${plazaIncompatible.rol}); libérala antes de quitarle ese rol.`,
+          `El operario ocupa la plaza "${plazaIncompatible.etiqueta}" (${plazaIncompatible.roles.join("-")}); libérala antes de quitarle ese rol.`,
         );
       }
-      data.funciones = dto.funciones as TipoFuncion[];
+      data.funciones = funcionesNuevas;
     }
 
     if ((payload as any).nombre || (payload as any).correo) {

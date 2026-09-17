@@ -3444,7 +3444,7 @@ export class DefinicionTareaPreventivaService {
         // y el supervisorId plano; no necesita la fila Usuario completa.
         operarios: { select: { id: true } },
         necesidades: {
-          select: { id: true, etiqueta: true, rol: true, operarioId: true },
+          select: { id: true, etiqueta: true, roles: true, operarioId: true },
         },
       },
       orderBy: [{ prioridad: "asc" }, { id: "asc" }],
@@ -3459,7 +3459,7 @@ export class DefinicionTareaPreventivaService {
         elemento: { include: elementoParentChainInclude },
         operarios: { select: { id: true } },
         necesidades: {
-          select: { id: true, etiqueta: true, rol: true, operarioId: true },
+          select: { id: true, etiqueta: true, roles: true, operarioId: true },
         },
       },
       orderBy: [{ prioridad: "asc" }, { id: "asc" }],

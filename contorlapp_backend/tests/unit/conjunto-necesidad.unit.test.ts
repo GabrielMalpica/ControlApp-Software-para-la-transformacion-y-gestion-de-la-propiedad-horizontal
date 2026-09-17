@@ -16,7 +16,7 @@ function makeFakePrisma() {
     {
       id: number;
       conjuntoId: string;
-      rol: TipoFuncion;
+      roles: TipoFuncion[];
       etiqueta: string;
       orden: number;
       horarioEspecial: boolean;
@@ -72,7 +72,7 @@ function makeFakePrisma() {
       const registro = {
         id,
         conjuntoId: data.conjuntoId,
-        rol: data.rol,
+        roles: data.roles,
         etiqueta: data.etiqueta,
         orden: data.orden ?? 0,
         horarioEspecial: data.horarioEspecial ?? false,
@@ -94,7 +94,7 @@ function makeFakePrisma() {
       if (!actual) throw new Error("no encontrado");
       const actualizado = {
         ...actual,
-        ...(data.rol !== undefined ? { rol: data.rol } : {}),
+        ...(data.roles !== undefined ? { roles: data.roles } : {}),
         ...(data.etiqueta !== undefined ? { etiqueta: data.etiqueta } : {}),
         ...(data.orden !== undefined ? { orden: data.orden } : {}),
         ...(data.horarioEspecial !== undefined ? { horarioEspecial: data.horarioEspecial } : {}),
@@ -184,10 +184,10 @@ describe("ConjuntoNecesidadService", () => {
     seedConjunto("C-1");
     const service = new ConjuntoNecesidadService(prisma, "C-1");
 
-    const creada = await service.crear({ rol: "TODERO", etiqueta: "Todero #1" });
+    const creada = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #1" });
     expect(creada.etiqueta).toBe("Todero #1");
 
-    await expect(service.crear({ rol: "TODERO", etiqueta: "Todero #1" })).rejects.toThrow(
+    await expect(service.crear({ roles: ["TODERO"], etiqueta: "Todero #1" })).rejects.toThrow(
       /Ya existe una necesidad/,
     );
   });
@@ -198,11 +198,11 @@ describe("ConjuntoNecesidadService", () => {
     const service = new ConjuntoNecesidadService(prisma, "C-1");
 
     await expect(
-      service.crear({ rol: "SALVAVIDAS", etiqueta: "Salvavidas #1", horarioEspecial: true }),
+      service.crear({ roles: ["SALVAVIDAS"], etiqueta: "Salvavidas #1", horarioEspecial: true }),
     ).rejects.toThrow(/horario especial/);
 
     const creada = await service.crear({
-      rol: "SALVAVIDAS",
+      roles: ["SALVAVIDAS"],
       etiqueta: "Salvavidas #1",
       horarioEspecial: true,
       horarios: [{ dia: DiaSemana.DOMINGO, horaApertura: "08:00", horaCierre: "17:00" }],
@@ -218,8 +218,8 @@ describe("ConjuntoNecesidadService", () => {
     seedOperario("pedro", [TipoFuncion.TODERO]);
     const service = new ConjuntoNecesidadService(prisma, "C-1");
 
-    const t1 = await service.crear({ rol: "TODERO", etiqueta: "Todero #1" });
-    const t2 = await service.crear({ rol: "TODERO", etiqueta: "Todero #2" });
+    const t1 = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #1" });
+    const t2 = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #2" });
 
     // Juan no tiene el rol TODERO.
     await expect(service.asignarOperario(t1.id, { operarioId: "juan" })).rejects.toThrow(
@@ -249,7 +249,7 @@ describe("ConjuntoNecesidadService", () => {
     seedOperario("pedro", [TipoFuncion.TODERO]);
     const service = new ConjuntoNecesidadService(prisma, "C-1");
 
-    const plaza = await service.crear({ rol: "TODERO", etiqueta: "Todero #1", operarioId: "juan" });
+    const plaza = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #1", operarioId: "juan" });
     expect(plaza.operarioId).toBe("juan");
 
     await service.liberarOperario(plaza.id);
@@ -265,12 +265,57 @@ describe("ConjuntoNecesidadService", () => {
     seedOperario("juan", [TipoFuncion.TODERO]);
     const service = new ConjuntoNecesidadService(prisma, "C-1");
 
-    const plaza = await service.crear({ rol: "TODERO", etiqueta: "Todero #1", operarioId: "juan" });
+    const plaza = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #1", operarioId: "juan" });
 
     const sinConfirmar = await service.eliminar(plaza.id);
     expect(sinConfirmar).toMatchObject({ ok: false, requiresConfirmation: true, motivo: "OCUPADA" });
 
     const confirmado = await service.eliminar(plaza.id, { confirmar: true });
     expect(confirmado).toEqual({ ok: true });
+  });
+
+  test("una plaza combinada (varios roles) exige que el operario tenga TODOS los roles", async () => {
+    const { prisma, seedConjunto, seedOperario } = makeFakePrisma();
+    seedConjunto("C-1");
+    seedOperario("juan", [TipoFuncion.TODERO]); // le falta SALVAVIDAS
+    seedOperario("pedro", [TipoFuncion.TODERO, TipoFuncion.SALVAVIDAS]);
+    const service = new ConjuntoNecesidadService(prisma, "C-1");
+
+    const plaza = await service.crear({
+      roles: ["TODERO", "SALVAVIDAS"],
+      etiqueta: "Todero-Salvavidas #1",
+    });
+
+    // Juan solo cumple uno de los dos roles requeridos.
+    await expect(service.asignarOperario(plaza.id, { operarioId: "juan" })).rejects.toThrow(
+      /no tiene el rol Salvavidas/,
+    );
+
+    // Pedro cumple ambos.
+    const asignado = await service.asignarOperario(plaza.id, { operarioId: "pedro" });
+    expect(asignado.operarioId).toBe("pedro");
+    expect(asignado.roles).toEqual(["TODERO", "SALVAVIDAS"]);
+  });
+
+  test("editar() rechaza quitar un rol combinado si el operario que la ocupa ya no lo cumpliría", async () => {
+    const { prisma, seedConjunto, seedOperario } = makeFakePrisma();
+    seedConjunto("C-1");
+    seedOperario("pedro", [TipoFuncion.TODERO, TipoFuncion.PISCINERO], "C-1");
+    const service = new ConjuntoNecesidadService(prisma, "C-1");
+
+    const plaza = await service.crear({
+      roles: ["TODERO", "PISCINERO"],
+      etiqueta: "Piscinero-Todero #1",
+      operarioId: "pedro",
+    });
+
+    // Pedro no tiene SALVAVIDAS: ampliar los roles exigidos debe rechazarse.
+    await expect(
+      service.editar(plaza.id, { roles: ["TODERO", "PISCINERO", "SALVAVIDAS"] }),
+    ).rejects.toThrow(/no tiene el rol Salvavidas/);
+
+    // Reducir a un subconjunto que Pedro sí cumple está permitido.
+    const editada = await service.editar(plaza.id, { roles: ["TODERO"] });
+    expect(editada.roles).toEqual(["TODERO"]);
   });
 });

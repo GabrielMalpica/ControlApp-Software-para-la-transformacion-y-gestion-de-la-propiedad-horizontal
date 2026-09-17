@@ -171,6 +171,7 @@ enum TipoFuncion {
   SALVAVIDAS
   ASEO
   PISCINERO
+  JARDINERO
 }
 
 enum OrigenRegistroAsistencia {
@@ -887,9 +888,12 @@ model ConjuntoNecesidadOperario {
   conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
   conjuntoId String
 
-  rol      TipoFuncion
+  // Roles requeridos por la plaza. Casi siempre uno solo, pero admite
+  // combinaciones (p.ej. "Todero-Salvavidas"): el operario asignado debe
+  // tener TODOS los roles listados aquí (ver validarYPrepararOperario).
+  roles    TipoFuncion[]
   etiqueta String
-  orden    Int         @default(0)
+  orden    Int           @default(0)
 
   horarioEspecial Boolean                    @default(false)
   horarios        ConjuntoNecesidadHorario[]

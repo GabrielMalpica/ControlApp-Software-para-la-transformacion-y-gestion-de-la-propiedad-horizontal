@@ -16,7 +16,12 @@ function sinDiasDuplicados(horarios: { dia: string }[] | undefined) {
 
 export const CrearNecesidadDTO = z
   .object({
-    rol: z.nativeEnum(TipoFuncion),
+    // Casi siempre un solo rol, pero admite combinaciones (p.ej.
+    // "Todero-Salvavidas"): el operario asignado debe tener TODOS los
+    // roles listados (ver ConjuntoNecesidadService.validarYPrepararOperario).
+    roles: z
+      .array(z.nativeEnum(TipoFuncion))
+      .min(1, "Selecciona al menos un rol"),
     etiqueta: z.string().trim().min(1, "La etiqueta es obligatoria").max(80),
     orden: z.coerce.number().int().min(0).optional().default(0),
     horarioEspecial: z.boolean().optional().default(false),
@@ -37,7 +42,10 @@ export type CrearNecesidadInput = z.infer<typeof CrearNecesidadDTO>;
 
 export const EditarNecesidadDTO = z
   .object({
-    rol: z.nativeEnum(TipoFuncion).optional(),
+    roles: z
+      .array(z.nativeEnum(TipoFuncion))
+      .min(1, "Selecciona al menos un rol")
+      .optional(),
     etiqueta: z.string().trim().min(1).max(80).optional(),
     orden: z.coerce.number().int().min(0).optional(),
     horarioEspecial: z.boolean().optional(),
@@ -68,7 +76,7 @@ export const AsignarOperarioNecesidadDTO = z.object({
 export const necesidadPublicSelect = {
   id: true,
   conjuntoId: true,
-  rol: true,
+  roles: true,
   etiqueta: true,
   orden: true,
   horarioEspecial: true,

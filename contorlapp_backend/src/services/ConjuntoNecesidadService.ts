@@ -12,7 +12,18 @@ const ETIQUETA_ROL: Record<TipoFuncion, string> = {
   SALVAVIDAS: "Salvavidas",
   ASEO: "Aseo",
   PISCINERO: "Piscinero",
+  JARDINERO: "Jardinero",
 };
+
+/** "Todero-Salvavidas" para una plaza combinada; "Todero" para una sola. */
+function etiquetaRoles(roles: TipoFuncion[]): string {
+  return roles.map((r) => ETIQUETA_ROL[r] ?? r).join("-");
+}
+
+/** Clave estable (orden-independiente) para agrupar plazas por combinación de roles. */
+function claveRoles(roles: TipoFuncion[]): string {
+  return [...roles].sort().join("+");
+}
 
 type ResultadoEliminar =
   | { ok: true }
@@ -61,11 +72,13 @@ export class ConjuntoNecesidadService {
   }
 
   /**
-   * Valida que el operario tenga el rol requerido y que no ocupe ya otra
-   * plaza en este conjunto; si no pertenece todavía al conjunto, lo conecta
-   * (regla H: "si no, conectarlo en la misma transacción").
+   * Valida que el operario tenga TODOS los roles requeridos (una plaza
+   * combinada, p.ej. "Todero-Salvavidas", exige que quien la ocupe cumpla
+   * cada uno) y que no ocupe ya otra plaza en este conjunto; si no
+   * pertenece todavía al conjunto, lo conecta (regla H: "si no, conectarlo
+   * en la misma transacción").
    */
-  private async validarYPrepararOperario(operarioId: string, rol: TipoFuncion) {
+  private async validarYPrepararOperario(operarioId: string, roles: TipoFuncion[]) {
     const operario = await this.prisma.operario.findUnique({
       where: { id: operarioId },
       select: {
@@ -79,9 +92,10 @@ export class ConjuntoNecesidadService {
       },
     });
     if (!operario) throw new Error("Operario no encontrado.");
-    if (!operario.funciones.includes(rol)) {
+    const faltantes = roles.filter((r) => !operario.funciones.includes(r));
+    if (faltantes.length > 0) {
       throw new Error(
-        `El operario no tiene el rol ${ETIQUETA_ROL[rol] ?? rol}; agrégaselo antes de asignarlo a esta plaza.`,
+        `El operario no tiene el rol ${etiquetaRoles(faltantes)}; agrégaselo antes de asignarlo a esta plaza.`,
       );
     }
     if (operario.necesidadesOcupadas.length > 0) {
@@ -110,13 +124,13 @@ export class ConjuntoNecesidadService {
     const dto = CrearNecesidadDTO.parse(payload);
     await this.validarEtiquetaUnica(dto.etiqueta);
     if (dto.operarioId) {
-      await this.validarYPrepararOperario(dto.operarioId, dto.rol);
+      await this.validarYPrepararOperario(dto.operarioId, dto.roles);
     }
 
     return this.prisma.conjuntoNecesidadOperario.create({
       data: {
         conjuntoId: this.conjuntoId,
-        rol: dto.rol,
+        roles: dto.roles,
         etiqueta: dto.etiqueta,
         orden: dto.orden,
         horarioEspecial: dto.horarioEspecial,
@@ -148,16 +162,18 @@ export class ConjuntoNecesidadService {
 
     if (dto.etiqueta) await this.validarEtiquetaUnica(dto.etiqueta, id);
 
-    // Si cambia el rol y la plaza está ocupada, el operario actual debe
-    // seguir cumpliéndolo (si no, primero hay que liberar la plaza).
-    if (dto.rol && actual.operarioId) {
+    // Si cambian los roles y la plaza está ocupada, el operario actual debe
+    // seguir cumpliendo TODOS los roles nuevos (si no, primero hay que
+    // liberar la plaza).
+    if (dto.roles && actual.operarioId) {
       const operario = await this.prisma.operario.findUnique({
         where: { id: actual.operarioId },
         select: { funciones: true },
       });
-      if (!operario?.funciones.includes(dto.rol)) {
+      const faltantes = dto.roles.filter((r) => !(operario?.funciones.includes(r) ?? false));
+      if (faltantes.length > 0) {
         throw new Error(
-          "El operario que ocupa esta plaza no tiene el rol nuevo; libera la plaza antes de cambiarlo.",
+          `El operario que ocupa esta plaza no tiene el rol ${etiquetaRoles(faltantes)}; libera la plaza antes de cambiarlo.`,
         );
       }
     }
@@ -185,7 +201,7 @@ export class ConjuntoNecesidadService {
       return tx.conjuntoNecesidadOperario.update({
         where: { id },
         data: {
-          rol: dto.rol,
+          roles: dto.roles,
           etiqueta: dto.etiqueta,
           orden: dto.orden,
           horarioEspecial: dto.horarioEspecial,
@@ -248,7 +264,7 @@ export class ConjuntoNecesidadService {
     const { operarioId } = AsignarOperarioNecesidadDTO.parse(payload);
     const necesidad = await this.prisma.conjuntoNecesidadOperario.findFirst({
       where: { id, conjuntoId: this.conjuntoId },
-      select: { id: true, rol: true, operarioId: true, etiqueta: true },
+      select: { id: true, roles: true, operarioId: true, etiqueta: true },
     });
     if (!necesidad) throw new Error("Necesidad no encontrada.");
     if (necesidad.operarioId) {
@@ -256,7 +272,7 @@ export class ConjuntoNecesidadService {
         `La plaza "${necesidad.etiqueta}" ya está ocupada; libérala antes de asignar otro operario.`,
       );
     }
-    await this.validarYPrepararOperario(operarioId, necesidad.rol);
+    await this.validarYPrepararOperario(operarioId, necesidad.roles);
 
     return this.prisma.conjuntoNecesidadOperario.update({
       where: { id },
@@ -294,30 +310,37 @@ export class ConjuntoNecesidadService {
       }),
       this.prisma.conjuntoNecesidadOperario.findMany({
         where: { conjuntoId: this.conjuntoId },
-        select: { operarioId: true, rol: true },
+        select: { operarioId: true, roles: true },
       }),
     ]);
 
     const ocupadas = new Set(
       necesidadesExistentes.map((n) => n.operarioId).filter((id): id is string => id != null),
     );
-    const contadorPorRol = new Map<TipoFuncion, number>();
+    // Cuenta por combinación de roles (p.ej. "Todero+Salvavidas" numera
+    // aparte de "Todero" solo), para que la etiqueta sugerida ("Todero #2")
+    // no choque entre plazas de distinta combinación.
+    const contadorPorClave = new Map<string, number>();
     for (const n of necesidadesExistentes) {
-      contadorPorRol.set(n.rol, (contadorPorRol.get(n.rol) ?? 0) + 1);
+      const clave = claveRoles(n.roles);
+      contadorPorClave.set(clave, (contadorPorClave.get(clave) ?? 0) + 1);
     }
 
     const creadas: Array<{ etiqueta: string; operarioId: string }> = [];
     for (const operario of operarios) {
       if (ocupadas.has(operario.id)) continue;
-      const rol = operario.funciones[0];
-      if (!rol) continue; // sin funciones no hay de dónde inferir la plaza
-      const siguiente = (contadorPorRol.get(rol) ?? 0) + 1;
-      contadorPorRol.set(rol, siguiente);
-      const etiqueta = `${ETIQUETA_ROL[rol] ?? rol} #${siguiente}`;
+      // Todos los roles actuales del operario pasan a la plaza (si tiene
+      // varios, la plaza queda combinada desde el arranque).
+      const roles = operario.funciones;
+      if (!roles.length) continue; // sin funciones no hay de dónde inferir la plaza
+      const clave = claveRoles(roles);
+      const siguiente = (contadorPorClave.get(clave) ?? 0) + 1;
+      contadorPorClave.set(clave, siguiente);
+      const etiqueta = `${etiquetaRoles(roles)} #${siguiente}`;
       await this.prisma.conjuntoNecesidadOperario.create({
         data: {
           conjuntoId: this.conjuntoId,
-          rol,
+          roles,
           etiqueta,
           orden: siguiente,
           horarioEspecial: false,

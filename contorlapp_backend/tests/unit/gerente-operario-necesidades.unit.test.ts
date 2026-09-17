@@ -4,8 +4,8 @@ function makeFakePrisma() {
   // "1" a propósito: GerenteService.editarOperario recibe operarioId numérico
   // y hace operarioId.toString() antes de tocar Prisma; se usa el mismo id
   // en ambos flujos (traslado y edición) para poder compartir el fixture.
-  const necesidades = new Map<number, { id: number; operarioId: string | null; activo: boolean; rol: string; etiqueta: string }>([
-    [501, { id: 501, operarioId: "1", activo: true, rol: "TODERO", etiqueta: "Todero #1" }],
+  const necesidades = new Map<number, { id: number; operarioId: string | null; activo: boolean; roles: string[]; etiqueta: string }>([
+    [501, { id: 501, operarioId: "1", activo: true, roles: ["TODERO"], etiqueta: "Todero #1" }],
   ]);
   const operarioUpdates: any[] = [];
 
@@ -40,17 +40,10 @@ function makeFakePrisma() {
         }
         return { count };
       }),
-      findFirst: jest.fn(async ({ where }: any) => {
-        for (const n of necesidades.values()) {
-          if (
-            n.operarioId === where.operarioId &&
-            n.activo === where.activo &&
-            !where.rol.notIn.includes(n.rol)
-          ) {
-            return { etiqueta: n.etiqueta, rol: n.rol };
-          }
-        }
-        return null;
+      findMany: jest.fn(async ({ where }: any) => {
+        return Array.from(necesidades.values())
+          .filter((n) => n.operarioId === where.operarioId && n.activo === where.activo)
+          .map((n) => ({ etiqueta: n.etiqueta, roles: n.roles }));
       }),
     },
     $transaction: async (fn: any) => fn(prisma),
@@ -95,5 +88,22 @@ describe("GerenteService: necesidades operativas al trasladar/editar un operario
       where: { id: "1" },
       data: { funciones: ["TODERO", "SALVAVIDAS"] },
     });
+  });
+
+  test("editarOperario rechaza quitar cualquier rol de una plaza combinada", async () => {
+    const { prisma, necesidades } = makeFakePrisma();
+    necesidades.set(501, {
+      id: 501,
+      operarioId: "1",
+      activo: true,
+      roles: ["TODERO", "SALVAVIDAS"],
+      etiqueta: "Todero-Salvavidas #1",
+    });
+    const service = new GerenteService(prisma, "EMP-1");
+
+    // Le queda TODERO pero pierde SALVAVIDAS, que la plaza combinada exige.
+    await expect(
+      service.editarOperario(1 as any, { funciones: ["TODERO"] }),
+    ).rejects.toThrow(/Todero-Salvavidas #1/);
   });
 });
