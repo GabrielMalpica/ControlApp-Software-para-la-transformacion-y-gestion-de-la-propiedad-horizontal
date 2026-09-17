@@ -1057,7 +1057,14 @@ class _CronogramaPreventivasBorradorPageState
       return _rangosDesdeHorarioConjunto(horarioDia);
     }
 
-    if (fecha.weekday == DateTime.sunday) return const [];
+    // Sin horario general configurado: un domingo se asume cerrado por
+    // defecto, salvo que una plaza con horario especial (necesidad
+    // operativa) sí tenga tareas programadas ese día -su disponibilidad
+    // real sale de esas tareas, en vez de mostrar el domingo entero como
+    // no disponible aunque haya trabajo real-.
+    if (fecha.weekday == DateTime.sunday) {
+      return _rangosDesdeTareasDelDia(fecha);
+    }
 
     final inicio = _horaInicioJornada * 60;
     final fin = _horaFinJornada * 60;
@@ -1083,6 +1090,27 @@ class _CronogramaPreventivasBorradorPageState
       rangos.add(_MinuteRange(start: descansoFin, end: fin));
     }
     return rangos;
+  }
+
+  /// Disponibilidad de un día sin horario general configurado, derivada de
+  /// las tareas realmente programadas ese día (envolvente: inicio más
+  /// temprano a fin más tardío). Usado para domingo, donde por defecto se
+  /// asume cerrado salvo que una plaza con horario especial sí trabaje ahí.
+  List<_MinuteRange> _rangosDesdeTareasDelDia(DateTime fecha) {
+    int? minInicio;
+    int? maxFin;
+    for (final t in _tareasFiltradas) {
+      final ini = t.fechaInicio.toLocal();
+      if (!DateUtils.isSameDay(ini, fecha)) continue;
+      final fin = t.fechaFin.toLocal();
+      final iniMin = ini.hour * 60 + ini.minute;
+      final finMin = fin.hour * 60 + fin.minute;
+      if (finMin <= iniMin) continue;
+      minInicio = minInicio == null ? iniMin : (iniMin < minInicio ? iniMin : minInicio);
+      maxFin = maxFin == null ? finMin : (finMin > maxFin ? finMin : maxFin);
+    }
+    if (minInicio == null || maxFin == null) return const [];
+    return [_MinuteRange(start: minInicio, end: maxFin)];
   }
 
   List<_MinuteRange> _mergeMinuteRanges(List<_MinuteRange> ranges) {
