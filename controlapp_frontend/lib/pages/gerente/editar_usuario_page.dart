@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/gerente_api.dart';
+import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
 import 'package:flutter_application_1/repositories/usuario_repository.dart';
 import 'package:flutter_application_1/service/theme.dart';
@@ -23,6 +25,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
   final _formKey = GlobalKey<FormState>();
   final UsuarioRepository _usuarioRepository = UsuarioRepository();
   final UsuarioEnumsService _enumsService = UsuarioEnumsService();
+  final GerenteApi _gerenteApi = GerenteApi();
 
   // Enums
   UsuarioEnums? _enums;
@@ -44,11 +47,17 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
   String? tipoSangre, eps, fondo, tipoContrato, jornada;
   String? tallaCamisa, tallaPantalon, tallaCalzado;
   String? rolSeleccionado;
-  final List<_DisponibilidadPeriodoForm> _disponibilidadPeriodos = [];
 
   // ✅ NUEVOS
   bool activo = true;
   String? patronJornada;
+
+  // Traslado de conjunto (solo aplica a operarios)
+  List<Conjunto> _conjuntos = [];
+  bool _cargandoConjuntos = true;
+  String? _errorConjuntos;
+  String? _conjuntoSeleccionadoNit;
+  String? _conjuntoOriginalNit;
 
   bool _guardando = false;
 
@@ -85,14 +94,28 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     // ✅ Inicializar nuevos campos (asegúrate que existan en tu Usuario model)
     activo = u.activo;
     patronJornada = jornada == 'MEDIO_TIEMPO' ? u.patronJornada : null;
-    _disponibilidadPeriodos.addAll(
-      u.disponibilidadPeriodos.map(_DisponibilidadPeriodoForm.fromModel),
-    );
-    if (_disponibilidadPeriodos.isEmpty && u.rol == 'operario') {
-      _disponibilidadPeriodos.add(_DisponibilidadPeriodoForm());
-    }
+
+    _conjuntoSeleccionadoNit = u.conjuntoNit;
+    _conjuntoOriginalNit = u.conjuntoNit;
 
     _cargarEnums();
+    _cargarConjuntos();
+  }
+
+  Future<void> _cargarConjuntos() async {
+    try {
+      final lista = await _gerenteApi.listarConjuntos();
+      setState(() {
+        _conjuntos = lista;
+        _cargandoConjuntos = false;
+        _errorConjuntos = null;
+      });
+    } catch (e) {
+      setState(() {
+        _cargandoConjuntos = false;
+        _errorConjuntos = AppError.messageOf(e);
+      });
+    }
   }
 
   String prettyPatronJornada(String? raw) {
@@ -123,9 +146,6 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     _telefonoCtrl.dispose();
     _cedulaCtrl.dispose();
     _direccionCtrl.dispose();
-    for (final item in _disponibilidadPeriodos) {
-      item.dispose();
-    }
     super.dispose();
   }
 
@@ -166,43 +186,15 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
       return;
     }
 
-    if (widget.usuario.rol == 'operario') {
-      final periodos = _disponibilidadPeriodos
-          .map((e) => e.toModel())
-          .whereType<DisponibilidadOperarioPeriodo>()
-          .toList();
-      if (periodos.isEmpty) {
-        AppFeedback.showFromSnackBar(
-          context,
-          const SnackBar(
-            content: Text(
-              'Registre al menos un periodo de disponibilidad para el operario',
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-      final periodoInvalido = periodos.any(
-        (p) =>
-            p.trabajaDomingo &&
-            (p.diaDescanso == null || p.diaDescanso == 'DOMINGO'),
-      );
-      if (periodoInvalido) {
-        AppFeedback.showFromSnackBar(
-          context,
-          const SnackBar(
-            content: Text(
-              'Si el operario trabaja domingo, debe tener un día de descanso entre semana en ese periodo.',
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
+    setState(() => _guardando = true);
+
+    if (rolSeleccionado == 'operario') {
+      final trasladoOk = await _asegurarTrasladoConjunto();
+      if (!trasladoOk) {
+        if (mounted) setState(() => _guardando = false);
         return;
       }
     }
-
-    setState(() => _guardando = true);
 
     try {
       final cambios = <String, dynamic>{
@@ -230,12 +222,6 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
         // ✅ NUEVOS
         'activo': activo,
         'patronJornada': jornada == 'MEDIO_TIEMPO' ? patronJornada : null,
-        if (rolSeleccionado == 'operario')
-          'disponibilidadPeriodos': _disponibilidadPeriodos
-              .map((e) => e.toModel())
-              .whereType<DisponibilidadOperarioPeriodo>()
-              .map((e) => e.toJson())
-              .toList(),
       };
 
       await _usuarioRepository.editarUsuario(widget.usuario.cedula, cambios);
@@ -254,6 +240,83 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
+  }
+
+  /// Si el conjunto seleccionado cambió respecto al actual, intenta
+  /// trasladar al operario. Si tiene tareas abiertas, ofrece cerrarlas en
+  /// bloque (completadas o no completadas) y reintenta el traslado.
+  /// Devuelve `false` si el usuario canceló y el guardado debe abortarse.
+  Future<bool> _asegurarTrasladoConjunto() async {
+    final destino = _conjuntoSeleccionadoNit;
+    if (destino == null ||
+        destino.trim().isEmpty ||
+        destino == _conjuntoOriginalNit) {
+      return true;
+    }
+
+    try {
+      await _gerenteApi.trasladarOperario(
+        operarioCedula: widget.usuario.cedula,
+        conjuntoDestinoNit: destino,
+      );
+      _conjuntoOriginalNit = destino;
+      return true;
+    } on TareasAbiertasException catch (e) {
+      if (!mounted) return false;
+      final resultado = await _mostrarDialogoTareasAbiertas(e.cantidad);
+      if (resultado == null) {
+        if (!mounted) return false;
+        AppFeedback.showFromSnackBar(
+          context,
+          const SnackBar(
+            content: Text(
+              'Traslado cancelado. No se guardaron los cambios.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return false;
+      }
+
+      await _gerenteApi.cerrarTareasAbiertasOperario(
+        operarioCedula: widget.usuario.cedula,
+        resultado: resultado,
+      );
+      await _gerenteApi.trasladarOperario(
+        operarioCedula: widget.usuario.cedula,
+        conjuntoDestinoNit: destino,
+      );
+      _conjuntoOriginalNit = destino;
+      return true;
+    }
+  }
+
+  Future<String?> _mostrarDialogoTareasAbiertas(int cantidad) {
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Tareas abiertas'),
+        content: Text(
+          'Este operario tiene $cantidad tarea(s) abierta(s). Para trasladarlo '
+          'a otro conjunto primero debes cerrarlas. ¿Cómo quieres cerrarlas?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop('NO_COMPLETADA'),
+            child: const Text('No completadas'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop('COMPLETADA'),
+            child: const Text('Completadas'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _mostrarGuardadoYVolverMenu() async {
@@ -732,42 +795,49 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                       ],
                       if (rolSeleccionado == 'operario') ...[
                         const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Disponibilidad y descansos por periodo',
-                                style: TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: () => setState(() {
-                                _disponibilidadPeriodos.add(
-                                  _DisponibilidadPeriodoForm(),
-                                );
-                              }),
-                              icon: const Icon(Icons.add),
-                              label: const Text('Agregar periodo'),
-                            ),
-                          ],
+                        const Text(
+                          'Conjunto asignado',
+                          style: TextStyle(fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 8),
-                        const _DisponibilidadPeriodoHelpCard(),
-                        const SizedBox(height: 8),
-                        ..._disponibilidadPeriodos.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final item = entry.value;
-                          return _DisponibilidadPeriodoCard(
-                            item: item,
-                            onChanged: () => setState(() {}),
-                            onRemove: _disponibilidadPeriodos.length <= 1
-                                ? null
-                                : () => setState(() {
-                                    item.dispose();
-                                    _disponibilidadPeriodos.removeAt(index);
-                                  }),
-                          );
-                        }),
+                        if (_cargandoConjuntos)
+                          const LinearProgressIndicator()
+                        else if (_errorConjuntos != null)
+                          Text(
+                            'Error cargando conjuntos: $_errorConjuntos',
+                            style: const TextStyle(color: Colors.red),
+                          )
+                        else if (_conjuntos.isEmpty)
+                          const Text(
+                            'No hay conjuntos creados.',
+                            style: TextStyle(color: Colors.grey),
+                          )
+                        else
+                          DropdownButtonFormField<String>(
+                            initialValue:
+                                _conjuntos.any(
+                                  (c) => c.nit == _conjuntoSeleccionadoNit,
+                                )
+                                ? _conjuntoSeleccionadoNit
+                                : null,
+                            decoration: const InputDecoration(
+                              labelText: 'Conjunto',
+                              helperText:
+                                  'Cambiar el conjunto traslada al operario. '
+                                  'Si tiene tareas abiertas se pedirá cerrarlas.',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: _conjuntos
+                                .map(
+                                  (c) => DropdownMenuItem<String>(
+                                    value: c.nit,
+                                    child: Text(c.nombre),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) =>
+                                setState(() => _conjuntoSeleccionadoNit = v),
+                          ),
                       ],
                     ],
                   ),
@@ -796,186 +866,6 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DisponibilidadPeriodoForm {
-  _DisponibilidadPeriodoForm();
-
-  factory _DisponibilidadPeriodoForm.fromModel(
-    DisponibilidadOperarioPeriodo model,
-  ) {
-    final item = _DisponibilidadPeriodoForm();
-    item.id = model.id;
-    item.fechaInicio = model.fechaInicio;
-    item.fechaFin = model.fechaFin;
-    item.trabajaDomingo = model.trabajaDomingo;
-    item.diaDescanso = model.diaDescanso;
-    item.observacionesCtrl.text = model.observaciones ?? '';
-    return item;
-  }
-
-  int? id;
-  DateTime? fechaInicio;
-  DateTime? fechaFin;
-  bool trabajaDomingo = false;
-  String? diaDescanso;
-  final TextEditingController observacionesCtrl = TextEditingController();
-
-  DisponibilidadOperarioPeriodo? toModel() {
-    if (fechaInicio == null) return null;
-    return DisponibilidadOperarioPeriodo(
-      id: id,
-      fechaInicio: fechaInicio!,
-      fechaFin: fechaFin,
-      trabajaDomingo: trabajaDomingo,
-      diaDescanso: diaDescanso,
-      observaciones: observacionesCtrl.text.trim().isEmpty
-          ? null
-          : observacionesCtrl.text.trim(),
-    );
-  }
-
-  void dispose() => observacionesCtrl.dispose();
-}
-
-class _DisponibilidadPeriodoCard extends StatelessWidget {
-  const _DisponibilidadPeriodoCard({
-    required this.item,
-    required this.onChanged,
-    this.onRemove,
-  });
-
-  final _DisponibilidadPeriodoForm item;
-  final VoidCallback onChanged;
-  final VoidCallback? onRemove;
-
-  Future<void> _pickDate(
-    BuildContext context, {
-    required DateTime? initial,
-    required ValueChanged<DateTime> onSelected,
-    required String helpText,
-  }) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial ?? DateTime.now(),
-      firstDate: DateTime(2024),
-      lastDate: DateTime(2100),
-      helpText: helpText,
-    );
-    if (picked != null) {
-      onSelected(picked);
-      onChanged();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const dias = [
-      'LUNES',
-      'MARTES',
-      'MIERCOLES',
-      'JUEVES',
-      'VIERNES',
-      'SABADO',
-      'DOMINGO',
-    ];
-
-    String fmt(DateTime? d) =>
-        d == null ? 'Seleccionar fecha' : '${d.day}/${d.month}/${d.year}';
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Periodo de disponibilidad',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                if (onRemove != null)
-                  IconButton(
-                    onPressed: onRemove,
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-              ],
-            ),
-            InkWell(
-              onTap: () => _pickDate(
-                context,
-                initial: item.fechaInicio,
-                onSelected: (d) => item.fechaInicio = d,
-                helpText: 'Inicio del periodo',
-              ),
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Fecha inicio',
-                  border: OutlineInputBorder(),
-                ),
-                child: Text(fmt(item.fechaInicio)),
-              ),
-            ),
-            const SizedBox(height: 8),
-            InkWell(
-              onTap: () => _pickDate(
-                context,
-                initial: item.fechaFin,
-                onSelected: (d) => item.fechaFin = d,
-                helpText: 'Fin del periodo',
-              ),
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Fecha fin (opcional)',
-                  border: OutlineInputBorder(),
-                ),
-                child: Text(fmt(item.fechaFin)),
-              ),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String?>(
-              initialValue: item.diaDescanso,
-              decoration: const InputDecoration(
-                labelText: 'Día de descanso semanal',
-                border: OutlineInputBorder(),
-              ),
-              items: [
-                const DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text('Sin definir'),
-                ),
-                ...dias.map((d) => DropdownMenuItem(value: d, child: Text(d))),
-              ],
-              onChanged: (v) {
-                item.diaDescanso = v;
-                onChanged();
-              },
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Trabaja domingos'),
-              value: item.trabajaDomingo,
-              onChanged: (v) {
-                item.trabajaDomingo = v;
-                onChanged();
-              },
-            ),
-            TextField(
-              controller: item.observacionesCtrl,
-              onChanged: (_) => onChanged(),
-              decoration: const InputDecoration(
-                labelText: 'Observaciones del periodo (opcional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -1020,44 +910,3 @@ class _PatronJornadaHelpCard extends StatelessWidget {
   }
 }
 
-class _DisponibilidadPeriodoHelpCard extends StatelessWidget {
-  const _DisponibilidadPeriodoHelpCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F8F6),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFDCE7E0)),
-      ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Como funciona este periodo',
-            style: TextStyle(fontWeight: FontWeight.w700),
-          ),
-          SizedBox(height: 6),
-          Text(
-            'Fecha inicio: desde qué día empieza a aplicar este esquema de trabajo.',
-          ),
-          SizedBox(height: 4),
-          Text(
-            'Fecha fin: hasta qué día aplica. Si lo dejas vacío, sigue vigente hasta nuevo aviso.',
-          ),
-          SizedBox(height: 4),
-          Text(
-            'Trabaja domingos: actívalo solo si en ese periodo el operario sí labora domingo.',
-          ),
-          SizedBox(height: 4),
-          Text(
-            'Día de descanso semanal: indica qué día descansa durante ese mismo periodo.',
-          ),
-        ],
-      ),
-    );
-  }
-}

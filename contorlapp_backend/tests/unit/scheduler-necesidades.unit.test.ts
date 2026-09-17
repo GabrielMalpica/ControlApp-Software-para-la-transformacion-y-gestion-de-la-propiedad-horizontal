@@ -230,7 +230,9 @@ describe("generarBorradorMensual - necesidades operativas (plazas/cargos)", () =
           horarios: [{ dia: DiaSemana.DOMINGO, horaApertura: "08:00", horaCierre: "17:00" }],
         },
       ],
-      operarioTrabajaDomingo: true,
+      // Sin periodo de disponibilidad (operarioTrabajaDomingo queda en
+      // false/undefined): el horario especial de la plaza ya es suficiente,
+      // no depende de un trabajaDomingo=true aparte.
       frecuencia: Frecuencia.MENSUAL,
       diaMesProgramado: 8, // 2026-03-08 es domingo.
       duracionMinutosFija: 120,

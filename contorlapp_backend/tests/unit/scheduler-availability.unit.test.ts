@@ -231,14 +231,12 @@ describe("Necesidades operativas: horario propio de una plaza (ConjuntoNecesidad
           { id: "salvavidas-1", usuario: { jornadaLaboral: null, patronJornada: null } },
         ]),
       },
-      // El horario de la plaza no anula la autorización legal de trabajar
-      // domingo: son capas independientes. Un salvavidas de plaza dominical
-      // necesita trabajaDomingo=true en su periodo de disponibilidad.
+      // El horario de la plaza es ahora la única fuente de verdad sobre qué
+      // días trabaja el operario: sin periodo de disponibilidad configurado
+      // (findFirst -> null), el salvavidas igual puede trabajar domingo
+      // porque su plaza tiene horario especial ese día.
       operarioDisponibilidadPeriodo: {
-        findFirst: jest.fn().mockResolvedValue({
-          trabajaDomingo: true,
-          diaDescanso: DiaSemana.LUNES,
-        }),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
     };
 

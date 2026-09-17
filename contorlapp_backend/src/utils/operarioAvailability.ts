@@ -78,60 +78,26 @@ export async function obtenerDisponibilidadActivaOperarios(params: {
   return new Map(entries);
 }
 
-export function diaOperarioBloqueado(params: {
-  dia: DiaSemana;
-  trabajaDomingo?: boolean | null;
-  diaDescanso?: DiaSemana | null;
-}) {
-  const { dia, trabajaDomingo, diaDescanso } = params;
-  if (diaDescanso != null && dia === diaDescanso) return true;
-  if (dia === DiaSemana.DOMINGO && !(trabajaDomingo ?? false)) return true;
-  return false;
-}
-
-export function disponibilidadPermiteDia(params: {
-  dia: DiaSemana;
-  periodo?: { trabajaDomingo: boolean; diaDescanso: DiaSemana | null } | null;
-}) {
-  const { dia, periodo } = params;
-  return !diaOperarioBloqueado({
-    dia,
-    trabajaDomingo: periodo?.trabajaDomingo ?? false,
-    diaDescanso: periodo?.diaDescanso ?? null,
-  });
-}
-
+/**
+ * Antes, un operario sin `trabajaDomingo=true` (o con `diaDescanso` ese día)
+ * en su periodo de disponibilidad quedaba bloqueado ese día sin importar el
+ * horario. Con las necesidades operativas (plazas), qué días trabaja un
+ * operario ya lo dice su horario efectivo (el de su plaza, o el heredado del
+ * conjunto): si un día no tiene fila configurada, `horarioEfectivo` es `null`
+ * y `allowedIntervalsForUserWithAvailability` ya no da intervalos ese día.
+ * Esta función queda como no-operación (nunca bloquea) para no romper a los
+ * ~9 llamadores existentes; la tabla `OperarioDisponibilidadPeriodo` se
+ * conserva por compatibilidad con datos históricos, pero ya no gatilla nada.
+ */
 export async function validarOperariosDisponiblesEnFecha(params: {
   prisma: DbClient;
   fecha: Date;
   operariosIds: string[];
 }) {
-  const { prisma, fecha, operariosIds } = params;
-  const dia = diaSemanaFromDate(fecha);
-  const disponibilidad = await obtenerDisponibilidadActivaOperarios({
-    prisma,
-    operariosIds,
-    fecha,
-  });
-
-  const noDisponibles: string[] = [];
-  for (const id of Array.from(new Set(operariosIds.map(String)))) {
-    const ok = disponibilidadPermiteDia({
-      dia,
-      periodo: disponibilidad.get(id)
-        ? {
-            trabajaDomingo: disponibilidad.get(id)!.trabajaDomingo,
-            diaDescanso: disponibilidad.get(id)!.diaDescanso,
-          }
-        : null,
-    });
-    if (!ok) noDisponibles.push(id);
-  }
-
   return {
-    dia,
-    noDisponibles,
-    ok: noDisponibles.length === 0,
+    dia: diaSemanaFromDate(params.fecha),
+    noDisponibles: [] as string[],
+    ok: true,
   };
 }
 
@@ -316,9 +282,11 @@ export function allowedIntervalsForUserWithAvailability(params: {
   const horario =
     params.horarioEfectivo === undefined ? params.horario : params.horarioEfectivo;
 
-  if (!disponibilidadPermiteDia({ dia, periodo: disponibilidad })) {
-    return [] as Array<{ i: number; f: number }>;
-  }
+  // Qué días trabaja el operario ya lo dice `horario` (el de su plaza, o el
+  // heredado del conjunto): un `trabajaDomingo=false`/`diaDescanso` en su
+  // periodo de disponibilidad ya no bloquea por separado (ver comentario en
+  // validarOperariosDisponiblesEnFecha). `disponibilidad` se conserva solo
+  // para reasignar `diaPatron` más abajo (patrones de jornada parcial).
   if (!horario) {
     return [] as Array<{ i: number; f: number }>;
   }
