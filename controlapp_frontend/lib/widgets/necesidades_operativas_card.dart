@@ -153,7 +153,7 @@ class _NecesidadesOperativasCardState
               }
               return Column(
                 children: necesidades
-                    .map((n) => _necesidadTile(n))
+                    .map((n) => _necesidadTile(n, necesidades))
                     .toList(growable: false),
               );
             },
@@ -163,7 +163,7 @@ class _NecesidadesOperativasCardState
     );
   }
 
-  Widget _necesidadTile(NecesidadOperario n) {
+  Widget _necesidadTile(NecesidadOperario n, List<NecesidadOperario> todas) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
@@ -241,14 +241,18 @@ class _NecesidadesOperativasCardState
                   ),
                 ),
               ),
-              if (n.ocupada)
+              if (n.ocupada) ...[
+                TextButton(
+                  onPressed: () => _cambiarVacante(n, todas),
+                  child: const Text('Cambiar vacante'),
+                ),
                 TextButton(
                   onPressed: () => _liberar(n),
                   child: const Text('Liberar'),
-                )
-              else
+                ),
+              ] else
                 TextButton(
-                  onPressed: () => _mostrarAsignarOperario(n),
+                  onPressed: () => _mostrarAsignarOperario(n, todas),
                   child: const Text('Asignar'),
                 ),
             ],
@@ -295,7 +299,10 @@ class _NecesidadesOperativasCardState
     }
   }
 
-  Future<void> _mostrarAsignarOperario(NecesidadOperario n) async {
+  Future<void> _mostrarAsignarOperario(
+    NecesidadOperario n,
+    List<NecesidadOperario> todas,
+  ) async {
     // La plaza puede exigir varios roles combinados: el candidato debe
     // tenerlos TODOS (igual que valida el backend).
     final candidatos = widget.operariosCatalogo
@@ -317,6 +324,15 @@ class _NecesidadesOperativasCardState
       return;
     }
 
+    // Si un candidato ya ocupa otra plaza de este conjunto, elegirlo aquí lo
+    // MUEVE (el backend libera su plaza anterior automáticamente): se avisa
+    // en la etiqueta para que quede claro antes de confirmar.
+    final ocupacionActual = <String, String>{
+      for (final otra in todas)
+        if (otra.id != n.id && otra.operarioId != null)
+          otra.operarioId!: otra.etiqueta,
+    };
+
     String? seleccionado;
     final ok = await showDialog<bool>(
       context: context,
@@ -329,7 +345,11 @@ class _NecesidadesOperativasCardState
                 .map(
                   (o) => DropdownMenuItem(
                     value: o.cedula,
-                    child: Text('${o.nombre} (${o.cedula})'),
+                    child: Text(
+                      ocupacionActual.containsKey(o.cedula)
+                          ? '${o.nombre} (${o.cedula}) — mover desde ${ocupacionActual[o.cedula]}'
+                          : '${o.nombre} (${o.cedula})',
+                    ),
                   ),
                 )
                 .toList(),
@@ -369,6 +389,109 @@ class _NecesidadesOperativasCardState
         context,
         SnackBar(
           content: Text('No se pudo asignar el operario: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Mueve al operario que ocupa [actual] a otra plaza vacante compatible
+  /// del mismo conjunto, en un solo paso (sin liberar y volver a asignar a
+  /// mano). Reutiliza asignarOperarioNecesidad: el backend libera la plaza
+  /// de origen automáticamente al asignar la de destino.
+  Future<void> _cambiarVacante(
+    NecesidadOperario actual,
+    List<NecesidadOperario> todas,
+  ) async {
+    final operarioId = actual.operarioId;
+    if (operarioId == null) return;
+
+    Usuario? operario;
+    for (final o in widget.operariosCatalogo) {
+      if (o.cedula == operarioId) {
+        operario = o;
+        break;
+      }
+    }
+    final rolesOperario = operario?.tipoFunciones ?? actual.roles;
+
+    final destinos = todas
+        .where(
+          (n) =>
+              n.id != actual.id &&
+              !n.ocupada &&
+              n.roles.every(rolesOperario.contains),
+        )
+        .toList();
+
+    if (destinos.isEmpty) {
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            'No hay otra plaza vacante compatible con '
+            '${actual.operarioNombre ?? operarioId} en este conjunto.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    int? seleccionado;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(
+            'Cambiar de plaza a ${actual.operarioNombre ?? operarioId}',
+          ),
+          content: DropdownButtonFormField<int>(
+            initialValue: seleccionado,
+            items: destinos
+                .map(
+                  (n) => DropdownMenuItem(
+                    value: n.id,
+                    child: Text('${n.etiqueta} (${_etiquetaRoles(n.roles)})'),
+                  ),
+                )
+                .toList(),
+            onChanged: (v) => setDialogState(() => seleccionado = v),
+            decoration: const InputDecoration(
+              labelText: 'Nueva plaza',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: seleccionado == null
+                  ? null
+                  : () => Navigator.pop(context, true),
+              child: const Text('Mover'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok != true || seleccionado == null) return;
+    try {
+      await _api.asignarOperarioNecesidad(
+        conjuntoNit: widget.conjuntoNit,
+        necesidadId: seleccionado!,
+        operarioId: operarioId,
+      );
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text('No se pudo cambiar de plaza: $e'),
           backgroundColor: Colors.red,
         ),
       );

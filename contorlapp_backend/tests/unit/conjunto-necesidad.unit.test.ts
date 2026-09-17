@@ -211,7 +211,7 @@ describe("ConjuntoNecesidadService", () => {
     expect(creada.horarios).toHaveLength(1);
   });
 
-  test("asignarOperario valida el rol, conecta al conjunto si hace falta y evita doble ocupación", async () => {
+  test("asignarOperario valida el rol, conecta al conjunto si hace falta, y mueve al operario si ya ocupaba otra plaza", async () => {
     const { prisma, seedConjunto, seedOperario } = makeFakePrisma();
     seedConjunto("C-1");
     seedOperario("juan", [TipoFuncion.SALVAVIDAS]); // sin rol TODERO, aún no pertenece al conjunto
@@ -230,14 +230,17 @@ describe("ConjuntoNecesidadService", () => {
     const asignado = await service.asignarOperario(t1.id, { operarioId: "pedro" });
     expect(asignado.operarioId).toBe("pedro");
 
-    // Pedro ya ocupa Todero #1: no puede ocupar Todero #2 también.
-    await expect(service.asignarOperario(t2.id, { operarioId: "pedro" })).rejects.toThrow(
-      /ya ocupa la plaza/,
-    );
+    // Pedro ya ocupa Todero #1: asignarlo a Todero #2 lo MUEVE (libera #1
+    // automáticamente, sin el paso manual de liberar primero).
+    const movido = await service.asignarOperario(t2.id, { operarioId: "pedro" });
+    expect(movido.operarioId).toBe("pedro");
+    const listado = await service.listar();
+    expect(listado.find((n) => n.id === t1.id)?.operarioId).toBeNull();
+    expect(listado.find((n) => n.id === t2.id)?.operarioId).toBe("pedro");
 
-    // Todero #1 ya está ocupado: no admite un segundo operario sin liberar antes.
+    // Todero #2 ya está ocupado (por Pedro): no admite un segundo operario sin liberar antes.
     seedOperario("carlos", [TipoFuncion.TODERO], "C-1");
-    await expect(service.asignarOperario(t1.id, { operarioId: "carlos" })).rejects.toThrow(
+    await expect(service.asignarOperario(t2.id, { operarioId: "carlos" })).rejects.toThrow(
       /ya está ocupada/,
     );
   });

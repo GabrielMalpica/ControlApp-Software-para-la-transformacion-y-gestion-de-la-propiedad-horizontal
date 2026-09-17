@@ -1,5 +1,5 @@
 // src/services/ConjuntoNecesidadService.ts
-import type { PrismaClient, TipoFuncion } from "@prisma/client";
+import type { PrismaClient, Prisma, TipoFuncion } from "@prisma/client";
 import {
   CrearNecesidadDTO,
   EditarNecesidadDTO,
@@ -74,12 +74,22 @@ export class ConjuntoNecesidadService {
   /**
    * Valida que el operario tenga TODOS los roles requeridos (una plaza
    * combinada, p.ej. "Todero-Salvavidas", exige que quien la ocupe cumpla
-   * cada uno) y que no ocupe ya otra plaza en este conjunto; si no
-   * pertenece todavía al conjunto, lo conecta (regla H: "si no, conectarlo
-   * en la misma transacción").
+   * cada uno); si no pertenece todavía al conjunto, lo conecta (regla H:
+   * "si no, conectarlo en la misma transacción").
+   *
+   * Si el operario ya ocupa otra plaza en este conjunto: con
+   * `moverSiOcupada` (usado por `asignarOperario`, para poder cambiar a
+   * alguien de plaza sin el paso manual de liberar primero) la libera aquí
+   * mismo; sin esa opción (usado por `crear`, donde pre-asignar un operario
+   * a una plaza nueva es una acción más deliberada) rechaza la operación.
    */
-  private async validarYPrepararOperario(operarioId: string, roles: TipoFuncion[]) {
-    const operario = await this.prisma.operario.findUnique({
+  private async validarYPrepararOperario(
+    operarioId: string,
+    roles: TipoFuncion[],
+    options: { moverSiOcupada?: boolean; tx?: Prisma.TransactionClient } = {},
+  ) {
+    const db = options.tx ?? this.prisma;
+    const operario = await db.operario.findUnique({
       where: { id: operarioId },
       select: {
         id: true,
@@ -99,12 +109,18 @@ export class ConjuntoNecesidadService {
       );
     }
     if (operario.necesidadesOcupadas.length > 0) {
-      throw new Error(
-        `El operario ya ocupa la plaza "${operario.necesidadesOcupadas[0].etiqueta}" en este conjunto; libérala primero.`,
-      );
+      if (!options.moverSiOcupada) {
+        throw new Error(
+          `El operario ya ocupa la plaza "${operario.necesidadesOcupadas[0].etiqueta}" en este conjunto; libérala primero.`,
+        );
+      }
+      await db.conjuntoNecesidadOperario.update({
+        where: { id: operario.necesidadesOcupadas[0].id },
+        data: { operarioId: null },
+      });
     }
     if (!operario.conjuntos.length) {
-      await this.prisma.conjunto.update({
+      await db.conjunto.update({
         where: { nit: this.conjuntoId },
         data: { operarios: { connect: { id: operarioId } } },
       });
@@ -260,24 +276,35 @@ export class ConjuntoNecesidadService {
     return { ok: true };
   }
 
+  /**
+   * Asigna un operario a una plaza vacante. Si el operario ya ocupa otra
+   * plaza en este mismo conjunto, lo mueve: libera la anterior y ocupa esta,
+   * en una sola transacción (evita el paso manual "liberar y luego
+   * asignar" para cambiar a alguien de cargo).
+   */
   async asignarOperario(id: number, payload: unknown) {
     const { operarioId } = AsignarOperarioNecesidadDTO.parse(payload);
-    const necesidad = await this.prisma.conjuntoNecesidadOperario.findFirst({
-      where: { id, conjuntoId: this.conjuntoId },
-      select: { id: true, roles: true, operarioId: true, etiqueta: true },
-    });
-    if (!necesidad) throw new Error("Necesidad no encontrada.");
-    if (necesidad.operarioId) {
-      throw new Error(
-        `La plaza "${necesidad.etiqueta}" ya está ocupada; libérala antes de asignar otro operario.`,
-      );
-    }
-    await this.validarYPrepararOperario(operarioId, necesidad.roles);
+    return this.prisma.$transaction(async (tx) => {
+      const necesidad = await tx.conjuntoNecesidadOperario.findFirst({
+        where: { id, conjuntoId: this.conjuntoId },
+        select: { id: true, roles: true, operarioId: true, etiqueta: true },
+      });
+      if (!necesidad) throw new Error("Necesidad no encontrada.");
+      if (necesidad.operarioId) {
+        throw new Error(
+          `La plaza "${necesidad.etiqueta}" ya está ocupada; libérala antes de asignar otro operario.`,
+        );
+      }
+      await this.validarYPrepararOperario(operarioId, necesidad.roles, {
+        moverSiOcupada: true,
+        tx,
+      });
 
-    return this.prisma.conjuntoNecesidadOperario.update({
-      where: { id },
-      data: { operarioId },
-      select: necesidadPublicSelect,
+      return tx.conjuntoNecesidadOperario.update({
+        where: { id },
+        data: { operarioId },
+        select: necesidadPublicSelect,
+      });
     });
   }
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../api/gerente_api.dart';
+import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/model/necesidad_operario_model.dart';
 
 import '../../service/theme.dart';
 import '../../service/app_error.dart';
@@ -11,6 +13,7 @@ import '../../utils/enums/usuario_enums_service.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
+import 'package:flutter_application_1/widgets/searchable_select_field.dart';
 
 class CrearUsuarioPage extends StatefulWidget {
   final String nit;
@@ -26,6 +29,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
 
   final UsuarioRepository _usuarioRepository = UsuarioRepository();
   final GerenteApi _gerenteApi = GerenteApi();
+  final ConjuntoApi _conjuntoApi = ConjuntoApi();
   final UsuarioEnumsService _enumsService = UsuarioEnumsService();
 
   // 🔹 Enums cargados desde el backend
@@ -69,6 +73,12 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
   String? _errorConjuntos;
   String? _conjuntoSeleccionadoNit;
 
+  // Vacantes (necesidades operativas) del conjunto seleccionado, para poder
+  // elegir de una vez en qué plaza entra el operario nuevo.
+  List<NecesidadOperario> _necesidadesConjunto = [];
+  bool _cargandoNecesidades = false;
+  int? _vacanteSeleccionadaId;
+
   @override
   void initState() {
     super.initState();
@@ -100,12 +110,47 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
         _cargandoConjuntos = false;
         _errorConjuntos = null;
       });
+      _cargarNecesidades(_conjuntoSeleccionadoNit);
     } catch (e) {
       setState(() {
         _cargandoConjuntos = false;
         _errorConjuntos = AppError.messageOf(e);
       });
     }
+  }
+
+  /// Vacantes del conjunto elegido, para poder asignar al operario nuevo de
+  /// una vez en vez de tener que volver a entrar al conjunto después. No
+  /// bloquea la creación si falla: es un paso opcional.
+  Future<void> _cargarNecesidades(String? nit) async {
+    setState(() {
+      _necesidadesConjunto = [];
+      _vacanteSeleccionadaId = null;
+    });
+    if (nit == null || nit.trim().isEmpty) return;
+    setState(() => _cargandoNecesidades = true);
+    try {
+      final lista = await _conjuntoApi.listarNecesidades(nit);
+      if (!mounted) return;
+      setState(() {
+        _necesidadesConjunto = lista;
+        _cargandoNecesidades = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _cargandoNecesidades = false);
+    }
+  }
+
+  /// Vacantes sin ocupar cuyos roles requeridos están todos dentro de los
+  /// que se seleccionaron para el operario (igual que valida el backend).
+  List<NecesidadOperario> get _vacantesCompatibles {
+    if (funcionesSeleccionadas.isEmpty) return const [];
+    return _necesidadesConjunto
+        .where(
+          (n) => !n.ocupada && n.roles.every(funcionesSeleccionadas.contains),
+        )
+        .toList();
   }
 
   Future<void> _cargarEnums() async {
@@ -260,6 +305,14 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
               conjuntoNit: _conjuntoSeleccionadoNit!,
               operarioCedula: usuarioCreado.cedula,
             );
+
+            if (_vacanteSeleccionadaId != null) {
+              await _conjuntoApi.asignarOperarioNecesidad(
+                conjuntoNit: _conjuntoSeleccionadoNit!,
+                necesidadId: _vacanteSeleccionadaId!,
+                operarioId: usuarioCreado.cedula,
+              );
+            }
           }
           break;
 
@@ -870,6 +923,9 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                                   } else {
                                     funcionesSeleccionadas.remove(tipo);
                                   }
+                                  // Las funciones cambiaron: la vacante
+                                  // elegida antes puede ya no ser compatible.
+                                  _vacanteSeleccionadaId = null;
                                 });
                               },
                             );
@@ -950,25 +1006,72 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
                       style: const TextStyle(color: Colors.red),
                     ),
                   )
-                else if (_conjuntos.isNotEmpty)
-                  DropdownButtonFormField<String>(
-                    initialValue: _conjuntoSeleccionadoNit,
-                    decoration: const InputDecoration(
-                      labelText: "Asignar al conjunto",
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _conjuntos
+                else if (_conjuntos.isNotEmpty) ...[
+                  SearchableSelectField<String>(
+                    label: "Asignar al conjunto",
+                    prefixIcon: const Icon(Icons.apartment_outlined),
+                    searchHint: "Buscar conjunto por nombre",
+                    value: _conjuntoSeleccionadoNit,
+                    clearLabel: "Sin conjunto asignado",
+                    options: _conjuntos
                         .map(
-                          (c) => DropdownMenuItem<String>(
+                          (c) => SearchableSelectOption<String>(
                             value: c.nit,
-                            child: Text(c.nombre),
+                            label: c.nombre,
+                            subtitle: c.nit,
                           ),
                         )
                         .toList(),
-                    onChanged: (v) =>
-                        setState(() => _conjuntoSeleccionadoNit = v),
-                  )
-                else
+                    onChanged: (v) {
+                      setState(() => _conjuntoSeleccionadoNit = v);
+                      _cargarNecesidades(v);
+                    },
+                  ),
+                  if (rolSeleccionado == 'operario' &&
+                      _conjuntoSeleccionadoNit != null) ...[
+                    const SizedBox(height: 12),
+                    if (_cargandoNecesidades)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: LinearProgressIndicator(),
+                      )
+                    else if (funcionesSeleccionadas.isEmpty)
+                      const Text(
+                        "Seleccione primero las funciones del operario para "
+                        "ver las vacantes disponibles en el conjunto.",
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      )
+                    else if (_vacantesCompatibles.isEmpty)
+                      const Text(
+                        "Este conjunto no tiene vacantes libres compatibles "
+                        "con esas funciones. Puede asignar una plaza más "
+                        "tarde desde el detalle del conjunto.",
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      )
+                    else
+                      DropdownButtonFormField<int>(
+                        initialValue: _vacanteSeleccionadaId,
+                        decoration: const InputDecoration(
+                          labelText: "Vacante en la que va a entrar (opcional)",
+                          border: OutlineInputBorder(),
+                        ),
+                        items: _vacantesCompatibles
+                            .map(
+                              (n) => DropdownMenuItem<int>(
+                                value: n.id,
+                                child: Text(
+                                  n.horarioEspecial
+                                      ? '${n.etiqueta} (horario especial)'
+                                      : n.etiqueta,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) =>
+                            setState(() => _vacanteSeleccionadaId = v),
+                      ),
+                  ],
+                ] else
                   const Text(
                     "No hay conjuntos creados para asignar.",
                     style: TextStyle(color: Colors.grey),
