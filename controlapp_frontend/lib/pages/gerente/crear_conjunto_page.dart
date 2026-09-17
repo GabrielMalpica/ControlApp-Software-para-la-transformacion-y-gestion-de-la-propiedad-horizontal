@@ -76,13 +76,16 @@ class _NecesidadForm {
   // seleccionados aquí.
   final Set<String> roles;
   final TextEditingController etiquetaCtrl;
+  // Ejemplo mostrado como placeholder (ej. "Todero #1"), no un valor
+  // precargado: si el usuario no escribe nada se usa como etiqueta real.
+  final String etiquetaSugerida;
   bool horarioEspecial = false;
   final Map<String, _NecesidadHorarioDia> horariosPorDia = {
     for (final d in _diasSemana) d: _NecesidadHorarioDia(),
   };
 
-  _NecesidadForm({required this.roles, required String etiquetaInicial})
-    : etiquetaCtrl = TextEditingController(text: etiquetaInicial);
+  _NecesidadForm({required this.roles, required this.etiquetaSugerida})
+    : etiquetaCtrl = TextEditingController();
 
   void dispose() => etiquetaCtrl.dispose();
 }
@@ -311,7 +314,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
       _necesidades.add(
         _NecesidadForm(
           roles: rolesIniciales,
-          etiquetaInicial: _etiquetaSugerida(rolesIniciales),
+          etiquetaSugerida: _etiquetaSugerida(rolesIniciales),
         ),
       );
     });
@@ -378,7 +381,8 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
   Future<List<String>> _crearNecesidadesPendientes(String conjuntoNit) async {
     final errores = <String>[];
     for (final n in _necesidades) {
-      final etiqueta = n.etiquetaCtrl.text.trim();
+      final texto = n.etiquetaCtrl.text.trim();
+      final etiqueta = texto.isEmpty ? n.etiquetaSugerida : texto;
       if (etiqueta.isEmpty || n.roles.isEmpty) continue;
       final horarios = n.horarioEspecial
           ? n.horariosPorDia.entries
@@ -1351,9 +1355,10 @@ class _NecesidadRolWidget extends StatelessWidget {
           const SizedBox(height: 8),
           TextField(
             controller: necesidad.etiquetaCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Etiqueta (ej. "Todero-Salvavidas #1")',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: 'Etiqueta',
+              hintText: 'ej. "${necesidad.etiquetaSugerida}"',
+              border: const OutlineInputBorder(),
               isDense: true,
             ),
           ),
@@ -1412,8 +1417,11 @@ class _NecesidadHorarioEspecialWidget extends StatelessWidget {
                     builder: (context, _) {
                       final etiqueta = necesidad.etiquetaCtrl.text.trim();
                       final rolLabel = _etiquetaRoles(necesidad.roles);
+                      final etiquetaMostrada = etiqueta.isEmpty
+                          ? necesidad.etiquetaSugerida
+                          : etiqueta;
                       return Text(
-                        etiqueta.isEmpty ? rolLabel : '$etiqueta · $rolLabel',
+                        '$etiquetaMostrada · $rolLabel',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       );
                     },
