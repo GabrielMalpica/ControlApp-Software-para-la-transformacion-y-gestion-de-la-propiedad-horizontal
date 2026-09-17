@@ -499,6 +499,12 @@ class _NecesidadesOperativasCardState
       entry.activo = true;
       entry.apertura = _parseHora(h.horaApertura);
       entry.cierre = _parseHora(h.horaCierre);
+      entry.descansoInicio = h.descansoInicio != null
+          ? _parseHora(h.descansoInicio!)
+          : null;
+      entry.descansoFin = h.descansoFin != null
+          ? _parseHora(h.descansoFin!)
+          : null;
     }
 
     final guardado = await showDialog<bool>(
@@ -557,65 +563,113 @@ class _NecesidadesOperativasCardState
                 if (horarioEspecial)
                   ..._diasSemanaNecesidad.map((dia) {
                     final h = horariosPorDia[dia]!;
+                    Future<void> elegir({
+                      required TimeOfDay? actual,
+                      required TimeOfDay defecto,
+                      required void Function(TimeOfDay) aplicar,
+                    }) async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: actual ?? defecto,
+                      );
+                      if (picked != null) setDialogState(() => aplicar(picked));
+                    }
+
                     return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Checkbox(
-                            value: h.activo,
-                            onChanged: (v) =>
-                                setDialogState(() => h.activo = v ?? false),
+                          Row(
+                            children: [
+                              Checkbox(
+                                value: h.activo,
+                                onChanged: (v) => setDialogState(
+                                  () => h.activo = v ?? false,
+                                ),
+                              ),
+                              Text(dia, style: const TextStyle(fontSize: 12)),
+                            ],
                           ),
-                          SizedBox(
-                            width: 80,
-                            child: Text(
-                              dia,
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: !h.activo
-                                  ? null
-                                  : () async {
-                                      final picked = await showTimePicker(
-                                        context: context,
-                                        initialTime:
-                                            h.apertura ??
-                                            const TimeOfDay(hour: 8, minute: 0),
-                                      );
-                                      if (picked != null) {
-                                        setDialogState(() => h.apertura = picked);
-                                      }
-                                    },
-                              child: Text(
-                                h.apertura == null
-                                    ? 'Entrada'
-                                    : _formatHora(h.apertura!),
+                          if (h.activo)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 28),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: () => elegir(
+                                        actual: h.apertura,
+                                        defecto: const TimeOfDay(
+                                          hour: 8,
+                                          minute: 0,
+                                        ),
+                                        aplicar: (t) => h.apertura = t,
+                                      ),
+                                      child: Text(
+                                        h.apertura == null
+                                            ? 'Entrada'
+                                            : _formatHora(h.apertura!),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: () => elegir(
+                                        actual: h.descansoInicio,
+                                        defecto: const TimeOfDay(
+                                          hour: 12,
+                                          minute: 0,
+                                        ),
+                                        aplicar: (t) => h.descansoInicio = t,
+                                      ),
+                                      child: Text(
+                                        h.descansoInicio == null
+                                            ? 'Desc. ini'
+                                            : _formatHora(h.descansoInicio!),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: () => elegir(
+                                        actual: h.descansoFin,
+                                        defecto: const TimeOfDay(
+                                          hour: 13,
+                                          minute: 0,
+                                        ),
+                                        aplicar: (t) => h.descansoFin = t,
+                                      ),
+                                      child: Text(
+                                        h.descansoFin == null
+                                            ? 'Desc. fin'
+                                            : _formatHora(h.descansoFin!),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: () => elegir(
+                                        actual: h.cierre,
+                                        defecto: const TimeOfDay(
+                                          hour: 17,
+                                          minute: 0,
+                                        ),
+                                        aplicar: (t) => h.cierre = t,
+                                      ),
+                                      child: Text(
+                                        h.cierre == null
+                                            ? 'Salida'
+                                            : _formatHora(h.cierre!),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: !h.activo
-                                  ? null
-                                  : () async {
-                                      final picked = await showTimePicker(
-                                        context: context,
-                                        initialTime:
-                                            h.cierre ??
-                                            const TimeOfDay(hour: 17, minute: 0),
-                                      );
-                                      if (picked != null) {
-                                        setDialogState(() => h.cierre = picked);
-                                      }
-                                    },
-                              child: Text(
-                                h.cierre == null ? 'Salida' : _formatHora(h.cierre!),
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     );
@@ -658,6 +712,12 @@ class _NecesidadesOperativasCardState
                   dia: e.key,
                   horaApertura: _formatHora(e.value.apertura!),
                   horaCierre: _formatHora(e.value.cierre!),
+                  descansoInicio: e.value.descansoCompleto
+                      ? _formatHora(e.value.descansoInicio!)
+                      : null,
+                  descansoFin: e.value.descansoCompleto
+                      ? _formatHora(e.value.descansoFin!)
+                      : null,
                 ),
               )
               .toList()
@@ -715,4 +775,8 @@ class _DiaHorarioEdit {
   bool activo = false;
   TimeOfDay? apertura;
   TimeOfDay? cierre;
+  TimeOfDay? descansoInicio;
+  TimeOfDay? descansoFin;
+
+  bool get descansoCompleto => descansoInicio != null && descansoFin != null;
 }

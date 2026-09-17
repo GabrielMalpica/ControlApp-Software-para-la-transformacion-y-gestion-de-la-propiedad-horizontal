@@ -52,15 +52,19 @@ class _HorarioDia {
   bool get descansoCompleto => descansoInicio != null && descansoFin != null;
 }
 
-/// Horario especial de una necesidad para un día concreto: más simple que
-/// _HorarioDia del conjunto (sin descanso) para mantener manejable el
-/// formulario cuando se editan varias plazas a la vez.
+/// Horario especial de una necesidad para un día concreto: puede tener su
+/// propio almuerzo/descanso, igual que el horario general, pero a una hora
+/// distinta (ej. la plaza entra más tarde y almuerza más tarde).
 class _NecesidadHorarioDia {
   bool activo = false;
   TimeOfDay? apertura;
   TimeOfDay? cierre;
+  TimeOfDay? descansoInicio;
+  TimeOfDay? descansoFin;
 
   bool get completo => activo && apertura != null && cierre != null;
+
+  bool get descansoCompleto => descansoInicio != null && descansoFin != null;
 }
 
 /// Necesidad operativa (plaza/cargo) capturada localmente durante la
@@ -322,15 +326,36 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
   Future<void> _seleccionarHoraNecesidad({
     required _NecesidadHorarioDia horario,
     required bool esApertura,
+    bool esDescansoInicio = false,
+    bool esDescansoFin = false,
   }) async {
-    final initial =
-        (esApertura ? horario.apertura : horario.cierre) ??
-        TimeOfDay(hour: esApertura ? 8 : 17, minute: 0);
-    final picked = await showTimePicker(context: context, initialTime: initial);
+    final TimeOfDay defecto;
+    final TimeOfDay? actual;
+    if (esApertura) {
+      actual = horario.apertura;
+      defecto = const TimeOfDay(hour: 8, minute: 0);
+    } else if (esDescansoInicio) {
+      actual = horario.descansoInicio;
+      defecto = const TimeOfDay(hour: 12, minute: 0);
+    } else if (esDescansoFin) {
+      actual = horario.descansoFin;
+      defecto = const TimeOfDay(hour: 13, minute: 0);
+    } else {
+      actual = horario.cierre;
+      defecto = const TimeOfDay(hour: 17, minute: 0);
+    }
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: actual ?? defecto,
+    );
     if (picked != null) {
       setState(() {
         if (esApertura) {
           horario.apertura = picked;
+        } else if (esDescansoInicio) {
+          horario.descansoInicio = picked;
+        } else if (esDescansoFin) {
+          horario.descansoFin = picked;
         } else {
           horario.cierre = picked;
         }
@@ -363,6 +388,12 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                     dia: e.key,
                     horaApertura: _formatTimeOfDay(e.value.apertura!),
                     horaCierre: _formatTimeOfDay(e.value.cierre!),
+                    descansoInicio: e.value.descansoCompleto
+                        ? _formatTimeOfDay(e.value.descansoInicio!)
+                        : null,
+                    descansoFin: e.value.descansoCompleto
+                        ? _formatTimeOfDay(e.value.descansoFin!)
+                        : null,
                   ),
                 )
                 .toList()
@@ -987,10 +1018,17 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                           _NecesidadHorarioEspecialWidget(
                             necesidad: _necesidades[i],
                             onChanged: () => setState(() {}),
-                            onSeleccionarHora: (h, esApertura) =>
-                                _seleccionarHoraNecesidad(
+                            onSeleccionarHora:
+                                ({
+                                  required h,
+                                  required esApertura,
+                                  esDescansoInicio = false,
+                                  esDescansoFin = false,
+                                }) => _seleccionarHoraNecesidad(
                                   horario: h,
                                   esApertura: esApertura,
+                                  esDescansoInicio: esDescansoInicio,
+                                  esDescansoFin: esDescansoFin,
                                 ),
                           ),
                     ],
@@ -1333,7 +1371,12 @@ class _NecesidadRolWidget extends StatelessWidget {
 class _NecesidadHorarioEspecialWidget extends StatelessWidget {
   final _NecesidadForm necesidad;
   final VoidCallback onChanged;
-  final void Function(_NecesidadHorarioDia horario, bool esApertura)
+  final Future<void> Function({
+    required _NecesidadHorarioDia h,
+    required bool esApertura,
+    bool esDescansoInicio,
+    bool esDescansoFin,
+  })
   onSeleccionarHora;
 
   const _NecesidadHorarioEspecialWidget({
@@ -1398,46 +1441,96 @@ class _NecesidadHorarioEspecialWidget extends StatelessWidget {
                 children: _diasSemana.map((dia) {
                   final h = necesidad.horariosPorDia[dia]!;
                   return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SizedBox(
-                          width: 28,
-                          child: Checkbox(
-                            value: h.activo,
-                            onChanged: (v) {
-                              h.activo = v ?? false;
-                              onChanged();
-                            },
-                          ),
+                        Row(
+                          children: [
+                            SizedBox(
+                              width: 28,
+                              child: Checkbox(
+                                value: h.activo,
+                                onChanged: (v) {
+                                  h.activo = v ?? false;
+                                  onChanged();
+                                },
+                              ),
+                            ),
+                            Text(
+                              dia,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
-                        SizedBox(
-                          width: 84,
-                          child: Text(dia, style: const TextStyle(fontSize: 12)),
-                        ),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: h.activo
-                                ? () => onSeleccionarHora(h, true)
-                                : null,
-                            child: Text(
-                              h.apertura == null
-                                  ? 'Entrada'
-                                  : _formatHora(h.apertura!),
+                        if (h.activo)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 28),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () => onSeleccionarHora(
+                                      h: h,
+                                      esApertura: true,
+                                    ),
+                                    child: Text(
+                                      h.apertura == null
+                                          ? 'Entrada'
+                                          : _formatHora(h.apertura!),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () => onSeleccionarHora(
+                                      h: h,
+                                      esApertura: false,
+                                      esDescansoInicio: true,
+                                    ),
+                                    child: Text(
+                                      h.descansoInicio == null
+                                          ? 'Desc. ini'
+                                          : _formatHora(h.descansoInicio!),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () => onSeleccionarHora(
+                                      h: h,
+                                      esApertura: false,
+                                      esDescansoFin: true,
+                                    ),
+                                    child: Text(
+                                      h.descansoFin == null
+                                          ? 'Desc. fin'
+                                          : _formatHora(h.descansoFin!),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () => onSeleccionarHora(
+                                      h: h,
+                                      esApertura: false,
+                                    ),
+                                    child: Text(
+                                      h.cierre == null
+                                          ? 'Salida'
+                                          : _formatHora(h.cierre!),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: h.activo
-                                ? () => onSeleccionarHora(h, false)
-                                : null,
-                            child: Text(
-                              h.cierre == null ? 'Salida' : _formatHora(h.cierre!),
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   );
