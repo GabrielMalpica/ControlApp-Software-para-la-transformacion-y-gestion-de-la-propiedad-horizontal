@@ -763,6 +763,44 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                           border: OutlineInputBorder(),
                         ),
                       ),
+                      const SizedBox(height: 16),
+                      const Divider(),
+                      const SizedBox(height: 4),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Operarios del conjunto (opcional)',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '¿Cuántos operarios va a tener este conjunto y qué rol '
+                          'cumple cada uno? (ej. 2 × Todero, 1 × Salvavidas). '
+                          'El horario especial de cada cargo -si aplica- se '
+                          'configura más abajo, después del horario general. El '
+                          'operario que ocupe cada cargo se asigna luego desde el '
+                          'detalle del conjunto.',
+                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      for (int i = 0; i < _necesidades.length; i++)
+                        _NecesidadRolWidget(
+                          necesidad: _necesidades[i],
+                          onEliminar: () => _eliminarNecesidad(i),
+                          onChanged: () => setState(() {}),
+                        ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _agregarNecesidad,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Agregar operario/cargo'),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -879,7 +917,10 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
 
               const SizedBox(height: 12),
 
-              // NECESIDADES OPERATIVAS (PLAZAS/CARGOS)
+              // HORARIOS ESPECIALES POR CARGO (solo para los operarios/roles
+              // definidos arriba, en Administración y servicios; no todos
+              // necesitan uno: el que no se configure aquí usa el horario
+              // general del conjunto de la sección anterior).
               Card(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -891,11 +932,11 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.badge_outlined, color: AppTheme.primary),
+                          Icon(Icons.schedule, color: AppTheme.primary),
                           const SizedBox(width: 8),
                           const Expanded(
                             child: Text(
-                              'Necesidades de operarios (opcional)',
+                              'Horarios especiales por cargo (opcional)',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
@@ -908,33 +949,32 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                       const Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Define los cargos que necesita el conjunto (ej. Todero #1, '
-                          'Salvavidas #1). Sin horario especial, cada plaza usa el '
-                          'horario general de arriba; el operario que la ocupe se '
-                          'asigna después, desde el detalle del conjunto.',
+                          'No todos los cargos necesitan un horario propio: '
+                          'actívalo solo para los que lo requieran (puede '
+                          'exceder el horario general o cubrir días en que el '
+                          'conjunto no opera). El resto sigue el horario '
+                          'general definido arriba.',
                           style: TextStyle(fontSize: 12, color: Colors.black54),
                         ),
                       ),
                       const SizedBox(height: 12),
-                      for (int i = 0; i < _necesidades.length; i++)
-                        _NecesidadWidget(
-                          necesidad: _necesidades[i],
-                          onEliminar: () => _eliminarNecesidad(i),
-                          onChanged: () => setState(() {}),
-                          onSeleccionarHora: (h, esApertura) =>
-                              _seleccionarHoraNecesidad(
-                                horario: h,
-                                esApertura: esApertura,
-                              ),
-                        ),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: _agregarNecesidad,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Agregar necesidad'),
-                        ),
-                      ),
+                      if (_necesidades.isEmpty)
+                        Text(
+                          'Primero agrega operarios/cargos en '
+                          '"Administración y servicios".',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        )
+                      else
+                        for (int i = 0; i < _necesidades.length; i++)
+                          _NecesidadHorarioEspecialWidget(
+                            necesidad: _necesidades[i],
+                            onChanged: () => setState(() {}),
+                            onSeleccionarHora: (h, esApertura) =>
+                                _seleccionarHoraNecesidad(
+                                  horario: h,
+                                  esApertura: esApertura,
+                                ),
+                          ),
                     ],
                   ),
                 ),
@@ -1190,16 +1230,86 @@ class _UbicacionForm {
   }
 }
 
-class _NecesidadWidget extends StatelessWidget {
+/// Fila de "Administración y servicios": solo rol + etiqueta. Cuántos
+/// operarios va a tener el conjunto y qué rol cumple cada uno se define
+/// aquí, independientemente de si luego se les da un horario especial.
+class _NecesidadRolWidget extends StatelessWidget {
   final _NecesidadForm necesidad;
   final VoidCallback onEliminar;
+  final VoidCallback onChanged;
+
+  const _NecesidadRolWidget({
+    required this.necesidad,
+    required this.onEliminar,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 2,
+            child: DropdownButtonFormField<String>(
+              initialValue: necesidad.rol,
+              items: _rolesNecesidad
+                  .map(
+                    (r) => DropdownMenuItem(
+                      value: r,
+                      child: Text(_etiquetaRol[r] ?? r),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) {
+                if (v == null) return;
+                necesidad.rol = v;
+                onChanged();
+              },
+              decoration: const InputDecoration(
+                labelText: 'Rol',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 3,
+            child: TextField(
+              controller: necesidad.etiquetaCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Etiqueta (ej. "Todero #1")',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            onPressed: onEliminar,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sección "Horarios especiales por cargo": se muestra DESPUÉS del horario
+/// general del conjunto. Solo aplica a los cargos ya definidos en
+/// Administración y servicios, y no todos necesitan uno -el switch queda
+/// apagado por defecto y el cargo sigue el horario general hasta que se
+/// active-.
+class _NecesidadHorarioEspecialWidget extends StatelessWidget {
+  final _NecesidadForm necesidad;
   final VoidCallback onChanged;
   final void Function(_NecesidadHorarioDia horario, bool esApertura)
   onSeleccionarHora;
 
-  const _NecesidadWidget({
+  const _NecesidadHorarioEspecialWidget({
     required this.necesidad,
-    required this.onEliminar,
     required this.onChanged,
     required this.onSeleccionarHora,
   });
@@ -1223,51 +1333,30 @@ class _NecesidadWidget extends StatelessWidget {
           children: [
             Row(
               children: [
+                Icon(Icons.badge_outlined, size: 16, color: AppTheme.primary),
+                const SizedBox(width: 6),
                 Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: necesidad.rol,
-                    items: _rolesNecesidad
-                        .map(
-                          (r) => DropdownMenuItem(
-                            value: r,
-                            child: Text(_etiquetaRol[r] ?? r),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) {
-                      if (v == null) return;
-                      necesidad.rol = v;
-                      onChanged();
+                  child: ListenableBuilder(
+                    listenable: necesidad.etiquetaCtrl,
+                    builder: (context, _) {
+                      final etiqueta = necesidad.etiquetaCtrl.text.trim();
+                      final rolLabel =
+                          _etiquetaRol[necesidad.rol] ?? necesidad.rol;
+                      return Text(
+                        etiqueta.isEmpty ? rolLabel : '$etiqueta · $rolLabel',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      );
                     },
-                    decoration: const InputDecoration(
-                      labelText: 'Rol',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: onEliminar,
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: necesidad.etiquetaCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Etiqueta (ej. "Todero #1")',
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 4),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               dense: true,
               title: const Text('Horario especial'),
               subtitle: const Text(
-                'Sobrescribe el horario general del conjunto para esta plaza '
+                'Sobrescribe el horario general del conjunto para este cargo '
                 '(puede exceder su horario o cubrir días en que no opera).',
                 style: TextStyle(fontSize: 11),
               ),
