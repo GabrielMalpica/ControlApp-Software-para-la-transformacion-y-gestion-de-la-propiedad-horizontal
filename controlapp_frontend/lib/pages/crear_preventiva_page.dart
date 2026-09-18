@@ -547,6 +547,21 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     }
   }
 
+  /// "≈ 2h 30min por día" a partir de la duración total estimada y los
+  /// días indicados en _diasParaCompletarCtrl. null si falta algún dato.
+  String? _previewHorasPorDia() {
+    final totalMin = _previewMinutosBien();
+    final dias = _tryInt(_diasParaCompletarCtrl.text);
+    if (totalMin == null || dias == null || dias < 2) return null;
+
+    final porDia = (totalMin / dias).round();
+    final h = porDia ~/ 60;
+    final m = porDia % 60;
+    final partes = [if (h > 0) '${h}h', if (m > 0) '${m}min'];
+    final texto = partes.isEmpty ? '0min' : partes.join(' ');
+    return '≈ $texto por día ($totalMin min repartidos en $dias días)';
+  }
+
   // ===========================
   // selector operarios
   // ===========================
@@ -1585,11 +1600,13 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       TextFormField(
                         controller: _diasParaCompletarCtrl,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: 'Días para completar',
-                          helperText: 'Mínimo 2 días.',
-                          border: OutlineInputBorder(),
+                          helperText:
+                              _previewHorasPorDia() ?? 'Mínimo 2 días.',
+                          border: const OutlineInputBorder(),
                         ),
+                        onChanged: (_) => setState(() {}),
                       ),
                     ],
                     // La ocurrencia debe finalizarse dentro de la jornada de
