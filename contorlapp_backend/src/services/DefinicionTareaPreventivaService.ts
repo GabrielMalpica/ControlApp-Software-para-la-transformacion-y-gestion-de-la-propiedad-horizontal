@@ -477,6 +477,27 @@ export class DefinicionTareaPreventivaService {
     );
   }
 
+  /**
+   * Resuelve los ids de necesidades (plazas) vinculadas a una definición,
+   * para conectarlos en una tarea creada manualmente a partir de ella
+   * (split, reprogramación desde excluidas, bloque manual, reordenamiento).
+   * Sin esto, esas tareas pierden el distintivo visual de horario especial
+   * aunque sigan siendo de la misma plaza -solo `crearBloquesPreventivosDeDefinicion`
+   * (el generador automático) lo conectaba-. `[]` si la definición no usa
+   * necesidades o no existe (p.ej. bloque 100% manual sin definicionId).
+   */
+  private async necesidadesIdsDeDefId(
+    defId: number | null | undefined,
+    client: PrismaClient | Prisma.TransactionClient = this.prisma,
+  ): Promise<number[]> {
+    if (defId == null) return [];
+    const def = await client.definicionTareaPreventiva.findUnique({
+      where: { id: defId },
+      select: { necesidades: { select: { id: true } } },
+    });
+    return def?.necesidades.map((n) => n.id) ?? [];
+  }
+
   private operariosIdsDeDefinicion(def: {
     operarios: Array<{ id: string }>;
     necesidades?: Array<{ operarioId: string | null }>;
@@ -3232,6 +3253,7 @@ export class DefinicionTareaPreventivaService {
       : null;
 
     const planes = await this.cargarPlanesRecursosExcluida(excluida);
+    const necesidadesIds = await this.necesidadesIdsDeDefId(excluida.defId);
 
     const created = await this.prisma.$transaction(async (tx) => {
       const creadas = [] as Awaited<ReturnType<typeof tx.tarea.create>>[];
@@ -3275,6 +3297,12 @@ export class DefinicionTareaPreventivaService {
               | undefined,
             operarios: excluida.operariosIds.length
               ? { connect: excluida.operariosIds.map((id) => ({ id })) }
+              : undefined,
+            // Conserva el vínculo a la(s) plaza(s) de origen (si la
+            // definición resolvía por necesidad): sin esto la tarea
+            // materializada perdía el distintivo visual de horario especial.
+            necesidades: necesidadesIds.length
+              ? { connect: necesidadesIds.map((id) => ({ id })) }
               : undefined,
           },
         });
@@ -3908,7 +3936,7 @@ export class DefinicionTareaPreventivaService {
 
     const original = await this.prisma.tarea.findUnique({
       where: { id: tareaId },
-      include: { operarios: true },
+      include: { operarios: true, necesidades: { select: { id: true } } },
     });
 
     if (!original || !original.borrador || original.conjuntoId !== conjuntoId) {
@@ -3920,6 +3948,7 @@ export class DefinicionTareaPreventivaService {
       throw new Error("Solo se pueden dividir tareas preventivas en borrador.");
     }
 
+    const necesidadesIds = original.necesidades.map((n) => n.id);
     const originalMin = original.duracionMinutos ?? 0;
 
     const minutosBloques = bloques.reduce((acc, b) => {
@@ -4046,6 +4075,9 @@ export class DefinicionTareaPreventivaService {
             operarios: operariosIds.length
               ? { connect: operariosIds.map((id) => ({ id })) }
               : undefined,
+            necesidades: necesidadesIds.length
+              ? { connect: necesidadesIds.map((id) => ({ id })) }
+              : undefined,
           },
         });
       }
@@ -4074,7 +4106,10 @@ export class DefinicionTareaPreventivaService {
 
     const original = await this.prisma.tarea.findUnique({
       where: { id: tareaId },
-      include: { operarios: { select: { id: true } } },
+      include: {
+        operarios: { select: { id: true } },
+        necesidades: { select: { id: true } },
+      },
     });
 
     if (
@@ -4087,6 +4122,7 @@ export class DefinicionTareaPreventivaService {
     }
 
     const operariosIds = original.operarios.map((o) => o.id);
+    const necesidadesIds = original.necesidades.map((n) => n.id);
 
     await this.validarSlotPreventivaBorrador({
       conjuntoId,
@@ -4207,6 +4243,13 @@ export class DefinicionTareaPreventivaService {
           original.maquinariaPlanJson as Prisma.InputJsonValue,
         herramientasPlanJson: (original as any)
           .herramientasPlanJson as Prisma.InputJsonValue,
+
+        // Conserva el vínculo a la(s) plaza(s) de origen en ambas mitades:
+        // sin esto se perdía el distintivo visual de horario especial al
+        // dividir un bloque.
+        necesidades: necesidadesIds.length
+          ? { connect: necesidadesIds.map((id) => ({ id })) }
+          : undefined,
       };
 
       const tarea1 = await tx.tarea.create({
@@ -6652,6 +6695,7 @@ export class DefinicionTareaPreventivaService {
     });
 
     const grupoPlanId = `EXC-MANUAL-${excluida.id}`;
+    const necesidadesIds = await this.necesidadesIdsDeDefId(excluida.defId);
     const tarea = await this.prisma.$transaction(async (tx) => {
       const creada = await tx.tarea.create({
         data: {
@@ -6680,6 +6724,9 @@ export class DefinicionTareaPreventivaService {
           supervisorId: excluida.supervisorId,
           operarios: excluida.operariosIds.length
             ? { connect: excluida.operariosIds.map((id) => ({ id })) }
+            : undefined,
+          necesidades: necesidadesIds.length
+            ? { connect: necesidadesIds.map((id) => ({ id })) }
             : undefined,
         },
       });
@@ -6799,6 +6846,7 @@ export class DefinicionTareaPreventivaService {
             usuario: { select: { nombre: true } },
           },
         },
+        necesidades: { select: { id: true } },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
@@ -8921,6 +8969,16 @@ function buildTareaBorradorCreateData(
       ? {
           connect: original.operarios.map((operario: { id: string }) => ({
             id: operario.id,
+          })),
+        }
+      : undefined,
+    // Conserva el vínculo a la(s) plaza(s) de origen al recrear el bloque
+    // (reordenamiento del día): sin esto se perdía el distintivo visual de
+    // horario especial.
+    necesidades: original.necesidades?.length
+      ? {
+          connect: original.necesidades.map((necesidad: { id: number }) => ({
+            id: necesidad.id,
           })),
         }
       : undefined,
