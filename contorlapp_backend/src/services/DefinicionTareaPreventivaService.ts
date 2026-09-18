@@ -2552,7 +2552,6 @@ export class DefinicionTareaPreventivaService {
     conjuntoId: string;
     periodoAnio: number;
     periodoMes: number;
-    horariosPorDia: Map<DiaSemana, HorarioDia>;
   }): Promise<{ reordenadas: number; componentesSinOrdenar: number }> {
     const tareas = await this.prisma.tarea.findMany({
       where: {
@@ -2630,19 +2629,6 @@ export class DefinicionTareaPreventivaService {
 
     for (const tareasDia of porDia.values()) {
       const fecha = tareasDia[0].fechaInicio;
-      const horario = params.horariosPorDia.get(dateToDiaSemana(fecha));
-      if (!horario) {
-        tareasDia.forEach((tarea) =>
-          this.registrarIntervaloAgendaScheduler({
-            tareaId: tarea.id,
-            fechaInicio: tarea.fechaInicio,
-            fechaFin: tarea.fechaFin,
-            operariosIds: tarea.operarios.map((operario) => operario.id),
-            borrador: true,
-          }),
-        );
-        continue;
-      }
 
       const pendientes = new Set(tareasDia.map((tarea) => tarea.id));
       while (pendientes.size) {
@@ -2678,6 +2664,38 @@ export class DefinicionTareaPreventivaService {
         const componente = tareasDia.filter((tarea) =>
           componenteIds.has(tarea.id),
         );
+
+        // Ventana de ESTE componente (los operarios que comparte): la de su
+        // plaza si tiene horario especial, o el horario general del
+        // conjunto en cualquier otro caso -igual que en la generación
+        // inicial-. Antes se usaba un único horario por día para todo el
+        // conjunto, así que una tarea de una plaza con horario especial
+        // (p.ej. 09:00-20:00) que caía el mismo día de la semana en que el
+        // conjunto SÍ tiene fila general (p.ej. 07:00-17:00) terminaba
+        // reposicionada aquí dentro del horario general, fuera del horario
+        // real de su plaza.
+        const horariosComponente = await this.horariosPorDiaParaOperarios(
+          params.conjuntoId,
+          [...operariosComponente],
+        );
+        const horario = horariosComponente.get(dateToDiaSemana(fecha));
+        if (!horario) {
+          componentesSinOrdenar++;
+          this.retirarTareasAgendaScheduler(
+            componente.map((tarea) => tarea.id),
+          );
+          for (const tarea of componente) {
+            this.registrarIntervaloAgendaScheduler({
+              tareaId: tarea.id,
+              fechaInicio: tarea.fechaInicio,
+              fechaFin: tarea.fechaFin,
+              operariosIds: tarea.operarios.map((operario) => operario.id),
+              borrador: true,
+            });
+          }
+          continue;
+        }
+
         type PropuestaZona = {
           tarea: (typeof tareas)[number];
           fechaInicio: Date;
@@ -5835,20 +5853,17 @@ export class DefinicionTareaPreventivaService {
     }
 
     // Reempaquetado por zonas: pasada global que mezcla tareas de varias
-    // definiciones/plazas por día. Usa deliberadamente el horario general
-    // del conjunto (no el de cada plaza): si un día no tiene fila en
-    // ConjuntoHorario, esa fecha simplemente se salta del reordenamiento
-    // (ver reordenarBorradorGeneradoPorZonas) sin tocar las tareas ya
-    // creadas -las de plazas con horario especial ya quedaron agendadas
-    // correctamente en las fases anteriores; solo no se benefician de este
-    // reempaquetado estético cuando caen fuera del horario del conjunto.
+    // definiciones/plazas por día. Resuelve el horario POR COMPONENTE (los
+    // operarios que comparten las tareas agrupadas), no uno solo por día
+    // para todo el conjunto: así una plaza con horario especial conserva su
+    // propia ventana aunque ese día de la semana también tenga fila en el
+    // horario general del conjunto (ver reordenarBorradorGeneradoPorZonas).
     const ordenamientoZonas =
       modo === "RESET"
         ? await this.reordenarBorradorGeneradoPorZonas({
             conjuntoId,
             periodoAnio,
             periodoMes,
-            horariosPorDia,
           })
         : { reordenadas: 0, componentesSinOrdenar: 0 };
 
