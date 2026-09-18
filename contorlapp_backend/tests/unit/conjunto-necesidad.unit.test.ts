@@ -160,11 +160,52 @@ function makeFakePrisma() {
     }),
   };
 
+  const definiciones = new Map<
+    number,
+    {
+      id: number;
+      conjuntoId: string;
+      descripcion: string;
+      activo: boolean;
+      operariosIds: string[];
+      necesidadesIds: number[];
+    }
+  >();
+
+  const definicionTareaPreventiva = {
+    findMany: jest.fn(async ({ where }: any) => {
+      let out = Array.from(definiciones.values()).filter(
+        (d) => d.conjuntoId === where.conjuntoId,
+      );
+      if (where.activo != null) out = out.filter((d) => d.activo === where.activo);
+      if (where.necesidades?.none) {
+        out = out.filter((d) => d.necesidadesIds.length === 0);
+      }
+      if (where.operarios?.some) {
+        out = out.filter((d) => d.operariosIds.length > 0);
+      }
+      return out.map((d) => ({
+        id: d.id,
+        descripcion: d.descripcion,
+        operarios: d.operariosIds.map((id) => ({ id })),
+      }));
+    }),
+    update: jest.fn(async ({ where, data }: any) => {
+      const def = definiciones.get(where.id);
+      if (!def) throw new Error("no encontrado");
+      if (data.necesidades?.connect) {
+        def.necesidadesIds = data.necesidades.connect.map((c: any) => c.id);
+      }
+      return def;
+    }),
+  };
+
   const prisma: any = {
     conjuntoNecesidadOperario,
     conjuntoNecesidadHorario,
     operario,
     conjunto,
+    definicionTareaPreventiva,
     $transaction: async (fn: any) => fn(prisma),
   };
 
@@ -175,6 +216,18 @@ function makeFakePrisma() {
       operarios.set(id, { id, funciones });
       if (conjuntoId) conjuntos.get(conjuntoId)?.operariosIds.add(id);
     },
+    seedDefinicion: (params: {
+      id: number;
+      conjuntoId: string;
+      descripcion: string;
+      operariosIds: string[];
+    }) =>
+      definiciones.set(params.id, {
+        ...params,
+        activo: true,
+        necesidadesIds: [],
+      }),
+    definicionesGuardadas: definiciones,
   };
 }
 
@@ -320,5 +373,82 @@ describe("ConjuntoNecesidadService", () => {
     // Reducir a un subconjunto que Pedro sí cumple está permitido.
     const editada = await service.editar(plaza.id, { roles: ["TODERO"] });
     expect(editada.roles).toEqual(["TODERO"]);
+  });
+});
+
+describe("ConjuntoNecesidadService: vincularDefinicionesConNecesidades (migración paso 2)", () => {
+  test("vincula una definición cuando todos sus operarios ya ocupan una plaza", async () => {
+    const { prisma, seedConjunto, seedOperario, seedDefinicion } = makeFakePrisma();
+    seedConjunto("C-1");
+    seedOperario("pedro", [TipoFuncion.TODERO], "C-1");
+    const service = new ConjuntoNecesidadService(prisma, "C-1");
+
+    const plaza = await service.crear({
+      roles: ["TODERO"],
+      etiqueta: "Todero #1",
+      operarioId: "pedro",
+    });
+    seedDefinicion({
+      id: 500,
+      conjuntoId: "C-1",
+      descripcion: "Ronda todero",
+      operariosIds: ["pedro"],
+    });
+
+    const resultado = await service.vincularDefinicionesConNecesidades();
+
+    expect(resultado.saltadas).toEqual([]);
+    expect(resultado.vinculadas).toEqual([{ id: 500, descripcion: "Ronda todero" }]);
+    expect(prisma.definicionTareaPreventiva.update).toHaveBeenCalledWith({
+      where: { id: 500 },
+      data: { necesidades: { connect: [{ id: plaza.id }] } },
+    });
+  });
+
+  test("salta (sin tocar) una definición cuyo operario todavía no ocupa ninguna plaza", async () => {
+    const { prisma, seedConjunto, seedOperario, seedDefinicion } = makeFakePrisma();
+    seedConjunto("C-1");
+    seedOperario("juan", [TipoFuncion.TODERO], "C-1");
+    const service = new ConjuntoNecesidadService(prisma, "C-1");
+
+    seedDefinicion({
+      id: 501,
+      conjuntoId: "C-1",
+      descripcion: "Ronda sin plaza todavia",
+      operariosIds: ["juan"],
+    });
+
+    const resultado = await service.vincularDefinicionesConNecesidades();
+
+    expect(resultado.vinculadas).toEqual([]);
+    expect(resultado.saltadas).toHaveLength(1);
+    expect(resultado.saltadas[0]).toMatchObject({ id: 501 });
+    expect(prisma.definicionTareaPreventiva.update).not.toHaveBeenCalled();
+  });
+
+  test("no vincula (ni cuenta) una definición que ya tiene necesidades vinculadas", async () => {
+    const { prisma, seedConjunto, seedOperario, seedDefinicion, definicionesGuardadas } =
+      makeFakePrisma();
+    seedConjunto("C-1");
+    seedOperario("pedro", [TipoFuncion.TODERO], "C-1");
+    const service = new ConjuntoNecesidadService(prisma, "C-1");
+
+    const plaza = await service.crear({
+      roles: ["TODERO"],
+      etiqueta: "Todero #1",
+      operarioId: "pedro",
+    });
+    seedDefinicion({
+      id: 502,
+      conjuntoId: "C-1",
+      descripcion: "Ya vinculada antes",
+      operariosIds: ["pedro"],
+    });
+    definicionesGuardadas.get(502)!.necesidadesIds = [plaza.id];
+
+    const resultado = await service.vincularDefinicionesConNecesidades();
+
+    expect(resultado.vinculadas).toEqual([]);
+    expect(resultado.saltadas).toEqual([]);
   });
 });

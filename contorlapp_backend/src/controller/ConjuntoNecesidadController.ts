@@ -127,4 +127,16 @@ export class ConjuntoNecesidadController {
       next(err);
     }
   };
+
+  // POST /conjuntos/:nit/necesidades/vincular-definiciones
+  vincularDefinicionesConNecesidades: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const service = new ConjuntoNecesidadService(prisma, conjuntoId);
+      const data = await service.vincularDefinicionesConNecesidades();
+      res.status(200).json(data);
+    } catch (err) {
+      next(err);
+    }
+  };
 }

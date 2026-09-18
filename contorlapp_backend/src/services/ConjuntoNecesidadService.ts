@@ -378,4 +378,79 @@ export class ConjuntoNecesidadService {
     }
     return { creadas };
   }
+
+  /**
+   * Paso 2 de la migración (después de migrarDesdeOperariosActuales, o de
+   * asignar manualmente las plazas): conecta las definiciones de
+   * preventiva que hoy resuelven por `operarios` directos a las plazas que
+   * esos mismos operarios ya ocupan en este conjunto. A partir de ahí la
+   * definición resuelve "necesidad primero" (ver operariosIdsDeDefinicion
+   * en el generador): reasignar el titular de la plaza no vuelve a
+   * requerir editar la definición, y la plaza puede tener horario
+   * especial propio.
+   *
+   * Solo vincula una definición si TODOS sus operarios directos ocupan una
+   * plaza en este conjunto: conectar `necesidades` hace que la resolución
+   * IGNORE `operarios` por completo, así que vincular a medias perdería en
+   * silencio a quien todavía no tiene plaza. Si eso pasa, la definición se
+   * reporta como "saltada" con el motivo en vez de vincularla a medias.
+   */
+  async vincularDefinicionesConNecesidades() {
+    const definiciones = await this.prisma.definicionTareaPreventiva.findMany({
+      where: {
+        conjuntoId: this.conjuntoId,
+        activo: true,
+        necesidades: { none: {} },
+        operarios: { some: {} },
+      },
+      select: {
+        id: true,
+        descripcion: true,
+        operarios: { select: { id: true } },
+      },
+    });
+
+    const vinculadas: Array<{ id: number; descripcion: string }> = [];
+    const saltadas: Array<{ id: number; descripcion: string; motivo: string }> = [];
+    if (!definiciones.length) {
+      return { vinculadas, saltadas };
+    }
+
+    const operarioIds = Array.from(
+      new Set(definiciones.flatMap((d) => d.operarios.map((o) => o.id))),
+    );
+    const plazas = await this.prisma.conjuntoNecesidadOperario.findMany({
+      where: { conjuntoId: this.conjuntoId, operarioId: { in: operarioIds }, activo: true },
+      select: { id: true, operarioId: true },
+    });
+    const plazaPorOperario = new Map(
+      plazas
+        .filter((p): p is typeof p & { operarioId: string } => p.operarioId != null)
+        .map((p) => [p.operarioId, p.id]),
+    );
+
+    for (const def of definiciones) {
+      const necesidadesIds = def.operarios.map((o) => plazaPorOperario.get(o.id));
+      const faltante = def.operarios.find((o) => !plazaPorOperario.has(o.id));
+      if (faltante) {
+        saltadas.push({
+          id: def.id,
+          descripcion: def.descripcion,
+          motivo: `El operario ${faltante.id} todavía no ocupa una plaza en este conjunto.`,
+        });
+        continue;
+      }
+      await this.prisma.definicionTareaPreventiva.update({
+        where: { id: def.id },
+        data: {
+          necesidades: {
+            connect: Array.from(new Set(necesidadesIds as number[])).map((id) => ({ id })),
+          },
+        },
+      });
+      vinculadas.push({ id: def.id, descripcion: def.descripcion });
+    }
+
+    return { vinculadas, saltadas };
+  }
 }

@@ -53,6 +53,7 @@ conjuntoRouter.delete("/conjuntos/:nit/necesidades/:necesidadId", requirePermiss
 conjuntoRouter.post("/conjuntos/:nit/necesidades/:necesidadId/operario", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.asignarOperario);
 conjuntoRouter.delete("/conjuntos/:nit/necesidades/:necesidadId/operario", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.liberarOperario);
 conjuntoRouter.post("/conjuntos/:nit/necesidades/migrar-desde-operarios", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.migrarDesdeOperariosActuales);
+conjuntoRouter.post("/conjuntos/:nit/necesidades/vincular-definiciones", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.vincularDefinicionesConNecesidades);
 
 conjuntoRouter.post("/conjuntos/:nit/cronograma/tareas", requirePermission("tareas.crear", "cronograma.correctivas_programar"), requireConjuntoScope("nit"), c.agregarTareaACronograma);
 conjuntoRouter.get("/conjuntos/:nit/tareas/por-fecha", requirePermission("tareas.ver", "cronograma.ver"), requireConjuntoScope("nit"), c.tareasPorFecha);

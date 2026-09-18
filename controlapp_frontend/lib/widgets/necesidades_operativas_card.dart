@@ -107,6 +107,7 @@ class _NecesidadesOperativasCardState
                 onSelected: (value) {
                   if (value == 'agregar') _mostrarFormulario();
                   if (value == 'migrar') _migrarDesdeOperarios();
+                  if (value == 'vincular') _vincularDefiniciones();
                 },
                 itemBuilder: (context) => const [
                   PopupMenuItem(
@@ -115,7 +116,11 @@ class _NecesidadesOperativasCardState
                   ),
                   PopupMenuItem(
                     value: 'migrar',
-                    child: Text('Crear plazas desde operarios actuales'),
+                    child: Text('1. Crear plazas desde operarios actuales'),
+                  ),
+                  PopupMenuItem(
+                    value: 'vincular',
+                    child: Text('2. Vincular preventivas existentes a esas plazas'),
                   ),
                 ],
               ),
@@ -601,6 +606,78 @@ class _NecesidadesOperativasCardState
         context,
         SnackBar(
           content: Text('No se pudo migrar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Paso 2 de la migración: conecta las preventivas que todavía resuelven
+  /// por operarios directos a la plaza que ese mismo operario ya ocupa
+  /// (normalmente después de "Crear plazas desde operarios actuales").
+  Future<void> _vincularDefiniciones() async {
+    try {
+      final resultado = await _api.vincularDefinicionesConNecesidades(
+        widget.conjuntoNit,
+      );
+      if (!mounted) return;
+      if (resultado.vinculadas.isEmpty && resultado.saltadas.isEmpty) {
+        AppFeedback.showFromSnackBar(
+          context,
+          const SnackBar(
+            content: Text(
+              'No había preventivas por vincular (ya usan plazas, o no tienen operarios directos).',
+            ),
+          ),
+        );
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Vincular preventivas a las plazas'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (resultado.vinculadas.isNotEmpty) ...[
+                  Text(
+                    'Vinculadas (${resultado.vinculadas.length}):',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  ...resultado.vinculadas.map((d) => Text('• $d')),
+                ],
+                if (resultado.saltadas.isNotEmpty) ...[
+                  if (resultado.vinculadas.isNotEmpty)
+                    const SizedBox(height: 12),
+                  Text(
+                    'Saltadas (${resultado.saltadas.length}) — asigna la plaza '
+                    'que falta y vuelve a intentar:',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  ...resultado.saltadas.map((d) => Text('• $d')),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+      _reload();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(
+          content: Text('No se pudieron vincular las preventivas: $e'),
           backgroundColor: Colors.red,
         ),
       );

@@ -492,4 +492,61 @@ class ConjuntoApi {
         .where((e) => e.isNotEmpty)
         .toList();
   }
+
+  /// POST /conjunto/conjuntos/:nit/necesidades/vincular-definiciones
+  /// Paso 2 de la migración: conecta las preventivas que hoy resuelven por
+  /// operarios directos a la plaza que ese mismo operario ya ocupa. Solo
+  /// vincula cuando TODOS los operarios de la definición tienen plaza; el
+  /// resto queda listado en `saltadas` con el motivo.
+  Future<VinculacionDefinicionesResultado> vincularDefinicionesConNecesidades(
+    String conjuntoNit,
+  ) async {
+    final resp = await _client.post(
+      '${_necesidadesBase(conjuntoNit)}/vincular-definiciones',
+    );
+    if (resp.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudieron vincular las preventivas a las plazas.',
+        ),
+      );
+    }
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    return VinculacionDefinicionesResultado.fromJson(data);
+  }
+}
+
+class VinculacionDefinicionesResultado {
+  final List<String> vinculadas;
+  final List<String> saltadas;
+
+  VinculacionDefinicionesResultado({
+    required this.vinculadas,
+    required this.saltadas,
+  });
+
+  factory VinculacionDefinicionesResultado.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    final vinculadas = (json['vinculadas'] as List?) ?? const [];
+    final saltadas = (json['saltadas'] as List?) ?? const [];
+    return VinculacionDefinicionesResultado(
+      vinculadas: vinculadas
+          .map((v) => (v as Map<String, dynamic>)['descripcion']?.toString() ?? '')
+          .where((e) => e.isNotEmpty)
+          .toList(),
+      saltadas: saltadas
+          .map((v) {
+            final map = v as Map<String, dynamic>;
+            final descripcion = map['descripcion']?.toString() ?? '';
+            final motivo = map['motivo']?.toString() ?? '';
+            return descripcion.isEmpty
+                ? ''
+                : '$descripcion${motivo.isEmpty ? '' : ' ($motivo)'}';
+          })
+          .where((e) => e.isNotEmpty)
+          .toList(),
+    );
+  }
 }
