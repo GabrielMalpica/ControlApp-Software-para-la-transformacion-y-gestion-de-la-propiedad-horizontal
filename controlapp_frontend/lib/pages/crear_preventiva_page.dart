@@ -73,6 +73,12 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   final _duracionFijaMinCtrl = TextEditingController();
 
+  // Si la tarea es muy larga para una sola jornada, se puede repartir en
+  // varios días (el backend reparte los minutos equilibradamente y agenda
+  // cada parte en un día distinto). Generalmente se usa en tareas P1.
+  bool _dividirEnVariosDias = false;
+  final _diasParaCompletarCtrl = TextEditingController();
+
   // Insumo principal
   int? _insumoPrincipalId;
   final _consumoPorUnidadCtrl = TextEditingController();
@@ -312,6 +318,12 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         ..clear()
         ..addAll(existente.fechasProgramadas);
 
+      if (existente.diasParaCompletar != null &&
+          existente.diasParaCompletar! > 1) {
+        _dividirEnVariosDias = true;
+        _diasParaCompletarCtrl.text = existente.diasParaCompletar.toString();
+      }
+
       if (existente.duracionMinutosFija != null) {
         _usaRendimiento = false;
         _duracionFijaMinCtrl.text = existente.duracionMinutosFija!.toString();
@@ -475,6 +487,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     _cantidadCtrl.dispose();
     _rendimientoCtrl.dispose();
     _duracionFijaMinCtrl.dispose();
+    _diasParaCompletarCtrl.dispose();
     _consumoPorUnidadCtrl.dispose();
 
     for (final r in _insumosPlanRows) {
@@ -806,6 +819,15 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       }
     }
 
+    int? diasParaCompletar;
+    if (_dividirEnVariosDias) {
+      diasParaCompletar = _tryInt(_diasParaCompletarCtrl.text.trim());
+      if (diasParaCompletar == null || diasParaCompletar < 2) {
+        _snack('Indica en cuántos días (2 o más) se puede dividir la tarea.');
+        return;
+      }
+    }
+
     final prioridad = (int.tryParse(_prioridadCtrl.text.trim()) ?? 2).clamp(
       1,
       3,
@@ -873,7 +895,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         rendimientoBase: rendimiento,
         duracionMinutosFija: duracionMinFija,
         rendimientoTiempoBase: _usaRendimiento ? _rendimientoTiempoBase : null,
-        diasParaCompletar: null,
+        diasParaCompletar: diasParaCompletar,
         insumoPrincipalId: _insumoPrincipalId,
         consumoPrincipalPorUnidad: consumoPrincipal,
         insumosPlan: insumosPlanRequests,
@@ -1541,7 +1563,37 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                       ),
                     ],
 
-                    // La ocurrencia debe finalizarse dentro de una jornada.
+                    const SizedBox(height: 12),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Dividir en varios días si es muy larga'),
+                      subtitle: const Text(
+                        'Reparte la duración total en partes equilibradas, una por '
+                        'día. Se usa normalmente en tareas prioridad 1, que el '
+                        'generador agenda primero para no quedarse sin días '
+                        'disponibles al repartir las partes.',
+                        style: TextStyle(fontSize: 11),
+                      ),
+                      value: _dividirEnVariosDias,
+                      onChanged: (v) => setState(() {
+                        _dividirEnVariosDias = v;
+                        if (!v) _diasParaCompletarCtrl.clear();
+                      }),
+                    ),
+                    if (_dividirEnVariosDias) ...[
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _diasParaCompletarCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Días para completar',
+                          helperText: 'Mínimo 2 días.',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                    // La ocurrencia debe finalizarse dentro de la jornada de
+                    // cada día que le toque.
                     const SizedBox(height: 12),
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -1550,13 +1602,15 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.grey.shade200),
                       ),
-                      child: const Row(
+                      child: Row(
                         children: [
-                          Icon(Icons.free_breakfast_outlined),
-                          SizedBox(width: 10),
+                          const Icon(Icons.free_breakfast_outlined),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              'La tarea debe completarse el mismo día. Solo se dividirá si una parte termina al iniciar el almuerzo y la otra continúa justo después.',
+                              _dividirEnVariosDias
+                                  ? 'Cada día se agenda la parte que le toca dentro de su jornada. Dentro de un mismo día, esa parte solo se divide si un tramo termina al iniciar el almuerzo y el otro continúa justo después.'
+                                  : 'La tarea debe completarse el mismo día. Solo se dividirá si una parte termina al iniciar el almuerzo y la otra continúa justo después.',
                             ),
                           ),
                         ],
