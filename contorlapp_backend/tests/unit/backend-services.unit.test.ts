@@ -7,6 +7,7 @@ jest.mock('../../src/utils/schedulerUtils', () => ({
 }));
 
 jest.mock('../../src/utils/drive_evidencias', () => ({
+  buildEvidenciaFileName: jest.fn().mockReturnValue('evidencia-renombrada.jpg'),
   uploadEvidenciaToDrive: jest.fn().mockResolvedValue('https://drive.test/evidencia.jpg'),
 }));
 
@@ -227,6 +228,9 @@ describe('Pruebas unitarias backend', () => {
     jest.spyOn(fs, 'unlinkSync').mockImplementation(() => undefined);
 
     const prisma: any = {
+      usuario: {
+        findUnique: jest.fn().mockResolvedValue({ nombre: 'Supervisor Uno' }),
+      },
       tarea: {
         findUnique: jest.fn().mockResolvedValue({
           id: 88,
@@ -272,7 +276,7 @@ describe('Pruebas unitarias backend', () => {
             'https://previa.test/1.jpg',
             'https://drive.test/evidencia.jpg',
           ],
-          estado: EstadoTarea.PENDIENTE_APROBACION,
+          estado: EstadoTarea.APROBADA,
         }),
       }),
     );

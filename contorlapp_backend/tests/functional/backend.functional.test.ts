@@ -254,12 +254,15 @@ describe('Pruebas funcionales backend', () => {
 
     expect(inventory.consumirInsumoPorId).toHaveBeenCalledWith({ insumoId: 2, cantidad: 3 });
     expect(prisma.tarea.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ estado: EstadoTarea.PENDIENTE_APROBACION }) }),
+      expect.objectContaining({ data: expect.objectContaining({ estado: EstadoTarea.APROBADA }) }),
     );
   });
 
   test('PF7 - Evidencias: asocia imagen a la tarea cerrada', async () => {
     const prisma: any = {
+      usuario: {
+        findUnique: jest.fn().mockResolvedValue({ nombre: 'Supervisor Uno' }),
+      },
       tarea: {
         findUnique: jest.fn().mockResolvedValue({
           id: 77,

@@ -25,6 +25,9 @@ import { TareaService } from '../../src/services/TareaServices';
 describe('Pruebas de integración backend', () => {
   test('PI1 - Actividades + Evidencias: cerrar tarea adjunta evidencias', async () => {
     const prisma: any = {
+      usuario: {
+        findUnique: jest.fn().mockResolvedValue({ nombre: 'Supervisor Uno' }),
+      },
       conjunto: {
         findFirst: jest.fn().mockResolvedValue({ nit: 'C-1' }),
       },
@@ -55,7 +58,7 @@ describe('Pruebas de integración backend', () => {
 
     expect(tx.tarea.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ estado: EstadoTarea.PENDIENTE_APROBACION }),
+        data: expect.objectContaining({ estado: EstadoTarea.APROBADA }),
       }),
     );
   });
