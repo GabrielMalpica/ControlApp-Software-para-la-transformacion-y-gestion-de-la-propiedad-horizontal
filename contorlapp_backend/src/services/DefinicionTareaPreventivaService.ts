@@ -9,6 +9,7 @@ import {
   Frecuencia,
   DiaSemana,
   Rol,
+  TipoFuncion,
 } from "@prisma/client";
 import { z } from "zod";
 
@@ -451,6 +452,31 @@ export class DefinicionTareaPreventivaService {
    * llamador decide qué hacer si el resultado queda incompleto). Si no
    * tiene ninguna, se conserva el camino directo `operarios` de siempre.
    */
+  /**
+   * true si TODOS los operarios/necesidades que resolverían esta ocurrencia
+   * tienen el rol SALVAVIDAS (solo o combinado, p.ej. "TODERO-SALVAVIDAS").
+   * Nueva regla de negocio: estos sí pueden recibir tareas en festivo,
+   * mientras el día caiga dentro del horario de su cargo -el resto de
+   * roles sigue sin trabajar festivos-. Si la definición mezcla
+   * necesidades/operarios con y sin SALVAVIDAS, exige que TODOS lo tengan
+   * (no basta con que uno lo tenga, para no colar a quien no debería
+   * trabajar ese día).
+   */
+  private defPuedeTrabajarFestivo(def: {
+    operarios: Array<{ funciones?: TipoFuncion[] | null }>;
+    necesidades?: Array<{ roles?: TipoFuncion[] | null }>;
+  }): boolean {
+    if (def.necesidades?.length) {
+      return def.necesidades.every((n) =>
+        (n.roles ?? []).includes(TipoFuncion.SALVAVIDAS),
+      );
+    }
+    if (!def.operarios.length) return false;
+    return def.operarios.every((o) =>
+      (o.funciones ?? []).includes(TipoFuncion.SALVAVIDAS),
+    );
+  }
+
   private operariosIdsDeDefinicion(def: {
     operarios: Array<{ id: string }>;
     necesidades?: Array<{ operarioId: string | null }>;
@@ -1804,6 +1830,21 @@ export class DefinicionTareaPreventivaService {
       inicio: inicioMes,
       fin: finMes,
     });
+    // Roles SALVAVIDAS (solos o combinados): sí trabajan festivos, dentro de
+    // su horario (misma regla que en generarBorradorMensual). Aquí solo se
+    // conocen los operariosIds ya resueltos, así que se consulta su rol
+    // directamente en vez de partir de `def.necesidades`.
+    const operariosPuedenTrabajarFestivo =
+      excluida.operariosIds.length > 0 &&
+      (
+        await this.prisma.operario.findMany({
+          where: { id: { in: excluida.operariosIds } },
+          select: { funciones: true },
+        })
+      ).every((o) => o.funciones.includes(TipoFuncion.SALVAVIDAS));
+    const festivosSetEfectivo = operariosPuedenTrabajarFestivo
+      ? new Set<string>()
+      : festivosSet;
 
     const fechas = enumerateDays(inicioMes, finMes);
     const preferida = fechaPreferida ?? excluida.fechaObjetivo;
@@ -1873,7 +1914,7 @@ export class DefinicionTareaPreventivaService {
     for (const dia of fechas) {
       if (opciones.length >= maxOpciones) break;
       const key = dayKey(dia);
-      if (festivosSet.has(key)) continue;
+      if (festivosSetEfectivo.has(key)) continue;
 
       const horario = horariosPorDia.get(dateToDiaSemana(dia));
       if (!horario) continue;
@@ -1960,7 +2001,7 @@ export class DefinicionTareaPreventivaService {
         excluida,
         fechas,
         horariosPorDia,
-        festivosSet,
+        festivosSet: festivosSetEfectivo,
         preferida,
         startIndex: fechas.findIndex((f) => dayKey(f) === key),
       });
@@ -3328,6 +3369,82 @@ export class DefinicionTareaPreventivaService {
     }
   }
 
+  /**
+   * Si la definición se liga a necesidades (plazas) y su día programado NO
+   * cae en ningún día que esas plazas trabajen, la definición nunca podría
+   * cumplirse ese día: el generador la reubicaría en silencio dentro del
+   * mes (motivo REUBICADA_EN_PERIODO) sin avisar que la causa es una
+   * incompatibilidad estructural, no falta de cupo. Se rechaza aquí en vez
+   * de dejar que ocurra eso.
+   *
+   * Solo aplica a SEMANAL/QUINCENAL (día de semana fijo) y a
+   * fechasProgramadasJson (fechas concretas, cuyo día de semana ya se
+   * conoce). MENSUAL usa día-del-mes, cuyo día de semana varía cada mes, así
+   * que no es una incompatibilidad estructural fija y no se valida aquí.
+   */
+  private async validarCompatibilidadHorarioNecesidades(params: {
+    conjuntoId: string;
+    necesidadesIds: number[];
+    frecuencia: Frecuencia;
+    diaSemanaProgramado?: DiaSemana | null;
+    fechasProgramadasJson?: string[] | null;
+  }): Promise<void> {
+    const {
+      conjuntoId,
+      necesidadesIds,
+      frecuencia,
+      diaSemanaProgramado,
+      fechasProgramadasJson,
+    } = params;
+    if (!necesidadesIds.length) return;
+
+    const diasRequeridos = new Set<DiaSemana>();
+    if (
+      (frecuencia === Frecuencia.SEMANAL || frecuencia === Frecuencia.QUINCENAL) &&
+      diaSemanaProgramado
+    ) {
+      diasRequeridos.add(diaSemanaProgramado);
+    }
+    for (const fecha of fechasProgramadasJson ?? []) {
+      diasRequeridos.add(diaSemanaFromDate(new Date(`${fecha}T00:00:00`)));
+    }
+    if (!diasRequeridos.size) return;
+
+    const necesidades = await this.prisma.conjuntoNecesidadOperario.findMany({
+      where: { id: { in: necesidadesIds }, conjuntoId },
+      select: {
+        etiqueta: true,
+        horarioEspecial: true,
+        horarios: { select: { dia: true } },
+      },
+    });
+
+    let horarioGeneralDias: Set<DiaSemana> | null = null;
+    const diasCubiertos = new Set<DiaSemana>();
+    for (const n of necesidades) {
+      if (n.horarioEspecial) {
+        for (const h of n.horarios) diasCubiertos.add(h.dia);
+        continue;
+      }
+      if (horarioGeneralDias == null) {
+        const filas = await this.prisma.conjuntoHorario.findMany({
+          where: { conjuntoId },
+          select: { dia: true },
+        });
+        horarioGeneralDias = new Set(filas.map((f) => f.dia));
+      }
+      for (const d of horarioGeneralDias) diasCubiertos.add(d);
+    }
+
+    const faltantes = [...diasRequeridos].filter((d) => !diasCubiertos.has(d));
+    if (faltantes.length) {
+      const etiquetas = necesidades.map((n) => n.etiqueta).join(", ");
+      throw new Error(
+        `El día programado (${faltantes.join(", ")}) está fuera del horario de la(s) plaza(s) asignada(s) (${etiquetas}). Ajusta el día programado o el horario especial de la plaza antes de guardar.`,
+      );
+    }
+  }
+
   private async crearConCliente(
     client: PrismaClient | Prisma.TransactionClient,
     payload: unknown,
@@ -3336,6 +3453,13 @@ export class DefinicionTareaPreventivaService {
     this.validarProgramacionFrecuencia(dto);
     if (dto.necesidadesIds?.length) {
       await this.validarNecesidadesDelConjunto(dto.conjuntoId, dto.necesidadesIds);
+      await this.validarCompatibilidadHorarioNecesidades({
+        conjuntoId: dto.conjuntoId,
+        necesidadesIds: dto.necesidadesIds,
+        frecuencia: dto.frecuencia,
+        diaSemanaProgramado: dto.diaSemanaProgramado,
+        fechasProgramadasJson: dto.fechasProgramadasJson,
+      });
     }
 
     const supervisorIdResuelto =
@@ -3487,25 +3611,44 @@ export class DefinicionTareaPreventivaService {
         diaSemanaProgramado: true,
         diaMesProgramado: true,
         fechasProgramadasJson: true,
+        necesidades: { select: { id: true } },
       } as any,
     });
     if (!actual) {
       throw new Error("Definición no encontrada para este conjunto.");
     }
 
+    const frecuenciaEfectiva = dto.frecuencia ?? actual.frecuencia;
+    const diaSemanaEfectivo =
+      dto.diaSemanaProgramado === undefined
+        ? actual.diaSemanaProgramado
+        : dto.diaSemanaProgramado;
+    const fechasEfectivas: string[] | null =
+      dto.fechasProgramadasJson === undefined
+        ? ((actual.fechasProgramadasJson as string[] | null | undefined) ?? null)
+        : dto.fechasProgramadasJson;
+
     this.validarProgramacionFrecuencia({
-      frecuencia: dto.frecuencia ?? actual.frecuencia,
-      diaSemanaProgramado:
-        dto.diaSemanaProgramado === undefined
-          ? actual.diaSemanaProgramado
-          : dto.diaSemanaProgramado,
+      frecuencia: frecuenciaEfectiva,
+      diaSemanaProgramado: diaSemanaEfectivo,
       diaMesProgramado:
         dto.diaMesProgramado === undefined ? actual.diaMesProgramado : dto.diaMesProgramado,
-      fechasProgramadasJson:
-        dto.fechasProgramadasJson === undefined
-          ? ((actual.fechasProgramadasJson as string[] | null | undefined) ?? null)
-          : dto.fechasProgramadasJson,
+      fechasProgramadasJson: fechasEfectivas,
     });
+
+    const necesidadesIdsEfectivas: number[] =
+      dto.necesidadesIds === undefined
+        ? actual.necesidades.map((n: { id: number }) => n.id)
+        : (dto.necesidadesIds ?? []);
+    if (necesidadesIdsEfectivas.length) {
+      await this.validarCompatibilidadHorarioNecesidades({
+        conjuntoId,
+        necesidadesIds: necesidadesIdsEfectivas,
+        frecuencia: frecuenciaEfectiva,
+        diaSemanaProgramado: diaSemanaEfectivo,
+        fechasProgramadasJson: fechasEfectivas,
+      });
+    }
 
     // recalcular duración si vienen campos
     const durMinFija =
@@ -4595,6 +4738,9 @@ export class DefinicionTareaPreventivaService {
         );
 
         const diasFrecuencia = pickDaysByFrecuencia(fechasDelMes, def);
+        // Roles SALVAVIDAS (solos o combinados): sí trabajan festivos,
+        // mientras el día caiga en su horario (ver defPuedeTrabajarFestivo).
+        const puedeTrabajarFestivo = this.defPuedeTrabajarFestivo(def);
         // Una preventiva DIARIA representa una ejecucion por cada jornada
         // laborable configurada. Generarla tambien en dias sin horario (por
         // ejemplo sabado y domingo) creaba ocurrencias extra que luego
@@ -4604,7 +4750,7 @@ export class DefinicionTareaPreventivaService {
             ? diasFrecuencia.filter(
                 (dia) =>
                   horariosPorDiaDef.has(dateToDiaSemana(dia)) &&
-                  !festivosSet.has(dayKey(dia)),
+                  (puedeTrabajarFestivo || !festivosSet.has(dayKey(dia))),
               )
             : diasFrecuencia;
         out.push({
@@ -4734,6 +4880,12 @@ export class DefinicionTareaPreventivaService {
       // o el horario general del conjunto). Sustituye al `horariosPorDia`
       // conjunto-wide en todo el cuerpo de este bucle.
       const horariosPorDiaDef = trabajo.horariosPorDiaDef;
+      // Roles SALVAVIDAS (solos o combinados): sí trabajan festivos, dentro
+      // de su horario (ver defPuedeTrabajarFestivo). Para el resto de roles
+      // este set es el real, así que el comportamiento no cambia.
+      const festivosSetDef = this.defPuedeTrabajarFestivo(def)
+        ? new Set<string>()
+        : festivosSet;
       const diasValidos = [trabajo.dia];
 
       for (const diaBase of diasValidos) {
@@ -4808,7 +4960,7 @@ export class DefinicionTareaPreventivaService {
             });
             continue;
           }
-          const diaBaseEsFestivo = festivosSet.has(dayKey(diaBase));
+          const diaBaseEsFestivo = festivosSetDef.has(dayKey(diaBase));
           const diaBaseEsDomingo =
             dateToDiaSemana(diaBase) === DiaSemana.DOMINGO;
           if (diaBaseEsFestivo || diaBaseEsDomingo) {
@@ -4865,7 +5017,7 @@ export class DefinicionTareaPreventivaService {
         }
 
         // ✅ log: cayó en festivo/domingo y se movió
-        const diaBaseEsFestivo = festivosSet.has(dayKey(diaBase));
+        const diaBaseEsFestivo = festivosSetDef.has(dayKey(diaBase));
         const diaBaseEsDomingo = dateToDiaSemana(diaBase) === DiaSemana.DOMINGO;
         if (
           (diaBaseEsFestivo || diaBaseEsDomingo) &&
@@ -4995,7 +5147,7 @@ export class DefinicionTareaPreventivaService {
             ) {
               break;
             }
-            const esFestivo = festivosSet.has(diaParteKey);
+            const esFestivo = festivosSetDef.has(diaParteKey);
             const disponibilidadOperarios = operariosIds.length
               ? await this.disponibilidadScheduler({
                   fecha: diaParte,
@@ -5124,7 +5276,7 @@ export class DefinicionTareaPreventivaService {
             const diasP1PorProximidad = ordenarDiasMesPorProximidad({
               dias: enumerateDays(inicioMes, finMes).filter(
                 (dia) =>
-                  !festivosSet.has(dayKey(dia)) &&
+                  !festivosSetDef.has(dayKey(dia)) &&
                   horariosPorDiaDef.has(dateToDiaSemana(dia)),
               ),
               fechaObjetivo: diaObjetivoParte,
@@ -5148,7 +5300,7 @@ export class DefinicionTareaPreventivaService {
                 operariosIds,
                 dias: [diaCandidato],
                 horariosPorDia: horariosPorDiaDef,
-                festivosSet,
+                festivosSet: festivosSetDef,
                 maxBloquesPorDia: 2,
                 permitirMultiDia: false,
                 validarLimiteSemanal: true,
@@ -5349,7 +5501,7 @@ export class DefinicionTareaPreventivaService {
               periodoMes,
               operariosIds,
               horariosPorDia: horariosPorDiaDef,
-              festivosSet,
+              festivosSet: festivosSetDef,
               definicionId: def.id,
               descripcion: def.descripcion,
               ubicacionId: def.ubicacionId,
@@ -5366,7 +5518,7 @@ export class DefinicionTareaPreventivaService {
                 operariosIds,
                 dias: diasRescate,
                 horariosPorDia: horariosPorDiaDef,
-                festivosSet,
+                festivosSet: festivosSetDef,
                 incluirPublicadasEnAgenda,
               });
 

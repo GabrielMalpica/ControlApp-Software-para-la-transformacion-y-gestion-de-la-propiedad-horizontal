@@ -1,5 +1,5 @@
 // src/services/CronogramaService.ts
-import { EstadoTarea, Prisma, TipoTarea, type PrismaClient } from "@prisma/client";
+import { EstadoTarea, Prisma, TipoFuncion, TipoTarea, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import {
   buildAgendaPorOperarioDia,
@@ -2120,20 +2120,35 @@ export class CronogramaService {
       })
       .parse(payload);
 
+    const tarea = await this.prisma.tarea.findUnique({
+      where: { id: tareaId },
+      select: { operarios: { select: { id: true } } },
+    });
+    const operariosIds = tarea?.operarios.map((o) => o.id) ?? [];
+
     const esFestivo = await isFestivoDate({
       prisma: this.prisma,
       fecha: fechaInicio,
       pais: "CO",
     });
     if (esFestivo) {
-      throw new Error("No se permite reprogramar tareas a festivos.");
+      // Los operarios con rol SALVAVIDAS (solo o combinado) sí pueden
+      // trabajar festivos, dentro del horario de su cargo -se valida más
+      // abajo igual que cualquier otro día- (misma regla que en el
+      // generador: DefinicionTareaPreventivaService.defPuedeTrabajarFestivo).
+      const puedenTrabajarFestivo =
+        operariosIds.length > 0 &&
+        (
+          await this.prisma.operario.findMany({
+            where: { id: { in: operariosIds } },
+            select: { funciones: true },
+          })
+        ).every((o) => o.funciones.includes(TipoFuncion.SALVAVIDAS));
+      if (!puedenTrabajarFestivo) {
+        throw new Error("No se permite reprogramar tareas a festivos.");
+      }
     }
 
-    const tarea = await this.prisma.tarea.findUnique({
-      where: { id: tareaId },
-      select: { operarios: { select: { id: true } } },
-    });
-    const operariosIds = tarea?.operarios.map((o) => o.id) ?? [];
     const validacionIntervalo = await validarIntervaloProgramacion({
       prisma: this.prisma,
       conjuntoId: this.conjuntoId,

@@ -1,5 +1,5 @@
 // src/services/TareaService.ts
-import { PrismaClient, EstadoTarea, TipoTarea } from "@prisma/client";
+import { PrismaClient, EstadoTarea, TipoFuncion, TipoTarea } from "@prisma/client";
 import { z } from "zod";
 import {
   CrearTareaDTO,
@@ -212,9 +212,23 @@ export class TareaService {
       pais: "CO",
     });
     if (esFestivo) {
-      throw new Error(
-        "No se permite programar tareas en festivos.",
-      );
+      // Los operarios con rol SALVAVIDAS (solo o combinado) sí pueden
+      // trabajar festivos, dentro del horario de su cargo -se valida más
+      // abajo igual que cualquier otro día- (misma regla que en el
+      // generador: DefinicionTareaPreventivaService.defPuedeTrabajarFestivo).
+      const puedenTrabajarFestivo =
+        operarios.length > 0 &&
+        (
+          await prisma.operario.findMany({
+            where: { id: { in: operarios } },
+            select: { funciones: true },
+          })
+        ).every((o) => o.funciones.includes(TipoFuncion.SALVAVIDAS));
+      if (!puedenTrabajarFestivo) {
+        throw new Error(
+          "No se permite programar tareas en festivos.",
+        );
+      }
     }
 
     await validarOperariosEnHorarioTarea({

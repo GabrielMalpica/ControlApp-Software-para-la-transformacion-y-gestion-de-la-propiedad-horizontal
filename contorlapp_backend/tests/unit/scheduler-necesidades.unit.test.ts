@@ -1,4 +1,4 @@
-import { DiaSemana, Frecuencia } from "@prisma/client";
+import { DiaSemana, Frecuencia, TipoFuncion } from "@prisma/client";
 
 // Mismo patrón que scheduler-rescate.unit.test.ts: se neutraliza solo la
 // consulta de festivos (va por SQL crudo), el resto de schedulerUtils real.
@@ -11,6 +11,7 @@ jest.mock("../../src/utils/schedulerUtils", () => {
 });
 
 import { DefinicionTareaPreventivaService } from "../../src/services/DefinicionTareaPreventivaService";
+import { getFestivosSet } from "../../src/utils/schedulerUtils";
 
 const CONJUNTO = "C-NEC";
 const DIAS_LABORALES = [
@@ -33,6 +34,7 @@ function construirPrisma(opts: {
     operarioId: string | null;
     horarioEspecial: boolean;
     horarios: Array<{ dia: DiaSemana; horaApertura: string; horaCierre: string }>;
+    roles?: TipoFuncion[];
   }>;
   operarioTrabajaDomingo?: boolean;
   frecuencia: Frecuencia;
@@ -67,6 +69,7 @@ function construirPrisma(opts: {
     necesidades: opts.necesidades.map((n) => ({
       id: n.id,
       operarioId: n.operarioId,
+      roles: n.roles ?? [],
       operario: n.operarioId
         ? { id: n.operarioId, usuario: { nombre: "Carlos" } }
         : null,
@@ -316,5 +319,105 @@ describe("generarBorradorMensual - necesidades operativas (plazas/cargos)", () =
     expect(prisma.tareasCreadas).toHaveLength(0);
     expect(prisma.excluidasCreadas).toHaveLength(1);
     expect(prisma.excluidasCreadas[0].motivoTipo).toBe("NECESIDAD_SIN_OPERARIO");
+  });
+});
+
+describe("generarBorradorMensual - roles SALVAVIDAS sí trabajan festivos (dentro de su horario)", () => {
+  // 2026-04-01 es miércoles: mismo día de semana que diaSemanaProgramado, así
+  // que es el primer candidato natural de la ocurrencia SEMANAL del mes.
+  const FESTIVO = "2026-04-01";
+
+  test("una plaza SALVAVIDAS sí se agenda en festivo, dentro de su horario", async () => {
+    jest.mocked(getFestivosSet).mockResolvedValueOnce(new Set([FESTIVO]));
+    const prisma = construirPrisma({
+      necesidades: [
+        {
+          id: 601,
+          operarioId: "op-salva",
+          horarioEspecial: false,
+          horarios: [],
+          roles: [TipoFuncion.SALVAVIDAS],
+        },
+      ],
+      frecuencia: Frecuencia.SEMANAL,
+      diaSemanaProgramado: DiaSemana.MIERCOLES,
+      duracionMinutosFija: 60,
+      prioridad: 2,
+    });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    const { creadas } = await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 4,
+    });
+
+    expect(creadas).toBeGreaterThan(0);
+    const tareaFestivo = prisma.tareasCreadas.find(
+      (t: any) => t.fechaInicio.toISOString().slice(0, 10) === FESTIVO,
+    );
+    expect(tareaFestivo).toBeTruthy();
+  });
+
+  test("una plaza TODERO (sin salvavidas) NO se agenda en festivo: se reubica a otro día", async () => {
+    jest.mocked(getFestivosSet).mockResolvedValueOnce(new Set([FESTIVO]));
+    const prisma = construirPrisma({
+      necesidades: [
+        {
+          id: 602,
+          operarioId: "op-todero",
+          horarioEspecial: false,
+          horarios: [],
+          roles: [TipoFuncion.TODERO],
+        },
+      ],
+      frecuencia: Frecuencia.SEMANAL,
+      diaSemanaProgramado: DiaSemana.MIERCOLES,
+      duracionMinutosFija: 60,
+      prioridad: 2,
+    });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 4,
+    });
+
+    const tareaFestivo = prisma.tareasCreadas.find(
+      (t: any) => t.fechaInicio.toISOString().slice(0, 10) === FESTIVO,
+    );
+    expect(tareaFestivo).toBeUndefined();
+  });
+
+  test("una plaza combinada TODERO-SALVAVIDAS sí trabaja festivos (basta con tener el rol)", async () => {
+    jest.mocked(getFestivosSet).mockResolvedValueOnce(new Set([FESTIVO]));
+    const prisma = construirPrisma({
+      necesidades: [
+        {
+          id: 603,
+          operarioId: "op-combo",
+          horarioEspecial: false,
+          horarios: [],
+          roles: [TipoFuncion.TODERO, TipoFuncion.SALVAVIDAS],
+        },
+      ],
+      frecuencia: Frecuencia.SEMANAL,
+      diaSemanaProgramado: DiaSemana.MIERCOLES,
+      duracionMinutosFija: 60,
+      prioridad: 2,
+    });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 4,
+    });
+
+    const tareaFestivo = prisma.tareasCreadas.find(
+      (t: any) => t.fechaInicio.toISOString().slice(0, 10) === FESTIVO,
+    );
+    expect(tareaFestivo).toBeTruthy();
   });
 });
