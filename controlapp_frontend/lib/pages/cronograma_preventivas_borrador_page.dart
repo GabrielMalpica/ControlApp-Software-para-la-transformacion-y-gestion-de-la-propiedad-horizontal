@@ -6807,10 +6807,17 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     required String horaIni,
     required String horaFinStr,
   }) {
-    // Distintivo visual (necesidades operativas): la tarea viene de una
-    // plaza con horario especial, puede caer fuera del horario general
-    // del conjunto.
-    final horarioEspecial = t.tieneHorarioEspecial;
+    // Distintivo visual (necesidades operativas): solo se marca si esta
+    // tarea en concreto cae fuera del horario GENERAL del conjunto -no
+    // basta con que la plaza tenga horario especial configurado; si
+    // coincide con el horario general no se marca.
+    final horarioEspecial =
+        t.tieneHorarioEspecial &&
+        tareaFueraDeHorarioGeneral(
+          horariosConjunto: widget.horariosConjunto,
+          inicio: t.fechaInicio.toLocal(),
+          fin: t.fechaFin.toLocal(),
+        );
     return Container(
       clipBehavior: Clip.hardEdge,
       padding: EdgeInsets.fromLTRB(
@@ -6909,8 +6916,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                   top: 0,
                   child: Tooltip(
                     message: t.necesidadesEtiquetas.isEmpty
-                        ? 'Plaza con horario especial'
-                        : 'Plaza con horario especial: ${t.necesidadesEtiquetas.join(', ')}',
+                        ? 'Fuera del horario general del conjunto (horario especial de la plaza)'
+                        : 'Fuera del horario general del conjunto: horario especial de ${t.necesidadesEtiquetas.join(', ')}',
                     child: Icon(
                       Icons.schedule,
                       size: tiny ? 11 : 15,
@@ -7539,6 +7546,18 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                   : overlapMinutes) *
                                               pxPorMin)
                                           .clamp(26.0, 120.0);
+                                  // Umbrales sobre la altura ya conocida (no
+                                  // hace falta esperar un LayoutBuilder): con
+                                  // el clamp mínimo de 26px una franja de solo
+                                  // puntos de color siempre cabe, así el
+                                  // marcador nunca queda vacío/ilegible como
+                                  // antes cuando el solape era muy corto.
+                                  final compactMarker = markerHeight < 58;
+                                  final ultraCompactMarker =
+                                      markerHeight < 40;
+                                  final markerPadding = ultraCompactMarker
+                                      ? const EdgeInsets.fromLTRB(6, 3, 6, 3)
+                                      : const EdgeInsets.fromLTRB(8, 7, 8, 7);
 
                                   return Positioned(
                                     left: left,
@@ -7549,12 +7568,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                       onTap: () => widget.onTapTarea(t),
                                       child: Container(
                                         clipBehavior: Clip.hardEdge,
-                                        padding: const EdgeInsets.fromLTRB(
-                                          8,
-                                          7,
-                                          8,
-                                          7,
-                                        ),
+                                        padding: markerPadding,
                                         decoration: BoxDecoration(
                                           color: Colors.amber.withValues(
                                             alpha: 0.14,
@@ -7567,107 +7581,98 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                             width: 1,
                                           ),
                                         ),
-                                        child: LayoutBuilder(
-                                          builder: (context, box) {
-                                            if (box.maxHeight < 18) {
-                                              return const SizedBox.shrink();
-                                            }
-                                            final compactMarker =
-                                                box.maxHeight < 58;
-                                            final ultraCompactMarker =
-                                                box.maxHeight < 34;
-                                            return Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Row(
                                               children: [
-                                                Row(
-                                                  children: [
-                                                    ...List.generate(dotCount, (
-                                                      i,
-                                                    ) {
-                                                      return Container(
-                                                        width: 10,
-                                                        height: 10,
-                                                        margin: EdgeInsets.only(
-                                                          right:
-                                                              i == dotCount - 1
-                                                              ? 0
-                                                              : 4,
-                                                        ),
-                                                        decoration: BoxDecoration(
-                                                          color:
-                                                              colors[i %
-                                                                  colors
-                                                                      .length],
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                2,
-                                                              ),
-                                                        ),
-                                                      );
-                                                    }),
-                                                    if (!ultraCompactMarker &&
-                                                        placement.groupSize >
-                                                            dotCount) ...[
-                                                      const SizedBox(width: 6),
-                                                      Text(
-                                                        '+${placement.groupSize - dotCount}',
-                                                        style: TextStyle(
-                                                          fontSize: 10,
-                                                          color: text,
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: Text(
-                                                        compactMarker
-                                                            ? 'Tareas solapadas'
-                                                            : 'Superposicion detectada',
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: TextStyle(
-                                                          color: text,
-                                                          fontSize: 11,
-                                                          fontWeight:
-                                                              FontWeight.w800,
-                                                        ),
-                                                      ),
+                                                ...List.generate(dotCount, (
+                                                  i,
+                                                ) {
+                                                  return Container(
+                                                    width: 10,
+                                                    height: 10,
+                                                    margin: EdgeInsets.only(
+                                                      right: i == dotCount - 1
+                                                          ? 0
+                                                          : 4,
                                                     ),
-                                                  ],
-                                                ),
-                                                if (!compactMarker) ...[
-                                                  const SizedBox(height: 2),
+                                                    decoration: BoxDecoration(
+                                                      color:
+                                                          colors[i %
+                                                              colors.length],
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            2,
+                                                          ),
+                                                    ),
+                                                  );
+                                                }),
+                                                if (placement.groupSize >
+                                                    dotCount) ...[
+                                                  const SizedBox(width: 6),
                                                   Text(
-                                                    'Aqui hay ${placement.groupSize} tareas superpuestas. Filtra por operario para verlo mejor.',
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
+                                                    '+${placement.groupSize - dotCount}',
                                                     style: TextStyle(
-                                                      color: subtext,
                                                       fontSize: 10,
+                                                      color: text,
+                                                      fontWeight:
+                                                          FontWeight.w700,
                                                     ),
                                                   ),
-                                                  const SizedBox(height: 2),
-                                                ] else if (!ultraCompactMarker)
-                                                  const SizedBox(height: 2),
-                                                if (!ultraCompactMarker)
-                                                  Text(
-                                                    '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra más' : ''}'}',
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                      color: subtext,
-                                                      fontSize: 10,
+                                                ],
+                                                if (!ultraCompactMarker) ...[
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Text(
+                                                      compactMarker
+                                                          ? 'Tareas solapadas'
+                                                          : 'Superposicion detectada',
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow
+                                                          .ellipsis,
+                                                      style: TextStyle(
+                                                        color: text,
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                      ),
                                                     ),
                                                   ),
+                                                ],
                                               ],
-                                            );
-                                          },
+                                            ),
+                                            if (!compactMarker) ...[
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'Aqui hay ${placement.groupSize} tareas superpuestas. Filtra por operario para verlo mejor.',
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: subtext,
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                            ] else if (!ultraCompactMarker)
+                                              const SizedBox(height: 2),
+                                            if (!ultraCompactMarker)
+                                              Text(
+                                                '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra más' : ''}'}',
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: subtext,
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                          ],
                                         ),
                                       ),
                                     ),
@@ -8241,7 +8246,9 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                     ),
                                   ),
                                   const SizedBox(height: 8),
-                                  Row(
+                                  Wrap(
+                                    spacing: 4,
+                                    runSpacing: 4,
                                     children: [
                                       TextButton.icon(
                                         onPressed: () =>
@@ -8251,8 +8258,15 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                           size: 16,
                                         ),
                                         label: const Text('Eliminar'),
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                          ),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
                                       ),
-                                      const SizedBox(width: 6),
                                       TextButton.icon(
                                         onPressed: () =>
                                             widget.onReemplazarConExcluida(t),
@@ -8261,8 +8275,15 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                           size: 16,
                                         ),
                                         label: const Text('Reemplazar'),
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                          ),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
                                       ),
-                                      const SizedBox(width: 6),
                                       TextButton.icon(
                                         onPressed: () =>
                                             widget.onReasignarOperario(t),
@@ -8271,6 +8292,14 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                                           size: 16,
                                         ),
                                         label: const Text('Operario'),
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                          ),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
                                       ),
                                     ],
                                   ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../model/conjunto_model.dart';
 
 String normalizeScheduleDay(String raw) {
   var out = raw.trim().toUpperCase();
@@ -70,6 +71,35 @@ int? parseHourToMinutes(String? raw) {
 }
 
 int timeOfDayToMinutes(TimeOfDay time) => (time.hour * 60) + time.minute;
+
+/// true si [inicio, fin) cae, aunque sea parcialmente, fuera del horario
+/// GENERAL del conjunto ese día. Una plaza puede tener horarioEspecial=true
+/// y aun así coincidir con el horario general (no se marca); solo se marca
+/// cuando la tarea realmente excede esa ventana o cae un día que el
+/// conjunto no opera -el criterio que importa para el distintivo visual,
+/// no el simple hecho de que la plaza tenga horario especial configurado-.
+bool tareaFueraDeHorarioGeneral({
+  required List<HorarioConjunto> horariosConjunto,
+  required DateTime inicio,
+  required DateTime fin,
+}) {
+  HorarioConjunto? horarioDia;
+  for (final h in horariosConjunto) {
+    if (weekdayFromScheduleDay(h.dia) == inicio.weekday) {
+      horarioDia = h;
+      break;
+    }
+  }
+  if (horarioDia == null) return true;
+
+  final aperturaMin = parseHourToMinutes(horarioDia.horaApertura);
+  final cierreMin = parseHourToMinutes(horarioDia.horaCierre);
+  if (aperturaMin == null || cierreMin == null) return true;
+
+  final iniMin = inicio.hour * 60 + inicio.minute;
+  final finMin = fin.hour * 60 + fin.minute;
+  return iniMin < aperturaMin || finMin > cierreMin;
+}
 
 String formatMinutesAsHour(int minutes) {
   final hour = (minutes ~/ 60).toString().padLeft(2, '0');
