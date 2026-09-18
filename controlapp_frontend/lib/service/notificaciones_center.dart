@@ -16,11 +16,19 @@ class NotificacionesCenter with WidgetsBindingObserver {
   final ValueNotifier<List<NotificacionModel>> items =
       ValueNotifier<List<NotificacionModel>>([]);
 
+  /// Se actualiza cada vez que llega una notificación nueva de tipo
+  /// INSUMO_STOCK_BAJO (no en el primer refresh de la sesión), para que un
+  /// listener global la muestre como aviso flotante.
+  final ValueNotifier<NotificacionModel?> stockBajoNueva =
+      ValueNotifier<NotificacionModel?>(null);
+
   Timer? _timer;
   bool _cargando = false;
   bool _observando = false;
   String? _usuarioActivo;
   Duration _interval = const Duration(seconds: 60);
+  Set<int> _idsVistos = {};
+  bool _primerRefresh = true;
 
   Future<void> start({Duration interval = const Duration(seconds: 60)}) async {
     final token = (await _session.getToken())?.trim();
@@ -36,6 +44,8 @@ class NotificacionesCenter with WidgetsBindingObserver {
       _usuarioActivo = usuario;
       totalNoLeidas.value = 0;
       items.value = const [];
+      _idsVistos = {};
+      _primerRefresh = true;
     }
 
     _interval = interval;
@@ -82,7 +92,23 @@ class NotificacionesCenter with WidgetsBindingObserver {
         _api.listar(limit: 50),
         _api.contarNoLeidas(),
       ]);
-      items.value = resultados[0] as List<NotificacionModel>;
+      final nuevaLista = resultados[0] as List<NotificacionModel>;
+
+      if (_primerRefresh) {
+        // No flotamos el historial que ya existía al abrir la app.
+        _idsVistos = nuevaLista.map((n) => n.id).toSet();
+        _primerRefresh = false;
+      } else {
+        for (final n in nuevaLista) {
+          if (_idsVistos.contains(n.id)) continue;
+          _idsVistos.add(n.id);
+          if (n.tipo == 'INSUMO_STOCK_BAJO') {
+            stockBajoNueva.value = n;
+          }
+        }
+      }
+
+      items.value = nuevaLista;
       totalNoLeidas.value = resultados[1] as int;
     } catch (_) {
       // Silencioso para no interrumpir UX en caso de red.
@@ -111,5 +137,7 @@ class NotificacionesCenter with WidgetsBindingObserver {
     _usuarioActivo = null;
     totalNoLeidas.value = 0;
     items.value = const [];
+    _idsVistos = {};
+    _primerRefresh = true;
   }
 }

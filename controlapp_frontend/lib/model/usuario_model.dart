@@ -1,5 +1,15 @@
 import 'package:intl/intl.dart';
 
+Map<String, dynamic>? _primerConjunto(Map<String, dynamic> json) {
+  final conjuntos = (json['operario']?['conjuntos'] as List?) ?? const [];
+  for (final c in conjuntos) {
+    if (c is Map && (c['nombre']?.toString().trim().isNotEmpty ?? false)) {
+      return c.cast<String, dynamic>();
+    }
+  }
+  return null;
+}
+
 class Usuario {
   final String cedula;
   final String nombre;
@@ -23,6 +33,7 @@ class Usuario {
   final bool activo;
   final String? patronJornada;
   final String? conjuntoNombre;
+  final String? conjuntoNit;
   final List<DisponibilidadOperarioPeriodo> disponibilidadPeriodos;
 
   Usuario({
@@ -48,6 +59,7 @@ class Usuario {
     this.activo = true,
     this.patronJornada,
     this.conjuntoNombre,
+    this.conjuntoNit,
     this.disponibilidadPeriodos = const [],
   });
 
@@ -72,15 +84,19 @@ class Usuario {
       tallaCalzado: json['tallaCalzado'],
       tipoContrato: json['tipoContrato'],
       jornadaLaboral: json['jornadaLaboral'],
-      tipoFunciones: (json['tipoFunciones'] as List<dynamic>?)
-          ?.map((e) => e.toString())
-          .toList(),
+      // El backend expone las funciones del operario anidadas bajo
+      // `operario.funciones` (usuarioPublicSelect / obtenerConjunto en
+      // GerenteServices.ts); se conserva `tipoFunciones` plano como
+      // compatibilidad con otras respuestas que ya lo envían así.
+      tipoFunciones:
+          ((json['operario']?['funciones'] ?? json['tipoFunciones'])
+                  as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList(),
       activo: json['activo'] ?? true,
       patronJornada: json['patronJornada'],
-      conjuntoNombre: ((json['operario']?['conjuntos'] as List?) ?? const [])
-          .whereType<Map>()
-          .map((e) => e['nombre']?.toString() ?? '')
-          .firstWhere((e) => e.trim().isNotEmpty, orElse: () => ''),
+      conjuntoNombre: _primerConjunto(json)?['nombre']?.toString(),
+      conjuntoNit: _primerConjunto(json)?['nit']?.toString(),
       disponibilidadPeriodos:
           ((json['operario']?['disponibilidadPeriodos'] as List?) ??
                   (json['disponibilidadPeriodos'] as List?) ??

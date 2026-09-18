@@ -13,6 +13,17 @@ import '../service/app_constants.dart';
 import '../service/app_error.dart';
 import '../service/session_service.dart';
 
+/// Se lanza cuando un traslado de operario es rechazado porque aún tiene
+/// tareas abiertas (no cerradas) en su conjunto actual.
+class TareasAbiertasException implements Exception {
+  final int cantidad;
+  const TareasAbiertasException(this.cantidad);
+
+  @override
+  String toString() =>
+      'El operario tiene $cantidad tarea(s) abierta(s) que deben cerrarse antes del traslado.';
+}
+
 class GerenteApi {
   final ApiClient _apiClient = ApiClient();
   final SessionService _session = SessionService();
@@ -130,6 +141,28 @@ class GerenteApi {
     }
   }
 
+  /// PATCH /gerente/operarios/:operarioId
+  /// Edita campos propios del operario (hoy solo se usa para `funciones`).
+  /// El backend rechaza quitar un rol que una plaza ocupada todavía exige
+  /// (hay que liberarla o reasignarle otros roles primero).
+  Future<void> editarOperario({
+    required String operarioCedula,
+    required List<String> funciones,
+  }) async {
+    final resp = await _apiClient.patch(
+      '${AppConstants.gerenteBase}/operarios/$operarioCedula',
+      body: {'funciones': funciones},
+    );
+    if (resp.statusCode != 200 && resp.statusCode != 204) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudieron actualizar las funciones del operario.',
+        ),
+      );
+    }
+  }
+
   Future<void> asignarOperarioAConjunto({
     required String conjuntoNit,
     required String operarioCedula,
@@ -146,6 +179,75 @@ class GerenteApi {
       throw Exception(
         'Error asignando operario a conjunto: ${resp.statusCode} ${resp.body}',
       );
+    }
+  }
+
+  /// Traslada un operario a otro conjunto, reemplazando su asignación
+  /// actual. Lanza [TareasAbiertasException] si el operario aún tiene
+  /// tareas abiertas que deben cerrarse primero.
+  Future<void> trasladarOperario({
+    required String operarioCedula,
+    required String conjuntoDestinoNit,
+  }) async {
+    final resp = await _apiClient.post(
+      '${AppConstants.gerenteBase}/operarios/$operarioCedula/trasladar',
+      body: {'conjuntoId': conjuntoDestinoNit},
+    );
+
+    if (resp.statusCode >= 400) {
+      final decoded = _tryDecodeMap(resp.body);
+      if (decoded?['code'] == 'TAREAS_ABIERTAS') {
+        final cantidad = decoded?['details']?['tareasAbiertas'];
+        throw TareasAbiertasException(
+          cantidad is num ? cantidad.toInt() : int.tryParse('$cantidad') ?? 0,
+        );
+      }
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo trasladar al operario de conjunto.',
+        ),
+      );
+    }
+  }
+
+  /// Cierra en bloque las tareas abiertas de un operario (todas como
+  /// completadas o todas como no completadas). Devuelve cuántas se cerraron.
+  Future<int> cerrarTareasAbiertasOperario({
+    required String operarioCedula,
+    required String resultado, // 'COMPLETADA' | 'NO_COMPLETADA'
+    String? observaciones,
+  }) async {
+    final resp = await _apiClient.post(
+      '${AppConstants.gerenteBase}/operarios/$operarioCedula/tareas-abiertas/cerrar',
+      body: {
+        'resultado': resultado,
+        if (observaciones != null && observaciones.trim().isNotEmpty)
+          'observaciones': observaciones.trim(),
+      },
+    );
+
+    if (resp.statusCode >= 400) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudieron cerrar las tareas del operario.',
+        ),
+      );
+    }
+
+    final decoded = _tryDecodeMap(resp.body);
+    final cerradas = decoded?['cerradas'];
+    return cerradas is num ? cerradas.toInt() : int.tryParse('$cerradas') ?? 0;
+  }
+
+  Map<String, dynamic>? _tryDecodeMap(String body) {
+    if (body.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(body);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (_) {
+      return null;
     }
   }
 

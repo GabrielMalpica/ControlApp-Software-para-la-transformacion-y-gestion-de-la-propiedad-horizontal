@@ -67,6 +67,15 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
   bool get _puedeTomarFoto => kIsWeb || _esMovil;
   bool get _puedePegarImagen => kIsWeb && ClipboardImageCapture.isSupported;
 
+  /// Texto de stock disponible: si el insumo tiene contenido medible por
+  /// unidad (ej. cada tarro = 1.8 L), muestra el total real primero (ej.
+  /// "7.2 L") y el conteo entre paréntesis; si no, solo el conteo.
+  String _stockLabel(InventarioItemResponse item) {
+    final total = item.totalDisponibleTexto;
+    if (total == null) return item.disponibleTexto;
+    return '$total (${item.disponibleTexto})';
+  }
+
   ClipboardImageDispose? _disposeClipboardListener;
   bool _esperandoPegado = false;
 
@@ -236,13 +245,31 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
     return nuevos;
   }
 
+  /// El operario escribe la cantidad usada en la medida real del insumo (ej.
+  /// litros) cuando el insumo la tiene configurada; aquí se convierte a la
+  /// unidad de conteo (ej. tarros) que es la que de verdad se descuenta del
+  /// stock. Si el insumo se cuenta simple (sin contenido medible), se manda
+  /// tal cual.
   List<Map<String, num>> _buildInsumosUsados() {
     final out = <Map<String, num>>[];
     for (final r in _rows) {
       if (r.insumoId == null) continue;
-      final qty = num.tryParse(r.qtyCtrl.text.trim());
-      if (qty == null || qty <= 0) continue;
-      out.add({'insumoId': r.insumoId!, 'cantidad': qty});
+      final qtyIngresada = num.tryParse(r.qtyCtrl.text.trim());
+      if (qtyIngresada == null || qtyIngresada <= 0) continue;
+
+      InventarioItemResponse? item;
+      try {
+        item = widget.inventario.firstWhere((x) => x.insumoId == r.insumoId);
+      } catch (_) {
+        item = null;
+      }
+
+      final contenido = item?.contenidoPorUnidad;
+      final cantidadADescontar = (contenido != null && contenido > 0)
+          ? qtyIngresada / contenido
+          : qtyIngresada;
+
+      out.add({'insumoId': r.insumoId!, 'cantidad': cantidadADescontar});
     }
     return out;
   }
@@ -550,7 +577,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                                     (x) => DropdownMenuItem<int>(
                                       value: x.insumoId,
                                       child: Text(
-                                        '${x.nombre} (${x.cantidad} ${x.unidad})',
+                                        '${x.nombre} (${_stockLabel(x)})',
                                       ),
                                     ),
                                   )
@@ -569,7 +596,9 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                                 labelText: 'Cantidad usada',
                                 hintText: item == null
                                     ? 'Ej: 0.5'
-                                    : 'En ${item.unidad}',
+                                    : (item.contenidoPorUnidad != null
+                                          ? 'En ${item.unidadContenido}'
+                                          : 'En ${item.unidad}'),
                                 border: const OutlineInputBorder(),
                                 isDense: true,
                               ),
@@ -580,7 +609,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                                 if (item != null)
                                   Expanded(
                                     child: Text(
-                                      'Stock: ${item.cantidad} ${item.unidad}',
+                                      'Stock: ${_stockLabel(item)}',
                                       style: TextStyle(
                                         fontSize: 12,
                                         color: Colors.grey.shade700,

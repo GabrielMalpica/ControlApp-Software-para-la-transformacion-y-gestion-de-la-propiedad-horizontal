@@ -48,6 +48,10 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
   String? tallaCamisa, tallaPantalon, tallaCalzado;
   String? rolSeleccionado;
 
+  // Funciones del operario (TODERO, SALVAVIDAS, ASEO...). Solo aplica si
+  // rolSeleccionado == 'operario'.
+  final Set<String> funcionesSeleccionadas = {};
+
   // ✅ NUEVOS
   bool activo = true;
   String? patronJornada;
@@ -90,6 +94,7 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
     tallaCalzado = u.tallaCalzado;
     tipoContrato = u.tipoContrato;
     jornada = u.jornadaLaboral;
+    funcionesSeleccionadas.addAll(u.tipoFunciones ?? const []);
 
     // ✅ Inicializar nuevos campos (asegúrate que existan en tu Usuario model)
     activo = u.activo;
@@ -186,6 +191,17 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
       return;
     }
 
+    if (rolSeleccionado == 'operario' && funcionesSeleccionadas.isEmpty) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(
+          content: Text("Seleccione al menos una función para el operario"),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _guardando = true);
 
     if (rolSeleccionado == 'operario') {
@@ -223,6 +239,17 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
         'activo': activo,
         'patronJornada': jornada == 'MEDIO_TIEMPO' ? patronJornada : null,
       };
+
+      // Las funciones viven en Operario, no en Usuario: van por un
+      // endpoint aparte (PATCH /gerente/operarios/:id). Se intenta primero
+      // para que, si el backend rechaza quitar un rol que una plaza
+      // ocupada todavía exige, no se guarde nada a medias.
+      if (rolSeleccionado == 'operario') {
+        await _gerenteApi.editarOperario(
+          operarioCedula: widget.usuario.cedula,
+          funciones: funcionesSeleccionadas.toList(),
+        );
+      }
 
       await _usuarioRepository.editarUsuario(widget.usuario.cedula, cambios);
 
@@ -794,6 +821,44 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                         const _PatronJornadaHelpCard(),
                       ],
                       if (rolSeleccionado == 'operario') ...[
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Funciones (puede seleccionar varias)',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: enums.tiposFuncion.map((tipo) {
+                            final selected = funcionesSeleccionadas.contains(
+                              tipo,
+                            );
+                            return FilterChip(
+                              label: Text(prettyEnum(tipo)),
+                              selected: selected,
+                              onSelected: (v) {
+                                setState(() {
+                                  if (v) {
+                                    funcionesSeleccionadas.add(tipo);
+                                  } else if (funcionesSeleccionadas.length >
+                                      1) {
+                                    funcionesSeleccionadas.remove(tipo);
+                                  }
+                                  // Al menos una función debe quedar
+                                  // seleccionada.
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Quitar una función que una plaza ocupada todavía exige se rechaza: libérala primero desde el conjunto.',
+                            style: TextStyle(fontSize: 11, color: Colors.grey),
+                          ),
+                        ),
                         const SizedBox(height: 16),
                         const Text(
                           'Conjunto asignado',
