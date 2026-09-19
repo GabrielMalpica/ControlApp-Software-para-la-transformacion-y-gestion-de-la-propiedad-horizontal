@@ -43,7 +43,7 @@ describe('acciones manuales del borrador preventivo', () => {
     });
   });
 
-  test('al excluir una tarea agrupada mueve todos sus bloques y libera su maquinaria', async () => {
+  test('al excluir un bloque multidia conserva sus hermanos y libera solo su maquinaria', async () => {
     const base = {
       descripcion: 'Limpieza profunda',
       conjuntoId: CONJUNTO,
@@ -89,9 +89,20 @@ describe('acciones manuales del borrador preventivo', () => {
     const prisma: any = {
       tarea: {
         findFirst: jest.fn().mockResolvedValue(bloques[0]),
-        findMany: jest.fn().mockResolvedValue(bloques),
+        findMany: jest.fn(async ({ where }: any) =>
+          bloques.filter((bloque) => bloque.grupoPlanId === where.grupoPlanId),
+        ),
         findUnique: jest.fn().mockResolvedValue(bloques[0]),
-        deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
+        update: jest.fn(async ({ where, data }: any) => {
+          const bloque = bloques.find((item) => item.id === where.id);
+          Object.assign(bloque!, data);
+          return bloque;
+        }),
+        deleteMany: jest.fn(async ({ where }: any) => {
+          const index = bloques.findIndex((item) => item.id === where.id.in[0]);
+          if (index >= 0) bloques.splice(index, 1);
+          return { count: index >= 0 ? 1 : 0 };
+        }),
       },
       preventivaExcluidaBorrador: {
         create: jest.fn(async ({ data }: any) => ({ ...data, id: 500 })),
@@ -109,20 +120,27 @@ describe('acciones manuales del borrador preventivo', () => {
     expect(prisma.preventivaExcluidaBorrador.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          duracionMinutos: 180,
+          duracionMinutos: 60,
           motivoTipo: 'MANUAL_ELIMINADA',
           metadataJson: {
-            tareaIdsOriginales: [60, 61],
-            bloquesEliminados: 2,
+            tareaIdsOriginales: [60],
+            bloquesEliminados: 1,
           },
         }),
       }),
     );
     expect(prisma.usoMaquinaria.deleteMany).toHaveBeenCalledWith({
-      where: { tareaId: { in: [60, 61] } },
+      where: { tareaId: { in: [60] } },
     });
     expect(prisma.tarea.deleteMany).toHaveBeenCalledWith({
-      where: { id: { in: [60, 61] } },
+      where: { id: { in: [60] } },
+    });
+    expect(bloques).toHaveLength(1);
+    expect(bloques[0]).toMatchObject({
+      id: 61,
+      grupoPlanId: null,
+      bloqueIndex: null,
+      bloquesTotales: null,
     });
   });
 });

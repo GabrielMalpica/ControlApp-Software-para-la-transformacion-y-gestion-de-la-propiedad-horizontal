@@ -24,6 +24,7 @@ import { DefinicionTareaPreventivaService } from '../../src/services/DefinicionT
 function coincideConWhere(tarea: any, where: any): boolean {
   if (!where) return true;
   if (where.id?.notIn && where.id.notIn.includes(tarea.id)) return false;
+  if (where.grupoPlanId && tarea.grupoPlanId !== where.grupoPlanId) return false;
   const fi = where.fechaInicio;
   if (fi?.lt && !(tarea.fechaInicio < fi.lt)) return false;
   if (fi?.lte && !(tarea.fechaInicio <= fi.lte)) return false;
@@ -103,6 +104,7 @@ function construirPrisma(tareas: any[]) {
     auditoriaEvento: {
       create: jest.fn().mockResolvedValue({}),
     },
+    usoMaquinaria: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     $transaction: jest.fn(async (callback: any) => callback(prisma)),
   };
   return prisma;
@@ -338,7 +340,7 @@ describe('reordenamiento coordinado del borrador', () => {
     });
   });
 
-  test('cascada: si la bloqueadora es una division por almuerzo, el reordenamiento se rechaza sin tocar nada', async () => {
+  test('cascada: incorpora la division por almuerzo que bloquea el nuevo orden', async () => {
     const fecha = new Date(2026, 2, 4);
     const tareas: any[] = [
       {
@@ -365,11 +367,23 @@ describe('reordenamiento coordinado del borrador', () => {
         id: 20,
         descripcion: 'Division por almuerzo · antes (bloqueadora)',
         fechaInicio: new Date(2026, 2, 4, 9, 0),
-        fechaFin: new Date(2026, 2, 4, 9, 15),
-        duracionMinutos: 15,
+        fechaFin: new Date(2026, 2, 4, 12, 0),
+        duracionMinutos: 180,
         ocurrenciaPlanId: 'OC-9',
         grupoPlanId: 'GRP-9',
         bloqueIndex: 1,
+        bloquesTotales: 2,
+        operarios: [{ id: 'op-1', usuario: { nombre: 'Ana' } }],
+      },
+      {
+        id: 21,
+        descripcion: 'Division por almuerzo · despues (bloqueadora)',
+        fechaInicio: new Date(2026, 2, 4, 13, 0),
+        fechaFin: new Date(2026, 2, 4, 14, 0),
+        duracionMinutos: 60,
+        ocurrenciaPlanId: 'OC-9',
+        grupoPlanId: 'GRP-9',
+        bloqueIndex: 2,
         bloquesTotales: 2,
         operarios: [{ id: 'op-1', usuario: { nombre: 'Ana' } }],
       },
@@ -377,18 +391,20 @@ describe('reordenamiento coordinado del borrador', () => {
     const prisma = construirPrisma(tareas);
     const service = new DefinicionTareaPreventivaService(prisma);
 
-    await expect(
-      service.reordenarTareasBorradorDia({
-        conjuntoId: '9001',
-        fecha,
-        tareaIds: [11, 10],
-      }),
-    ).rejects.toThrow(/división por almuerzo/i);
+    const resultado = await service.reordenarTareasBorradorDia({
+      conjuntoId: '9001',
+      fecha,
+      tareaIds: [11, 10],
+    });
 
-    expect(prisma.tarea.update).not.toHaveBeenCalled();
+    expect(resultado).toMatchObject({ aplicado: true, omitidasPorDivisionAlmuerzo: 0 });
     expect(prisma.tarea.create).not.toHaveBeenCalled();
     expect(prisma.tarea.delete).not.toHaveBeenCalled();
     expect(tareas.find((t) => t.id === 11)?.fechaInicio.getHours()).toBe(8);
+    expect(tareas.find((t) => t.id === 20)?.fechaInicio.getHours()).toBe(10);
+    expect(tareas.find((t) => t.id === 20)?.fechaFin.getHours()).toBe(12);
+    expect(tareas.find((t) => t.id === 21)?.fechaInicio.getHours()).toBe(13);
+    expect(tareas.find((t) => t.id === 21)?.fechaFin.getHours()).toBe(15);
   });
 
   test('si el reordenamiento obliga a partir una tarea por el almuerzo, los dos tramos quedan agrupados', async () => {
@@ -462,12 +478,8 @@ describe('reordenamiento coordinado del borrador', () => {
     expect(tramosLargos[1].fechaFin.getHours()).toBe(14);
   });
 
-  test('omite los bloques de una division por almuerzo pero sigue reordenando el resto del dia a su alrededor', async () => {
+  test('recalcula ambos tramos de almuerzo al cambiar el orden del dia', async () => {
     const fecha = new Date(2026, 2, 4);
-    // El frontend suele enviar la vista completa del dia (aqui filtrada por
-    // el mismo operario), no solo las dos tareas que el usuario movio. La
-    // division por almuerzo (20/21) queda en medio de esa vista pero no debe
-    // reflotarse: sus dos tramos deben conservar exactamente su horario.
     const tareas: any[] = [
       {
         id: 30,
@@ -483,8 +495,8 @@ describe('reordenamiento coordinado del borrador', () => {
         id: 20,
         descripcion: 'Division por almuerzo · antes',
         fechaInicio: new Date(2026, 2, 4, 9),
-        fechaFin: new Date(2026, 2, 4, 10),
-        duracionMinutos: 60,
+        fechaFin: new Date(2026, 2, 4, 12),
+        duracionMinutos: 180,
         ocurrenciaPlanId: 'OC-1',
         grupoPlanId: 'GRP-1',
         bloqueIndex: 1,
@@ -494,8 +506,8 @@ describe('reordenamiento coordinado del borrador', () => {
       {
         id: 31,
         descripcion: 'Tarea suelta B',
-        fechaInicio: new Date(2026, 2, 4, 11),
-        fechaFin: new Date(2026, 2, 4, 12),
+        fechaInicio: new Date(2026, 2, 4, 14),
+        fechaFin: new Date(2026, 2, 4, 15),
         duracionMinutos: 60,
         ocurrenciaPlanId: null,
         grupoPlanId: null,
@@ -517,29 +529,134 @@ describe('reordenamiento coordinado del borrador', () => {
     const prisma = construirPrisma(tareas);
     const service = new DefinicionTareaPreventivaService(prisma);
 
-    // Vista completa del dia con la tarea suelta B (31) arrastrada delante
-    // de la tarea suelta A (30); la division (20) va incluida tal cual la
-    // manda el frontend pero no cambio de posicion relativa.
+    // B y A pasan antes de la poda. La poda conserva sus cuatro horas,
+    // pero ahora necesita dos horas a cada lado del almuerzo.
     const resultado = await service.reordenarTareasBorradorDia({
       conjuntoId: '9001',
       fecha,
-      tareaIds: [20, 31, 30],
+      tareaIds: [31, 30, 20],
     });
 
-    expect(resultado).toMatchObject({ ok: true, omitidasPorDivisionAlmuerzo: 1 });
-    // Las dos tareas sueltas se intercambian alrededor de la division.
+    expect(resultado).toMatchObject({ ok: true, omitidasPorDivisionAlmuerzo: 0 });
     expect(tareas.find((tarea) => tarea.id === 31)?.fechaInicio.getHours()).toBe(8);
-    expect(tareas.find((tarea) => tarea.id === 30)?.fechaInicio.getHours()).toBe(11);
-    // Los dos tramos de la division conservan su horario exacto: no se
-    // tocaron ni se recrearon.
-    expect(tareas.find((tarea) => tarea.id === 20)?.fechaInicio.getHours()).toBe(9);
+    expect(tareas.find((tarea) => tarea.id === 30)?.fechaInicio.getHours()).toBe(9);
+    expect(tareas.find((tarea) => tarea.id === 20)?.fechaInicio.getHours()).toBe(10);
+    expect(tareas.find((tarea) => tarea.id === 20)?.duracionMinutos).toBe(120);
     expect(tareas.find((tarea) => tarea.id === 21)?.fechaInicio.getHours()).toBe(13);
-    expect(
-      prisma.tarea.update.mock.calls.some(([args]: any[]) => args.where.id === 20),
-    ).toBe(false);
-    expect(
-      prisma.tarea.update.mock.calls.some(([args]: any[]) => args.where.id === 21),
-    ).toBe(false);
+    expect(tareas.find((tarea) => tarea.id === 21)?.fechaFin.getHours()).toBe(15);
+    expect(tareas.find((tarea) => tarea.id === 21)?.duracionMinutos).toBe(120);
+    expect(prisma.tarea.delete).not.toHaveBeenCalled();
+  });
+
+  test('une una división cuando el nuevo horario cabe antes del almuerzo', async () => {
+    const fecha = new Date(2026, 2, 4);
+    const operarios = [{ id: 'op-1', usuario: { nombre: 'Ana' } }];
+    const tareas: any[] = [
+      {
+        id: 50,
+        descripcion: 'Poda',
+        fechaInicio: new Date(2026, 2, 4, 9),
+        fechaFin: new Date(2026, 2, 4, 12),
+        duracionMinutos: 180,
+        grupoPlanId: 'PODA',
+        bloqueIndex: 1,
+        bloquesTotales: 2,
+        ocurrenciaPlanId: null,
+        operarios,
+      },
+      {
+        id: 51,
+        descripcion: 'Poda',
+        fechaInicio: new Date(2026, 2, 4, 13),
+        fechaFin: new Date(2026, 2, 4, 14),
+        duracionMinutos: 60,
+        grupoPlanId: 'PODA',
+        bloqueIndex: 2,
+        bloquesTotales: 2,
+        ocurrenciaPlanId: null,
+        operarios,
+      },
+      {
+        id: 52,
+        descripcion: 'Limpieza',
+        fechaInicio: new Date(2026, 2, 4, 8),
+        fechaFin: new Date(2026, 2, 4, 9),
+        duracionMinutos: 60,
+        grupoPlanId: null,
+        ocurrenciaPlanId: null,
+        operarios,
+      },
+    ];
+    const prisma = construirPrisma(tareas);
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    const resultado = await service.reordenarTareasBorradorDia({
+      conjuntoId: '9001',
+      fecha,
+      tareaIds: [50, 51, 52],
+    });
+
+    expect(resultado).toMatchObject({ aplicado: true, divididas: 0 });
+    expect(tareas.filter((tarea) => tarea.descripcion === 'Poda')).toHaveLength(1);
+    expect(tareas.find((tarea) => tarea.id === 50)).toMatchObject({
+      duracionMinutos: 240,
+      grupoPlanId: null,
+      bloqueIndex: null,
+      bloquesTotales: null,
+    });
+    expect(tareas.find((tarea) => tarea.id === 50)?.fechaInicio.getHours()).toBe(8);
+    expect(tareas.find((tarea) => tarea.id === 50)?.fechaFin.getHours()).toBe(12);
+    expect(tareas.find((tarea) => tarea.id === 52)?.fechaInicio.getHours()).toBe(13);
+    expect(prisma.usoMaquinaria.deleteMany).toHaveBeenCalledWith({
+      where: { tareaId: { in: [51] } },
+    });
+  });
+
+  test('no une bloques con operarios distintos ni pierde la asignacion del segundo', async () => {
+    const fecha = new Date(2026, 2, 4);
+    const tareas: any[] = [
+      {
+        id: 60,
+        descripcion: 'Poda',
+        fechaInicio: new Date(2026, 2, 4, 9),
+        fechaFin: new Date(2026, 2, 4, 12),
+        duracionMinutos: 180,
+        grupoPlanId: 'PODA-EQUIPO',
+        ocurrenciaPlanId: null,
+        operarios: [{ id: 'op-1', usuario: { nombre: 'Ana' } }],
+      },
+      {
+        id: 61,
+        descripcion: 'Poda',
+        fechaInicio: new Date(2026, 2, 4, 13),
+        fechaFin: new Date(2026, 2, 4, 14),
+        duracionMinutos: 60,
+        grupoPlanId: 'PODA-EQUIPO',
+        ocurrenciaPlanId: null,
+        operarios: [{ id: 'op-2', usuario: { nombre: 'Luis' } }],
+      },
+      {
+        id: 62,
+        descripcion: 'Limpieza',
+        fechaInicio: new Date(2026, 2, 4, 8),
+        fechaFin: new Date(2026, 2, 4, 9),
+        duracionMinutos: 60,
+        grupoPlanId: null,
+        ocurrenciaPlanId: null,
+        operarios: [{ id: 'op-1', usuario: { nombre: 'Ana' } }],
+      },
+    ];
+    const prisma = construirPrisma(tareas);
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await expect(service.reordenarTareasBorradorDia({
+      conjuntoId: '9001',
+      fecha,
+      tareaIds: [60, 61, 62],
+    })).rejects.toThrow(/asignaciones distintas/);
+    expect(prisma.tarea.update).not.toHaveBeenCalled();
+    expect(prisma.tarea.delete).not.toHaveBeenCalled();
+    expect(tareas.find((tarea) => tarea.id === 61)?.operarios[0].id).toBe('op-2');
   });
 
   test('permite reordenar un bloque de tarea multidia cuando es el unico bloque del grupo en ese dia', async () => {
