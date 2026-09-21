@@ -142,7 +142,7 @@ export class InventarioActivoController {
     try {
       const { id } = IdActivoParam.parse(req.params);
       const body = kind === "maquinaria" ? CambiarEstadoMaquinariaBody.parse(req.body) : CambiarEstadoHerramientaBody.parse(req.body);
-      res.json(await (await this.service(req)).cambiarEstado(kind, id, body.estado, body.motivo));
+      res.json(await (await this.service(req)).cambiarEstado(kind, id, body.estado, body.motivo, body.condicion));
     } catch (error) { next(error); }
   };
 

@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Insumo" ADD COLUMN     "creadoEn" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ADD COLUMN     "creadoPorId" TEXT;

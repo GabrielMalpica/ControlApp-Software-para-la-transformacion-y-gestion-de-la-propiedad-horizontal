@@ -5,6 +5,7 @@ import { prisma } from "../db/prisma";
 import { InventarioService } from "../services/InventarioServices";
 import { ConjuntoService } from "../services/ConjuntoServices";
 import { decToNumber } from "../utils/decimal";
+import { extraerActorAuditoriaConNombre } from "../utils/auditoria";
 
 // ===================== ZOD =====================
 const InventarioIdParam = z.object({
@@ -71,7 +72,8 @@ export class InventarioController {
       const { nit } = ConjuntoNitParam.parse(req.params);
       const q = UmbralQuery.parse(req.query);
 
-      const service = new ConjuntoService(prisma, nit);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      const service = new ConjuntoService(prisma, nit, actor);
       const out = await service.listarInventario({
         nombre: q.nombre,
         categoria: q.categoria,
@@ -107,7 +109,8 @@ export class InventarioController {
     try {
       const { nit } = ConjuntoNitParam.parse(req.params);
 
-      const service = new ConjuntoService(prisma, nit);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      const service = new ConjuntoService(prisma, nit, actor);
       const out = await service.crearInsumoPersonalizado(req.body);
 
       res.status(201).json(out);

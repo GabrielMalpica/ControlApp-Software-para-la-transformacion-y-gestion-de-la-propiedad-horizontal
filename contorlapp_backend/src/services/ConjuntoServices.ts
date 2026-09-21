@@ -67,7 +67,7 @@ export class ConjuntoService {
 
   async listarInventario(filtro?: { nombre?: string; categoria?: string }) {
     const inventarioId = await this.getOrCreateInventarioId();
-    const invService = new InventarioService(this.prisma, inventarioId);
+    const invService = new InventarioService(this.prisma, inventarioId, this.actor);
     return invService.listarInsumosDetallado(filtro);
   }
 
@@ -86,7 +86,7 @@ export class ConjuntoService {
   async crearInsumoPersonalizado(payload: unknown) {
     const empresaId = await this.empresaIdDelConjunto();
     const inventarioId = await this.getOrCreateInventarioId();
-    const invService = new InventarioService(this.prisma, inventarioId);
+    const invService = new InventarioService(this.prisma, inventarioId, this.actor);
     return invService.crearInsumoPersonalizado(payload, {
       empresaId,
       conjuntoId: this.conjuntoId,

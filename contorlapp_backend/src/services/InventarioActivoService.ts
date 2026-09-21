@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import {
+  CondicionActivo,
   EstadoAprobacionActivo,
   EstadoHerramienta,
   EstadoMaquinaria,
@@ -42,7 +43,7 @@ function texto(value: string | null | undefined) {
 }
 
 function esAprobador(actor: ActorAuditoria) {
-  return actor.rol === "gerente" || actor.rol === "jefe_operaciones";
+  return actor.rol === "gerente" || actor.rol === "jefe_operaciones" || actor.rol === "supervisor";
 }
 
 function serializarMaquinaria(item: any) {
@@ -389,6 +390,7 @@ export class InventarioActivoService {
           tipo: type.tipoLegacy ?? TipoMaquinaria.OTRO,
           tipoCatalogoId: type.id,
           estado: dto.estado,
+          condicion: dto.condicion ?? null,
           propietarioTipo: scope.propietarioTipo,
           empresaId: this.empresaId,
           conjuntoPropietarioId: scope.conjuntoId,
@@ -480,6 +482,7 @@ export class InventarioActivoService {
         propietarioTipo: scope.propietarioTipo,
         conjuntoPropietarioId: scope.conjuntoId,
         estado: dto.estado,
+        condicion: dto.condicion ?? null,
         estadoAprobacion: approved ? EstadoAprobacionActivo.APROBADA : EstadoAprobacionActivo.PENDIENTE,
         registroLoteId: lote,
         creadoPorId: this.actor.id ?? null,
@@ -876,15 +879,16 @@ export class InventarioActivoService {
     });
   }
 
-  async cambiarEstado(kind: ClaseActivo, id: number, estado: string, motivo: string) {
+  async cambiarEstado(kind: ClaseActivo, id: number, estado: string, motivo: string, condicion?: CondicionActivo) {
     if (!esAprobador(this.actor)) throw httpError(403, "No autorizado para cambiar el estado del activo.");
     const before = await this.editable(kind, id);
     if (before.estadoAprobacion !== "APROBADA") throw httpError(409, "Solo se puede gestionar un activo aprobado.");
     return this.prisma.$transaction(async (tx) => {
       const retired = estado === "RETIRADA" || estado === "BAJA";
+      const condicionData = condicion !== undefined ? { condicion } : {};
       const after = kind === "maquinaria"
-        ? await tx.maquinaria.update({ where: { id }, data: { estado: estado as EstadoMaquinaria, actualizadoPorId: this.actor.id, retiradoPorId: retired ? this.actor.id : null, retiradoEn: retired ? new Date() : null } })
-        : await tx.herramientaItem.update({ where: { id }, data: { estado: estado as EstadoHerramienta, actualizadoPorId: this.actor.id, retiradoPorId: retired ? this.actor.id : null, retiradoEn: retired ? new Date() : null } });
+        ? await tx.maquinaria.update({ where: { id }, data: { estado: estado as EstadoMaquinaria, ...condicionData, actualizadoPorId: this.actor.id, retiradoPorId: retired ? this.actor.id : null, retiradoEn: retired ? new Date() : null } })
+        : await tx.herramientaItem.update({ where: { id }, data: { estado: estado as EstadoHerramienta, ...condicionData, actualizadoPorId: this.actor.id, retiradoPorId: retired ? this.actor.id : null, retiradoEn: retired ? new Date() : null } });
       await new AuditoriaService(tx).registrarEstricto({
         modulo: kind === "maquinaria" ? "INVENTARIO_MAQUINARIA" : "INVENTARIO_HERRAMIENTAS",
         entidad: kind === "maquinaria" ? "Maquinaria" : "HerramientaItem",

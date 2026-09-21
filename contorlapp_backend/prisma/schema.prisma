@@ -387,6 +387,11 @@ enum EstadoAprobacionActivo {
   RECHAZADA
 }
 
+enum CondicionActivo {
+  NUEVA
+  USADA
+}
+
 /**
  * =========================================
  * ENUMS - RENDIMIENTOS
@@ -1016,6 +1021,13 @@ model Insumo {
   categoria  CategoriaInsumo
   umbralBajo Int?
 
+  // Trazabilidad de quien creo el insumo (solo se llena para personalizados,
+  // conjuntoId != ""; el catalogo de empresa se carga por Woo/importacion y
+  // no tiene un creador puntual). Sin relacion formal por el mismo motivo
+  // que Maquinaria.creadoPorId: se resuelve el nombre en la capa de servicio.
+  creadoPorId String?
+  creadoEn    DateTime @default(now())
+
   empresa   Empresa @relation(fields: [empresaId], references: [nit])
   empresaId String
 
@@ -1118,6 +1130,7 @@ model HerramientaItem {
   conjuntoPropietarioId String?
 
   estado           EstadoHerramienta      @default(OPERATIVA)
+  condicion        CondicionActivo?
   estadoAprobacion EstadoAprobacionActivo @default(PENDIENTE)
   registroLoteId   String?
 
@@ -1381,11 +1394,12 @@ model InsumoConsumoEmpresa {
  */
 
 model Maquinaria {
-  id     Int              @id @default(autoincrement())
-  nombre String
-  marca  String
-  tipo   TipoMaquinaria
-  estado EstadoMaquinaria @default(OPERATIVA)
+  id        Int              @id @default(autoincrement())
+  nombre    String
+  marca     String
+  tipo      TipoMaquinaria
+  estado    EstadoMaquinaria @default(OPERATIVA)
+  condicion CondicionActivo?
 
   tipoCatalogo   TipoMaquinariaCatalogo? @relation(fields: [tipoCatalogoId], references: [id])
   tipoCatalogoId Int?

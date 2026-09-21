@@ -7,6 +7,7 @@ import {
   CrearInsumoPersonalizadoDTO,
   EditarInsumoPersonalizadoDTO,
 } from "../model/Insumo";
+import type { ActorAuditoria } from "../model/Auditoria";
 
 const AgregarInsumoDTO = z.object({
   insumoId: z.number().int().positive(),
@@ -78,7 +79,20 @@ export class InventarioService {
   constructor(
     private prisma: PrismaClient,
     private inventarioId: number,
+    private actor?: ActorAuditoria,
   ) {}
+
+  private async nombresUsuarios(ids: (string | null | undefined)[]) {
+    const unicos = Array.from(
+      new Set(ids.filter((id): id is string => typeof id === "string" && id.length > 0)),
+    );
+    if (!unicos.length) return new Map<string, string>();
+    const usuarios = await this.prisma.usuario.findMany({
+      where: { id: { in: unicos } },
+      select: { id: true, nombre: true },
+    });
+    return new Map(usuarios.map((u) => [u.id, u.nombre]));
+  }
 
   /* ========= Stock básico ========= */
 
@@ -153,6 +167,7 @@ export class InventarioService {
               conjuntoId: ctx.conjuntoId,
               contenidoPorUnidad,
               unidadContenido,
+              creadoPorId: this.actor?.id ?? null,
             },
           });
 
@@ -195,6 +210,9 @@ export class InventarioService {
           cantidadInicial,
           insumo.contenidoPorUnidad,
         ),
+        creadoPorId: insumo.creadoPorId,
+        creadoPorNombre: this.actor?.nombre ?? null,
+        creadoEn: insumo.creadoEn,
       };
     });
   }
@@ -366,6 +384,10 @@ export class InventarioService {
       orderBy: [{ insumo: { nombre: "asc" } }],
     });
 
+    const nombresPorId = await this.nombresUsuarios(
+      rows.map((r) => (r.insumo as any).creadoPorId as string | null),
+    );
+
     // filtros suaves (no rompen si categoria no existe en Insumo)
     return rows
       .filter((r) => {
@@ -378,6 +400,7 @@ export class InventarioService {
       })
       .map((r) => {
         const cantidad = decToNumber(r.cantidad);
+        const creadoPorId = (r.insumo as any).creadoPorId as string | null;
         return {
           inventarioInsumoId: r.id,
           insumoId: r.insumoId,
@@ -394,6 +417,9 @@ export class InventarioService {
             ? decToNumber(r.insumo.contenidoPorUnidad)
             : null,
           unidadContenido: r.insumo.unidadContenido,
+          creadoPorId,
+          creadoPorNombre: creadoPorId ? nombresPorId.get(creadoPorId) ?? null : null,
+          creadoEn: (r.insumo as any).creadoEn as Date | null,
           totalDisponible: calcularTotalDisponible(
             cantidad,
             r.insumo.contenidoPorUnidad,

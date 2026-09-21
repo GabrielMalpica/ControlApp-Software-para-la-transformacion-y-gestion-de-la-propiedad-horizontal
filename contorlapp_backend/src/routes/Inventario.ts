@@ -17,7 +17,7 @@ router.use(authRequired);
 
 // Inventario físico de maquinaria y herramientas. Estas rutas se declaran
 // antes de las rutas legacy por inventarioId para evitar ambigüedades.
-router.get("/empresa/:empresaId/resumen", requireRoles("gerente", "jefe_operaciones"), requirePermission("inventario.ver"), requireEmpresaScope("empresaId"), activos.resumenEmpresa);
+router.get("/empresa/:empresaId/resumen", requireRoles("gerente", "jefe_operaciones", "supervisor"), requirePermission("inventario.ver"), requireEmpresaScope("empresaId"), activos.resumenEmpresa);
 router.get("/conjunto/:nit/resumen", requirePermission("inventario.ver"), requireConjuntoScope("nit"), activos.resumenConjunto);
 router.get("/empresa/:empresaId/catalogos/maquinaria", requirePermission("maquinaria.ver"), requireEmpresaScope("empresaId"), activos.catalogoMaquinaria);
 router.get("/empresa/:empresaId/catalogos/herramientas", requirePermission("herramientas.ver"), requireEmpresaScope("empresaId"), activos.catalogoHerramientas);
@@ -37,17 +37,17 @@ for (const [path, kind, editPermission, approvalPermission, statePermission, loa
   ["herramientas", "herramienta", "herramientas.editar", "herramientas.aprobar", "herramientas.gestionar_estado", "herramientas.prestar"],
 ] as const) {
   router.patch(`/${path}/:id`, requirePermission(editPermission, `${path}.crear`), activos.editar(kind));
-  router.post(`/${path}/:id/aprobar`, requireRoles("gerente", "jefe_operaciones"), requirePermission(approvalPermission), activos.aprobar(kind));
-  router.post(`/${path}/:id/rechazar`, requireRoles("gerente", "jefe_operaciones"), requirePermission(approvalPermission), activos.rechazar(kind));
-  router.post(`/${path}/:id/estado`, requireRoles("gerente", "jefe_operaciones"), requirePermission(statePermission), activos.cambiarEstado(kind));
-  router.post(`/${path}/:id/prestar`, requireRoles("gerente", "jefe_operaciones"), requirePermission(loanPermission), activos.prestar(kind));
-  router.post(`/${path}/:id/devolver`, requireRoles("gerente", "jefe_operaciones"), requirePermission(loanPermission), activos.devolver(kind));
+  router.post(`/${path}/:id/aprobar`, requireRoles("gerente", "jefe_operaciones", "supervisor"), requirePermission(approvalPermission), activos.aprobar(kind));
+  router.post(`/${path}/:id/rechazar`, requireRoles("gerente", "jefe_operaciones", "supervisor"), requirePermission(approvalPermission), activos.rechazar(kind));
+  router.post(`/${path}/:id/estado`, requireRoles("gerente", "jefe_operaciones", "supervisor"), requirePermission(statePermission), activos.cambiarEstado(kind));
+  router.post(`/${path}/:id/prestar`, requireRoles("gerente", "jefe_operaciones", "supervisor"), requirePermission(loanPermission), activos.prestar(kind));
+  router.post(`/${path}/:id/devolver`, requireRoles("gerente", "jefe_operaciones", "supervisor"), requirePermission(loanPermission), activos.devolver(kind));
   router.get(`/${path}/:id/foto`, requirePermission(`${path}.ver`), activos.obtenerFoto(kind));
   router.put(`/${path}/:id/foto`, requirePermission(editPermission, `${path}.crear`), uploadFotoInventario.single("foto"), activos.guardarFoto(kind));
   router.delete(`/${path}/:id/foto`, requirePermission(editPermission, `${path}.crear`), activos.eliminarFoto(kind));
 }
-router.post("/herramientas/lotes/:loteId/aprobar", requireRoles("gerente", "jefe_operaciones"), requirePermission("herramientas.aprobar"), activos.aprobarLoteHerramientas);
-router.post("/herramientas/lotes/:loteId/rechazar", requireRoles("gerente", "jefe_operaciones"), requirePermission("herramientas.aprobar"), activos.rechazarLoteHerramientas);
+router.post("/herramientas/lotes/:loteId/aprobar", requireRoles("gerente", "jefe_operaciones", "supervisor"), requirePermission("herramientas.aprobar"), activos.aprobarLoteHerramientas);
+router.post("/herramientas/lotes/:loteId/rechazar", requireRoles("gerente", "jefe_operaciones", "supervisor"), requirePermission("herramientas.aprobar"), activos.rechazarLoteHerramientas);
 
 // ✅ por conjunto
 router.get("/conjunto/:nit/insumos", requirePermission("inventario.ver"), requireConjuntoScope("nit"), c.listarInsumosConjunto);

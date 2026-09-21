@@ -1,5 +1,6 @@
 import {
   CategoriaHerramienta,
+  CondicionActivo,
   EstadoHerramienta,
   EstadoMaquinaria,
   ModoControlHerramienta,
@@ -40,6 +41,7 @@ export const CrearMaquinariaInventarioBody = z.object({
   serial: textoOpcional,
   alias: textoOpcional,
   estado: z.nativeEnum(EstadoMaquinaria).optional().default(EstadoMaquinaria.OPERATIVA),
+  condicion: z.nativeEnum(CondicionActivo).optional(),
 }).strict().superRefine((value, ctx) => {
   if (Boolean(value.tipoCatalogoId) === Boolean(value.tipoPropuesto)) {
     ctx.addIssue({
@@ -68,6 +70,7 @@ export const CrearHerramientasInventarioBody = z.object({
   serial: textoOpcional,
   alias: textoOpcional,
   estado: z.nativeEnum(EstadoHerramienta).optional().default(EstadoHerramienta.OPERATIVA),
+  condicion: z.nativeEnum(CondicionActivo).optional(),
 }).strict().superRefine((value, ctx) => {
   if (Boolean(value.herramientaId) === Boolean(value.tipoPropuesto)) {
     ctx.addIssue({
@@ -105,11 +108,13 @@ export const RechazarActivoBody = z.object({
 export const CambiarEstadoMaquinariaBody = z.object({
   estado: z.nativeEnum(EstadoMaquinaria),
   motivo: z.string().trim().min(3).max(500),
+  condicion: z.nativeEnum(CondicionActivo).optional(),
 }).strict();
 
 export const CambiarEstadoHerramientaBody = z.object({
   estado: z.nativeEnum(EstadoHerramienta),
   motivo: z.string().trim().min(3).max(500),
+  condicion: z.nativeEnum(CondicionActivo).optional(),
 }).strict();
 
 export const PrestarActivoBody = z.object({
