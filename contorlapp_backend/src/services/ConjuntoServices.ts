@@ -79,7 +79,7 @@ export class ConjuntoService {
 
   async agregarStock(payload: unknown) {
     const inventarioId = await this.getOrCreateInventarioId();
-    const invService = new InventarioService(this.prisma, inventarioId);
+    const invService = new InventarioService(this.prisma, inventarioId, this.actor);
     return invService.agregarStock(payload);
   }
 
@@ -119,7 +119,7 @@ export class ConjuntoService {
 
   async consumirStock(payload: unknown) {
     const inventarioId = await this.getOrCreateInventarioId();
-    const invService = new InventarioService(this.prisma, inventarioId);
+    const invService = new InventarioService(this.prisma, inventarioId, this.actor);
     return invService.consumirStock(payload);
   }
 

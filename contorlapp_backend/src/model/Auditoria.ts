@@ -42,6 +42,7 @@ export const AccionAuditoria = {
   LIBERAR_MAQUINARIA: "LIBERAR_MAQUINARIA",
   ASIGNAR_HERRAMIENTA: "ASIGNAR_HERRAMIENTA",
   LIBERAR_HERRAMIENTA: "LIBERAR_HERRAMIENTA",
+  CORREGIR_CIERRE: "CORREGIR_CIERRE",
 } as const;
 
 export type AccionAuditoria = (typeof AccionAuditoria)[keyof typeof AccionAuditoria];

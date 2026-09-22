@@ -786,7 +786,9 @@ export class SupervisorService {
             cantidad: usar,
             fecha: fechaCierre,
             observacion: `Consumo en cierre de tarea #${tareaId} por ${this.actorRolLabel()} ${this.supervisorId}`,
-            // operarioId NO se manda (undefined) para no chocar con tu modelo
+            // operarioId NO se manda (undefined) para no chocar con tu modelo:
+            // apunta a Operario.id, y quien cierra aca no es un operario.
+            registradoPorId: this.supervisorId,
           },
         });
       }

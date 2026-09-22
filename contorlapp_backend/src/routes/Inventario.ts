@@ -45,6 +45,7 @@ for (const [path, kind, editPermission, approvalPermission, statePermission, loa
   router.get(`/${path}/:id/foto`, requirePermission(`${path}.ver`), activos.obtenerFoto(kind));
   router.put(`/${path}/:id/foto`, requirePermission(editPermission, `${path}.crear`), uploadFotoInventario.single("foto"), activos.guardarFoto(kind));
   router.delete(`/${path}/:id/foto`, requirePermission(editPermission, `${path}.crear`), activos.eliminarFoto(kind));
+  router.delete(`/${path}/:id`, requireRoles("gerente"), activos.eliminar(kind));
 }
 router.post("/herramientas/lotes/:loteId/aprobar", requireRoles("gerente", "jefe_operaciones", "supervisor"), requirePermission("herramientas.aprobar"), activos.aprobarLoteHerramientas);
 router.post("/herramientas/lotes/:loteId/rechazar", requireRoles("gerente", "jefe_operaciones", "supervisor"), requirePermission("herramientas.aprobar"), activos.rechazarLoteHerramientas);

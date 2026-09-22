@@ -155,7 +155,8 @@ export class InventarioController {
       const { nit } = ConjuntoNitParam.parse(req.params);
       const body = AgregarInsumoBody.parse(req.body);
 
-      const service = new ConjuntoService(prisma, nit);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      const service = new ConjuntoService(prisma, nit, actor);
       const out = await service.agregarStock(body);
 
       res.status(201).json(out ?? { ok: true });
@@ -170,7 +171,8 @@ export class InventarioController {
       const { nit } = ConjuntoNitParam.parse(req.params);
       const body = ConsumirBody.extend({ insumoId: z.number().int().positive() }).parse(req.body);
 
-      const service = new ConjuntoService(prisma, nit);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      const service = new ConjuntoService(prisma, nit, actor);
       await service.consumirStock(body);
 
       res.status(204).send();

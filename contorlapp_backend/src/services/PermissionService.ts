@@ -52,6 +52,14 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: "Permite aprobar o rechazar tareas pendientes de veredicto.",
   },
   {
+    key: "tareas.editar_cierre",
+    module: "tareas",
+    moduleLabel: "Tareas",
+    label: "Corregir cierre de tareas",
+    description:
+      "Permite corregir evidencias e insumos de tareas ya cerradas (aprobadas, no completadas o rechazadas), con ajuste del inventario.",
+  },
+  {
     key: "cronograma.ver",
     module: "cronograma",
     moduleLabel: "Cronogramas",
@@ -414,7 +422,7 @@ const ALL_PERMISSION_KEYS = new Set(PERMISSION_CATALOG.map((item) => item.key));
 // poder ejecutar esa accion. La matriz conserva los interruptores separados:
 // desactivar "ver" sigue ocultando el modulo si tampoco hay una accion activa.
 const PERMISSIONS_THAT_GRANT_ACCESS: Readonly<Record<string, readonly string[]>> = {
-  "tareas.ver": ["tareas.crear", "tareas.cerrar", "tareas.veredicto"],
+  "tareas.ver": ["tareas.crear", "tareas.cerrar", "tareas.veredicto", "tareas.editar_cierre"],
   "cronograma.ver": [
     "cronograma.imprimir",
     "cronograma.publicar",
@@ -486,6 +494,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "tareas.ver",
     "tareas.cerrar",
     "tareas.veredicto",
+    "tareas.editar_cierre",
     "cronograma.ver",
     "cronograma.imprimir",
     "solicitudes.ver",

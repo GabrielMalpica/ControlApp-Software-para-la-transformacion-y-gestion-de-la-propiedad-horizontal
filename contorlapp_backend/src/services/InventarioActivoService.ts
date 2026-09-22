@@ -19,6 +19,7 @@ import {
   subirFotoInventario,
 } from "../utils/drive_inventario";
 import { normalizarNombreCatalogo } from "../utils/catalogoInventario";
+import { prefijoConjunto } from "../utils/codigoInventarioConjunto";
 
 export { normalizarNombreCatalogo } from "../utils/catalogoInventario";
 
@@ -98,9 +99,41 @@ export class InventarioActivoService {
     return conjunto;
   }
 
+  /** Siguiente número de secuencia disponible para un prefijo de código
+   * interno (ej. "MAQ-BDM") dentro de la empresa, buscando el mayor
+   * consecutivo usado hasta ahora (evita colisiones si algún código de en
+   * medio fue eliminado). */
+  private async siguienteSecuenciaActivo(
+    tx: Prisma.TransactionClient,
+    model: "maquinaria" | "herramientaItem",
+    prefijo: string,
+  ): Promise<number> {
+    const rows = model === "maquinaria"
+      ? await tx.maquinaria.findMany({
+          where: { empresaId: this.empresaId, codigoInterno: { startsWith: `${prefijo}-` } },
+          select: { codigoInterno: true },
+        })
+      : await tx.herramientaItem.findMany({
+          where: { empresaId: this.empresaId, codigoInterno: { startsWith: `${prefijo}-` } },
+          select: { codigoInterno: true },
+        });
+    let max = 0;
+    for (const row of rows) {
+      const match = /-(\d+)$/.exec(row.codigoInterno ?? "");
+      if (match) max = Math.max(max, parseInt(match[1], 10));
+    }
+    return max + 1;
+  }
+
   private async asegurarAprobador() {
     if (!esAprobador(this.actor)) {
       throw httpError(403, "Solo gerente o jefe de operaciones puede aprobar o rechazar registros.");
+    }
+  }
+
+  private asegurarGerente() {
+    if (this.actor.rol !== "gerente") {
+      throw httpError(403, "Solo el gerente puede eliminar un activo del inventario.");
     }
   }
 
@@ -376,7 +409,7 @@ export class InventarioActivoService {
   }
 
   async crearMaquinaria(dto: any, scope: Scope) {
-    if (scope.conjuntoId) await this.asegurarConjunto(scope.conjuntoId);
+    const conjunto = scope.conjuntoId ? await this.asegurarConjunto(scope.conjuntoId) : null;
     if (this.actor.rol === "administrador" && scope.propietarioTipo !== "CONJUNTO") {
       throw httpError(403, "El administrador solo puede registrar inventario de sus conjuntos.");
     }
@@ -402,9 +435,17 @@ export class InventarioActivoService {
           ...(approved ? { aprobadoPorId: this.actor.id, aprobadoEn: new Date() } : {}),
         },
       });
+      let codigoInterno: string;
+      if (conjunto) {
+        const prefijo = `MAQ-${prefijoConjunto(conjunto.nombre)}`;
+        const secuencia = await this.siguienteSecuenciaActivo(tx, "maquinaria", prefijo);
+        codigoInterno = `${prefijo}-${String(secuencia).padStart(3, "0")}`;
+      } else {
+        codigoInterno = `MAQ-${String(created.id).padStart(6, "0")}`;
+      }
       const item = await tx.maquinaria.update({
         where: { id: created.id },
-        data: { codigoInterno: `MAQ-${String(created.id).padStart(6, "0")}` },
+        data: { codigoInterno },
         include: { tipoCatalogo: true, conjuntoPropietario: { select: { nit: true, nombre: true } } },
       });
       await new AuditoriaService(tx).registrarEstricto({
@@ -467,7 +508,7 @@ export class InventarioActivoService {
   }
 
   async crearHerramientas(dto: any, scope: Scope) {
-    if (scope.conjuntoId) await this.asegurarConjunto(scope.conjuntoId);
+    const conjunto = scope.conjuntoId ? await this.asegurarConjunto(scope.conjuntoId) : null;
     if (this.actor.rol === "administrador" && scope.propietarioTipo !== "CONJUNTO") {
       throw httpError(403, "El administrador solo puede registrar inventario de sus conjuntos.");
     }
@@ -475,8 +516,12 @@ export class InventarioActivoService {
     const lote = crypto.randomUUID();
     return this.prisma.$transaction(async (tx) => {
       const catalog = await this.resolverCatalogoHerramienta(tx, dto, approved);
+      const prefijo = conjunto ? `HER-${prefijoConjunto(conjunto.nombre)}` : null;
+      const secuenciaInicial = prefijo ? await this.siguienteSecuenciaActivo(tx, "herramientaItem", prefijo) : 0;
       const rows = Array.from({ length: dto.cantidad }, (_, index) => ({
-        codigoInterno: `HER-${lote.slice(0, 8).toUpperCase()}-${String(index + 1).padStart(3, "0")}`,
+        codigoInterno: prefijo
+          ? `${prefijo}-${String(secuenciaInicial + index).padStart(3, "0")}`
+          : `HER-${lote.slice(0, 8).toUpperCase()}-${String(index + 1).padStart(3, "0")}`,
         empresaId: this.empresaId,
         herramientaId: catalog.id,
         propietarioTipo: scope.propietarioTipo,
@@ -1046,6 +1091,48 @@ export class InventarioActivoService {
       await new AuditoriaService(tx).registrarEstricto({ modulo: kind === "maquinaria" ? "INVENTARIO_MAQUINARIA" : "INVENTARIO_HERRAMIENTAS", entidad: kind === "maquinaria" ? "Maquinaria" : "HerramientaItem", entidadId: id, accion: "ELIMINAR_FOTO", empresaId: this.empresaId, conjuntoId: before.conjuntoPropietarioId, actor: this.actor });
     });
     await this.eliminarDriveSiNoReferenciado(before.fotoDriveId);
+  }
+
+  async eliminar(kind: ClaseActivo, id: number) {
+    this.asegurarGerente();
+    const before: any = kind === "maquinaria"
+      ? await this.prisma.maquinaria.findFirst({ where: { id, empresaId: this.empresaId } })
+      : await this.prisma.herramientaItem.findFirst({ where: { id, empresaId: this.empresaId } });
+    if (!before) throw httpError(404, "Activo no encontrado.");
+
+    const [asignaciones, usos, solicitudes] = kind === "maquinaria"
+      ? await Promise.all([
+          this.prisma.maquinariaConjunto.count({ where: { maquinariaId: id } }),
+          this.prisma.usoMaquinaria.count({ where: { maquinariaId: id } }),
+          this.prisma.solicitudMaquinaria.count({ where: { maquinariaId: id } }),
+        ])
+      : await Promise.all([
+          this.prisma.herramientaItemConjunto.count({ where: { herramientaItemId: id } }),
+          this.prisma.usoHerramienta.count({ where: { herramientaItemId: id } }),
+          Promise.resolve(0),
+        ]);
+    if (asignaciones + usos + solicitudes > 0) {
+      throw httpError(
+        409,
+        "No se puede eliminar: el activo tiene préstamos, usos o solicitudes registradas. Usa 'Cambiar estado' para retirarlo en su lugar.",
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (kind === "maquinaria") await tx.maquinaria.delete({ where: { id } });
+      else await tx.herramientaItem.delete({ where: { id } });
+      await new AuditoriaService(tx).registrarEstricto({
+        modulo: kind === "maquinaria" ? "INVENTARIO_MAQUINARIA" : "INVENTARIO_HERRAMIENTAS",
+        entidad: kind === "maquinaria" ? "Maquinaria" : "HerramientaItem",
+        entidadId: id,
+        accion: "ELIMINAR",
+        empresaId: this.empresaId,
+        conjuntoId: before.conjuntoPropietarioId,
+        actor: this.actor,
+        datosAntes: before,
+      });
+    });
+    if (before.fotoDriveId) await this.eliminarDriveSiNoReferenciado(before.fotoDriveId);
   }
 
   private async eliminarDriveSiNoReferenciado(fileId: string) {

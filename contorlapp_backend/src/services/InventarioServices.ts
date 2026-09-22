@@ -458,7 +458,8 @@ export class InventarioService {
         cantidad: toDec(dto.cantidad),
         fecha: new Date(),
         operarioId: dto.operarioId ?? null,
-        observacion: dto.observacion ?? null,
+        observacion: dto.observacion ?? "Ingreso manual",
+        registradoPorId: this.actor?.id ?? null,
       },
     });
 
@@ -634,7 +635,8 @@ export class InventarioService {
           fecha: new Date(),
           operarioId: dto.operarioId ?? null,
           tareaId: dto.tareaId ?? null,
-          observacion: dto.observacion ?? null,
+          observacion: dto.observacion ?? "Salida manual",
+          registradoPorId: this.actor?.id ?? null,
         },
       });
 
@@ -662,10 +664,27 @@ export class InventarioService {
       },
     });
 
+    const nombresPorId = await this.nombresUsuarios(
+      movimientos.map((m) => (m as any).registradoPorId as string | null),
+    );
+
     let saldo = 0;
     const conSaldo = movimientos.map((m) => {
       const cantidad = decToNumber(m.cantidad);
       saldo += m.tipo === TipoMovimientoInsumo.ENTRADA ? cantidad : -cantidad;
+      const registradoPorId = (m as any).registradoPorId as string | null;
+      const operarioNombre = m.operario?.usuario.nombre ?? null;
+      const registradoPorNombre = registradoPorId
+        ? nombresPorId.get(registradoPorId) ?? null
+        : null;
+      // De donde vino el movimiento, para que el front elija la frase
+      // correcta ("compró", "se usó en la tarea X", "registrado manualmente
+      // por"): compra (pedidoAppId), cierre de tarea (tareaId) o manual.
+      const origen = m.pedidoAppId
+        ? "COMPRA"
+        : m.tareaId
+          ? "TAREA"
+          : "MANUAL";
       return {
         id: m.id,
         tipo: m.tipo as TipoMovimientoInsumo,
@@ -673,7 +692,10 @@ export class InventarioService {
         saldo,
         fecha: m.fecha,
         observacion: m.observacion,
-        operario: m.operario?.usuario.nombre ?? null,
+        operario: operarioNombre,
+        registradoPorNombre,
+        responsableNombre: operarioNombre ?? registradoPorNombre,
+        origen,
         tareaId: m.tareaId,
         tareaDescripcion: m.tarea?.descripcion ?? null,
       };

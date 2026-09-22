@@ -41,7 +41,8 @@ export class SolicitudInsumoController {
       const { id } = IdParam.parse(req.params);
       const body = AprobarBody.parse(req.body ?? {});
       const empresaId = await empresaIdAutenticada(req);
-      const out = await service.aprobar(id, { ...body, empresaId });
+      const actorId = req.user?.sub ? String(req.user.sub) : null;
+      const out = await service.aprobar(id, { ...body, empresaId }, actorId);
       res.json(out);
     } catch (err) {
       next(err);

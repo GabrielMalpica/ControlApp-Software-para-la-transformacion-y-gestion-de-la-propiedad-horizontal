@@ -1,8 +1,17 @@
 // src/services/TareaService.ts
-import { PrismaClient, EstadoTarea, TipoFuncion, TipoTarea } from "@prisma/client";
+import {
+  PrismaClient,
+  Prisma,
+  EstadoTarea,
+  TipoFuncion,
+  TipoTarea,
+  TipoMovimientoInsumo,
+} from "@prisma/client";
 import { z } from "zod";
+import fs from "fs";
 import {
   CrearTareaDTO,
+  CorregirCierreDTO,
   EditarTareaDTO,
   FiltroTareaDTO,
   tareaPublicSelect,
@@ -14,6 +23,9 @@ import {
   validarOperariosDisponiblesEnFecha,
   validarLimiteSemanalOperarios,
 } from "../utils/operarioAvailability";
+import { buildEvidenciaFileName, uploadEvidenciaToDrive } from "../utils/drive_evidencias";
+import { AuditoriaService } from "./AuditoriaService";
+import { AccionAuditoria, EntidadAuditoria, ModuloAuditoria } from "../model/Auditoria";
 
 const EvidenciaDTO = z.object({ imagen: z.string().min(1) });
 
@@ -611,6 +623,223 @@ export class TareaService {
     });
 
     return { ok: true, message: "Tarea eliminada correctamente." };
+  }
+
+  /**
+   * Corrige el cierre de una tarea ya cerrada (APROBADA / NO_COMPLETADA /
+   * RECHAZADA): permite quitar/agregar evidencias y reemplazar por completo
+   * los insumos usados, revirtiendo el consumo anterior y aplicando el
+   * nuevo. No toca el veredicto ni quién cerró la tarea originalmente
+   * (finalizadaPorId/finalizadaPorRol) — solo deja constancia de la
+   * corrección en AuditoriaEvento.
+   */
+  static async corregirCierre(
+    prisma: PrismaClient,
+    tareaId: number,
+    payload: unknown,
+    files: Express.Multer.File[],
+    empresaId: string,
+    actor: { id: string; rol: string; nombre?: string | null },
+  ) {
+    const dto = CorregirCierreDTO.parse(payload ?? {});
+
+    const tarea = await prisma.tarea.findFirst({
+      where: { id: tareaId, conjunto: { empresaId } },
+      select: {
+        id: true,
+        estado: true,
+        evidencias: true,
+        insumosUsados: true,
+        conjuntoId: true,
+        fechaFinalizarTarea: true,
+        fechaFin: true,
+        conjunto: { select: { nit: true, nombre: true } },
+      },
+    });
+
+    if (!tarea) throw new Error("Tarea no encontrada.");
+
+    const estadosCorregibles = new Set<EstadoTarea>([
+      EstadoTarea.APROBADA,
+      EstadoTarea.NO_COMPLETADA,
+      EstadoTarea.RECHAZADA,
+    ]);
+    if (!estadosCorregibles.has(tarea.estado)) {
+      throw new Error(
+        `No se puede corregir el cierre de una tarea en estado ${tarea.estado}.`,
+      );
+    }
+
+    const actuales = tarea.evidencias ?? [];
+    const eliminarSet = new Set(dto.evidenciasEliminar);
+    const restantes = actuales.filter((url) => !eliminarSet.has(url));
+
+    // Subir evidencias nuevas a Drive: mismo patrón que el cierre directo.
+    const urlsNuevas: string[] = [];
+    try {
+      let indice = 0;
+      for (const f of files ?? []) {
+        indice++;
+        const url = await uploadEvidenciaToDrive({
+          filePath: f.path,
+          fileName: buildEvidenciaFileName({
+            subidoPor: actor.nombre ?? actor.id,
+            rol: actor.rol,
+            fecha: new Date(),
+            originalName: f.originalname,
+            indice,
+          }),
+          mimeType: f.mimetype,
+          conjuntoNit: tarea.conjunto?.nit ?? tarea.conjuntoId ?? "SIN_CONJUNTO",
+          conjuntoNombre: tarea.conjunto?.nombre ?? undefined,
+          fecha: new Date(),
+        });
+        urlsNuevas.push(url);
+      }
+    } finally {
+      for (const f of files ?? []) {
+        try {
+          if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+        } catch {}
+      }
+    }
+
+    const evidenciasFinal = Array.from(
+      new Set(
+        [...restantes, ...urlsNuevas]
+          .map((x) => x.trim())
+          .filter((x) => x.length > 0),
+      ),
+    );
+
+    const insumosAntes = (tarea.insumosUsados as unknown) ?? null;
+    const insumosNuevos = dto.insumosUsados; // undefined => no se toca el consumo
+
+    const tareaActualizada = await prisma.$transaction(async (tx) => {
+      if (insumosNuevos !== undefined) {
+        if (!tarea.conjuntoId) {
+          throw new Error(
+            "La tarea no tiene conjunto asignado, no puedo ajustar el inventario.",
+          );
+        }
+
+        const inventario = await tx.inventario.findUnique({
+          where: { conjuntoId: tarea.conjuntoId },
+          select: { id: true },
+        });
+        if (!inventario) {
+          throw new Error("No existe inventario para este conjunto.");
+        }
+
+        // Se conserva la fecha del cierre original: los informes filtran el
+        // consumo por rango de fechas y una corrección no debe "mover" la
+        // tarea al informe del mes en que se corrige.
+        const fechaConsumo = tarea.fechaFinalizarTarea ?? tarea.fechaFin;
+
+        // 1) Revertir el consumo que dejó el cierre original (agrupado por
+        // insumo, por si hubiera varias filas para el mismo insumo).
+        const consumosPrevios = await tx.consumoInsumo.findMany({
+          where: { tareaId, tipo: TipoMovimientoInsumo.SALIDA },
+          select: { id: true, insumoId: true, cantidad: true },
+        });
+
+        const reversionPorInsumo = new Map<number, Prisma.Decimal>();
+        for (const c of consumosPrevios) {
+          const previo = reversionPorInsumo.get(c.insumoId) ?? new Prisma.Decimal(0);
+          reversionPorInsumo.set(c.insumoId, previo.plus(c.cantidad));
+        }
+
+        for (const [insumoId, cantidad] of reversionPorInsumo) {
+          await tx.inventarioInsumo.updateMany({
+            where: { inventarioId: inventario.id, insumoId },
+            data: { cantidad: { increment: cantidad } },
+          });
+        }
+
+        if (consumosPrevios.length > 0) {
+          await tx.consumoInsumo.deleteMany({
+            where: { id: { in: consumosPrevios.map((c) => c.id) } },
+          });
+        }
+
+        // 2) Aplicar la lista corregida (mismo patrón de descuento del cierre).
+        for (const item of insumosNuevos) {
+          const invItem = await tx.inventarioInsumo.findUnique({
+            where: {
+              inventarioId_insumoId: {
+                inventarioId: inventario.id,
+                insumoId: item.insumoId,
+              },
+            },
+            select: { id: true, cantidad: true },
+          });
+
+          if (!invItem) {
+            throw new Error(
+              `El insumo ${item.insumoId} no existe en inventario del conjunto.`,
+            );
+          }
+
+          const actual = invItem.cantidad;
+          const usar = new Prisma.Decimal(item.cantidad);
+          if (usar.lte(0)) continue;
+          if (actual.lt(usar)) {
+            throw new Error(
+              `Stock insuficiente para insumo ${item.insumoId}. Stock=${actual.toString()} / Usar=${usar.toString()}`,
+            );
+          }
+
+          await tx.inventarioInsumo.update({
+            where: { id: invItem.id },
+            data: { cantidad: actual.minus(usar) },
+          });
+
+          await tx.consumoInsumo.create({
+            data: {
+              inventario: { connect: { id: inventario.id } },
+              insumo: { connect: { id: item.insumoId } },
+              tipo: TipoMovimientoInsumo.SALIDA,
+              tarea: { connect: { id: tareaId } },
+              cantidad: usar,
+              fecha: fechaConsumo,
+              observacion: `Corrección de cierre de tarea #${tareaId} por ${actor.rol} ${actor.id}: ${dto.motivo}`,
+              registradoPorId: actor.id,
+            },
+          });
+        }
+      }
+
+      const actualizada = await tx.tarea.update({
+        where: { id: tareaId },
+        data: {
+          evidencias: evidenciasFinal,
+          insumosUsados:
+            insumosNuevos !== undefined ? (insumosNuevos as any) : undefined,
+          observaciones: dto.observaciones ?? undefined,
+        },
+        select: tareaPublicSelect,
+      });
+
+      await new AuditoriaService(tx).registrarEstricto({
+        modulo: ModuloAuditoria.TAREA,
+        entidad: EntidadAuditoria.TAREA,
+        entidadId: tareaId,
+        accion: AccionAuditoria.CORREGIR_CIERRE,
+        conjuntoId: tarea.conjuntoId,
+        empresaId,
+        actor,
+        descripcion: dto.motivo,
+        datosAntes: { evidencias: actuales, insumosUsados: insumosAntes },
+        datosDespues: {
+          evidencias: evidenciasFinal,
+          insumosUsados: insumosNuevos ?? insumosAntes,
+        },
+      });
+
+      return actualizada;
+    });
+
+    return toTareaPublica(tareaActualizada);
   }
 
   /* =====================================================

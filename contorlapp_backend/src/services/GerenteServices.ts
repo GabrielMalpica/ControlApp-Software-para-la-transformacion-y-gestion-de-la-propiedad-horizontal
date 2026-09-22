@@ -8,6 +8,7 @@ import {
   PatronJornada,
   TipoUnidadResidencial,
   DiaSemana,
+  TipoMovimientoInsumo,
 } from "@prisma/client";
 import bcrypt from "bcrypt";
 import { Prisma } from "@prisma/client";
@@ -2158,28 +2159,40 @@ export class GerenteService {
         `Ã¢ÂÅ’ No se encontrÃƒÂ³ inventario para el conjunto ${dto.conjuntoId}`,
       );
 
-    const existente = await this.prisma.inventarioInsumo.findUnique({
-      where: {
-        inventarioId_insumoId: {
+    return this.prisma.$transaction(async (tx) => {
+      const existente = await tx.inventarioInsumo.findUnique({
+        where: {
+          inventarioId_insumoId: {
+            inventarioId: inventario.id,
+            insumoId: dto.insumoId,
+          },
+        },
+      });
+
+      const inventarioInsumo = existente
+        ? await tx.inventarioInsumo.update({
+            where: { id: existente.id },
+            data: { cantidad: { increment: dto.cantidad } },
+          })
+        : await tx.inventarioInsumo.create({
+            data: {
+              inventarioId: inventario.id,
+              insumoId: dto.insumoId,
+              cantidad: dto.cantidad,
+            },
+          });
+
+      await tx.consumoInsumo.create({
+        data: {
           inventarioId: inventario.id,
           insumoId: dto.insumoId,
+          tipo: TipoMovimientoInsumo.ENTRADA,
+          cantidad: dto.cantidad,
+          fecha: new Date(),
         },
-      },
-    });
-
-    if (existente) {
-      return this.prisma.inventarioInsumo.update({
-        where: { id: existente.id },
-        data: { cantidad: { increment: dto.cantidad } },
       });
-    }
 
-    return this.prisma.inventarioInsumo.create({
-      data: {
-        inventarioId: inventario.id,
-        insumoId: dto.insumoId,
-        cantidad: dto.cantidad,
-      },
+      return inventarioInsumo;
     });
   }
 

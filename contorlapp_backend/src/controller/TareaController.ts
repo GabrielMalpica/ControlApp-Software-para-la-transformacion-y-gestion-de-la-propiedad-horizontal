@@ -8,6 +8,16 @@ const IdParamSchema = z.object({
   id: z.coerce.number().int().positive(),
 });
 
+async function actorAutenticado(req: any): Promise<{ id: string; rol: string; nombre?: string | null }> {
+  const id = String(req.user?.sub ?? "").trim();
+  const rol = String(req.user?.rol ?? "").trim();
+  const usuario = await prisma.usuario.findUnique({
+    where: { id },
+    select: { nombre: true },
+  });
+  return { id, rol, nombre: usuario?.nombre ?? null };
+}
+
 export class TareaController {
 
   // POST /tareas  (correctiva por defecto)
@@ -72,6 +82,28 @@ export class TareaController {
       const empresaId = await empresaIdAutenticada(req);
       await TareaService.eliminarTarea(prisma, id, empresaId);
       res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // POST /tareas/:id/corregir-cierre (multipart)
+  corregirCierre: RequestHandler = async (req: any, res, next) => {
+    try {
+      const { id } = IdParamSchema.parse(req.params);
+      const empresaId = await empresaIdAutenticada(req);
+      const actor = await actorAutenticado(req);
+      const files = (req.files ?? []) as Express.Multer.File[];
+
+      const tarea = await TareaService.corregirCierre(
+        prisma,
+        id,
+        req.body,
+        files,
+        empresaId,
+        actor,
+      );
+      res.json(tarea);
     } catch (err) {
       next(err);
     }

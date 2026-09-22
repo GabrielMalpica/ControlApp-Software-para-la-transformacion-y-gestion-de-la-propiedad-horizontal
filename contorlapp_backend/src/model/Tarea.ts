@@ -1,6 +1,11 @@
 // src/models/tarea.ts
 import { z } from "zod";
 import { EstadoTarea, TipoTarea, Frecuencia } from "@prisma/client";
+import {
+  elementoParentChainInclude,
+  operarioResumenSelect,
+  supervisorResumenSelect,
+} from "../utils/elementoHierarchy";
 
 export const InsumoUsadoItemDTO = z.object({
   insumoId: z.number().int().positive(),
@@ -204,12 +209,53 @@ export const RegistrarInsumosUsadosDTO = z.object({
   insumosUsados: z.array(InsumoUsadoItemDTO).min(1),
 });
 
+/** Corregir el cierre de una tarea ya cerrada (evidencias/insumos/observaciones) */
+export const CorregirCierreDTO = z.object({
+  motivo: z.string().trim().min(3, "Debes indicar el motivo de la corrección."),
+  evidenciasEliminar: z
+    .string()
+    .optional()
+    .transform((raw, ctx) => {
+      if (!raw || !raw.trim()) return [] as string[];
+      try {
+        const parsed = JSON.parse(raw);
+        return z.array(z.string()).parse(parsed);
+      } catch {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'evidenciasEliminar debe ser JSON válido: ["url1","url2"]',
+        });
+        return z.NEVER;
+      }
+    }),
+  insumosUsados: z
+    .string()
+    .optional()
+    .transform((raw, ctx) => {
+      if (raw == null) return undefined;
+      if (!raw.trim()) return [] as z.infer<typeof InsumoUsadoItemDTO>[];
+      try {
+        const parsed = JSON.parse(raw);
+        return z.array(InsumoUsadoItemDTO).parse(parsed);
+      } catch {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "insumosUsados debe ser un JSON válido: [{insumoId, cantidad}]",
+        });
+        return z.NEVER;
+      }
+    }),
+  observaciones: z.string().optional(),
+});
+
 /* ===================== SELECT BASE PARA PRISMA ===================== */
 export const tareaPublicSelect = {
   id: true,
   descripcion: true,
   fechaInicio: true,
   fechaFin: true,
+  fechaFinalizarTarea: true,
 
   duracionMinutos: true,
   prioridad: true,
@@ -225,14 +271,31 @@ export const tareaPublicSelect = {
   supervisorId: true,
   ubicacionId: true,
   elementoId: true,
+  finalizadaPorRol: true,
+
+  conjunto: { select: { nit: true, nombre: true } },
+  ubicacion: { select: { id: true, nombre: true } },
+  elemento: { select: { id: true, nombre: true, ...elementoParentChainInclude } },
+  operarios: { select: operarioResumenSelect },
+  supervisor: { select: supervisorResumenSelect },
 } as const;
 
 /** Helper para castear el resultado Prisma */
 export type TareaPublica = {
   [K in keyof typeof tareaPublicSelect]: any;
-};
+} & { conjuntoNombre?: string | null };
+
+/**
+ * Castea el resultado Prisma y agrega `conjuntoNombre` plano: el resto de
+ * relaciones (ubicacion/elemento/supervisor) ya las resuelve el front desde
+ * el objeto anidado, pero `conjuntoNombre` no tiene ese fallback en
+ * `TareaModel.fromJson`.
+ */
 export function toTareaPublica<
   T extends Record<keyof typeof tareaPublicSelect, any>,
 >(row: T): TareaPublica {
-  return row as unknown as TareaPublica;
+  return {
+    ...(row as unknown as TareaPublica),
+    conjuntoNombre: row.conjunto?.nombre ?? null,
+  };
 }

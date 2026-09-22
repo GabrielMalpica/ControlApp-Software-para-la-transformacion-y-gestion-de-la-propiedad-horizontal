@@ -1,5 +1,5 @@
 // src/services/SolicitudInsumoService.ts
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, TipoMovimientoInsumo } from "@prisma/client";
 import {
   CrearSolicitudInsumoDTO,
   AprobarSolicitudInsumoDTO,
@@ -68,7 +68,7 @@ export class SolicitudInsumoService {
     return creada;
   }
 
-  async aprobar(id: number, payload: unknown) {
+  async aprobar(id: number, payload: unknown, actorId?: string | null) {
     const dto = AprobarSolicitudInsumoDTO.parse(payload);
 
     return this.prisma.$transaction(async (tx) => {
@@ -116,16 +116,16 @@ export class SolicitudInsumoService {
           });
         }
 
-        // opcional: registrar movimiento ENTRADA
         await tx.consumoInsumo.create({
           data: {
             inventarioId: inventario.id,
             insumoId: it.insumoId,
             cantidad: it.cantidad as any,
             fecha: new Date(),
-            // tipo: "ENTRADA",
-            // observacion: `Ingreso por aprobación solicitud #${id}`
-          } as any,
+            tipo: TipoMovimientoInsumo.ENTRADA,
+            observacion: `Ingreso por aprobación de solicitud #${id}`,
+            registradoPorId: actorId ?? null,
+          },
         });
       }
 

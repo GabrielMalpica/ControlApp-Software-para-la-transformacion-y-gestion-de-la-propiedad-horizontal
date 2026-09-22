@@ -385,7 +385,7 @@ export class CommerceLifecycleService {
     return this.previewRecepcion(userId, pedidoId);
   }
 
-  private async applyInventory(tx: TransactionClient, pedido: PedidoRecepcion) {
+  private async applyInventory(tx: TransactionClient, pedido: PedidoRecepcion, registradoPorId: string) {
     if (pedido.entradaInventarioAplicada) return;
     if (!pedido.conjuntoId) throw commerceHttpError(409, "El pedido no tiene conjunto asociado");
 
@@ -447,6 +447,7 @@ export class CommerceLifecycleService {
           cantidad: item.cantidad,
           fecha: new Date(),
           observacion: `Entrada por recepcion del pedido operativo #${pedido.id}`,
+          registradoPorId,
         },
         update: {},
       });
@@ -481,7 +482,7 @@ export class CommerceLifecycleService {
         dto.estadoDestino === EstadoPedidoInterno.RECIBIDO &&
         pedido.tipo === TipoPedidoApp.CONJUNTO
       ) {
-        await this.applyInventory(tx, pedido);
+        await this.applyInventory(tx, pedido, userId);
       }
 
       const updated = await tx.pedidoApp.updateMany({

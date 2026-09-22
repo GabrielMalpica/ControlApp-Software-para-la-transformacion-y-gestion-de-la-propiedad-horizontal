@@ -1360,6 +1360,12 @@ model ConsumoInsumo {
   operario   Operario? @relation(fields: [operarioId], references: [id])
   operarioId String?
 
+  // Quien registro el movimiento cuando quien actua NO es un operario (ej.
+  // administrador/gerente/supervisor/jefe_operaciones haciendo un ingreso o
+  // salida manual, o recibiendo una compra). Sin relacion FK, igual que
+  // Insumo.creadoPorId, porque puede apuntar a un Usuario de cualquier rol.
+  registradoPorId String?
+
   tarea   Tarea? @relation(fields: [tareaId], references: [id])
   tareaId Int?
 

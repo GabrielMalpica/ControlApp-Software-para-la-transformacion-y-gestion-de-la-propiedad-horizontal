@@ -129,6 +129,7 @@ function prismaCreacionMaquinaria() {
           conjuntoPropietario: { nit: "CONJ-1", nombre: "Conjunto 1" },
         }),
       ),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     auditoriaEvento: { create: jest.fn().mockResolvedValue({}) },
   };

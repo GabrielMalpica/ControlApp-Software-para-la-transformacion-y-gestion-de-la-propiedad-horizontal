@@ -191,4 +191,12 @@ export class InventarioActivoController {
       res.status(204).send();
     } catch (error) { next(error); }
   };
+
+  eliminar = (kind: Kind): RequestHandler => async (req, res, next) => {
+    try {
+      const { id } = IdActivoParam.parse(req.params);
+      await (await this.service(req)).eliminar(kind, id);
+      res.status(204).send();
+    } catch (error) { next(error); }
+  };
 }
