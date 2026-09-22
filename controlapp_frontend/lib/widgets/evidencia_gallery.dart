@@ -116,59 +116,67 @@ class _EvidenceImageState extends State<EvidenceImage> {
 void mostrarEvidenciaPreview(BuildContext context, List<String> urls) {
   showDialog(
     context: context,
-    builder: (_) => Dialog(
-      insetPadding: const EdgeInsets.all(16),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 6, 8),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Evidencia',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
+    builder: (dialogContext) {
+      final size = MediaQuery.sizeOf(dialogContext);
+      // Alto/ancho máximo ligados al viewport real (no un valor fijo): en
+      // pantallas cortas (celular en horizontal, iPad en split-view) 700px
+      // fijos no caben y recortaban el diálogo.
+      final maxHeight = (size.height * 0.85).clamp(240.0, 700.0);
+      final maxWidth = (size.width * 0.92).clamp(240.0, 900.0);
+
+      return Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 6, 8),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Evidencia',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
+                    IconButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const Divider(height: 1),
-            Flexible(
-              child: InteractiveViewer(
-                child: Container(
-                  width: double.infinity,
-                  height: 500,
-                  color: Colors.black,
-                  alignment: Alignment.center,
-                  child: EvidenceImage(
-                    urls: urls,
-                    fit: BoxFit.contain,
-                    fallback: const Center(
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.white70,
-                        size: 48,
+              const Divider(height: 1),
+              Expanded(
+                child: InteractiveViewer(
+                  child: Container(
+                    width: double.infinity,
+                    color: Colors.black,
+                    alignment: Alignment.center,
+                    child: EvidenceImage(
+                      urls: urls,
+                      fit: BoxFit.contain,
+                      fallback: const Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white70,
+                          size: 48,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 

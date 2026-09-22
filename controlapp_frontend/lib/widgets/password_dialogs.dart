@@ -82,7 +82,7 @@ Future<void> showChangePasswordDialog(BuildContext context) async {
           return AlertDialog(
             title: const Text('Cambiar contrasena'),
             content: SizedBox(
-              width: 380,
+              width: (MediaQuery.sizeOf(ctx).width * 0.9).clamp(0, 380),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -275,7 +275,7 @@ Future<void> showRecoverPasswordDialog(
           return AlertDialog(
             title: const Text('Recuperar contrasena'),
             content: SizedBox(
-              width: 380,
+              width: (MediaQuery.sizeOf(ctx).width * 0.9).clamp(0, 380),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -457,7 +457,7 @@ Future<void> showManagerResetPasswordDialog(
           return AlertDialog(
             title: const Text('Actualizar contrasena del usuario'),
             content: SizedBox(
-              width: 380,
+              width: (MediaQuery.sizeOf(ctx).width * 0.9).clamp(0, 380),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,

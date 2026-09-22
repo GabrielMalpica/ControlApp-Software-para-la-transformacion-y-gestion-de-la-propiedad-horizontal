@@ -183,31 +183,36 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
               title: const Text('Seleccionar operarios'),
               content: SizedBox(
                 width: double.maxFinite,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _operarios.length,
-                  itemBuilder: (_, index) {
-                    final op = _operarios[index];
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _operarios.length,
+                    itemBuilder: (_, index) {
+                      final op = _operarios[index];
 
-                    // Usamos la cédula numérica como ID
-                    final opId = op.cedula.trim();
-                    if (opId.isEmpty) return const SizedBox.shrink();
+                      // Usamos la cédula numérica como ID
+                      final opId = op.cedula.trim();
+                      if (opId.isEmpty) return const SizedBox.shrink();
 
-                    final checked = seleccionTemp.contains(opId);
-                    return CheckboxListTile(
-                      value: checked,
-                      title: Text(op.nombre),
-                      subtitle: Text('Cédula: ${op.cedula}'),
-                      onChanged: (v) {
-                        if (v == true) {
-                          seleccionTemp.add(opId);
-                        } else {
-                          seleccionTemp.remove(opId);
-                        }
-                        setStateDialog(() {});
-                      },
-                    );
-                  },
+                      final checked = seleccionTemp.contains(opId);
+                      return CheckboxListTile(
+                        value: checked,
+                        title: Text(op.nombre),
+                        subtitle: Text('Cédula: ${op.cedula}'),
+                        onChanged: (v) {
+                          if (v == true) {
+                            seleccionTemp.add(opId);
+                          } else {
+                            seleccionTemp.remove(opId);
+                          }
+                          setStateDialog(() {});
+                        },
+                      );
+                    },
+                  ),
                 ),
               ),
               actions: [

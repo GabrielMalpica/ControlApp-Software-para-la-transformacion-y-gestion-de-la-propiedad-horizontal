@@ -17,6 +17,7 @@ import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
 import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import 'package:flutter_application_1/widgets/perfil_action.dart';
+import 'package:flutter_application_1/widgets/responsive_appbar_actions.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 import '../service/theme.dart';
 import 'compartidos/reportes_dashboard_page.dart';
@@ -28,8 +29,6 @@ import 'inventario_resumen_page.dart';
 import 'inventario_activos_page.dart';
 import 'jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'plan_esperanza_page.dart';
-import 'solicitudes_page.dart';
-import 'tareas_page.dart';
 import 'gerente/compromisos_page.dart';
 import 'gerente/compromisos_por_conjunto_page.dart';
 import 'gerente/carga_residentes_page.dart';
@@ -269,26 +268,12 @@ class _AdministradorPageState extends State<AdministradorPage> {
               ),
             ),
           ),
-        if (_can('tareas.ver'))
-          _AdminTile(
-            'Tareas',
-            Icons.assignment,
-            AppTheme.green,
-            () => _go(TareasPage(nit: conjunto.nit)),
-          ),
         if (_can('tareas.veredicto'))
           _AdminTile(
             'Veredictos de tareas',
             Icons.fact_check_outlined,
             AppTheme.green,
             () => _go(JefeOperacionesPendientesPage(conjuntoId: conjunto.nit)),
-          ),
-        if (_can('solicitudes.ver'))
-          _AdminTile(
-            'Solicitudes',
-            Icons.pending_actions,
-            AppTheme.primary,
-            () => _go(SolicitudesPage(nit: conjunto.nit)),
           ),
         if (_can('compromisos.ver'))
           _AdminTile(
@@ -402,8 +387,10 @@ class _AdministradorPageState extends State<AdministradorPage> {
             () => _go(
               ReportesDashboardPage(
                 conjuntoIdInicial: conjunto.nit,
-                permitirInformesPdf: false,
+                permitirInformesPdf: true,
                 soloResumenTipos: true,
+                mostrarAnalisisInformes: false,
+                mostrarDescargaInformes: false,
               ),
             ),
           ),
@@ -501,27 +488,29 @@ class _AdministradorPageState extends State<AdministradorPage> {
       trailing: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 420;
+          // Sin Expanded aquí: cuando compact==true estas cards se apilan
+          // en un Column dentro de un LayoutBuilder con alto no acotado
+          // (el hero vive dentro de un scroll), y un Expanded ahí revienta
+          // con "incoming height constraints are unbounded". Expanded solo
+          // tiene sentido para repartir ANCHO en la fila horizontal.
           final cards = <Widget>[
-            Expanded(
-              child: DashboardStatusCard(
-                label: 'Conjuntos asignados',
-                value: _conjuntos.length.toString(),
-                icon: Icons.domain_rounded,
-                color: AppTheme.primary,
-              ),
+            DashboardStatusCard(
+              label: 'Conjuntos asignados',
+              value: _conjuntos.length.toString(),
+              icon: Icons.domain_rounded,
+              color: AppTheme.primary,
             ),
-            Expanded(
-              child: DashboardStatusCard(
-                label: 'Conjunto activo',
-                value: compact ? conjunto.nit : conjunto.nombre,
-                icon: Icons.apartment_rounded,
-                color: AppTheme.green,
-              ),
+            DashboardStatusCard(
+              label: 'Conjunto activo',
+              value: compact ? conjunto.nit : conjunto.nombre,
+              icon: Icons.apartment_rounded,
+              color: AppTheme.green,
             ),
           ];
 
           if (compact) {
             return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 cards[0],
                 const SizedBox(height: 12),
@@ -531,7 +520,11 @@ class _AdministradorPageState extends State<AdministradorPage> {
           }
 
           return Row(
-            children: <Widget>[cards[0], const SizedBox(width: 12), cards[1]],
+            children: <Widget>[
+              Expanded(child: cards[0]),
+              const SizedBox(width: 12),
+              Expanded(child: cards[1]),
+            ],
           );
         },
       ),
@@ -606,33 +599,42 @@ class _AdministradorPageState extends State<AdministradorPage> {
         title: const Text(
           "Panel Administrador",
           style: TextStyle(color: Colors.white),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          const PerfilAction(),
-          const NotificacionesAction(),
-          const CambiarContrasenaAction(),
-          IconButton(
-            tooltip: "Recargar",
-            onPressed: _cargarConjuntos,
-            icon: const Icon(Icons.refresh, color: Colors.white),
-          ),
-          if (_hayConjunto)
-            IconButton(
-              tooltip: 'Ver reportes',
-              onPressed: () => _go(
-                ReportesDashboardPage(
-                  conjuntoIdInicial: _conjuntoSeleccionado!.nit,
-                  permitirInformesPdf: false,
-                  soloResumenTipos: true,
-                ),
+          ResponsiveAppBarActions(
+            background: AppTheme.primary,
+            actions: [
+              const PerfilAction(),
+              const NotificacionesAction(),
+              const CambiarContrasenaAction(),
+              IconButton(
+                tooltip: "Recargar",
+                onPressed: _cargarConjuntos,
+                icon: const Icon(Icons.refresh, color: Colors.white),
               ),
-              icon: const Icon(Icons.bar_chart, color: Colors.white),
-            ),
-          const SizedBox(width: 6),
-          IconButton(
-            tooltip: 'Cerrar sesión',
-            icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: _confirmLogout,
+              if (_hayConjunto)
+                IconButton(
+                  tooltip: 'Ver reportes',
+                  onPressed: () => _go(
+                    ReportesDashboardPage(
+                      conjuntoIdInicial: _conjuntoSeleccionado!.nit,
+                      permitirInformesPdf: true,
+                      soloResumenTipos: true,
+                      mostrarAnalisisInformes: false,
+                      mostrarDescargaInformes: false,
+                    ),
+                  ),
+                  icon: const Icon(Icons.bar_chart, color: Colors.white),
+                ),
+              const SizedBox(width: 6),
+              IconButton(
+                tooltip: 'Cerrar sesión',
+                icon: const Icon(Icons.logout, color: Colors.white),
+                onPressed: _confirmLogout,
+              ),
+            ],
           ),
         ],
       ),

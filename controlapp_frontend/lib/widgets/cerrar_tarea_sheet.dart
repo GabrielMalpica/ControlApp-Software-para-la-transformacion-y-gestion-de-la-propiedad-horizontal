@@ -289,257 +289,277 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final alto = MediaQuery.of(context).size.height * 0.82;
+    final mq = MediaQuery.of(context);
+    // El framework ya empuja el sheet hacia arriba cuando aparece el
+    // teclado (AnimatedPadding sobre viewInsets.bottom en showModalBottomSheet).
+    // Por eso el alto máximo se calcula sobre el espacio que queda visible
+    // (pantalla - teclado - status bar), no sobre el alto total de la
+    // pantalla; así nunca pedimos más alto del que realmente cabe.
+    final alturaVisible =
+        mq.size.height - mq.viewInsets.bottom - mq.padding.top;
+    // OJO: no usar `.clamp(280.0, alturaVisible)` — si alturaVisible < 280
+    // (ventana angosta y corta, o teclado cubriendo casi toda la pantalla)
+    // el límite inferior queda por encima del superior y Dart lanza una
+    // excepción, tumbando el sheet completo antes de poder pintarlo.
+    final objetivo = alturaVisible * 0.92;
+    final alto = objetivo < 280.0 ? 280.0 : objetivo;
     final inv = widget.inventario; // ✅ nunca null
 
-    return SizedBox(
-      height: alto,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Cerrar tarea',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            Text(
-              widget.tarea.descripcion,
-              style: TextStyle(color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 12),
-
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'COMPLETADA', label: Text('Completada')),
-                ButtonSegment(
-                  value: 'NO_COMPLETADA',
-                  label: Text('No completada'),
-                ),
-              ],
-              selected: {_accion},
-              onSelectionChanged: (value) {
-                setState(() => _accion = value.first);
-              },
-            ),
-            const SizedBox(height: 12),
-
-            if (_requiereObservacionNoCompletada)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.orange.withValues(alpha: 0.22),
-                  ),
-                ),
-                child: const Text(
-                  'Marca la tarea como no completada e indica el motivo u observación. Esto alimenta informes y gráficas.',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ),
-            if (_requiereObservacionNoCompletada) const SizedBox(height: 12),
-
-            Card(
-              elevation: 0,
-              color: Colors.amber.shade50,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '📸 Evidencias de cierre',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    if (_puedePegarImagen && _esperandoPegado) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: Colors.blue.withValues(alpha: 0.22),
-                          ),
-                        ),
-                        child: const Text(
-                          'Modo pegado activo: copia la imagen y presiona Ctrl+V mientras este panel siga abierto.',
-                          style: TextStyle(fontSize: 12),
-                        ),
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: alto),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Cerrar tarea',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
                       ),
-                    ],
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (_puedeTomarFoto)
-                          OutlinedButton.icon(
-                            onPressed: _tomarFoto,
-                            icon: const Icon(Icons.photo_camera),
-                            label: const Text('Tomar foto'),
-                          ),
-                        if (_puedePegarImagen)
-                          OutlinedButton.icon(
-                            onPressed: _activarPegado,
-                            icon: const Icon(Icons.content_paste_rounded),
-                            label: Text(
-                              _esperandoPegado
-                                  ? 'Esperando Ctrl+V'
-                                  : 'Pegar imagen',
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              Text(
+                widget.tarea.descripcion,
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 12),
+
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'COMPLETADA', label: Text('Completada')),
+                  ButtonSegment(
+                    value: 'NO_COMPLETADA',
+                    label: Text('No completada'),
+                  ),
+                ],
+                selected: {_accion},
+                onSelectionChanged: (value) {
+                  setState(() => _accion = value.first);
+                },
+              ),
+              const SizedBox(height: 12),
+
+              if (_requiereObservacionNoCompletada)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.orange.withValues(alpha: 0.22),
+                    ),
+                  ),
+                  child: const Text(
+                    'Marca la tarea como no completada e indica el motivo u observación. Esto alimenta informes y gráficas.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+              if (_requiereObservacionNoCompletada) const SizedBox(height: 12),
+
+              Card(
+                elevation: 0,
+                color: Colors.amber.shade50,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '📸 Evidencias de cierre',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      if (_puedePegarImagen && _esperandoPegado) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: Colors.blue.withValues(alpha: 0.22),
                             ),
                           ),
-                        OutlinedButton.icon(
-                          onPressed: _pickEvidencias,
-                          icon: const Icon(Icons.attach_file),
-                          label: const Text('Agregar archivos'),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Text('${_evidencias.length} evidencia(s)'),
+                          child: const Text(
+                            'Modo pegado activo: copia la imagen y presiona Ctrl+V mientras este panel siga abierto.',
+                            style: TextStyle(fontSize: 12),
+                          ),
                         ),
                       ],
-                    ),
-                    if (_evidencias.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      ..._evidencias.map((e) {
-                        return Row(
-                          children: [
-                            const Icon(Icons.insert_drive_file, size: 16),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                _displayName(e),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 12),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (_puedeTomarFoto)
+                            OutlinedButton.icon(
+                              onPressed: _tomarFoto,
+                              icon: const Icon(Icons.photo_camera),
+                              label: const Text('Tomar foto'),
+                            ),
+                          if (_puedePegarImagen)
+                            OutlinedButton.icon(
+                              onPressed: _activarPegado,
+                              icon: const Icon(Icons.content_paste_rounded),
+                              label: Text(
+                                _esperandoPegado
+                                    ? 'Esperando Ctrl+V'
+                                    : 'Pegar imagen',
                               ),
                             ),
-                            IconButton(
-                              tooltip: 'Quitar',
-                              onPressed: () =>
-                                  setState(() => _evidencias.remove(e)),
-                              icon: const Icon(Icons.close, size: 18),
-                            ),
-                          ],
-                        );
-                      }),
+                          OutlinedButton.icon(
+                            onPressed: _pickEvidencias,
+                            icon: const Icon(Icons.attach_file),
+                            label: const Text('Agregar archivos'),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Text('${_evidencias.length} evidencia(s)'),
+                          ),
+                        ],
+                      ),
+                      if (_evidencias.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        ..._evidencias.map((e) {
+                          return Row(
+                            children: [
+                              const Icon(Icons.insert_drive_file, size: 16),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  _displayName(e),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Quitar',
+                                onPressed: () =>
+                                    setState(() => _evidencias.remove(e)),
+                                icon: const Icon(Icons.close, size: 18),
+                              ),
+                            ],
+                          );
+                        }),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-
-            // Maquinaria
-            if (widget.tarea.maquinariasAsignadas.isNotEmpty) ...[
-              const Text(
-                'Maquinaria asignada',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: widget.tarea.maquinariasAsignadas
-                    .map(
-                      (m) => Chip(
-                        avatar: const Icon(
-                          Icons.precision_manufacturing,
-                          size: 18,
-                        ),
-                        label: Text(m.nombre),
-                      ),
-                    )
-                    .toList(),
-              ),
               const SizedBox(height: 12),
-            ] else ...[
-              Text(
-                'Maquinaria asignada: ninguna.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-              ),
-              const SizedBox(height: 12),
-            ],
 
-            // Herramientas
-            if (widget.tarea.herramientasAsignadas.isNotEmpty) ...[
-              const Text(
-                'Herramientas asignadas',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 8),
-              Column(
-                children: widget.tarea.herramientasAsignadas.map((h) {
-                  final qty = h.cantidad;
-                  final estado = (h.estado ?? '').toUpperCase();
-
-                  return ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.handyman, size: 20),
-                    title: Text(h.nombre),
-                    subtitle: estado.isEmpty ? null : Text('Estado: $estado'),
-                    trailing: Text('x$qty'),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 12),
-            ] else ...[
-              Text(
-                'Herramientas asignadas: ninguna.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-              ),
-              const SizedBox(height: 12),
-            ],
-
-            Row(
-              children: [
+              // Maquinaria
+              if (widget.tarea.maquinariasAsignadas.isNotEmpty) ...[
                 const Text(
-                  'Insumos usados',
+                  'Maquinaria asignada',
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: inv.isEmpty
-                      ? null
-                      : () => setState(() => _rows.add(_ConsumoRow())),
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Agregar'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.tarea.maquinariasAsignadas
+                      .map(
+                        (m) => Chip(
+                          avatar: const Icon(
+                            Icons.precision_manufacturing,
+                            size: 18,
+                          ),
+                          label: Text(m.nombre),
+                        ),
+                      )
+                      .toList(),
                 ),
+                const SizedBox(height: 12),
+              ] else ...[
+                Text(
+                  'Maquinaria asignada: ninguna.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 12),
               ],
-            ),
 
-            if (inv.isEmpty)
-              Text(
-                'No hay inventario disponible (o no se pudo cargar). Puedes cerrar sin insumos.',
-                style: TextStyle(color: Colors.grey.shade700),
-              )
-            else if (_requiereObservacionNoCompletada)
-              Text(
-                'Si la tarea queda no completada no es necesario registrar consumo de insumos.',
-                style: TextStyle(color: Colors.grey.shade700),
-              )
-            else
-              Expanded(
-                child: ListView.separated(
+              // Herramientas
+              if (widget.tarea.herramientasAsignadas.isNotEmpty) ...[
+                const Text(
+                  'Herramientas asignadas',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                Column(
+                  children: widget.tarea.herramientasAsignadas.map((h) {
+                    final qty = h.cantidad;
+                    final estado = (h.estado ?? '').toUpperCase();
+
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.handyman, size: 20),
+                      title: Text(h.nombre),
+                      subtitle: estado.isEmpty ? null : Text('Estado: $estado'),
+                      trailing: Text('x$qty'),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 12),
+              ] else ...[
+                Text(
+                  'Herramientas asignadas: ninguna.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              Row(
+                children: [
+                  const Text(
+                    'Insumos usados',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: inv.isEmpty
+                        ? null
+                        : () => setState(() => _rows.add(_ConsumoRow())),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Agregar'),
+                  ),
+                ],
+              ),
+
+              if (inv.isEmpty)
+                Text(
+                  'No hay inventario disponible (o no se pudo cargar). Puedes cerrar sin insumos.',
+                  style: TextStyle(color: Colors.grey.shade700),
+                )
+              else if (_requiereObservacionNoCompletada)
+                Text(
+                  'Si la tarea queda no completada no es necesario registrar consumo de insumos.',
+                  style: TextStyle(color: Colors.grey.shade700),
+                )
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
                   itemCount: _rows.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (_, i) {
@@ -632,59 +652,59 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                     );
                   },
                 ),
-              ),
 
-            const SizedBox(height: 10),
-            TextField(
-              controller: _obsCtrl,
-              maxLines: 3,
-              decoration: InputDecoration(
-                labelText: _requiereObservacionNoCompletada
-                    ? 'Motivo / observación (obligatorio)'
-                    : 'Observaciones (opcional)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  final observacion = _obsCtrl.text.trim();
-                  if (_requiereObservacionNoCompletada &&
-                      observacion.length < 3) {
-                    AppFeedback.showFromSnackBar(
-                      context,
-                      const SnackBar(
-                        content: Text(
-                          'Debes indicar un motivo u observación de al menos 3 caracteres.',
-                        ),
-                      ),
-                    );
-                    return;
-                  }
-                  Navigator.pop(
-                    context,
-                    CerrarTareaResult(
-                      accion: _accion,
-                      insumosUsados: _requiereObservacionNoCompletada
-                          ? const []
-                          : _buildInsumosUsados(),
-                      observaciones: observacion.isEmpty ? null : observacion,
-                      evidencias: _evidencias, // ✅ listo para web+mobile
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.send),
-                label: Text(
-                  _requiereObservacionNoCompletada
-                      ? 'Marcar no completada'
-                      : 'Cerrar y enviar',
+              const SizedBox(height: 10),
+              TextField(
+                controller: _obsCtrl,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  labelText: _requiereObservacionNoCompletada
+                      ? 'Motivo / observación (obligatorio)'
+                      : 'Observaciones (opcional)',
+                  border: OutlineInputBorder(),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    final observacion = _obsCtrl.text.trim();
+                    if (_requiereObservacionNoCompletada &&
+                        observacion.length < 3) {
+                      AppFeedback.showFromSnackBar(
+                        context,
+                        const SnackBar(
+                          content: Text(
+                            'Debes indicar un motivo u observación de al menos 3 caracteres.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                    Navigator.pop(
+                      context,
+                      CerrarTareaResult(
+                        accion: _accion,
+                        insumosUsados: _requiereObservacionNoCompletada
+                            ? const []
+                            : _buildInsumosUsados(),
+                        observaciones: observacion.isEmpty ? null : observacion,
+                        evidencias: _evidencias, // ✅ listo para web+mobile
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.send),
+                  label: Text(
+                    _requiereObservacionNoCompletada
+                        ? 'Marcar no completada'
+                        : 'Cerrar y enviar',
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

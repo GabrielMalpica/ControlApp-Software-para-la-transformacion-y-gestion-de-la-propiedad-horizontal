@@ -51,6 +51,7 @@ class ActivoInventario {
   final String? modelo;
   final String? serial;
   final String estado;
+  final String? condicion;
   final String estadoAprobacion;
   final String propietarioTipo;
   final UbicacionActivo? conjuntoPropietario;
@@ -74,6 +75,7 @@ class ActivoInventario {
     required this.catalogoId,
     required this.nombreCatalogo,
     required this.estado,
+    this.condicion,
     required this.estadoAprobacion,
     required this.propietarioTipo,
     required this.prestada,
@@ -124,6 +126,7 @@ class ActivoInventario {
       modelo: json['modelo']?.toString(),
       serial: json['serial']?.toString(),
       estado: (json['estado'] ?? '').toString(),
+      condicion: json['condicion']?.toString(),
       estadoAprobacion: (json['estadoAprobacion'] ?? '').toString(),
       propietarioTipo: (json['propietarioTipo'] ?? '').toString(),
       conjuntoPropietario: rawPropietario is Map

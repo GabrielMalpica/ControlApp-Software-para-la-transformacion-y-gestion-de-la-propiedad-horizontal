@@ -12,6 +12,7 @@ import 'package:flutter_application_1/model/cronograma_actividad_informe_model.d
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
+import 'package:flutter_application_1/widgets/corregir_cierre_sheet.dart';
 import 'package:flutter_application_1/widgets/cronograma_informe_jerarquico.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
@@ -125,9 +126,23 @@ class _CronogramaPageState extends State<CronogramaPage> {
   late DateTime _semanaBase;
   int _escalaSemanalMinutos = 60;
   bool _sidebarResumenColapsado = false;
+  bool _sidebarAgendaColapsada = false;
+  // Los dos sidebars de la vista semanal (filtros/resumen a la izquierda,
+  // agenda del día a la derecha) arrancan expandidos en pantallas grandes,
+  // pero en tablet (>=1100px ya usa el layout de fila con sidebars, pero
+  // sigue siendo una pantalla chica) deben arrancar colapsados para dejarle
+  // espacio a la cuadrícula. Solo se aplica una vez al entrar a la pantalla
+  // para no pisar lo que el usuario decida después con los botones de
+  // colapsar/expandir.
+  bool _sidebarsSemanaDefaultsAplicados = false;
   int _sidebarDiaIndex = 0;
   _SidebarAgendaModo _sidebarAgendaModo = _SidebarAgendaModo.agenda;
   bool _sidebarVerExcluidasMes = false;
+  // En móvil (< 1100px), la cuadrícula semanal exige scroll horizontal Y
+  // vertical simultáneos y el drag&drop para reprogramar no puede alcanzar
+  // columnas fuera de pantalla; por eso ahí la vista por defecto es la
+  // agenda por día (lista), con la cuadrícula disponible como alternativa.
+  bool _vistaAgendaEnMovil = true;
 
   bool _mostrarFiltrosMensual = false;
 
@@ -195,6 +210,17 @@ class _CronogramaPageState extends State<CronogramaPage> {
       if (!mounted) return;
       _cargarDatos();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_sidebarsSemanaDefaultsAplicados) return;
+    _sidebarsSemanaDefaultsAplicados = true;
+    if (MediaQuery.of(context).size.width < 1366) {
+      _sidebarResumenColapsado = true;
+      _sidebarAgendaColapsada = true;
+    }
   }
 
   Future<void> _refreshSessionProfile() async {
@@ -2449,7 +2475,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
                             ),
                           ),
                           const SizedBox(height: 6),
-                          EvidenciaGallery(evidencias: t.evidencias ?? const []),
+                          EvidenciaGallery(
+                            evidencias: t.evidencias ?? const [],
+                          ),
                         ],
                       ),
                     ),
@@ -2537,6 +2565,25 @@ class _CronogramaPageState extends State<CronogramaPage> {
                                       Icons.edit_calendar_rounded,
                                     ),
                                     label: const Text('Editar correctiva'),
+                                  ),
+                                ),
+                              ],
+                              if (puedeCorregirCierre(t)) ...[
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () async {
+                                      Navigator.pop(context);
+                                      final corregido =
+                                          await abrirCorregirCierre(
+                                            ctx,
+                                            tareaId: t.id,
+                                          );
+                                      if (corregido) _cargarDatos();
+                                    },
+                                    icon: const Icon(Icons.edit_note),
+                                    label: const Text('Corregir cierre'),
                                   ),
                                 ),
                               ],
@@ -3133,7 +3180,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
       final iniMin = ini.hour * 60 + ini.minute;
       final finMin = fin.hour * 60 + fin.minute;
       if (finMin <= iniMin) continue;
-      minInicio = minInicio == null ? iniMin : (iniMin < minInicio ? iniMin : minInicio);
+      minInicio = minInicio == null
+          ? iniMin
+          : (iniMin < minInicio ? iniMin : minInicio);
       maxFin = maxFin == null ? finMin : (finMin > maxFin ? finMin : maxFin);
     }
     if (minInicio == null || maxFin == null) return const [];
@@ -3557,23 +3606,22 @@ class _CronogramaPageState extends State<CronogramaPage> {
           descripcion: (item['descripcion'] ?? '—').toString(),
           estado: 'Reprogramada',
           color: Colors.blue.shade700,
-          detalle:
-              (() {
-                final desplazadas =
-                    ((item['tareasDesplazadas'] as List?) ?? const [])
-                        .map((e) => Map<String, dynamic>.from(e as Map))
-                        .toList();
-                if (desplazadas.isEmpty) {
-                  return 'Se ubicó en un hueco libre, sin desplazar tareas.';
-                }
-                return desplazadas
-                    .map(
-                      (d) =>
-                          '${d['descripcion'] ?? '—'} '
-                          '(${(d['accion'] ?? '').toString().toLowerCase()})',
-                    )
-                    .join(' · ');
-              })(),
+          detalle: (() {
+            final desplazadas =
+                ((item['tareasDesplazadas'] as List?) ?? const [])
+                    .map((e) => Map<String, dynamic>.from(e as Map))
+                    .toList();
+            if (desplazadas.isEmpty) {
+              return 'Se ubicó en un hueco libre, sin desplazar tareas.';
+            }
+            return desplazadas
+                .map(
+                  (d) =>
+                      '${d['descripcion'] ?? '—'} '
+                      '(${(d['accion'] ?? '').toString().toLowerCase()})',
+                )
+                .join(' · ');
+          })(),
           responsable: actorDe(item),
         ),
       for (final item in excepciones)
@@ -3591,8 +3639,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
           descripcion: (item['descripcion'] ?? '—').toString(),
           estado: 'Pendiente',
           color: Colors.red.shade700,
-          detalle:
-              (item['motivoMensaje'] ?? item['motivoTipo'] ?? '—').toString(),
+          detalle: (item['motivoMensaje'] ?? item['motivoTipo'] ?? '—')
+              .toString(),
           responsable: '—',
         ),
     ];
@@ -3663,9 +3711,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: DataTable(
-              headingRowColor: WidgetStatePropertyAll(
-                Colors.blueGrey.shade50,
-              ),
+              headingRowColor: WidgetStatePropertyAll(Colors.blueGrey.shade50),
               headingTextStyle: TextStyle(
                 color: Colors.blueGrey.shade900,
                 fontWeight: FontWeight.w800,
@@ -4295,38 +4341,103 @@ class _CronogramaPageState extends State<CronogramaPage> {
     final showSidebar = w >= 1100;
 
     if (!showSidebar) {
+      // El supervisor no necesita el resumen de horas por operario (es
+      // información de gestión, no algo que use para cerrar tareas), pero
+      // sí necesita los filtros (operario, ubicación, estado...) para poder
+      // ubicar rápido a quién le va a cerrar una tarea; en desktop esos
+      // filtros solo viven dentro del sidebar "Resumen", que en móvil no se
+      // muestra en absoluto, así que aquí se exponen aparte.
+      final esSupervisor = _rolActual == 'supervisor';
       return Column(
         children: [
-          _buildResumenHorasSemanaCard(
-            resumenSemana,
-            resumenOperarios,
-            compact: true,
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              // Colapsado por defecto en móvil/tablet: en pantallas chicas
+              // los filtros desplegados empujan la agenda/cuadrícula fuera
+              // de la vista inicial. El usuario los expande si los necesita.
+              initiallyExpanded: false,
+              title: const Text(
+                'Filtros',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+              ),
+              childrenPadding: const EdgeInsets.only(bottom: 8),
+              children: [_buildFiltrosComoColumna(mostrarTitulo: false)],
+            ),
+          ),
+          if (!esSupervisor) ...[
+            _buildResumenHorasSemanaCard(
+              resumenSemana,
+              resumenOperarios,
+              compact: true,
+            ),
+            const SizedBox(height: 10),
+          ],
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                value: true,
+                label: Text('Agenda'),
+                icon: Icon(Icons.view_agenda_outlined),
+              ),
+              ButtonSegment(
+                value: false,
+                label: Text('Cuadrícula'),
+                icon: Icon(Icons.grid_on_outlined),
+              ),
+            ],
+            selected: {_vistaAgendaEnMovil},
+            onSelectionChanged: (value) =>
+                setState(() => _vistaAgendaEnMovil = value.first),
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: _WeekScheduleView(
-              weekStart: weekStart,
-              tareas: tareas,
-              agruparSuperposiciones: _filtroOperario == 'TODOS',
-              horariosConjunto: _horariosConjunto,
-              scaleMinutes: _escalaSemanalMinutos,
-              horaInicio: _horaInicioJornada,
-              horaFin: _horaFinJornada,
-              horaDescansoInicio: _horaDescansoInicio,
-              horaDescansoFin: _horaDescansoFin,
-              esFestivo: _esFestivo,
-              nombreFestivo: _nombreFestivo,
-              onTapTarea: (t) => _mostrarDetalleTarea(t, context),
-              onTapEmptySlot: _canScheduleCorrectivasInCronograma
-                  ? _abrirProgramarCorrectivaModal
-                  : null,
-              onMoveCorrectiva: _canScheduleCorrectivasInCronograma
-                  ? _moverCorrectivaDesdeCronograma
-                  : null,
-              onProgramExcluidaComoCorrectiva: _canViewExcluidasStandby
-                  ? _programarExcluidaComoCorrectiva
-                  : null,
-            ),
+            child: _vistaAgendaEnMovil
+                ? _SidebarAgendaDia(
+                    weekStart: weekStart,
+                    dayIndex: _sidebarDiaIndex,
+                    onDayIndexChanged: (value) =>
+                        setState(() => _sidebarDiaIndex = value),
+                    modo: _sidebarAgendaModo,
+                    onModoChanged: _canViewExcluidasStandby
+                        ? (value) => setState(() => _sidebarAgendaModo = value)
+                        : null,
+                    verExcluidasMes: _sidebarVerExcluidasMes,
+                    onVerExcluidasMesChanged: (value) =>
+                        setState(() => _sidebarVerExcluidasMes = value),
+                    tareasSemana: tareas,
+                    excluidasMes: _excluidasFiltradas,
+                    excluirPorFecha: _excluidasPorFecha,
+                    onTapTarea: (t) => _mostrarDetalleTarea(t, context),
+                    onTapExcluida: _canViewExcluidasStandby
+                        ? (item) =>
+                              _mostrarDetalleExcluidaStandby(item, context)
+                        : null,
+                  )
+                : _WeekScheduleView(
+                    weekStart: weekStart,
+                    tareas: tareas,
+                    agruparSuperposiciones: _filtroOperario == 'TODOS',
+                    horariosConjunto: _horariosConjunto,
+                    scaleMinutes: _escalaSemanalMinutos,
+                    horaInicio: _horaInicioJornada,
+                    horaFin: _horaFinJornada,
+                    horaDescansoInicio: _horaDescansoInicio,
+                    horaDescansoFin: _horaDescansoFin,
+                    esFestivo: _esFestivo,
+                    nombreFestivo: _nombreFestivo,
+                    onTapTarea: (t) => _mostrarDetalleTarea(t, context),
+                    onTapEmptySlot: _canScheduleCorrectivasInCronograma
+                        ? _abrirProgramarCorrectivaModal
+                        : null,
+                    onMoveCorrectiva: _canScheduleCorrectivasInCronograma
+                        ? _moverCorrectivaDesdeCronograma
+                        : null,
+                    onProgramExcluidaComoCorrectiva: _canViewExcluidasStandby
+                        ? _programarExcluidaComoCorrectiva
+                        : null,
+                  ),
           ),
         ],
       );
@@ -4398,28 +4509,85 @@ class _CronogramaPageState extends State<CronogramaPage> {
           ),
         ),
         const SizedBox(width: 10),
-        Expanded(
-          flex: 4,
-          child: _SidebarAgendaDia(
-            weekStart: weekStart,
-            dayIndex: _sidebarDiaIndex,
-            onDayIndexChanged: (value) =>
-                setState(() => _sidebarDiaIndex = value),
-            modo: _sidebarAgendaModo,
-            onModoChanged: _canViewExcluidasStandby
-                ? (value) => setState(() => _sidebarAgendaModo = value)
-                : null,
-            verExcluidasMes: _sidebarVerExcluidasMes,
-            onVerExcluidasMesChanged: (value) =>
-                setState(() => _sidebarVerExcluidasMes = value),
-            tareasSemana: tareas,
-            excluidasMes: _excluidasFiltradas,
-            excluirPorFecha: _excluidasPorFecha,
-            onTapTarea: (t) => _mostrarDetalleTarea(t, context),
-            onTapExcluida: _canViewExcluidasStandby
-                ? (item) => _mostrarDetalleExcluidaStandby(item, context)
-                : null,
-          ),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          width: _sidebarAgendaColapsada ? 76 : 360,
+          child: _sidebarAgendaColapsada
+              ? Card(
+                  color: Colors.white,
+                  elevation: 1,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Agenda del día',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        IconButton(
+                          tooltip: 'Expandir agenda del día',
+                          onPressed: () =>
+                              setState(() => _sidebarAgendaColapsada = false),
+                          icon: const Icon(
+                            Icons.keyboard_double_arrow_left_rounded,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : Column(
+                  children: [
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        tooltip: 'Colapsar agenda del día',
+                        onPressed: () =>
+                            setState(() => _sidebarAgendaColapsada = true),
+                        icon: const Icon(
+                          Icons.keyboard_double_arrow_right_rounded,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: _SidebarAgendaDia(
+                        weekStart: weekStart,
+                        dayIndex: _sidebarDiaIndex,
+                        onDayIndexChanged: (value) =>
+                            setState(() => _sidebarDiaIndex = value),
+                        modo: _sidebarAgendaModo,
+                        onModoChanged: _canViewExcluidasStandby
+                            ? (value) =>
+                                  setState(() => _sidebarAgendaModo = value)
+                            : null,
+                        verExcluidasMes: _sidebarVerExcluidasMes,
+                        onVerExcluidasMesChanged: (value) => setState(
+                          () => _sidebarVerExcluidasMes = value,
+                        ),
+                        tareasSemana: tareas,
+                        excluidasMes: _excluidasFiltradas,
+                        excluirPorFecha: _excluidasPorFecha,
+                        onTapTarea: (t) => _mostrarDetalleTarea(t, context),
+                        onTapExcluida: _canViewExcluidasStandby
+                            ? (item) => _mostrarDetalleExcluidaStandby(
+                                item,
+                                context,
+                              )
+                            : null,
+                      ),
+                    ),
+                  ],
+                ),
         ),
       ],
     );
@@ -6020,8 +6188,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   // marcador nunca queda vacío/ilegible como
                                   // antes cuando el solape era muy corto.
                                   final compactMarker = markerHeight < 58;
-                                  final ultraCompactMarker =
-                                      markerHeight < 40;
+                                  final ultraCompactMarker = markerHeight < 40;
                                   final markerPadding = ultraCompactMarker
                                       ? const EdgeInsets.fromLTRB(6, 3, 6, 3)
                                       : const EdgeInsets.fromLTRB(8, 7, 8, 7);
@@ -6057,9 +6224,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                           children: [
                                             Row(
                                               children: [
-                                                ...List.generate(dotCount, (
-                                                  i,
-                                                ) {
+                                                ...List.generate(dotCount, (i) {
                                                   return Container(
                                                     width: 10,
                                                     height: 10,
@@ -6100,8 +6265,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                           ? 'Tareas solapadas'
                                                           : 'Superposicion detectada',
                                                       maxLines: 1,
-                                                      overflow: TextOverflow
-                                                          .ellipsis,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
                                                       style: TextStyle(
                                                         color: text,
                                                         fontSize: 11,
@@ -6118,8 +6283,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                               Text(
                                                 'Aqui hay ${placement.groupSize} tareas superpuestas. Filtra por operario para verlo mejor.',
                                                 maxLines: 1,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
+                                                overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
                                                   color: subtext,
                                                   fontSize: 10,
@@ -6132,8 +6296,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                               Text(
                                                 '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra más' : ''}'}',
                                                 maxLines: 1,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
+                                                overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
                                                   color: subtext,
                                                   fontSize: 10,
@@ -6249,7 +6412,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                 right: 0,
                                                 top: 0,
                                                 child: Tooltip(
-                                                  message: t
+                                                  message:
+                                                      t
                                                           .necesidadesEtiquetas
                                                           .isEmpty
                                                       ? 'Fuera del horario general del conjunto (horario especial de la plaza)'
@@ -6539,7 +6703,7 @@ class _SidebarSimple extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        collapsed ? 'Filtros' : title,
+                        title,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
@@ -6549,8 +6713,8 @@ class _SidebarSimple extends StatelessWidget {
                     ),
                     IconButton(
                       tooltip: collapsed
-                          ? 'Expandir filtros'
-                          : 'Colapsar filtros',
+                          ? 'Expandir $title'
+                          : 'Colapsar $title',
                       onPressed: onToggle,
                       icon: Icon(
                         collapsed

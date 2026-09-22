@@ -57,8 +57,7 @@ class NecesidadesOperativasCard extends StatefulWidget {
       _NecesidadesOperativasCardState();
 }
 
-class _NecesidadesOperativasCardState
-    extends State<NecesidadesOperativasCard> {
+class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
   final ConjuntoApi _api = ConjuntoApi();
   late Future<List<NecesidadOperario>> _future;
 
@@ -120,7 +119,9 @@ class _NecesidadesOperativasCardState
                   ),
                   PopupMenuItem(
                     value: 'vincular',
-                    child: Text('2. Vincular preventivas existentes a esas plazas'),
+                    child: Text(
+                      '2. Vincular preventivas existentes a esas plazas',
+                    ),
                   ),
                 ],
               ),
@@ -185,9 +186,13 @@ class _NecesidadesOperativasCardState
               Expanded(
                 child: Row(
                   children: [
-                    Text(
-                      n.etiqueta,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    Flexible(
+                      child: Text(
+                        n.etiqueta,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
                     ),
                     const SizedBox(width: 6),
                     Container(
@@ -240,26 +245,41 @@ class _NecesidadesOperativasCardState
               Expanded(
                 child: Text(
                   n.ocupada ? (n.operarioNombre ?? n.operarioId!) : 'Vacante',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: n.ocupada ? Colors.black87 : Colors.grey.shade600,
                     fontStyle: n.ocupada ? FontStyle.normal : FontStyle.italic,
                   ),
                 ),
               ),
-              if (n.ocupada) ...[
-                TextButton(
-                  onPressed: () => _cambiarVacante(n, todas),
-                  child: const Text('Cambiar vacante'),
+              // Flexible+Wrap: un nombre largo + "Cambiar vacante"+"Liberar"
+              // (sobre todo con letra grande de accesibilidad) puede pedir
+              // más ancho del que queda; así los botones se envuelven en
+              // vez de desbordar.
+              Flexible(
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    if (n.ocupada) ...[
+                      TextButton(
+                        onPressed: () => _cambiarVacante(n, todas),
+                        child: const Text('Cambiar vacante'),
+                      ),
+                      TextButton(
+                        onPressed: () => _liberar(n),
+                        child: const Text('Liberar'),
+                      ),
+                    ] else
+                      TextButton(
+                        onPressed: () => _mostrarAsignarOperario(n, todas),
+                        child: const Text('Asignar'),
+                      ),
+                  ],
                 ),
-                TextButton(
-                  onPressed: () => _liberar(n),
-                  child: const Text('Liberar'),
-                ),
-              ] else
-                TextButton(
-                  onPressed: () => _mostrarAsignarOperario(n, todas),
-                  child: const Text('Asignar'),
-                ),
+              ),
             ],
           ),
           if (n.horarioEspecial && n.horarios.isNotEmpty) ...[
@@ -312,7 +332,8 @@ class _NecesidadesOperativasCardState
     // tenerlos TODOS (igual que valida el backend).
     final candidatos = widget.operariosCatalogo
         .where(
-          (o) => n.roles.every((r) => (o.tipoFunciones ?? const []).contains(r)),
+          (o) =>
+              n.roles.every((r) => (o.tipoFunciones ?? const []).contains(r)),
         )
         .toList();
 
@@ -685,10 +706,10 @@ class _NecesidadesOperativasCardState
   }
 
   Future<void> _mostrarFormulario({NecesidadOperario? existente}) async {
-    final etiquetaCtrl = TextEditingController(
-      text: existente?.etiqueta ?? '',
-    );
-    final roles = <String>{...(existente?.roles ?? [_rolesNecesidad[0]])};
+    final etiquetaCtrl = TextEditingController(text: existente?.etiqueta ?? '');
+    final roles = <String>{
+      ...(existente?.roles ?? [_rolesNecesidad[0]]),
+    };
     bool horarioEspecial = existente?.horarioEspecial ?? false;
     final horariosPorDia = <String, _DiaHorarioEdit>{
       for (final d in _diasSemanaNecesidad) d: _DiaHorarioEdit(),
@@ -711,7 +732,9 @@ class _NecesidadesOperativasCardState
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(existente == null ? 'Agregar necesidad' : 'Editar necesidad'),
+          title: Text(
+            existente == null ? 'Agregar necesidad' : 'Editar necesidad',
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -784,9 +807,8 @@ class _NecesidadesOperativasCardState
                             children: [
                               Checkbox(
                                 value: h.activo,
-                                onChanged: (v) => setDialogState(
-                                  () => h.activo = v ?? false,
-                                ),
+                                onChanged: (v) =>
+                                    setDialogState(() => h.activo = v ?? false),
                               ),
                               Text(dia, style: const TextStyle(fontSize: 12)),
                             ],
@@ -906,7 +928,12 @@ class _NecesidadesOperativasCardState
     }
     final horarios = horarioEspecial
         ? horariosPorDia.entries
-              .where((e) => e.value.activo && e.value.apertura != null && e.value.cierre != null)
+              .where(
+                (e) =>
+                    e.value.activo &&
+                    e.value.apertura != null &&
+                    e.value.cierre != null,
+              )
               .map(
                 (e) => HorarioConjunto(
                   dia: e.key,

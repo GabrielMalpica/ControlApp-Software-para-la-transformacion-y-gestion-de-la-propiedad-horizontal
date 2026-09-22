@@ -19,6 +19,7 @@ import '../service/permission_service.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import '../widgets/cerrar_tarea_sheet.dart';
 import '../widgets/cierres_pendientes_sheet.dart';
+import '../widgets/corregir_cierre_sheet.dart';
 import 'crear_tarea_page.dart';
 import 'editar_tarea_page.dart';
 
@@ -497,12 +498,28 @@ class _TareasPageState extends State<TareasPage> {
                       onPressed: () => _cerrarComoOperario(t),
                     )
                   : const Icon(Icons.chevron_right, color: Colors.black38))
-            : (_canManageTasks
-                  ? IconButton(
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (puedeCorregirCierre(t))
+                    IconButton(
+                      tooltip: 'Corregir cierre',
+                      icon: const Icon(Icons.edit_note),
+                      onPressed: () async {
+                        final corregido = await abrirCorregirCierre(
+                          context,
+                          tareaId: t.id,
+                        );
+                        if (corregido) _cargarTareas();
+                      },
+                    ),
+                  if (_canManageTasks)
+                    IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
                       onPressed: () => _eliminarTarea(t),
-                    )
-                  : null),
+                    ),
+                ],
+              ),
         onTap: _esOperario()
             ? () => _abrirDetalleTarea(t)
             : (_canManageTasks

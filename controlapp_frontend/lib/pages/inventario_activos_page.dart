@@ -1,11 +1,16 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/api/inventario_activo_api.dart';
 import 'package:flutter_application_1/model/inventario_activo_model.dart';
+import 'package:flutter_application_1/pdf/acta_inventario_pdf.dart';
+import 'package:flutter_application_1/pdf/pdf_actions.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/permission_service.dart';
+import 'package:flutter_application_1/utils/pickers/camera_capture_bridge.dart';
+import 'package:flutter_application_1/utils/pickers/clipboard_image_capture_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 import 'package:intl/intl.dart';
 
@@ -44,6 +49,7 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
   String? _approval;
   int _total = 0;
   int _page = 1;
+  bool _generatingActa = false;
 
   static const _pageSize = 50;
 
@@ -51,6 +57,7 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
       PermissionService.instance.hasAnyRole(const [
         'gerente',
         'jefe_operaciones',
+        'supervisor',
       ]) &&
       PermissionService.instance.canAny(const [
         'maquinaria.aprobar',
@@ -71,6 +78,16 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
 
   bool get _canLoan =>
       _approver && PermissionService.instance.can('$_prefix.prestar');
+
+  bool get _canDelete =>
+      PermissionService.instance.hasAnyRole(const ['gerente']);
+
+  bool get _canDownloadActa =>
+      widget.conjuntoId != null &&
+      PermissionService.instance.hasAnyRole(const [
+        'gerente',
+        'jefe_operaciones',
+      ]);
 
   @override
   void initState() {
@@ -354,6 +371,36 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
     );
   }
 
+  Future<void> _deleteAsset(ActivoInventario item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Eliminar del inventario'),
+        content: Text(
+          'Se eliminará "${item.alias?.isNotEmpty == true ? item.alias! : item.codigoInterno}" '
+          'del inventario. Esta acción no se puede deshacer y solo debe usarse '
+          'si el registro se creó por error.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _action(
+      () => _api.eliminar(item.clase, item.id),
+      'Activo eliminado del inventario.',
+    );
+  }
+
   void _showPhoto(ActivoInventario item) {
     showDialog<void>(
       context: context,
@@ -420,11 +467,43 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
       ),
     );
     if (state == null) return;
+    String? condicion;
+    if (state == 'OPERATIVA') {
+      condicion = await _askCondicion();
+      if (condicion == null) return;
+    }
     final reason = await _ask('Justificación', 'Motivo del cambio');
     if (reason == null) return;
     await _action(
-      () => _api.cambiarEstado(item.clase, item.id, state, reason),
+      () => _api.cambiarEstado(
+        item.clase,
+        item.id,
+        state,
+        reason,
+        condicion: condicion,
+      ),
       'Estado actualizado.',
+    );
+  }
+
+  Future<String?> _askCondicion() {
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('¿Nueva o usada?'),
+        children: [
+          ListTile(
+            leading: const Icon(Icons.fiber_new_outlined),
+            title: const Text('Nueva'),
+            onTap: () => Navigator.pop(dialogContext, 'NUEVA'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.history_outlined),
+            title: const Text('Usada'),
+            onTap: () => Navigator.pop(dialogContext, 'USADA'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -481,6 +560,7 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
         if (choice.model.isNotEmpty) 'modelo': choice.model,
         if (choice.serial.isNotEmpty) 'serial': choice.serial,
         if (choice.alias.isNotEmpty) 'alias': choice.alias,
+        'condicion': choice.condicion,
       };
       final created = await _api.crear(
         empresaId: widget.empresaId,
@@ -509,6 +589,64 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
         context,
         SnackBar(content: Text(AppError.messageOf(error))),
       );
+    }
+  }
+
+  Future<List<ActivoInventario>> _listarTodo(
+    String conjuntoId,
+    ClaseActivoInventario clase,
+  ) async {
+    const pageSize = 100;
+    final items = <ActivoInventario>[];
+    var page = 1;
+    while (true) {
+      final result = await _api.listar(
+        empresaId: widget.empresaId,
+        clase: clase,
+        conjuntoId: conjuntoId,
+        propietario: 'CONJUNTO',
+        aprobacion: 'APROBADA',
+        page: page,
+        pageSize: pageSize,
+      );
+      items.addAll(result.data);
+      if (items.length >= result.total || result.data.isEmpty) break;
+      page++;
+    }
+    return items;
+  }
+
+  Future<void> _downloadActa() async {
+    final conjuntoId = widget.conjuntoId;
+    if (conjuntoId == null || _generatingActa) return;
+    setState(() => _generatingActa = true);
+    try {
+      final conjunto = await GerenteApi().obtenerConjunto(conjuntoId);
+      final maquinaria = await _listarTodo(
+        conjuntoId,
+        ClaseActivoInventario.maquinaria,
+      );
+      final herramientas = await _listarTodo(
+        conjuntoId,
+        ClaseActivoInventario.herramienta,
+      );
+      final bytes = await buildActaInventarioPdf(
+        empresaNit: widget.empresaId,
+        conjuntoNombre: conjunto.nombre,
+        conjuntoNit: conjunto.nit,
+        administradorNombre: conjunto.administradorNombre,
+        maquinaria: maquinaria,
+        herramientas: herramientas,
+      );
+      await openOrDownloadPdf(bytes, 'acta_inventario_${conjunto.nit}.pdf');
+    } catch (error) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text(AppError.messageOf(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _generatingActa = false);
     }
   }
 
@@ -600,6 +738,7 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
                         'Devolución registrada.',
                       );
                     }
+                    if (action == 'delete') _deleteAsset(item);
                   },
                   itemBuilder: (_) => [
                     if (editable)
@@ -634,6 +773,14 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
                         value: 'return',
                         child: Text('Registrar devolución'),
                       ),
+                    if (_canDelete)
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text(
+                          'Eliminar del inventario',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ),
                   ],
                 ),
               ],
@@ -643,6 +790,7 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
               runSpacing: 4,
               children: [
                 _tag(item.estado),
+                if (item.condicion != null) _tag(item.condicion!),
                 _tag(item.estadoAprobacion),
                 Chip(
                   visualDensity: VisualDensity.compact,
@@ -743,6 +891,19 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
               ? 'Inventario general de empresa'
               : 'Inventario del conjunto',
         ),
+        actions: [
+          if (_canDownloadActa)
+            IconButton(
+              tooltip: 'Descargar acta de entrega de inventario',
+              onPressed: _generatingActa ? null : _downloadActa,
+              icon: _generatingActa
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.picture_as_pdf_outlined),
+            ),
+        ],
       ),
       floatingActionButton: _canCreate && !widget.soloPendientes
           ? FloatingActionButton.extended(
@@ -904,6 +1065,7 @@ class _CreateChoice {
   final String alias;
   final int quantity;
   final SelectedUploadFile? photo;
+  final String condicion;
 
   const _CreateChoice({
     required this.catalogId,
@@ -914,6 +1076,7 @@ class _CreateChoice {
     required this.alias,
     required this.quantity,
     required this.photo,
+    required this.condicion,
   });
 }
 
@@ -937,12 +1100,32 @@ class _CreateAssetSheetState extends State<_CreateAssetSheet> {
   late bool _newType;
   int? _catalogId;
   SelectedUploadFile? _photo;
+  String _condicion = 'NUEVA';
+
+  bool get _puedePegarImagen => kIsWeb && ClipboardImageCapture.isSupported;
+  ClipboardImageDispose? _disposeClipboardListener;
+  bool _esperandoPegado = false;
+
+  bool get _esMovil =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  // En web (celular/tablet abriendo la app desde el navegador) usamos un
+  // <input type="file" capture="environment"> que abre la cámara trasera
+  // directamente; no podemos confiar solo en `defaultTargetPlatform` porque
+  // iPadOS reporta un user-agent de escritorio y se detecta como macOS.
+  bool get _puedeTomarFoto => kIsWeb || _esMovil;
 
   @override
   void initState() {
     super.initState();
     _newType = widget.catalog.isEmpty;
     _catalogId = widget.catalog.isEmpty ? null : widget.catalog.first.id;
+    if (_puedePegarImagen) {
+      _disposeClipboardListener = ClipboardImageCapture.registerPasteListener(
+        _onClipboardImagePasted,
+      );
+    }
   }
 
   @override
@@ -953,7 +1136,32 @@ class _CreateAssetSheetState extends State<_CreateAssetSheet> {
     _serial.dispose();
     _alias.dispose();
     _quantity.dispose();
+    _disposeClipboardListener?.call();
     super.dispose();
+  }
+
+  void _activarPegado() {
+    setState(() => _esperandoPegado = true);
+    AppFeedback.showFromSnackBar(
+      context,
+      const SnackBar(
+        content: Text(
+          'Copia la imagen y presiona Ctrl+V dentro de esta ventana para adjuntarla.',
+        ),
+      ),
+    );
+  }
+
+  void _onClipboardImagePasted(SelectedUploadFile file) {
+    if (!mounted) return;
+    setState(() {
+      _photo = file;
+      _esperandoPegado = false;
+    });
+    AppFeedback.showFromSnackBar(
+      context,
+      const SnackBar(content: Text('Imagen pegada desde el portapapeles.')),
+    );
   }
 
   Future<void> _pickPhoto() async {
@@ -985,6 +1193,22 @@ class _CreateAssetSheetState extends State<_CreateAssetSheet> {
     });
   }
 
+  Future<void> _tomarFoto() async {
+    if (!_puedeTomarFoto) return;
+    try {
+      final captura = await CameraCapture.pickPhoto();
+      if (captura == null) return;
+      if (!mounted) return;
+      setState(() => _photo = captura);
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showFromSnackBar(
+        context,
+        SnackBar(content: Text('No se pudo abrir la cámara: $e')),
+      );
+    }
+  }
+
   void _submit() {
     final quantity = int.tryParse(_quantity.text) ?? 0;
     if (_newType && _proposed.text.trim().length < 2) return;
@@ -1006,6 +1230,7 @@ class _CreateAssetSheetState extends State<_CreateAssetSheet> {
             ? quantity
             : 1,
         photo: _photo,
+        condicion: _condicion,
       ),
     );
   }
@@ -1027,9 +1252,22 @@ class _CreateAssetSheetState extends State<_CreateAssetSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                isTool ? 'Registrar herramientas' : 'Registrar maquinaria',
-                style: Theme.of(context).textTheme.headlineSmall,
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Volver',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back),
+                  ),
+                  Expanded(
+                    child: Text(
+                      isTool
+                          ? 'Registrar herramientas'
+                          : 'Registrar maquinaria',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                  ),
+                ],
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -1097,10 +1335,63 @@ class _CreateAssetSheetState extends State<_CreateAssetSheet> {
                 decoration: const InputDecoration(labelText: 'Alias'),
               ),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: quantity == 1 ? _pickPhoto : null,
-                icon: const Icon(Icons.add_a_photo_outlined),
-                label: Text(_photo?.name ?? 'Fotografía opcional'),
+              const Text('Condición'),
+              const SizedBox(height: 6),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'NUEVA', label: Text('Nueva')),
+                  ButtonSegment(value: 'USADA', label: Text('Usada')),
+                ],
+                selected: {_condicion},
+                onSelectionChanged: (value) {
+                  setState(() => _condicion = value.first);
+                },
+              ),
+              const SizedBox(height: 12),
+              if (_puedePegarImagen && _esperandoPegado) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.blue.withValues(alpha: 0.22),
+                    ),
+                  ),
+                  child: const Text(
+                    'Modo pegado activo: copia la imagen y presiona Ctrl+V mientras este panel siga abierto.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: quantity == 1 ? _pickPhoto : null,
+                    icon: const Icon(Icons.add_a_photo_outlined),
+                    label: Text(
+                      _photo?.name ?? 'Adjuntar desde el dispositivo',
+                    ),
+                  ),
+                  if (_puedeTomarFoto)
+                    OutlinedButton.icon(
+                      onPressed: quantity == 1 ? _tomarFoto : null,
+                      icon: const Icon(Icons.photo_camera_outlined),
+                      label: const Text('Tomar foto'),
+                    ),
+                  if (_puedePegarImagen)
+                    OutlinedButton.icon(
+                      onPressed: quantity == 1 ? _activarPegado : null,
+                      icon: const Icon(Icons.content_paste_rounded),
+                      label: Text(
+                        _esperandoPegado ? 'Esperando Ctrl+V' : 'Pegar imagen',
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
               FilledButton.icon(

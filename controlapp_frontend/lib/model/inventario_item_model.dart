@@ -26,6 +26,12 @@ class InventarioItemResponse {
   /// aplica.
   final num? totalDisponible;
 
+  /// Trazabilidad de creación (solo se llena en insumos personalizados; el
+  /// catálogo de empresa no tiene un creador puntual).
+  final String? creadoPorId;
+  final String? creadoPorNombre;
+  final DateTime? creadoEn;
+
   InventarioItemResponse({
     required this.insumoId,
     required this.nombre,
@@ -37,6 +43,9 @@ class InventarioItemResponse {
     this.contenidoPorUnidad,
     this.unidadContenido,
     this.totalDisponible,
+    this.creadoPorId,
+    this.creadoPorNombre,
+    this.creadoEn,
   });
 
   static int _parseInt(dynamic v) {
@@ -108,6 +117,9 @@ class InventarioItemResponse {
       contenidoPorUnidad: _parseNumNullable(json['contenidoPorUnidad']),
       unidadContenido: json['unidadContenido']?.toString(),
       totalDisponible: _parseNumNullable(json['totalDisponible']),
+      creadoPorId: json['creadoPorId']?.toString(),
+      creadoPorNombre: json['creadoPorNombre']?.toString(),
+      creadoEn: DateTime.tryParse((json['creadoEn'] ?? '').toString()),
     );
   }
 
@@ -122,5 +134,8 @@ class InventarioItemResponse {
     'contenidoPorUnidad': contenidoPorUnidad,
     'unidadContenido': unidadContenido,
     'totalDisponible': totalDisponible,
+    'creadoPorId': creadoPorId,
+    'creadoPorNombre': creadoPorNombre,
+    'creadoEn': creadoEn?.toIso8601String(),
   };
 }

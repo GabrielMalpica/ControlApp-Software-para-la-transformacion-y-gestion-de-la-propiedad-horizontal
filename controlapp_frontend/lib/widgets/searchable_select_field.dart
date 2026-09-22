@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 class _SearchableClearSelection {
@@ -27,6 +29,7 @@ Future<T?> showSearchableSelectionSheet<T>({
   return showModalBottomSheet<T>(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
     builder: (context) {
       var query = '';
 
@@ -38,92 +41,102 @@ Future<T?> showSearchableSelectionSheet<T>({
             return haystack.contains(query.toLowerCase());
           }).toList();
 
-          return SafeArea(
-            child: Padding(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 16,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-              ),
-              child: SizedBox(
-                height: 520,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 12),
-                    TextField(
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        hintText: searchHint,
-                        prefixIcon: const Icon(Icons.search_rounded),
-                        suffixIcon: query.isEmpty
-                            ? null
-                            : IconButton(
-                                onPressed: () => setState(() => query = ''),
-                                icon: const Icon(Icons.close_rounded),
-                              ),
-                      ),
-                      onChanged: (value) => setState(() => query = value),
-                    ),
-                    const SizedBox(height: 12),
-                    if (clearOption != null)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(
-                          selectedValue == clearOption.value
-                              ? Icons.radio_button_checked_rounded
-                              : Icons.radio_button_off_rounded,
-                        ),
-                        title: Text(clearOption.label),
-                        subtitle: clearOption.subtitle == null
-                            ? null
-                            : Text(clearOption.subtitle!),
-                        onTap: () =>
-                            Navigator.of(context).pop(clearOption.value),
-                      ),
-                    Expanded(
-                      child: filtered.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'No hay resultados para esa búsqueda.',
-                              ),
-                            )
-                          : ListView.separated(
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, __) =>
-                                  const Divider(height: 1),
-                              itemBuilder: (context, index) {
-                                final option = filtered[index];
-                                final selected = option.value == selectedValue;
-                                return ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  leading: Icon(
-                                    selected
-                                        ? Icons.radio_button_checked_rounded
-                                        : Icons.radio_button_off_rounded,
-                                  ),
-                                  title: Text(
-                                    option.label,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  subtitle: option.subtitle == null
-                                      ? null
-                                      : Text(
-                                          option.subtitle!,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                  onTap: () =>
-                                      Navigator.of(context).pop(option.value),
-                                );
-                              },
+          // El alto disponible depende del teclado: si se calcula un alto
+          // fijo (como los 520 anteriores) y el teclado + el alto pedido
+          // superan el alto real de la pantalla, la hoja se dibuja saliendo
+          // por arriba y el buscador/las primeras filas quedan fuera del
+          // area visible aunque sigan "existiendo" en el layout: por eso en
+          // tablet/celular parecia que el buscador no filtraba y que había
+          // que hacer scroll para poder tocar un resultado.
+          final mq = MediaQuery.of(context);
+          final keyboardHeight = mq.viewInsets.bottom;
+          final availableHeight = mq.size.height - keyboardHeight;
+          final sheetHeight = math.min(520.0, availableHeight * 0.9);
+
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: keyboardHeight + 16,
+            ),
+            child: SizedBox(
+              height: sheetHeight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 12),
+                  TextField(
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: searchHint,
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: query.isEmpty
+                          ? null
+                          : IconButton(
+                              onPressed: () => setState(() => query = ''),
+                              icon: const Icon(Icons.close_rounded),
                             ),
                     ),
-                  ],
-                ),
+                    onChanged: (value) => setState(() => query = value),
+                  ),
+                  const SizedBox(height: 12),
+                  if (clearOption != null)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        selectedValue == clearOption.value
+                            ? Icons.radio_button_checked_rounded
+                            : Icons.radio_button_off_rounded,
+                      ),
+                      title: Text(clearOption.label),
+                      subtitle: clearOption.subtitle == null
+                          ? null
+                          : Text(clearOption.subtitle!),
+                      onTap: () =>
+                          Navigator.of(context).pop(clearOption.value),
+                    ),
+                  Expanded(
+                    child: filtered.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No hay resultados para esa búsqueda.',
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final option = filtered[index];
+                              final selected = option.value == selectedValue;
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(
+                                  selected
+                                      ? Icons.radio_button_checked_rounded
+                                      : Icons.radio_button_off_rounded,
+                                ),
+                                title: Text(
+                                  option.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                subtitle: option.subtitle == null
+                                    ? null
+                                    : Text(
+                                        option.subtitle!,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                onTap: () =>
+                                    Navigator.of(context).pop(option.value),
+                              );
+                            },
+                          ),
+                  ),
+                ],
               ),
             ),
           );

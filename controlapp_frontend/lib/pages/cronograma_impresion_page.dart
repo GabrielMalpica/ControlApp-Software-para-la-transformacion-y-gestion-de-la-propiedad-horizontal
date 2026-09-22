@@ -677,9 +677,18 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                 builder: (context, constraints) {
                   final totalWidth = constraints.maxWidth;
                   final spacing = 10.0;
-                  final cardWidth = (totalWidth - (spacing * 5)) / 6;
+                  // Esta vista replica cómo se ve la semana impresa (6
+                  // columnas fijas), así que en vez de encoger las tarjetas
+                  // hasta volverlas ilegibles en un teléfono, se respeta un
+                  // ancho mínimo legible y se habilita scroll horizontal.
+                  const minCardWidth = 140.0;
+                  final anchoNecesario = minCardWidth * 6 + spacing * 5;
+                  final cardWidth = totalWidth >= anchoNecesario
+                      ? (totalWidth - (spacing * 5)) / 6
+                      : minCardWidth;
+                  final necesitaScroll = totalWidth < anchoNecesario;
 
-                  return Row(
+                  final fila = Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: dias.asMap().entries.map((entry) {
                       final dia = entry.value;
@@ -900,6 +909,12 @@ class _CronogramaImpresionPageState extends State<CronogramaImpresionPage> {
                         ),
                       );
                     }).toList(),
+                  );
+
+                  if (!necesitaScroll) return fila;
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: fila,
                   );
                 },
               ),

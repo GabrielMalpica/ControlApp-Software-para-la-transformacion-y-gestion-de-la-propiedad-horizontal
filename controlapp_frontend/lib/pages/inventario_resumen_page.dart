@@ -30,6 +30,7 @@ class _InventarioResumenPageState extends State<InventarioResumenPage> {
       PermissionService.instance.hasAnyRole(const [
         'gerente',
         'jefe_operaciones',
+        'supervisor',
       ]) &&
       PermissionService.instance.canAny(const [
         'maquinaria.aprobar',

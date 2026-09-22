@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../service/theme.dart';
 import '../service/permission_service.dart';
@@ -6,7 +7,6 @@ import '../api/inventario_api.dart';
 import '../model/inventario_item_model.dart';
 import '../model/insumo_model.dart';
 import '../model/movimiento_insumo_model.dart';
-import 'solicitud_insumo_page.dart';
 
 // ✅ Imports herramientas
 import '../api/herramienta_api.dart';
@@ -15,6 +15,7 @@ import '../service/app_error.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
+import 'package:flutter_application_1/widgets/corregir_cierre_sheet.dart';
 
 enum TipoInventario { INSUMOS, HERRAMIENTAS }
 
@@ -40,8 +41,6 @@ class _InventarioPageState extends State<InventarioPage> {
   // ✅ Tipo actual
   TipoInventario _tipoInventario = TipoInventario.INSUMOS;
 
-  bool get _canCreateRequests =>
-      PermissionService.instance.can('solicitudes.crear');
   bool get _canViewTools => PermissionService.instance.canAny([
     'herramientas.ver',
     'herramientas.gestionar',
@@ -205,11 +204,8 @@ class _InventarioPageState extends State<InventarioPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => KardexInsumoPage(
-          nitConjunto: widget.nit,
-          api: _api,
-          item: item,
-        ),
+        builder: (_) =>
+            KardexInsumoPage(nitConjunto: widget.nit, api: _api, item: item),
       ),
     );
   }
@@ -528,73 +524,270 @@ class _InventarioPageState extends State<InventarioPage> {
       );
     }
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Una PaginatedDataTable de 6-7 columnas necesita scroll horizontal
+        // para llegar a "Acciones" en pantallas angostas, y en tablet/celular
+        // eso hace que los botones de esa columna queden fuera del area
+        // visible o sean dificiles de alcanzar con el dedo. Por debajo del
+        // breakpoint se usa una lista de tarjetas con los botones siempre
+        // visibles en vez de la tabla.
+        if (constraints.maxWidth < 900) {
+          // Column simple: si hay más insumos de los que caben en el alto
+          // acotado que da el Expanded padre, se desborda. El contenido
+          // desbordado se sigue pintando pero deja de ser clickeable (un
+          // Column/Flex no recorta ni redirige hit-testing más allá de su
+          // propio tamaño), así que los botones de las tarjetas de abajo
+          // dejaban de responder al toque aunque se vieran normales.
+          // ListView.builder soluciona esto porque scrollea en vez de
+          // desbordar.
+          return ListView.builder(
+            itemCount: filtrados.length,
+            itemBuilder: (_, i) => _insumoCard(filtrados[i]),
+          );
+        }
+
+        // OJO: PaginatedDataTable ya trae su propio SingleChildScrollView
+        // horizontal alrededor de la grilla (no del header/footer). Envolver
+        // el widget COMPLETO en otro SingleChildScrollView horizontal le da
+        // ancho infinito a su Card interno, y el header de PaginatedDataTable
+        // usa un Expanded ahí adentro: con ancho infinito eso revienta el
+        // layout (RenderFlex sin tamaño) y toda la tarjeta deja de recibir
+        // toques. Por eso acá NO se agrega scroll horizontal propio.
+        return Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: Colors.grey.shade300),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.grey.shade200),
+              child: PaginatedDataTable(
+                header: const Text(
+                  "Insumos",
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                showCheckboxColumn: false,
+                availableRowsPerPage: const [8, 10, 20, 50],
+                rowsPerPage: _rowsPerPage,
+                onRowsPerPageChanged: (v) {
+                  if (v == null) return;
+                  setState(() => _rowsPerPage = v);
+                },
+                sortColumnIndex: _sortColumnIndex,
+                sortAscending: _sortAscending,
+                columns: [
+                  DataColumn(
+                    label: const Text("Nombre"),
+                    onSort: (i, asc) =>
+                        _sort<String>(i, asc, (d) => d.nombre.toLowerCase()),
+                  ),
+                  DataColumn(
+                    label: const Text("Categoria"),
+                    onSort: (i, asc) => _sort<String>(
+                      i,
+                      asc,
+                      (d) => (d.categoria ?? '').toLowerCase(),
+                    ),
+                  ),
+                  DataColumn(
+                    label: const Text("Unidad"),
+                    onSort: (i, asc) =>
+                        _sort<String>(i, asc, (d) => d.unidad.toLowerCase()),
+                  ),
+                  DataColumn(
+                    numeric: true,
+                    label: const Text("Disponible"),
+                    onSort: (i, asc) => _sort<num>(i, asc, (d) => d.cantidad),
+                  ),
+                  const DataColumn(label: Text("Total disponible")),
+                  const DataColumn(label: Text("Estado")),
+                  if (_canManageInventory)
+                    const DataColumn(label: Text("Acciones")),
+                ],
+                source: _InventarioDataSource(
+                  data: filtrados,
+                  canManage: _canManageInventory,
+                  canManagePersonalizados: _canCrearInsumoPersonalizado,
+                  onAgregarStock: _agregarStockInsumo,
+                  onRegistrarSalida: _registrarSalidaInsumo,
+                  onVerKardex: _verKardexInsumo,
+                  onEditar: _editarInsumoPersonalizado,
+                  onEliminar: _confirmarEliminarInsumoPersonalizado,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _insumoCard(InventarioItemResponse inv) {
+    final statusTxt = inv.agotado
+        ? 'Agotado - comprar'
+        : (inv.estaBajo ? 'Stock bajo' : 'Disponible');
+    final statusColor = inv.agotado
+        ? const Color(0xFF8D2C21)
+        : (inv.estaBajo ? AppTheme.red : AppTheme.green);
+
+    final acciones = <Widget>[];
+    if (_canManageInventory) {
+      acciones.add(
+        OutlinedButton.icon(
+          onPressed: () => _agregarStockInsumo(inv),
+          icon: const Icon(Icons.add_box_outlined, size: 18),
+          label: const Text('Agregar stock'),
+        ),
+      );
+      acciones.add(
+        OutlinedButton.icon(
+          onPressed: () => _registrarSalidaInsumo(inv),
+          icon: const Icon(Icons.indeterminate_check_box_outlined, size: 18),
+          label: const Text('Registrar salida'),
+        ),
+      );
+      acciones.add(
+        OutlinedButton.icon(
+          onPressed: () => _verKardexInsumo(inv),
+          icon: const Icon(Icons.receipt_long_outlined, size: 18),
+          label: const Text('Ver kardex'),
+        ),
+      );
+      if (inv.personalizado && _canCrearInsumoPersonalizado) {
+        acciones.add(
+          OutlinedButton.icon(
+            onPressed: () => _editarInsumoPersonalizado(inv),
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            label: const Text('Editar'),
+          ),
+        );
+        acciones.add(
+          OutlinedButton.icon(
+            onPressed: () => _confirmarEliminarInsumoPersonalizado(inv),
+            icon: Icon(Icons.delete_outline, size: 18, color: AppTheme.red),
+            label: Text('Eliminar', style: TextStyle(color: AppTheme.red)),
+          ),
+        );
+      }
+    }
+
     return Card(
+      margin: const EdgeInsets.only(bottom: 10),
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(color: Colors.grey.shade300),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: SingleChildScrollView(
-          child: Theme(
-            data: Theme.of(
-              context,
-            ).copyWith(dividerColor: Colors.grey.shade200),
-            child: PaginatedDataTable(
-              header: const Text(
-                "Insumos",
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              showCheckboxColumn: false,
-              availableRowsPerPage: const [8, 10, 20, 50],
-              rowsPerPage: _rowsPerPage,
-              onRowsPerPageChanged: (v) {
-                if (v == null) return;
-                setState(() => _rowsPerPage = v);
-              },
-              sortColumnIndex: _sortColumnIndex,
-              sortAscending: _sortAscending,
-              columns: [
-                DataColumn(
-                  label: const Text("Nombre"),
-                  onSort: (i, asc) =>
-                      _sort<String>(i, asc, (d) => d.nombre.toLowerCase()),
-                ),
-                DataColumn(
-                  label: const Text("Categoria"),
-                  onSort: (i, asc) => _sort<String>(
-                    i,
-                    asc,
-                    (d) => (d.categoria ?? '').toLowerCase(),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (inv.estaBajo || inv.agotado) ...[
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    color: AppTheme.red,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Expanded(
+                  child: Text(
+                    inv.nombre,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
-                DataColumn(
-                  label: const Text("Unidad"),
-                  onSort: (i, asc) =>
-                      _sort<String>(i, asc, (d) => d.unidad.toLowerCase()),
-                ),
-                DataColumn(
-                  numeric: true,
-                  label: const Text("Disponible"),
-                  onSort: (i, asc) => _sort<num>(i, asc, (d) => d.cantidad),
-                ),
-                const DataColumn(label: Text("Total disponible")),
-                const DataColumn(label: Text("Estado")),
-                if (_canManageInventory) const DataColumn(label: Text("Acciones")),
+                if (inv.personalizado)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blueGrey.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Colors.blueGrey.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: const Text(
+                      'Personalizado',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.blueGrey,
+                      ),
+                    ),
+                  ),
               ],
-              source: _InventarioDataSource(
-                data: filtrados,
-                canManage: _canManageInventory,
-                canManagePersonalizados: _canCrearInsumoPersonalizado,
-                onAgregarStock: _agregarStockInsumo,
-                onRegistrarSalida: _registrarSalidaInsumo,
-                onVerKardex: _verKardexInsumo,
-                onEditar: _editarInsumoPersonalizado,
-                onEliminar: _confirmarEliminarInsumoPersonalizado,
-              ),
             ),
-          ),
+            const SizedBox(height: 4),
+            Text(
+              [
+                if ((inv.categoria ?? '').isNotEmpty) inv.categoria!,
+                inv.unidad.isEmpty ? null : inv.unidad,
+              ].whereType<String>().join(' · '),
+              style: const TextStyle(color: Colors.black54),
+            ),
+            if (inv.personalizado) ...[
+              const SizedBox(height: 2),
+              Text(
+                _trazabilidadTexto(inv),
+                style: const TextStyle(fontSize: 12, color: Colors.black45),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: statusColor.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Text(
+                    statusTxt,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text('Disponible: ${inv.disponibleTexto}'),
+                ),
+                if (inv.totalDisponibleTexto != null)
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text('Total: ${inv.totalDisponibleTexto}'),
+                  ),
+              ],
+            ),
+            if (acciones.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(spacing: 8, runSpacing: 8, children: acciones),
+            ],
+          ],
         ),
       ),
     );
@@ -616,50 +809,190 @@ class _InventarioPageState extends State<InventarioPage> {
       );
     }
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 900) {
+          // Ver comentario equivalente en _buildTablaInsumos: un Column sin
+          // scroll se desborda y el contenido desbordado deja de recibir
+          // toques aunque se siga viendo.
+          return ListView.builder(
+            itemCount: filtrados.length,
+            itemBuilder: (_, i) => _herramientaCard(filtrados[i]),
+          );
+        }
+
+        // Ver comentario equivalente en _buildTablaInsumos: no envolver
+        // PaginatedDataTable en otro SingleChildScrollView horizontal propio,
+        // ya trae el suyo alrededor de la grilla.
+        return Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: Colors.grey.shade300),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.grey.shade200),
+              child: PaginatedDataTable(
+                header: const Text(
+                  "Herramientas",
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                showCheckboxColumn: false,
+                availableRowsPerPage: const [8, 10, 20, 50],
+                rowsPerPage: _rowsPerPage,
+                onRowsPerPageChanged: (v) {
+                  if (v == null) return;
+                  setState(() => _rowsPerPage = v);
+                },
+                columns: const [
+                  DataColumn(label: Text("Nombre")),
+                  DataColumn(label: Text("Unidad")),
+                  DataColumn(label: Text("Propiedad")),
+                  DataColumn(numeric: true, label: Text("Disponible")),
+                  DataColumn(label: Text("Estado")),
+                  DataColumn(label: Text("Accion")),
+                ],
+                source: _HerramientaDataSource(
+                  data: filtrados,
+                  onDevolver: _canManageTools
+                      ? _devolverHerramientaPrestada
+                      : null,
+                  onCambiarEstado: _canManageTools
+                      ? _cambiarEstadoHerramientaPropia
+                      : null,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _herramientaCard(HerramientaStockResponse h) {
+    final estadoTxt = h.estado.label;
+    final estadoColor = (h.estado == EstadoHerramientaStock.OPERATIVA)
+        ? AppTheme.green
+        : (h.estado == EstadoHerramientaStock.DANADA)
+        ? AppTheme.red
+        : Colors.black54;
+    final tenenciaTxt = h.tipoTenencia == TipoTenenciaHerramienta.PRESTADA
+        ? 'Prestada por empresa'
+        : 'Propia del conjunto';
+    final tenenciaColor = h.tipoTenencia == TipoTenenciaHerramienta.PRESTADA
+        ? Colors.orange.shade700
+        : Colors.blueGrey;
+
+    final acciones = <Widget>[];
+    if (h.tipoTenencia == TipoTenenciaHerramienta.PROPIA &&
+        _canManageTools) {
+      acciones.add(
+        OutlinedButton.icon(
+          onPressed: () => _cambiarEstadoHerramientaPropia(h),
+          icon: const Icon(Icons.sync_alt_outlined, size: 18),
+          label: const Text('Cambiar estado'),
+        ),
+      );
+    }
+    if (h.tipoTenencia == TipoTenenciaHerramienta.PRESTADA &&
+        _canManageTools) {
+      acciones.add(
+        OutlinedButton.icon(
+          onPressed: () => _devolverHerramientaPrestada(h),
+          icon: const Icon(Icons.assignment_return_outlined, size: 18),
+          label: const Text('Devolver a empresa'),
+        ),
+      );
+    }
+
     return Card(
+      margin: const EdgeInsets.only(bottom: 10),
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(color: Colors.grey.shade300),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: SingleChildScrollView(
-          child: Theme(
-            data: Theme.of(
-              context,
-            ).copyWith(dividerColor: Colors.grey.shade200),
-            child: PaginatedDataTable(
-              header: const Text(
-                "Herramientas",
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              showCheckboxColumn: false,
-              availableRowsPerPage: const [8, 10, 20, 50],
-              rowsPerPage: _rowsPerPage,
-              onRowsPerPageChanged: (v) {
-                if (v == null) return;
-                setState(() => _rowsPerPage = v);
-              },
-              columns: const [
-                DataColumn(label: Text("Nombre")),
-                DataColumn(label: Text("Unidad")),
-                DataColumn(label: Text("Propiedad")),
-                DataColumn(numeric: true, label: Text("Disponible")),
-                DataColumn(label: Text("Estado")),
-                DataColumn(label: Text("Accion")),
-              ],
-              source: _HerramientaDataSource(
-                data: filtrados,
-                onDevolver: _canManageTools
-                    ? _devolverHerramientaPrestada
-                    : null,
-                onCambiarEstado: _canManageTools
-                    ? _cambiarEstadoHerramientaPropia
-                    : null,
-              ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              h.nombre,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
             ),
-          ),
+            if (h.unidad.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(h.unidad, style: const TextStyle(color: Colors.black54)),
+            ],
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: tenenciaColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: tenenciaColor.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Text(
+                    tenenciaTxt,
+                    style: TextStyle(
+                      color: tenenciaColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: estadoColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: estadoColor.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Text(
+                    estadoTxt,
+                    style: TextStyle(
+                      color: estadoColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text('Disponible: ${h.cantidad}'),
+                ),
+              ],
+            ),
+            if (h.empresaIdFuente != null && h.empresaIdFuente!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  h.empresaIdFuente!,
+                  style: const TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ),
+            if (acciones.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(spacing: 8, runSpacing: 8, children: acciones),
+            ],
+          ],
         ),
       ),
     );
@@ -766,11 +1099,15 @@ class _InventarioPageState extends State<InventarioPage> {
         child: Column(
           children: [
             // ===== Toolbar superior =====
-            Row(
+            // Wrap en vez de Row+Spacer: un Spacer no puede achicar el
+            // botón si su ancho supera un teléfono angosto.
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                const Spacer(),
                 if (_tipoInventario == TipoInventario.INSUMOS &&
-                    _canCrearInsumoPersonalizado) ...[
+                    _canCrearInsumoPersonalizado)
                   _ghostButton(
                     icon: Icons.add,
                     label: "Agregar insumo",
@@ -784,24 +1121,6 @@ class _InventarioPageState extends State<InventarioPage> {
                         ),
                       );
                       if (changed == true) _cargar();
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                if (_tipoInventario == TipoInventario.INSUMOS &&
-                    _canCreateRequests)
-                  _ghostButton(
-                    icon: Icons.add_shopping_cart_outlined,
-                    label: "Solicitar insumos",
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              SolicitudInsumoPage(conjuntoNit: widget.nit),
-                        ),
-                      );
-                      _cargar();
                     },
                   ),
                 if (_tipoInventario == TipoInventario.HERRAMIENTAS &&
@@ -880,50 +1199,75 @@ class _InventarioPageState extends State<InventarioPage> {
             ],
 
             // ===== Buscador + chips =====
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: TextField(
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(Icons.search),
-                        hintText: _tipoInventario == TipoInventario.INSUMOS
-                            ? "Buscar (nombre, categoría, unidad)"
-                            : "Buscar (nombre, unidad, estado, modo, origen)",
-                        filled: true,
-                        fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final buscador = SizedBox(
+                  height: 44,
+                  child: TextField(
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search),
+                      hintText: _tipoInventario == TipoInventario.INSUMOS
+                          ? "Buscar (nombre, categoría, unidad)"
+                          : "Buscar (nombre, unidad, estado, modo, origen)",
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                    ),
+                    onChanged: (v) => setState(() => _q = v),
+                  ),
+                );
+
+                final chips = _tipoInventario == TipoInventario.INSUMOS
+                    ? [
+                        _chipCount("Bajos", bajos, AppTheme.red),
+                        _chipCount("Agotados", agotados, Colors.black54),
+                      ]
+                    : [
+                        _chipCount("Operativas", operativas, AppTheme.green),
+                        _chipCount("Dañadas", danadas, AppTheme.red),
+                        _chipCount("Perdidas", perdidas, Colors.black54),
+                        _chipCount("Bajas", bajasHerr, Colors.black45),
+                      ];
+
+                // Con 4 chips + buscador, un Row fijo desborda en teléfonos
+                // angostos; ahí el buscador ocupa todo el ancho y los chips
+                // se envuelven en la línea de abajo.
+                if (constraints.maxWidth >= 560) {
+                  return Row(
+                    children: [
+                      Expanded(child: buscador),
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.end,
+                          children: chips,
                         ),
                       ),
-                      onChanged: (v) => setState(() => _q = v),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                if (_tipoInventario == TipoInventario.INSUMOS) ...[
-                  _chipCount("Bajos", bajos, AppTheme.red),
-                  const SizedBox(width: 8),
-                  _chipCount("Agotados", agotados, Colors.black54),
-                ] else ...[
-                  _chipCount("Operativas", operativas, AppTheme.green),
-                  const SizedBox(width: 8),
-                  _chipCount("Dañadas", danadas, AppTheme.red),
-                  const SizedBox(width: 8),
-                  _chipCount("Perdidas", perdidas, Colors.black54),
-                  const SizedBox(width: 8),
-                  _chipCount("Bajas", bajasHerr, Colors.black45),
-                ],
-              ],
+                    ],
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    buscador,
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 8, runSpacing: 8, children: chips),
+                  ],
+                );
+              },
             ),
 
             const SizedBox(height: 12),
@@ -939,6 +1283,15 @@ class _InventarioPageState extends State<InventarioPage> {
       ),
     );
   }
+}
+
+String _trazabilidadTexto(InventarioItemResponse inv) {
+  final nombre = inv.creadoPorNombre ?? inv.creadoPorId;
+  if (nombre == null) return 'Sin datos de registro';
+  final fecha = inv.creadoEn == null
+      ? ''
+      : ' · ${DateFormat('dd/MM/yyyy HH:mm').format(inv.creadoEn!)}';
+  return 'Registró: $nombre$fecha';
 }
 
 // ================= DataSource INSUMOS =================
@@ -1009,24 +1362,27 @@ class _InventarioDataSource extends DataTableSource {
               ),
               if (inv.personalizado) ...[
                 const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.blueGrey.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: Colors.blueGrey.withValues(alpha: 0.25),
+                Tooltip(
+                  message: _trazabilidadTexto(inv),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
                     ),
-                  ),
-                  child: const Text(
-                    'Personalizado',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.blueGrey,
+                    decoration: BoxDecoration(
+                      color: Colors.blueGrey.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Colors.blueGrey.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: const Text(
+                      'Personalizado',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.blueGrey,
+                      ),
                     ),
                   ),
                 ),
@@ -1077,7 +1433,10 @@ class _InventarioDataSource extends DataTableSource {
                       : () => onAgregarStock!(inv),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.indeterminate_check_box_outlined, size: 20),
+                  icon: const Icon(
+                    Icons.indeterminate_check_box_outlined,
+                    size: 20,
+                  ),
                   tooltip: 'Registrar salida',
                   onPressed: onRegistrarSalida == null
                       ? null
@@ -1094,9 +1453,7 @@ class _InventarioDataSource extends DataTableSource {
                   IconButton(
                     icon: const Icon(Icons.edit_outlined, size: 20),
                     tooltip: 'Editar',
-                    onPressed: onEditar == null
-                        ? null
-                        : () => onEditar!(inv),
+                    onPressed: onEditar == null ? null : () => onEditar!(inv),
                   ),
                   IconButton(
                     icon: Icon(
@@ -1913,7 +2270,8 @@ class _InsumoPersonalizadoDialogState
                         (c) => DropdownMenuItem(value: c, child: Text(c.label)),
                       )
                       .toList(),
-                  onChanged: (v) => setState(() => _categoria = v ?? _categoria),
+                  onChanged: (v) =>
+                      setState(() => _categoria = v ?? _categoria),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -1931,7 +2289,8 @@ class _InsumoPersonalizadoDialogState
                           ),
                           validator: (v) {
                             final parsed = num.tryParse((v ?? '').trim());
-                            if (parsed == null) return 'Ingresa un número válido';
+                            if (parsed == null)
+                              return 'Ingresa un número válido';
                             if (parsed < 0) return 'No puede ser negativo';
                             return null;
                           },
@@ -1989,7 +2348,9 @@ class _InsumoPersonalizadoDialogState
                   ),
                 )
               : Icon(_editando ? Icons.check : Icons.save),
-          label: Text(_saving ? 'Guardando...' : (_editando ? 'Actualizar' : 'Guardar')),
+          label: Text(
+            _saving ? 'Guardando...' : (_editando ? 'Actualizar' : 'Guardar'),
+          ),
           style: AppTheme.saveButtonStyle,
         ),
       ],
@@ -2054,7 +2415,10 @@ class _AgregarStockDialogState extends State<_AgregarStockDialog> {
             children: [
               Text(
                 widget.item.nombre,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
@@ -2124,8 +2488,7 @@ class _RegistrarSalidaDialog extends StatefulWidget {
   const _RegistrarSalidaDialog({required this.item});
 
   @override
-  State<_RegistrarSalidaDialog> createState() =>
-      _RegistrarSalidaDialogState();
+  State<_RegistrarSalidaDialog> createState() => _RegistrarSalidaDialogState();
 }
 
 class _RegistrarSalidaDialogState extends State<_RegistrarSalidaDialog> {
@@ -2201,7 +2564,10 @@ class _RegistrarSalidaDialogState extends State<_RegistrarSalidaDialog> {
             children: [
               Text(
                 widget.item.nombre,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
@@ -2379,7 +2745,9 @@ class _KardexInsumoPageState extends State<KardexInsumoPage> {
                   Center(
                     child: Text(
                       _error!,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                   ),
                 ],
@@ -2398,6 +2766,8 @@ class _KardexInsumoPageState extends State<KardexInsumoPage> {
                 itemBuilder: (_, i) {
                   final m = _movimientos[i];
                   final color = m.esEntrada ? AppTheme.green : AppTheme.red;
+                  final puedeCorregir = m.tareaId != null &&
+                      PermissionService.instance.can('tareas.editar_cierre');
                   return ListTile(
                     leading: Icon(
                       m.esEntrada
@@ -2406,23 +2776,44 @@ class _KardexInsumoPageState extends State<KardexInsumoPage> {
                       color: color,
                     ),
                     title: Text(
+                      '${m.esEntrada ? "ENTRADA" : "SALIDA"} · '
                       '${m.esEntrada ? "+" : "-"}${_cantidadMovimientoTexto(m)}',
-                      style: TextStyle(fontWeight: FontWeight.w700, color: color),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
                     ),
                     subtitle: Text(
                       [
+                        m.resumenResponsable,
                         _fecha(m.fecha),
-                        if (m.operario != null) 'Por ${m.operario}',
-                        if (m.tareaDescripcion != null)
-                          'Tarea: ${m.tareaDescripcion}',
-                        if (m.observacion != null && m.observacion!.isNotEmpty)
+                        if (m.observacion != null &&
+                            m.observacion!.isNotEmpty &&
+                            m.observacion != m.resumenResponsable)
                           m.observacion!,
                       ].join(' · '),
                     ),
-                    trailing: Text(
-                      'Saldo\n${_saldoTexto(m.saldo)}',
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(fontSize: 12),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (puedeCorregir)
+                          IconButton(
+                            tooltip: 'Corregir cierre de la tarea',
+                            icon: const Icon(Icons.edit_note, size: 20),
+                            onPressed: () async {
+                              final corregido = await abrirCorregirCierre(
+                                context,
+                                tareaId: m.tareaId!,
+                              );
+                              if (corregido) _cargar();
+                            },
+                          ),
+                        Text(
+                          'Saldo\n${_saldoTexto(m.saldo)}',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
                     ),
                     isThreeLine: true,
                   );

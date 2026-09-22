@@ -21,7 +21,7 @@ Future<bool> showMaquinariaConflictDialog(
     builder: (_) => AlertDialog(
       title: Text(fallbackTitle ?? payload.title),
       content: SizedBox(
-        width: 760,
+        width: (MediaQuery.sizeOf(context).width * 0.9).clamp(0, 760),
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

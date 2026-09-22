@@ -412,28 +412,33 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
               title: const Text('Seleccionar operarios'),
               content: SizedBox(
                 width: double.maxFinite,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _operarios.length,
-                  itemBuilder: (_, index) {
-                    final op = _operarios[index];
-                    final opId = op.cedula.trim();
-                    if (opId.isEmpty) return const SizedBox.shrink();
-                    final checked = seleccionTemp.contains(opId);
-                    return CheckboxListTile(
-                      value: checked,
-                      title: Text(op.nombre),
-                      subtitle: Text('Cédula: ${op.cedula}'),
-                      onChanged: (v) {
-                        if (v == true) {
-                          seleccionTemp.add(opId);
-                        } else {
-                          seleccionTemp.remove(opId);
-                        }
-                        setStateDialog(() {});
-                      },
-                    );
-                  },
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _operarios.length,
+                    itemBuilder: (_, index) {
+                      final op = _operarios[index];
+                      final opId = op.cedula.trim();
+                      if (opId.isEmpty) return const SizedBox.shrink();
+                      final checked = seleccionTemp.contains(opId);
+                      return CheckboxListTile(
+                        value: checked,
+                        title: Text(op.nombre),
+                        subtitle: Text('Cédula: ${op.cedula}'),
+                        onChanged: (v) {
+                          if (v == true) {
+                            seleccionTemp.add(opId);
+                          } else {
+                            seleccionTemp.remove(opId);
+                          }
+                          setStateDialog(() {});
+                        },
+                      );
+                    },
+                  ),
                 ),
               ),
               actions: [
@@ -492,42 +497,48 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
               title: const Text('Maquinaria a prestar'),
               content: SizedBox(
                 width: double.maxFinite,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      decoration: const InputDecoration(
-                        labelText: 'Buscar maquinaria',
-                        hintText: 'Nombre, marca o tipo',
-                        prefixIcon: Icon(Icons.search_rounded),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'Buscar maquinaria',
+                          hintText: 'Nombre, marca o tipo',
+                          prefixIcon: Icon(Icons.search_rounded),
+                        ),
+                        onChanged: (value) =>
+                            setStateDialog(() => query = value),
                       ),
-                      onChanged: (value) => setStateDialog(() => query = value),
-                    ),
-                    const SizedBox(height: 12),
-                    Flexible(
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: filtered.length,
-                        itemBuilder: (_, index) {
-                          final m = filtered[index];
-                          final checked = seleccionTemp.contains(m.id);
-                          return CheckboxListTile(
-                            value: checked,
-                            title: Text('${m.nombre} (${m.marca})'),
-                            subtitle: Text(m.tipo.label),
-                            onChanged: (v) {
-                              if (v == true) {
-                                seleccionTemp.add(m.id);
-                              } else {
-                                seleccionTemp.remove(m.id);
-                              }
-                              setStateDialog(() {});
-                            },
-                          );
-                        },
+                      const SizedBox(height: 12),
+                      Flexible(
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: filtered.length,
+                          itemBuilder: (_, index) {
+                            final m = filtered[index];
+                            final checked = seleccionTemp.contains(m.id);
+                            return CheckboxListTile(
+                              value: checked,
+                              title: Text('${m.nombre} (${m.marca})'),
+                              subtitle: Text(m.tipo.label),
+                              onChanged: (v) {
+                                if (v == true) {
+                                  seleccionTemp.add(m.id);
+                                } else {
+                                  seleccionTemp.remove(m.id);
+                                }
+                                setStateDialog(() {});
+                              },
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               actions: [
@@ -586,74 +597,80 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
               title: const Text('Herramientas para la tarea'),
               content: SizedBox(
                 width: double.maxFinite,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      decoration: const InputDecoration(
-                        labelText: 'Buscar herramienta',
-                        hintText: 'Nombre, unidad o categoria',
-                        prefixIcon: Icon(Icons.search_rounded),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        decoration: const InputDecoration(
+                          labelText: 'Buscar herramienta',
+                          hintText: 'Nombre, unidad o categoria',
+                          prefixIcon: Icon(Icons.search_rounded),
+                        ),
+                        onChanged: (value) =>
+                            setStateDialog(() => query = value),
                       ),
-                      onChanged: (value) => setStateDialog(() => query = value),
-                    ),
-                    const SizedBox(height: 12),
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Si hay stock propio del conjunto se usa primero. Si no alcanza, la reserva sale del stock de empresa.',
+                      const SizedBox(height: 12),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Si hay stock propio del conjunto se usa primero. Si no alcanza, la reserva sale del stock de empresa.',
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Flexible(
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: filtered.length,
-                        itemBuilder: (_, index) {
-                          final h = filtered[index];
-                          final actual = seleccionTemp[h.herramientaId];
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(h.nombre),
-                            subtitle: Text(
-                              '${h.categoria.label} · conjunto: ${h.disponibleConjunto} · empresa: ${h.disponibleEmpresa} · total: ${h.totalDisponible}',
-                            ),
-                            trailing: SizedBox(
-                              width: 96,
-                              child: TextFormField(
-                                initialValue: actual != null
-                                    ? actual.toString()
-                                    : '',
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: const InputDecoration(
-                                  labelText: 'Cant.',
-                                  border: OutlineInputBorder(),
-                                ),
-                                onChanged: (value) {
-                                  final parsed = num.tryParse(value.trim());
-                                  if (parsed == null || parsed <= 0) {
-                                    seleccionTemp.remove(h.herramientaId);
-                                  } else {
-                                    seleccionTemp[h.herramientaId] = parsed;
-                                  }
-                                },
+                      const SizedBox(height: 12),
+                      Flexible(
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: filtered.length,
+                          itemBuilder: (_, index) {
+                            final h = filtered[index];
+                            final actual = seleccionTemp[h.herramientaId];
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(h.nombre),
+                              subtitle: Text(
+                                '${h.categoria.label} · conjunto: ${h.disponibleConjunto} · empresa: ${h.disponibleEmpresa} · total: ${h.totalDisponible}',
                               ),
-                            ),
-                            isThreeLine: true,
-                            dense: false,
-                            leading: Icon(
-                              h.disponibleConjunto > 0
-                                  ? Icons.home_repair_service_outlined
-                                  : Icons.inventory_2_outlined,
-                            ),
-                          );
-                        },
+                              trailing: SizedBox(
+                                width: 96,
+                                child: TextFormField(
+                                  initialValue: actual != null
+                                      ? actual.toString()
+                                      : '',
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Cant.',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  onChanged: (value) {
+                                    final parsed = num.tryParse(value.trim());
+                                    if (parsed == null || parsed <= 0) {
+                                      seleccionTemp.remove(h.herramientaId);
+                                    } else {
+                                      seleccionTemp[h.herramientaId] = parsed;
+                                    }
+                                  },
+                                ),
+                              ),
+                              isThreeLine: true,
+                              dense: false,
+                              leading: Icon(
+                                h.disponibleConjunto > 0
+                                    ? Icons.home_repair_service_outlined
+                                    : Icons.inventory_2_outlined,
+                              ),
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               actions: [
@@ -1241,109 +1258,116 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
             title: Text(title ?? 'Elegir reemplazo de preventiva'),
             content: SizedBox(
               width: double.maxFinite,
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: opciones.length,
-                itemBuilder: (_, i) {
-                  final o = opciones[i];
-                  final critical = o['critical'] == true;
-                  final noticeOnly = o['noticeOnly'] == true;
-                  final prioridadObjetivo = _intValue(
-                    o['prioridadObjetivo'],
-                    fallback: 3,
-                  );
-                  final accent = _reemplazoAccentColor(
-                    critical: critical,
-                    noticeOnly: noticeOnly,
-                  );
-                  final soft = _reemplazoSoftColor(
-                    critical: critical,
-                    noticeOnly: noticeOnly,
-                  );
-                  final tareas = _parseReemplazoTareas(o['tareas']);
-                  final resumen = (o['resumen'] ?? 'Opcion ${i + 1}')
-                      .toString()
-                      .trim();
-                  final selected = selectedIndex == i;
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(ctx).height * 0.7,
+                ),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: opciones.length,
+                  itemBuilder: (_, i) {
+                    final o = opciones[i];
+                    final critical = o['critical'] == true;
+                    final noticeOnly = o['noticeOnly'] == true;
+                    final prioridadObjetivo = _intValue(
+                      o['prioridadObjetivo'],
+                      fallback: 3,
+                    );
+                    final accent = _reemplazoAccentColor(
+                      critical: critical,
+                      noticeOnly: noticeOnly,
+                    );
+                    final soft = _reemplazoSoftColor(
+                      critical: critical,
+                      noticeOnly: noticeOnly,
+                    );
+                    final tareas = _parseReemplazoTareas(o['tareas']);
+                    final resumen = (o['resumen'] ?? 'Opcion ${i + 1}')
+                        .toString()
+                        .trim();
+                    final selected = selectedIndex == i;
 
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: soft,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: selected
-                            ? accent
-                            : accent.withValues(alpha: 0.35),
-                        width: selected ? 2 : 1,
-                      ),
-                    ),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(14),
-                      onTap: () => setStateDialog(() => selectedIndex = i),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: soft,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: selected
+                              ? accent
+                              : accent.withValues(alpha: 0.35),
+                          width: selected ? 2 : 1,
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Icon(
-                                selected
-                                    ? Icons.radio_button_checked_rounded
-                                    : Icons.radio_button_off_rounded,
-                                color: accent,
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => setStateDialog(() => selectedIndex = i),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Icon(
+                                  selected
+                                      ? Icons.radio_button_checked_rounded
+                                      : Icons.radio_button_off_rounded,
+                                  color: accent,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    resumen,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.78,
-                                      ),
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Text(
-                                      _etiquetaSeveridadReemplazo(
-                                        critical: critical,
-                                        noticeOnly: noticeOnly,
-                                        prioridadObjetivo: prioridadObjetivo,
-                                      ),
-                                      style: TextStyle(
-                                        color: accent,
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      resumen,
+                                      style: const TextStyle(
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Text(_previewTareasReemplazo(tareas)),
-                                ],
+                                    const SizedBox(height: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.78,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        _etiquetaSeveridadReemplazo(
+                                          critical: critical,
+                                          noticeOnly: noticeOnly,
+                                          prioridadObjetivo: prioridadObjetivo,
+                                        ),
+                                        style: TextStyle(
+                                          color: accent,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(_previewTareasReemplazo(tareas)),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
             actions: [

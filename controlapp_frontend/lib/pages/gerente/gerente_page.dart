@@ -39,6 +39,7 @@ import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import 'package:flutter_application_1/widgets/perfil_action.dart';
+import 'package:flutter_application_1/widgets/responsive_appbar_actions.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
 import '../../service/theme.dart';
@@ -754,14 +755,33 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             PlanEsperanzaPage(nit: nit, nombreConjunto: nombreConjunto),
           ),
         ),
-        _Tile("Compromisos", Icons.checklist_rounded, Colors.indigo, () {
-          Navigator.push(
+        _Tile(
+          "Consignas especiales diarias",
+          Icons.checklist_rounded,
+          Colors.indigo,
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    CompromisosPage(nit: nit, nombreConjunto: nombreConjunto),
+              ),
+            );
+          },
+        ),
+        _Tile(
+          "Consignas especiales inicio contrato",
+          Icons.fact_check_outlined,
+          AppTheme.accent,
+          () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) =>
-                  CompromisosPage(nit: nit, nombreConjunto: nombreConjunto),
+              builder: (_) => ConsignasValorAgregadoPage(conjunto: conjunto),
             ),
-          );
+          ),
+        ),
+        _Tile("Mapa de areas", Icons.account_tree_outlined, Colors.teal, () {
+          _abrirYRecargar(MapaConjuntoPage(conjuntoNit: nit));
         }),
       ]),
       _TileSection("Planeacion y recursos", [
@@ -785,18 +805,23 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             ),
           );
         }),
-        _Tile("Inventario de insumos", Icons.inventory_2_outlined, Colors.teal, () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => InventarioPage(
-                nit: nit,
-                empresaId: AppConstants.empresaNit,
-                soloInsumos: true,
+        _Tile(
+          "Inventario de insumos",
+          Icons.inventory_2_outlined,
+          Colors.teal,
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => InventarioPage(
+                  nit: nit,
+                  empresaId: AppConstants.empresaNit,
+                  soloInsumos: true,
+                ),
               ),
-            ),
-          );
-        }),
+            );
+          },
+        ),
         _Tile(
           "Inventario de maquinaria",
           Icons.precision_manufacturing_outlined,
@@ -867,17 +892,6 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           );
         }),
         _Tile(
-          "Consignas especiales",
-          Icons.fact_check_outlined,
-          AppTheme.accent,
-          () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ConsignasValorAgregadoPage(conjunto: conjunto),
-            ),
-          ),
-        ),
-        _Tile(
           "Permisos por rol",
           Icons.admin_panel_settings_outlined,
           Colors.blueGrey,
@@ -886,9 +900,6 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             MaterialPageRoute(builder: (_) => const GestionPermisosPage()),
           ),
         ),
-        _Tile("Mapa de areas", Icons.account_tree_outlined, Colors.teal, () {
-          _abrirYRecargar(MapaConjuntoPage(conjuntoNit: nit));
-        }),
       ]),
       _TileSection("Analisis y control", [
         _Tile("Comprar insumos", Icons.storefront, AppTheme.primaryDark, () {
@@ -964,20 +975,17 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         }),
       ]),
       _TileSection("Asistencia", [
-        _Tile(
-          "Asistencia",
-          Icons.fact_check_outlined,
-          AppTheme.green,
-          () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    AsistenciaGridPage(conjuntoId: nit, conjuntoNombre: nombreConjunto),
+        _Tile("Asistencia", Icons.fact_check_outlined, AppTheme.green, () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AsistenciaGridPage(
+                conjuntoId: nit,
+                conjuntoNombre: nombreConjunto,
               ),
-            );
-          },
-        ),
+            ),
+          );
+        }),
         _Tile("Turnos extra", Icons.swap_horiz_rounded, AppTheme.primary, () {
           Navigator.push(
             context,
@@ -988,8 +996,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) =>
-                  AsistenciaQrPage(conjuntoId: nit, conjuntoNombre: nombreConjunto),
+              builder: (_) => AsistenciaQrPage(
+                conjuntoId: nit,
+                conjuntoNombre: nombreConjunto,
+              ),
             ),
           );
         }),
@@ -1004,27 +1014,29 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
       trailing: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 420;
+          // Sin Expanded aquí: cuando compact==true estas cards se apilan
+          // en un Column dentro de un LayoutBuilder con alto no acotado
+          // (el hero vive dentro de un scroll), y un Expanded ahí revienta
+          // con "incoming height constraints are unbounded". Expanded solo
+          // tiene sentido para repartir ANCHO en la fila horizontal.
           final cards = <Widget>[
-            Expanded(
-              child: DashboardStatusCard(
-                label: 'Conjuntos cargados',
-                value: _conjuntos.length.toString(),
-                icon: Icons.domain_rounded,
-                color: AppTheme.primary,
-              ),
+            DashboardStatusCard(
+              label: 'Conjuntos cargados',
+              value: _conjuntos.length.toString(),
+              icon: Icons.domain_rounded,
+              color: AppTheme.primary,
             ),
-            Expanded(
-              child: DashboardStatusCard(
-                label: 'Conjunto activo',
-                value: compact ? conjunto.nit : conjunto.nombre,
-                icon: Icons.apartment_rounded,
-                color: AppTheme.green,
-              ),
+            DashboardStatusCard(
+              label: 'Conjunto activo',
+              value: compact ? conjunto.nit : conjunto.nombre,
+              icon: Icons.apartment_rounded,
+              color: AppTheme.green,
             ),
           ];
 
           if (compact) {
             return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 cards[0],
                 const SizedBox(height: 12),
@@ -1034,7 +1046,11 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           }
 
           return Row(
-            children: <Widget>[cards[0], const SizedBox(width: 12), cards[1]],
+            children: <Widget>[
+              Expanded(child: cards[0]),
+              const SizedBox(width: 12),
+              Expanded(child: cards[1]),
+            ],
           );
         },
       ),
@@ -1101,50 +1117,58 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         title: const Text(
           "Panel del Gerente",
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          const PerfilAction(),
-          const NotificacionesAction(),
-          const CambiarContrasenaAction(),
-          IconButton(
-            tooltip: "Recargar conjuntos",
-            onPressed: _cargarConjuntos,
-            icon: const Icon(Icons.refresh, color: Colors.white),
-          ),
-          PopupMenuButton<_QuickAction>(
-            tooltip: "Atajos",
-            icon: const Icon(Icons.apps_rounded, color: Colors.white),
-            onSelected: _handleQuickAction,
-            itemBuilder: (_) => _buildQuickMenuItems(enabledNit: enabledNit),
-          ),
-          const SizedBox(width: 6),
-          IconButton(
-            tooltip: 'Cerrar sesión',
-            icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () async {
-              final ok = await showDialog<bool>(
-                context: context,
-                builder: (dialogContext) => AlertDialog(
-                  title: const Text('Cerrar sesión'),
-                  content: const Text('¿Seguro que quieres salir?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(dialogContext, false),
-                      child: const Text('Cancelar'),
+          ResponsiveAppBarActions(
+            background: AppTheme.primary,
+            actions: [
+              const PerfilAction(),
+              const NotificacionesAction(),
+              const CambiarContrasenaAction(),
+              IconButton(
+                tooltip: "Recargar conjuntos",
+                onPressed: _cargarConjuntos,
+                icon: const Icon(Icons.refresh, color: Colors.white),
+              ),
+              PopupMenuButton<_QuickAction>(
+                tooltip: "Atajos",
+                icon: const Icon(Icons.apps_rounded, color: Colors.white),
+                onSelected: _handleQuickAction,
+                itemBuilder: (_) =>
+                    _buildQuickMenuItems(enabledNit: enabledNit),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                tooltip: 'Cerrar sesión',
+                icon: const Icon(Icons.logout, color: Colors.white),
+                onPressed: () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (dialogContext) => AlertDialog(
+                      title: const Text('Cerrar sesión'),
+                      content: const Text('¿Seguro que quieres salir?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext, false),
+                          child: const Text('Cancelar'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(dialogContext, true),
+                          child: const Text('Salir'),
+                        ),
+                      ],
                     ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.pop(dialogContext, true),
-                      child: const Text('Salir'),
-                    ),
-                  ],
-                ),
-              );
+                  );
 
-              if (!context.mounted) return;
-              if (ok == true) logout(context);
-            },
+                  if (!context.mounted) return;
+                  if (ok == true) logout(context);
+                },
+              ),
+              const SizedBox(width: 6),
+            ],
           ),
-          const SizedBox(width: 6),
         ],
       ),
       body: _buildBody(),

@@ -28,7 +28,7 @@ class AppTheme {
     elevation: 0,
     shadowColor: Colors.transparent,
     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-    minimumSize: const Size(0, 42),
+    minimumSize: const Size(0, 48),
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

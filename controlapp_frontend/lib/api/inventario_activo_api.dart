@@ -198,11 +198,16 @@ class InventarioActivoApi {
     ClaseActivoInventario clase,
     int id,
     String estado,
-    String motivo,
-  ) async {
+    String motivo, {
+    String? condicion,
+  }) async {
     final response = await _client.post(
       '/inventario/${_segmento(clase)}/$id/estado',
-      body: {'estado': estado, 'motivo': motivo},
+      body: {
+        'estado': estado,
+        'motivo': motivo,
+        if (condicion != null) 'condicion': condicion,
+      },
     );
     if (response.statusCode != 200) {
       _throw(response, 'No se pudo actualizar el estado.');
@@ -278,6 +283,15 @@ class InventarioActivoApi {
     final response = await http.Response.fromStream(await request.send());
     if (response.statusCode != 200) {
       _throw(response, 'No se pudo subir la fotografía.');
+    }
+  }
+
+  Future<void> eliminar(ClaseActivoInventario clase, int id) async {
+    final response = await _client.delete(
+      '/inventario/${_segmento(clase)}/$id',
+    );
+    if (response.statusCode != 204) {
+      _throw(response, 'No se pudo eliminar el activo.');
     }
   }
 

@@ -268,29 +268,28 @@ class _ConjuntoCompromisoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      group.nombre,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                      ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final nombreBloque = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    group.nombre,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'NIT: ${group.nit}',
-                      style: const TextStyle(color: Colors.black54),
-                    ),
-                  ],
-                ),
-              ),
-              Wrap(
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'NIT: ${group.nit}',
+                    style: const TextStyle(color: Colors.black54),
+                  ),
+                ],
+              );
+
+              final pills = Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
@@ -320,8 +319,27 @@ class _ConjuntoCompromisoCard extends StatelessWidget {
                     color: const Color(0xFFC62828),
                   ),
                 ],
-              ),
-            ],
+              );
+
+              // Un Wrap de 5 badges puesto como hermano no-flexible de un
+              // Expanded en un Row exige su ancho natural completo sin
+              // importar el espacio disponible: en un teléfono angosto eso
+              // desborda. Por debajo de ~560px se apila en vez de eso.
+              if (constraints.maxWidth >= 560) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: nombreBloque),
+                    pills,
+                  ],
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [nombreBloque, const SizedBox(height: 8), pills],
+              );
+            },
           ),
           const SizedBox(height: 12),
           ...group.items.map(

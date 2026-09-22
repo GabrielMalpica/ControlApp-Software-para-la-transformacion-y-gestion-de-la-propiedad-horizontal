@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 
 import 'package:image_picker/image_picker.dart';
 
+import 'package:flutter_application_1/utils/pickers/camera_capture_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 import 'package:flutter_application_1/utils/evidence_utils.dart';
@@ -44,6 +45,14 @@ class _JefeOperacionesPendientesPageState
       !kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
+
+  // En web (celular/tablet abriendo la app desde el navegador) usamos un
+  // <input type="file" capture="environment"> que abre la cámara trasera
+  // directamente. No podemos confiar solo en `_isMobile` aquí: iPadOS
+  // reporta un user-agent de escritorio por defecto y se detecta como
+  // macOS, ocultando el botón de cámara (mismo bug ya resuelto en
+  // cerrar_tarea_sheet.dart).
+  bool get _puedeTomarFoto => kIsWeb || _isMobile;
 
   bool get _isDesktop =>
       !kIsWeb &&
@@ -246,7 +255,7 @@ class _JefeOperacionesPendientesPageState
         return StatefulBuilder(
           builder: (ctx, setModal) {
             Future<void> pickCam() async {
-              if (!_isMobile) {
+              if (!_puedeTomarFoto) {
                 AppFeedback.showFromSnackBar(
                   context,
                   const SnackBar(
@@ -255,23 +264,17 @@ class _JefeOperacionesPendientesPageState
                 );
                 return;
               }
-              final picker = ImagePicker();
-              final x = await picker.pickImage(
-                source: ImageSource.camera,
-                imageQuality: 85,
-              );
-              if (x == null) return;
-
-              final bytes = await x.readAsBytes();
-              setModal(() {
-                archivos.add(
-                  SelectedUploadFile(
-                    name: x.name.isNotEmpty ? x.name : 'foto.jpg',
-                    bytes: bytes,
-                    mimeType: 'image/jpeg',
-                  ),
+              try {
+                final captura = await CameraCapture.pickPhoto();
+                if (captura == null) return;
+                setModal(() => archivos.add(captura));
+              } catch (e) {
+                if (!mounted) return;
+                AppFeedback.showFromSnackBar(
+                  context,
+                  SnackBar(content: Text('No se pudo abrir la cámara: $e')),
                 );
-              });
+              }
             }
 
             Future<void> pickGallery() async {
@@ -505,7 +508,9 @@ class _JefeOperacionesPendientesPageState
                                 onPressed: pickCam,
                                 icon: const Icon(Icons.photo_camera),
                                 label: Text(
-                                  _isMobile ? 'Cámara' : 'Cámara (móvil)',
+                                  _puedeTomarFoto
+                                      ? 'Cámara'
+                                      : 'Cámara (no disponible)',
                                 ),
                               ),
                               OutlinedButton.icon(
@@ -572,23 +577,33 @@ class _JefeOperacionesPendientesPageState
                                 }
 
                                 return Stack(
+                                  clipBehavior: Clip.none,
                                   children: [
                                     thumb,
                                     Positioned(
-                                      right: 0,
-                                      top: 0,
-                                      child: InkWell(
-                                        onTap: () => removeArchivo(i),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.black54,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.close,
-                                            size: 14,
-                                            color: Colors.white,
+                                      right: -6,
+                                      top: -6,
+                                      child: Material(
+                                        color: Colors.transparent,
+                                        child: InkWell(
+                                          onTap: () => removeArchivo(i),
+                                          customBorder: const CircleBorder(),
+                                          child: Container(
+                                            width: 36,
+                                            height: 36,
+                                            alignment: Alignment.center,
+                                            child: Container(
+                                              padding: const EdgeInsets.all(4),
+                                              decoration: const BoxDecoration(
+                                                color: Colors.black54,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(
+                                                Icons.close,
+                                                size: 14,
+                                                color: Colors.white,
+                                              ),
+                                            ),
                                           ),
                                         ),
                                       ),

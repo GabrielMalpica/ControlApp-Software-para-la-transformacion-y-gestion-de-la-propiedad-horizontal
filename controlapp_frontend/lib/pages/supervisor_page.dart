@@ -3,7 +3,6 @@ import 'package:flutter_application_1/api/auth_api.dart';
 import '../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_activo_model.dart';
-import 'package:flutter_application_1/pages/supervisor/supervisor_tareas_page.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/cumpleanos_banner.dart';
@@ -11,26 +10,22 @@ import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import 'package:flutter_application_1/widgets/perfil_action.dart';
+import 'package:flutter_application_1/widgets/responsive_appbar_actions.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
 import '../service/theme.dart';
 
-import 'solicitudes_page.dart';
-import 'agenda_maquinaria_page.dart';
-import 'agenda_herramientas_page.dart';
 import 'inventario_resumen_page.dart';
 import 'inventario_activos_page.dart';
-import 'jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'cronograma_page.dart';
 import 'cronograma_impresion_page.dart';
-import 'crear_tarea_page.dart';
 import 'plan_esperanza_page.dart';
 import 'reportes_page.dart';
 import 'gerente/compromisos_page.dart';
 import 'gerente/compromisos_por_conjunto_page.dart';
+import 'gerente/consignas_valor_agregado_page.dart';
 import '../model/recurso_calendario_item.dart';
 import 'gerente/agenda_recursos_page.dart';
-import 'gerente/lista_insumos_page.dart';
 import 'gerente/mapa_conjunto_page.dart';
 import 'asistencia_grid_page.dart';
 import 'asistencia_qr_page.dart';
@@ -258,33 +253,6 @@ class _SupervisorPageState extends State<SupervisorPage> {
               _go(PlanEsperanzaPage(nit: nit, nombreConjunto: nombreConjunto));
             },
           ),
-        if (_can('tareas.ver'))
-          _SupervisorTile('Tareas', Icons.assignment, AppTheme.green, () {
-            if (!_requiereConjuntoOrWarn()) return;
-            _go(SupervisorTareasPage(nit: nit));
-          }),
-        if (_can('tareas.crear'))
-          _SupervisorTile('Crear tarea', Icons.add_task, AppTheme.green, () {
-            if (!_requiereConjuntoOrWarn()) return;
-            _go(CrearTareaPage(nit: nit));
-          }),
-        if (_can('tareas.veredicto'))
-          _SupervisorTile(
-            'Veredictos de tareas',
-            Icons.fact_check_outlined,
-            AppTheme.green,
-            () => _go(JefeOperacionesPendientesPage(conjuntoId: nit)),
-          ),
-        if (_can('solicitudes.ver'))
-          _SupervisorTile(
-            'Solicitudes',
-            Icons.pending_actions,
-            AppTheme.primary,
-            () {
-              if (!_requiereConjuntoOrWarn()) return;
-              _go(SolicitudesPage(nit: nit));
-            },
-          ),
         if (_can('cronograma.ver'))
           _SupervisorTile(
             'Cronograma',
@@ -297,12 +265,22 @@ class _SupervisorPageState extends State<SupervisorPage> {
           ),
         if (_can('compromisos.ver'))
           _SupervisorTile(
-            'Compromisos',
+            'Consignas especiales diarias',
             Icons.checklist_rounded,
             Colors.indigo,
             () {
               if (!_requiereConjuntoOrWarn()) return;
               _go(CompromisosPage(nit: nit, nombreConjunto: nombreConjunto));
+            },
+          ),
+        if (_can('compromisos.ver'))
+          _SupervisorTile(
+            'Consignas especiales inicio contrato',
+            Icons.fact_check_outlined,
+            AppTheme.accent,
+            () {
+              if (!_requiereConjuntoOrWarn()) return;
+              _go(ConsignasValorAgregadoPage(conjunto: conjunto));
             },
           ),
       ]),
@@ -321,28 +299,6 @@ class _SupervisorPageState extends State<SupervisorPage> {
                 ),
               );
             },
-          ),
-        if (_can('maquinaria.ver'))
-          _SupervisorTile(
-            'Maquinaria',
-            Icons.precision_manufacturing,
-            AppTheme.red,
-            () {
-              if (!_requiereConjuntoOrWarn()) return;
-              _go(AgendaMaquinariaPage(conjuntoId: nit));
-            },
-          ),
-        if (_can('herramientas.ver'))
-          _SupervisorTile('Herramientas', Icons.handyman, Colors.orange, () {
-            if (!_requiereConjuntoOrWarn()) return;
-            _go(AgendaHerramientasPage(conjuntoId: nit));
-          }),
-        if (_can('inventario.gestionar'))
-          _SupervisorTile(
-            'Gestionar insumos',
-            Icons.inventory_outlined,
-            AppTheme.yellow,
-            () => _go(const ListaInsumosPage()),
           ),
         if (_can('maquinaria.asignar')) ...[
           _SupervisorTile(
@@ -395,26 +351,63 @@ class _SupervisorPageState extends State<SupervisorPage> {
       ]),
       _SupervisorSection('Asistencia', [
         if (_can('asistencia.ver'))
-          _SupervisorTile('Asistencia', Icons.fact_check_outlined, AppTheme.green, () {
-            if (!_requiereConjuntoOrWarn()) return;
-            _go(AsistenciaGridPage(conjuntoId: nit, conjuntoNombre: nombreConjunto));
-          }),
+          _SupervisorTile(
+            'Asistencia',
+            Icons.fact_check_outlined,
+            AppTheme.green,
+            () {
+              if (!_requiereConjuntoOrWarn()) return;
+              _go(
+                AsistenciaGridPage(
+                  conjuntoId: nit,
+                  conjuntoNombre: nombreConjunto,
+                ),
+              );
+            },
+          ),
         if (_can('asistencia.turnos_extra.gestionar'))
-          _SupervisorTile('Turnos extra', Icons.swap_horiz_rounded, AppTheme.primary, () {
-            if (!_requiereConjuntoOrWarn()) return;
-            _go(TurnosExtraPage(conjuntoId: nit, conjuntoNombre: nombreConjunto));
-          }),
+          _SupervisorTile(
+            'Turnos extra',
+            Icons.swap_horiz_rounded,
+            AppTheme.primary,
+            () {
+              if (!_requiereConjuntoOrWarn()) return;
+              _go(
+                TurnosExtraPage(
+                  conjuntoId: nit,
+                  conjuntoNombre: nombreConjunto,
+                ),
+              );
+            },
+          ),
         if (_can('asistencia.qr.gestionar'))
-          _SupervisorTile('QR de asistencia', Icons.qr_code_2_rounded, Colors.teal, () {
-            if (!_requiereConjuntoOrWarn()) return;
-            _go(AsistenciaQrPage(conjuntoId: nit, conjuntoNombre: nombreConjunto));
-          }),
+          _SupervisorTile(
+            'QR de asistencia',
+            Icons.qr_code_2_rounded,
+            Colors.teal,
+            () {
+              if (!_requiereConjuntoOrWarn()) return;
+              _go(
+                AsistenciaQrPage(
+                  conjuntoId: nit,
+                  conjuntoNombre: nombreConjunto,
+                ),
+              );
+            },
+          ),
       ]),
       _SupervisorSection('Analisis y control', [
         if (_can('reportes.ver'))
           _SupervisorTile('Reportes', Icons.bar_chart, Colors.teal, () {
             if (!_requiereConjuntoOrWarn()) return;
-            _go(ReportesPage(nit: nit, soloResumenTipos: true));
+            _go(
+              ReportesPage(
+                nit: nit,
+                soloResumenTipos: true,
+                mostrarInformes: true,
+                mostrarAnalisisInformes: false,
+              ),
+            );
           }),
         if (_can('cronograma.imprimir'))
           _SupervisorTile(
@@ -446,27 +439,29 @@ class _SupervisorPageState extends State<SupervisorPage> {
       trailing: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 420;
+          // Sin Expanded aquí: cuando compact==true estas cards se apilan
+          // en un Column dentro de un LayoutBuilder con alto no acotado
+          // (el hero vive dentro de un scroll), y un Expanded ahí revienta
+          // con "incoming height constraints are unbounded". Expanded solo
+          // tiene sentido para repartir ANCHO en la fila horizontal.
           final cards = <Widget>[
-            Expanded(
-              child: DashboardStatusCard(
-                label: 'Conjuntos disponibles',
-                value: _conjuntos.length.toString(),
-                icon: Icons.domain_rounded,
-                color: AppTheme.primary,
-              ),
+            DashboardStatusCard(
+              label: 'Conjuntos disponibles',
+              value: _conjuntos.length.toString(),
+              icon: Icons.domain_rounded,
+              color: AppTheme.primary,
             ),
-            Expanded(
-              child: DashboardStatusCard(
-                label: 'Conjunto activo',
-                value: conjunto.nombre,
-                icon: Icons.fact_check_rounded,
-                color: AppTheme.green,
-              ),
+            DashboardStatusCard(
+              label: 'Conjunto activo',
+              value: conjunto.nombre,
+              icon: Icons.fact_check_rounded,
+              color: AppTheme.green,
             ),
           ];
 
           if (compact) {
             return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 cards[0],
                 const SizedBox(height: 12),
@@ -476,7 +471,11 @@ class _SupervisorPageState extends State<SupervisorPage> {
           }
 
           return Row(
-            children: <Widget>[cards[0], const SizedBox(width: 12), cards[1]],
+            children: <Widget>[
+              Expanded(child: cards[0]),
+              const SizedBox(width: 12),
+              Expanded(child: cards[1]),
+            ],
           );
         },
       ),
@@ -554,42 +553,49 @@ class _SupervisorPageState extends State<SupervisorPage> {
         title: const Text(
           "Panel del Supervisor",
           style: TextStyle(color: Colors.white),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          const PerfilAction(),
-          const NotificacionesAction(),
-          const CambiarContrasenaAction(),
-          IconButton(
-            tooltip: "Recargar conjuntos",
-            onPressed: _cargarConjuntos,
-            icon: const Icon(Icons.refresh, color: Colors.white),
-          ),
-          const SizedBox(width: 6),
-          IconButton(
-            tooltip: 'Cerrar sesión',
-            icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () async {
-              final ok = await showDialog<bool>(
-                context: context,
-                builder: (dialogContext) => AlertDialog(
-                  title: const Text('Cerrar sesión'),
-                  content: const Text('¿Seguro que quieres salir?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(dialogContext, false),
-                      child: const Text('Cancelar'),
+          ResponsiveAppBarActions(
+            background: AppTheme.primary,
+            actions: [
+              const PerfilAction(),
+              const NotificacionesAction(),
+              const CambiarContrasenaAction(),
+              IconButton(
+                tooltip: "Recargar conjuntos",
+                onPressed: _cargarConjuntos,
+                icon: const Icon(Icons.refresh, color: Colors.white),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                tooltip: 'Cerrar sesión',
+                icon: const Icon(Icons.logout, color: Colors.white),
+                onPressed: () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (dialogContext) => AlertDialog(
+                      title: const Text('Cerrar sesión'),
+                      content: const Text('¿Seguro que quieres salir?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext, false),
+                          child: const Text('Cancelar'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(dialogContext, true),
+                          child: const Text('Salir'),
+                        ),
+                      ],
                     ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.pop(dialogContext, true),
-                      child: const Text('Salir'),
-                    ),
-                  ],
-                ),
-              );
+                  );
 
-              if (!context.mounted) return;
-              if (ok == true) logout(context);
-            },
+                  if (!context.mounted) return;
+                  if (ok == true) logout(context);
+                },
+              ),
+            ],
           ),
         ],
       ),

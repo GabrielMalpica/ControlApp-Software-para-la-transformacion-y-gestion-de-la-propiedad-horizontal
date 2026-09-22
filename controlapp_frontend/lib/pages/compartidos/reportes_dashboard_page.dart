@@ -16,10 +16,12 @@ import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/chart_capture.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/chart_style.dart';
+import 'package:flutter_application_1/service/permission_service.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/utils/duration_format.dart';
 import 'package:flutter_application_1/utils/evidence_utils.dart';
+import 'package:flutter_application_1/widgets/corregir_cierre_sheet.dart';
 import 'package:flutter_application_1/widgets/evidencia_gallery.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 import 'package:intl/intl.dart';
@@ -35,12 +37,16 @@ class ReportesDashboardPage extends StatefulWidget {
   final bool modoGeneral;
   final bool permitirInformesPdf;
   final bool soloResumenTipos;
+  final bool mostrarAnalisisInformes;
+  final bool mostrarDescargaInformes;
   const ReportesDashboardPage({
     super.key,
     this.conjuntoIdInicial,
     this.modoGeneral = false,
     this.permitirInformesPdf = true,
     this.soloResumenTipos = false,
+    this.mostrarAnalisisInformes = true,
+    this.mostrarDescargaInformes = true,
   });
 
   @override
@@ -57,6 +63,8 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   bool get _esReporteGeneral => widget.modoGeneral;
   bool get _permitirInformesPdf => widget.permitirInformesPdf;
   bool get _soloResumenTipos => widget.soloResumenTipos;
+  bool get _mostrarAnalisisInformes => widget.mostrarAnalisisInformes;
+  bool get _mostrarDescargaInformes => widget.mostrarDescargaInformes;
 
   bool _loading = false;
   bool _generandoPdf = false;
@@ -2364,28 +2372,28 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   Widget build(BuildContext context) {
     final primary = AppTheme.primary;
     final df = DateFormat('dd/MM/yyyy', 'es');
-    final tabs = _soloResumenTipos
-        ? <Tab>[const Tab(text: 'Resumen'), const Tab(text: 'Tipos')]
-        : <Tab>[
-            const Tab(text: 'Resumen'),
-            const Tab(text: 'Compromisos'),
-            const Tab(text: 'Operarios'),
-            const Tab(text: 'Insumos'),
-            const Tab(text: 'Maq/Herr'),
-            const Tab(text: 'Tipos'),
-            if (_permitirInformesPdf) const Tab(text: 'Informes'),
-          ];
-    final tabViews = _soloResumenTipos
-        ? <Widget>[_tabResumen(), _tabTipos()]
-        : <Widget>[
-            _tabResumen(),
-            _tabCompromisos(),
-            _tabOperarios(),
-            _tabInsumos(),
-            _tabMaqHerr(),
-            _tabTipos(),
-            if (_permitirInformesPdf) _tabInformes(),
-          ];
+    final tabs = <Tab>[
+      const Tab(text: 'Resumen'),
+      if (!_soloResumenTipos) ...[
+        const Tab(text: 'Compromisos'),
+        const Tab(text: 'Operarios'),
+        const Tab(text: 'Insumos'),
+        const Tab(text: 'Maq/Herr'),
+      ],
+      const Tab(text: 'Tipos'),
+      if (_permitirInformesPdf) const Tab(text: 'Informes'),
+    ];
+    final tabViews = <Widget>[
+      _tabResumen(),
+      if (!_soloResumenTipos) ...[
+        _tabCompromisos(),
+        _tabOperarios(),
+        _tabInsumos(),
+        _tabMaqHerr(),
+      ],
+      _tabTipos(),
+      if (_permitirInformesPdf) _tabInformes(),
+    ];
 
     final conteoTipos = _contarTipos();
     final prev = conteoTipos['preventivas'] ?? 0;
@@ -2752,9 +2760,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         if (v > 0) presentes.add(_estadoKey(k));
       });
     }
-    final ordenados = ChartStyle.estadoOrder
-        .where(presentes.contains)
-        .toList();
+    final ordenados = ChartStyle.estadoOrder.where(presentes.contains).toList();
     for (final k in presentes) {
       if (!ordenados.contains(k)) ordenados.add(k);
     }
@@ -3642,10 +3648,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     }
 
     final top = conIncidencias.take(10).toList();
-    final totalIncidencias = conIncidencias.fold<int>(
-      0,
-      (a, e) => a + e.value,
-    );
+    final totalIncidencias = conIncidencias.fold<int>(0, (a, e) => a + e.value);
 
     var acumulado = 0;
     final data = <_ParetoDatum>[];
@@ -4664,46 +4667,52 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        _analisisEditableCard(),
-        const SizedBox(height: 14),
+        if (_mostrarAnalisisInformes) ...[
+          _analisisEditableCard(),
+          const SizedBox(height: 14),
+        ],
 
-        _sectionTitle('Informes automáticos'),
-        const SizedBox(height: 8),
-        _card(
-          child: Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: (_kpis == null || _generandoPdf)
-                      ? null
-                      : _generarInformeGestionPdfV2,
-                  icon: _generandoPdf
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.insights),
-                  label: Text(
-                    _generandoPdf ? 'Generando...' : 'Gestión (solo gráficas)',
+        if (_mostrarDescargaInformes) ...[
+          _sectionTitle('Informes automáticos'),
+          const SizedBox(height: 8),
+          _card(
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: (_kpis == null || _generandoPdf)
+                        ? null
+                        : _generarInformeGestionPdfV2,
+                    icon: _generandoPdf
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.insights),
+                    label: Text(
+                      _generandoPdf
+                          ? 'Generando...'
+                          : 'Gestión (solo gráficas)',
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _tareasDetalle.isEmpty
-                      ? null
-                      : _generarInformeDetalladoPdfV2,
-                  icon: const Icon(Icons.list_alt),
-                  label: const Text('Detallado (PDF)'),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _tareasDetalle.isEmpty
+                        ? null
+                        : _generarInformeDetalladoPdfV2,
+                    icon: const Icon(Icons.list_alt),
+                    label: const Text('Detallado (PDF)'),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          const SizedBox(height: 14),
+        ],
 
-        const SizedBox(height: 14),
         _sectionTitle('Tareas del rango'),
         const SizedBox(height: 8),
         _tareasCalendarSection(),
@@ -4892,9 +4901,8 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: () => setState(
-                    () => _verTodasLasTareas = !_verTodasLasTareas,
-                  ),
+                  onPressed: () =>
+                      setState(() => _verTodasLasTareas = !_verTodasLasTareas),
                   child: Text(
                     _verTodasLasTareas
                         ? 'Ocultar lista completa'
@@ -5379,10 +5387,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         labelText: label,
         isDense: true,
         border: const OutlineInputBorder(),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: 8,
-        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       ),
       items: items,
       onChanged: (v) {
@@ -5423,10 +5428,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       return const Center(child: Text('Sin tareas para este filtro.'));
     }
 
-    var horaInicio = (bloques
-                .map((b) => b.inicioMin)
-                .reduce(math.min) /
-            60)
+    var horaInicio = (bloques.map((b) => b.inicioMin).reduce(math.min) / 60)
         .floor();
     var horaFin = (bloques.map((b) => b.finMin).reduce(math.max) / 60).ceil();
     horaInicio = (horaInicio - 1).clamp(0, 22);
@@ -5596,7 +5598,10 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 if (lineas >= 2 && ubicacion.isNotEmpty)
                   linea(
                     ubicacion,
-                    TextStyle(fontSize: 9, color: onColor.withValues(alpha: 0.85)),
+                    TextStyle(
+                      fontSize: 9,
+                      color: onColor.withValues(alpha: 0.85),
+                    ),
                   ),
               ],
             );
@@ -5801,15 +5806,39 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _chipBadge(t.tipo),
-                    const SizedBox(width: 8),
-                    _chipState(t.estado),
-                    if (t.esTareaReemplazo) ...[
-                      const SizedBox(width: 8),
-                      _replacementInfoChip(t),
-                    ],
-                    const Spacer(),
+                    // Flexible+Wrap en vez de una fila fija: si el chip de
+                    // reemplazo trae un texto largo, aquí se envuelve en
+                    // vez de desbordar horizontalmente; "Cerrar" siempre
+                    // queda fijo a la derecha con su ancho propio.
+                    Flexible(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _chipBadge(t.tipo),
+                          _chipState(t.estado),
+                          if (t.esTareaReemplazo) _replacementInfoChip(t),
+                        ],
+                      ),
+                    ),
+                    if (PermissionService.instance.can('tareas.editar_cierre') &&
+                        estadoCorregible(t.estado))
+                      TextButton.icon(
+                        onPressed: () async {
+                          final corregido = await abrirCorregirCierre(
+                            context,
+                            tareaId: t.id,
+                          );
+                          if (corregido && mounted) {
+                            Navigator.of(context).pop();
+                            _cargarTodo();
+                          }
+                        },
+                        icon: const Icon(Icons.edit_note),
+                        label: const Text('Corregir cierre'),
+                      ),
                     TextButton.icon(
                       onPressed: () => Navigator.of(context).pop(),
                       icon: const Icon(Icons.close),
@@ -5898,14 +5927,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                     spacing: 10,
                     runSpacing: 10,
                     children: [
-                      for (
-                        var i = 0;
-                        i < t.evidencias.length && i < 12;
-                        i++
-                      )
+                      for (var i = 0; i < t.evidencias.length && i < 12; i++)
                         InkWell(
-                          onTap: () =>
-                              _openEvidenciasCarousel(t.evidencias, i),
+                          onTap: () => _openEvidenciasCarousel(t.evidencias, i),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
                             child: Container(
@@ -6155,12 +6179,17 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: base.withValues(alpha: .36)),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: base,
-          fontWeight: FontWeight.w900,
-          fontSize: compact ? 11 : 12,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 260),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: base,
+            fontWeight: FontWeight.w900,
+            fontSize: compact ? 11 : 12,
+          ),
         ),
       ),
     );

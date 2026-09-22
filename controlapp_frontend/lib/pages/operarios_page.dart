@@ -174,27 +174,29 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
         trailing: LayoutBuilder(
           builder: (context, constraints) {
             final compact = constraints.maxWidth < 420;
+            // Sin Expanded aquí: cuando compact==true estas cards se apilan
+            // en un Column dentro de un LayoutBuilder con alto no acotado
+            // (el hero vive dentro de un scroll), y un Expanded ahí revienta
+            // con "incoming height constraints are unbounded". Expanded
+            // solo tiene sentido para repartir ANCHO en la fila horizontal.
             final cards = <Widget>[
-              Expanded(
-                child: DashboardStatusCard(
-                  label: 'Conjunto vinculado',
-                  value: widget.nit,
-                  icon: Icons.apartment_rounded,
-                  color: AppTheme.primary,
-                ),
+              DashboardStatusCard(
+                label: 'Conjunto vinculado',
+                value: widget.nit,
+                icon: Icons.apartment_rounded,
+                color: AppTheme.primary,
               ),
-              const Expanded(
-                child: DashboardStatusCard(
-                  label: 'Accesos principales',
-                  value: '3',
-                  icon: Icons.touch_app_rounded,
-                  color: AppTheme.green,
-                ),
+              const DashboardStatusCard(
+                label: 'Accesos principales',
+                value: '3',
+                icon: Icons.touch_app_rounded,
+                color: AppTheme.green,
               ),
             ];
 
             if (compact) {
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   cards[0],
                   const SizedBox(height: 12),
@@ -204,7 +206,11 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
             }
 
             return Row(
-              children: <Widget>[cards[0], const SizedBox(width: 12), cards[1]],
+              children: <Widget>[
+                Expanded(child: cards[0]),
+                const SizedBox(width: 12),
+                Expanded(child: cards[1]),
+              ],
             );
           },
         ),

@@ -272,53 +272,63 @@ class _AgendaHerramientasPageState extends State<AgendaHerramientasPage> {
             ].join(' ').toLowerCase().contains(q);
           }).toList();
 
+          final catalogo = Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Buscar herramienta',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                  onChanged: (value) => setState(() => _query = value),
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: items.length,
+                  itemBuilder: (_, index) {
+                    final h = items[index];
+                    final block = _blocks[h.id];
+                    final selected = _seleccionada?.id == h.id;
+                    return ListTile(
+                      selected: selected,
+                      title: Text(h.nombre),
+                      subtitle: Text('${h.unidad} • ${h.categoria}'),
+                      trailing: Text('${block?.reservasMes ?? 0}'),
+                      onTap: () => setState(() => _seleccionada = h),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+
           return Column(
             children: [
               _bannerNecesidades(),
               Expanded(
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 320,
-                      child: Column(
+                child: LayoutBuilder(
+                  builder: (context, c) {
+                    final mobile = c.maxWidth < 980;
+                    if (!mobile) {
+                      return Row(
                         children: [
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: TextField(
-                              decoration: const InputDecoration(
-                                labelText: 'Buscar herramienta',
-                                prefixIcon: Icon(Icons.search),
-                              ),
-                              onChanged: (value) =>
-                                  setState(() => _query = value),
-                            ),
-                          ),
-                          Expanded(
-                            child: ListView.builder(
-                              itemCount: items.length,
-                              itemBuilder: (_, index) {
-                                final h = items[index];
-                                final block = _blocks[h.id];
-                                final selected = _seleccionada?.id == h.id;
-                                return ListTile(
-                                  selected: selected,
-                                  title: Text(h.nombre),
-                                  subtitle: Text(
-                                    '${h.unidad} • ${h.categoria}',
-                                  ),
-                                  trailing: Text('${block?.reservasMes ?? 0}'),
-                                  onTap: () =>
-                                      setState(() => _seleccionada = h),
-                                );
-                              },
-                            ),
-                          ),
+                          SizedBox(width: 320, child: catalogo),
+                          const VerticalDivider(width: 1),
+                          Expanded(child: _buildDetalle()),
                         ],
-                      ),
-                    ),
-                    const VerticalDivider(width: 1),
-                    Expanded(child: _buildDetalle()),
-                  ],
+                      );
+                    }
+
+                    return Column(
+                      children: [
+                        SizedBox(height: 260, child: catalogo),
+                        const Divider(height: 1),
+                        Expanded(child: _buildDetalle()),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],

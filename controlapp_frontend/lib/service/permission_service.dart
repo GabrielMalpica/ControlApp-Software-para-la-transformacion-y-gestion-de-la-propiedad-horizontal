@@ -10,7 +10,12 @@ class PermissionService {
   final AuthApi _authApi = AuthApi();
 
   static const Map<String, Set<String>> _permissionsThatGrantAccess = {
-    'tareas.ver': {'tareas.crear', 'tareas.cerrar', 'tareas.veredicto'},
+    'tareas.ver': {
+      'tareas.crear',
+      'tareas.cerrar',
+      'tareas.veredicto',
+      'tareas.editar_cierre',
+    },
     'cronograma.ver': {
       'cronograma.imprimir',
       'cronograma.publicar',
@@ -30,6 +35,7 @@ class PermissionService {
     },
     'herramientas.ver': {
       'herramientas.gestionar',
+      'herramientas.asignar',
       'herramientas.crear',
       'herramientas.editar',
       'herramientas.aprobar',

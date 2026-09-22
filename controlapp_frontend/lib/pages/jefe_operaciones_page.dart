@@ -30,11 +30,11 @@ import 'package:flutter_application_1/widgets/dashboard_tile.dart';
 import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import 'package:flutter_application_1/widgets/perfil_action.dart';
+import 'package:flutter_application_1/widgets/responsive_appbar_actions.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
 import '../service/theme.dart';
 import 'inventario_resumen_page.dart';
-import 'solicitudes_page.dart';
 import 'cronograma_page.dart';
 import 'asistencia_grid_page.dart';
 import 'asistencia_qr_page.dart';
@@ -263,15 +263,6 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
               );
             },
           ),
-        if (_can('tareas.ver'))
-          _JefeTile('Tareas', Icons.assignment, AppTheme.green, () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => JefeOperacionesPendientesPage(conjuntoId: nit),
-              ),
-            );
-          }),
         if (_can('tareas.crear'))
           _JefeTile(
             'Crear y editar tareas',
@@ -284,13 +275,6 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
               );
             },
           ),
-        if (_can('solicitudes.ver'))
-          _JefeTile('Solicitudes', Icons.pending_actions, AppTheme.primary, () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => SolicitudesPage(nit: nit)),
-            );
-          }),
         if (_can('compromisos.ver'))
           _JefeTile('Compromisos', Icons.checklist_rounded, Colors.indigo, () {
             Navigator.push(
@@ -331,21 +315,15 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
             );
           }),
         if (_can('maquinaria.asignar') || _can('herramientas.asignar'))
-          _JefeTile(
-            'Agenda de recursos',
-            Icons.event_repeat,
-            AppTheme.red,
-            () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => AgendaRecursosPage(
-                    empresaNit: AppConstants.empresaNit,
-                  ),
-                ),
-              );
-            },
-          ),
+          _JefeTile('Agenda de recursos', Icons.event_repeat, AppTheme.red, () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    AgendaRecursosPage(empresaNit: AppConstants.empresaNit),
+              ),
+            );
+          }),
         if (_can('maquinaria.asignar') || _can('herramientas.asignar'))
           _JefeTile(
             'Agenda general de recursos',
@@ -544,15 +522,22 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
             },
           ),
         if (_can('asistencia.qr.gestionar'))
-          _JefeTile('QR de asistencia', Icons.qr_code_2_rounded, Colors.teal, () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    AsistenciaQrPage(conjuntoId: nit, conjuntoNombre: conjunto.nombre),
-              ),
-            );
-          }),
+          _JefeTile(
+            'QR de asistencia',
+            Icons.qr_code_2_rounded,
+            Colors.teal,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AsistenciaQrPage(
+                    conjuntoId: nit,
+                    conjuntoNombre: conjunto.nombre,
+                  ),
+                ),
+              );
+            },
+          ),
       ]),
     ].where((section) => section.tiles.isNotEmpty).toList();
 
@@ -564,27 +549,29 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
       trailing: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 420;
+          // Sin Expanded aquí: cuando compact==true estas cards se apilan
+          // en un Column dentro de un LayoutBuilder con alto no acotado
+          // (el hero vive dentro de un scroll), y un Expanded ahí revienta
+          // con "incoming height constraints are unbounded". Expanded solo
+          // tiene sentido para repartir ANCHO en la fila horizontal.
           final cards = <Widget>[
-            Expanded(
-              child: DashboardStatusCard(
-                label: 'Conjuntos disponibles',
-                value: _conjuntos.length.toString(),
-                icon: Icons.domain_rounded,
-                color: AppTheme.primary,
-              ),
+            DashboardStatusCard(
+              label: 'Conjuntos disponibles',
+              value: _conjuntos.length.toString(),
+              icon: Icons.domain_rounded,
+              color: AppTheme.primary,
             ),
-            Expanded(
-              child: DashboardStatusCard(
-                label: 'Conjunto activo',
-                value: compact ? conjunto.nit : conjunto.nombre,
-                icon: Icons.apartment_rounded,
-                color: AppTheme.green,
-              ),
+            DashboardStatusCard(
+              label: 'Conjunto activo',
+              value: compact ? conjunto.nit : conjunto.nombre,
+              icon: Icons.apartment_rounded,
+              color: AppTheme.green,
             ),
           ];
 
           if (compact) {
             return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 cards[0],
                 const SizedBox(height: 12),
@@ -594,7 +581,11 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
           }
 
           return Row(
-            children: <Widget>[cards[0], const SizedBox(width: 12), cards[1]],
+            children: <Widget>[
+              Expanded(child: cards[0]),
+              const SizedBox(width: 12),
+              Expanded(child: cards[1]),
+            ],
           );
         },
       ),
@@ -669,21 +660,28 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
         title: const Text(
           "Panel Jefe de Operaciones",
           style: TextStyle(color: Colors.white),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          const PerfilAction(),
-          const NotificacionesAction(),
-          const CambiarContrasenaAction(),
-          IconButton(
-            tooltip: "Recargar conjuntos",
-            onPressed: _cargarConjuntos,
-            icon: const Icon(Icons.refresh, color: Colors.white),
-          ),
-          const SizedBox(width: 6),
-          IconButton(
-            tooltip: 'Cerrar sesión',
-            icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: _confirmLogout,
+          ResponsiveAppBarActions(
+            background: AppTheme.primary,
+            actions: [
+              const PerfilAction(),
+              const NotificacionesAction(),
+              const CambiarContrasenaAction(),
+              IconButton(
+                tooltip: "Recargar conjuntos",
+                onPressed: _cargarConjuntos,
+                icon: const Icon(Icons.refresh, color: Colors.white),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                tooltip: 'Cerrar sesión',
+                icon: const Icon(Icons.logout, color: Colors.white),
+                onPressed: _confirmLogout,
+              ),
+            ],
           ),
         ],
       ),

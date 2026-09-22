@@ -113,4 +113,7 @@ class AppConstants {
 
   static String get cronogramaBase => "$baseUrl/cronograma";
   static String get commerceBase => "$baseUrl/commerce";
+
+  // 🔹 Endpoints genéricos de tarea (por permiso, no por rol fijo)
+  static String get tareaBase => "$baseUrl/tarea";
 }

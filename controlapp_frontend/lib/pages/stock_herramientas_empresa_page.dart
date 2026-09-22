@@ -323,43 +323,70 @@ class _StockHerramientasEmpresaPageState
               ),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: TextField(
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(Icons.search),
-                        hintText:
-                            'Buscar (nombre, unidad, categoria, control o estado)',
-                        filled: true,
-                        fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final buscador = SizedBox(
+                  height: 44,
+                  child: TextField(
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search),
+                      hintText:
+                          'Buscar (nombre, unidad, categoria, control o estado)',
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                    ),
+                    onChanged: (value) => setState(() => _search = value),
+                  ),
+                );
+
+                final chips = [
+                  _chipCount('Operativas', operativas, AppTheme.green),
+                  _chipCount('Dañadas', danadas, AppTheme.red),
+                  _chipCount('Perdidas', perdidas, Colors.black54),
+                  _chipCount('Bajas', bajas, Colors.black45),
+                ];
+
+                // Con 4 chips + buscador, un Row fijo desborda en teléfonos
+                // angostos y en anchos intermedios (tablet partida); por
+                // eso el Wrap de chips va envuelto en Flexible incluso en
+                // la fila ancha, y por debajo de 560px se apila entero.
+                if (constraints.maxWidth >= 560) {
+                  return Row(
+                    children: [
+                      Expanded(child: buscador),
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          alignment: WrapAlignment.end,
+                          children: chips,
                         ),
                       ),
-                      onChanged: (value) => setState(() => _search = value),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                _chipCount('Operativas', operativas, AppTheme.green),
-                const SizedBox(width: 8),
-                _chipCount('Dañadas', danadas, AppTheme.red),
-                const SizedBox(width: 8),
-                _chipCount('Perdidas', perdidas, Colors.black54),
-                const SizedBox(width: 8),
-                _chipCount('Bajas', bajas, Colors.black45),
-              ],
+                    ],
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    buscador,
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 8, runSpacing: 8, children: chips),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 12),
             Expanded(
@@ -377,46 +404,51 @@ class _StockHerramientasEmpresaPageState
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(14),
-                        child: SingleChildScrollView(
-                          child: Theme(
-                            data: Theme.of(
-                              context,
-                            ).copyWith(dividerColor: Colors.grey.shade200),
-                            child: PaginatedDataTable(
-                              header: const Text(
-                                'Herramientas empresa',
-                                style: TextStyle(fontWeight: FontWeight.w800),
+                        // OJO: no envolver PaginatedDataTable en otro
+                        // SingleChildScrollView propio. Ya trae el suyo
+                        // alrededor de la grilla, y envolver el widget
+                        // completo le da una restriccion no acotada a su
+                        // Card interno; el header de PaginatedDataTable usa
+                        // un Expanded ahi adentro y eso revienta el layout
+                        // (ver el mismo arreglo en inventario_page.dart).
+                        child: Theme(
+                          data: Theme.of(
+                            context,
+                          ).copyWith(dividerColor: Colors.grey.shade200),
+                          child: PaginatedDataTable(
+                            header: const Text(
+                              'Herramientas empresa',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            showCheckboxColumn: false,
+                            availableRowsPerPage: const [8, 10, 20, 50],
+                            rowsPerPage: _rowsPerPage,
+                            onRowsPerPageChanged: (value) {
+                              if (value == null) return;
+                              setState(() => _rowsPerPage = value);
+                            },
+                            columns: const [
+                              DataColumn(label: Text('NAME')),
+                              DataColumn(label: Text('UNIT')),
+                              DataColumn(label: Text('CONTROL')),
+                              DataColumn(
+                                numeric: true,
+                                label: Text('AVAILABLE'),
                               ),
-                              showCheckboxColumn: false,
-                              availableRowsPerPage: const [8, 10, 20, 50],
-                              rowsPerPage: _rowsPerPage,
-                              onRowsPerPageChanged: (value) {
-                                if (value == null) return;
-                                setState(() => _rowsPerPage = value);
-                              },
-                              columns: const [
-                                DataColumn(label: Text('NAME')),
-                                DataColumn(label: Text('UNIT')),
-                                DataColumn(label: Text('CONTROL')),
-                                DataColumn(
-                                  numeric: true,
-                                  label: Text('AVAILABLE'),
-                                ),
-                                DataColumn(label: Text('STATE')),
-                                DataColumn(label: Text('ACTION')),
-                              ],
-                              source: _EmpresaHerramientaDataSource(
-                                data: filtrados,
-                                onAgregar: _canManage
-                                    ? (item) => _ajustar(item, sumar: true)
-                                    : null,
-                                onDescontar: _canManage
-                                    ? (item) => _ajustar(item, sumar: false)
-                                    : null,
-                                onCambiarEstado: _canManage
-                                    ? _cambiarEstado
-                                    : null,
-                              ),
+                              DataColumn(label: Text('STATE')),
+                              DataColumn(label: Text('ACTION')),
+                            ],
+                            source: _EmpresaHerramientaDataSource(
+                              data: filtrados,
+                              onAgregar: _canManage
+                                  ? (item) => _ajustar(item, sumar: true)
+                                  : null,
+                              onDescontar: _canManage
+                                  ? (item) => _ajustar(item, sumar: false)
+                                  : null,
+                              onCambiarEstado: _canManage
+                                  ? _cambiarEstado
+                                  : null,
                             ),
                           ),
                         ),

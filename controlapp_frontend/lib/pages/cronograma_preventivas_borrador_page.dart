@@ -135,6 +135,11 @@ class _CronogramaPreventivasBorradorPageState
   int _sidebarDiaIndex = 0;
   bool _sidebarVerExcluidasMes = false;
   bool _sidebarResumenColapsado = false;
+  // En móvil (< 1100px), la cuadrícula semanal exige scroll horizontal Y
+  // vertical simultáneos y el drag&drop no puede alcanzar columnas fuera de
+  // pantalla; por eso ahí la vista por defecto es la agenda por día (lista),
+  // con la cuadrícula disponible como alternativa.
+  bool _vistaAgendaEnMovil = true;
 
   bool _mostrarFiltrosMensual = false;
   int _escalaSemanalMinutos = 60;
@@ -1106,7 +1111,9 @@ class _CronogramaPreventivasBorradorPageState
       final iniMin = ini.hour * 60 + ini.minute;
       final finMin = fin.hour * 60 + fin.minute;
       if (finMin <= iniMin) continue;
-      minInicio = minInicio == null ? iniMin : (iniMin < minInicio ? iniMin : minInicio);
+      minInicio = minInicio == null
+          ? iniMin
+          : (iniMin < minInicio ? iniMin : minInicio);
       maxFin = maxFin == null ? finMin : (finMin > maxFin ? finMin : maxFin);
     }
     if (minInicio == null || maxFin == null) return const [];
@@ -2459,12 +2466,15 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   Future<void> _eliminarTareaBorrador(TareaModel tarea) async {
+    final avisoOtrosBloques = (tarea.bloquesTotales ?? 0) > 1
+        ? ' Los demás bloques de la tarea seguirán programados.'
+        : '';
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Eliminar del borrador'),
+        title: const Text('Eliminar bloque del borrador'),
         content: Text(
-          'La tarea "${tarea.descripcion}" se quitara del borrador y pasara a excluidas. ¿Continuar?',
+          'Este bloque de "${tarea.descripcion}" se quitará del borrador y pasará a excluidas.$avisoOtrosBloques ¿Continuar?',
         ),
         actions: [
           TextButton(
@@ -2489,7 +2499,7 @@ class _CronogramaPreventivasBorradorPageState
       _marcarCambioManual();
       AppFeedback.showFromSnackBar(
         context,
-        const SnackBar(content: Text('Tarea enviada a excluidas.')),
+        const SnackBar(content: Text('Bloque enviado a excluidas.')),
       );
       await _cargarDatos();
     } catch (e) {
@@ -2978,8 +2988,6 @@ class _CronogramaPreventivasBorradorPageState
       _marcarCambioManual();
     }
 
-    final omitidas =
-        (resultado['omitidasPorDivisionAlmuerzo'] as num?)?.toInt() ?? 0;
     final cambiosCascada = ((resultado['cambiosCascada'] as List?) ?? const [])
         .whereType<Map>();
     final movidas = cambiosCascada
@@ -2997,11 +3005,6 @@ class _CronogramaPreventivasBorradorPageState
     }
     if (excluidas > 0) {
       mensaje.write(' $excluidas tarea(s) quedaron excluidas.');
-    }
-    if (omitidas > 0) {
-      mensaje.write(
-        ' $omitidas tarea(s) de una división por almuerzo conservaron su horario.',
-      );
     }
 
     AppFeedback.showFromSnackBar(
@@ -5547,28 +5550,94 @@ class _CronogramaPreventivasBorradorPageState
     final showSidebar = w >= 1100;
 
     if (!showSidebar) {
-      return _WeekScheduleView(
-        weekStart: weekStart,
-        tareas: tareas,
-        tareasCompletas: tareasCompletas,
-        agruparSuperposiciones: _filtroOperario == 'TODOS',
-        horariosConjunto: _horariosConjunto,
-        scaleMinutes: _escalaSemanalMinutos,
-        horaInicio: _horaInicioJornada,
-        horaFin: _horaFinJornada,
-        horaDescansoInicio: _horaDescansoInicio,
-        horaDescansoFin: _horaDescansoFin,
-        esFestivo: _esFestivo,
-        nombreFestivo: _nombreFestivo,
-        onTapTarea: (t) => _mostrarDetalleTarea(t, context),
-        onMoverTarea: _moverTareaSemana,
-        onAgendarBloqueExcluida: _agendarBloqueExcluidaEnSemana,
-        onAgendarExcluidaEnSlot: _agendarExcluidaEnSlot,
-        normalizarMensajeMovimiento: (error, operariosNombres) =>
-            _normalizarMensajeMovimientoBorrador(
-              error: error,
-              operariosNombres: operariosNombres,
+      // En desktop los filtros (operario, ubicación, estado...) solo viven
+      // dentro del sidebar "Resumen", que en móvil no se muestra; se
+      // exponen aparte para no perder la capacidad de filtrar.
+      return Column(
+        children: [
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              initiallyExpanded: true,
+              title: const Text(
+                'Filtros',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+              ),
+              childrenPadding: const EdgeInsets.only(bottom: 8),
+              children: [_buildFiltrosComoColumna(mostrarTitulo: false)],
             ),
+          ),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                value: true,
+                label: Text('Agenda'),
+                icon: Icon(Icons.view_agenda_outlined),
+              ),
+              ButtonSegment(
+                value: false,
+                label: Text('Cuadrícula'),
+                icon: Icon(Icons.grid_on_outlined),
+              ),
+            ],
+            selected: {_vistaAgendaEnMovil},
+            onSelectionChanged: (value) =>
+                setState(() => _vistaAgendaEnMovil = value.first),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _vistaAgendaEnMovil
+                ? _SidebarAgendaDia(
+                    weekStart: weekStart,
+                    dayIndex: _sidebarDiaIndex,
+                    verExcluidasMes: _sidebarVerExcluidasMes,
+                    onDayIndexChanged: (value) =>
+                        setState(() => _sidebarDiaIndex = value),
+                    onVerExcluidasMesChanged: (value) =>
+                        setState(() => _sidebarVerExcluidasMes = value),
+                    tareasSemana: tareas,
+                    tareasSemanaCompletas: tareasCompletas,
+                    horariosConjunto: _horariosConjunto,
+                    onTapTarea: (t) => _mostrarDetalleTarea(t, context),
+                    excluidasMes: _excluidasFiltradas,
+                    excluirPorFecha: _excluidasPorFecha,
+                    onReordenarTareasDia: _reordenarTareasDia,
+                    onEliminarTarea: _eliminarTareaBorrador,
+                    onTapExcluida: _mostrarDetalleExcluida,
+                    onDescartarExcluida: _descartarExcluidaBorrador,
+                    onAgendarExcluida: _agendarExcluida,
+                    onDividirExcluida: _dividirExcluidaEnMinutos,
+                    onAgendarBloqueExcluida: _agendarBloqueExcluida,
+                    onReemplazarConExcluida: _reemplazarTareaConExcluida,
+                    onReasignarOperario: _reasignarOperarioTarea,
+                    onReasignarOperarioExcluida: _reasignarOperarioExcluida,
+                  )
+                : _WeekScheduleView(
+                    weekStart: weekStart,
+                    tareas: tareas,
+                    tareasCompletas: tareasCompletas,
+                    agruparSuperposiciones: _filtroOperario == 'TODOS',
+                    horariosConjunto: _horariosConjunto,
+                    scaleMinutes: _escalaSemanalMinutos,
+                    horaInicio: _horaInicioJornada,
+                    horaFin: _horaFinJornada,
+                    horaDescansoInicio: _horaDescansoInicio,
+                    horaDescansoFin: _horaDescansoFin,
+                    esFestivo: _esFestivo,
+                    nombreFestivo: _nombreFestivo,
+                    onTapTarea: (t) => _mostrarDetalleTarea(t, context),
+                    onMoverTarea: _moverTareaSemana,
+                    onAgendarBloqueExcluida: _agendarBloqueExcluidaEnSemana,
+                    onAgendarExcluidaEnSlot: _agendarExcluidaEnSlot,
+                    normalizarMensajeMovimiento: (error, operariosNombres) =>
+                        _normalizarMensajeMovimientoBorrador(
+                          error: error,
+                          operariosNombres: operariosNombres,
+                        ),
+                  ),
+          ),
+        ],
       );
     }
 
@@ -5644,6 +5713,7 @@ class _CronogramaPreventivasBorradorPageState
                 setState(() => _sidebarVerExcluidasMes = value),
             tareasSemana: tareas,
             tareasSemanaCompletas: tareasCompletas,
+            horariosConjunto: _horariosConjunto,
             onTapTarea: (t) => _mostrarDetalleTarea(t, context),
             excluidasMes: _excluidasFiltradas,
             excluirPorFecha: _excluidasPorFecha,
@@ -6902,7 +6972,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                   bottom: 0,
                   child: Tooltip(
                     message:
-                        'División automática por almuerzo; no se mueve por separado',
+                        'Al reordenar el día se ajustan ambos tramos de la tarea',
                     child: Icon(
                       Icons.free_breakfast,
                       size: tiny ? 11 : 15,
@@ -7553,8 +7623,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   // marcador nunca queda vacío/ilegible como
                                   // antes cuando el solape era muy corto.
                                   final compactMarker = markerHeight < 58;
-                                  final ultraCompactMarker =
-                                      markerHeight < 40;
+                                  final ultraCompactMarker = markerHeight < 40;
                                   final markerPadding = ultraCompactMarker
                                       ? const EdgeInsets.fromLTRB(6, 3, 6, 3)
                                       : const EdgeInsets.fromLTRB(8, 7, 8, 7);
@@ -7590,9 +7659,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                           children: [
                                             Row(
                                               children: [
-                                                ...List.generate(dotCount, (
-                                                  i,
-                                                ) {
+                                                ...List.generate(dotCount, (i) {
                                                   return Container(
                                                     width: 10,
                                                     height: 10,
@@ -7633,8 +7700,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                           ? 'Tareas solapadas'
                                                           : 'Superposicion detectada',
                                                       maxLines: 1,
-                                                      overflow: TextOverflow
-                                                          .ellipsis,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
                                                       style: TextStyle(
                                                         color: text,
                                                         fontSize: 11,
@@ -7651,8 +7718,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                               Text(
                                                 'Aqui hay ${placement.groupSize} tareas superpuestas. Filtra por operario para verlo mejor.',
                                                 maxLines: 1,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
+                                                overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
                                                   color: subtext,
                                                   fontSize: 10,
@@ -7665,8 +7731,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                               Text(
                                                 '$horaIni - $horaFinGrupo${resumen.isEmpty ? '' : ' • $resumen${extra > 0 ? ' y $extra más' : ''}'}',
                                                 maxLines: 1,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
+                                                overflow: TextOverflow.ellipsis,
                                                 style: TextStyle(
                                                   color: subtext,
                                                   fontSize: 10,
@@ -7949,6 +8014,7 @@ class _SidebarAgendaDia extends StatefulWidget {
   final ValueChanged<bool> onVerExcluidasMesChanged;
   final List<TareaModel> tareasSemana;
   final List<TareaModel> tareasSemanaCompletas;
+  final List<HorarioConjunto> horariosConjunto;
   final void Function(TareaModel t) onTapTarea;
   final List<PreventivaExcluidaBorradorModel> excluidasMes;
   final List<PreventivaExcluidaBorradorModel> Function(DateTime fecha)
@@ -7981,6 +8047,7 @@ class _SidebarAgendaDia extends StatefulWidget {
     required this.onVerExcluidasMesChanged,
     required this.tareasSemana,
     required this.tareasSemanaCompletas,
+    required this.horariosConjunto,
     required this.onTapTarea,
     required this.excluidasMes,
     required this.excluirPorFecha,
@@ -8003,6 +8070,25 @@ class _SidebarAgendaDia extends StatefulWidget {
 class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
   final Set<int> _excluidasExpandidaIds = <int>{};
   bool _reordenandoDia = false;
+
+  bool _esParejaAlmuerzo(List<TareaModel> pareja, DateTime fecha) {
+    if (pareja.length != 2) return false;
+    for (final horario in widget.horariosConjunto) {
+      if (weekdayFromScheduleDay(horario.dia) != fecha.weekday) continue;
+      final inicio = horario.descansoInicio == null
+          ? null
+          : parseHourToTimeOfDay(horario.descansoInicio);
+      final fin = horario.descansoFin == null
+          ? null
+          : parseHourToTimeOfDay(horario.descansoFin);
+      if (inicio == null || fin == null) return false;
+      final antes = pareja[0].fechaFin.toLocal();
+      final despues = pareja[1].fechaInicio.toLocal();
+      return antes.hour * 60 + antes.minute == timeOfDayToMinutes(inicio) &&
+          despues.hour * 60 + despues.minute == timeOfDayToMinutes(fin);
+    }
+    return false;
+  }
 
   Future<void> _mostrarDialogoErrorReordenamiento(String mensaje) async {
     if (!mounted) return;
@@ -8158,6 +8244,27 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                         final nuevas = [...tareasDia];
                         final item = nuevas.removeAt(oldIndex);
                         nuevas.insert(newIndex, item);
+                        if (item.grupoPlanId != null) {
+                          final pareja =
+                              tareasDia
+                                  .where(
+                                    (t) => t.grupoPlanId == item.grupoPlanId,
+                                  )
+                                  .toList()
+                                ..sort(
+                                  (a, b) =>
+                                      a.fechaInicio.compareTo(b.fechaInicio),
+                                );
+                          if (_esParejaAlmuerzo(pareja, fecha)) {
+                            final idsPareja = pareja.map((t) => t.id).toSet();
+                            final posicion = nuevas
+                                .takeWhile((t) => t.id != item.id)
+                                .where((t) => !idsPareja.contains(t.id))
+                                .length;
+                            nuevas.removeWhere((t) => idsPareja.contains(t.id));
+                            nuevas.insertAll(posicion, pareja);
+                          }
+                        }
                         setState(() => _reordenandoDia = true);
                         try {
                           await widget.onReordenarTareasDia(fecha, nuevas);

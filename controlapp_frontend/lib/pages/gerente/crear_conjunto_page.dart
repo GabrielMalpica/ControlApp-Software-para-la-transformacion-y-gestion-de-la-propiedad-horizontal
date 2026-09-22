@@ -888,77 +888,112 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                       Column(
                         children: _diasSemana.map((dia) {
                           final h = _horariosPorDia[dia]!;
+                          final botones = [
+                            OutlinedButton(
+                              onPressed: () =>
+                                  _seleccionarHora(dia: dia, esApertura: true),
+                              child: Text(
+                                h.apertura == null
+                                    ? 'Apertura'
+                                    : _formatTimeOfDay(h.apertura!),
+                              ),
+                            ),
+                            OutlinedButton(
+                              onPressed: () => _seleccionarHora(
+                                esApertura: false,
+                                dia: dia,
+                                esDescansoInicio: true,
+                              ),
+                              child: Text(
+                                h.descansoInicio == null
+                                    ? 'Desc. ini'
+                                    : _formatTimeOfDay(h.descansoInicio!),
+                              ),
+                            ),
+                            OutlinedButton(
+                              onPressed: () => _seleccionarHora(
+                                dia: dia,
+                                esDescansoFin: true,
+                                esApertura: false,
+                              ),
+                              child: Text(
+                                h.descansoFin == null
+                                    ? 'Desc. fin'
+                                    : _formatTimeOfDay(h.descansoFin!),
+                              ),
+                            ),
+                            OutlinedButton(
+                              onPressed: () =>
+                                  _seleccionarHora(dia: dia, esApertura: false),
+                              child: Text(
+                                h.cierre == null
+                                    ? 'Cierre'
+                                    : _formatTimeOfDay(h.cierre!),
+                              ),
+                            ),
+                          ];
+
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 4),
-                            child: Row(
-                              children: [
-                                SizedBox(
-                                  width: 90,
-                                  child: Text(
-                                    dia,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w500,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                // Con 4 botones de hora + la etiqueta del día
+                                // en una sola fila, un teléfono angosto
+                                // (≤ ~420px) no da espacio para el texto de
+                                // cada botón ("Desc. ini", "Apertura", ...) y
+                                // se recorta; ahí se apila el día arriba y
+                                // los botones en un Wrap de 2 columnas.
+                                if (constraints.maxWidth >= 420) {
+                                  return Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 90,
+                                        child: Text(
+                                          dia,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                      for (
+                                        var i = 0;
+                                        i < botones.length;
+                                        i++
+                                      ) ...[
+                                        if (i > 0) const SizedBox(width: 6),
+                                        Expanded(child: botones[i]),
+                                      ],
+                                    ],
+                                  );
+                                }
+
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      dia,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: () => _seleccionarHora(
-                                      dia: dia,
-                                      esApertura: true,
+                                    const SizedBox(height: 4),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 6,
+                                      children: botones
+                                          .map(
+                                            (b) => SizedBox(
+                                              width:
+                                                  (constraints.maxWidth - 6) /
+                                                  2,
+                                              child: b,
+                                            ),
+                                          )
+                                          .toList(),
                                     ),
-                                    child: Text(
-                                      h.apertura == null
-                                          ? 'Apertura'
-                                          : _formatTimeOfDay(h.apertura!),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: () => _seleccionarHora(
-                                      esApertura: false,
-                                      dia: dia,
-                                      esDescansoInicio: true,
-                                    ),
-                                    child: Text(
-                                      h.descansoInicio == null
-                                          ? 'Desc. ini'
-                                          : _formatTimeOfDay(h.descansoInicio!),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: () => _seleccionarHora(
-                                      dia: dia,
-                                      esDescansoFin: true,
-                                      esApertura: false,
-                                    ),
-                                    child: Text(
-                                      h.descansoFin == null
-                                          ? 'Desc. fin'
-                                          : _formatTimeOfDay(h.descansoFin!),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: () => _seleccionarHora(
-                                      dia: dia,
-                                      esApertura: false,
-                                    ),
-                                    child: Text(
-                                      h.cierre == null
-                                          ? 'Cierre'
-                                          : _formatTimeOfDay(h.cierre!),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                                  ],
+                                );
+                              },
                             ),
                           );
                         }).toList(),
@@ -1477,10 +1512,10 @@ class _NecesidadHorarioEspecialWidget extends StatelessWidget {
                         if (h.activo)
                           Padding(
                             padding: const EdgeInsets.only(left: 28),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton(
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final botones = [
+                                  OutlinedButton(
                                     onPressed: () => onSeleccionarHora(
                                       h: h,
                                       esApertura: true,
@@ -1491,10 +1526,7 @@ class _NecesidadHorarioEspecialWidget extends StatelessWidget {
                                           : _formatHora(h.apertura!),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: OutlinedButton(
+                                  OutlinedButton(
                                     onPressed: () => onSeleccionarHora(
                                       h: h,
                                       esApertura: false,
@@ -1506,10 +1538,7 @@ class _NecesidadHorarioEspecialWidget extends StatelessWidget {
                                           : _formatHora(h.descansoInicio!),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: OutlinedButton(
+                                  OutlinedButton(
                                     onPressed: () => onSeleccionarHora(
                                       h: h,
                                       esApertura: false,
@@ -1521,10 +1550,7 @@ class _NecesidadHorarioEspecialWidget extends StatelessWidget {
                                           : _formatHora(h.descansoFin!),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: OutlinedButton(
+                                  OutlinedButton(
                                     onPressed: () => onSeleccionarHora(
                                       h: h,
                                       esApertura: false,
@@ -1535,8 +1561,40 @@ class _NecesidadHorarioEspecialWidget extends StatelessWidget {
                                           : _formatHora(h.cierre!),
                                     ),
                                   ),
-                                ),
-                              ],
+                                ];
+
+                                // Igual que en el horario general del
+                                // conjunto: 4 botones con texto (min. 300px)
+                                // no caben junto al checkbox+día en un
+                                // teléfono angosto sin recortarse.
+                                if (constraints.maxWidth >= 320) {
+                                  return Row(
+                                    children: [
+                                      for (
+                                        var i = 0;
+                                        i < botones.length;
+                                        i++
+                                      ) ...[
+                                        if (i > 0) const SizedBox(width: 4),
+                                        Expanded(child: botones[i]),
+                                      ],
+                                    ],
+                                  );
+                                }
+
+                                return Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  children: botones
+                                      .map(
+                                        (b) => SizedBox(
+                                          width: (constraints.maxWidth - 4) / 2,
+                                          child: b,
+                                        ),
+                                      )
+                                      .toList(),
+                                );
+                              },
                             ),
                           ),
                       ],

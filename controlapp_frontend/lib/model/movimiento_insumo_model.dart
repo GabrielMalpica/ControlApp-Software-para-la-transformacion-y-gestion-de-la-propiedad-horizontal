@@ -13,6 +13,18 @@ class MovimientoInsumoResponse {
   final int? tareaId;
   final String? tareaDescripcion;
 
+  /// Nombre de quien registró el movimiento cuando NO es un operario
+  /// cerrando su propia tarea (ej. administrador/gerente/supervisor
+  /// haciendo un ingreso/salida manual, o recibiendo una compra).
+  final String? registradoPorNombre;
+
+  /// operario ?? registradoPorNombre: a quién mostrarle como responsable.
+  final String? responsableNombre;
+
+  /// "COMPRA", "TAREA" o "MANUAL": de dónde vino el movimiento, para elegir
+  /// la frase correcta al mostrarlo.
+  final String origen;
+
   MovimientoInsumoResponse({
     required this.id,
     required this.tipo,
@@ -23,9 +35,35 @@ class MovimientoInsumoResponse {
     this.operario,
     this.tareaId,
     this.tareaDescripcion,
+    this.registradoPorNombre,
+    this.responsableNombre,
+    this.origen = 'MANUAL',
   });
 
   bool get esEntrada => tipo.toUpperCase() == 'ENTRADA';
+
+  /// Frase lista para mostrar en el kardex, ej. "María González compró" /
+  /// "Se usó en la tarea #12 (Limpieza de fachada)" / "Registrado
+  /// manualmente por Juan Pérez".
+  String get resumenResponsable {
+    final nombre = responsableNombre;
+    switch (origen) {
+      case 'COMPRA':
+        return nombre == null ? 'Compra registrada' : '$nombre compró';
+      case 'TAREA':
+        final desc = tareaDescripcion?.trim();
+        final tareaTxt = tareaId == null
+            ? 'una tarea'
+            : 'la tarea #$tareaId${desc?.isNotEmpty == true ? ' ($desc)' : ''}';
+        return nombre == null
+            ? 'Se usó en $tareaTxt'
+            : 'Se usó en $tareaTxt · $nombre';
+      default:
+        return nombre == null
+            ? 'Registrado manualmente'
+            : 'Registrado manualmente por $nombre';
+    }
+  }
 
   static num _parseNum(dynamic v) {
     if (v == null) return 0;
@@ -52,6 +90,9 @@ class MovimientoInsumoResponse {
       operario: json['operario']?.toString(),
       tareaId: _parseIntNullable(json['tareaId']),
       tareaDescripcion: json['tareaDescripcion']?.toString(),
+      registradoPorNombre: json['registradoPorNombre']?.toString(),
+      responsableNombre: json['responsableNombre']?.toString(),
+      origen: (json['origen'] ?? 'MANUAL').toString(),
     );
   }
 }

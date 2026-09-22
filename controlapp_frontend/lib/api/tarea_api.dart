@@ -5,11 +5,13 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
+import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 import 'package:http/http.dart' as http;
 
 import '../service/api_client.dart';
 import '../service/app_constants.dart';
 import '../service/api_exception.dart';
+import '../service/app_error.dart';
 import '../service/session_service.dart';
 import '../service/upload_media_type.dart';
 
@@ -276,5 +278,109 @@ class TareaApi {
     if (streamed.statusCode != 200) {
       throw Exception('Error cerrando tarea: ${streamed.statusCode} - $body');
     }
+  }
+
+  /// Detalle completo de una tarea por id (acceso por permiso, no por rol).
+  Future<TareaModel> obtenerTarea(int id) async {
+    final resp = await _client.get('${AppConstants.tareaBase}/$id');
+
+    if (resp.statusCode != 200) {
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudo cargar la tarea.',
+      );
+    }
+
+    final decoded = jsonDecode(resp.body) as Map<String, dynamic>;
+    return TareaModel.fromJson(decoded);
+  }
+
+  /// Corrige el cierre de una tarea ya cerrada: quita/agrega evidencias y,
+  /// opcionalmente, reemplaza los insumos usados (con ajuste real de
+  /// inventario en el backend). El estado de la tarea no cambia.
+  Future<TareaModel> corregirCierreTarea({
+    required int tareaId,
+    required String motivo,
+    List<String> evidenciasEliminar = const [],
+    List<Map<String, num>>? insumosUsados,
+    String? observaciones,
+    List<SelectedUploadFile> nuevasEvidencias = const [],
+  }) async {
+    final uri = Uri.parse('${AppConstants.tareaBase}/$tareaId/corregir-cierre');
+
+    final req = http.MultipartRequest('POST', uri);
+    req.headers.addAll(await _authHeaders());
+
+    req.fields['motivo'] = motivo.trim();
+    if (evidenciasEliminar.isNotEmpty) {
+      req.fields['evidenciasEliminar'] = jsonEncode(evidenciasEliminar);
+    }
+    if (insumosUsados != null) {
+      req.fields['insumosUsados'] = jsonEncode(insumosUsados);
+    }
+    if (observaciones != null && observaciones.trim().isNotEmpty) {
+      req.fields['observaciones'] = observaciones.trim();
+    }
+
+    for (final f in nuevasEvidencias) {
+      if (kIsWeb) {
+        if (!f.hasBytes) {
+          throw Exception('En Web el archivo "${f.name}" debe traer bytes.');
+        }
+        req.files.add(
+          http.MultipartFile.fromBytes(
+            'files',
+            f.bytes!,
+            filename: f.name,
+            contentType: uploadMediaTypeFromName(
+              f.name,
+              fallbackMimeType: f.mimeType,
+            ),
+          ),
+        );
+        continue;
+      }
+
+      if (f.hasPath) {
+        req.files.add(
+          await http.MultipartFile.fromPath(
+            'files',
+            f.path!,
+            filename: f.name,
+            contentType: uploadMediaTypeFromName(
+              f.name,
+              fallbackMimeType: f.mimeType,
+            ),
+          ),
+        );
+      } else if (f.hasBytes) {
+        req.files.add(
+          http.MultipartFile.fromBytes(
+            'files',
+            f.bytes!,
+            filename: f.name,
+            contentType: uploadMediaTypeFromName(
+              f.name,
+              fallbackMimeType: f.mimeType,
+            ),
+          ),
+        );
+      }
+    }
+
+    final streamed = await req.send();
+    final body = await streamed.stream.bytesToString();
+
+    if (streamed.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          body,
+          fallback: 'No se pudo corregir el cierre de la tarea.',
+        ),
+      );
+    }
+
+    return TareaModel.fromJson(jsonDecode(body) as Map<String, dynamic>);
   }
 }
