@@ -35,6 +35,7 @@ type ResolvedOrderItem = {
   unitPrice: number;
   subtotal: number;
   service?: ResolvedServiceSelection;
+  factorInventario: number | null;
 };
 
 type ServiceSelectionDTO = NonNullable<OrderItemsDTO[number]["service"]>;
@@ -384,33 +385,53 @@ export class CommerceOrderService {
       if (!product.service?.enabled && item.service) {
         throw makeHttpError(400, `${product.name} no admite configuracion de servicio`);
       }
-      if (product.type != "simple" && !item.variationId) {
-        throw makeHttpError(
-          400,
-          `El producto ${product.name} requiere seleccion de variacion. Este soporte se activa en el siguiente ajuste de checkout`,
-        );
+      let variationLabel = "";
+      let variationPrice: number | null = null;
+      let variationSku = "";
+      // Factor declarado EN WOOCOMMERCE (campo del plugin), si existe, para
+      // este producto o -si aplica- esta variacion puntual. Se congela aqui
+      // (item.wooFactorInventario) para no depender de Woo durante la
+      // recepcion; ver comentario en el schema de PedidoAppItem.
+      let factorInventario: number | null = product.insumoConfig.factorConversion;
+      if (product.type !== "simple") {
+        if (!item.variationId) {
+          throw makeHttpError(400, `Debes elegir una variacion de ${product.name}`);
+        }
+        const variation = product.variations.find((v) => v.id === item.variationId);
+        if (!variation) {
+          throw makeHttpError(400, `La variacion seleccionada de ${product.name} ya no existe`);
+        }
+        if (!variation.purchasable) {
+          throw makeHttpError(400, `${product.name} (${variation.label}) no esta disponible por el momento`);
+        }
+        variationLabel = variation.label;
+        variationPrice = variation.price.current;
+        variationSku = variation.sku;
+        factorInventario = variation.insumoConfig.factorConversion;
       }
 
+      const basePrice = variationPrice ?? product.price.current;
       const pricedService = item.service
         ? validateAndPriceServiceSelection(
             product.service!,
             item.service,
-            product.price.current,
+            basePrice,
             item.quantity,
           )
         : null;
-      const unitPrice = pricedService?.unitPrice ?? product.price.current;
+      const unitPrice = pricedService?.unitPrice ?? basePrice;
 
       resolved.push({
         productId: item.productId,
         quantity: item.quantity,
         variationId: item.variationId,
-        name: product.name,
-        sku: product.sku,
+        name: variationLabel ? `${product.name} (${variationLabel})` : product.name,
+        sku: variationSku || product.sku,
         type: product.type,
         unitPrice,
         subtotal: unitPrice * item.quantity,
         service: pricedService?.service,
+        factorInventario,
       });
     }
 
@@ -507,6 +528,8 @@ export class CommerceOrderService {
     return {
       wooProductId: item.productId,
       wooVariationId: item.variationId ?? null,
+      wooFactorInventario:
+        item.factorInventario != null ? new Prisma.Decimal(item.factorInventario) : null,
       nombreProducto: item.name,
       sku: item.sku || null,
       cantidad: new Prisma.Decimal(item.quantity),
@@ -555,6 +578,10 @@ export class CommerceOrderService {
       opcionPagoServicio: string | null;
       addonsServicio: Prisma.JsonValue | null;
       conjuntoId: string | null;
+      direccionEntrega: string | null;
+      metodoPago: string | null;
+      comprobanteUrl: string | null;
+      comprobanteSubidoEn: Date | null;
       creadoEn: Date;
       actualizadoEn: Date;
       conjunto?: { nombre: string } | null;
@@ -589,6 +616,10 @@ export class CommerceOrderService {
         process.env.WOO_WHATSAPP_PHONE ?? process.env.WHATSAPP_PHONE ?? "",
       ).replace(/\D/g, ""),
       conjuntoId: pedido.conjuntoId,
+      direccionEntrega: pedido.direccionEntrega,
+      metodoPago: pedido.metodoPago,
+      comprobanteUrl: pedido.comprobanteUrl,
+      comprobanteSubidoEn: pedido.comprobanteSubidoEn,
       conjuntoNombre: pedido.conjunto?.nombre ?? null,
       creadoEn: pedido.creadoEn,
       actualizadoEn: pedido.actualizadoEn,
@@ -660,11 +691,14 @@ export class CommerceOrderService {
           last_name: lastName,
           email: usuario.correo,
         },
+        shipping: { address_1: dto.direccionEntrega },
         line_items: orderItems.map((item) => this.buildWooLineItem(item)),
         meta_data: [
           { key: "controlapp_tipo_pedido", value: "RESIDENTE" },
           { key: "controlapp_residente_id", value: usuario.residente!.id },
           { key: "controlapp_conjunto_id", value: usuario.residente!.conjuntoId },
+          { key: "controlapp_direccion_entrega", value: dto.direccionEntrega },
+          { key: "controlapp_metodo_pago", value: dto.metodoPago },
           ...(dto.idempotencyKey
             ? [{ key: "controlapp_idempotency_key", value: dto.idempotencyKey }]
             : []),
@@ -683,6 +717,8 @@ export class CommerceOrderService {
         usuarioId: usuario.id,
         conjuntoId: usuario.residente!.conjuntoId,
         residenteId: usuario.residente!.id,
+        direccionEntrega: dto.direccionEntrega,
+        metodoPago: dto.metodoPago,
         total: new Prisma.Decimal(total),
         pagarAhora: new Prisma.Decimal(serviceSummary.pagarAhora),
         fechaServicio: serviceSummary.first
@@ -724,6 +760,9 @@ export class CommerceOrderService {
       turnoServicio: pedido.turnoServicio,
       opcionPagoServicio: pedido.opcionPagoServicio,
       addonsServicio: pedido.addonsServicio,
+      direccionEntrega: pedido.direccionEntrega,
+      metodoPago: pedido.metodoPago,
+      comprobanteUrl: pedido.comprobanteUrl,
       whatsappPhone: String(
         process.env.WOO_WHATSAPP_PHONE ?? process.env.WHATSAPP_PHONE ?? "",
       ).replace(/\D/g, ""),
@@ -775,10 +814,13 @@ export class CommerceOrderService {
           company: conjunto.nombre,
           email: conjunto.correo || usuario.correo,
         },
+        shipping: { address_1: dto.direccionEntrega, company: conjunto.nombre },
         line_items: orderItems.map((item) => this.buildWooLineItem(item)),
         meta_data: [
           { key: "controlapp_tipo_pedido", value: "CONJUNTO" },
           { key: "controlapp_conjunto_id", value: conjunto.nit },
+          { key: "controlapp_direccion_entrega", value: dto.direccionEntrega },
+          { key: "controlapp_metodo_pago", value: dto.metodoPago },
           ...(dto.idempotencyKey
             ? [{ key: "controlapp_idempotency_key", value: dto.idempotencyKey }]
             : []),
@@ -797,6 +839,8 @@ export class CommerceOrderService {
         usuarioId: usuario.id,
         conjuntoId: conjunto.nit,
         residenteId: null,
+        direccionEntrega: dto.direccionEntrega,
+        metodoPago: dto.metodoPago,
         total: new Prisma.Decimal(total),
         pagarAhora: new Prisma.Decimal(serviceSummary.pagarAhora),
         fechaServicio: serviceSummary.first

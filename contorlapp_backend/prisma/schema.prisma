@@ -2073,6 +2073,22 @@ model PedidoApp {
   addonsServicio     Json?
   idempotencyKey     String?   @unique
 
+  // Verificacion de pago manual (aun no hay pasarela conectada): el
+  // comprador elige metodo y sube su comprobante de transferencia; un
+  // administrador/gerente lo revisa DENTRO de la app (no en WordPress) y
+  // recien ahi puede pasar el pedido a PAGADO -ver el guard en
+  // CommerceLifecycleService.transicionar.
+  direccionEntrega    String?
+  metodoPago          String?
+  comprobanteUrl      String?
+  comprobanteSubidoEn DateTime?
+  // Lectura automatica (OCR) del comprobante -ayuda al revisor, no confirma el
+  // pago por si sola-. Referencia y hash sirven para detectar el mismo
+  // comprobante reutilizado en otro pedido.
+  comprobanteReferencia   String?
+  comprobanteHash         String?
+  comprobanteVerificacion Json?
+
   entradaInventarioAplicada   Boolean   @default(false)
   entradaInventarioAplicadaEn DateTime?
   puntosAplicados             Boolean   @default(false)
@@ -2094,6 +2110,8 @@ model PedidoApp {
   @@index([usuarioId, estado])
   @@index([conjuntoId, estado])
   @@index([wooOrderId])
+  @@index([comprobanteReferencia])
+  @@index([comprobanteHash])
   @@map("PedidoApp")
 }
 
@@ -2104,6 +2122,15 @@ model PedidoAppItem {
 
   wooProductId       Int?
   wooVariationId     Int?
+  // Factor de conversion declarado EN WOOCOMMERCE (campo propio del plugin,
+  // ej. "este tarro trae 60 pastillas") al momento de comprar. Se guarda
+  // aqui -no se relee de Woo durante la recepcion- para no depender de una
+  // llamada HTTP dentro de la transaccion que aplica el inventario, y para
+  // que quede fijo el valor con el que se compro aunque despues alguien
+  // edite el campo en WordPress. Null = Woo no declaro nada para este
+  // producto/variacion; en ese caso se usa el factor manual del Insumo
+  // (Insumo.wooFactorConversion), como antes de este campo existir.
+  wooFactorInventario Decimal? @db.Decimal(12, 4)
   nombreProducto     String
   sku                String?
   cantidad           Decimal   @db.Decimal(14, 4)
@@ -2117,6 +2144,12 @@ model PedidoAppItem {
 
   insumo   Insumo? @relation(fields: [insumoId], references: [id], onDelete: SetNull)
   insumoId Int?
+
+  // Lo que el cliente reporto al confirmar la recepcion: cuanto llego de lo
+  // pedido (menos que "cantidad" = llego incompleto) y, opcional, que paso.
+  // Solo lo recibido suma al inventario. Null = pedido anterior a este reporte.
+  cantidadRecibida Decimal? @db.Decimal(14, 4)
+  novedadRecepcion String?
 
   @@index([pedidoId])
   @@index([insumoId])

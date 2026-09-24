@@ -94,7 +94,18 @@ app.use(
     message: { ok: false, message: "Demasiadas solicitudes. Intenta nuevamente en unos minutos" },
   }),
 );
-app.use(express.json({ limit: "1mb" }));
+app.use(
+  express.json({
+    limit: "1mb",
+    // Guarda el cuerpo crudo (antes de parsear) para el webhook de
+    // WooCommerce: su firma HMAC se calcula sobre los bytes exactos que
+    // envio, no sobre el JSON re-serializado -que podria no ser identico
+    // byte a byte (orden de llaves, espacios, etc).
+    verify: (req, _res, buf) => {
+      (req as Request).rawBody = buf;
+    },
+  }),
+);
 
 const loginIpLimit = distributedRateLimit({
   name: "auth:login:ip",

@@ -59,11 +59,117 @@ type WooStoreProduct = {
     clx_catalogo?: {
       only_conjunto?: boolean;
       only_public?: boolean;
+      // Campos propios del plugin (formulario de producto en WordPress),
+      // mismos 4 datos que pide el modal "Agregar insumo personalizado" de
+      // ControlApp. Si se llenan, ControlApp puede crear/actualizar el
+      // insumo correspondiente automaticamente -sin que nadie lo mapee a
+      // mano la primera vez. Todos null/ausente = no declarado en Woo, en
+      // cuyo caso se sigue usando el mapeo manual dentro de ControlApp.
+      factor_inventario?: number | null;
+      insumo_modo?: string | null;
+      insumo_unidad?: string | null;
+      insumo_contenido?: number | null;
+      insumo_unidad_contenido?: string | null;
+      insumo_categoria?: string | null;
+      insumo_umbral?: number | null;
+      // Producto variable por unidades: todas las variaciones suman al mismo insumo.
+      insumo_compartido?: boolean;
     };
   };
 };
 
 type WooStoreProductsResponse = WooStoreProduct[];
+
+// Woo REST v3 (no la Store API publica): unica forma de listar las
+// variaciones reales (con su propio id, comprable via line_items.variation_id)
+// de un producto variable. Requiere las credenciales de la tienda.
+type WooRestVariation = {
+  id: number;
+  sku?: string;
+  price?: string;
+  regular_price?: string;
+  sale_price?: string;
+  on_sale?: boolean;
+  purchasable?: boolean;
+  stock_status?: string;
+  attributes?: Array<{ name?: string; option?: string }>;
+  image?: { src?: string } | null;
+  // Inyectados por el plugin via woocommerce_rest_prepare_product_variation_object
+  // (equivalente por-variacion de los 4 campos del producto padre; vacios =
+  // se usan los del producto padre, ver normalizeVariation).
+  clx_factor_inventario?: number | null;
+  clx_insumo_modo?: string | null;
+  clx_insumo_unidad?: string | null;
+  clx_insumo_contenido?: number | null;
+  clx_insumo_unidad_contenido?: string | null;
+  clx_insumo_categoria?: string | null;
+  clx_insumo_umbral?: number | null;
+};
+
+// Union deliberadamente amplia -en vez del enum de Prisma, para no acoplar
+// este servicio (habla con WordPress) al cliente de Prisma- pero con los
+// mismos 5 valores exactos que CategoriaInsumo. Validado/saneado en
+// normalizeInsumoCategoria antes de usarse.
+export type WooInsumoCategoria = "LIMPIEZA" | "JARDINERIA" | "PISCINA" | "FERRETERIA" | "OTROS";
+
+function normalizeInsumoCategoria(raw: unknown): WooInsumoCategoria | null {
+  const value = String(raw ?? "").trim().toUpperCase();
+  const valid: WooInsumoCategoria[] = ["LIMPIEZA", "JARDINERIA", "PISCINA", "FERRETERIA", "OTROS"];
+  return (valid as string[]).includes(value) ? (value as WooInsumoCategoria) : null;
+}
+
+// Igual que el modal "Agregar insumo personalizado" de la app:
+//  - "unidad": se cuenta en piezas (escobas, pares, kits).
+//  - "empaque": se cuenta en empaques (tarro, caja) que traen un contenido
+//    medible (1,8 L, 500 g), que el inventario muestra como total.
+export type WooInsumoModo = "unidad" | "empaque";
+
+function normalizeInsumoModo(raw: unknown): WooInsumoModo | null {
+  const value = String(raw ?? "").trim().toLowerCase();
+  return value === "unidad" || value === "empaque" ? value : null;
+}
+
+function positiveNumber(raw: unknown): number | null {
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : null;
+}
+
+export type WooInsumoConfig = {
+  // null = no declarado en Woo (o producto de antes del selector de modo: se
+  // interpreta como "unidad" si trae unidad, ver modoEfectivo).
+  modo: WooInsumoModo | null;
+  // Unidad de conteo ("unidad", "par") o nombre del empaque ("tarro", "caja").
+  unidad: string | null;
+  // Solo modo empaque: cuanto trae cada empaque y en que se mide.
+  contenido: number | null;
+  unidadContenido: string | null;
+  categoria: WooInsumoCategoria | null;
+  umbralBajo: number | null;
+  // Cuantas unidades (o empaques) de inventario trae CADA unidad vendida en Woo.
+  factorConversion: number | null;
+  // Producto variable contado por unidades: todas las variaciones (ej. Sanitabs
+  // de 30, 60 y 120 pastillas) suman al MISMO insumo, con el nombre del
+  // producto y no el de cada variacion; cada variacion aporta su propio factor.
+  // Las variaciones lo heredan del producto.
+  compartido: boolean;
+};
+
+/** Modo con el que se creara el insumo: el declarado o, si solo hay unidad, "unidad". */
+export function modoEfectivo(config: Pick<WooInsumoConfig, "modo" | "unidad">): WooInsumoModo | null {
+  if (config.modo) return config.modo;
+  return config.unidad ? "unidad" : null;
+}
+
+/**
+ * ¿Woo declaro lo suficiente para crear el insumo sin que nadie lo mapee?
+ * Por unidades basta la unidad; por empaques hacen falta ademas el contenido
+ * (mayor a 0) y su unidad de medida.
+ */
+export function insumoDeclaradoCompleto(config: WooInsumoConfig): boolean {
+  const modo = modoEfectivo(config);
+  if (!modo || !config.unidad) return false;
+  if (modo === "empaque") return config.contenido != null && config.contenido > 0 && !!config.unidadContenido;
+  return true;
+}
 
 function normalizeSlug(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
@@ -101,6 +207,14 @@ function moneyToNumber(raw: string | undefined, minorUnit: number | undefined) {
   const safeMinorUnit = Number.isFinite(minorUnit) ? Number(minorUnit) : 0;
   const divisor = safeMinorUnit > 0 ? 10 ** safeMinorUnit : 1;
   return parsed / divisor;
+}
+
+// La REST v3 (variaciones) devuelve el precio como decimal "normal" (ej.
+// "95400" o "10.50"), a diferencia de la Store API que lo entrega en unidad
+// menor (centavos) + currency_minor_unit. Por eso no reutiliza moneyToNumber.
+function restMoneyToNumber(raw: string | undefined) {
+  const parsed = Number(String(raw ?? "").trim());
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export type CommerceServiceSlot = { id: string; label: string; capacity: number };
@@ -391,6 +505,22 @@ export class WooCommerceCatalogService {
       service,
       searchableText: "",
       source: "woo_store_api",
+      insumoConfig: {
+        modo: normalizeInsumoModo(product.extensions?.clx_catalogo?.insumo_modo),
+        unidad: product.extensions?.clx_catalogo?.insumo_unidad?.trim() || null,
+        contenido: positiveNumber(product.extensions?.clx_catalogo?.insumo_contenido),
+        unidadContenido: product.extensions?.clx_catalogo?.insumo_unidad_contenido?.trim() || null,
+        categoria: normalizeInsumoCategoria(product.extensions?.clx_catalogo?.insumo_categoria),
+        compartido: product.extensions?.clx_catalogo?.insumo_compartido === true,
+        umbralBajo:
+          typeof product.extensions?.clx_catalogo?.insumo_umbral === "number"
+            ? product.extensions.clx_catalogo.insumo_umbral
+            : null,
+        factorConversion:
+          typeof product.extensions?.clx_catalogo?.factor_inventario === "number"
+            ? product.extensions.clx_catalogo.factor_inventario
+            : null,
+      } satisfies WooInsumoConfig,
     };
   }
 
@@ -500,12 +630,91 @@ export class WooCommerceCatalogService {
     });
   }
 
+  private normalizeVariation(variation: WooRestVariation, currencyCode: string) {
+    const optionLabel = (variation.attributes ?? [])
+      .map((attr) => String(attr.option ?? "").trim())
+      .filter(Boolean)
+      .join(" / ");
+    const regular = restMoneyToNumber(variation.regular_price ?? variation.price);
+    const current = restMoneyToNumber(variation.price);
+    return {
+      id: variation.id,
+      label: optionLabel || `#${variation.id}`,
+      sku: String(variation.sku ?? "").trim(),
+      purchasable: variation.purchasable !== false && variation.stock_status !== "outofstock",
+      stockStatus: variation.stock_status ?? "instock",
+      price: {
+        currencyCode,
+        current,
+        regular,
+        sale: variation.on_sale ? restMoneyToNumber(variation.sale_price) : current,
+      },
+      image: variation.image?.src ? String(variation.image.src).trim() : "",
+      // Sin fallback al producto padre todavia -eso pasa en getProduct(),
+      // que es quien tiene ambos objetos disponibles para mezclarlos.
+      insumoConfig: {
+        modo: normalizeInsumoModo(variation.clx_insumo_modo),
+        unidad: variation.clx_insumo_unidad?.trim() || null,
+        contenido: positiveNumber(variation.clx_insumo_contenido),
+        unidadContenido: variation.clx_insumo_unidad_contenido?.trim() || null,
+        categoria: normalizeInsumoCategoria(variation.clx_insumo_categoria),
+        compartido: false, // se hereda del producto en getProduct()
+        umbralBajo: typeof variation.clx_insumo_umbral === "number" ? variation.clx_insumo_umbral : null,
+        factorConversion:
+          typeof variation.clx_factor_inventario === "number" ? variation.clx_factor_inventario : null,
+      } satisfies WooInsumoConfig,
+    };
+  }
+
+  /**
+   * Variaciones reales de un producto variable (Woo REST v3, autenticado).
+   * Cada una tiene su propio id, comprable via line_items.variation_id -no
+   * confundir con los atributos que trae la Store API publica, que solo
+   * listan las opciones, no las combinaciones vendibles ni sus precios.
+   */
+  async getProductVariations(productId: number, currencyCode = "COP") {
+    this.ensureConfigured();
+    const url = buildWooUrl("rest", `/products/${productId}/variations`, { per_page: 100 });
+    return cached(`commerce:catalogo:variaciones:v1:${productId}`, 60, async () => {
+      const raw = await wooFetch<WooRestVariation[]>(
+        url,
+        {},
+        {
+          requireAuth: true,
+          failureMessage: "No se pudieron consultar las variaciones de este producto",
+        },
+      );
+      return raw.map((variation) => this.normalizeVariation(variation, currencyCode));
+    });
+  }
+
   async getProduct(productId: number) {
     this.ensureConfigured();
     const url = this.buildStoreUrl(`/products/${productId}`);
     return cached(`commerce:catalogo:producto:v1:${productId}`, 60, async () => {
       const product = await this.fetchJson<WooStoreProduct>(url);
-      return this.normalizeProduct(product);
+      const normalized = this.normalizeProduct(product);
+      if (normalized.type === "simple") {
+        return { ...normalized, variations: [] as ReturnType<WooCommerceCatalogService["normalizeVariation"]>[] };
+      }
+      const rawVariations = await this.getProductVariations(productId, normalized.price.currencyCode);
+      // Cada campo vacio en la variacion cae al del producto padre (ej. si
+      // solo el padre declaro "categoria", todas las variaciones la heredan
+      // salvo que alguna la sobrescriba puntualmente).
+      const variations = rawVariations.map((variation) => ({
+        ...variation,
+        insumoConfig: {
+          compartido: normalized.insumoConfig.compartido,
+          modo: variation.insumoConfig.modo ?? normalized.insumoConfig.modo,
+          contenido: variation.insumoConfig.contenido ?? normalized.insumoConfig.contenido,
+          unidadContenido: variation.insumoConfig.unidadContenido ?? normalized.insumoConfig.unidadContenido,
+          unidad: variation.insumoConfig.unidad ?? normalized.insumoConfig.unidad,
+          categoria: variation.insumoConfig.categoria ?? normalized.insumoConfig.categoria,
+          umbralBajo: variation.insumoConfig.umbralBajo ?? normalized.insumoConfig.umbralBajo,
+          factorConversion: variation.insumoConfig.factorConversion ?? normalized.insumoConfig.factorConversion,
+        } satisfies WooInsumoConfig,
+      }));
+      return { ...normalized, variations };
     });
   }
 

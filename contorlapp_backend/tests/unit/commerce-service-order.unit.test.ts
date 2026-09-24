@@ -94,6 +94,7 @@ describe("CommerceOrderService - orden de servicio", () => {
       purchasable: true,
       price: { current: 100000 },
       audience: { paraResidente: true, paraConjunto: false, esServicio: true },
+      insumoConfig: { modo: null, unidad: null, contenido: null, unidadContenido: null, categoria: null, umbralBajo: null, factorConversion: null, compartido: false },
       service: {
         enabled: true,
         depositPct: 50,
@@ -135,6 +136,8 @@ describe("CommerceOrderService - orden de servicio", () => {
 
     const result = await service.createResidentOrder("resident-1", {
       idempotencyKey: "cart-service-1",
+      direccionEntrega: "Apto 501, Torre 2",
+      metodoPago: "bre_b",
       items: [
         {
           productId: 77,

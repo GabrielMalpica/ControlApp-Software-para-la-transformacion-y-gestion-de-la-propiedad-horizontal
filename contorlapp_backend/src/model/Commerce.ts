@@ -22,8 +22,16 @@ const IdempotencyKeyDTO = z
   .regex(/^[A-Za-z0-9._:-]+$/, "La clave de idempotencia no es valida")
   .optional();
 
+// Sin pasarela de pago conectada todavia: el comprador transfiere a mano y
+// declara con que metodo va a pagar para que el checkout le muestre el QR
+// correspondiente. El comprobante se sube despues, ya con el pedido creado
+// (ver POST /commerce/pedidos/:id/comprobante).
+export const MetodoPagoManualDTO = z.enum(["nequi", "bre_b"]);
+
 export const CrearPedidoResidenteDTO = z.object({
   items: z.array(PedidoCommerceItemDTO).min(1, "Debes agregar al menos un producto al carrito"),
+  direccionEntrega: z.string().trim().min(5, "Indica la direccion de entrega").max(300),
+  metodoPago: MetodoPagoManualDTO,
   notas: z.string().trim().max(500).optional(),
   idempotencyKey: IdempotencyKeyDTO,
 });
@@ -31,8 +39,14 @@ export const CrearPedidoResidenteDTO = z.object({
 export const CrearPedidoConjuntoDTO = z.object({
   conjuntoId: z.string().trim().min(1, "Debes seleccionar un conjunto").optional(),
   items: z.array(PedidoCommerceItemDTO).min(1, "Debes agregar al menos un insumo al carrito"),
+  direccionEntrega: z.string().trim().min(5, "Indica la direccion de entrega").max(300),
+  metodoPago: MetodoPagoManualDTO,
   notas: z.string().trim().max(500).optional(),
   idempotencyKey: IdempotencyKeyDTO,
+});
+
+export const SubirComprobantePagoDTO = z.object({
+  metodoPago: MetodoPagoManualDTO.optional(),
 });
 
 export const PedidoDetalleParamDTO = z.object({
@@ -55,6 +69,18 @@ export const CambiarEstadoPedidoDTO = z.object({
     "CANCELADO",
   ]),
   motivo: z.string().trim().max(500).optional(),
+  // Solo al pasar un pedido de conjunto a RECIBIDO: lo que llego de cada
+  // producto. Lo que no se reporte se da por recibido completo.
+  recepcion: z
+    .array(
+      z.object({
+        itemId: z.coerce.number().int().positive(),
+        cantidadRecibida: z.coerce.number().min(0).max(1_000_000),
+        nota: z.string().trim().max(300).optional(),
+      }),
+    )
+    .max(200)
+    .optional(),
 });
 
 export const MapearPedidoItemDTO = z.object({

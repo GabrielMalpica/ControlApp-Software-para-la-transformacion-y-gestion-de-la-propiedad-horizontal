@@ -34,6 +34,7 @@ function product(overrides: Record<string, unknown> = {}) {
     },
     searchableText: "",
     source: "woo_store_api",
+    insumoConfig: { modo: null, unidad: null, contenido: null, unidadContenido: null, categoria: null, umbralBajo: null, factorConversion: null, compartido: false },
     ...overrides,
   };
 }
@@ -122,6 +123,8 @@ describe("CommerceOrderService - pedidos de conjunto", () => {
 
     const result = await service.createConjuntoOrder("admin-1", {
       items: [{ productId: 72, quantity: 2 }],
+      direccionEntrega: "Porteria del conjunto",
+      metodoPago: "nequi",
       notas: "Entregar en porteria",
     });
 
@@ -180,6 +183,8 @@ describe("CommerceOrderService - pedidos de conjunto", () => {
       service.createConjuntoOrder("gerente-1", {
         conjuntoId: "CONJUNTO-EXTERNO",
         items: [{ productId: 72, quantity: 1 }],
+        direccionEntrega: "Porteria del conjunto",
+        metodoPago: "nequi",
       }),
     ).rejects.toMatchObject({ status: 403 });
     expect(prisma.conjunto.findFirst).toHaveBeenCalledWith(
@@ -231,6 +236,8 @@ describe("CommerceOrderService - pedidos de conjunto", () => {
     await expect(
       service.createConjuntoOrder("admin-1", {
         items: [{ productId: 72, quantity: 1 }],
+        direccionEntrega: "Porteria del conjunto",
+        metodoPago: "nequi",
       }),
     ).rejects.toMatchObject({ status: 400 });
     expect(fetchMock).not.toHaveBeenCalled();

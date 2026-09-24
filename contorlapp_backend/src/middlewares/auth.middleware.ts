@@ -21,16 +21,26 @@ function isPublicRequest(method: string, path: string): boolean {
     return true;
   }
 
-  return (
+  if (
     method === "GET" &&
     (path === "/commerce/catalogo" || path.startsWith("/commerce/catalogo/"))
-  );
+  ) {
+    return true;
+  }
+
+  // Sin Bearer: WooCommerce no manda un JWT de ControlApp. Se autentica con
+  // su propia firma HMAC (ver CommerceWebhookController), verificada dentro
+  // del handler -esto solo lo exime del guard generico de Bearer token.
+  return method === "POST" && path === "/commerce/webhooks/woocommerce";
 }
 
 declare global {
   namespace Express {
     interface Request {
       user?: AuthPayload;
+      // Cuerpo crudo capturado por el verify() de express.json() en index.ts
+      // -lo necesita el webhook de WooCommerce para validar su firma HMAC.
+      rawBody?: Buffer;
     }
   }
 }

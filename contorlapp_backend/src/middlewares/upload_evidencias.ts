@@ -134,6 +134,39 @@ const inventoryPhotoUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024, files: 1 },
 });
 
+// Comprobantes de pago: capturas de pantalla de celulares recientes y PDFs de
+// bancos suelen pasar de 5 MB, asi que tienen un tope propio mas holgado.
+const MAX_COMPROBANTE_MB = 25;
+const comprobanteUpload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: MAX_COMPROBANTE_MB * 1024 * 1024, files: 1 },
+});
+
+const comprobanteSingle = (fieldName: string): RequestHandler => {
+  const handler = comprobanteUpload.single(fieldName);
+  return (req, res, next) => {
+    handler(req, res, (error?: unknown) => {
+      if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+        next({
+          ok: false,
+          status: 413,
+          message: `El comprobante supera el tamaño máximo permitido de ${MAX_COMPROBANTE_MB} MB.`,
+        });
+        return;
+      }
+      next(error);
+    });
+  };
+};
+
+export const uploadComprobante = {
+  single: (fieldName: string): RequestHandler[] => [
+    comprobanteSingle(fieldName),
+    validateMagicBytes,
+  ],
+};
+
 export const uploadEvidencias = {
   single: (fieldName: string): RequestHandler[] => [
     baseUpload.single(fieldName),

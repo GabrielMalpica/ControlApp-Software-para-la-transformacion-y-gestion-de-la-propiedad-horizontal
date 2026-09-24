@@ -414,6 +414,22 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
     label: "Exportar reporte de asistencia",
     description: "Permite exportar el reporte mensual de asistencia a Excel.",
   },
+  {
+    key: "comercio.pedidos.ver",
+    module: "comercio",
+    moduleLabel: "Compra de insumos",
+    label: "Ver pedidos de conjunto",
+    description:
+      "Permite consultar el listado y el detalle de los pedidos de insumos hechos por conjuntos.",
+  },
+  {
+    key: "comercio.pedidos.gestionar",
+    module: "comercio",
+    moduleLabel: "Compra de insumos",
+    label: "Gestionar pedidos de conjunto",
+    description:
+      "Permite confirmar el pago (tras revisar el comprobante), mapear insumos, confirmar recepcion y avanzar el estado de los pedidos de conjunto.",
+  },
 ];
 
 const ALL_PERMISSION_KEYS = new Set(PERMISSION_CATALOG.map((item) => item.key));
@@ -459,6 +475,7 @@ const PERMISSIONS_THAT_GRANT_ACCESS: Readonly<Record<string, readonly string[]>>
     "residentes.cargar_masivo",
   ],
   "plan_esperanza.acceso": ["plan_esperanza.configurar"],
+  "comercio.pedidos.ver": ["comercio.pedidos.gestionar"],
   "asistencia.ver": [
     "asistencia.registrar_manual",
     "asistencia.qr.gestionar",
@@ -488,6 +505,8 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "residentes.editar",
     "residentes.eliminar",
     "residentes.cargar_masivo",
+    "comercio.pedidos.ver",
+    "comercio.pedidos.gestionar",
   ]),
   [Rol.jefe_operaciones]: new Set([
     "conjuntos.ver",
@@ -528,6 +547,8 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "asistencia.qr.gestionar",
     "asistencia.turnos_extra.gestionar",
     "asistencia.exportar",
+    "comercio.pedidos.ver",
+    "comercio.pedidos.gestionar",
   ]),
   [Rol.supervisor]: new Set([
     "conjuntos.ver",

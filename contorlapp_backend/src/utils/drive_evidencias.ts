@@ -49,9 +49,17 @@ export function buildEvidenciaFileName(params: {
   );
 }
 
+let driveClient: ReturnType<typeof google.drive> | null = null;
+let driveClientCredentials: string | null = null;
+
 function getDrive() {
   if (!process.env.GOOGLE_CREDENTIALS) {
     throw new Error("GOOGLE_CREDENTIALS no está definida");
+  }
+  // Se reutiliza el cliente mientras las credenciales no cambien: crear uno
+  // por archivo obligaba a renegociar el token para cada foto de un informe.
+  if (driveClient && driveClientCredentials === process.env.GOOGLE_CREDENTIALS) {
+    return driveClient;
   }
   const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
 
@@ -63,7 +71,9 @@ function getDrive() {
     scopes: ["https://www.googleapis.com/auth/drive.file"],
   });
 
-  return google.drive({ version: "v3", auth });
+  driveClient = google.drive({ version: "v3", auth });
+  driveClientCredentials = process.env.GOOGLE_CREDENTIALS;
+  return driveClient;
 }
 
 async function findFolderByName(drive: any, parentId: string, name: string) {
@@ -108,6 +118,12 @@ export async function uploadEvidenciaToDrive(params: {
   conjuntoNit: string;
   conjuntoNombre?: string;
   fecha: Date; // para carpeta mensual
+  /**
+   * Carpeta fija dentro de la carpeta del conjunto (p. ej. "comprobantes-pago").
+   * Si se indica, el archivo va ahi directamente y no en la carpeta mensual de
+   * evidencias.
+   */
+  subcarpeta?: string;
 }) {
   const rootId = process.env.DRIVE_EVIDENCIAS_ROOT_ID;
   if (!rootId) throw new Error("DRIVE_EVIDENCIAS_ROOT_ID no está definida");
@@ -119,7 +135,11 @@ export async function uploadEvidenciaToDrive(params: {
   );
 
   const conjuntoFolderId = await getOrCreateFolder(drive, rootId, carpetaConjunto);
-  const mesFolderId = await getOrCreateFolder(drive, conjuntoFolderId, monthFolderLabel(params.fecha));
+  const destinoFolderId = await getOrCreateFolder(
+    drive,
+    conjuntoFolderId,
+    params.subcarpeta ? safeName(params.subcarpeta) : monthFolderLabel(params.fecha),
+  );
 
   const media = {
     mimeType: params.mimeType,
@@ -129,7 +149,7 @@ export async function uploadEvidenciaToDrive(params: {
   const res = await drive.files.create({
     requestBody: {
       name: safeName(params.fileName),
-      parents: [mesFolderId],
+      parents: [destinoFolderId],
     },
     media,
     fields: "id",
@@ -170,4 +190,58 @@ export async function getEvidenciaStream(fileId: string) {
     mimeType: (meta.data.mimeType as string) || "application/octet-stream",
     name: (meta.data.name as string) || fileId,
   };
+}
+
+/**
+ * Descarga una evidencia completa en memoria. A diferencia de
+ * `getEvidenciaStream` no consulta los metadatos (una llamada menos por foto)
+ * y corta con timeout: los informes piden muchas fotos y una sola colgada no
+ * debe frenar todo el PDF.
+ */
+export async function getEvidenciaBuffer(
+  fileId: string,
+  timeoutMs = 20_000,
+): Promise<Buffer> {
+  const drive = getDrive();
+  const res = await drive.files.get(
+    { fileId, alt: "media" },
+    { responseType: "arraybuffer", timeout: timeoutMs },
+  );
+  return Buffer.from(res.data as ArrayBuffer);
+}
+
+/**
+ * Id de archivo de Drive dentro de un enlace (`/d/ID`, `?id=ID`), de la ruta
+ * del proxy `/evidencias/ID` o un id suelto. Null si no parece de Drive.
+ */
+export function extraerDriveId(raw: string): string | null {
+  const v = String(raw ?? "").trim().replace(/^["']|["']$/g, "");
+  if (!v) return null;
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(v)) return v;
+  const patrones = [
+    /\/d\/([a-zA-Z0-9_-]{20,})/,
+    /[?&]id=([a-zA-Z0-9_-]{20,})/,
+    /\/evidencias\/([a-zA-Z0-9_-]{10,})/,
+  ];
+  for (const p of patrones) {
+    const m = v.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/**
+ * Borra una evidencia de Drive. El scope "drive.file" solo permite tocar
+ * archivos que la cuenta de servicio creo (las evidencias). Si el archivo ya
+ * no existe se considera hecho.
+ */
+export async function eliminarEvidenciaDeDrive(fileId: string): Promise<void> {
+  const drive = getDrive();
+  try {
+    await drive.files.delete({ fileId, supportsAllDrives: true });
+  } catch (err: any) {
+    const status = err?.code ?? err?.response?.status;
+    if (status === 404) return;
+    throw err;
+  }
 }

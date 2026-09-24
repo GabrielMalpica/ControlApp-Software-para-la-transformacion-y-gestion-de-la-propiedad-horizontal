@@ -5,6 +5,10 @@ import { prisma } from "../db/prisma";
 import { ReporteService } from "../services/ReporteService";
 import { EstadoTarea } from "@prisma/client";
 import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
+import fs from "fs";
+import { claveDia } from "../services/InformeMensualModelo";
+import { informeMensualJobs, type JobInforme } from "../services/InformeMensualJobs";
+import { crearEjecutorInforme } from "../services/InformeMensualService";
 
 async function serviceFor(req: Request) {
   return new ReporteService(prisma, await empresaIdAutenticada(req));
@@ -61,6 +65,45 @@ const ZonificacionPreventivasQuery = RangoQueryBase.merge(
   path: ["hasta"],
   message: "hasta debe ser >= desde",
 });
+
+// ✅ Informe mensual en PDF (se genera en segundo plano)
+const MAX_DIAS_INFORME = 366;
+const InformeMensualPdfBody = z
+  .object({
+    desde: z.coerce.date(),
+    hasta: z.coerce.date(),
+    conjuntoId: z.string().trim().min(1).optional(),
+  })
+  .refine((d) => d.hasta >= d.desde, {
+    path: ["hasta"],
+    message: "hasta debe ser >= desde",
+  })
+  .refine(
+    (d) => d.hasta.getTime() - d.desde.getTime() <= MAX_DIAS_INFORME * 86_400_000,
+    { path: ["hasta"], message: "El rango del informe no puede superar un año" },
+  );
+
+const InformeMensualPdfParams = z.object({ jobId: z.string().uuid() });
+
+function estadoJobInforme(job: JobInforme) {
+  return {
+    jobId: job.id,
+    estado: job.estado,
+    progreso: job.progreso,
+    mensaje: job.mensaje,
+    error: job.error,
+    posicionCola: informeMensualJobs.posicionEnCola(job.id),
+    nombreArchivo: job.estado === "LISTO" ? job.nombreArchivo : null,
+  };
+}
+
+function usuarioIdDe(req: Request): string {
+  const id = String(req.user?.sub ?? "").trim();
+  if (!id) {
+    throw Object.assign(new Error("No autenticado"), { status: 401 });
+  }
+  return id;
+}
 
 export class ReporteController {
   // =========================
@@ -158,6 +201,103 @@ export class ReporteController {
       const out = await (await serviceFor(req)).reporteMensualDetalle(q);
       logPerf("Reporte mensual detalle", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // POST /reporte/informe-mensual/pdf  { desde, hasta, conjuntoId? }
+  // Responde 202 al instante; el PDF se arma en segundo plano.
+  iniciarInformeMensualPdf: RequestHandler = async (req, res, next) => {
+    try {
+      const body = InformeMensualPdfBody.parse(req.body);
+      const usuarioId = usuarioIdDe(req);
+      const empresaId = await empresaIdAutenticada(req);
+
+      if (body.conjuntoId) {
+        const conjunto = await prisma.conjunto.findFirst({
+          where: { nit: body.conjuntoId, empresaId },
+          select: { nit: true },
+        });
+        if (!conjunto) {
+          throw Object.assign(new Error("Conjunto no encontrado"), { status: 404 });
+        }
+      }
+
+      const clave = [
+        empresaId,
+        body.conjuntoId ?? "*",
+        claveDia(body.desde),
+        claveDia(body.hasta),
+      ].join("|");
+      const job = informeMensualJobs.iniciar({
+        usuarioId,
+        clave,
+        ejecutar: crearEjecutorInforme({
+          prisma,
+          empresaId,
+          conjuntoId: body.conjuntoId,
+          desde: body.desde,
+          hasta: body.hasta,
+        }),
+      });
+      res.status(202).json(estadoJobInforme(job));
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /reporte/informe-mensual/pdf/:jobId
+  estadoInformeMensualPdf: RequestHandler = async (req, res, next) => {
+    try {
+      const { jobId } = InformeMensualPdfParams.parse(req.params);
+      const job = informeMensualJobs.obtener(jobId, usuarioIdDe(req));
+      if (!job) {
+        throw Object.assign(
+          new Error("El informe ya no está disponible. Genéralo de nuevo."),
+          { status: 404 },
+        );
+      }
+      res.json(estadoJobInforme(job));
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /reporte/informe-mensual/pdf/:jobId/archivo
+  descargarInformeMensualPdf: RequestHandler = async (req, res, next) => {
+    try {
+      const { jobId } = InformeMensualPdfParams.parse(req.params);
+      const job = informeMensualJobs.obtener(jobId, usuarioIdDe(req));
+      if (!job) {
+        throw Object.assign(
+          new Error("El informe ya no está disponible. Genéralo de nuevo."),
+          { status: 404 },
+        );
+      }
+      if (job.estado !== "LISTO") {
+        throw Object.assign(new Error("El informe todavía no está listo."), {
+          status: 409,
+        });
+      }
+      const { size } = await fs.promises.stat(job.archivo);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Length", String(size));
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${job.nombreArchivo.replace(/[^A-Za-z0-9._-]/g, "_")}"`,
+      );
+      res.setHeader("Cache-Control", "private, no-store");
+      const stream = fs.createReadStream(job.archivo);
+      stream.on("error", (e) => {
+        console.error("[informe-mensual] error leyendo el PDF:", e);
+        if (!res.headersSent) {
+          res.status(404).json({ message: "El informe ya no está disponible." });
+        } else {
+          res.destroy();
+        }
+      });
+      stream.pipe(res);
     } catch (err) {
       next(err);
     }

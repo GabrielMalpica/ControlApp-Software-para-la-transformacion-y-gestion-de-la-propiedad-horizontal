@@ -23,7 +23,12 @@ import {
   validarOperariosDisponiblesEnFecha,
   validarLimiteSemanalOperarios,
 } from "../utils/operarioAvailability";
-import { buildEvidenciaFileName, uploadEvidenciaToDrive } from "../utils/drive_evidencias";
+import {
+  buildEvidenciaFileName,
+  eliminarEvidenciaDeDrive,
+  extraerDriveId,
+  uploadEvidenciaToDrive,
+} from "../utils/drive_evidencias";
 import { AuditoriaService } from "./AuditoriaService";
 import { AccionAuditoria, EntidadAuditoria, ModuloAuditoria } from "../model/Auditoria";
 
@@ -839,7 +844,43 @@ export class TareaService {
       return actualizada;
     });
 
+    // Las evidencias quitadas tambien se borran de Drive. Va despues de la
+    // transaccion: si Drive falla, la tarea ya quedo bien y solo se avisa en
+    // el log (el archivo huerfano no afecta al informe).
+    const quitadas = actuales.filter(
+      (url) => eliminarSet.has(url) && !evidenciasFinal.includes(url.trim()),
+    );
+    await TareaService.borrarEvidenciasDeDrive(prisma, tareaId, quitadas);
+
     return toTareaPublica(tareaActualizada);
+  }
+
+  /**
+   * Borra de Drive las evidencias que se quitaron de una tarea. Solo toca
+   * archivos que estaban en esa tarea (nunca ids arbitrarios del cliente) y
+   * conserva los que otra tarea siga usando.
+   */
+  private static async borrarEvidenciasDeDrive(
+    prisma: PrismaClient,
+    tareaId: number,
+    urls: string[],
+  ) {
+    for (const url of urls) {
+      const fileId = extraerDriveId(url);
+      if (!fileId) continue;
+      try {
+        const otrasTareas = await prisma.tarea.count({
+          where: { id: { not: tareaId }, evidencias: { has: url } },
+        });
+        if (otrasTareas > 0) continue;
+        await eliminarEvidenciaDeDrive(fileId);
+      } catch (err) {
+        console.error(
+          `[corregir-cierre] no se pudo borrar de Drive la evidencia ${fileId} (tarea ${tareaId}):`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
   }
 
   /* =====================================================

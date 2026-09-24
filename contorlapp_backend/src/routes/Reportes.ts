@@ -18,6 +18,12 @@ router.get("/por-conjunto", c.resumenPorConjunto);
 router.get("/por-operario", c.resumenPorOperario);
 router.get("/duracion-promedio", c.duracionPromedioPorEstado);
 router.get("/mensual-detalle", c.reporteMensualDetalle);
+
+// INFORME MENSUAL EN PDF (asincrono: se inicia, se consulta el estado y se descarga)
+router.post("/informe-mensual/pdf", c.iniciarInformeMensualPdf);
+router.get("/informe-mensual/pdf/:jobId", c.estadoInformeMensualPdf);
+router.get("/informe-mensual/pdf/:jobId/archivo", c.descargarInformeMensualPdf);
+
 router.get("/zonificacion/preventivas", c.zonificacionPreventivas);
 router.get("/maquinaria/top", c.usoMaquinariaTop);
 router.get("/herramientas/top", c.usoHerramientaTop);

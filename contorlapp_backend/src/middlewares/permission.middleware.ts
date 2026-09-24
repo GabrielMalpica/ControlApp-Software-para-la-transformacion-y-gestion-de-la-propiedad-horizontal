@@ -44,3 +44,24 @@ export function requirePermission(...permissions: string[]): RequestHandler {
     }
   };
 }
+
+/**
+ * Variante para rutas compartidas con residente (ej. gestionar su propio
+ * pedido): residente no participa del sistema de permisos por rol -su
+ * acceso ya esta acotado a lo suyo por CommerceAccessService.assertPedidoAccess-
+ * asi que aqui pasa directo, sin permiso. El resto de roles si necesita el
+ * permiso indicado, igual que requirePermission().
+ */
+export function requirePermissionUnlessRoles(
+  exemptRoles: string[],
+  ...permissions: string[]
+): RequestHandler {
+  const inner = requirePermission(...permissions);
+  return (req, res, next) => {
+    if (req.user?.rol && exemptRoles.includes(req.user.rol)) {
+      next();
+      return;
+    }
+    inner(req, res, next);
+  };
+}

@@ -57,4 +57,21 @@ export class CommerceLifecycleController {
       next(error);
     }
   };
+
+  subirComprobante: RequestHandler = async (req, res, next) => {
+    try {
+      if (!req.user?.sub) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+      if (!req.file) {
+        res.status(400).json({ message: "Debes adjuntar el comprobante de pago" });
+        return;
+      }
+      const { pedidoId } = PedidoDetalleParamDTO.parse(req.params);
+      res.json(await service.subirComprobante(req.user.sub, pedidoId, req.file, req.body));
+    } catch (error) {
+      next(error);
+    }
+  };
 }
