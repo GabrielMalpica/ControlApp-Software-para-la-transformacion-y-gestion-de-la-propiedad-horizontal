@@ -585,6 +585,7 @@ model Supervisor {
 
   tareasPorVerificar         Tarea[]
   definicionTareaPreventivas DefinicionTareaPreventiva[]
+  visitas                    VisitaSupervisor[]
 
   @@map("Supervisor")
 }
@@ -730,6 +731,36 @@ model RegistroAsistencia {
 
 /// Refleja la hoja "TURNOS" del Excel: turnos adicionales y reemplazos que no
 /// caben en el grid diario (persona extra cubriendo a otra, novenas, etc).
+/// Visita de un supervisor a un conjunto (entrada/salida por QR). A diferencia
+/// de RegistroAsistencia (una fila por operario y día), un supervisor puede
+/// visitar varios conjuntos y volver varias veces el mismo día.
+model VisitaSupervisor {
+  id Int @id @default(autoincrement())
+
+  supervisor   Supervisor @relation(fields: [supervisorId], references: [id], onDelete: Cascade)
+  supervisorId String
+
+  conjunto   Conjunto @relation(fields: [conjuntoId], references: [nit], onDelete: Cascade)
+  conjuntoId String
+
+  fecha       DateTime  @db.Date
+  horaEntrada DateTime
+  horaSalida  DateTime?
+
+  latitudEntrada  Decimal? @db.Decimal(10, 7)
+  longitudEntrada Decimal? @db.Decimal(10, 7)
+  latitudSalida   Decimal? @db.Decimal(10, 7)
+  longitudSalida  Decimal? @db.Decimal(10, 7)
+  distanciaEntradaMetros Int?
+  distanciaSalidaMetros  Int?
+
+  creadoEn DateTime @default(now())
+
+  @@index([supervisorId, fecha])
+  @@index([conjuntoId, fecha])
+  @@map("VisitaSupervisor")
+}
+
 model TurnoExtra {
   id Int @id @default(autoincrement())
 
@@ -822,6 +853,16 @@ model Conjunto {
   qrAsistenciaActualizado DateTime?
   registrosAsistencia     RegistroAsistencia[]
   turnosExtra             TurnoExtra[]
+  visitasSupervisor       VisitaSupervisor[]
+
+  // Ubicación del conjunto para validar el QR de asistencia: si está
+  // configurada, el check-in solo se permite dentro de
+  // `radioAsistenciaMetros` metros. `ubicacionMapsUrl` es el enlace de Google
+  // Maps que se pegó (latitud/longitud salen de ahí).
+  ubicacionMapsUrl      String?
+  latitud               Decimal?  @db.Decimal(10, 7)
+  longitud              Decimal?  @db.Decimal(10, 7)
+  radioAsistenciaMetros Int       @default(150)
 
   // Overrides / maquinaria
   limiteHorasSemanaOverride  Int?

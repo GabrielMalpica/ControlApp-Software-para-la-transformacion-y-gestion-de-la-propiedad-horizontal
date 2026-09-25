@@ -94,6 +94,7 @@ import {
   operariosPuedenTrabajarFestivo,
 } from "../utils/operarioAvailability";
 import { PermissionService } from "./PermissionService";
+import { resolverCoordenadasDesdeMaps } from "../utils/ubicacionMaps";
 import {
   normalizeCell,
   normalizeHeader,
@@ -1393,6 +1394,7 @@ export class GerenteService {
     dto: z.infer<typeof CrearConjuntoDTO>,
     empresaId: string,
     administradorId: string | null,
+    ubicacion?: { url: string; latitud: number; longitud: number } | null,
   ) {
     const creado = await client.conjunto.create({
       data: {
@@ -1414,6 +1416,13 @@ export class GerenteService {
             : null,
         consignasEspeciales: dto.consignasEspeciales,
         valorAgregado: dto.valorAgregado,
+
+        ubicacionMapsUrl: ubicacion?.url ?? null,
+        latitud: ubicacion ? new Prisma.Decimal(ubicacion.latitud) : null,
+        longitud: ubicacion ? new Prisma.Decimal(ubicacion.longitud) : null,
+        ...(dto.radioAsistenciaMetros != null
+          ? { radioAsistenciaMetros: dto.radioAsistenciaMetros }
+          : {}),
 
         horarios:
           dto.horarios && dto.horarios.length
@@ -1495,8 +1504,14 @@ export class GerenteService {
       administradorId = dto.administradorId;
     }
 
+    // La red (expandir enlaces cortos de Maps) va antes de la transacción.
+    const ubicacionUrl = dto.ubicacionMapsUrl?.trim();
+    const ubicacion = ubicacionUrl
+      ? { url: ubicacionUrl, ...(await resolverCoordenadasDesdeMaps(ubicacionUrl)) }
+      : null;
+
     return this.prisma.$transaction((tx) =>
-      this.crearConjuntoConEstructura(tx, dto, empresaId, administradorId),
+      this.crearConjuntoConEstructura(tx, dto, empresaId, administradorId, ubicacion),
     );
   }
 
@@ -1562,6 +1577,10 @@ export class GerenteService {
         fechaFinContrato: true,
         consignasEspeciales: true,
         valorAgregado: true,
+        ubicacionMapsUrl: true,
+        latitud: true,
+        longitud: true,
+        radioAsistenciaMetros: true,
         administrador: {
           select: { id: true, usuario: { select: usuarioSinContrasenaSelect } },
         },
@@ -1732,6 +1751,23 @@ export class GerenteService {
 
     if (dto.valorAgregado !== undefined) {
       data.valorAgregado = dto.valorAgregado;
+    }
+
+    if (dto.ubicacionMapsUrl !== undefined) {
+      const url = dto.ubicacionMapsUrl?.trim();
+      if (url) {
+        const coords = await resolverCoordenadasDesdeMaps(url);
+        data.ubicacionMapsUrl = url;
+        data.latitud = new Prisma.Decimal(coords.latitud);
+        data.longitud = new Prisma.Decimal(coords.longitud);
+      } else {
+        data.ubicacionMapsUrl = null;
+        data.latitud = null;
+        data.longitud = null;
+      }
+    }
+    if (dto.radioAsistenciaMetros !== undefined) {
+      data.radioAsistenciaMetros = dto.radioAsistenciaMetros;
     }
 
     if (dto.horarios !== undefined) {

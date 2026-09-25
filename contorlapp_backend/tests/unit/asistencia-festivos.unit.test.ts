@@ -45,7 +45,16 @@ function construirPrisma(opts: {
         return match ? { fecha: match.fecha, nombre: match.nombre ?? null } : null;
       }),
     },
+    // Conjunto L-V (sábado y domingo no tienen horario = día de descanso).
+    conjuntoHorario: {
+      findUnique: jest.fn(async ({ where }: any) =>
+        ["LUNES", "MARTES", "MIERCOLES", "JUEVES", "VIERNES"].includes(where.conjuntoId_dia.dia)
+          ? { horaApertura: "07:00", horaCierre: "16:00", descansoInicio: null, descansoFin: null }
+          : null,
+      ),
+    },
     conjuntoNecesidadOperario: {
+      findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn().mockResolvedValue(
         opts.necesidad
           ? { descansoCompensatorio: opts.necesidad.descansoCompensatorio }
@@ -75,10 +84,15 @@ function construirPrisma(opts: {
   return { prisma, registros };
 }
 
-// Miércoles 2026-04-01 a medianoche LOCAL (igual que Festivo.fecha en BD).
-const FESTIVO_LOCAL = new Date(2026, 3, 1);
+// Fechas a medianoche LOCAL (igual que Festivo.fecha en BD).
+const SABADO_FESTIVO = new Date(2026, 3, 4); // día de descanso del conjunto L-V
+const MIERCOLES_FESTIVO = new Date(2026, 3, 1); // día que sí se trabaja
 
-describe("AsistenciaService.checkin - festivos y descanso compensatorio", () => {
+const QR = "CTRLAPP-ASISTENCIA|C-1|tok-1";
+const checkin = (service: AsistenciaService) =>
+  service.checkin({ operarioId: "op-1", conjuntoId: "C-1", qrPayload: QR });
+
+describe("AsistenciaService.checkin - festivos y día de descanso", () => {
   function congelarFecha(fecha: Date) {
     jest.useFakeTimers({ now: fecha, doNotFake: ["nextTick", "setImmediate"] });
   }
@@ -87,88 +101,61 @@ describe("AsistenciaService.checkin - festivos y descanso compensatorio", () => 
   });
 
   test("detecta el festivo aunque Festivo.fecha esté a medianoche local (bug corregido: antes comparaba contra UTC)", async () => {
-    // 2026-04-01 10:00 hora local, con un festivo ese mismo día.
-    congelarFecha(new Date(2026, 3, 1, 10, 0, 0));
+    congelarFecha(new Date(2026, 3, 4, 10, 0, 0));
     const { prisma } = construirPrisma({
-      festivos: [{ fecha: FESTIVO_LOCAL, nombre: "Día del trabajo" }],
+      festivos: [{ fecha: SABADO_FESTIVO, nombre: "Festivo de prueba" }],
       necesidad: { descansoCompensatorio: true },
     });
-    const service = new AsistenciaService(prisma);
-
-    const resultado = await service.checkin({
-      operarioId: "op-1",
-      conjuntoId: "C-1",
-      qrPayload: "CTRLAPP-ASISTENCIA|C-1|tok-1",
-    });
-
+    const resultado = await checkin(new AsistenciaService(prisma));
     expect(resultado.tipo).toBe("ENTRADA");
     expect(resultado.registro.conceptoCodigo).toBe("DFC");
   });
 
-  test("festivo + plaza CON descanso compensatorio -> DFC", async () => {
-    congelarFecha(new Date(2026, 3, 1, 9, 0, 0));
+  test("festivo en su día de descanso + plaza CON compensatorio -> DFC", async () => {
+    congelarFecha(new Date(2026, 3, 4, 9, 0, 0));
     const { prisma } = construirPrisma({
-      festivos: [{ fecha: FESTIVO_LOCAL }],
+      festivos: [{ fecha: SABADO_FESTIVO }],
       necesidad: { descansoCompensatorio: true },
     });
-    const service = new AsistenciaService(prisma);
-
-    const resultado = await service.checkin({
-      operarioId: "op-1",
-      conjuntoId: "C-1",
-      qrPayload: "CTRLAPP-ASISTENCIA|C-1|tok-1",
-    });
-
-    expect(resultado.registro.conceptoCodigo).toBe("DFC");
+    expect((await checkin(new AsistenciaService(prisma))).registro.conceptoCodigo).toBe("DFC");
   });
 
-  test("festivo + plaza SIN descanso compensatorio -> DFP", async () => {
-    congelarFecha(new Date(2026, 3, 1, 9, 0, 0));
+  test("festivo en su día de descanso + plaza SIN compensatorio -> DFP", async () => {
+    congelarFecha(new Date(2026, 3, 4, 9, 0, 0));
     const { prisma } = construirPrisma({
-      festivos: [{ fecha: FESTIVO_LOCAL }],
+      festivos: [{ fecha: SABADO_FESTIVO }],
       necesidad: { descansoCompensatorio: false },
     });
-    const service = new AsistenciaService(prisma);
-
-    const resultado = await service.checkin({
-      operarioId: "op-1",
-      conjuntoId: "C-1",
-      qrPayload: "CTRLAPP-ASISTENCIA|C-1|tok-1",
-    });
-
-    expect(resultado.registro.conceptoCodigo).toBe("DFP");
+    expect((await checkin(new AsistenciaService(prisma))).registro.conceptoCodigo).toBe("DFP");
   });
 
-  test("festivo + operario SIN plaza -> se conserva 'A' con nota pendiente (comportamiento previo)", async () => {
+  test("festivo en un día que igual trabaja (no genera compensatorio) -> DFP aunque la plaza lo tenga", async () => {
     congelarFecha(new Date(2026, 3, 1, 9, 0, 0));
     const { prisma } = construirPrisma({
-      festivos: [{ fecha: FESTIVO_LOCAL }],
-      necesidad: null,
+      festivos: [{ fecha: MIERCOLES_FESTIVO }],
+      necesidad: { descansoCompensatorio: true },
     });
-    const service = new AsistenciaService(prisma);
+    expect((await checkin(new AsistenciaService(prisma))).registro.conceptoCodigo).toBe("DFP");
+  });
 
-    const resultado = await service.checkin({
-      operarioId: "op-1",
-      conjuntoId: "C-1",
-      qrPayload: "CTRLAPP-ASISTENCIA|C-1|tok-1",
-    });
+  test("trabajar su día de descanso (domingo, sin festivo) con plaza con compensatorio -> DFC", async () => {
+    congelarFecha(new Date(2026, 3, 5, 9, 0, 0)); // domingo
+    const { prisma } = construirPrisma({ festivos: [], necesidad: { descansoCompensatorio: true } });
+    expect((await checkin(new AsistenciaService(prisma))).registro.conceptoCodigo).toBe("DFC");
+  });
 
+  test("festivo + operario SIN plaza -> se conserva 'A' con nota pendiente", async () => {
+    congelarFecha(new Date(2026, 3, 4, 9, 0, 0));
+    const { prisma } = construirPrisma({ festivos: [{ fecha: SABADO_FESTIVO }], necesidad: null });
+    const resultado = await checkin(new AsistenciaService(prisma));
     expect(resultado.registro.conceptoCodigo).toBe("A");
     expect(resultado.registro.observacion).toMatch(/pendiente clasificar/i);
   });
 
-  test("día normal (sin festivo, no domingo) sigue registrando 'A' sin observación", async () => {
-    // Martes 2026-04-07.
+  test("día normal (martes, sin festivo) registra 'A' sin observación", async () => {
     congelarFecha(new Date(2026, 3, 7, 9, 0, 0));
     const { prisma } = construirPrisma({ festivos: [], necesidad: { descansoCompensatorio: true } });
-    const service = new AsistenciaService(prisma);
-
-    const resultado = await service.checkin({
-      operarioId: "op-1",
-      conjuntoId: "C-1",
-      qrPayload: "CTRLAPP-ASISTENCIA|C-1|tok-1",
-    });
-
+    const resultado = await checkin(new AsistenciaService(prisma));
     expect(resultado.registro.conceptoCodigo).toBe("A");
     expect(resultado.registro.observacion).toBeNull();
   });

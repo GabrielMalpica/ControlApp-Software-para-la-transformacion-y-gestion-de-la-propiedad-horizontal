@@ -208,7 +208,9 @@ export class OperarioService {
       include: {
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
-        conjunto: true,
+        // Nunca `conjunto: true`: trae mapaConjuntoBytes (la imagen del mapa)
+        // por cada tarea y la respuesta de Prisma revienta por tamaño.
+        conjunto: { select: { nit: true, nombre: true, direccion: true, activo: true } },
       },
     });
   }

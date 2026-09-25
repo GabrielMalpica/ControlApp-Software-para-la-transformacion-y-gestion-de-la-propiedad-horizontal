@@ -2,8 +2,9 @@ import { randomUUID } from "crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { AuditoriaService } from "./AuditoriaService";
-import { obtenerCalendariosOperarios } from "../utils/operarioAvailability";
+import { diaSemanaFromDate, obtenerCalendariosOperarios, obtenerHorariosEfectivosOperarios } from "../utils/operarioAvailability";
 import type { DiaCalendarioPlaza } from "../utils/calendarioPlazaCore";
+import { validarUbicacionEnConjunto } from "../utils/ubicacionMaps";
 
 function makeHttpError(status: number, message: string) {
   const err = new Error(message) as Error & { status: number };
@@ -134,6 +135,59 @@ function serializeRegistro(registro: RegistroConConcepto) {
         ? { lat: toNumberOrNull(registro.latitudSalida)!, lng: toNumberOrNull(registro.longitudSalida)! }
         : null,
     observacion: registro.observacion,
+  };
+}
+
+function serializarVisitaDetalle(v: {
+  id: number;
+  conjuntoId: string;
+  conjunto: { nombre: string };
+  fecha: Date;
+  horaEntrada: Date;
+  horaSalida: Date | null;
+  distanciaEntradaMetros: number | null;
+  distanciaSalidaMetros: number | null;
+}) {
+  return {
+    id: v.id,
+    fecha: toYmdUtc(v.fecha),
+    conjuntoId: v.conjuntoId,
+    conjuntoNombre: v.conjunto.nombre,
+    horaEntrada: v.horaEntrada,
+    horaSalida: v.horaSalida,
+    distanciaEntradaMetros: v.distanciaEntradaMetros,
+    distanciaSalidaMetros: v.distanciaSalidaMetros,
+  };
+}
+
+/** Misma forma que serializeRegistro para que la app muestre el resultado igual. */
+function serializarVisita(v: {
+  id: number;
+  horaEntrada: Date;
+  horaSalida: Date | null;
+  latitudEntrada: DecimalLike;
+  longitudEntrada: DecimalLike;
+  latitudSalida: DecimalLike;
+  longitudSalida: DecimalLike;
+}) {
+  return {
+    id: v.id,
+    conceptoId: 0,
+    conceptoCodigo: "VISITA",
+    conceptoNombre: "Visita de supervisor",
+    colorHex: "#5C6BC0",
+    origen: "QR",
+    horaEntrada: v.horaEntrada,
+    horaSalida: v.horaSalida,
+    ubicacionEntrada:
+      toNumberOrNull(v.latitudEntrada) != null
+        ? { lat: toNumberOrNull(v.latitudEntrada)!, lng: toNumberOrNull(v.longitudEntrada)! }
+        : null,
+    ubicacionSalida:
+      toNumberOrNull(v.latitudSalida) != null
+        ? { lat: toNumberOrNull(v.latitudSalida)!, lng: toNumberOrNull(v.longitudSalida)! }
+        : null,
+    observacion: null,
   };
 }
 
@@ -310,16 +364,28 @@ export class AsistenciaService {
 
   /* ------------------------------- check-in -------------------------------- */
 
-  async checkin(input: {
-    operarioId: string;
+  /**
+   * Valida el QR del conjunto y que el dispositivo esté en el sitio (si el
+   * conjunto tiene ubicación configurada). Compartido por el check-in de
+   * operarios y de supervisores.
+   */
+  private async validarQrYUbicacion(input: {
     conjuntoId: string;
     qrPayload: string;
     latitud?: number | null;
     longitud?: number | null;
+    precisionMetros?: number | null;
   }) {
     const conjunto = await this.prisma.conjunto.findUnique({
       where: { nit: input.conjuntoId },
-      select: { nit: true, nombre: true, qrAsistenciaToken: true },
+      select: {
+        nit: true,
+        nombre: true,
+        qrAsistenciaToken: true,
+        latitud: true,
+        longitud: true,
+        radioAsistenciaMetros: true,
+      },
     });
     if (!conjunto || !conjunto.qrAsistenciaToken) {
       throw makeHttpError(404, "El conjunto no tiene un QR de asistencia configurado");
@@ -329,6 +395,27 @@ export class AsistenciaService {
     if (input.qrPayload.trim() !== payloadEsperado) {
       throw makeHttpError(400, "El codigo QR no es valido o ya fue reemplazado. Pide uno nuevo en el sitio.");
     }
+
+    // Si el conjunto tiene ubicación, no se deja registrar desde otro lugar:
+    // así toda asistencia registrada se hizo en el sitio de trabajo.
+    const ubicacion = validarUbicacionEnConjunto({
+      conjunto,
+      latitud: input.latitud,
+      longitud: input.longitud,
+      precisionMetros: input.precisionMetros,
+    });
+    return { conjunto, ubicacion };
+  }
+
+  async checkin(input: {
+    operarioId: string;
+    conjuntoId: string;
+    qrPayload: string;
+    latitud?: number | null;
+    longitud?: number | null;
+    precisionMetros?: number | null;
+  }) {
+    const { conjunto } = await this.validarQrYUbicacion(input);
 
     const operario = await this.prisma.operario.findUnique({
       where: { id: input.operarioId },
@@ -341,7 +428,6 @@ export class AsistenciaService {
     const ahora = new Date();
     const hoyYmd = toYmd(ahora);
     const fecha = parseYmdAsUtcDate(hoyYmd);
-    const esDomingo = ahora.getDay() === 0;
     // `Festivo.fecha` se guarda a medianoche LOCAL (ver
     // EmpresaServices.startOfDayLocal), a diferencia de `fecha` de arriba
     // (marcador de día en UTC, la convención de RegistroAsistencia). Buscar
@@ -353,21 +439,36 @@ export class AsistenciaService {
       where: { pais: "CO", fecha: { gte: inicioDiaLocal, lt: finDiaLocal } },
     });
 
-    // Festivo o dominical: la plaza (necesidad operativa) del operario en
-    // este conjunto decide si el check-in queda con descanso compensatorio
-    // (DFC) o pleno sin descanso (DFP). Sin plaza, se conserva el
-    // comportamiento previo ("A" con la nota pendiente).
+    // Día de descanso semanal del operario: el día de la semana en que ni su
+    // plaza ni el conjunto le dan horario (no hay nada especial con el
+    // domingo: si tiene horario ese día, es un día de trabajo normal).
+    const horariosHoy = await obtenerHorariosEfectivosOperarios({
+      prisma: this.prisma,
+      conjuntoId: conjunto.nit,
+      operariosIds: [operario.id],
+      dia: diaSemanaFromDate(ahora),
+    });
+    const esDiaDeDescanso = (horariosHoy.get(operario.id) ?? null) == null;
+
+    // Trabaja un festivo o su día de descanso: la plaza (necesidad
+    // operativa) del operario decide la clasificación. DFC solo si la plaza
+    // da descanso compensatorio Y lo trabajado fue su día de descanso (un
+    // festivo que cae en un día que igual trabaja no genera compensatorio:
+    // DFP). Sin plaza se conserva el comportamiento previo ("A" con la nota
+    // pendiente).
     let codigoConcepto = "A";
     let observacion: string | null = null;
-    if (esDomingo || festivo) {
+    if (esDiaDeDescanso || festivo) {
       const necesidad = await this.prisma.conjuntoNecesidadOperario.findFirst({
         where: { conjuntoId: conjunto.nit, operarioId: operario.id, activo: true },
         select: { descansoCompensatorio: true },
       });
-      const etiquetaDia = festivo ? `festivo${festivo.nombre ? ` (${festivo.nombre})` : ""}` : "dominical";
+      const etiquetaDia = festivo
+        ? `festivo${festivo.nombre ? ` (${festivo.nombre})` : ""}`
+        : "día de descanso";
       if (!necesidad) {
-        observacion = "Trabajo en domingo/festivo: pendiente clasificar como DFC o DFP.";
-      } else if (necesidad.descansoCompensatorio) {
+        observacion = "Trabajo en festivo/día de descanso: pendiente clasificar como DFC o DFP.";
+      } else if (necesidad.descansoCompensatorio && esDiaDeDescanso) {
         codigoConcepto = "DFC";
         observacion = `Asistencia ${etiquetaDia}, con descanso compensatorio.`;
       } else {
@@ -429,6 +530,154 @@ export class AsistenciaService {
     }
 
     throw makeHttpError(409, "Ya registraste entrada y salida hoy.");
+  }
+
+  /* ------------------------- visitas de supervisores ------------------------ */
+
+  /**
+   * Entrada/salida de un supervisor en un conjunto. A diferencia del
+   * operario (una fila por día), cada visita es una fila: si tiene una visita
+   * abierta hoy en ESTE conjunto, el escaneo cierra esa visita (salida); si
+   * no, abre una nueva (entrada). Así puede visitar varios conjuntos y volver
+   * al mismo más de una vez el mismo día.
+   */
+  async checkinSupervisor(input: {
+    supervisorId: string;
+    conjuntoId: string;
+    qrPayload: string;
+    latitud?: number | null;
+    longitud?: number | null;
+    precisionMetros?: number | null;
+  }) {
+    const supervisor = await this.prisma.supervisor.findUnique({
+      where: { id: input.supervisorId },
+      select: { id: true },
+    });
+    if (!supervisor) throw makeHttpError(404, "Supervisor no encontrado");
+
+    const { conjunto, ubicacion } = await this.validarQrYUbicacion(input);
+
+    const ahora = new Date();
+    const fecha = parseYmdAsUtcDate(toYmd(ahora));
+
+    const abierta = await this.prisma.visitaSupervisor.findFirst({
+      where: { supervisorId: supervisor.id, conjuntoId: conjunto.nit, fecha, horaSalida: null },
+      orderBy: { horaEntrada: "desc" },
+    });
+
+    if (abierta) {
+      const actualizada = await this.prisma.visitaSupervisor.update({
+        where: { id: abierta.id },
+        data: {
+          horaSalida: ahora,
+          latitudSalida: input.latitud ?? null,
+          longitudSalida: input.longitud ?? null,
+          distanciaSalidaMetros: ubicacion.distanciaMetros,
+        },
+      });
+      return {
+        tipo: "SALIDA" as const,
+        registro: serializarVisita(actualizada),
+        conjuntoNombre: conjunto.nombre,
+      };
+    }
+
+    const creada = await this.prisma.visitaSupervisor.create({
+      data: {
+        supervisorId: supervisor.id,
+        conjuntoId: conjunto.nit,
+        fecha,
+        horaEntrada: ahora,
+        latitudEntrada: input.latitud ?? null,
+        longitudEntrada: input.longitud ?? null,
+        distanciaEntradaMetros: ubicacion.distanciaMetros,
+      },
+    });
+    return {
+      tipo: "ENTRADA" as const,
+      registro: serializarVisita(creada),
+      conjuntoNombre: conjunto.nombre,
+    };
+  }
+
+  /**
+   * Visitas de supervisores del mes: una fila por visita y un resumen por
+   * supervisor con cuántas veces fue (entradas) y cuántas cerró (salidas).
+   */
+  async getVisitasSupervisores(input: {
+    empresaId: string;
+    conjuntoId?: string | null;
+    anio: number;
+    mes: number;
+  }) {
+    const totalDias = daysInMonth(input.anio, input.mes);
+    const primerDia = new Date(Date.UTC(input.anio, input.mes - 1, 1));
+    const ultimoDia = new Date(Date.UTC(input.anio, input.mes - 1, totalDias));
+
+    const visitas = await this.prisma.visitaSupervisor.findMany({
+      where: {
+        fecha: { gte: primerDia, lte: ultimoDia },
+        supervisor: { empresaId: input.empresaId },
+        ...(input.conjuntoId ? { conjuntoId: input.conjuntoId } : {}),
+      },
+      include: {
+        supervisor: { select: { id: true, usuario: { select: { nombre: true } } } },
+        conjunto: { select: { nit: true, nombre: true } },
+      },
+      orderBy: [{ horaEntrada: "asc" }],
+    });
+
+    const porSupervisor = new Map<
+      string,
+      {
+        supervisorId: string;
+        nombre: string;
+        visitas: number;
+        salidas: number;
+        porConjunto: Map<string, { conjuntoId: string; conjuntoNombre: string; visitas: number }>;
+        detalle: Array<ReturnType<typeof serializarVisitaDetalle>>;
+      }
+    >();
+
+    for (const v of visitas) {
+      let entry = porSupervisor.get(v.supervisorId);
+      if (!entry) {
+        entry = {
+          supervisorId: v.supervisorId,
+          nombre: v.supervisor.usuario?.nombre ?? "",
+          visitas: 0,
+          salidas: 0,
+          porConjunto: new Map(),
+          detalle: [],
+        };
+        porSupervisor.set(v.supervisorId, entry);
+      }
+      entry.visitas += 1;
+      if (v.horaSalida) entry.salidas += 1;
+      const c = entry.porConjunto.get(v.conjuntoId) ?? {
+        conjuntoId: v.conjuntoId,
+        conjuntoNombre: v.conjunto.nombre,
+        visitas: 0,
+      };
+      c.visitas += 1;
+      entry.porConjunto.set(v.conjuntoId, c);
+      entry.detalle.push(serializarVisitaDetalle(v));
+    }
+
+    return {
+      anio: input.anio,
+      mes: input.mes,
+      supervisores: Array.from(porSupervisor.values())
+        .map((e) => ({
+          supervisorId: e.supervisorId,
+          nombre: e.nombre,
+          visitas: e.visitas,
+          salidas: e.salidas,
+          porConjunto: Array.from(e.porConjunto.values()),
+          detalle: e.detalle,
+        }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre)),
+    };
   }
 
   /* ---------------------------- registro manual ---------------------------- */
@@ -648,6 +897,17 @@ export class AsistenciaService {
         const diaCalendario = calendarioOp?.get(ymd);
         const descansoProgramado =
           diaCalendario?.tipo === "DESCANSO" ? { origen: diaCalendario.origen ?? null } : null;
+        // Día de descanso semanal de la plaza (sin horario ese día de la
+        // semana, y no festivo): si hay asistencia registrada, trabajó su descanso.
+        const esDiaDescanso = diaCalendario?.tipo === "LIBRE";
+        // Día en que la plaza no debe ir: su descanso semanal, o un festivo
+        // que no trabaja. Se muestra como "D" (descanso) sin necesidad de un
+        // registro, y no cuenta como pendiente aunque ya haya pasado. El
+        // compensatorio ("C") es solo el descanso ganado por trabajar un
+        // festivo en su día de descanso.
+        const esDescansoNormal =
+          diaCalendario?.tipo === "LIBRE" ||
+          (diaCalendario?.tipo === "FESTIVO" && diaCalendario.horario == null);
 
         return {
           dia,
@@ -655,7 +915,10 @@ export class AsistenciaService {
           diaSemana,
           esFestivo,
           festivoNombre,
-          pendiente: !registro && !esFuturo && !descansoProgramado,
+          esDiaDescanso,
+          esDescansoNormal,
+          esFuturo,
+          pendiente: !registro && !esFuturo && !descansoProgramado && !esDescansoNormal,
           incompleto,
           registro: registro ? serializeRegistro(registro) : null,
           descansoProgramado,
@@ -731,7 +994,7 @@ export class AsistenciaService {
     const resumen = grid.operarios.map((fila) => {
       const conteoPorConcepto = new Map<string, number>();
       let pendientes = 0;
-      let dominicalesTrabajados = 0;
+      let descansosTrabajados = 0;
       let festivosTrabajados = 0;
       let compensatoriosProgramados = 0;
       let compensatoriosTomados = 0;
@@ -742,15 +1005,24 @@ export class AsistenciaService {
           pendientes += 1;
           continue;
         }
-        if (!dia.registro) continue;
+        if (!dia.registro) {
+          // Descansos automáticos (sin registro) que ya pasaron o son hoy.
+          if (!dia.esFuturo && dia.descansoProgramado) {
+            conteoPorConcepto.set("C", (conteoPorConcepto.get("C") ?? 0) + 1);
+            compensatoriosTomados += 1;
+          } else if (!dia.esFuturo && dia.esDescansoNormal) {
+            conteoPorConcepto.set("D", (conteoPorConcepto.get("D") ?? 0) + 1);
+          }
+          continue;
+        }
         const codigo = dia.registro.conceptoCodigo;
         conteoPorConcepto.set(codigo, (conteoPorConcepto.get(codigo) ?? 0) + 1);
         if (codigo === "C") compensatoriosTomados += 1;
         if (CODIGOS_TRABAJADO.has(codigo)) {
-          // Un festivo que cae domingo cuenta solo como festivo (ver
-          // calendarioPlazaCore: el festivo tiene precedencia).
+          // Un festivo cuenta solo como festivo (tiene precedencia); trabajar
+          // un día de descanso semanal que no es festivo cuenta aparte.
           if (dia.esFestivo) festivosTrabajados += 1;
-          else if (dia.diaSemana === 0) dominicalesTrabajados += 1;
+          else if (dia.esDiaDescanso) descansosTrabajados += 1;
         }
       }
 
@@ -762,7 +1034,7 @@ export class AsistenciaService {
         conjuntos: fila.conjuntos,
         pendientes,
         conteoPorConcepto: Object.fromEntries(conteoPorConcepto),
-        dominicalesTrabajados,
+        descansosTrabajados,
         festivosTrabajados,
         compensatoriosProgramados,
         compensatoriosTomados,

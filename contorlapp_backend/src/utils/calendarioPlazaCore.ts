@@ -2,8 +2,8 @@
 //
 // Cálculo PURO (sin Prisma) del calendario día a día de una plaza
 // (ConjuntoNecesidadOperario): para cada fecha, si es un día normal,
-// festivo, domingo, descanso compensatorio o libre, y con qué horario (si
-// alguno) trabaja la plaza ese día. Reemplaza la regla fija "SALVAVIDAS sí
+// festivo, descanso compensatorio o libre, y con qué horario (si alguno)
+// trabaja la plaza ese día. Reemplaza la regla fija "SALVAVIDAS sí
 // trabaja festivos" por una configuración por plaza (cualquier rol), y
 // añade el descanso compensatorio automático que antes no existía.
 //
@@ -12,20 +12,23 @@
 // como `calendarioPlaza.ts` (vistas de calendario para asistencia/reportes)
 // sin crear un ciclo de imports entre ambos.
 //
-// Reglas (ver plan "Festivos y descanso compensatorio en las plazas"):
+// Reglas:
+// - Día de descanso semanal: cualquier día de la semana en que la plaza no
+//   tiene horario (tipo LIBRE). No hay nada especial con el domingo: si la
+//   plaza tiene horario el domingo, es un día de trabajo más.
 // - Festivo: si la plaza tiene `trabajaFestivos`, usa su horario festivo
 //   propio (obligatorio en ese caso); si no, el festivo es día no laborable
-//   para esa plaza, sin importar el rol. El festivo tiene precedencia sobre
-//   el domingo (un festivo en domingo se resuelve como festivo).
-// - Domingo (que no sea festivo): "trabajado" si el horario por día de la
-//   plaza para DOMINGO no es null (comportamiento ya existente).
-// - Descanso compensatorio: si la plaza lo tiene activo, un festivo o
-//   domingo TRABAJADO genera un día de descanso `diasDescansoCompensatorio`
-//   días después. Si ese día cae en otro festivo, domingo trabajado, un día
-//   que la plaza no trabaja, o ya es descanso de otro festivo/domingo, se
-//   corre al siguiente día que sería NORMAL para la plaza (tope de 14
-//   intentos).
-import { DiaSemana as DiaSemanaEnum, type DiaSemana } from "@prisma/client";
+//   para esa plaza, sin importar el rol.
+// - Descanso compensatorio: solo se genera cuando la plaza trabaja un festivo
+//   que cae en su día de descanso semanal (o sea, trabajó el día que le
+//   tocaba descansar). Un festivo que cae en un día que igual trabaja no
+//   genera nada, y si no hubo festivo trabajado en el día de descanso, ese
+//   sigue siendo su descanso normal. El compensatorio cae
+//   `diasDescansoCompensatorio` días después; si ese día no es un día normal
+//   de trabajo de la plaza (ya es descanso semanal, otro festivo trabajado
+//   o ya es compensatorio de otro festivo), se corre al siguiente día NORMAL
+//   (tope de 14 intentos).
+import type { DiaSemana } from "@prisma/client";
 
 import type { HorarioDia } from "./agenda";
 import { dateToDiaSemana, ymdLocal } from "./schedulerUtils";
@@ -33,7 +36,6 @@ import { dateToDiaSemana, ymdLocal } from "./schedulerUtils";
 export type TipoDiaCalendarioPlaza =
   | "NORMAL"
   | "FESTIVO"
-  | "DOMINGO"
   | "DESCANSO"
   | "LIBRE";
 
@@ -41,8 +43,13 @@ export type DiaCalendarioPlaza = {
   tipo: TipoDiaCalendarioPlaza;
   /** Ventana de trabajo ese día, o null si la plaza no trabaja (LIBRE/DESCANSO/festivo sin trabajarFestivos). */
   horario: HorarioDia | null;
-  /** Solo en tipo DESCANSO: fecha (ymd) del festivo/domingo que lo originó. */
+  /** Solo en tipo DESCANSO: fecha (ymd) del festivo trabajado que lo originó. */
   origen?: string;
+  /**
+   * Solo en tipo FESTIVO: true si el festivo cae en el día de descanso
+   * semanal de la plaza (o sea, si lo trabaja, trabaja su día de descanso).
+   */
+  enDiaDeDescanso?: boolean;
 };
 
 export type ConfigFestivoNecesidad = {
@@ -99,7 +106,7 @@ const MAX_INTENTOS_CORRIDA = 14;
 /**
  * Calendario día a día de UNA plaza entre `desde` y `hasta` (ambos
  * inclusive). Internamente calcula desde `MARGEN_DIAS_ARRASTRE_CALENDARIO`
- * días antes de `desde`, para que un festivo/domingo trabajado justo antes
+ * días antes de `desde`, para que un festivo trabajado justo antes
  * del rango pedido siga generando su descanso compensatorio dentro de él
  * (p.ej. un festivo el último día de un mes genera el descanso el día 1 del
  * siguiente).
@@ -120,21 +127,24 @@ export function calcularCalendarioPlaza(params: {
   const base = new Map<string, DiaCalendarioPlaza>();
   for (let f = inicioCalculo; f.getTime() <= hasta.getTime(); f = addDays(f, 1)) {
     const key = ymdLocal(f);
+    const horarioDia = horarioPorDia(dateToDiaSemana(f));
     if (festivos.has(key)) {
-      base.set(key, { tipo: "FESTIVO", horario: horarioFestivo });
+      base.set(key, {
+        tipo: "FESTIVO",
+        horario: horarioFestivo,
+        enDiaDeDescanso: horarioDia == null,
+      });
       continue;
     }
-    const horarioDia = horarioPorDia(dateToDiaSemana(f));
-    const esDomingo = dateToDiaSemana(f) === DiaSemanaEnum.DOMINGO;
     base.set(key, {
-      tipo: horarioDia ? (esDomingo ? "DOMINGO" : "NORMAL") : "LIBRE",
+      tipo: horarioDia ? "NORMAL" : "LIBRE",
       horario: horarioDia,
     });
   }
 
   // Segunda pasada: aplica el descanso compensatorio por encima de la base,
   // en orden cronológico. Un descanso corrido nunca origina otro descanso
-  // (solo un festivo/domingo "base" trabajado lo hace).
+  // (solo un festivo trabajado en el día de descanso semanal lo hace).
   const resultado = new Map<string, DiaCalendarioPlaza>(base);
   if (config.descansoCompensatorio) {
     for (let f = inicioCalculo; f.getTime() <= hasta.getTime(); f = addDays(f, 1)) {
@@ -142,7 +152,7 @@ export function calcularCalendarioPlaza(params: {
       const diaBase = base.get(key);
       if (!diaBase) continue;
       const generaDescanso =
-        (diaBase.tipo === "FESTIVO" || diaBase.tipo === "DOMINGO") && diaBase.horario != null;
+        diaBase.tipo === "FESTIVO" && diaBase.horario != null && diaBase.enDiaDeDescanso === true;
       if (!generaDescanso) continue;
 
       let candidato = addDays(f, config.diasDescansoCompensatorio);

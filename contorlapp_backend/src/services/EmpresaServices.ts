@@ -561,7 +561,8 @@ export class EmpresaService {
     return prisma.solicitudTarea.findMany({
       where: { empresaId: this.empresaNit, estado: EstadoSolicitud.PENDIENTE },
       include: {
-        conjunto: true,
+        // Sin mapaConjuntoBytes (blob de la imagen del mapa).
+        conjunto: { select: { nit: true, nombre: true, direccion: true, activo: true } },
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
       },

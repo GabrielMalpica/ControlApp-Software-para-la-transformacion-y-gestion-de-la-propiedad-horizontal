@@ -88,9 +88,7 @@ type RowOperario = {
   usoSemanalPct: number;
   usoMensualPct: number;
   conjuntoCapacidadId: string | null;
-  tareasDomingo: number;
   tareasFestivo: number;
-  diasDomingoTrabajados: number;
   diasFestivoTrabajados: number;
 };
 
@@ -827,11 +825,8 @@ export class ReporteService {
 
     const map = new Map<string, RowOperario>();
     const conteoConjuntoPorOperario = new Map<string, Map<string, number>>();
-    // Festivos del rango: un festivo tiene precedencia sobre domingo (mismo
-    // criterio que calendarioPlazaCore) para no contar doble un festivo que
-    // cae domingo.
+    // Festivos del rango, para contar las tareas/días trabajados en festivo.
     const festivosSet = await getFestivosSet({ prisma: this.prisma, pais: "CO", inicio: desde, fin: hasta });
-    const diasDomingoPorOperario = new Map<string, Set<string>>();
     const diasFestivoPorOperario = new Map<string, Set<string>>();
 
     for (const t of tareas) {
@@ -841,7 +836,6 @@ export class ReporteService {
       );
       const claveDia = dayKey(t.fechaInicio);
       const esFestivo = festivosSet.has(claveDia);
-      const esDomingo = !esFestivo && t.fechaInicio.getDay() === 0;
 
       for (const op of t.operarios ?? []) {
         const id = op.id; // ✅ string
@@ -863,9 +857,7 @@ export class ReporteService {
             usoSemanalPct: 0,
             usoMensualPct: 0,
             conjuntoCapacidadId: null,
-            tareasDomingo: 0,
             tareasFestivo: 0,
-            diasDomingoTrabajados: 0,
             diasFestivoTrabajados: 0,
           });
         }
@@ -889,11 +881,6 @@ export class ReporteService {
           const dias = diasFestivoPorOperario.get(id) ?? new Set<string>();
           dias.add(claveDia);
           diasFestivoPorOperario.set(id, dias);
-        } else if (esDomingo) {
-          row.tareasDomingo++;
-          const dias = diasDomingoPorOperario.get(id) ?? new Set<string>();
-          dias.add(claveDia);
-          diasDomingoPorOperario.set(id, dias);
         }
 
         if (t.conjuntoId) {
@@ -908,7 +895,6 @@ export class ReporteService {
 
     const data = Array.from(map.values());
     for (const row of data) {
-      row.diasDomingoTrabajados = diasDomingoPorOperario.get(row.operarioId)?.size ?? 0;
       row.diasFestivoTrabajados = diasFestivoPorOperario.get(row.operarioId)?.size ?? 0;
     }
 

@@ -151,6 +151,11 @@ export const CrearConjuntoDTO = z.object({
   consignasEspeciales: z.array(z.string()).default([]),
   valorAgregado: z.array(z.string()).default([]),
 
+  // Enlace de Google Maps del conjunto: de ahí salen latitud/longitud para
+  // validar que el QR de asistencia se escanee en el sitio.
+  ubicacionMapsUrl: z.string().trim().max(1000).optional().nullable(),
+  radioAsistenciaMetros: z.coerce.number().int().min(30).max(2000).optional(),
+
   horarios: z.array(HorarioDTO).optional().default([]),
 
   ubicaciones: z
@@ -179,6 +184,10 @@ export const EditarConjuntoDTO = z.object({
   consignasEspeciales: z.array(z.string()).optional(),
   valorAgregado: z.array(z.string()).optional(),
 
+  // null o "" borra la ubicación (el QR deja de validarse por distancia).
+  ubicacionMapsUrl: z.string().trim().max(1000).optional().nullable(),
+  radioAsistenciaMetros: z.coerce.number().int().min(30).max(2000).optional(),
+
   horarios: z.array(HorarioDTO).optional(),
   operariosIds: z.array(z.string()).optional(),
   ubicaciones: z.array(UbicacionConElementosDTO).optional(),
@@ -200,6 +209,10 @@ export const conjuntoPublicSelect = {
   valorMensual: true,
   consignasEspeciales: true,
   valorAgregado: true,
+  ubicacionMapsUrl: true,
+  latitud: true,
+  longitud: true,
+  radioAsistenciaMetros: true,
 
   horarios: {
     select: {

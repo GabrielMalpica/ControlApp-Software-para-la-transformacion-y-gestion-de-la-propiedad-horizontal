@@ -50,7 +50,7 @@ export class AsistenciaExcelService {
     anio: number;
     mes: number;
   }): Promise<Buffer> {
-    const [grid, conceptos, turnosExtra] = await Promise.all([
+    const [grid, conceptos, turnosExtra, visitas] = await Promise.all([
       this.asistencia.getGrid(input),
       this.asistencia.listarConceptos(input.empresaId),
       this.asistencia.listarTurnosExtra({
@@ -59,6 +59,7 @@ export class AsistenciaExcelService {
         anio: input.anio,
         mes: input.mes,
       }),
+      this.asistencia.getVisitasSupervisores(input),
     ]);
 
     const operarioIds = grid.operarios.map((o) => o.operarioId);
@@ -77,6 +78,7 @@ export class AsistenciaExcelService {
 
     this.armarHojaAsistencia(workbook, grid, conceptos, detalleMap, input);
     this.armarHojaTurnosExtra(workbook, turnosExtra, input);
+    this.armarHojaVisitasSupervisores(workbook, visitas);
     this.armarHojaConceptos(workbook, conceptos);
 
     const output = await workbook.xlsx.writeBuffer();
@@ -97,7 +99,7 @@ export class AsistenciaExcelService {
 
     const totalDias = grid.totalDias;
     const firstDayCol = COLS_FIJAS.length + 1;
-    // Dos columnas de resumen (dominicales/festivos trabajados) justo
+    // Dos columnas de resumen (descansos/festivos trabajados) justo
     // después de los días, antes del hueco que separa la leyenda.
     const domingosCol = firstDayCol + totalDias;
     const festivosCol = domingosCol + 1;
@@ -117,7 +119,7 @@ export class AsistenciaExcelService {
     for (let dia = 1; dia <= totalDias; dia += 1) {
       sheet.getCell(2, firstDayCol + dia - 1).value = dia;
     }
-    sheet.getCell(2, domingosCol).value = "DOMINICALES";
+    sheet.getCell(2, domingosCol).value = "DESCANSOS TRAB.";
     sheet.getCell(2, festivosCol).value = "FESTIVOS";
 
     const headerRow1 = sheet.getRow(1);
@@ -162,6 +164,8 @@ export class AsistenciaExcelService {
         };
       });
 
+    const colorConcepto = new Map(conceptos.map((c) => [c.codigo, c.colorHex]));
+
     // Filas de datos: una por operario
     grid.operarios.forEach((fila, index) => {
       const row = 3 + index;
@@ -176,16 +180,30 @@ export class AsistenciaExcelService {
       sheet.getCell(row, 6).value = fila.cedula;
 
       const CODIGOS_TRABAJADO = new Set(["A", "DFC", "DFP"]);
-      let dominicales = 0;
+      let descansos = 0;
       let festivos = 0;
 
       fila.dias.forEach((dia) => {
         const cell = sheet.getCell(row, firstDayCol + dia.dia - 1);
         if (dia.registro && CODIGOS_TRABAJADO.has(dia.registro.conceptoCodigo)) {
           if (dia.esFestivo) festivos += 1;
-          else if (dia.diaSemana === 0) dominicales += 1;
+          else if (dia.esDiaDescanso) descansos += 1;
         }
-        if (!dia.registro) return;
+        if (!dia.registro) {
+          // Descansos automáticos: "C" compensatorio ganado, "D" descanso normal.
+          const codigoAuto = dia.descansoProgramado ? "C" : dia.esDescansoNormal ? "D" : null;
+          if (codigoAuto) {
+            const color = colorConcepto.get(codigoAuto) ?? (codigoAuto === "C" ? "#00ACC1" : "#9E9E9E");
+            cell.value = codigoAuto;
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: `FF${color.replace("#", "")}` },
+            };
+            cell.alignment = { horizontal: "center" };
+          }
+          return;
+        }
         cell.value = dia.registro.conceptoCodigo;
         cell.fill = {
           type: "pattern",
@@ -198,7 +216,7 @@ export class AsistenciaExcelService {
         }
       });
 
-      sheet.getCell(row, domingosCol).value = dominicales;
+      sheet.getCell(row, domingosCol).value = descansos;
       sheet.getCell(row, festivosCol).value = festivos;
       sheet.getCell(row, domingosCol).alignment = { horizontal: "center" };
       sheet.getCell(row, festivosCol).alignment = { horizontal: "center" };
@@ -213,10 +231,71 @@ export class AsistenciaExcelService {
     for (let dia = 1; dia <= totalDias; dia += 1) {
       sheet.getColumn(firstDayCol + dia - 1).width = 4;
     }
-    sheet.getColumn(domingosCol).width = 12;
+    sheet.getColumn(domingosCol).width = 16;
     sheet.getColumn(festivosCol).width = 10;
     sheet.getColumn(legendCol).width = 8;
     sheet.getColumn(legendCol + 1).width = 40;
+  }
+
+  /**
+   * Visitas de supervisores: arriba el resumen por supervisor y conjunto
+   * (cuántas veces fue y cuántas salidas registró) y abajo cada visita con su
+   * hora de entrada y de salida.
+   */
+  private armarHojaVisitasSupervisores(
+    workbook: ExcelJS.Workbook,
+    visitas: Awaited<ReturnType<AsistenciaService["getVisitasSupervisores"]>>,
+  ): void {
+    const sheet = workbook.addWorksheet("Visitas supervisores", {
+      views: [{ state: "frozen", ySplit: 1 }],
+    });
+    const fmtHora = (d: Date | string | null) => {
+      if (!d) return "";
+      const x = new Date(d);
+      return `${String(x.getHours()).padStart(2, "0")}:${String(x.getMinutes()).padStart(2, "0")}`;
+    };
+    const negrita = (row: ExcelJS.Row) => {
+      row.font = { bold: true };
+      row.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFEFEF" } };
+      });
+    };
+
+    // Resumen
+    sheet.addRow(["RESUMEN DE VISITAS"]).font = { bold: true };
+    negrita(sheet.addRow(["Supervisor", "Conjunto", "Visitas (entradas)", "Salidas registradas"]));
+    for (const sup of visitas.supervisores) {
+      sheet.addRow([sup.nombre, "TOTAL", sup.visitas, sup.salidas]).font = { bold: true };
+      for (const c of sup.porConjunto) {
+        const salidas = sup.detalle.filter(
+          (d) => d.conjuntoId === c.conjuntoId && d.horaSalida != null,
+        ).length;
+        sheet.addRow([sup.nombre, c.conjuntoNombre, c.visitas, salidas]);
+      }
+    }
+    if (!visitas.supervisores.length) sheet.addRow(["Sin visitas registradas en el periodo."]);
+
+    // Detalle
+    sheet.addRow([]);
+    sheet.addRow(["DETALLE"]).font = { bold: true };
+    negrita(sheet.addRow(["Supervisor", "Conjunto", "Fecha", "Entrada", "Salida", "Metros al entrar", "Metros al salir"]));
+    for (const sup of visitas.supervisores) {
+      for (const d of sup.detalle) {
+        sheet.addRow([
+          sup.nombre,
+          d.conjuntoNombre,
+          d.fecha,
+          fmtHora(d.horaEntrada),
+          d.horaSalida ? fmtHora(d.horaSalida) : "Sin salida",
+          d.distanciaEntradaMetros ?? "",
+          d.distanciaSalidaMetros ?? "",
+        ]);
+      }
+    }
+
+    [26, 30, 18, 18, 14, 16, 16].forEach((w, i) => {
+      sheet.getColumn(i + 1).width = w;
+    });
   }
 
   private armarHojaTurnosExtra(

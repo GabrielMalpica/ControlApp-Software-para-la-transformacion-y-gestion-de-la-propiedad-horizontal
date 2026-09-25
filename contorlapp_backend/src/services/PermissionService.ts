@@ -376,7 +376,7 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
     module: "asistencia",
     moduleLabel: "Asistencia",
     label: "Marcar asistencia por QR",
-    description: "Permite al operario registrar su propia entrada y salida escaneando el QR del conjunto.",
+    description: "Permite al operario (o supervisor, en sus visitas) registrar su propia entrada y salida escaneando el QR del conjunto.",
   },
   {
     key: "asistencia.ver",
@@ -551,6 +551,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "comercio.pedidos.gestionar",
   ]),
   [Rol.supervisor]: new Set([
+    "asistencia.marcar",
     "conjuntos.ver",
     "tareas.crear",
     "tareas.ver",

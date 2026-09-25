@@ -31,6 +31,7 @@ const CheckinBody = z.object({
   qrPayload: z.string().min(1),
   latitud: z.coerce.number().min(-90).max(90).optional().nullable(),
   longitud: z.coerce.number().min(-180).max(180).optional().nullable(),
+  precisionMetros: z.coerce.number().min(0).max(100000).optional().nullable(),
 });
 
 const UpsertRegistroBody = z.object({
@@ -134,14 +135,36 @@ export class AsistenciaController {
         return;
       }
 
-      const resultado = await service.checkin({
-        operarioId,
+      const datos = {
         conjuntoId: body.conjuntoId,
         qrPayload: body.qrPayload,
         latitud: body.latitud ?? null,
         longitud: body.longitud ?? null,
-      });
+        precisionMetros: body.precisionMetros ?? null,
+      };
+      // Los supervisores marcan visitas (varias por día, en varios
+      // conjuntos); los operarios, su asistencia diaria.
+      const resultado =
+        req.user?.rol === "supervisor"
+          ? await service.checkinSupervisor({ supervisorId: operarioId, ...datos })
+          : await service.checkin({ operarioId, ...datos });
       res.json(resultado);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getVisitasSupervisores: RequestHandler = async (req, res, next) => {
+    try {
+      const empresaId = await empresaIdAutenticada(req);
+      const query = PeriodoQuery.parse(req.query);
+      const data = await service.getVisitasSupervisores({
+        empresaId,
+        conjuntoId: query.conjuntoId ?? null,
+        anio: query.anio,
+        mes: query.mes,
+      });
+      res.json(data);
     } catch (err) {
       next(err);
     }

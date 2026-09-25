@@ -48,6 +48,7 @@ router.post(
 // Grid y resumen mensual
 router.get("/grid", requirePermission("asistencia.ver"), ctrl.getGrid);
 router.get("/resumen", requirePermission("asistencia.ver"), ctrl.getResumen);
+router.get("/visitas-supervisores", requirePermission("asistencia.ver"), ctrl.getVisitasSupervisores);
 router.get("/exportar", requirePermission("asistencia.exportar"), ctrl.exportarExcel);
 
 // Registro manual (falta, permiso, vacaciones, etc)

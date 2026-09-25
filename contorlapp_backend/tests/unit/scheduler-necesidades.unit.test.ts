@@ -444,42 +444,78 @@ describe("generarBorradorMensual - una plaza con 'trabaja festivos' sí trabaja 
 });
 
 describe("generarBorradorMensual - descanso compensatorio", () => {
-  test("el día siguiente a un festivo trabajado con descanso compensatorio queda libre (la definición se reubica)", async () => {
-    // 2026-04-01 es miércoles (festivo trabajado); diasParaCompletar/descanso
-    // deja el jueves 2026-04-02 como descanso. La definición es DIARIA (una
-    // ocurrencia por jornada laborable) para poder ver directamente que el
-    // jueves queda sin tarea.
-    const FESTIVO = "2026-04-01";
-    jest.mocked(getFestivosSet).mockResolvedValue(new Set([FESTIVO]));
+  const plazaConCompensatorio = (id: number) => ({
+    id,
+    operarioId: "op-descanso",
+    horarioEspecial: false,
+    horarios: [],
+    trabajaFestivos: true,
+    festivoHoraApertura: "09:00",
+    festivoHoraCierre: "15:00",
+    descansoCompensatorio: true,
+    diasDescansoCompensatorio: 1,
+  });
+  const fechasConTarea = (prisma: any) =>
+    new Set<string>(
+      prisma.tareasCreadas.map((t: any) => {
+        const f: Date = t.fechaInicio;
+        return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, "0")}-${String(f.getDate()).padStart(2, "0")}`;
+      }),
+    );
+
+  test("festivo en día de descanso semanal (sábado; el conjunto es L-V): se trabaja y el compensatorio (lunes) queda libre", async () => {
+    // Sábado 2026-04-04 festivo. Sábado y domingo no tienen horario en el
+    // conjunto: trabajar el festivo es trabajar su día de descanso. El +1
+    // (domingo) ya es descanso semanal, así que el compensatorio pasa al lunes.
+    jest.mocked(getFestivosSet).mockResolvedValue(new Set(["2026-04-04"]));
     const prisma = construirPrisma({
-      necesidades: [
-        {
-          id: 701,
-          operarioId: "op-descanso",
-          horarioEspecial: false,
-          horarios: [],
-          trabajaFestivos: true,
-          festivoHoraApertura: "09:00",
-          festivoHoraCierre: "15:00",
-          descansoCompensatorio: true,
-          diasDescansoCompensatorio: 1,
-        },
-      ],
+      necesidades: [plazaConCompensatorio(701)],
       frecuencia: Frecuencia.DIARIA,
       duracionMinutosFija: 60,
       prioridad: 2,
     });
     const service = new DefinicionTareaPreventivaService(prisma);
 
-    await service.generarBorradorMensual({
-      conjuntoId: CONJUNTO,
-      periodoAnio: 2026,
-      periodoMes: 4,
-    });
+    await service.generarBorradorMensual({ conjuntoId: CONJUNTO, periodoAnio: 2026, periodoMes: 4 });
 
-    const tareaJueves = prisma.tareasCreadas.find(
-      (t: any) => t.fechaInicio.toISOString().slice(0, 10) === "2026-04-02",
-    );
-    expect(tareaJueves).toBeUndefined();
+    const fechas = fechasConTarea(prisma);
+    expect(fechas.has("2026-04-04")).toBe(true); // trabaja el festivo
+    expect(fechas.has("2026-04-06")).toBe(false); // lunes: compensatorio
+    expect(fechas.has("2026-04-07")).toBe(true); // martes normal
+  });
+
+  test("festivo en un día que la plaza igual trabaja (miércoles) NO quita ningún día", async () => {
+    jest.mocked(getFestivosSet).mockResolvedValue(new Set(["2026-04-01"]));
+    const prisma = construirPrisma({
+      necesidades: [plazaConCompensatorio(702)],
+      frecuencia: Frecuencia.DIARIA,
+      duracionMinutosFija: 60,
+      prioridad: 2,
+    });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({ conjuntoId: CONJUNTO, periodoAnio: 2026, periodoMes: 4 });
+
+    const fechas = fechasConTarea(prisma);
+    expect(fechas.has("2026-04-01")).toBe(true); // trabaja el festivo
+    expect(fechas.has("2026-04-02")).toBe(true); // jueves: sigue trabajando
+    expect(fechas.has("2026-04-03")).toBe(true);
+  });
+
+  test("sin festivos en el mes no se le quita ningún día", async () => {
+    jest.mocked(getFestivosSet).mockResolvedValue(new Set());
+    const prisma = construirPrisma({
+      necesidades: [plazaConCompensatorio(703)],
+      frecuencia: Frecuencia.DIARIA,
+      duracionMinutosFija: 60,
+      prioridad: 2,
+    });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({ conjuntoId: CONJUNTO, periodoAnio: 2026, periodoMes: 4 });
+
+    const fechas = fechasConTarea(prisma);
+    // Abril 2026 tiene 22 días hábiles L-V, todos con tarea.
+    expect(fechas.size).toBe(22);
   });
 });
