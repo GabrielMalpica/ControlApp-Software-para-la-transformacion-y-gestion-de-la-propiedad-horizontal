@@ -47,6 +47,7 @@ conjuntoRouter.get("/conjuntos/:nit/ubicaciones/buscar", requirePermission("mapa
 
 /* Necesidades operativas (plazas/cargos) del conjunto */
 conjuntoRouter.get("/conjuntos/:nit/necesidades", requirePermission("conjuntos.ver", "conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.listar);
+conjuntoRouter.get("/conjuntos/:nit/necesidades/calendario", requirePermission("conjuntos.ver", "conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.calendario);
 conjuntoRouter.post("/conjuntos/:nit/necesidades", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.crear);
 conjuntoRouter.patch("/conjuntos/:nit/necesidades/:necesidadId", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.editar);
 conjuntoRouter.delete("/conjuntos/:nit/necesidades/:necesidadId", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), necesidades.eliminar);

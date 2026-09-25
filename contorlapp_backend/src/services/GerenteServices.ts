@@ -91,6 +91,7 @@ import {
 import {
   validarLimiteSemanalOperarios,
   validarOperariosDisponiblesEnFecha,
+  operariosPuedenTrabajarFestivo,
 } from "../utils/operarioAvailability";
 import { PermissionService } from "./PermissionService";
 import {
@@ -764,7 +765,10 @@ export class GerenteService {
     }
   }
 
-  private async validarFechaLaborable(fecha: Date) {
+  private async validarFechaLaborable(
+    fecha: Date,
+    contexto?: { conjuntoId?: string | null; operariosIds?: string[] },
+  ) {
     const esFestivo = await isFestivoDate({
       prisma: this.prisma,
       fecha,
@@ -772,11 +776,25 @@ export class GerenteService {
     });
 
     if (esFestivo) {
-      return {
-        ok: false as const,
-        reason: "FECHA_NO_LABORABLE" as const,
-        message: "No se pueden programar tareas en festivos.",
-      };
+      // La plaza (necesidad operativa) que ocupa cada operario decide si
+      // trabaja festivos, con su propio horario festivo -no depende del
+      // rol-. Se valida el horario exacto más abajo igual que cualquier
+      // otro día.
+      const puedenTrabajarFestivo =
+        contexto?.conjuntoId &&
+        contexto.operariosIds?.length &&
+        (await operariosPuedenTrabajarFestivo({
+          prisma: this.prisma,
+          conjuntoId: contexto.conjuntoId,
+          operariosIds: contexto.operariosIds,
+        }));
+      if (!puedenTrabajarFestivo) {
+        return {
+          ok: false as const,
+          reason: "FECHA_NO_LABORABLE" as const,
+          message: "No se pueden programar tareas en festivos.",
+        };
+      }
     }
 
     return null;
@@ -3022,7 +3040,13 @@ export class GerenteService {
     const dto = CrearTareaDTO.parse(payload);
 
     const inicio = dto.fechaInicio;
-    const noLaborable = await this.validarFechaLaborable(inicio);
+    const operariosIds =
+      dto.operariosIds?.map(String) ??
+      (dto.operarioId ? [String(dto.operarioId)] : []);
+    const noLaborable = await this.validarFechaLaborable(inicio, {
+      conjuntoId: dto.conjuntoId,
+      operariosIds,
+    });
     if (noLaborable) return noLaborable;
 
     const periodoAnio = inicio.getFullYear();
@@ -3049,10 +3073,6 @@ export class GerenteService {
     }
 
     const fin = dto.fechaFin ?? new Date(inicio.getTime() + durMin * 60000);
-
-    const operariosIds =
-      dto.operariosIds?.map(String) ??
-      (dto.operarioId ? [String(dto.operarioId)] : []);
 
     if (operariosIds.length) {
       const disponibilidad = await validarOperariosDisponiblesEnFecha({
@@ -3361,7 +3381,13 @@ export class GerenteService {
     }
 
     const inicio = dto.fechaInicio;
-    const noLaborable = await this.validarFechaLaborable(inicio);
+    const operariosIds =
+      dto.operariosIds?.map(String) ??
+      (dto.operarioId ? [String(dto.operarioId)] : []);
+    const noLaborable = await this.validarFechaLaborable(inicio, {
+      conjuntoId: dto.conjuntoId,
+      operariosIds,
+    });
     if (noLaborable) return noLaborable;
 
     const durMin =
@@ -3383,9 +3409,6 @@ export class GerenteService {
       };
     }
     const fin = dto.fechaFin ?? new Date(inicio.getTime() + durMin * 60000);
-    const operariosIds =
-      dto.operariosIds?.map(String) ??
-      (dto.operarioId ? [String(dto.operarioId)] : []);
 
     if (operariosIds.length) {
       const disponibilidad = await validarOperariosDisponiblesEnFecha({
@@ -3646,7 +3669,13 @@ export class GerenteService {
     }
 
     const inicio = dto.fechaInicio;
-    const noLaborable = await this.validarFechaLaborable(inicio);
+    const operariosIds =
+      dto.operariosIds?.map(String) ??
+      (dto.operarioId ? [String(dto.operarioId)] : []);
+    const noLaborable = await this.validarFechaLaborable(inicio, {
+      conjuntoId: dto.conjuntoId,
+      operariosIds,
+    });
     if (noLaborable) return noLaborable;
 
     const durMin =
@@ -3668,10 +3697,6 @@ export class GerenteService {
       };
     }
     const fin = dto.fechaFin ?? new Date(inicio.getTime() + durMin * 60000);
-
-    const operariosIds =
-      dto.operariosIds?.map(String) ??
-      (dto.operarioId ? [String(dto.operarioId)] : []);
 
     if (operariosIds.length) {
       const disponibilidad = await validarOperariosDisponiblesEnFecha({
@@ -4545,7 +4570,10 @@ export class GerenteService {
     const finValidado = mergedFin ?? new Date(mergedInicio.getTime() + duracionCalculada * 60000);
 
     if (mergedTipo === "CORRECTIVA") {
-      const noLaborable = await this.validarFechaLaborable(mergedInicio);
+      const noLaborable = await this.validarFechaLaborable(mergedInicio, {
+        conjuntoId: mergedConjuntoId,
+        operariosIds: mergedOperariosIds,
+      });
       if (noLaborable) return noLaborable;
 
       if (mergedOperariosIds.length) {

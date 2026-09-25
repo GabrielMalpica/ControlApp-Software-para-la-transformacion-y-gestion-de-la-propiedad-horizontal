@@ -6,6 +6,7 @@ import {
   AsignarOperarioNecesidadDTO,
   necesidadPublicSelect,
 } from "../model/ConjuntoNecesidad";
+import { obtenerCalendariosOperarios } from "../utils/operarioAvailability";
 
 const ETIQUETA_ROL: Record<TipoFuncion, string> = {
   TODERO: "Todero",
@@ -135,6 +136,63 @@ export class ConjuntoNecesidadService {
     });
   }
 
+  /**
+   * Calendario del mes por plaza ocupada: solo los días "interesantes"
+   * (festivo trabajado, domingo trabajado o descanso compensatorio), para
+   * que el borrador y la vista de calendario del conjunto puedan marcarlos
+   * sin recalcular la lógica de calendarioPlazaCore por su cuenta. Una
+   * plaza vacante no aparece (no hay operario cuyo calendario resolver).
+   */
+  async calendarioMes(anio: number, mes: number) {
+    await this.conjuntoExiste();
+    const plazas = await this.prisma.conjuntoNecesidadOperario.findMany({
+      where: { conjuntoId: this.conjuntoId, activo: true, operarioId: { not: null } },
+      select: { id: true, etiqueta: true, operarioId: true },
+    });
+    const operariosIds = plazas
+      .map((p) => p.operarioId)
+      .filter((id): id is string => !!id);
+
+    const resultado = {
+      anio,
+      mes,
+      plazas: [] as Array<{
+        necesidadId: number;
+        etiqueta: string;
+        operarioId: string;
+        dias: Array<{ fecha: string; tipo: string; origen: string | null }>;
+      }>,
+    };
+    if (!operariosIds.length) return resultado;
+
+    const desde = new Date(anio, mes - 1, 1);
+    const hasta = new Date(anio, mes, 0);
+    const calendarios = await obtenerCalendariosOperarios({
+      prisma: this.prisma,
+      conjuntoId: this.conjuntoId,
+      operariosIds,
+      desde,
+      hasta,
+    });
+
+    for (const plaza of plazas) {
+      if (!plaza.operarioId) continue;
+      const calendario = calendarios.get(plaza.operarioId);
+      const dias = calendario
+        ? Array.from(calendario.entries())
+            .filter(([, info]) => info.tipo !== "NORMAL" && info.tipo !== "LIBRE")
+            .map(([fecha, info]) => ({ fecha, tipo: info.tipo, origen: info.origen ?? null }))
+        : [];
+      resultado.plazas.push({
+        necesidadId: plaza.id,
+        etiqueta: plaza.etiqueta,
+        operarioId: plaza.operarioId,
+        dias,
+      });
+    }
+    return resultado;
+  }
+
   async crear(payload: unknown) {
     await this.conjuntoExiste();
     const dto = CrearNecesidadDTO.parse(payload);
@@ -150,6 +208,13 @@ export class ConjuntoNecesidadService {
         etiqueta: dto.etiqueta,
         orden: dto.orden,
         horarioEspecial: dto.horarioEspecial,
+        trabajaFestivos: dto.trabajaFestivos,
+        festivoHoraApertura: dto.horarioFestivo?.horaApertura ?? null,
+        festivoHoraCierre: dto.horarioFestivo?.horaCierre ?? null,
+        festivoDescansoInicio: dto.horarioFestivo?.descansoInicio ?? null,
+        festivoDescansoFin: dto.horarioFestivo?.descansoFin ?? null,
+        descansoCompensatorio: dto.descansoCompensatorio,
+        diasDescansoCompensatorio: dto.diasDescansoCompensatorio,
         observaciones: dto.observaciones ?? null,
         operarioId: dto.operarioId ?? null,
         horarios: dto.horarios.length
@@ -172,7 +237,14 @@ export class ConjuntoNecesidadService {
     const dto = EditarNecesidadDTO.parse(payload);
     const actual = await this.prisma.conjuntoNecesidadOperario.findFirst({
       where: { id, conjuntoId: this.conjuntoId },
-      select: { id: true, horarioEspecial: true, operarioId: true },
+      select: {
+        id: true,
+        horarioEspecial: true,
+        operarioId: true,
+        trabajaFestivos: true,
+        festivoHoraApertura: true,
+        festivoHoraCierre: true,
+      },
     });
     if (!actual) throw new Error("Necesidad no encontrada.");
 
@@ -210,6 +282,22 @@ export class ConjuntoNecesidadService {
       }
     }
 
+    // Mismo invariante para festivos: si trabajaFestivos queda activo al
+    // terminar esta edición, la plaza necesita su franja horaria festiva
+    // (la que trae este payload, o la que ya tenía en BD si no se tocó).
+    const trabajaFestivosFinal = dto.trabajaFestivos ?? actual.trabajaFestivos;
+    if (trabajaFestivosFinal) {
+      const tieneHorarioFestivo =
+        dto.horarioFestivo !== undefined
+          ? dto.horarioFestivo != null
+          : actual.festivoHoraApertura != null && actual.festivoHoraCierre != null;
+      if (!tieneHorarioFestivo) {
+        throw new Error(
+          "Si 'trabaja festivos' está activo, la plaza debe tener su horario festivo configurado.",
+        );
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       if (dto.horarios) {
         await tx.conjuntoNecesidadHorario.deleteMany({ where: { necesidadId: id } });
@@ -221,6 +309,17 @@ export class ConjuntoNecesidadService {
           etiqueta: dto.etiqueta,
           orden: dto.orden,
           horarioEspecial: dto.horarioEspecial,
+          trabajaFestivos: dto.trabajaFestivos,
+          ...(dto.horarioFestivo !== undefined
+            ? {
+                festivoHoraApertura: dto.horarioFestivo?.horaApertura ?? null,
+                festivoHoraCierre: dto.horarioFestivo?.horaCierre ?? null,
+                festivoDescansoInicio: dto.horarioFestivo?.descansoInicio ?? null,
+                festivoDescansoFin: dto.horarioFestivo?.descansoFin ?? null,
+              }
+            : {}),
+          descansoCompensatorio: dto.descansoCompensatorio,
+          diasDescansoCompensatorio: dto.diasDescansoCompensatorio,
           observaciones: dto.observaciones,
           activo: dto.activo,
           horarios: dto.horarios

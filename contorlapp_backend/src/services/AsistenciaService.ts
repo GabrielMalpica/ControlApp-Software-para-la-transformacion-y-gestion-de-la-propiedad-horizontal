@@ -2,6 +2,8 @@ import { randomUUID } from "crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { AuditoriaService } from "./AuditoriaService";
+import { obtenerCalendariosOperarios } from "../utils/operarioAvailability";
+import type { DiaCalendarioPlaza } from "../utils/calendarioPlazaCore";
 
 function makeHttpError(status: number, message: string) {
   const err = new Error(message) as Error & { status: number };
@@ -244,6 +246,68 @@ export class AsistenciaService {
     };
   }
 
+  /**
+   * Festivos del mes, en un mapa ymd -> nombre (o null). Usa un rango en
+   * hora LOCAL (Festivo.fecha se guarda a medianoche local, ver
+   * EmpresaServices.startOfDayLocal); las claves ymd resultantes son
+   * comparables con las que usa el grid (toYmdUtc), ya que ambas son solo
+   * "YYYY-MM-DD" del mismo día calendario.
+   */
+  private async festivosDelMes(anio: number, mes: number): Promise<Map<string, string | null>> {
+    const inicioLocal = new Date(anio, mes - 1, 1);
+    const finLocalExclusive = new Date(anio, mes, 1);
+    const rows = await this.prisma.festivo.findMany({
+      where: { pais: "CO", fecha: { gte: inicioLocal, lt: finLocalExclusive } },
+      select: { fecha: true, nombre: true },
+    });
+    const mapa = new Map<string, string | null>();
+    for (const row of rows) {
+      const key = `${row.fecha.getFullYear()}-${String(row.fecha.getMonth() + 1).padStart(2, "0")}-${String(row.fecha.getDate()).padStart(2, "0")}`;
+      mapa.set(key, row.nombre);
+    }
+    return mapa;
+  }
+
+  /**
+   * Calendario efectivo (festivo/domingo/descanso/normal) de cada operario
+   * para el mes, agrupando por su conjunto principal (conjuntos[0]) para
+   * resolver la plaza correspondiente. Un operario sin conjunto activo
+   * queda sin entrada (no tiene plaza que consultar).
+   */
+  private async calendarioDelMesPorOperario(
+    operarios: Array<{ id: string; conjuntos: Array<{ nit: string }> }>,
+    anio: number,
+    mes: number,
+  ): Promise<Map<string, Map<string, DiaCalendarioPlaza>>> {
+    const totalDias = daysInMonth(anio, mes);
+    const desde = new Date(anio, mes - 1, 1);
+    const hasta = new Date(anio, mes - 1, totalDias);
+
+    const porConjunto = new Map<string, string[]>();
+    for (const operario of operarios) {
+      const conjuntoId = operario.conjuntos[0]?.nit;
+      if (!conjuntoId) continue;
+      const lista = porConjunto.get(conjuntoId) ?? [];
+      lista.push(operario.id);
+      porConjunto.set(conjuntoId, lista);
+    }
+
+    const resultado = new Map<string, Map<string, DiaCalendarioPlaza>>();
+    for (const [conjuntoId, operariosIds] of porConjunto) {
+      const calendarios = await obtenerCalendariosOperarios({
+        prisma: this.prisma,
+        conjuntoId,
+        operariosIds,
+        desde,
+        hasta,
+      });
+      for (const [operarioId, calendario] of calendarios) {
+        resultado.set(operarioId, calendario);
+      }
+    }
+    return resultado;
+  }
+
   /* ------------------------------- check-in -------------------------------- */
 
   async checkin(input: {
@@ -273,29 +337,57 @@ export class AsistenciaService {
     if (!operario) throw makeHttpError(404, "Operario no encontrado");
 
     await this.ensureConceptosSeed(operario.empresaId);
-    const conceptoAsistencia = await this.prisma.conceptoAsistencia.findUnique({
-      where: { empresaId_codigo: { empresaId: operario.empresaId, codigo: "A" } },
-    });
-    if (!conceptoAsistencia) {
-      throw makeHttpError(500, "No se pudo resolver el concepto de asistencia por defecto");
-    }
 
     const ahora = new Date();
     const hoyYmd = toYmd(ahora);
     const fecha = parseYmdAsUtcDate(hoyYmd);
     const esDomingo = ahora.getDay() === 0;
-    const festivo = await this.prisma.festivo.findUnique({ where: { fecha } });
+    // `Festivo.fecha` se guarda a medianoche LOCAL (ver
+    // EmpresaServices.startOfDayLocal), a diferencia de `fecha` de arriba
+    // (marcador de día en UTC, la convención de RegistroAsistencia). Buscar
+    // el festivo con ese mismo valor UTC nunca calzaba -bug: el check-in de
+    // un festivo real jamás detectaba el festivo-.
+    const inicioDiaLocal = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+    const finDiaLocal = new Date(inicioDiaLocal.getTime() + 24 * 60 * 60 * 1000);
+    const festivo = await this.prisma.festivo.findFirst({
+      where: { pais: "CO", fecha: { gte: inicioDiaLocal, lt: finDiaLocal } },
+    });
+
+    // Festivo o dominical: la plaza (necesidad operativa) del operario en
+    // este conjunto decide si el check-in queda con descanso compensatorio
+    // (DFC) o pleno sin descanso (DFP). Sin plaza, se conserva el
+    // comportamiento previo ("A" con la nota pendiente).
+    let codigoConcepto = "A";
+    let observacion: string | null = null;
+    if (esDomingo || festivo) {
+      const necesidad = await this.prisma.conjuntoNecesidadOperario.findFirst({
+        where: { conjuntoId: conjunto.nit, operarioId: operario.id, activo: true },
+        select: { descansoCompensatorio: true },
+      });
+      const etiquetaDia = festivo ? `festivo${festivo.nombre ? ` (${festivo.nombre})` : ""}` : "dominical";
+      if (!necesidad) {
+        observacion = "Trabajo en domingo/festivo: pendiente clasificar como DFC o DFP.";
+      } else if (necesidad.descansoCompensatorio) {
+        codigoConcepto = "DFC";
+        observacion = `Asistencia ${etiquetaDia}, con descanso compensatorio.`;
+      } else {
+        codigoConcepto = "DFP";
+        observacion = `Asistencia ${etiquetaDia}, sin descanso compensatorio (pleno).`;
+      }
+    }
+
+    const conceptoAsistencia = await this.prisma.conceptoAsistencia.findUnique({
+      where: { empresaId_codigo: { empresaId: operario.empresaId, codigo: codigoConcepto } },
+    });
+    if (!conceptoAsistencia) {
+      throw makeHttpError(500, "No se pudo resolver el concepto de asistencia por defecto");
+    }
 
     const existente = await this.prisma.registroAsistencia.findUnique({
       where: { operarioId_fecha: { operarioId: operario.id, fecha } },
     });
 
     if (!existente) {
-      const observacion =
-        esDomingo || festivo
-          ? "Trabajo en domingo/festivo: pendiente clasificar como DFC o DFP."
-          : null;
-
       const creado = await this.prisma.registroAsistencia.create({
         data: {
           operarioId: operario.id,
@@ -528,9 +620,14 @@ export class AsistenciaService {
     }
 
     const hoy = toYmd(new Date());
+    const [festivosDelMes, calendarioPorOperario] = await Promise.all([
+      this.festivosDelMes(input.anio, input.mes),
+      this.calendarioDelMesPorOperario(operarios, input.anio, input.mes),
+    ]);
 
     const filas = operarios.map((operario) => {
       const registrosOp = registrosPorOperario.get(operario.id) ?? new Map();
+      const calendarioOp = calendarioPorOperario.get(operario.id);
       const dias = Array.from({ length: totalDias }, (_, idx) => {
         const dia = idx + 1;
         const fechaObj = new Date(Date.UTC(input.anio, input.mes - 1, dia));
@@ -545,14 +642,23 @@ export class AsistenciaService {
             !registro.horaSalida &&
             esPasado,
         );
+        const diaSemana = fechaObj.getUTCDay();
+        const festivoNombre = festivosDelMes.get(ymd) ?? null;
+        const esFestivo = festivosDelMes.has(ymd);
+        const diaCalendario = calendarioOp?.get(ymd);
+        const descansoProgramado =
+          diaCalendario?.tipo === "DESCANSO" ? { origen: diaCalendario.origen ?? null } : null;
 
         return {
           dia,
           fecha: ymd,
-          diaSemana: fechaObj.getUTCDay(),
-          pendiente: !registro && !esFuturo,
+          diaSemana,
+          esFestivo,
+          festivoNombre,
+          pendiente: !registro && !esFuturo && !descansoProgramado,
           incompleto,
           registro: registro ? serializeRegistro(registro) : null,
+          descansoProgramado,
         };
       });
 
@@ -620,11 +726,18 @@ export class AsistenciaService {
   async getResumen(input: { empresaId: string; conjuntoId?: string | null; anio: number; mes: number }) {
     const grid = await this.getGrid(input);
 
+    const CODIGOS_TRABAJADO = new Set(["A", "DFC", "DFP"]);
+
     const resumen = grid.operarios.map((fila) => {
       const conteoPorConcepto = new Map<string, number>();
       let pendientes = 0;
+      let dominicalesTrabajados = 0;
+      let festivosTrabajados = 0;
+      let compensatoriosProgramados = 0;
+      let compensatoriosTomados = 0;
 
       for (const dia of fila.dias) {
+        if (dia.descansoProgramado) compensatoriosProgramados += 1;
         if (dia.pendiente) {
           pendientes += 1;
           continue;
@@ -632,6 +745,13 @@ export class AsistenciaService {
         if (!dia.registro) continue;
         const codigo = dia.registro.conceptoCodigo;
         conteoPorConcepto.set(codigo, (conteoPorConcepto.get(codigo) ?? 0) + 1);
+        if (codigo === "C") compensatoriosTomados += 1;
+        if (CODIGOS_TRABAJADO.has(codigo)) {
+          // Un festivo que cae domingo cuenta solo como festivo (ver
+          // calendarioPlazaCore: el festivo tiene precedencia).
+          if (dia.esFestivo) festivosTrabajados += 1;
+          else if (dia.diaSemana === 0) dominicalesTrabajados += 1;
+        }
       }
 
       return {
@@ -642,6 +762,10 @@ export class AsistenciaService {
         conjuntos: fila.conjuntos,
         pendientes,
         conteoPorConcepto: Object.fromEntries(conteoPorConcepto),
+        dominicalesTrabajados,
+        festivosTrabajados,
+        compensatoriosProgramados,
+        compensatoriosTomados,
       };
     });
 

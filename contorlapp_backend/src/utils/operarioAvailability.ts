@@ -3,6 +3,14 @@ import { DiaSemana, EstadoTarea } from "@prisma/client";
 // Mismo tipo que usa el generador de cronograma (DefinicionTareaPreventivaService.ts).
 // Se reutiliza en vez de duplicarlo: son estructuralmente idénticos.
 import type { HorarioDia } from "./agenda";
+import { getFestivosSet, ymdLocal } from "./schedulerUtils";
+import {
+  calcularCalendarioPlaza,
+  CONFIG_FESTIVO_DEFAULT,
+  MARGEN_DIAS_ARRASTRE_CALENDARIO,
+  type ConfigFestivoNecesidad,
+  type DiaCalendarioPlaza,
+} from "./calendarioPlazaCore";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
@@ -13,7 +21,8 @@ export type MotivoIntervaloInvalido =
   | "CRUZA_DIA"
   | "SIN_HORARIO_CONJUNTO"
   | "FUERA_HORARIO_CONJUNTO"
-  | "FUERA_HORARIO_OPERARIO";
+  | "FUERA_HORARIO_OPERARIO"
+  | "DESCANSO_COMPENSATORIO";
 
 export function diaSemanaFromDate(date: Date): DiaSemana {
   const js = date.getDay();
@@ -182,19 +191,26 @@ async function capacidadSemanalOperario(params: {
       42) * 60;
   let total = 0;
 
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  // Calendario efectivo de la semana completa en un solo lote: contempla
+  // festivos (con el horario festivo de la plaza, si trabaja festivos) y
+  // descanso compensatorio (sin ventana ese día), no solo el horario por
+  // día de la semana.
+  const calendarioSemana = await obtenerCalendariosOperarios({
+    prisma: prisma as PrismaClient,
+    conjuntoId,
+    operariosIds: [operarioId],
+    desde: monday,
+    hasta: sunday,
+  });
+  const diasCalendario = calendarioSemana.get(operarioId);
+
   for (let offset = 0; offset < 7; offset++) {
     const fecha = new Date(monday);
     fecha.setDate(monday.getDate() + offset);
     const ds = diaSemanaFromDate(fecha);
-    // Horario efectivo del operario ese día: el de su plaza si tiene horario
-    // especial, o el heredado del conjunto (comportamiento previo intacto
-    // cuando no hay necesidades configuradas).
-    const horarioEfectivo = await obtenerHorarioEfectivoOperario({
-      prisma,
-      conjuntoId,
-      operarioId,
-      dia: ds,
-    });
+    const horarioEfectivo = diasCalendario?.get(ymdLocal(fecha))?.horario ?? null;
     if (!horarioEfectivo) continue;
 
     const periodo = await obtenerPeriodoDisponibilidadActivo({ prisma, operarioId, fecha });
@@ -566,6 +582,132 @@ export async function obtenerHorarioEfectivoOperario(params: {
   return mapa.get(params.operarioId) ?? null;
 }
 
+/**
+ * Config de festivos/descanso de la plaza que ocupa cada operario en el
+ * conjunto (independiente del día, a diferencia de `horarios`). Un operario
+ * sin plaza activa en el conjunto no aparece en el mapa devuelto
+ * (equivalente a CONFIG_FESTIVO_DEFAULT: no trabaja festivos ni tiene
+ * descanso compensatorio).
+ */
+export async function obtenerConfigFestivoNecesidades(params: {
+  prisma: DbClient;
+  conjuntoId: string;
+  operariosIds: string[];
+}): Promise<Map<string, ConfigFestivoNecesidad>> {
+  const { prisma, conjuntoId } = params;
+  const ids = Array.from(new Set(params.operariosIds.map(String)));
+  const resultado = new Map<string, ConfigFestivoNecesidad>();
+  if (!ids.length) return resultado;
+
+  const necesidades = await prisma.conjuntoNecesidadOperario.findMany({
+    where: { conjuntoId, operarioId: { in: ids }, activo: true },
+    select: {
+      operarioId: true,
+      trabajaFestivos: true,
+      festivoHoraApertura: true,
+      festivoHoraCierre: true,
+      festivoDescansoInicio: true,
+      festivoDescansoFin: true,
+      descansoCompensatorio: true,
+      diasDescansoCompensatorio: true,
+    },
+  });
+
+  for (const n of necesidades) {
+    if (!n.operarioId) continue;
+    resultado.set(n.operarioId, {
+      trabajaFestivos: n.trabajaFestivos ?? false,
+      festivoHoraApertura: n.festivoHoraApertura ?? null,
+      festivoHoraCierre: n.festivoHoraCierre ?? null,
+      festivoDescansoInicio: n.festivoDescansoInicio ?? null,
+      festivoDescansoFin: n.festivoDescansoFin ?? null,
+      descansoCompensatorio: n.descansoCompensatorio ?? false,
+      diasDescansoCompensatorio: n.diasDescansoCompensatorio ?? 1,
+    });
+  }
+  return resultado;
+}
+
+/**
+ * true solo si TODOS los operarios dados ocupan una plaza activa del
+ * conjunto con `trabajaFestivos=true`. Reemplaza la regla fija anterior
+ * ("solo SALVAVIDAS trabaja festivos"): ahora es la plaza -de cualquier
+ * rol- la que decide, vía su horario festivo configurado.
+ */
+export async function operariosPuedenTrabajarFestivo(params: {
+  prisma: DbClient;
+  conjuntoId: string;
+  operariosIds: string[];
+}): Promise<boolean> {
+  const ids = Array.from(new Set(params.operariosIds.map(String)));
+  if (!ids.length) return false;
+  const configs = await obtenerConfigFestivoNecesidades({
+    prisma: params.prisma,
+    conjuntoId: params.conjuntoId,
+    operariosIds: ids,
+  });
+  if (configs.size !== ids.length) return false; // algún operario sin plaza
+  return ids.every((id) => configs.get(id)?.trabajaFestivos === true);
+}
+
+/**
+ * Calendario día a día (festivo/domingo/descanso/normal + horario) de varios
+ * operarios entre `desde` y `hasta`, en lote: una consulta de festivos, una
+ * de config por plaza, y una por día de la semana para el horario (reutiliza
+ * `obtenerHorariosEfectivosOperarios`, que ya resuelve horarioEspecial vs.
+ * heredado del conjunto). `desde === hasta` resuelve una sola fecha.
+ */
+export async function obtenerCalendariosOperarios(params: {
+  prisma: PrismaClient;
+  conjuntoId: string;
+  operariosIds: string[];
+  desde: Date;
+  hasta: Date;
+  pais?: string;
+}): Promise<Map<string, Map<string, DiaCalendarioPlaza>>> {
+  const { prisma, conjuntoId, desde, hasta, pais = "CO" } = params;
+  const ids = Array.from(new Set(params.operariosIds.map(String)));
+  const resultado = new Map<string, Map<string, DiaCalendarioPlaza>>();
+  if (!ids.length) return resultado;
+
+  const inicioFestivos = new Date(desde);
+  inicioFestivos.setDate(inicioFestivos.getDate() - MARGEN_DIAS_ARRASTRE_CALENDARIO);
+
+  const [festivos, configPorOperario] = await Promise.all([
+    getFestivosSet({ prisma, pais, inicio: inicioFestivos, fin: hasta }),
+    obtenerConfigFestivoNecesidades({ prisma, conjuntoId, operariosIds: ids }),
+  ]);
+
+  const horarioPorDiaYOperario = new Map<string, Map<DiaSemana, HorarioDia | null>>();
+  for (const id of ids) horarioPorDiaYOperario.set(id, new Map());
+  for (const dia of Object.values(DiaSemana)) {
+    const porOperario = await obtenerHorariosEfectivosOperarios({
+      prisma,
+      conjuntoId,
+      operariosIds: ids,
+      dia,
+    });
+    for (const id of ids) {
+      horarioPorDiaYOperario.get(id)!.set(dia, porOperario.get(id) ?? null);
+    }
+  }
+
+  for (const id of ids) {
+    const mapaDias = horarioPorDiaYOperario.get(id)!;
+    const config = configPorOperario.get(id) ?? CONFIG_FESTIVO_DEFAULT;
+    const calendario = calcularCalendarioPlaza({
+      desde,
+      hasta,
+      festivos,
+      horarioPorDia: (dia) => mapaDias.get(dia) ?? null,
+      config,
+    });
+    resultado.set(id, calendario);
+  }
+
+  return resultado;
+}
+
 /** Unión de intervalos (a diferencia de intersectIntervals, que es AND). */
 function unionIntervals(
   left: IntervaloLaboral[],
@@ -603,6 +745,8 @@ export async function obtenerIntervalosEfectivosProgramacion(params: {
   /** Intersección tras aplicar jornada/patrón/disponibilidad de cada operario. */
   intervalosEfectivos: IntervaloLaboral[];
   operariosSinConfiguracion: string[];
+  /** Operarios cuya plaza tiene ese día como descanso compensatorio (ver calendarioPlazaCore). */
+  operariosEnDescanso: string[];
 }> {
   const { prisma, conjuntoId, fecha } = params;
   const operariosIds = Array.from(new Set((params.operariosIds ?? []).map(String)));
@@ -617,10 +761,12 @@ export async function obtenerIntervalosEfectivosProgramacion(params: {
       intervalosConjunto,
       intervalosEfectivos: intervalosConjunto,
       operariosSinConfiguracion: [],
+      operariosEnDescanso: [],
     };
   }
 
-  const [operarios, disponibilidad, horariosEfectivos] = await Promise.all([
+  const fechaKey = ymdLocal(fecha);
+  const [operarios, disponibilidad, calendarios] = await Promise.all([
     prisma.operario.findMany({
       where: { id: { in: operariosIds } },
       select: {
@@ -629,13 +775,25 @@ export async function obtenerIntervalosEfectivosProgramacion(params: {
       },
     }),
     obtenerDisponibilidadActivaOperarios({ prisma, operariosIds, fecha }),
-    obtenerHorariosEfectivosOperarios({ prisma, conjuntoId, operariosIds, dia }),
+    // Calendario efectivo (festivo/domingo/descanso compensatorio/normal) de
+    // cada operario para ESTA fecha exacta, no solo el horario del día de la
+    // semana: un festivo usa el horario festivo de la plaza (si lo tiene), y
+    // un día de descanso compensatorio queda sin ventana aunque el día de la
+    // semana normalmente trabaje.
+    obtenerCalendariosOperarios({
+      prisma: prisma as PrismaClient,
+      conjuntoId,
+      operariosIds,
+      desde: fecha,
+      hasta: fecha,
+    }),
   ]);
   const byId = new Map(operarios.map((operario) => [operario.id, operario]));
   const operariosSinConfiguracion = operariosIds.filter((id) => !byId.has(id));
 
   let intervalosConjunto: IntervaloLaboral[] = [];
   let intervalosEfectivos: IntervaloLaboral[] | null = null;
+  const operariosEnDescanso: string[] = [];
 
   for (const operarioId of operariosIds) {
     const operario = byId.get(operarioId);
@@ -643,7 +801,9 @@ export async function obtenerIntervalosEfectivosProgramacion(params: {
       intervalosEfectivos = [];
       continue;
     }
-    const horarioEfectivo = horariosEfectivos.get(operarioId) ?? null;
+    const diaCalendario = calendarios.get(operarioId)?.get(fechaKey) ?? null;
+    if (diaCalendario?.tipo === "DESCANSO") operariosEnDescanso.push(operarioId);
+    const horarioEfectivo = diaCalendario?.horario ?? null;
     intervalosConjunto = unionIntervals(
       intervalosConjunto,
       horarioEfectivo ? workIntervalsFromHorario(horarioEfectivo) : [],
@@ -676,6 +836,7 @@ export async function obtenerIntervalosEfectivosProgramacion(params: {
     intervalosConjunto,
     intervalosEfectivos: intervalosEfectivos ?? [],
     operariosSinConfiguracion,
+    operariosEnDescanso,
   };
 }
 
@@ -715,6 +876,13 @@ export async function validarIntervaloProgramacion(params: {
     fecha: fechaInicio,
     operariosIds: params.operariosIds,
   });
+  if (disponibilidad.operariosEnDescanso.length > 0) {
+    return {
+      ok: false,
+      motivo: "DESCANSO_COMPENSATORIO",
+      mensaje: `Los operarios ${disponibilidad.operariosEnDescanso.join(", ")} tienen descanso compensatorio ese día (por un festivo o domingo trabajado).`,
+    };
+  }
   // `intervalosConjunto` ya contempla el horario de una plaza con horario
   // especial (puede tener ventana un día en que el conjunto no opera), así
   // que el rechazo se basa en la ventana de búsqueda real, no solo en si el

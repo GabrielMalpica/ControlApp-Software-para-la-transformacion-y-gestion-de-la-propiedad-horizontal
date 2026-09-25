@@ -2,65 +2,90 @@
 import { z } from "zod";
 import { DiaSemana, TipoServicio } from "@prisma/client";
 
-/** Tipo horario (usar enums de Prisma) */
-export const HorarioDTO = z
-  .object({
-    dia: z.nativeEnum(DiaSemana),
-    horaApertura: z
-      .string()
-      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:mm"),
-    horaCierre: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:mm"),
+const horaRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-    descansoInicio: z
-      .string()
-      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:mm")
-      .optional()
-      .nullable(),
-
-    descansoFin: z
-      .string()
-      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Formato HH:mm")
-      .optional()
-      .nullable(),
-  })
-  .refine(({ horaApertura, horaCierre }) => horaApertura < horaCierre, {
-    message: "horaApertura debe ser menor que horaCierre",
-    path: ["horaCierre"],
-  })
-  .refine(
-    (d) => {
-      // si uno viene, el otro también
-      if (
-        (d.descansoInicio && !d.descansoFin) ||
-        (!d.descansoInicio && d.descansoFin)
-      ) {
-        return false;
+/**
+ * Refinamientos compartidos por cualquier franja horaria (apertura, cierre,
+ * descanso opcional): los usan tanto HorarioDTO (con día) como
+ * HorarioFranjaDTO (sin día, para el horario festivo de una necesidad).
+ */
+function withFranjaRefinements<
+  T extends {
+    horaApertura: string;
+    horaCierre: string;
+    descansoInicio?: string | null;
+    descansoFin?: string | null;
+  },
+>(schema: z.ZodType<T>) {
+  return schema
+    .refine(({ horaApertura, horaCierre }) => horaApertura < horaCierre, {
+      message: "horaApertura debe ser menor que horaCierre",
+      path: ["horaCierre"],
+    })
+    .refine(
+      (d) => {
+        // si uno viene, el otro también
+        if (
+          (d.descansoInicio && !d.descansoFin) ||
+          (!d.descansoInicio && d.descansoFin)
+        ) {
+          return false;
+        }
+        return true;
+      },
+      {
+        message:
+          "Si defines descanso, debes enviar descansoInicio y descansoFin.",
+        path: ["descansoInicio"],
       }
-      return true;
-    },
-    {
-      message:
-        "Si defines descanso, debes enviar descansoInicio y descansoFin.",
-      path: ["descansoInicio"],
-    }
-  )
-  .refine(
-    (d) => {
-      if (!d.descansoInicio || !d.descansoFin) return true;
+    )
+    .refine(
+      (d) => {
+        if (!d.descansoInicio || !d.descansoFin) return true;
 
-      // apertura < descansoInicio < descansoFin < cierre
-      return (
-        d.horaApertura < d.descansoInicio &&
-        d.descansoInicio < d.descansoFin &&
-        d.descansoFin < d.horaCierre
-      );
-    },
-    {
-      message:
-        "Descanso debe estar dentro de la jornada: apertura < descansoInicio < descansoFin < cierre.",
-      path: ["descansoInicio"],
-    }
-  );
+        // apertura < descansoInicio < descansoFin < cierre
+        return (
+          d.horaApertura < d.descansoInicio &&
+          d.descansoInicio < d.descansoFin &&
+          d.descansoFin < d.horaCierre
+        );
+      },
+      {
+        message:
+          "Descanso debe estar dentro de la jornada: apertura < descansoInicio < descansoFin < cierre.",
+        path: ["descansoInicio"],
+      }
+    );
+}
+
+const horarioFranjaBase = z.object({
+  horaApertura: z.string().regex(horaRegex, "Formato HH:mm"),
+  horaCierre: z.string().regex(horaRegex, "Formato HH:mm"),
+
+  descansoInicio: z
+    .string()
+    .regex(horaRegex, "Formato HH:mm")
+    .optional()
+    .nullable(),
+
+  descansoFin: z
+    .string()
+    .regex(horaRegex, "Formato HH:mm")
+    .optional()
+    .nullable(),
+});
+
+/**
+ * Franja horaria sin día: usada por el horario festivo de una necesidad
+ * operativa (ConjuntoNecesidadOperario), que no depende del día de la
+ * semana (un festivo puede caer cualquier día).
+ */
+export const HorarioFranjaDTO = withFranjaRefinements(horarioFranjaBase);
+
+/** Tipo horario (usar enums de Prisma) */
+export const HorarioDTO = withFranjaRefinements(
+  horarioFranjaBase.extend({ dia: z.nativeEnum(DiaSemana) }),
+);
 
 /** Dominio base alineado a Prisma */
 export interface ConjuntoDominio {

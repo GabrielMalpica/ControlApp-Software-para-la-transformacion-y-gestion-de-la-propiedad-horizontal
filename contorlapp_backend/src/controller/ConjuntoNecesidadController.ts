@@ -12,6 +12,10 @@ const ConfirmarQuery = z.object({
     .optional()
     .transform((v) => v === "true"),
 });
+const CalendarioQuery = z.object({
+  anio: z.coerce.number().int().min(2000).max(2100),
+  mes: z.coerce.number().int().min(1).max(12),
+});
 
 function resolveConjuntoId(req: any): string {
   const parsed = NitSchema.safeParse({ nit: req.params?.nit });
@@ -135,6 +139,19 @@ export class ConjuntoNecesidadController {
       const service = new ConjuntoNecesidadService(prisma, conjuntoId);
       const data = await service.vincularDefinicionesConNecesidades();
       res.status(200).json(data);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /conjuntos/:nit/necesidades/calendario?anio&mes
+  calendario: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const { anio, mes } = CalendarioQuery.parse(req.query);
+      const service = new ConjuntoNecesidadService(prisma, conjuntoId);
+      const data = await service.calendarioMes(anio, mes);
+      res.json(data);
     } catch (err) {
       next(err);
     }

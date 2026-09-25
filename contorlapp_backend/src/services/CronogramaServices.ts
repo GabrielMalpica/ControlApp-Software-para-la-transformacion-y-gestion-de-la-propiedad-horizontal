@@ -1,5 +1,5 @@
 // src/services/CronogramaService.ts
-import { EstadoTarea, Prisma, TipoFuncion, TipoTarea, type PrismaClient } from "@prisma/client";
+import { EstadoTarea, Prisma, TipoTarea, type PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import {
   buildAgendaPorOperarioDia,
@@ -22,6 +22,7 @@ import {
   validarIntervaloProgramacion,
   validarLimiteSemanalOperarios,
   validarOperariosDisponiblesEnFecha,
+  operariosPuedenTrabajarFestivo,
 } from "../utils/operarioAvailability";
 import {
   AccionAuditoria,
@@ -2132,18 +2133,17 @@ export class CronogramaService {
       pais: "CO",
     });
     if (esFestivo) {
-      // Los operarios con rol SALVAVIDAS (solo o combinado) sí pueden
-      // trabajar festivos, dentro del horario de su cargo -se valida más
-      // abajo igual que cualquier otro día- (misma regla que en el
-      // generador: DefinicionTareaPreventivaService.defPuedeTrabajarFestivo).
+      // La plaza (necesidad operativa) que ocupa cada operario decide si
+      // trabaja festivos, con su propio horario festivo -no depende del rol,
+      // ver ConjuntoNecesidadOperario.trabajaFestivos-. Se valida el horario
+      // exacto más abajo igual que cualquier otro día.
       const puedenTrabajarFestivo =
         operariosIds.length > 0 &&
-        (
-          await this.prisma.operario.findMany({
-            where: { id: { in: operariosIds } },
-            select: { funciones: true },
-          })
-        ).every((o) => o.funciones.includes(TipoFuncion.SALVAVIDAS));
+        (await operariosPuedenTrabajarFestivo({
+          prisma: this.prisma,
+          conjuntoId: this.conjuntoId,
+          operariosIds,
+        }));
       if (!puedenTrabajarFestivo) {
         throw new Error("No se permite reprogramar tareas a festivos.");
       }

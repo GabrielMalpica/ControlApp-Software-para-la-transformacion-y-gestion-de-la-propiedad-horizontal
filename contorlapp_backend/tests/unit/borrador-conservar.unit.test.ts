@@ -77,6 +77,12 @@ function construirPrisma(opts: {
         descansoFin: null,
       }),
     },
+    // Sin necesidades operativas en este set de pruebas: los operarios
+    // agendan directo (def.operarios), sin plaza -> heredan el horario
+    // general del conjunto de arriba y no trabajan festivos.
+    conjuntoNecesidadOperario: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     tarea: {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       count: jest.fn().mockResolvedValue(0),

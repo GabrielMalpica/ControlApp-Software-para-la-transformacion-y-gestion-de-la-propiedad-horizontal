@@ -1,7 +1,7 @@
 // src/model/ConjuntoNecesidad.ts
 import { z } from "zod";
 import { TipoFuncion } from "@prisma/client";
-import { HorarioDTO } from "./Conjunto";
+import { HorarioDTO, HorarioFranjaDTO } from "./Conjunto";
 
 /**
  * Necesidad operativa (plaza/cargo) de un conjunto, p.ej. "Todero #1".
@@ -12,6 +12,22 @@ import { HorarioDTO } from "./Conjunto";
 function sinDiasDuplicados(horarios: { dia: string }[] | undefined) {
   if (!horarios?.length) return true;
   return new Set(horarios.map((h) => h.dia)).size === horarios.length;
+}
+
+/**
+ * Reglas compartidas por CrearNecesidadDTO/EditarNecesidadDTO para el
+ * bloque de festivos (independiente del rol de la plaza -antes solo
+ * SALVAVIDAS podía trabajar festivos, regla fija en el generador-): si
+ * `trabajaFestivos` queda en true, la plaza necesita su franja horaria
+ * festiva; si no, no debería traer una (quedaría huérfana y confundiría al
+ * listar la plaza).
+ */
+function festivoConsistente(d: {
+  trabajaFestivos?: boolean;
+  horarioFestivo?: unknown;
+}) {
+  if (d.trabajaFestivos) return d.horarioFestivo != null;
+  return true;
 }
 
 export const CrearNecesidadDTO = z
@@ -26,6 +42,13 @@ export const CrearNecesidadDTO = z
     orden: z.coerce.number().int().min(0).optional().default(0),
     horarioEspecial: z.boolean().optional().default(false),
     horarios: z.array(HorarioDTO).optional().default([]),
+    // Festivos: independiente de horarioEspecial/horarios (por día de
+    // semana). Cualquier rol puede trabajar festivos si se configura aquí.
+    trabajaFestivos: z.boolean().optional().default(false),
+    horarioFestivo: HorarioFranjaDTO.optional().nullable(),
+    // Descanso compensatorio tras un festivo o domingo trabajado.
+    descansoCompensatorio: z.boolean().optional().default(false),
+    diasDescansoCompensatorio: z.coerce.number().int().min(1).max(6).optional().default(1),
     observaciones: z.string().trim().max(500).optional().nullable(),
     // Permite crear la plaza ya ocupada en la misma llamada.
     operarioId: z.string().trim().min(1).optional().nullable(),
@@ -37,6 +60,10 @@ export const CrearNecesidadDTO = z
   .refine((d) => sinDiasDuplicados(d.horarios), {
     message: "No repitas el mismo día en los horarios de la plaza.",
     path: ["horarios"],
+  })
+  .refine(festivoConsistente, {
+    message: "Si activas 'trabaja festivos', debes configurar su horario.",
+    path: ["horarioFestivo"],
   });
 export type CrearNecesidadInput = z.infer<typeof CrearNecesidadDTO>;
 
@@ -50,6 +77,10 @@ export const EditarNecesidadDTO = z
     orden: z.coerce.number().int().min(0).optional(),
     horarioEspecial: z.boolean().optional(),
     horarios: z.array(HorarioDTO).optional(),
+    trabajaFestivos: z.boolean().optional(),
+    horarioFestivo: HorarioFranjaDTO.optional().nullable(),
+    descansoCompensatorio: z.boolean().optional(),
+    diasDescansoCompensatorio: z.coerce.number().int().min(1).max(6).optional(),
     observaciones: z.string().trim().max(500).optional().nullable(),
     activo: z.boolean().optional(),
   })
@@ -66,7 +97,16 @@ export const EditarNecesidadDTO = z
   .refine((d) => sinDiasDuplicados(d.horarios), {
     message: "No repitas el mismo día en los horarios de la plaza.",
     path: ["horarios"],
-  });
+  })
+  .refine(
+    // Igual que arriba: el caso "ya estaba trabajaFestivos=true y se edita
+    // otra cosa sin tocar horarioFestivo" lo valida el servicio contra BD.
+    (d) => !(d.trabajaFestivos === true && d.horarioFestivo === null),
+    {
+      message: "Si activas 'trabaja festivos', debes configurar su horario.",
+      path: ["horarioFestivo"],
+    },
+  );
 export type EditarNecesidadInput = z.infer<typeof EditarNecesidadDTO>;
 
 export const AsignarOperarioNecesidadDTO = z.object({
@@ -80,6 +120,13 @@ export const necesidadPublicSelect = {
   etiqueta: true,
   orden: true,
   horarioEspecial: true,
+  trabajaFestivos: true,
+  festivoHoraApertura: true,
+  festivoHoraCierre: true,
+  festivoDescansoInicio: true,
+  festivoDescansoFin: true,
+  descansoCompensatorio: true,
+  diasDescansoCompensatorio: true,
   activo: true,
   observaciones: true,
   operarioId: true,

@@ -887,6 +887,9 @@ model ConjuntoHorario {
 /// general del conjunto para ese operario, incluso si exceden su ventana o
 /// cubren días en que el conjunto no opera. Si es false, la plaza hereda el
 /// horario general del conjunto sin cambios (comportamiento actual).
+/// `trabajaFestivos`/`descansoCompensatorio` son independientes de
+/// `horarioEspecial`: cualquier plaza puede tener horario festivo propio y
+/// descanso compensatorio, tenga o no días especiales configurados.
 model ConjuntoNecesidadOperario {
   id Int @id @default(autoincrement())
 
@@ -902,6 +905,26 @@ model ConjuntoNecesidadOperario {
 
   horarioEspecial Boolean                    @default(false)
   horarios        ConjuntoNecesidadHorario[]
+
+  // Horario festivo de la plaza: independiente del rol (antes solo
+  // SALVAVIDAS podía trabajar festivos, regla fija en código). Si
+  // `trabajaFestivos` es true, la plaza SÍ recibe tareas en un festivo,
+  // dentro de esta franja (obligatoria en ese caso). Si es false, un
+  // festivo es día no laborable para esta plaza, sin importar el rol.
+  trabajaFestivos      Boolean @default(false)
+  festivoHoraApertura  String?
+  festivoHoraCierre    String?
+  festivoDescansoInicio String?
+  festivoDescansoFin    String?
+
+  // Descanso compensatorio: si está activo, trabajar un festivo o un
+  // domingo (con horario efectivo ese día) genera automáticamente un día
+  // de descanso `diasDescansoCompensatorio` días después (corrido al
+  // siguiente día laborable de la plaza si cae en otro día no trabajable).
+  // En false para las plazas existentes: su cronograma no cambia con esta
+  // migración.
+  descansoCompensatorio     Boolean @default(false)
+  diasDescansoCompensatorio Int     @default(1)
 
   // Operario que ocupa ACTUALMENTE la plaza (0..1). Un operario solo puede
   // ocupar una plaza por conjunto (ver @@unique abajo); dejar la plaza

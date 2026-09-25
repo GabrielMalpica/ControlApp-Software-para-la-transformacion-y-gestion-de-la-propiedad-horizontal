@@ -1,5 +1,6 @@
 import { DiaSemana, TipoFuncion } from "@prisma/client";
 import { ConjuntoNecesidadService } from "../../src/services/ConjuntoNecesidadService";
+import { CrearNecesidadDTO, EditarNecesidadDTO } from "../../src/model/ConjuntoNecesidad";
 
 /**
  * Fake in-memory de Prisma acotado a las tablas que toca
@@ -76,6 +77,13 @@ function makeFakePrisma() {
         etiqueta: data.etiqueta,
         orden: data.orden ?? 0,
         horarioEspecial: data.horarioEspecial ?? false,
+        trabajaFestivos: data.trabajaFestivos ?? false,
+        festivoHoraApertura: data.festivoHoraApertura ?? null,
+        festivoHoraCierre: data.festivoHoraCierre ?? null,
+        festivoDescansoInicio: data.festivoDescansoInicio ?? null,
+        festivoDescansoFin: data.festivoDescansoFin ?? null,
+        descansoCompensatorio: data.descansoCompensatorio ?? false,
+        diasDescansoCompensatorio: data.diasDescansoCompensatorio ?? 1,
         operarioId: data.operarioId ?? null,
         activo: true,
         observaciones: data.observaciones ?? null,
@@ -98,6 +106,25 @@ function makeFakePrisma() {
         ...(data.etiqueta !== undefined ? { etiqueta: data.etiqueta } : {}),
         ...(data.orden !== undefined ? { orden: data.orden } : {}),
         ...(data.horarioEspecial !== undefined ? { horarioEspecial: data.horarioEspecial } : {}),
+        ...(data.trabajaFestivos !== undefined ? { trabajaFestivos: data.trabajaFestivos } : {}),
+        ...(data.festivoHoraApertura !== undefined
+          ? { festivoHoraApertura: data.festivoHoraApertura }
+          : {}),
+        ...(data.festivoHoraCierre !== undefined
+          ? { festivoHoraCierre: data.festivoHoraCierre }
+          : {}),
+        ...(data.festivoDescansoInicio !== undefined
+          ? { festivoDescansoInicio: data.festivoDescansoInicio }
+          : {}),
+        ...(data.festivoDescansoFin !== undefined
+          ? { festivoDescansoFin: data.festivoDescansoFin }
+          : {}),
+        ...(data.descansoCompensatorio !== undefined
+          ? { descansoCompensatorio: data.descansoCompensatorio }
+          : {}),
+        ...(data.diasDescansoCompensatorio !== undefined
+          ? { diasDescansoCompensatorio: data.diasDescansoCompensatorio }
+          : {}),
         ...(data.observaciones !== undefined ? { observaciones: data.observaciones } : {}),
         ...(data.activo !== undefined ? { activo: data.activo } : {}),
         ...(data.operarioId !== undefined ? { operarioId: data.operarioId } : {}),
@@ -450,5 +477,104 @@ describe("ConjuntoNecesidadService: vincularDefinicionesConNecesidades (migraci�
 
     expect(resultado.vinculadas).toEqual([]);
     expect(resultado.saltadas).toEqual([]);
+  });
+});
+
+describe("CrearNecesidadDTO / EditarNecesidadDTO - festivos y descanso compensatorio", () => {
+  const base = { roles: ["TODERO"], etiqueta: "Todero #1" };
+
+  test("trabajaFestivos y descansoCompensatorio quedan en false por defecto", () => {
+    const dto = CrearNecesidadDTO.parse(base);
+    expect(dto.trabajaFestivos).toBe(false);
+    expect(dto.horarioFestivo ?? null).toBeNull();
+    expect(dto.descansoCompensatorio).toBe(false);
+    expect(dto.diasDescansoCompensatorio).toBe(1);
+  });
+
+  test("trabajaFestivos=true sin horarioFestivo se rechaza", () => {
+    expect(() => CrearNecesidadDTO.parse({ ...base, trabajaFestivos: true })).toThrow();
+  });
+
+  test("trabajaFestivos=true con horarioFestivo válido se acepta", () => {
+    const dto = CrearNecesidadDTO.parse({
+      ...base,
+      trabajaFestivos: true,
+      horarioFestivo: { horaApertura: "09:00", horaCierre: "15:00" },
+      descansoCompensatorio: true,
+      diasDescansoCompensatorio: 2,
+    });
+    expect(dto.horarioFestivo).toMatchObject({ horaApertura: "09:00", horaCierre: "15:00" });
+    expect(dto.diasDescansoCompensatorio).toBe(2);
+  });
+
+  test("horarioFestivo con horaApertura >= horaCierre se rechaza (mismas reglas que el horario normal)", () => {
+    expect(() =>
+      CrearNecesidadDTO.parse({
+        ...base,
+        trabajaFestivos: true,
+        horarioFestivo: { horaApertura: "15:00", horaCierre: "09:00" },
+      }),
+    ).toThrow();
+  });
+
+  test("diasDescansoCompensatorio fuera de 1-6 se rechaza", () => {
+    expect(() =>
+      CrearNecesidadDTO.parse({ ...base, diasDescansoCompensatorio: 0 }),
+    ).toThrow();
+    expect(() =>
+      CrearNecesidadDTO.parse({ ...base, diasDescansoCompensatorio: 7 }),
+    ).toThrow();
+  });
+
+  test("EditarNecesidadDTO: activar trabajaFestivos con horarioFestivo explícitamente null se rechaza", () => {
+    expect(() =>
+      EditarNecesidadDTO.parse({ trabajaFestivos: true, horarioFestivo: null }),
+    ).toThrow();
+  });
+
+  test("EditarNecesidadDTO: activar trabajaFestivos sin mencionar horarioFestivo no se rechaza a nivel DTO (el servicio valida contra el estado en BD)", () => {
+    expect(() => EditarNecesidadDTO.parse({ trabajaFestivos: true })).not.toThrow();
+  });
+
+  test("EditarNecesidadDTO: activar trabajaFestivos con horarioFestivo en el mismo payload se acepta", () => {
+    const dto = EditarNecesidadDTO.parse({
+      trabajaFestivos: true,
+      horarioFestivo: { horaApertura: "08:00", horaCierre: "12:00" },
+    });
+    expect(dto.trabajaFestivos).toBe(true);
+  });
+
+  test("EditarNecesidadDTO: tocar otro campo sin mencionar trabajaFestivos no exige horarioFestivo (se valida contra BD en el servicio)", () => {
+    expect(() => EditarNecesidadDTO.parse({ orden: 2 })).not.toThrow();
+  });
+});
+
+describe("ConjuntoNecesidadService - invariante de festivos contra el estado en BD", () => {
+  test("editar rechaza activar trabajaFestivos si la plaza no tiene horario festivo (ni en el payload ni en BD)", async () => {
+    const { prisma, seedConjunto } = makeFakePrisma();
+    seedConjunto("C-1");
+    const service = new ConjuntoNecesidadService(prisma, "C-1");
+    const plaza = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #1" });
+
+    await expect(
+      service.editar(plaza.id, { trabajaFestivos: true }),
+    ).rejects.toThrow(/horario festivo/i);
+  });
+
+  test("editar acepta activar trabajaFestivos si la plaza ya tenía horario festivo guardado en BD", async () => {
+    const { prisma, seedConjunto } = makeFakePrisma();
+    seedConjunto("C-1");
+    const service = new ConjuntoNecesidadService(prisma, "C-1");
+    const plaza = await service.crear({
+      roles: ["SALVAVIDAS"],
+      etiqueta: "Salvavidas #1",
+      trabajaFestivos: true,
+      horarioFestivo: { horaApertura: "09:00", horaCierre: "15:00" },
+    });
+
+    // Se desactiva y se vuelve a activar sin repetir el horario en el payload.
+    await service.editar(plaza.id, { trabajaFestivos: false });
+    const reactivada = await service.editar(plaza.id, { trabajaFestivos: true });
+    expect(reactivada.trabajaFestivos).toBe(true);
   });
 });

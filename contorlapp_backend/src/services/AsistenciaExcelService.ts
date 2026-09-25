@@ -97,6 +97,10 @@ export class AsistenciaExcelService {
 
     const totalDias = grid.totalDias;
     const firstDayCol = COLS_FIJAS.length + 1;
+    // Dos columnas de resumen (dominicales/festivos trabajados) justo
+    // después de los días, antes del hueco que separa la leyenda.
+    const domingosCol = firstDayCol + totalDias;
+    const festivosCol = domingosCol + 1;
 
     // Fila 1: titulo + letra de dia de semana por cada dia
     sheet.getCell(1, 1).value = `NOVEDADES CONTROL ${nombreMes}`;
@@ -113,6 +117,8 @@ export class AsistenciaExcelService {
     for (let dia = 1; dia <= totalDias; dia += 1) {
       sheet.getCell(2, firstDayCol + dia - 1).value = dia;
     }
+    sheet.getCell(2, domingosCol).value = "DOMINICALES";
+    sheet.getCell(2, festivosCol).value = "FESTIVOS";
 
     const headerRow1 = sheet.getRow(1);
     const headerRow2 = sheet.getRow(2);
@@ -124,8 +130,20 @@ export class AsistenciaExcelService {
       });
     });
 
+    // Días festivos: encabezado resaltado en ambas filas, para que se note
+    // a simple vista cuál día es festivo (igual que el grid en la app).
+    const primeraFilaOperario = grid.operarios[0];
+    for (let dia = 1; dia <= totalDias; dia += 1) {
+      const esFestivo = primeraFilaOperario?.dias[dia - 1]?.esFestivo;
+      if (!esFestivo) continue;
+      const col = firstDayCol + dia - 1;
+      [sheet.getCell(1, col), sheet.getCell(2, col)].forEach((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFD9B3" } };
+      });
+    }
+
     // Leyenda a la derecha
-    const legendCol = firstDayCol + totalDias + GAP_COLS;
+    const legendCol = festivosCol + GAP_COLS;
     sheet.getCell(2, legendCol).value = "CODIGO";
     sheet.getCell(2, legendCol + 1).value = "CONCEPTO";
     sheet.getRow(2).getCell(legendCol).font = { bold: true };
@@ -157,8 +175,16 @@ export class AsistenciaExcelService {
       sheet.getCell(row, 5).value = fila.nombre;
       sheet.getCell(row, 6).value = fila.cedula;
 
+      const CODIGOS_TRABAJADO = new Set(["A", "DFC", "DFP"]);
+      let dominicales = 0;
+      let festivos = 0;
+
       fila.dias.forEach((dia) => {
         const cell = sheet.getCell(row, firstDayCol + dia.dia - 1);
+        if (dia.registro && CODIGOS_TRABAJADO.has(dia.registro.conceptoCodigo)) {
+          if (dia.esFestivo) festivos += 1;
+          else if (dia.diaSemana === 0) dominicales += 1;
+        }
         if (!dia.registro) return;
         cell.value = dia.registro.conceptoCodigo;
         cell.fill = {
@@ -171,6 +197,11 @@ export class AsistenciaExcelService {
           cell.note = dia.registro.observacion;
         }
       });
+
+      sheet.getCell(row, domingosCol).value = dominicales;
+      sheet.getCell(row, festivosCol).value = festivos;
+      sheet.getCell(row, domingosCol).alignment = { horizontal: "center" };
+      sheet.getCell(row, festivosCol).alignment = { horizontal: "center" };
     });
 
     sheet.getColumn(1).width = 22;
@@ -182,6 +213,8 @@ export class AsistenciaExcelService {
     for (let dia = 1; dia <= totalDias; dia += 1) {
       sheet.getColumn(firstDayCol + dia - 1).width = 4;
     }
+    sheet.getColumn(domingosCol).width = 12;
+    sheet.getColumn(festivosCol).width = 10;
     sheet.getColumn(legendCol).width = 8;
     sheet.getColumn(legendCol + 1).width = 40;
   }

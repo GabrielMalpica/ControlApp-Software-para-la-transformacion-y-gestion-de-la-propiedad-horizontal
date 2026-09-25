@@ -35,6 +35,11 @@ function construirPrisma(opts: {
     horarioEspecial: boolean;
     horarios: Array<{ dia: DiaSemana; horaApertura: string; horaCierre: string }>;
     roles?: TipoFuncion[];
+    trabajaFestivos?: boolean;
+    festivoHoraApertura?: string | null;
+    festivoHoraCierre?: string | null;
+    descansoCompensatorio?: boolean;
+    diasDescansoCompensatorio?: number;
   }>;
   operarioTrabajaDomingo?: boolean;
   frecuencia: Frecuencia;
@@ -128,6 +133,13 @@ function construirPrisma(opts: {
                 descansoInicio: null,
                 descansoFin: null,
               })),
+            trabajaFestivos: n.trabajaFestivos ?? false,
+            festivoHoraApertura: n.festivoHoraApertura ?? null,
+            festivoHoraCierre: n.festivoHoraCierre ?? null,
+            festivoDescansoInicio: null,
+            festivoDescansoFin: null,
+            descansoCompensatorio: n.descansoCompensatorio ?? false,
+            diasDescansoCompensatorio: n.diasDescansoCompensatorio ?? 1,
           }));
       }),
     },
@@ -322,13 +334,13 @@ describe("generarBorradorMensual - necesidades operativas (plazas/cargos)", () =
   });
 });
 
-describe("generarBorradorMensual - roles SALVAVIDAS sí trabajan festivos (dentro de su horario)", () => {
+describe("generarBorradorMensual - una plaza con 'trabaja festivos' sí trabaja festivos (cualquier rol)", () => {
   // 2026-04-01 es miércoles: mismo día de semana que diaSemanaProgramado, así
   // que es el primer candidato natural de la ocurrencia SEMANAL del mes.
   const FESTIVO = "2026-04-01";
 
-  test("una plaza SALVAVIDAS sí se agenda en festivo, dentro de su horario", async () => {
-    jest.mocked(getFestivosSet).mockResolvedValueOnce(new Set([FESTIVO]));
+  test("una plaza SALVAVIDAS con trabajaFestivos sí se agenda en festivo, con su horario festivo", async () => {
+    jest.mocked(getFestivosSet).mockResolvedValue(new Set([FESTIVO]));
     const prisma = construirPrisma({
       necesidades: [
         {
@@ -337,6 +349,9 @@ describe("generarBorradorMensual - roles SALVAVIDAS sí trabajan festivos (dentr
           horarioEspecial: false,
           horarios: [],
           roles: [TipoFuncion.SALVAVIDAS],
+          trabajaFestivos: true,
+          festivoHoraApertura: "09:00",
+          festivoHoraCierre: "15:00",
         },
       ],
       frecuencia: Frecuencia.SEMANAL,
@@ -357,10 +372,13 @@ describe("generarBorradorMensual - roles SALVAVIDAS sí trabajan festivos (dentr
       (t: any) => t.fechaInicio.toISOString().slice(0, 10) === FESTIVO,
     );
     expect(tareaFestivo).toBeTruthy();
+    // Usa el horario FESTIVO de la plaza (09-15), no su horario normal.
+    expect(tareaFestivo.fechaInicio.getHours()).toBeGreaterThanOrEqual(9);
+    expect(tareaFestivo.fechaFin.getHours()).toBeLessThanOrEqual(15);
   });
 
-  test("una plaza TODERO (sin salvavidas) NO se agenda en festivo: se reubica a otro día", async () => {
-    jest.mocked(getFestivosSet).mockResolvedValueOnce(new Set([FESTIVO]));
+  test("una plaza TODERO sin trabajaFestivos NO se agenda en festivo: se reubica a otro día", async () => {
+    jest.mocked(getFestivosSet).mockResolvedValue(new Set([FESTIVO]));
     const prisma = construirPrisma({
       necesidades: [
         {
@@ -390,16 +408,19 @@ describe("generarBorradorMensual - roles SALVAVIDAS sí trabajan festivos (dentr
     expect(tareaFestivo).toBeUndefined();
   });
 
-  test("una plaza combinada TODERO-SALVAVIDAS sí trabaja festivos (basta con tener el rol)", async () => {
-    jest.mocked(getFestivosSet).mockResolvedValueOnce(new Set([FESTIVO]));
+  test("una plaza TODERO (rol no salvavidas) CON trabajaFestivos sí se agenda en festivo: la regla ya no depende del rol", async () => {
+    jest.mocked(getFestivosSet).mockResolvedValue(new Set([FESTIVO]));
     const prisma = construirPrisma({
       necesidades: [
         {
           id: 603,
-          operarioId: "op-combo",
+          operarioId: "op-todero-fest",
           horarioEspecial: false,
           horarios: [],
-          roles: [TipoFuncion.TODERO, TipoFuncion.SALVAVIDAS],
+          roles: [TipoFuncion.TODERO],
+          trabajaFestivos: true,
+          festivoHoraApertura: "08:00",
+          festivoHoraCierre: "12:00",
         },
       ],
       frecuencia: Frecuencia.SEMANAL,
@@ -419,5 +440,46 @@ describe("generarBorradorMensual - roles SALVAVIDAS sí trabajan festivos (dentr
       (t: any) => t.fechaInicio.toISOString().slice(0, 10) === FESTIVO,
     );
     expect(tareaFestivo).toBeTruthy();
+  });
+});
+
+describe("generarBorradorMensual - descanso compensatorio", () => {
+  test("el día siguiente a un festivo trabajado con descanso compensatorio queda libre (la definición se reubica)", async () => {
+    // 2026-04-01 es miércoles (festivo trabajado); diasParaCompletar/descanso
+    // deja el jueves 2026-04-02 como descanso. La definición es DIARIA (una
+    // ocurrencia por jornada laborable) para poder ver directamente que el
+    // jueves queda sin tarea.
+    const FESTIVO = "2026-04-01";
+    jest.mocked(getFestivosSet).mockResolvedValue(new Set([FESTIVO]));
+    const prisma = construirPrisma({
+      necesidades: [
+        {
+          id: 701,
+          operarioId: "op-descanso",
+          horarioEspecial: false,
+          horarios: [],
+          trabajaFestivos: true,
+          festivoHoraApertura: "09:00",
+          festivoHoraCierre: "15:00",
+          descansoCompensatorio: true,
+          diasDescansoCompensatorio: 1,
+        },
+      ],
+      frecuencia: Frecuencia.DIARIA,
+      duracionMinutosFija: 60,
+      prioridad: 2,
+    });
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.generarBorradorMensual({
+      conjuntoId: CONJUNTO,
+      periodoAnio: 2026,
+      periodoMes: 4,
+    });
+
+    const tareaJueves = prisma.tareasCreadas.find(
+      (t: any) => t.fechaInicio.toISOString().slice(0, 10) === "2026-04-02",
+    );
+    expect(tareaJueves).toBeUndefined();
   });
 });

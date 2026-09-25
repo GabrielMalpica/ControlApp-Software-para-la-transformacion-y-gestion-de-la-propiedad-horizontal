@@ -2,9 +2,13 @@ import fs from 'fs';
 
 import { EstadoTarea, Prisma, TipoServicio, TipoTarea } from '@prisma/client';
 
-jest.mock('../../src/utils/schedulerUtils', () => ({
-  isFestivoDate: jest.fn().mockResolvedValue(false),
-}));
+jest.mock('../../src/utils/schedulerUtils', () => {
+  const real = jest.requireActual('../../src/utils/schedulerUtils');
+  return {
+    ...real,
+    isFestivoDate: jest.fn().mockResolvedValue(false),
+  };
+});
 
 jest.mock('../../src/utils/drive_evidencias', () => ({
   buildEvidenciaFileName: jest.fn().mockReturnValue('evidencia-renombrada.jpg'),
@@ -120,6 +124,10 @@ describe('Pruebas unitarias backend', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         findFirst: jest.fn().mockResolvedValue({ nit: '9001' }),
       },
+      // Sin necesidades operativas en esta prueba: el operario agenda
+      // directo, sin plaza -> hereda el horario general del conjunto.
+      conjuntoNecesidadOperario: { findMany: jest.fn().mockResolvedValue([]) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
       tarea: {
         // El operario no tiene otras tareas esa semana.
         findMany: jest.fn().mockResolvedValue([]),

@@ -83,6 +83,9 @@ import {
   validarLimiteSemanalOperarios,
   obtenerDisponibilidadActivaOperarios,
   validarOperariosDisponiblesEnFecha,
+  operariosPuedenTrabajarFestivo,
+  obtenerConfigFestivoNecesidades,
+  obtenerCalendariosOperarios,
 } from "../utils/operarioAvailability";
 
 /* =========================================================
@@ -168,7 +171,7 @@ type NovedadCronograma =
       descripcion: string;
       prioridad: number;
       fecha: string;
-      motivo: "FESTIVO" | "DOMINGO";
+      motivo: "FESTIVO" | "DOMINGO" | "DESCANSO_COMPENSATORIO";
       mensaje?: string;
     }
   | {
@@ -189,6 +192,7 @@ type ExclusionMotivoTipo =
   | "SIN_HUECO"
   | "REQUIERE_CONFIRMACION_REEMPLAZO"
   | "FESTIVO_OMITIDO"
+  | "DESCANSO_COMPENSATORIO"
   | "REEMPLAZO_PRIORIDAD"
   | "MANUAL_REEMPLAZADA"
   | "MANUAL_ELIMINADA"
@@ -225,6 +229,27 @@ type ExcluidaSnapshot = {
 };
 
 const dayKey = (d: Date) => ymdLocal(d);
+
+/**
+ * Horario efectivo de un día para el generador/rescate: si `dia` es festivo
+ * (según el set SIN filtrar, `festivosSetRaw`), usa el horario festivo de la
+ * plaza (`festivoHorario`, ya resuelto para el conjunto de operarios de la
+ * definición); si no, el horario normal por día de semana. En un festivo
+ * que la definición no puede trabajar, `festivoHorario` es `null` -y ese día
+ * ya debería haber quedado filtrado antes de llegar aquí por el gate
+ * `festivosSetDef.has(dayKey(dia))` que sigue existiendo sin cambios-.
+ */
+function resolverHorarioConFestivo(
+  dia: Date,
+  horariosPorDia: Map<DiaSemana, HorarioDia>,
+  festivosSetRaw: Set<string>,
+  festivoHorario: HorarioDia | null | undefined,
+): HorarioDia | undefined {
+  if (festivosSetRaw.has(dayKey(dia))) {
+    return festivoHorario ?? undefined;
+  }
+  return horariosPorDia.get(dateToDiaSemana(dia));
+}
 
 /**
  * Tope de bloques en que la fase de rescate puede partir una tarea dentro de un mismo dia.
@@ -429,6 +454,12 @@ export class DefinicionTareaPreventivaService {
   // operarios concreto (la(s) plaza(s) de una definición, o el conjunto
   // completo cuando no hay necesidades). Clave: `${conjuntoId}|${idsOrdenados}`.
   private horariosPorOperariosCache = new Map<string, Map<DiaSemana, HorarioDia>>();
+  // Horario festivo envolvente de un conjunto de operarios (null si alguno
+  // no tiene plaza con trabajaFestivos). Misma clave que horariosPorOperariosCache.
+  private festivoHorarioCache = new Map<string, HorarioDia | null>();
+  // Días de descanso compensatorio (unión de todos los operarios) para un
+  // conjunto de operarios en un periodo. Clave: `${conjuntoId}|${ids}|${anio}-${mes}`.
+  private diasDescansoCache = new Map<string, Set<string>>();
   private agendaSchedulerActiva = false;
   private agendaScheduler = new Map<string, IntervaloAgendaScheduler[]>();
   private ocurrenciasDefinicionDiaScheduler = new Map<string, Set<string>>();
@@ -452,31 +483,6 @@ export class DefinicionTareaPreventivaService {
    * llamador decide qué hacer si el resultado queda incompleto). Si no
    * tiene ninguna, se conserva el camino directo `operarios` de siempre.
    */
-  /**
-   * true si TODOS los operarios/necesidades que resolverían esta ocurrencia
-   * tienen el rol SALVAVIDAS (solo o combinado, p.ej. "TODERO-SALVAVIDAS").
-   * Nueva regla de negocio: estos sí pueden recibir tareas en festivo,
-   * mientras el día caiga dentro del horario de su cargo -el resto de
-   * roles sigue sin trabajar festivos-. Si la definición mezcla
-   * necesidades/operarios con y sin SALVAVIDAS, exige que TODOS lo tengan
-   * (no basta con que uno lo tenga, para no colar a quien no debería
-   * trabajar ese día).
-   */
-  private defPuedeTrabajarFestivo(def: {
-    operarios: Array<{ funciones?: TipoFuncion[] | null }>;
-    necesidades?: Array<{ roles?: TipoFuncion[] | null }>;
-  }): boolean {
-    if (def.necesidades?.length) {
-      return def.necesidades.every((n) =>
-        (n.roles ?? []).includes(TipoFuncion.SALVAVIDAS),
-      );
-    }
-    if (!def.operarios.length) return false;
-    return def.operarios.every((o) =>
-      (o.funciones ?? []).includes(TipoFuncion.SALVAVIDAS),
-    );
-  }
-
   /**
    * Resuelve los ids de necesidades (plazas) vinculadas a una definición,
    * para conectarlos en una tarea creada manualmente a partir de ella
@@ -621,6 +627,110 @@ export class DefinicionTareaPreventivaService {
 
     this.horariosPorOperariosCache.set(clave, mapa);
     return mapa;
+  }
+
+  /**
+   * Horario festivo envolvente (mínimo inicio, máximo cierre) de las plazas
+   * de estos operarios -análogo a horariosPorDiaParaOperarios, pero para el
+   * horario festivo (no depende del día de semana)-. `null` si no hay
+   * operarios, o si alguno no ocupa una plaza con `trabajaFestivos` (ver
+   * operariosPuedenTrabajarFestivo: para que la definición trabaje festivos,
+   * TODOS sus operarios/necesidades deben poder hacerlo).
+   */
+  private async festivoHorarioParaOperarios(
+    conjuntoId: string,
+    operariosIds: string[],
+  ): Promise<HorarioDia | null> {
+    const idsUnicos = Array.from(new Set(operariosIds)).sort();
+    if (!idsUnicos.length) return null;
+    const clave = `${conjuntoId}|${idsUnicos.join(",")}`;
+    const cacheado = this.festivoHorarioCache.get(clave);
+    if (cacheado !== undefined) return cacheado;
+
+    const puedenTrabajar = await operariosPuedenTrabajarFestivo({
+      prisma: this.prisma,
+      conjuntoId,
+      operariosIds: idsUnicos,
+    });
+    if (!puedenTrabajar) {
+      this.festivoHorarioCache.set(clave, null);
+      return null;
+    }
+
+    const configs = await obtenerConfigFestivoNecesidades({
+      prisma: this.prisma,
+      conjuntoId,
+      operariosIds: idsUnicos,
+    });
+
+    let startMin: number | null = null;
+    let endMin: number | null = null;
+    const descansos: Array<{ i: number; f: number }> = [];
+    for (const id of idsUnicos) {
+      const config = configs.get(id);
+      if (!config?.festivoHoraApertura || !config.festivoHoraCierre) continue;
+      const s = toMin(config.festivoHoraApertura);
+      const e = toMin(config.festivoHoraCierre);
+      if (e <= s) continue;
+      startMin = startMin == null ? s : Math.min(startMin, s);
+      endMin = endMin == null ? e : Math.max(endMin, e);
+      if (config.festivoDescansoInicio && config.festivoDescansoFin) {
+        descansos.push({ i: toMin(config.festivoDescansoInicio), f: toMin(config.festivoDescansoFin) });
+      }
+    }
+    if (startMin == null || endMin == null) {
+      this.festivoHorarioCache.set(clave, null);
+      return null;
+    }
+
+    let descansoStartMin: number | undefined;
+    let descansoEndMin: number | undefined;
+    if (
+      descansos.length > 0 &&
+      descansos.every((d) => d.i === descansos[0].i && d.f === descansos[0].f)
+    ) {
+      descansoStartMin = descansos[0].i;
+      descansoEndMin = descansos[0].f;
+    }
+
+    const resultado: HorarioDia = { startMin, endMin, descansoStartMin, descansoEndMin };
+    this.festivoHorarioCache.set(clave, resultado);
+    return resultado;
+  }
+
+  /**
+   * Días (ymd) dentro de [inicio, fin] en que ALGUNO de estos operarios
+   * tiene descanso compensatorio por su plaza -si cualquiera descansa, el
+   * grupo completo no puede agendarse ese día-. Vacío si ninguno tiene
+   * `descansoCompensatorio` activo (comportamiento previo intacto).
+   */
+  private async diasDescansoParaOperarios(
+    conjuntoId: string,
+    operariosIds: string[],
+    inicio: Date,
+    fin: Date,
+  ): Promise<Set<string>> {
+    const idsUnicos = Array.from(new Set(operariosIds)).sort();
+    if (!idsUnicos.length) return new Set();
+    const clave = `${conjuntoId}|${idsUnicos.join(",")}|${dayKey(inicio)}-${dayKey(fin)}`;
+    const cacheado = this.diasDescansoCache.get(clave);
+    if (cacheado) return cacheado;
+
+    const calendarios = await obtenerCalendariosOperarios({
+      prisma: this.prisma,
+      conjuntoId,
+      operariosIds: idsUnicos,
+      desde: inicio,
+      hasta: fin,
+    });
+    const dias = new Set<string>();
+    for (const calendario of calendarios.values()) {
+      for (const [ymd, info] of calendario) {
+        if (info.tipo === "DESCANSO") dias.add(ymd);
+      }
+    }
+    this.diasDescansoCache.set(clave, dias);
+    return dias;
   }
 
   private async disponibilidadScheduler(params: {
@@ -1669,7 +1779,20 @@ export class DefinicionTareaPreventivaService {
       pais: "CO",
     });
     if (inicioEsFestivo) {
-      throw new Error("No se permite programar tareas preventivas en festivos.");
+      // La plaza (necesidad operativa) de cada operario decide si trabaja
+      // festivos, con su propio horario -no depende del rol-.
+      // validarIntervaloProgramacion (arriba) ya validó que este horario
+      // exacto cae dentro de la ventana festiva de la plaza.
+      const puedenTrabajarFestivo =
+        operariosIds.length > 0 &&
+        (await operariosPuedenTrabajarFestivo({
+          prisma: this.prisma,
+          conjuntoId,
+          operariosIds,
+        }));
+      if (!puedenTrabajarFestivo) {
+        throw new Error("No se permite programar tareas preventivas en festivos.");
+      }
     }
 
     if (operariosIds.length) {
@@ -1851,19 +1974,20 @@ export class DefinicionTareaPreventivaService {
       inicio: inicioMes,
       fin: finMes,
     });
-    // Roles SALVAVIDAS (solos o combinados): sí trabajan festivos, dentro de
-    // su horario (misma regla que en generarBorradorMensual). Aquí solo se
-    // conocen los operariosIds ya resueltos, así que se consulta su rol
-    // directamente en vez de partir de `def.necesidades`.
-    const operariosPuedenTrabajarFestivo =
+    // La plaza de cada operario decide si trabaja festivos (no el rol, ver
+    // ConjuntoNecesidadOperario.trabajaFestivos). Si puede, se trata el día
+    // como "no festivo" para que esta sugerencia use el horario normal del
+    // día de semana como aproximación -el slot final que el usuario elija
+    // se revalida por completo (horario festivo real incluido) en
+    // validarSlotPreventivaBorrador antes de guardarse-.
+    const puedeTrabajarFestivoExcluida =
       excluida.operariosIds.length > 0 &&
-      (
-        await this.prisma.operario.findMany({
-          where: { id: { in: excluida.operariosIds } },
-          select: { funciones: true },
-        })
-      ).every((o) => o.funciones.includes(TipoFuncion.SALVAVIDAS));
-    const festivosSetEfectivo = operariosPuedenTrabajarFestivo
+      (await operariosPuedenTrabajarFestivo({
+        prisma: this.prisma,
+        conjuntoId,
+        operariosIds: excluida.operariosIds,
+      }));
+    const festivosSetEfectivo = puedeTrabajarFestivoExcluida
       ? new Set<string>()
       : festivosSet;
 
@@ -2050,6 +2174,14 @@ export class DefinicionTareaPreventivaService {
     dias: Date[];
     horariosPorDia: Map<DiaSemana, HorarioDia>;
     festivosSet: Set<string>;
+    // Set SIN filtrar de festivos del mes (todos, aunque `festivosSet` ya
+    // venga vacío por poder trabajarlos) + el horario festivo de la plaza.
+    // Cuando se pasan, un día festivo que sobrevive el filtro de arriba usa
+    // este horario en vez del horario normal del día de semana. Sin ellos
+    // (llamadores que no los pasan), el comportamiento es idéntico al
+    // previo: un festivo permitido usa el horario normal del día.
+    festivosSetRaw?: Set<string>;
+    festivoHorario?: HorarioDia | null;
     preferida?: Date;
     maxBloquesPorDia?: number;
     permitirMultiDia?: boolean;
@@ -2064,6 +2196,8 @@ export class DefinicionTareaPreventivaService {
       dias,
       horariosPorDia,
       festivosSet,
+      festivosSetRaw = new Set<string>(),
+      festivoHorario = null,
       preferida,
       maxBloquesPorDia = 3,
       permitirMultiDia = false,
@@ -2087,7 +2221,7 @@ export class DefinicionTareaPreventivaService {
       const key = dayKey(dia);
       if (festivosSet.has(key)) continue;
 
-      const horario = horariosPorDia.get(dateToDiaSemana(dia));
+      const horario = resolverHorarioConFestivo(dia, horariosPorDia, festivosSetRaw, festivoHorario);
       if (!horario) continue;
 
       const disponibilidad = operariosIds.length
@@ -2313,6 +2447,8 @@ export class DefinicionTareaPreventivaService {
     operariosIds: string[];
     horariosPorDia: Map<DiaSemana, HorarioDia>;
     festivosSet: Set<string>;
+    festivosSetRaw?: Set<string>;
+    festivoHorario?: HorarioDia | null;
     definicionId: number;
     descripcion: string;
     ubicacionId: number;
@@ -2320,13 +2456,15 @@ export class DefinicionTareaPreventivaService {
   }): Promise<Date[]> {
     const inicio = new Date(params.periodoAnio, params.periodoMes - 1, 1);
     const fin = new Date(params.periodoAnio, params.periodoMes, 0);
+    const festivosSetRaw = params.festivosSetRaw ?? new Set<string>();
 
     const candidatos = enumerateDays(inicio, fin).filter(
       (dia) =>
         dia.getFullYear() === params.periodoAnio &&
         dia.getMonth() + 1 === params.periodoMes &&
         !params.festivosSet.has(dayKey(dia)) &&
-        params.horariosPorDia.has(dateToDiaSemana(dia)),
+        resolverHorarioConFestivo(dia, params.horariosPorDia, festivosSetRaw, params.festivoHorario) !=
+          null,
     );
     const cargas = await this.cargaOperariosEnDias({
       conjuntoId: params.conjuntoId,
@@ -2421,6 +2559,8 @@ export class DefinicionTareaPreventivaService {
     dias: Date[];
     horariosPorDia: Map<DiaSemana, HorarioDia>;
     festivosSet: Set<string>;
+    festivosSetRaw?: Set<string>;
+    festivoHorario?: HorarioDia | null;
     incluirPublicadasEnAgenda: boolean;
   }): Promise<BloqueProgramacion[]> {
     let mejor: BloqueProgramacion[] = [];
@@ -2434,6 +2574,8 @@ export class DefinicionTareaPreventivaService {
         dias: [params.dias[orden]],
         horariosPorDia: params.horariosPorDia,
         festivosSet: params.festivosSet,
+        festivosSetRaw: params.festivosSetRaw,
+        festivoHorario: params.festivoHorario,
         maxBloquesPorDia: MAX_BLOQUES_RESCATE_POR_DIA,
         permitirMultiDia: false,
         validarLimiteSemanal: true,
@@ -2553,6 +2695,19 @@ export class DefinicionTareaPreventivaService {
     periodoAnio: number;
     periodoMes: number;
   }): Promise<{ reordenadas: number; componentesSinOrdenar: number }> {
+    // Festivos del mes: necesarios para que el reordenamiento use el horario
+    // FESTIVO de la plaza (si trabaja festivos) en vez del horario normal de
+    // ese día de semana -si no, una tarea creada correctamente en horario
+    // festivo terminaba reposicionada aquí dentro del horario normal-.
+    const inicioMesReorden = new Date(params.periodoAnio, params.periodoMes - 1, 1);
+    const finMesReorden = new Date(params.periodoAnio, params.periodoMes, 0, 23, 59, 59, 999);
+    const festivosSetReorden = await getFestivosSet({
+      prisma: this.prisma,
+      pais: "CO",
+      inicio: inicioMesReorden,
+      fin: finMesReorden,
+    });
+
     const tareas = await this.prisma.tarea.findMany({
       where: {
         conjuntoId: params.conjuntoId,
@@ -2678,7 +2833,16 @@ export class DefinicionTareaPreventivaService {
           params.conjuntoId,
           [...operariosComponente],
         );
-        const horario = horariosComponente.get(dateToDiaSemana(fecha));
+        const festivoHorarioComponente = await this.festivoHorarioParaOperarios(
+          params.conjuntoId,
+          [...operariosComponente],
+        );
+        const horario = resolverHorarioConFestivo(
+          fecha,
+          horariosComponente,
+          festivosSetReorden,
+          festivoHorarioComponente,
+        );
         if (!horario) {
           componentesSinOrdenar++;
           this.retirarTareasAgendaScheduler(
@@ -4721,6 +4885,13 @@ export class DefinicionTareaPreventivaService {
       // definición si tienen horario especial, o el horario general del
       // conjunto (idéntico al comportamiento previo) en cualquier otro caso.
       horariosPorDiaDef: Map<DiaSemana, HorarioDia>;
+      // Horario festivo envolvente de esos mismos operarios, o null si no
+      // pueden trabajar festivos (ver festivoHorarioParaOperarios).
+      festivoHorarioDef: HorarioDia | null;
+      // Días del mes en que alguno de estos operarios tiene descanso
+      // compensatorio (ver diasDescansoParaOperarios): bloquean igual que
+      // un festivo no trabajable.
+      diasDescansoDef: Set<string>;
       dias: Date[];
       durMin: number;
     };
@@ -4729,6 +4900,8 @@ export class DefinicionTareaPreventivaService {
       prioridad: number;
       operariosIds: string[];
       horariosPorDiaDef: Map<DiaSemana, HorarioDia>;
+      festivoHorarioDef: HorarioDia | null;
+      diasDescansoDef: Set<string>;
       dia: Date;
       esRondaGarantia: boolean;
     };
@@ -4797,11 +4970,23 @@ export class DefinicionTareaPreventivaService {
           conjuntoId,
           operariosIds,
         );
+        // Plaza(s) de esta definición: ¿trabajan festivos, y con qué
+        // horario? (reemplaza la regla fija "solo SALVAVIDAS").
+        const festivoHorarioDef = await this.festivoHorarioParaOperarios(
+          conjuntoId,
+          operariosIds,
+        );
 
         const diasFrecuencia = pickDaysByFrecuencia(fechasDelMes, def);
-        // Roles SALVAVIDAS (solos o combinados): sí trabajan festivos,
-        // mientras el día caiga en su horario (ver defPuedeTrabajarFestivo).
-        const puedeTrabajarFestivo = this.defPuedeTrabajarFestivo(def);
+        const puedeTrabajarFestivo = festivoHorarioDef != null;
+        // Días de descanso compensatorio de estas plazas: bloquean igual que
+        // un festivo no trabajable (ver diasDescansoParaOperarios).
+        const diasDescansoDef = await this.diasDescansoParaOperarios(
+          conjuntoId,
+          operariosIds,
+          inicioMes,
+          finMes,
+        );
         // Una preventiva DIARIA representa una ejecucion por cada jornada
         // laborable configurada. Generarla tambien en dias sin horario (por
         // ejemplo sabado y domingo) creaba ocurrencias extra que luego
@@ -4810,8 +4995,10 @@ export class DefinicionTareaPreventivaService {
           def.frecuencia === Frecuencia.DIARIA
             ? diasFrecuencia.filter(
                 (dia) =>
-                  horariosPorDiaDef.has(dateToDiaSemana(dia)) &&
-                  (puedeTrabajarFestivo || !festivosSet.has(dayKey(dia))),
+                  resolverHorarioConFestivo(dia, horariosPorDiaDef, festivosSet, festivoHorarioDef) !=
+                    null &&
+                  (puedeTrabajarFestivo || !festivosSet.has(dayKey(dia))) &&
+                  !diasDescansoDef.has(dayKey(dia)),
               )
             : diasFrecuencia;
         out.push({
@@ -4819,6 +5006,8 @@ export class DefinicionTareaPreventivaService {
           prioridad: Number((def as any).prioridad ?? 2),
           operariosIds,
           horariosPorDiaDef,
+          festivoHorarioDef,
+          diasDescansoDef,
           dias,
           durMin: estimarDuracionDefinicionMin(def, tamanoBloqueMinutos),
         });
@@ -4881,6 +5070,8 @@ export class DefinicionTareaPreventivaService {
               prioridad: info.prioridad,
               operariosIds: info.operariosIds,
               horariosPorDiaDef: info.horariosPorDiaDef,
+              festivoHorarioDef: info.festivoHorarioDef,
+              diasDescansoDef: info.diasDescansoDef,
               dia: info.dias[ronda],
               esRondaGarantia: false,
             });
@@ -4902,6 +5093,8 @@ export class DefinicionTareaPreventivaService {
           prioridad: info.prioridad,
           operariosIds: info.operariosIds,
           horariosPorDiaDef: info.horariosPorDiaDef,
+          festivoHorarioDef: info.festivoHorarioDef,
+          diasDescansoDef: info.diasDescansoDef,
           dia: info.dias[0],
           esRondaGarantia: esGarantiaP3,
         });
@@ -4941,12 +5134,16 @@ export class DefinicionTareaPreventivaService {
       // o el horario general del conjunto). Sustituye al `horariosPorDia`
       // conjunto-wide en todo el cuerpo de este bucle.
       const horariosPorDiaDef = trabajo.horariosPorDiaDef;
-      // Roles SALVAVIDAS (solos o combinados): sí trabajan festivos, dentro
-      // de su horario (ver defPuedeTrabajarFestivo). Para el resto de roles
-      // este set es el real, así que el comportamiento no cambia.
-      const festivosSetDef = this.defPuedeTrabajarFestivo(def)
-        ? new Set<string>()
-        : festivosSet;
+      const festivoHorarioDef = trabajo.festivoHorarioDef;
+      const diasDescansoDef = trabajo.diasDescansoDef;
+      // Días que bloquean esta definición: festivos que su(s) plaza(s) no
+      // pueden trabajar (vacío si sí pueden, con su propio horario -ver
+      // festivoHorarioDef-) UNION los días de descanso compensatorio de esas
+      // mismas plazas (bloquean siempre, sin importar el rol).
+      const festivosSetDef = new Set<string>([
+        ...(festivoHorarioDef != null ? [] : festivosSet),
+        ...diasDescansoDef,
+      ]);
       const diasValidos = [trabajo.dia];
 
       for (const diaBase of diasValidos) {
@@ -5021,20 +5218,28 @@ export class DefinicionTareaPreventivaService {
             });
             continue;
           }
-          const diaBaseEsFestivo = festivosSetDef.has(dayKey(diaBase));
+          const diaBaseEsDescanso = diasDescansoDef.has(dayKey(diaBase));
+          const diaBaseEsFestivo = !diaBaseEsDescanso && festivosSetDef.has(dayKey(diaBase));
           const diaBaseEsDomingo =
-            dateToDiaSemana(diaBase) === DiaSemana.DOMINGO;
-          if (diaBaseEsFestivo || diaBaseEsDomingo) {
-            const mensaje = diaBaseEsDomingo
-              ? "La tarea cae en domingo y no se programo en el periodo."
-              : "La tarea cae en festivo y no se programo en el periodo.";
+            !diaBaseEsDescanso && dateToDiaSemana(diaBase) === DiaSemana.DOMINGO;
+          if (diaBaseEsDescanso || diaBaseEsFestivo || diaBaseEsDomingo) {
+            const motivo = diaBaseEsDescanso
+              ? ("DESCANSO_COMPENSATORIO" as const)
+              : diaBaseEsDomingo
+                ? ("DOMINGO" as const)
+                : ("FESTIVO" as const);
+            const mensaje = diaBaseEsDescanso
+              ? "La tarea cae en el descanso compensatorio de la plaza y no se programo en el periodo."
+              : diaBaseEsDomingo
+                ? "La tarea cae en domingo y no se programo en el periodo."
+                : "La tarea cae en festivo y no se programo en el periodo.";
             novedades.push({
               tipo: "FESTIVO_OMITIDO",
               defId: def.id,
               descripcion: def.descripcion,
               prioridad,
               fecha: dayKey(diaBase),
-              motivo: diaBaseEsDomingo ? "DOMINGO" : "FESTIVO",
+              motivo,
               mensaje,
             });
             await this.crearExcluidaDesdeDefinicion({
@@ -5045,11 +5250,9 @@ export class DefinicionTareaPreventivaService {
               defId: def.id,
               fechaObjetivo: diaBase,
               duracionMinutos: Math.max(1, durMinTotal),
-              motivoTipo: "FESTIVO_OMITIDO",
+              motivoTipo: diaBaseEsDescanso ? "DESCANSO_COMPENSATORIO" : "FESTIVO_OMITIDO",
               motivoMensaje: mensaje,
-              metadataJson: {
-                motivo: diaBaseEsDomingo ? "DOMINGO" : "FESTIVO",
-              },
+              metadataJson: { motivo },
             });
           } else {
             const mensaje =
@@ -5077,11 +5280,11 @@ export class DefinicionTareaPreventivaService {
           continue;
         }
 
-        // ✅ log: cayó en festivo/domingo y se movió
-        const diaBaseEsFestivo = festivosSetDef.has(dayKey(diaBase));
+        // ✅ log: cayó en festivo/domingo/descanso y se movió
+        const diaBaseEsFestivo = !diasDescansoDef.has(dayKey(diaBase)) && festivosSetDef.has(dayKey(diaBase));
         const diaBaseEsDomingo = dateToDiaSemana(diaBase) === DiaSemana.DOMINGO;
         if (
-          (diaBaseEsFestivo || diaBaseEsDomingo) &&
+          (diaBaseEsFestivo || diaBaseEsDomingo || diasDescansoDef.has(dayKey(diaBase))) &&
           dayKey(diaProgramable) !== dayKey(diaBase)
         ) {
           novedades.push({
@@ -5220,7 +5423,7 @@ export class DefinicionTareaPreventivaService {
             // y se delega en la fase de rescate, que barre el resto del periodo.
             if (esFestivo || !disponibilidadOperarios.ok) break;
 
-            const horario = horariosPorDiaDef.get(dateToDiaSemana(diaParte));
+            const horario = resolverHorarioConFestivo(diaParte, horariosPorDiaDef, festivosSet, festivoHorarioDef);
             if (!horario) break;
 
             // ✅ 1) Descanso
@@ -5338,7 +5541,8 @@ export class DefinicionTareaPreventivaService {
               dias: enumerateDays(inicioMes, finMes).filter(
                 (dia) =>
                   !festivosSetDef.has(dayKey(dia)) &&
-                  horariosPorDiaDef.has(dateToDiaSemana(dia)),
+                  resolverHorarioConFestivo(dia, horariosPorDiaDef, festivosSet, festivoHorarioDef) !=
+                    null,
               ),
               fechaObjetivo: diaObjetivoParte,
               periodoAnio,
@@ -5362,6 +5566,8 @@ export class DefinicionTareaPreventivaService {
                 dias: [diaCandidato],
                 horariosPorDia: horariosPorDiaDef,
                 festivosSet: festivosSetDef,
+                festivosSetRaw: festivosSet,
+                festivoHorario: festivoHorarioDef,
                 maxBloquesPorDia: 2,
                 permitirMultiDia: false,
                 validarLimiteSemanal: true,
@@ -5442,8 +5648,11 @@ export class DefinicionTareaPreventivaService {
                   : { ok: true, noDisponibles: [] as string[] };
                 if (!disponibilidad.ok) continue;
 
-                const horario = horariosPorDiaDef.get(
-                  dateToDiaSemana(diaAlternativo),
+                const horario = resolverHorarioConFestivo(
+                  diaAlternativo,
+                  horariosPorDiaDef,
+                  festivosSet,
+                  festivoHorarioDef,
                 );
                 if (!horario) continue;
                 const bloqueos = [
@@ -5563,6 +5772,8 @@ export class DefinicionTareaPreventivaService {
               operariosIds,
               horariosPorDia: horariosPorDiaDef,
               festivosSet: festivosSetDef,
+              festivosSetRaw: festivosSet,
+              festivoHorario: festivoHorarioDef,
               definicionId: def.id,
               descripcion: def.descripcion,
               ubicacionId: def.ubicacionId,
@@ -5580,6 +5791,8 @@ export class DefinicionTareaPreventivaService {
                 dias: diasRescate,
                 horariosPorDia: horariosPorDiaDef,
                 festivosSet: festivosSetDef,
+                festivosSetRaw: festivosSet,
+                festivoHorario: festivoHorarioDef,
                 incluirPublicadasEnAgenda,
               });
 
@@ -5669,8 +5882,11 @@ export class DefinicionTareaPreventivaService {
                 : { ok: true, noDisponibles: [] as string[] };
               if (!disponibilidad.ok) continue;
 
-              const horario = horariosPorDiaDef.get(
-                dateToDiaSemana(diaAlternativo),
+              const horario = resolverHorarioConFestivo(
+                diaAlternativo,
+                horariosPorDiaDef,
+                festivosSet,
+                festivoHorarioDef,
               );
               if (!horario) continue;
               const bloqueos = [
@@ -6198,7 +6414,18 @@ export class DefinicionTareaPreventivaService {
         pais: "CO",
       });
       if (inicioEsFestivo) {
-        throw new Error("No se permite programar tareas preventivas en festivos.");
+        // La plaza (necesidad operativa) de cada operario decide si trabaja
+        // festivos, con su propio horario -no depende del rol-.
+        const puedenTrabajarFestivo =
+          operariosIdsFinal.length > 0 &&
+          (await operariosPuedenTrabajarFestivo({
+            prisma: this.prisma,
+            conjuntoId,
+            operariosIds: operariosIdsFinal,
+          }));
+        if (!puedenTrabajarFestivo) {
+          throw new Error("No se permite programar tareas preventivas en festivos.");
+        }
       }
 
       if (operariosIdsFinal.length) {
@@ -7160,7 +7387,19 @@ export class DefinicionTareaPreventivaService {
         pais: "CO",
       });
       if (inicioEsFestivo) {
-        throw new Error("No se permite programar tareas preventivas en festivos.");
+        // El reordenamiento no cambia operarios/plaza: si ya trabajaban ese
+        // festivo (ver operariosPuedenTrabajarFestivo), lo siguen haciendo.
+        const operariosDeTarea = tarea.operarios.map((o) => o.id);
+        const puedenTrabajarFestivo =
+          operariosDeTarea.length > 0 &&
+          (await operariosPuedenTrabajarFestivo({
+            prisma: this.prisma,
+            conjuntoId: dto.conjuntoId,
+            operariosIds: operariosDeTarea,
+          }));
+        if (!puedenTrabajarFestivo) {
+          throw new Error("No se permite programar tareas preventivas en festivos.");
+        }
       }
 
       const operariosPorSegmento = segmentos.map((_, index) =>

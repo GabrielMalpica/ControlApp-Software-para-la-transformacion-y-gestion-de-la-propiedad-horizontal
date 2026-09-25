@@ -98,6 +98,8 @@ describe("Disponibilidad canónica del cronograma", () => {
       operarioDisponibilidadPeriodo: {
         findFirst: jest.fn().mockResolvedValue(null),
       },
+      conjuntoNecesidadOperario: { findMany: jest.fn().mockResolvedValue([]) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
 
     await expect(
@@ -173,6 +175,7 @@ describe("Necesidades operativas: horario propio de una plaza (ConjuntoNecesidad
         ]),
       },
       operarioDisponibilidadPeriodo: { findFirst: jest.fn().mockResolvedValue(null) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
 
     // Lunes 17 de agosto de 2026.
@@ -238,6 +241,7 @@ describe("Necesidades operativas: horario propio de una plaza (ConjuntoNecesidad
       operarioDisponibilidadPeriodo: {
         findFirst: jest.fn().mockResolvedValue(null),
       },
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
 
     // Domingo 23 de agosto de 2026.
@@ -286,6 +290,7 @@ describe("Necesidades operativas: horario propio de una plaza (ConjuntoNecesidad
         ]),
       },
       operarioDisponibilidadPeriodo: { findFirst: jest.fn().mockResolvedValue(null) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
 
     await expect(
@@ -331,6 +336,7 @@ describe("Necesidades operativas: horario propio de una plaza (ConjuntoNecesidad
         ]),
       },
       operarioDisponibilidadPeriodo: { findFirst: jest.fn().mockResolvedValue(null) },
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
 
     // Martes 18 de agosto de 2026.
