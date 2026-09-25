@@ -39,6 +39,8 @@ class CommerceOrderDetailItem {
     required this.opcionPagoServicio,
     required this.addonsServicio,
     required this.insumo,
+    this.cantidadRecibida,
+    this.novedadRecepcion,
   });
 
   final int id;
@@ -53,6 +55,13 @@ class CommerceOrderDetailItem {
   final String? opcionPagoServicio;
   final List<dynamic> addonsServicio;
   final CommerceInsumoRef? insumo;
+  // Lo que el cliente reportó al recibir (null = pedido anterior al reporte).
+  final double? cantidadRecibida;
+  final String? novedadRecepcion;
+
+  /// true si al recibir llegó menos de lo pedido.
+  bool get llegoIncompleto =>
+      cantidadRecibida != null && cantidadRecibida! < cantidad;
 
   factory CommerceOrderDetailItem.fromJson(Map<String, dynamic> json) {
     final rawInsumo = json['insumo'];
@@ -76,6 +85,10 @@ class CommerceOrderDetailItem {
       insumo: rawInsumo is Map<String, dynamic>
           ? CommerceInsumoRef.fromJson(rawInsumo)
           : null,
+      cantidadRecibida: (json['cantidadRecibida'] as num?)?.toDouble(),
+      novedadRecepcion: json['novedadRecepcion'] == null
+          ? null
+          : repairCommerceText(json['novedadRecepcion']),
     );
   }
 }
@@ -155,6 +168,11 @@ class CommerceOrderDetail {
     required this.items,
     required this.historial,
     required this.entradasInventario,
+    required this.direccionEntrega,
+    required this.metodoPago,
+    required this.comprobanteUrl,
+    required this.comprobanteSubidoEn,
+    this.verificacionComprobante,
   });
 
   final int id;
@@ -172,6 +190,12 @@ class CommerceOrderDetail {
   final String? opcionPagoServicio;
   final String whatsappPhone;
   final DateTime? creadoEn;
+  final String? direccionEntrega;
+  final String? metodoPago;
+  final String? comprobanteUrl;
+  final DateTime? comprobanteSubidoEn;
+  // Lectura automática (OCR) del comprobante; solo la recibe quien revisa pagos.
+  final ComprobanteVerificacion? verificacionComprobante;
   final bool entradaInventarioAplicada;
   final bool puntosAplicados;
   final List<String> transicionesPermitidas;
@@ -222,6 +246,72 @@ class CommerceOrderDetail {
               .whereType<Map<String, dynamic>>()
               .map(CommerceInventoryEntry.fromJson)
               .toList(),
+      direccionEntrega: json['direccionEntrega']?.toString(),
+      metodoPago: json['metodoPago']?.toString(),
+      comprobanteUrl: json['comprobanteUrl']?.toString(),
+      comprobanteSubidoEn: json['comprobanteSubidoEn'] != null
+          ? DateTime.tryParse(json['comprobanteSubidoEn'].toString())
+          : null,
+      verificacionComprobante: json['verificacionComprobante'] is Map
+          ? ComprobanteVerificacion.fromJson(
+              Map<String, dynamic>.from(json['verificacionComprobante'] as Map),
+            )
+          : null,
+    );
+  }
+}
+
+class ComprobanteVerificacionCheck {
+  const ComprobanteVerificacionCheck({
+    required this.clave,
+    required this.ok,
+    required this.detalle,
+  });
+
+  final String clave;
+  // null = no se pudo evaluar.
+  final bool? ok;
+  final String detalle;
+
+  factory ComprobanteVerificacionCheck.fromJson(Map<String, dynamic> json) {
+    return ComprobanteVerificacionCheck(
+      clave: json['clave']?.toString() ?? '',
+      ok: json['ok'] as bool?,
+      detalle: repairCommerceText(json['detalle']),
+    );
+  }
+}
+
+class ComprobanteVerificacion {
+  const ComprobanteVerificacion({
+    required this.veredicto,
+    required this.montoDetectado,
+    required this.referencia,
+    required this.checks,
+    required this.analizadoEn,
+  });
+
+  /// COINCIDE, REVISAR, DUPLICADO o ILEGIBLE.
+  final String veredicto;
+  final double? montoDetectado;
+  final String? referencia;
+  final List<ComprobanteVerificacionCheck> checks;
+  final DateTime? analizadoEn;
+
+  factory ComprobanteVerificacion.fromJson(Map<String, dynamic> json) {
+    return ComprobanteVerificacion(
+      veredicto: json['veredicto']?.toString() ?? 'REVISAR',
+      montoDetectado: (json['montoDetectado'] as num?)?.toDouble(),
+      referencia: json['referencia']?.toString(),
+      checks: (json['checks'] as List<dynamic>? ?? const <dynamic>[])
+          .whereType<Map>()
+          .map(
+            (item) => ComprobanteVerificacionCheck.fromJson(
+              Map<String, dynamic>.from(item),
+            ),
+          )
+          .toList(),
+      analizadoEn: DateTime.tryParse(json['analizadoEn']?.toString() ?? ''),
     );
   }
 }
@@ -235,6 +325,7 @@ class ReceiptPreviewItem {
     required this.insumo,
     required this.origenMapeo,
     required this.cantidadInventario,
+    required this.factorDesdeWoo,
   });
 
   final int itemId;
@@ -246,6 +337,9 @@ class ReceiptPreviewItem {
   // cantidad x factor de conversion del insumo: lo que realmente sumara al
   // inventario del conjunto.
   final double cantidadInventario;
+  // true = el factor de conversion lo declaro WooCommerce (campo del
+  // producto/variacion), no hace falta escribirlo al mapear.
+  final bool factorDesdeWoo;
 
   factory ReceiptPreviewItem.fromJson(Map<String, dynamic> json) {
     final rawInsumo = json['insumo'];
@@ -261,6 +355,7 @@ class ReceiptPreviewItem {
       origenMapeo: json['origenMapeo']?.toString() ?? '',
       cantidadInventario:
           (json['cantidadInventario'] as num?)?.toDouble() ?? cantidad,
+      factorDesdeWoo: json['factorDesdeWoo'] as bool? ?? false,
     );
   }
 }
@@ -272,10 +367,13 @@ class ReceiptPreview {
     required this.mensaje,
     required this.items,
     required this.insumosDisponibles,
+    this.puedeMapear = false,
   });
 
   final bool puedeAplicar;
   final bool yaAplicada;
+  // Solo el equipo de Control SAS configura insumos; quien recibe solo reporta.
+  final bool puedeMapear;
   final String mensaje;
   final List<ReceiptPreviewItem> items;
   final List<CommerceInsumoRef> insumosDisponibles;
@@ -284,6 +382,7 @@ class ReceiptPreview {
     return ReceiptPreview(
       puedeAplicar: json['puedeAplicar'] as bool? ?? false,
       yaAplicada: json['yaAplicada'] as bool? ?? false,
+      puedeMapear: json['puedeMapear'] as bool? ?? false,
       mensaje: json['mensaje']?.toString() ?? '',
       items: (json['items'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()

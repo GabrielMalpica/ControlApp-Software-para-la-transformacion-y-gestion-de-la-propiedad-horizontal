@@ -3,6 +3,7 @@ import 'package:flutter_application_1/model/commerce_models.dart';
 class ResidentCartItem {
   final String cartKey;
   final int productId;
+  final int? variationId;
   final String name;
   final String sku;
   final String imageUrl;
@@ -14,6 +15,7 @@ class ResidentCartItem {
   const ResidentCartItem({
     required this.cartKey,
     required this.productId,
+    this.variationId,
     required this.name,
     required this.sku,
     required this.imageUrl,
@@ -27,6 +29,7 @@ class ResidentCartItem {
     return ResidentCartItem(
       cartKey: cartKey,
       productId: productId,
+      variationId: variationId,
       name: name,
       sku: sku,
       imageUrl: imageUrl,
@@ -42,6 +45,7 @@ class ResidentCartItem {
 
   Map<String, dynamic> toRequestJson() => <String, dynamic>{
     'productId': productId,
+    if (variationId != null) 'variationId': variationId,
     'quantity': quantity,
     if (service != null) 'service': service!.toRequestJson(),
   };

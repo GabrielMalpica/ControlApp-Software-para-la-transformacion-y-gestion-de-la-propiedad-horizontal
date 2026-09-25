@@ -407,6 +407,40 @@ class CommerceAudience {
   }
 }
 
+class CommerceVariation {
+  final int id;
+  final String label;
+  final String sku;
+  final bool purchasable;
+  final String stockStatus;
+  final CommercePrice price;
+  final String image;
+
+  const CommerceVariation({
+    required this.id,
+    required this.label,
+    required this.sku,
+    required this.purchasable,
+    required this.stockStatus,
+    required this.price,
+    required this.image,
+  });
+
+  factory CommerceVariation.fromJson(Map<String, dynamic> json) {
+    return CommerceVariation(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      label: repairCommerceText(json['label']),
+      sku: json['sku']?.toString() ?? '',
+      purchasable: json['purchasable'] != false,
+      stockStatus: json['stockStatus']?.toString() ?? 'unknown',
+      price: CommercePrice.fromJson(
+        json['price'] as Map<String, dynamic>? ?? const <String, dynamic>{},
+      ),
+      image: json['image']?.toString() ?? '',
+    );
+  }
+}
+
 class CommerceProduct {
   final int id;
   final String name;
@@ -429,6 +463,7 @@ class CommerceProduct {
   final CommerceAudience audience;
   final CommerceServiceConfig? service;
   final String source;
+  final List<CommerceVariation> variations;
 
   const CommerceProduct({
     required this.id,
@@ -452,7 +487,10 @@ class CommerceProduct {
     required this.audience,
     required this.service,
     required this.source,
+    this.variations = const <CommerceVariation>[],
   });
+
+  bool get isVariable => type != 'simple' && variations.isNotEmpty;
 
   factory CommerceProduct.fromJson(Map<String, dynamic> json) {
     return CommerceProduct(
@@ -494,6 +532,10 @@ class CommerceProduct {
             )
           : null,
       source: json['source']?.toString() ?? '',
+      variations: (json['variations'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(CommerceVariation.fromJson)
+          .toList(),
     );
   }
 }

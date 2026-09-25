@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/model/notificacion_model.dart';
+import 'package:flutter_application_1/pages/commerce_order_detail_page.dart';
 import 'package:flutter_application_1/service/notificaciones_center.dart';
 import 'package:intl/intl.dart';
 
@@ -82,10 +83,29 @@ class _NotificacionesActionState extends State<NotificacionesAction> {
                             final n = lista[i];
                             return ListTile(
                               onTap: () async {
-                                if (n.leida) return;
-                                try {
-                                  await _center.marcarLeida(n.id);
-                                } catch (_) {}
+                                // Se toman antes de esperar: después del await
+                                // el panel ya podría haberse cerrado.
+                                final panel = Navigator.of(ctx);
+                                final pantalla = Navigator.of(context);
+                                if (!n.leida) {
+                                  try {
+                                    await _center.marcarLeida(n.id);
+                                  } catch (_) {}
+                                }
+                                // Un aviso de pedido (pago confirmado, en
+                                // preparación, en camino) abre ese pedido.
+                                final pedidoId = n.referenciaTipo == 'PedidoApp'
+                                    ? n.referenciaId
+                                    : null;
+                                if (pedidoId == null) return;
+                                panel.pop();
+                                await pantalla.push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => CommerceOrderDetailPage(
+                                      pedidoId: pedidoId,
+                                    ),
+                                  ),
+                                );
                               },
                               leading: Icon(
                                 n.leida

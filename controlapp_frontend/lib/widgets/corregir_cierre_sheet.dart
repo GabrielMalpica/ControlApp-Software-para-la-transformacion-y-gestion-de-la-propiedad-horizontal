@@ -32,9 +32,13 @@ bool puedeCorregirCierre(TareaModel tarea) {
 /// Carga la tarea y su inventario, y abre la hoja de corrección de cierre.
 /// Devuelve `true` si se guardó una corrección (para que quien la llama
 /// recargue su lista).
+///
+/// Con [soloEvidencias] la hoja solo permite cambiar las fotos/archivos de la
+/// tarea (sin tocar insumos ni observaciones).
 Future<bool> abrirCorregirCierre(
   BuildContext context, {
   required int tareaId,
+  bool soloEvidencias = false,
 }) async {
   if (!PermissionService.instance.can('tareas.editar_cierre')) {
     AppFeedback.showError(
@@ -69,7 +73,7 @@ Future<bool> abrirCorregirCierre(
 
   List<InventarioItemResponse> inventario = const [];
   final conjuntoId = tarea.conjuntoId;
-  if (conjuntoId != null && conjuntoId.trim().isNotEmpty) {
+  if (!soloEvidencias && conjuntoId != null && conjuntoId.trim().isNotEmpty) {
     try {
       inventario = await InventarioApi().listarInventarioConjunto(conjuntoId);
     } catch (_) {
@@ -82,7 +86,11 @@ Future<bool> abrirCorregirCierre(
   final result = await showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
-    builder: (_) => CorregirCierreSheet(tarea: tarea, inventario: inventario),
+    builder: (_) => CorregirCierreSheet(
+      tarea: tarea,
+      inventario: inventario,
+      soloEvidencias: soloEvidencias,
+    ),
   );
 
   return result == true;
@@ -91,11 +99,13 @@ Future<bool> abrirCorregirCierre(
 class CorregirCierreSheet extends StatefulWidget {
   final TareaModel tarea;
   final List<InventarioItemResponse> inventario;
+  final bool soloEvidencias;
 
   const CorregirCierreSheet({
     super.key,
     required this.tarea,
     this.inventario = const [],
+    this.soloEvidencias = false,
   });
 
   @override
@@ -220,7 +230,10 @@ class _CorregirCierreSheetState extends State<CorregirCierreSheet> {
       _evidenciasNuevas.add(file);
       _esperandoPegado = false;
     });
-    AppFeedback.showInfo(context, message: 'Imagen pegada desde el portapapeles.');
+    AppFeedback.showInfo(
+      context,
+      message: 'Imagen pegada desde el portapapeles.',
+    );
   }
 
   void _agregarFilaInsumo() {
@@ -273,7 +286,18 @@ class _CorregirCierreSheetState extends State<CorregirCierreSheet> {
       );
       return;
     }
-    if (_rows.any((r) => r.insumoId == null && r.qtyCtrl.text.trim().isNotEmpty)) {
+    if (widget.soloEvidencias &&
+        _evidenciasEliminadas.isEmpty &&
+        _evidenciasNuevas.isEmpty) {
+      AppFeedback.showError(
+        context,
+        message: 'Quita o agrega al menos una evidencia para guardar.',
+      );
+      return;
+    }
+    if (_rows.any(
+      (r) => r.insumoId == null && r.qtyCtrl.text.trim().isNotEmpty,
+    )) {
       AppFeedback.showError(
         context,
         message: 'Selecciona un insumo para cada fila o elimínala.',
@@ -287,14 +311,21 @@ class _CorregirCierreSheetState extends State<CorregirCierreSheet> {
         tareaId: widget.tarea.id,
         motivo: motivo,
         evidenciasEliminar: _evidenciasEliminadas.toList(),
-        insumosUsados: _insumosDirty ? _buildInsumosUsados() : null,
-        observaciones: _obsCtrl.text.trim().isEmpty
+        insumosUsados: (_insumosDirty && !widget.soloEvidencias)
+            ? _buildInsumosUsados()
+            : null,
+        observaciones: (widget.soloEvidencias || _obsCtrl.text.trim().isEmpty)
             ? null
             : _obsCtrl.text.trim(),
         nuevasEvidencias: _evidenciasNuevas,
       );
       if (!mounted) return;
-      AppFeedback.showInfo(context, message: 'Cierre corregido correctamente.');
+      AppFeedback.showInfo(
+        context,
+        message: widget.soloEvidencias
+            ? 'Evidencias actualizadas correctamente.'
+            : 'Cierre corregido correctamente.',
+      );
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -325,10 +356,15 @@ class _CorregirCierreSheetState extends State<CorregirCierreSheet> {
             children: [
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Corregir cierre de tarea',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                      widget.soloEvidencias
+                          ? 'Editar evidencias'
+                          : 'Corregir cierre de tarea',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                   IconButton(
@@ -359,7 +395,8 @@ class _CorregirCierreSheetState extends State<CorregirCierreSheet> {
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 8),
-                      if (_evidenciasVisibles.isEmpty && _evidenciasNuevas.isEmpty)
+                      if (_evidenciasVisibles.isEmpty &&
+                          _evidenciasNuevas.isEmpty)
                         Text(
                           'Sin evidencias',
                           style: TextStyle(color: Colors.grey.shade700),
@@ -372,8 +409,9 @@ class _CorregirCierreSheetState extends State<CorregirCierreSheet> {
                             ..._evidenciasVisibles.map(
                               (url) => _EvidenciaActualTile(
                                 url: url,
-                                onQuitar: () =>
-                                    setState(() => _evidenciasEliminadas.add(url)),
+                                onQuitar: () => setState(
+                                  () => _evidenciasEliminadas.add(url),
+                                ),
                               ),
                             ),
                             ..._evidenciasNuevas.map(
@@ -432,140 +470,161 @@ class _CorregirCierreSheetState extends State<CorregirCierreSheet> {
                           ),
                         ],
                       ),
+                      if (_evidenciasEliminadas.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          '${_evidenciasEliminadas.length} evidencia(s) se borrarán también de Google Drive al guardar.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 12),
 
-              Row(
-                children: [
-                  const Text(
-                    'Insumos usados',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  const Spacer(),
-                  TextButton.icon(
-                    onPressed: inv.isEmpty ? null : _agregarFilaInsumo,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Agregar'),
-                  ),
-                ],
-              ),
-              if (inv.isEmpty && _rows.isEmpty)
-                Text(
-                  'No hay inventario disponible para este conjunto.',
-                  style: TextStyle(color: Colors.grey.shade700),
-                )
-              else
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _rows.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (_, i) {
-                    final row = _rows[i];
-                    InventarioItemResponse? item;
-                    if (row.insumoId != null) {
-                      try {
-                        item = inv.firstWhere((x) => x.insumoId == row.insumoId);
-                      } catch (_) {
-                        item = null;
+              if (!widget.soloEvidencias) ...[
+                Row(
+                  children: [
+                    const Text(
+                      'Insumos usados',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      onPressed: inv.isEmpty ? null : _agregarFilaInsumo,
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Agregar'),
+                    ),
+                  ],
+                ),
+                if (inv.isEmpty && _rows.isEmpty)
+                  Text(
+                    'No hay inventario disponible para este conjunto.',
+                    style: TextStyle(color: Colors.grey.shade700),
+                  )
+                else
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _rows.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) {
+                      final row = _rows[i];
+                      InventarioItemResponse? item;
+                      if (row.insumoId != null) {
+                        try {
+                          item = inv.firstWhere(
+                            (x) => x.insumoId == row.insumoId,
+                          );
+                        } catch (_) {
+                          item = null;
+                        }
                       }
-                    }
 
-                    return Card(
-                      elevation: 1,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          children: [
-                            DropdownButtonFormField<int>(
-                              initialValue: row.insumoId,
-                              decoration: const InputDecoration(
-                                labelText: 'Insumo',
-                                border: OutlineInputBorder(),
-                                isDense: true,
+                      return Card(
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            children: [
+                              DropdownButtonFormField<int>(
+                                initialValue: row.insumoId,
+                                decoration: const InputDecoration(
+                                  labelText: 'Insumo',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                items: inv
+                                    .map(
+                                      (x) => DropdownMenuItem<int>(
+                                        value: x.insumoId,
+                                        child: Text(
+                                          '${x.nombre} (${x.disponibleTexto})',
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (v) => setState(() {
+                                  row.insumoId = v;
+                                  _insumosDirty = true;
+                                }),
                               ),
-                              items: inv
-                                  .map(
-                                    (x) => DropdownMenuItem<int>(
-                                      value: x.insumoId,
-                                      child: Text('${x.nombre} (${x.disponibleTexto})'),
+                              const SizedBox(height: 10),
+                              TextField(
+                                controller: row.qtyCtrl,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
                                     ),
-                                  )
-                                  .toList(),
-                              onChanged: (v) => setState(() {
-                                row.insumoId = v;
-                                _insumosDirty = true;
-                              }),
-                            ),
-                            const SizedBox(height: 10),
-                            TextField(
-                              controller: row.qtyCtrl,
-                              keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true,
+                                onChanged: (_) => _insumosDirty = true,
+                                decoration: InputDecoration(
+                                  labelText: 'Cantidad usada',
+                                  hintText: item == null
+                                      ? 'Ej: 0.5'
+                                      : (item.contenidoPorUnidad != null
+                                            ? 'En ${item.unidadContenido}'
+                                            : 'En ${item.unidad}'),
+                                  border: const OutlineInputBorder(),
+                                  isDense: true,
+                                ),
                               ),
-                              onChanged: (_) => _insumosDirty = true,
-                              decoration: InputDecoration(
-                                labelText: 'Cantidad usada',
-                                hintText: item == null
-                                    ? 'Ej: 0.5'
-                                    : (item.contenidoPorUnidad != null
-                                          ? 'En ${item.unidadContenido}'
-                                          : 'En ${item.unidad}'),
-                                border: const OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                if (item != null)
-                                  Expanded(
-                                    child: Text(
-                                      'Stock: ${item.disponibleTexto}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade700,
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  if (item != null)
+                                    Expanded(
+                                      child: Text(
+                                        'Stock: ${item.disponibleTexto}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade700,
+                                        ),
                                       ),
                                     ),
+                                  IconButton(
+                                    tooltip: 'Quitar',
+                                    onPressed: () => _quitarFilaInsumo(i),
+                                    icon: const Icon(Icons.delete_outline),
                                   ),
-                                IconButton(
-                                  tooltip: 'Quitar',
-                                  onPressed: () => _quitarFilaInsumo(i),
-                                  icon: const Icon(Icons.delete_outline),
-                                ),
-                              ],
-                            ),
-                          ],
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-
+                      );
+                    },
+                  ),
+              ],
               const SizedBox(height: 12),
               TextField(
                 controller: _motivoCtrl,
                 maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Motivo de la corrección (obligatorio)',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: widget.soloEvidencias
+                      ? 'Motivo del cambio (obligatorio)'
+                      : 'Motivo de la corrección (obligatorio)',
+                  border: const OutlineInputBorder(),
                 ),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _obsCtrl,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Observaciones (opcional)',
-                  border: OutlineInputBorder(),
+              if (!widget.soloEvidencias) ...[
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _obsCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Observaciones (opcional)',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
+              ],
               const SizedBox(height: 12),
 
               SizedBox(
@@ -579,7 +638,11 @@ class _CorregirCierreSheetState extends State<CorregirCierreSheet> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.save),
-                  label: const Text('Guardar corrección'),
+                  label: Text(
+                    widget.soloEvidencias
+                        ? 'Guardar evidencias'
+                        : 'Guardar corrección',
+                  ),
                 ),
               ),
             ],
@@ -621,19 +684,21 @@ class _EvidenciaActualTile extends StatelessWidget {
                     urls: candidates,
                     fit: BoxFit.cover,
                     fallback: Center(
-                      child: Icon(Icons.image_not_supported, color: Colors.grey.shade600),
+                      child: Icon(
+                        Icons.image_not_supported,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                   )
                 : Center(
-                    child: Icon(Icons.insert_drive_file_outlined, color: Colors.grey.shade700),
+                    child: Icon(
+                      Icons.insert_drive_file_outlined,
+                      color: Colors.grey.shade700,
+                    ),
                   ),
           ),
         ),
-        Positioned(
-          top: -6,
-          right: -6,
-          child: _QuitarBadge(onTap: onQuitar),
-        ),
+        Positioned(top: -6, right: -6, child: _QuitarBadge(onTap: onQuitar)),
       ],
     );
   }

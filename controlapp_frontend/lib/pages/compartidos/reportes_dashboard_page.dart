@@ -7,7 +7,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
-import '../../utils/frecuencia_utils.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_application_1/api/reporte_api.dart';
 import 'package:flutter_application_1/model/reporte_model.dart';
@@ -68,6 +67,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
 
   bool _loading = false;
   bool _generandoPdf = false;
+  bool _generandoInforme = false;
+  int _informeProgreso = 0;
+  String _informeMensaje = '';
   String? _error;
 
   ReporteKpis? _kpis;
@@ -1623,728 +1625,62 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     }
   }
 
-  String _frequencyKeyV2(String? raw) {
-    return (raw ?? '')
-        .trim()
-        .toUpperCase()
-        .replaceAll('Á', 'A')
-        .replaceAll('É', 'E')
-        .replaceAll('Í', 'I')
-        .replaceAll('Ó', 'O')
-        .replaceAll('Ú', 'U')
-        .replaceAll('Ñ', 'N')
-        .replaceAll(RegExp(r'[\s\-]+'), '_');
-  }
-
-  bool _isDailyFrequencyV2(String? raw) {
-    final key = _frequencyKeyV2(raw);
-    return key == 'DIARIA' ||
-        key == 'DIARIO' ||
-        key.startsWith('DIARIA_') ||
-        key.startsWith('DIARIO_');
-  }
-
-  String _normalizeTaskGroupValueV2(String value) {
-    return value
-        .trim()
-        .toUpperCase()
-        .replaceAll('Á', 'A')
-        .replaceAll('É', 'E')
-        .replaceAll('Í', 'I')
-        .replaceAll('Ó', 'O')
-        .replaceAll('Ú', 'U')
-        .replaceAll('Ñ', 'N')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .replaceAll(RegExp(r'[^A-Z0-9 ]'), '');
-  }
-
-  List<Map<String, dynamic>> _buildDetallePdfItemsV2() {
-    final ordered = [..._tareasDetalle]
-      ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
-
-    final dailyBuckets = <String, List<TareaDetalleRow>>{};
-    final items = <Map<String, dynamic>>[];
-
-    for (final t in ordered) {
-      if (!_isDailyFrequencyV2(t.frecuencia)) {
-        items.add({
-          'esResumenDiario': false,
-          'principal': t,
-          'tareas': <TareaDetalleRow>[t],
-          'inicio': t.fechaInicio,
-        });
-        continue;
-      }
-
-      final key = [
-        _normalizeTaskGroupValueV2(t.tipo),
-        _normalizeTaskGroupValueV2(t.descripcion),
-        _normalizeTaskGroupValueV2(t.ubicacion ?? ''),
-        _normalizeTaskGroupValueV2(t.elemento ?? ''),
-      ].join('|');
-
-      dailyBuckets.putIfAbsent(key, () => <TareaDetalleRow>[]).add(t);
-    }
-
-    for (final bucket in dailyBuckets.values) {
-      bucket.sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
-      if (bucket.length == 1) {
-        final only = bucket.first;
-        items.add({
-          'esResumenDiario': false,
-          'principal': only,
-          'tareas': <TareaDetalleRow>[only],
-          'inicio': only.fechaInicio,
-        });
-        continue;
-      }
-
-      final principal = bucket.first;
-      items.add({
-        'esResumenDiario': true,
-        'principal': principal,
-        'tareas': bucket,
-        'inicio': principal.fechaInicio,
-      });
-    }
-
-    items.sort(
-      (a, b) => (a['inicio'] as DateTime).compareTo(b['inicio'] as DateTime),
-    );
-    return items;
-  }
-
+  /// Informe detallado: el servidor arma el PDF en segundo plano y aqui solo se
+  /// consulta su avance con peticiones cortas. Asi la app sigue usable mientras
+  /// se genera y ninguna conexion se queda abierta esperando (sin timeouts).
   Future<void> _generarInformeDetalladoPdfV2() async {
-    if (_tareasDetalle.isEmpty) return;
+    if (_generandoInforme) return;
 
-    setState(() => _generandoPdf = true);
+    setState(() {
+      _generandoInforme = true;
+      _informeProgreso = 0;
+      _informeMensaje = 'Enviando solicitud...';
+    });
 
     try {
-      final fontRegular = pw.Font.ttf(
-        await rootBundle.load('assets/fonts/Roboto-Regular.ttf'),
+      var estado = await _api.iniciarInformeMensualPdf(
+        desde: _desde,
+        hasta: _hasta,
+        conjuntoId: _esReporteGeneral ? null : _conjuntoId,
       );
-      final fontBold = pw.Font.ttf(
-        await rootBundle.load('assets/fonts/Roboto-Bold.ttf'),
-      );
+      _actualizarProgresoInforme(estado);
 
-      final doc = pw.Document();
-      final df = DateFormat('dd/MM/yyyy HH:mm', 'es');
-      final dfShort = DateFormat('dd/MM/yyyy', 'es');
-      final mes = DateFormat('MMMM', 'es').format(_desde);
-      final anio = DateFormat('yyyy', 'es').format(_desde);
-      final cliente = _conjuntoNombreForReport();
-
-      final items = _buildDetallePdfItemsV2();
-      if (items.isEmpty) return;
-
-      final totalDiasRango =
-          DateTime(
-            _hasta.year,
-            _hasta.month,
-            _hasta.day,
-          ).difference(DateTime(_desde.year, _desde.month, _desde.day)).inDays +
-          1;
-
-      final imageCache = <String, pw.ImageProvider>{};
-      final evidenceImageByRaw = <String, pw.ImageProvider?>{};
-
-      final evidenceAuthToken = await SessionService().getToken();
-
-      Future<pw.ImageProvider?> loadEvidenceImage(String raw) async {
-        final candidates = _evidenceUrlCandidates(raw);
-        for (final u in candidates) {
-          if (imageCache.containsKey(u)) return imageCache[u];
-          try {
-            final img = await networkImage(
-              u,
-              headers: u.startsWith(AppConstants.baseUrl)
-                  ? {'Authorization': 'Bearer $evidenceAuthToken'}
-                  : null,
-            );
-            imageCache[u] = img;
-            return img;
-          } catch (_) {
-            // intenta siguiente candidato
-          }
+      final limite = DateTime.now().add(const Duration(minutes: 12));
+      var fallosSeguidos = 0;
+      var espera = const Duration(milliseconds: 1500);
+      while (!estado.listo) {
+        if (estado.fallo) {
+          throw Exception(estado.error ?? 'No se pudo generar el informe.');
         }
-        return null;
-      }
-
-      final raws = items
-          .expand((item) => (item['tareas'] as List<TareaDetalleRow>))
-          .expand((t) => t.evidencias.take(4))
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toSet();
-      for (final raw in raws) {
-        evidenceImageByRaw[raw] = await loadEvidenceImage(raw);
-      }
-
-      String clipText(String value, {int max = 180}) {
-        final v = value.trim();
-        if (v.length <= max) return v;
-        return '${v.substring(0, max).trim()}...';
-      }
-
-      // Etiqueta unificada con el resto de la app (incluye el dia programado
-      // cuando la frecuencia depende de el).
-      String frequencyLabel(String? raw) {
-        final label = etiquetaFrecuencia(raw);
-        return label == '—' ? '-' : label.toUpperCase();
-      }
-
-      double toDouble(dynamic v) {
-        if (v == null) return 0;
-        if (v is num) return v.toDouble();
-        return double.tryParse('$v') ?? 0;
-      }
-
-      String miniList(List<Map<String, dynamic>> rows, {int max = 4}) {
-        if (rows.isEmpty) return 'Sin datos';
-        return rows
-            .take(max)
-            .map((m) {
-              final nombre = (m['nombre'] ?? '-').toString().trim();
-              final cantidad = toDouble(m['cantidad']);
-              final unidad = (m['unidad'] ?? '').toString().trim();
-              final qty = cantidad > 0
-                  ? (cantidad % 1 == 0
-                        ? cantidad.toStringAsFixed(0)
-                        : cantidad.toStringAsFixed(2))
-                  : '';
-              final extra = [
-                qty,
-                unidad,
-              ].where((x) => x.trim().isNotEmpty).join(' ');
-              return extra.isEmpty ? nombre : '$nombre ($extra)';
-            })
-            .join(' | ');
-      }
-
-      String mergedResourceList(
-        List<TareaDetalleRow> tasks,
-        List<Map<String, dynamic>> Function(TareaDetalleRow) selector, {
-        int max = 4,
-      }) {
-        final agg = <String, Map<String, dynamic>>{};
-        for (final t in tasks) {
-          for (final r in selector(t)) {
-            final nombre = (r['nombre'] ?? '-').toString().trim();
-            final unidad = (r['unidad'] ?? '').toString().trim();
-            final key = '${nombre.toUpperCase()}|${unidad.toUpperCase()}';
-            final slot = agg.putIfAbsent(
-              key,
-              () => <String, dynamic>{
-                'nombre': nombre,
-                'unidad': unidad,
-                'cantidad': 0.0,
-              },
-            );
-            slot['cantidad'] =
-                (slot['cantidad'] as double) + toDouble(r['cantidad']);
-          }
-        }
-        return miniList(agg.values.toList(), max: max);
-      }
-
-      pw.Widget evidenceTile(pw.ImageProvider? img) {
-        return pw.Container(
-          width: 88,
-          height: 62,
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: PdfColors.grey400),
-            borderRadius: pw.BorderRadius.circular(5),
-          ),
-          child: img == null
-              ? pw.Center(
-                  child: pw.Text(
-                    'Sin imagen',
-                    style: const pw.TextStyle(fontSize: 7),
-                  ),
-                )
-              : pw.ClipRRect(
-                  horizontalRadius: 5,
-                  verticalRadius: 5,
-                  child: pw.Image(img, fit: pw.BoxFit.cover),
-                ),
-        );
-      }
-
-      pw.Widget tareaCard(Map<String, dynamic> item) {
-        final resumenDiario = item['esResumenDiario'] == true;
-        final principal = item['principal'] as TareaDetalleRow;
-        final tasks = (item['tareas'] as List<TareaDetalleRow>)
-          ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
-
-        final first = tasks.first;
-        final last = tasks.last;
-        final uniqueDays = tasks
-            .map(
-              (t) => DateTime(
-                t.fechaInicio.year,
-                t.fechaInicio.month,
-                t.fechaInicio.day,
-              ).millisecondsSinceEpoch,
-            )
-            .toSet()
-            .length;
-        final supervisors = tasks
-            .map((t) => (t.supervisor ?? '').trim())
-            .where((s) => s.isNotEmpty)
-            .toSet()
-            .toList();
-        final operarios = tasks
-            .expand((t) => t.operarios)
-            .map((o) => o.trim())
-            .where((o) => o.isNotEmpty)
-            .toSet()
-            .toList();
-        final estados = tasks
-            .map((t) => t.estado.trim())
-            .where((e) => e.isNotEmpty)
-            .toSet()
-            .toList();
-        final evidenciaRaw = tasks
-            .expand((t) => t.evidencias)
-            .map((e) => e.trim())
-            .where((e) => e.isNotEmpty)
-            .toSet()
-            .toList();
-
-        String? reemplazadaPorRef(TareaDetalleRow t) {
-          if (t.reemplazadaPorTareaId == null) return null;
-          final desc = (t.reemplazadaPorDescripcion ?? '').trim();
-          return desc.isNotEmpty
-              ? '#${t.reemplazadaPorTareaId} ($desc)'
-              : '#${t.reemplazadaPorTareaId}';
-        }
-
-        final reemplazaRefs = tasks
-            .expand(_replacementRefs)
-            .map((r) => r.trim())
-            .where((r) => r.isNotEmpty)
-            .toSet()
-            .toList();
-        final reemplazadaPorRefs = tasks
-            .map(reemplazadaPorRef)
-            .whereType<String>()
-            .map((r) => r.trim())
-            .where((r) => r.isNotEmpty)
-            .toSet()
-            .toList();
-        final tieneReemplazo = tasks.any((t) => t.esTareaReemplazo);
-        final motivoNoComp = (principal.motivoNoCompletada ?? '').trim();
-        final refReemplazo = reemplazadaPorRef(principal);
-        final motivoReemplazo = _replacementInfoText(principal);
-
-        final resumenTexto = uniqueDays >= totalDiasRango
-            ? 'Esta tarea se hizo todos los días del mes.'
-            : 'Esta tarea se hizo de forma diaria durante el mes ($uniqueDays de $totalDiasRango días con registro).';
-
-        final insumosTxt = resumenDiario
-            ? mergedResourceList(tasks, (t) => t.insumos)
-            : miniList(principal.insumos);
-        final maquinariaTxt = resumenDiario
-            ? mergedResourceList(tasks, (t) => t.maquinaria)
-            : miniList(principal.maquinaria);
-        final herramientasTxt = resumenDiario
-            ? mergedResourceList(tasks, (t) => t.herramientas)
-            : miniList(principal.herramientas);
-
-        String safe(String? v) {
-          final txt = (v ?? '').trim();
-          return txt.isEmpty ? '-' : txt;
-        }
-
-        pw.Widget cell(String txt, {bool bold = false}) {
-          return pw.Padding(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-            child: pw.Text(
-              clipText(txt, max: 120),
-              style: pw.TextStyle(
-                fontSize: 7.5,
-                fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-              ),
-            ),
+        if (DateTime.now().isAfter(limite)) {
+          throw Exception(
+            'El informe está tardando más de lo esperado. Intenta de nuevo en unos minutos.',
           );
         }
-
-        pw.TableRow kvRow({
-          required String k1,
-          required String v1,
-          required String k2,
-          required String v2,
-        }) {
-          return pw.TableRow(
-            children: [
-              cell(k1, bold: true),
-              cell(v1),
-              cell(k2, bold: true),
-              cell(v2),
-            ],
-          );
+        await Future<void>.delayed(espera);
+        if (!mounted) return;
+        try {
+          estado = await _api.estadoInformeMensualPdf(estado.jobId);
+          fallosSeguidos = 0;
+          _actualizarProgresoInforme(estado);
+        } catch (_) {
+          // Un corte de red momentaneo no debe perder un informe en curso.
+          fallosSeguidos++;
+          if (fallosSeguidos >= 4) rethrow;
         }
-
-        final reemplazaTxt = reemplazaRefs.isNotEmpty
-            ? reemplazaRefs.join(', ')
-            : (tieneReemplazo ? clipText(motivoReemplazo, max: 110) : '-');
-        final reemplazadaTxt = reemplazadaPorRefs.isNotEmpty
-            ? reemplazadaPorRefs.join(', ')
-            : (refReemplazo ?? '-');
-
-        return pw.Container(
-          padding: const pw.EdgeInsets.all(8),
-          decoration: pw.BoxDecoration(
-            color: PdfColors.white,
-            border: pw.Border.all(color: PdfColor.fromHex('#D1D5DB')),
-            borderRadius: pw.BorderRadius.circular(8),
-          ),
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Container(
-                width: double.infinity,
-                padding: const pw.EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 6,
-                ),
-                decoration: pw.BoxDecoration(
-                  color: PdfColor.fromHex('#F3F4F6'),
-                  borderRadius: pw.BorderRadius.circular(6),
-                ),
-                child: pw.Text(
-                  resumenDiario
-                      ? 'TAREA (RESUMEN DIARIO) - ${principal.tipo}'
-                      : 'TAREA - ${principal.tipo}',
-                  style: pw.TextStyle(
-                    fontSize: 9,
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#111827'),
-                  ),
-                ),
-              ),
-              pw.SizedBox(height: 6),
-              pw.Table(
-                border: pw.TableBorder.all(color: PdfColor.fromHex('#D1D5DB')),
-                columnWidths: const {
-                  0: pw.FlexColumnWidth(1.1),
-                  1: pw.FlexColumnWidth(1.9),
-                  2: pw.FlexColumnWidth(1.1),
-                  3: pw.FlexColumnWidth(1.9),
-                },
-                children: [
-                  kvRow(
-                    k1: 'ID',
-                    v1: resumenDiario
-                        ? 'Multiple (${tasks.length})'
-                        : '${principal.id}',
-                    k2: 'Estado',
-                    v2: resumenDiario ? estados.join(', ') : principal.estado,
-                  ),
-                  kvRow(
-                    k1: 'Frecuencia',
-                    v1: frequencyLabel(principal.frecuencia),
-                    k2: 'Tipo',
-                    v2: principal.tipo,
-                  ),
-                  kvRow(
-                    k1: resumenDiario ? 'Periodo' : 'Inicio',
-                    v1: resumenDiario
-                        ? '${dfShort.format(first.fechaInicio)} - ${dfShort.format(last.fechaFin)}'
-                        : df.format(principal.fechaInicio),
-                    k2: resumenDiario ? 'Registros' : 'Fin',
-                    v2: resumenDiario
-                        ? '${tasks.length}'
-                        : '${df.format(principal.fechaFin)} (${principal.duracionMinutos} min)',
-                  ),
-                  kvRow(
-                    k1: 'Ubicación',
-                    v1: safe(principal.ubicacion),
-                    k2: 'Elemento',
-                    v2: safe(principal.elemento),
-                  ),
-                  kvRow(
-                    k1: 'Supervisor',
-                    v1: supervisors.isEmpty ? '-' : supervisors.join(', '),
-                    k2: 'Operarios',
-                    v2: operarios.isEmpty ? '-' : operarios.join(', '),
-                  ),
-                  kvRow(
-                    k1: 'Insumos',
-                    v1: insumosTxt,
-                    k2: 'Maquinaria',
-                    v2: maquinariaTxt,
-                  ),
-                  kvRow(
-                    k1: 'Herramientas',
-                    v1: herramientasTxt,
-                    k2: 'Reemplaza',
-                    v2: reemplazaTxt,
-                  ),
-                  kvRow(
-                    k1: 'Reemplazada por',
-                    v1: reemplazadaTxt,
-                    k2: 'Evidencias',
-                    v2: '${evidenciaRaw.length}',
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 5),
-              pw.Text(
-                'Descripcion: ${clipText(principal.descripcion, max: 220)}',
-                style: const pw.TextStyle(fontSize: 7.5),
-              ),
-              if (resumenDiario)
-                pw.Text(
-                  resumenTexto,
-                  style: pw.TextStyle(
-                    fontSize: 7.5,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              if (motivoNoComp.isNotEmpty)
-                pw.Text(
-                  'Motivo no completada: ${clipText(motivoNoComp, max: 220)}',
-                  style: const pw.TextStyle(fontSize: 7.5),
-                ),
-              pw.SizedBox(height: 5),
-              pw.Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: evidenciaRaw.isEmpty
-                    ? [evidenceTile(null)]
-                    : evidenciaRaw
-                          .take(3)
-                          .map(
-                            (raw) =>
-                                evidenceTile(evidenceImageByRaw[raw.trim()]),
-                          )
-                          .toList(),
-              ),
-            ],
-          ),
-        );
-      }
-
-      List<List<Map<String, dynamic>>> chunkedItems(
-        List<Map<String, dynamic>> source,
-      ) {
-        final out = <List<Map<String, dynamic>>>[];
-        for (var i = 0; i < source.length; i += 2) {
-          out.add(source.sublist(i, math.min(i + 2, source.length)));
+        if (espera < const Duration(seconds: 4)) {
+          espera += const Duration(milliseconds: 500);
         }
-        return out;
       }
 
-      final pages = chunkedItems(items);
-      final pageTheme = pw.PageTheme(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(18),
-        theme: pw.ThemeData.withFont(base: fontRegular, bold: fontBold),
-      );
-
-      int countEstado(String estado) =>
-          _tareasDetalle.where((t) => _estadoKey(t.estado) == estado).length;
-
-      final resumenConteos = <List<String>>[
-        ['Total tareas (registros)', '${_tareasDetalle.length}'],
-        ['Tareas visibles en PDF', '${items.length}'],
-        ['Asignadas', '${countEstado('ASIGNADA')}'],
-        ['En proceso', '${countEstado('EN_PROCESO')}'],
-        ['Completadas', '${countEstado('COMPLETADA')}'],
-        ['Aprobadas', '${countEstado('APROBADA')}'],
-        ['Pendientes aprobación', '${countEstado('PENDIENTE_APROBACION')}'],
-        ['No completadas', '${countEstado('NO_COMPLETADA')}'],
-        [
-          'Pendientes reprogramación',
-          '${countEstado('PENDIENTE_REPROGRAMACION')}',
-        ],
-        ['Rechazadas', '${countEstado('RECHAZADA')}'],
-        [
-          'Tareas que reemplazan',
-          '${_tareasDetalle.where((t) => t.esTareaReemplazo).length}',
-        ],
-        [
-          'Tareas reemplazadas',
-          '${_tareasDetalle.where((t) => t.noCompletadaPorReemplazo || t.reemplazadaPorTareaId != null).length}',
-        ],
-      ];
-
-      pw.TableRow resumenRow(String k, String v) {
-        return pw.TableRow(
-          children: [
-            pw.Padding(
-              padding: const pw.EdgeInsets.symmetric(
-                horizontal: 6,
-                vertical: 5,
-              ),
-              child: pw.Text(
-                k,
-                style: pw.TextStyle(
-                  fontSize: 9,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-            ),
-            pw.Padding(
-              padding: const pw.EdgeInsets.symmetric(
-                horizontal: 6,
-                vertical: 5,
-              ),
-              child: pw.Text(v, style: const pw.TextStyle(fontSize: 9)),
-            ),
-          ],
-        );
+      if (mounted) {
+        setState(() {
+          _informeProgreso = 100;
+          _informeMensaje = 'Descargando el informe...';
+        });
       }
-
-      doc.addPage(
-        pw.Page(
-          pageTheme: pageTheme,
-          build: (_) {
-            return pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Container(
-                  width: double.infinity,
-                  padding: const pw.EdgeInsets.all(10),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColors.white,
-                    borderRadius: pw.BorderRadius.circular(8),
-                    border: pw.Border.all(color: PdfColor.fromHex('#D1D5DB')),
-                  ),
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'INFORME DETALLADO DE TAREAS',
-                        style: pw.TextStyle(
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromHex('#111827'),
-                        ),
-                      ),
-                      pw.SizedBox(height: 3),
-                      pw.Text(
-                        'Conjunto: $cliente | Rango: ${dfShort.format(_desde)} - ${dfShort.format(_hasta)}',
-                        style: const pw.TextStyle(fontSize: 9),
-                      ),
-                      pw.Text(
-                        'Resumen general del periodo',
-                        style: pw.TextStyle(
-                          fontSize: 9,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                pw.SizedBox(height: 10),
-                pw.Table(
-                  border: pw.TableBorder.all(
-                    color: PdfColor.fromHex('#D1D5DB'),
-                  ),
-                  columnWidths: const {
-                    0: pw.FlexColumnWidth(2.4),
-                    1: pw.FlexColumnWidth(1),
-                  },
-                  children: resumenConteos
-                      .map((r) => resumenRow(r[0], r[1]))
-                      .toList(),
-                ),
-                pw.SizedBox(height: 10),
-                pw.Text(
-                  'Las siguientes hojas muestran 2 tablitas por página (1 tablita = 1 tarea visible del informe detallado).',
-                  style: const pw.TextStyle(fontSize: 8),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-
-      for (var i = 0; i < pages.length; i++) {
-        final pageItems = pages[i];
-        doc.addPage(
-          pw.Page(
-            pageTheme: pageTheme,
-            build: (_) {
-              return pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Container(
-                    padding: const pw.EdgeInsets.all(10),
-                    decoration: pw.BoxDecoration(
-                      color: PdfColors.white,
-                      borderRadius: pw.BorderRadius.circular(8),
-                      border: pw.Border.all(color: PdfColor.fromHex('#D1D5DB')),
-                    ),
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Row(
-                          children: [
-                            pw.Expanded(
-                              child: pw.Text(
-                                'INFORME DETALLADO DE TAREAS',
-                                style: pw.TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: pw.FontWeight.bold,
-                                  color: PdfColor.fromHex('#111827'),
-                                ),
-                              ),
-                            ),
-                            pw.Text(
-                              'Hoja tareas ${i + 1}/${pages.length}',
-                              style: const pw.TextStyle(fontSize: 9),
-                            ),
-                          ],
-                        ),
-                        pw.SizedBox(height: 3),
-                        pw.Text(
-                          'Conjunto: $cliente | Rango: ${dfShort.format(_desde)} - ${dfShort.format(_hasta)}',
-                          style: const pw.TextStyle(fontSize: 8),
-                        ),
-                        pw.Text(
-                          'Tareas visibles: ${items.length} (diarias repetitivas consolidadas)',
-                          style: const pw.TextStyle(fontSize: 8),
-                        ),
-                      ],
-                    ),
-                  ),
-                  pw.SizedBox(height: 10),
-                  pw.Expanded(child: tareaCard(pageItems[0])),
-                  pw.SizedBox(height: 10),
-                  pw.Expanded(
-                    child: pageItems.length > 1
-                        ? tareaCard(pageItems[1])
-                        : pw.Container(
-                            decoration: pw.BoxDecoration(
-                              border: pw.Border.all(
-                                color: PdfColor.fromHex('#E5E7EB'),
-                              ),
-                              borderRadius: pw.BorderRadius.circular(10),
-                            ),
-                            child: pw.Center(
-                              child: pw.Text(
-                                'Fin de pagina',
-                                style: const pw.TextStyle(
-                                  fontSize: 10,
-                                  color: PdfColors.grey600,
-                                ),
-                              ),
-                            ),
-                          ),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      }
-
-      final bytes = await doc.save();
-      final filename =
-          'Informe_detallado_${_safeFile(cliente)}_${_safeFile(mes)}_$anio.pdf';
+      final bytes = await _api.descargarInformeMensualPdf(estado.jobId);
+      final filename = estado.nombreArchivo ?? 'Informe_mensual.pdf';
 
       if (kIsWeb) {
         await downloadPdfWeb(bytes, filename);
@@ -2352,18 +1688,31 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         await Printing.layoutPdf(name: filename, onLayout: (_) async => bytes);
       }
     } catch (e, st) {
-      debugPrint('Error PDF Detallado V2: $e\n$st');
+      debugPrint('Error informe mensual PDF: $e\n$st');
       if (mounted) {
-        AppFeedback.showFromSnackBar(
+        AppFeedback.showError(
           context,
-          SnackBar(content: Text('Error generando PDF: $e')),
+          message: AppError.messageOf(
+            e,
+            fallback: 'No se pudo generar el informe.',
+          ),
         );
       }
     } finally {
       if (mounted) {
-        setState(() => _generandoPdf = false);
+        setState(() => _generandoInforme = false);
       }
     }
+  }
+
+  void _actualizarProgresoInforme(InformeMensualEstado estado) {
+    if (!mounted) return;
+    setState(() {
+      _informeProgreso = estado.progreso;
+      _informeMensaje = estado.estado == 'EN_COLA' && estado.posicionCola > 0
+          ? 'En cola (turno ${estado.posicionCola})...'
+          : estado.mensaje;
+    });
   }
 
   // ======================= BUILD =======================
@@ -4676,37 +4025,68 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           _sectionTitle('Informes automáticos'),
           const SizedBox(height: 8),
           _card(
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: (_kpis == null || _generandoPdf)
-                        ? null
-                        : _generarInformeGestionPdfV2,
-                    icon: _generandoPdf
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.insights),
-                    label: Text(
-                      _generandoPdf
-                          ? 'Generando...'
-                          : 'Gestión (solo gráficas)',
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: (_kpis == null || _generandoPdf)
+                            ? null
+                            : _generarInformeGestionPdfV2,
+                        icon: _generandoPdf
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.insights),
+                        label: Text(
+                          _generandoPdf
+                              ? 'Generando...'
+                              : 'Gestión (solo gráficas)',
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: (_tareasDetalle.isEmpty || _generandoInforme)
+                            ? null
+                            : _generarInformeDetalladoPdfV2,
+                        icon: _generandoInforme
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.list_alt),
+                        label: Text(
+                          _generandoInforme
+                              ? 'Generando $_informeProgreso%'
+                              : 'Detallado (PDF)',
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _tareasDetalle.isEmpty
-                        ? null
-                        : _generarInformeDetalladoPdfV2,
-                    icon: const Icon(Icons.list_alt),
-                    label: const Text('Detallado (PDF)'),
+                if (_generandoInforme) ...[
+                  const SizedBox(height: 12),
+                  LinearProgressIndicator(
+                    value: _informeProgreso > 0 ? _informeProgreso / 100 : null,
+                    minHeight: 6,
+                    borderRadius: BorderRadius.circular(3),
                   ),
-                ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '$_informeMensaje Puedes seguir usando la app mientras se genera.',
+                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ],
               ],
             ),
           ),
@@ -5823,7 +5203,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                         ],
                       ),
                     ),
-                    if (PermissionService.instance.can('tareas.editar_cierre') &&
+                    if (PermissionService.instance.can(
+                          'tareas.editar_cierre',
+                        ) &&
                         estadoCorregible(t.estado))
                       TextButton.icon(
                         onPressed: () async {
@@ -5914,7 +5296,30 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 ),
 
                 const SizedBox(height: 14),
-                _sectionTitle('Evidencias'),
+                Row(
+                  children: [
+                    Expanded(child: _sectionTitle('Evidencias')),
+                    if (PermissionService.instance.can(
+                          'tareas.editar_cierre',
+                        ) &&
+                        estadoCorregible(t.estado))
+                      TextButton.icon(
+                        onPressed: () async {
+                          final corregido = await abrirCorregirCierre(
+                            context,
+                            tareaId: t.id,
+                            soloEvidencias: true,
+                          );
+                          if (corregido && mounted) {
+                            Navigator.of(context).pop();
+                            _cargarTodo();
+                          }
+                        },
+                        icon: const Icon(Icons.photo_library_outlined),
+                        label: const Text('Editar evidencias'),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 8),
 
                 if (t.evidencias.isEmpty)

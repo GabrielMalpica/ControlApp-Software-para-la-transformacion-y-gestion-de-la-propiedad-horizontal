@@ -10,6 +10,8 @@ class ResidentOrdersApi {
 
   Future<ResidentOrderSummary> crearPedido({
     required List<ResidentCartItem> items,
+    required String direccionEntrega,
+    required String metodoPago,
     String notas = '',
     String? idempotencyKey,
   }) async {
@@ -17,6 +19,8 @@ class ResidentOrdersApi {
       '${AppConstants.commerceBase}/residente/pedidos',
       body: {
         'items': items.map((item) => item.toRequestJson()).toList(),
+        'direccionEntrega': direccionEntrega.trim(),
+        'metodoPago': metodoPago,
         'notas': notas.trim(),
         if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,
       },

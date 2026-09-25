@@ -23,6 +23,7 @@ class CommerceCatalogPage extends StatefulWidget {
     this.enableCart = false,
     this.initialConjuntoId,
     this.initialConjuntoNombre,
+    this.initialConjuntoDireccion,
   });
 
   final CommerceCatalogScope initialScope;
@@ -30,6 +31,7 @@ class CommerceCatalogPage extends StatefulWidget {
   final bool enableCart;
   final String? initialConjuntoId;
   final String? initialConjuntoNombre;
+  final String? initialConjuntoDireccion;
 
   @override
   State<CommerceCatalogPage> createState() => _CommerceCatalogPageState();
@@ -170,9 +172,14 @@ class _CommerceCatalogPageState extends State<CommerceCatalogPage> {
           money: _money,
           enableCart: widget.enableCart,
           useConjuntoCart: _usesConjuntoCart,
-          onAdd: (quantity, service) {
+          onAdd: (quantity, service, variation) {
             Navigator.pop(sheetContext);
-            _addProduct(detail, quantity: quantity, service: service);
+            _addProduct(
+              detail,
+              quantity: quantity,
+              service: service,
+              variation: variation,
+            );
           },
         ),
       );
@@ -190,6 +197,7 @@ class _CommerceCatalogPageState extends State<CommerceCatalogPage> {
             ? ConjuntoCartPage(
                 initialConjuntoId: widget.initialConjuntoId,
                 initialConjuntoNombre: widget.initialConjuntoNombre,
+                initialConjuntoDireccion: widget.initialConjuntoDireccion,
               )
             : const ResidentCartPage(),
       ),
@@ -200,6 +208,7 @@ class _CommerceCatalogPageState extends State<CommerceCatalogPage> {
     CommerceProduct product, {
     int quantity = 1,
     CommerceServiceSelection? service,
+    CommerceVariation? variation,
   }) {
     if (!product.purchasable || product.stockStatus == 'outofstock') {
       AppFeedback.showError(
@@ -221,19 +230,24 @@ class _CommerceCatalogPageState extends State<CommerceCatalogPage> {
         product,
         quantity: quantity,
         service: service,
+        variation: variation,
       );
     } else {
       ResidentCartService.instance.addProduct(
         product,
         quantity: quantity,
         service: service,
+        variation: variation,
       );
     }
 
+    final label = variation != null
+        ? '${product.name} (${variation.label})'
+        : product.name;
     AppFeedback.showInfo(
       context,
       title: 'Agregado al carrito',
-      message: '$quantity × ${product.name}',
+      message: '$quantity × $label',
     );
   }
 
@@ -479,8 +493,14 @@ class _CommerceCatalogPageState extends State<CommerceCatalogPage> {
                                 money: _money,
                                 onTap: () => _openProduct(item),
                                 enableCart: widget.enableCart,
+                                // La lista del catalogo no trae variaciones
+                                // (serian N llamadas extra a Woo); si el tipo
+                                // no es "simple" hay que abrir el detalle
+                                // (que si las carga) para elegir una antes de
+                                // agregar, igual que con los servicios.
                                 onAddToCart: widget.enableCart
-                                    ? item.service?.enabled == true
+                                    ? item.service?.enabled == true ||
+                                              item.type != 'simple'
                                           ? () => _openProduct(item)
                                           : () => _addProduct(item)
                                     : null,
@@ -1099,7 +1119,12 @@ class _ProductDetailSheet extends StatefulWidget {
   final NumberFormat money;
   final bool enableCart;
   final bool useConjuntoCart;
-  final void Function(int quantity, CommerceServiceSelection? service) onAdd;
+  final void Function(
+    int quantity,
+    CommerceServiceSelection? service,
+    CommerceVariation? variation,
+  )
+  onAdd;
 
   @override
   State<_ProductDetailSheet> createState() => _ProductDetailSheetState();
@@ -1115,6 +1140,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
   CommerceServiceAvailability? _availability;
   bool _checkingAvailability = false;
   String? _serviceError;
+  CommerceVariation? _selectedVariation;
 
   CommerceServiceConfig? get _service =>
       widget.product.service?.enabled == true ? widget.product.service : null;
@@ -1129,6 +1155,12 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
         _selectedAddons[addon.id] = <int>{};
       }
     }
+    if (widget.product.isVariable) {
+      _selectedVariation = widget.product.variations.firstWhere(
+        (variation) => variation.purchasable,
+        orElse: () => widget.product.variations.first,
+      );
+    }
   }
 
   bool get _canAdd {
@@ -1136,6 +1168,10 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
     if (!widget.enableCart || !product.purchasable) return false;
     if (product.stockStatus.toLowerCase() == 'outofstock') return false;
     if (widget.useConjuntoCart && !product.audience.paraConjunto) {
+      return false;
+    }
+    if (product.isVariable &&
+        (_selectedVariation == null || !_selectedVariation!.purchasable)) {
       return false;
     }
     return true;
@@ -1155,7 +1191,8 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
   }
 
   double get _configuredUnitPrice =>
-      widget.product.price.current + _serviceAddonsTotal;
+      (_selectedVariation?.price.current ?? widget.product.price.current) +
+      _serviceAddonsTotal;
 
   CommerceServiceSelection? _buildServiceSelection({bool showErrors = false}) {
     final service = _service;
@@ -1286,7 +1323,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
 
   Future<void> _addConfiguredProduct() async {
     if (_service == null) {
-      widget.onAdd(_quantity, null);
+      widget.onAdd(_quantity, null, _selectedVariation);
       return;
     }
     final selection = _buildServiceSelection(showErrors: true);
@@ -1295,7 +1332,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
       return;
     }
     if (!await _checkAvailability(showFeedback: true) || !mounted) return;
-    widget.onAdd(_quantity, selection);
+    widget.onAdd(_quantity, selection, _selectedVariation);
   }
 
   Widget _buildServiceConfiguration() {
@@ -1646,6 +1683,16 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                 ],
               ),
               const SizedBox(height: 18),
+              if (product.isVariable) ...<Widget>[
+                _VariationPicker(
+                  variations: product.variations,
+                  selected: _selectedVariation,
+                  money: widget.money,
+                  onSelected: (variation) =>
+                      setState(() => _selectedVariation = variation),
+                ),
+                const SizedBox(height: 18),
+              ],
               _AvailabilityCard(product: product),
               if (_service != null) _buildServiceConfiguration(),
               if (description.isNotEmpty) ...<Widget>[
@@ -1701,6 +1748,56 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _VariationPicker extends StatelessWidget {
+  const _VariationPicker({
+    required this.variations,
+    required this.selected,
+    required this.money,
+    required this.onSelected,
+  });
+
+  final List<CommerceVariation> variations;
+  final CommerceVariation? selected;
+  final NumberFormat money;
+  final ValueChanged<CommerceVariation> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return CommerceClayCard(
+      depth: 0,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Elige una presentación',
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: variations.map((variation) {
+              final isSelected = selected?.id == variation.id;
+              final title = variation.purchasable
+                  ? '${variation.label} · ${money.format(variation.price.current)}'
+                  : '${variation.label} · agotado';
+              return ChoiceChip(
+                selected: isSelected,
+                label: Text(title),
+                onSelected: variation.purchasable
+                    ? (_) => onSelected(variation)
+                    : null,
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

@@ -10,12 +10,16 @@ class ConjuntoOrdersApi {
 
   Future<ConjuntoOrderSummary> crearPedido({
     required List<ConjuntoCartItem> items,
+    required String direccionEntrega,
+    required String metodoPago,
     String? conjuntoId,
     String notas = '',
     String? idempotencyKey,
   }) async {
     final body = <String, dynamic>{
       'items': items.map((item) => item.toRequestJson()).toList(),
+      'direccionEntrega': direccionEntrega.trim(),
+      'metodoPago': metodoPago,
       'notas': notas.trim(),
       if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,
     };

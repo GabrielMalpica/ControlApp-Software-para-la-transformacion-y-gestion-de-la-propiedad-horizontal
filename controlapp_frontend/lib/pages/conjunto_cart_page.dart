@@ -1,8 +1,11 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/commerce_lifecycle_api.dart';
 import 'package:flutter_application_1/api/conjunto_orders_api.dart';
 import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/conjunto_order_models.dart';
+import 'package:flutter_application_1/pages/commerce_order_detail_page.dart';
 import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -18,10 +21,12 @@ class ConjuntoCartPage extends StatefulWidget {
     super.key,
     this.initialConjuntoId,
     this.initialConjuntoNombre,
+    this.initialConjuntoDireccion,
   });
 
   final String? initialConjuntoId;
   final String? initialConjuntoNombre;
+  final String? initialConjuntoDireccion;
 
   @override
   State<ConjuntoCartPage> createState() => _ConjuntoCartPageState();
@@ -30,9 +35,13 @@ class ConjuntoCartPage extends StatefulWidget {
 class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
   final _cart = ConjuntoCartService.instance;
   final _ordersApi = ConjuntoOrdersApi();
+  final _lifecycleApi = CommerceLifecycleApi();
   final _gerenteApi = GerenteApi();
   final _session = SessionService();
   final _notesCtrl = TextEditingController();
+  final _direccionCtrl = TextEditingController();
+  String? _metodoPago;
+  PlatformFile? _comprobanteFile;
   final _money = NumberFormat.currency(locale: 'es_CO', symbol: 'COP ');
   final String _idempotencyKey =
       'conjunto-${DateTime.now().microsecondsSinceEpoch}';
@@ -43,6 +52,11 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
   String? _role;
   String? _selectedConjuntoId;
   List<Conjunto> _conjuntos = const [];
+  // La direccion de entrega SIEMPRE parte de la del conjunto (para eso son
+  // los insumos), pero se puede editar puntualmente en el pedido -por eso
+  // solo se auto-rellena mientras el usuario no la haya tocado a mano.
+  bool _direccionEditadaManualmente = false;
+  bool _prefillingDireccion = false;
 
   bool get _requiresSelector =>
       _role == 'gerente' || _role == 'jefe_operaciones';
@@ -67,13 +81,28 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
   @override
   void initState() {
     super.initState();
+    _direccionCtrl.addListener(() {
+      if (!_prefillingDireccion) _direccionEditadaManualmente = true;
+    });
     _loadContext();
   }
 
   @override
   void dispose() {
     _notesCtrl.dispose();
+    _direccionCtrl.dispose();
     super.dispose();
+  }
+
+  void _prefillDireccion(String? conjuntoId, List<Conjunto> conjuntos) {
+    if (_direccionEditadaManualmente || !mounted) return;
+    final direccion = _requiresSelector
+        ? conjuntos.where((c) => c.nit == conjuntoId).firstOrNull?.direccion
+        : widget.initialConjuntoDireccion;
+    if (direccion == null || direccion.trim().isEmpty) return;
+    _prefillingDireccion = true;
+    setState(() => _direccionCtrl.text = direccion);
+    _prefillingDireccion = false;
   }
 
   Future<void> _loadContext() async {
@@ -107,6 +136,7 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
         _selectedConjuntoId = selectedId;
         _loadingContext = false;
       });
+      _prefillDireccion(selectedId, conjuntos);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -119,6 +149,17 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
     }
   }
 
+  Future<void> _pickComprobante() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: <String>['jpg', 'jpeg', 'png', 'pdf'],
+      withData: true,
+    );
+    final file = result?.files.firstOrNull;
+    if (file == null || !mounted) return;
+    setState(() => _comprobanteFile = file);
+  }
+
   Future<void> _checkout() async {
     if (_cart.items.isEmpty || _submitting) return;
     if (_requiresSelector && _selectedConjuntoId == null) {
@@ -128,36 +169,77 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
       );
       return;
     }
+    if (_direccionCtrl.text.trim().length < 5) {
+      AppFeedback.showError(
+        context,
+        message: 'Indica la dirección o punto de entrega.',
+      );
+      return;
+    }
+    if (_metodoPago == null) {
+      AppFeedback.showError(
+        context,
+        message: 'Elige con qué método vas a transferir el pago.',
+      );
+      return;
+    }
+    if (_comprobanteFile == null) {
+      AppFeedback.showError(
+        context,
+        message: 'Adjunta el comprobante de la transferencia para continuar.',
+      );
+      return;
+    }
 
     setState(() => _submitting = true);
     try {
       final pedido = await _ordersApi.crearPedido(
         items: _cart.items,
+        direccionEntrega: _direccionCtrl.text,
+        metodoPago: _metodoPago!,
         conjuntoId: _checkoutConjuntoId,
         notas: _notesCtrl.text,
         idempotencyKey: _idempotencyKey,
       );
+      // El comprobante va pegado a la creación del pedido -no tiene sentido
+      // dejarlo para despues- pero si esta subida puntual falla (ej. se cae
+      // la red), el pedido ya existe: se avisa y se deja reintentar desde el
+      // detalle, que tiene la misma opcion de adjuntar.
+      String? uploadError;
+      try {
+        await _lifecycleApi.subirComprobante(
+          pedidoId: pedido.id,
+          file: _comprobanteFile!,
+          metodoPago: _metodoPago,
+        );
+      } catch (error) {
+        uploadError = AppError.messageOf(error);
+      }
       _cart.clear();
       if (!mounted) return;
 
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          icon: const Icon(
-            Icons.check_circle_rounded,
-            color: AppTheme.primary,
+          icon: Icon(
+            uploadError == null
+                ? Icons.check_circle_rounded
+                : Icons.warning_amber_rounded,
+            color: uploadError == null ? AppTheme.primary : AppTheme.red,
             size: 44,
           ),
           title: const Text('Pedido operativo creado'),
           content: Text(
-            'Pedido #${pedido.id} para ${pedido.conjuntoNombre ?? _selectedConjuntoNombre}.\n\nTotal: ${_money.format(pedido.total)}\nEstado: pendiente de pago.',
+            uploadError == null
+                ? 'Pedido #${pedido.id} para ${pedido.conjuntoNombre ?? _selectedConjuntoNombre}.\n\nTotal: ${_money.format(pedido.total)}\nEstado: pendiente de pago.\n\nTu comprobante ya quedó adjunto, un administrador lo revisará.'
+                : 'Pedido #${pedido.id} creado, pero el comprobante no se pudo subir ($uploadError). Podrás adjuntarlo desde el detalle del pedido.',
             textAlign: TextAlign.center,
           ),
           actionsAlignment: MainAxisAlignment.center,
           actions: <Widget>[
             ElevatedButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Ver pedidos'),
+              child: const Text('Continuar'),
             ),
           ],
         ),
@@ -166,8 +248,7 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) =>
-              ConjuntoOrdersPage(initialConjuntoId: pedido.conjuntoId),
+          builder: (_) => CommerceOrderDetailPage(pedidoId: pedido.id),
         ),
       );
     } catch (error) {
@@ -274,8 +355,10 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
                             conjuntos: _conjuntos,
                             selectedId: _selectedConjuntoId,
                             fallbackName: _selectedConjuntoNombre,
-                            onChanged: (value) =>
-                                setState(() => _selectedConjuntoId = value),
+                            onChanged: (value) {
+                              setState(() => _selectedConjuntoId = value);
+                              _prefillDireccion(value, _conjuntos);
+                            },
                           ),
                         const SizedBox(height: 18),
                         const CommerceSectionHeader(
@@ -291,6 +374,32 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
                         PointsCheckoutCard(
                           key: ValueKey<String?>(_checkoutConjuntoId),
                           conjuntoId: _checkoutConjuntoId,
+                        ),
+                        const SizedBox(height: 12),
+                        CommerceClayCard(
+                          child: TextField(
+                            controller: _direccionCtrl,
+                            minLines: 1,
+                            maxLines: 2,
+                            maxLength: 300,
+                            decoration: const InputDecoration(
+                              labelText: 'Dirección o punto de entrega',
+                              helperText:
+                                  'Se sugiere la dirección registrada del conjunto; ajústala si hace falta.',
+                              prefixIcon: Icon(Icons.location_on_outlined),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        MetodoPagoSelector(
+                          value: _metodoPago,
+                          onChanged: (value) =>
+                              setState(() => _metodoPago = value),
+                        ),
+                        const SizedBox(height: 12),
+                        ComprobantePickerCard(
+                          file: _comprobanteFile,
+                          onPickFile: _pickComprobante,
                         ),
                         const SizedBox(height: 12),
                         CommerceClayCard(
@@ -312,6 +421,124 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
                 ),
         );
       },
+    );
+  }
+}
+
+/// Selector del comprobante de pago, adjuntado DURANTE el checkout (no
+/// despues) — compartido entre el checkout de conjunto y el de residente.
+class ComprobantePickerCard extends StatelessWidget {
+  const ComprobantePickerCard({
+    super.key,
+    required this.file,
+    required this.onPickFile,
+  });
+
+  final PlatformFile? file;
+  final VoidCallback onPickFile;
+
+  @override
+  Widget build(BuildContext context) {
+    final tiene = file != null;
+    return CommerceClayCard(
+      color: tiene ? CommerceClayTokens.mint : CommerceClayTokens.surface,
+      child: Row(
+        children: <Widget>[
+          Icon(
+            tiene ? Icons.check_circle_rounded : Icons.upload_file_rounded,
+            color: tiene ? AppTheme.primary : CommerceClayTokens.muted,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  tiene ? 'Comprobante adjunto' : 'Comprobante de pago',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  tiene
+                      ? file!.name
+                      : 'Adjunta la captura o PDF de la transferencia.',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: onPickFile,
+            child: Text(tiene ? 'Cambiar' : 'Adjuntar'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Selector de método de pago manual (Nequi/Bre-B) con su QR — compartido
+/// entre el checkout de conjunto y el de residente, ver resident_cart_page.dart.
+class MetodoPagoSelector extends StatelessWidget {
+  const MetodoPagoSelector({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String? value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return CommerceClayCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Método de pago',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Aún no hay pasarela automática: transfieres y luego adjuntas '
+            'el comprobante en el detalle del pedido.',
+            style: TextStyle(color: CommerceClayTokens.muted, fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: kMetodoPagoLabel.entries
+                .map(
+                  (entry) => ChoiceChip(
+                    selected: value == entry.key,
+                    label: Text(entry.value),
+                    onSelected: (_) => onChanged(entry.key),
+                  ),
+                )
+                .toList(),
+          ),
+          if (value != null && kMetodoPagoQrAsset[value] != null) ...<Widget>[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Image.asset(
+                kMetodoPagoQrAsset[value]!,
+                height: 180,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 100,
+                  alignment: Alignment.center,
+                  color: Colors.white,
+                  child: const Text('QR no configurado todavía.'),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

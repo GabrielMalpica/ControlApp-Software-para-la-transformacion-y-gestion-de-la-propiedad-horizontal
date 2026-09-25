@@ -22,6 +22,12 @@ class NotificacionesCenter with WidgetsBindingObserver {
   final ValueNotifier<NotificacionModel?> stockBajoNueva =
       ValueNotifier<NotificacionModel?>(null);
 
+  /// Última notificación nueva sobre un pedido (p. ej. `pedido_pagado`). La
+  /// pantalla de detalle del pedido la escucha para recargarse sin polling
+  /// propio.
+  final ValueNotifier<NotificacionModel?> pedidoActualizado =
+      ValueNotifier<NotificacionModel?>(null);
+
   Timer? _timer;
   bool _cargando = false;
   bool _observando = false;
@@ -104,6 +110,9 @@ class NotificacionesCenter with WidgetsBindingObserver {
           _idsVistos.add(n.id);
           if (n.tipo == 'INSUMO_STOCK_BAJO') {
             stockBajoNueva.value = n;
+          } else if (n.tipo.startsWith('pedido_') &&
+              n.referenciaTipo == 'PedidoApp') {
+            pedidoActualizado.value = n;
           }
         }
       }

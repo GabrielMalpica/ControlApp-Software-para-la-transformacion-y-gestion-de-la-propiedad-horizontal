@@ -1,13 +1,26 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/commerce_lifecycle_api.dart';
 import 'package:flutter_application_1/model/commerce_lifecycle_models.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/service/notificaciones_center.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/commerce_clay.dart';
+import 'package:flutter_application_1/widgets/receipt_confirmation_sheet.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
+
+const Map<String, String> kMetodoPagoLabel = <String, String>{
+  'nequi': 'Nequi',
+  'bre_b': 'Bre-B (llave)',
+};
+
+const Map<String, String> kMetodoPagoQrAsset = <String, String>{
+  'nequi': 'assets/payment/qr_nequi.png',
+  'bre_b': 'assets/payment/qr_breb.png',
+};
 
 class CommerceOrderDetailPage extends StatefulWidget {
   const CommerceOrderDetailPage({super.key, required this.pedidoId});
@@ -32,11 +45,44 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
   String? _error;
   bool _loading = true;
   bool _acting = false;
+  bool _uploadingComprobante = false;
 
   @override
   void initState() {
     super.initState();
+    NotificacionesCenter.instance.pedidoActualizado.addListener(
+      _onPedidoActualizado,
+    );
     _load();
+  }
+
+  @override
+  void dispose() {
+    NotificacionesCenter.instance.pedidoActualizado.removeListener(
+      _onPedidoActualizado,
+    );
+    super.dispose();
+  }
+
+  /// El backend crea una notificación cuando el pedido cambia por fuera de la
+  /// app (p. ej. el pago se confirma en WooCommerce). La campanita ya consulta
+  /// las notificaciones por su cuenta, así que aquí no se hace ninguna petición
+  /// periódica propia: solo se recarga este pedido cuando llega su aviso.
+  void _onPedidoActualizado() {
+    final aviso = NotificacionesCenter.instance.pedidoActualizado.value;
+    if (aviso == null || aviso.referenciaId != widget.pedidoId) return;
+    if (!mounted || _loading || _acting || _uploadingComprobante) return;
+    _reloadSilently();
+  }
+
+  Future<void> _reloadSilently() async {
+    try {
+      final order = await _api.obtenerPedido(widget.pedidoId);
+      if (!mounted) return;
+      setState(() => _order = order);
+    } catch (_) {
+      // Conserva lo que ya se ve; el usuario puede tirar para refrescar.
+    }
   }
 
   Future<void> _load() async {
@@ -60,24 +106,48 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
     }
   }
 
+  /// Texto del botón de acción para pasar el pedido a [state].
   String _label(String state) {
+    switch (state) {
+      case 'PENDIENTE_PAGO':
+        return 'Reportar pago';
+      case 'PAGADO':
+        return 'Confirmar pago';
+      case 'PENDIENTE_ENVIO':
+        return 'Marcar en preparación';
+      case 'ENVIADO':
+        return 'Marcar en camino';
+      case 'RECIBIDO':
+        return 'Marcar recibido';
+      case 'ENTREGADO':
+        return 'Marcar entregado';
+      case 'CANCELADO':
+        return 'Cancelar pedido';
+      default:
+        return _stateName(state);
+    }
+  }
+
+  /// Nombre del estado tal como lo ve el cliente (coincide con la etiqueta de
+  /// estado y con el seguimiento del pedido).
+  String _stateName(String state) {
     switch (state) {
       case 'BORRADOR':
         return 'Borrador';
       case 'PENDIENTE_PAGO':
-        return 'Reportar pago';
+        return 'Pendiente de pago';
       case 'PAGADO':
-        return 'Marcar pagado';
+        return 'Pagado';
       case 'PENDIENTE_ENVIO':
-        return 'Preparar envío';
+        return 'En preparación';
       case 'ENVIADO':
-        return 'Marcar enviado';
+        return 'En camino';
       case 'RECIBIDO':
-        return 'Confirmar recepción';
+        return 'Recibido';
       case 'ENTREGADO':
-        return 'Confirmar entrega';
+        return 'Entregado';
       case 'CANCELADO':
-        return 'Cancelar pedido';
+        return 'Cancelado';
       default:
         return state.replaceAll('_', ' ');
     }
@@ -96,7 +166,7 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
         content: Text(
           target == 'CANCELADO'
               ? 'El pedido quedará cancelado y no podrá reactivarse.'
-              : '¿Confirmas este cambio de estado?',
+              : '¿Marcar el pedido como ${_stateName(target).toLowerCase()}?',
         ),
         actions: <Widget>[
           TextButton(
@@ -113,16 +183,58 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
     if (confirmed == true) await _applyTransition(target);
   }
 
-  Future<void> _applyTransition(String target) async {
-    setState(() => _acting = true);
+  Future<void> _pickAndUploadComprobante() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: <String>['jpg', 'jpeg', 'png', 'pdf'],
+      withData: true,
+    );
+    final file = result?.files.firstOrNull;
+    if (file == null || !mounted) return;
+
+    setState(() => _uploadingComprobante = true);
     try {
-      final order = await _api.cambiarEstado(widget.pedidoId, target);
+      final order = await _api.subirComprobante(
+        pedidoId: widget.pedidoId,
+        file: file,
+        metodoPago: _order?.metodoPago,
+      );
       if (!mounted) return;
       setState(() => _order = order);
       AppFeedback.showInfo(
         context,
-        title: 'Pedido actualizado',
-        message: 'El pedido ahora está en ${_label(target).toLowerCase()}.',
+        title: 'Comprobante recibido',
+        message: 'Un administrador lo revisará para confirmar el pago.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      AppFeedback.showError(context, message: AppError.messageOf(error));
+    } finally {
+      if (mounted) setState(() => _uploadingComprobante = false);
+    }
+  }
+
+  Future<void> _applyTransition(
+    String target, {
+    List<Map<String, dynamic>>? recepcion,
+  }) async {
+    setState(() => _acting = true);
+    try {
+      final order = await _api.cambiarEstado(
+        widget.pedidoId,
+        target,
+        recepcion: recepcion,
+      );
+      if (!mounted) return;
+      setState(() => _order = order);
+      // Confirmar la recepción cierra el pedido: queda entregado sin otro paso.
+      final recibido = target == 'RECIBIDO';
+      AppFeedback.showInfo(
+        context,
+        title: recibido ? 'Recepción confirmada' : 'Pedido actualizado',
+        message: recibido
+            ? 'El pedido quedó entregado${order.esConjunto ? ' y el inventario ya se actualizó' : ''}.'
+            : 'El pedido ahora está: ${_stateName(target).toLowerCase()}.',
       );
     } catch (error) {
       if (!mounted) return;
@@ -134,215 +246,42 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
 
   Future<void> _showReceiptPreview() async {
     setState(() => _acting = true);
-    final factorControllers = <int, TextEditingController>{};
     try {
-      var preview = await _api.vistaPreviaRecepcion(widget.pedidoId);
+      final preview = await _api.vistaPreviaRecepcion(widget.pedidoId);
       if (!mounted) return;
       setState(() => _acting = false);
-      final apply = await showModalBottomSheet<bool>(
+      // Devuelve las novedades (vacío = llegó completo) o null si se cancela.
+      final novedades = await showModalBottomSheet<List<Map<String, dynamic>>>(
         context: context,
         isScrollControlled: true,
         backgroundColor: CommerceClayTokens.canvas,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
         ),
-        builder: (sheetContext) => StatefulBuilder(
-          builder: (context, setSheetState) => SafeArea(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                18,
-                20,
-                20 + MediaQuery.viewInsetsOf(context).bottom,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Confirmar recepción',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(preview.mensaje),
-                    const SizedBox(height: 16),
-                    ...preview.items.map((item) {
-                      final factorController = factorControllers.putIfAbsent(
-                        item.itemId,
-                        () => TextEditingController(
-                          text: _factorText(
-                            item.insumo?.wooFactorConversion ?? 1,
-                          ),
-                        ),
-                      );
-                      Future<void> applyMapping(int insumoId) async {
-                        final factor =
-                            double.tryParse(
-                              factorController.text.replaceAll(',', '.'),
-                            ) ??
-                            1;
-                        try {
-                          final updated = await _api.mapearItem(
-                            pedidoId: widget.pedidoId,
-                            itemId: item.itemId,
-                            insumoId: insumoId,
-                            factorConversion: factor > 0 ? factor : 1,
-                          );
-                          setSheetState(() => preview = updated);
-                        } catch (error) {
-                          if (!context.mounted) return;
-                          AppFeedback.showError(
-                            context,
-                            message: AppError.messageOf(error),
-                          );
-                        }
-                      }
-
-                      return CommerceClayCard(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              item.producto,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            Text(
-                              item.insumo != null &&
-                                      item.cantidadInventario != item.cantidad
-                                  ? 'Entrarán ${_quantity(item.cantidad)} unidades de la tienda = ${_quantity(item.cantidadInventario)} ${item.insumo!.unidad} en inventario'
-                                  : 'Entrarán ${_quantity(item.cantidad)} unidades',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                            const SizedBox(height: 10),
-                            DropdownButtonFormField<int>(
-                              initialValue: item.insumo?.id,
-                              decoration: InputDecoration(
-                                labelText: item.insumo == null
-                                    ? 'Mapeo pendiente'
-                                    : 'Insumo de inventario',
-                                prefixIcon: Icon(
-                                  item.insumo == null
-                                      ? Icons.link_off_rounded
-                                      : Icons.link_rounded,
-                                ),
-                              ),
-                              items: preview.insumosDisponibles
-                                  .map(
-                                    (insumo) => DropdownMenuItem<int>(
-                                      value: insumo.id,
-                                      child: Text(
-                                        '${insumo.nombre} (${insumo.unidad})',
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (insumoId) async {
-                                if (insumoId == null) return;
-                                final selected = preview.insumosDisponibles
-                                    .where((i) => i.id == insumoId)
-                                    .firstOrNull;
-                                factorController.text = _factorText(
-                                  selected?.wooFactorConversion ?? 1,
-                                );
-                                await applyMapping(insumoId);
-                              },
-                            ),
-                            if (item.insumo != null) ...<Widget>[
-                              const SizedBox(height: 10),
-                              TextField(
-                                controller: factorController,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
-                                    ),
-                                decoration: InputDecoration(
-                                  labelText:
-                                      'Unidades de ${item.insumo!.unidad} por unidad comprada',
-                                  helperText:
-                                      'Ej: si el insumo se mide en L y compras una garrafa de 3L, escribe 3',
-                                  prefixIcon: const Icon(
-                                    Icons.straighten_rounded,
-                                  ),
-                                ),
-                                onSubmitted: (_) =>
-                                    applyMapping(item.insumo!.id),
-                                onTapOutside: (_) =>
-                                    applyMapping(item.insumo!.id),
-                              ),
-                            ],
-                          ],
-                        ),
-                      );
-                    }),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF3DC),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: const Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Icon(Icons.warning_amber_rounded),
-                          SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Esta entrada es definitiva. El stock solo se sumará una vez.',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(sheetContext, false),
-                            child: const Text('Volver'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: preview.puedeAplicar
-                                ? () => Navigator.pop(sheetContext, true)
-                                : null,
-                            icon: const Icon(Icons.inventory_rounded),
-                            label: const Text('Recibir'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+        builder: (_) => ReceiptConfirmationSheet(
+          preview: preview,
+          onMapear: preview.puedeMapear
+              ? (itemId, insumoId, factor) => _api.mapearItem(
+                  pedidoId: widget.pedidoId,
+                  itemId: itemId,
+                  insumoId: insumoId,
+                  factorConversion: factor,
+                )
+              : null,
         ),
       );
-      if (apply == true) await _applyTransition('RECIBIDO');
+      if (novedades != null) {
+        await _applyTransition('RECIBIDO', recepcion: novedades);
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _acting = false);
       AppFeedback.showError(context, message: AppError.messageOf(error));
-    } finally {
-      for (final controller in factorControllers.values) {
-        controller.dispose();
-      }
     }
   }
 
   String _quantity(double value) {
     return value.toStringAsFixed(value % 1 == 0 ? 0 : 2);
-  }
-
-  String _factorText(double value) {
-    return value % 1 == 0 ? value.toStringAsFixed(0) : value.toString();
   }
 
   String _serviceDateLabel(String? value) {
@@ -447,10 +386,25 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
                 icon: order.esConjunto
                     ? Icons.inventory_2_rounded
                     : Icons.shopping_bag_rounded,
-                trailing: CommerceStatusPill(status: order.estado),
+                trailing: CommerceStatusPill(
+                  status: order.estado,
+                  onDark: true,
+                ),
               ),
               const SizedBox(height: 16),
               CommerceClayCard(child: _OrderProgress(estado: order.estado)),
+              for (final state in order.transicionesPermitidas.where(
+                (state) => state != 'CANCELADO',
+              )) ...<Widget>[
+                const SizedBox(height: 16),
+                OrderNextStepCard(
+                  target: state,
+                  esConjunto: order.esConjunto,
+                  label: _label(state),
+                  enabled: !_acting,
+                  onPressed: () => _transition(state),
+                ),
+              ],
               if (order.pagarAhora > 0) ...<Widget>[
                 const SizedBox(height: 16),
                 CommerceClayCard(
@@ -479,47 +433,22 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
                   ),
                 ),
               ],
-              const SizedBox(height: 16),
-              if (order.transicionesPermitidas.isNotEmpty)
-                CommerceClayCard(
-                  color: CommerceClayTokens.orangeSoft,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        'Acciones disponibles',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: order.transicionesPermitidas.map((state) {
-                          final cancel = state == 'CANCELADO';
-                          return cancel
-                              ? OutlinedButton.icon(
-                                  onPressed: _acting
-                                      ? null
-                                      : () => _transition(state),
-                                  icon: const Icon(Icons.cancel_outlined),
-                                  label: Text(_label(state)),
-                                )
-                              : FilledButton.icon(
-                                  onPressed: _acting
-                                      ? null
-                                      : () => _transition(state),
-                                  icon: Icon(
-                                    state == 'RECIBIDO'
-                                        ? Icons.inventory_rounded
-                                        : Icons.arrow_forward_rounded,
-                                  ),
-                                  label: Text(_label(state)),
-                                );
-                        }).toList(),
-                      ),
-                    ],
-                  ),
+              if (order.estado == 'PENDIENTE_PAGO' ||
+                  order.comprobanteUrl != null) ...<Widget>[
+                const SizedBox(height: 16),
+                _ComprobantePagoCard(
+                  order: order,
+                  uploading: _uploadingComprobante,
+                  onPickFile: _pickAndUploadComprobante,
                 ),
+              ],
+              if (order.verificacionComprobante != null) ...<Widget>[
+                const SizedBox(height: 16),
+                _VerificacionComprobanteCard(
+                  verificacion: order.verificacionComprobante!,
+                  money: _money,
+                ),
+              ],
               const SizedBox(height: 16),
               const CommerceSectionHeader(
                 title: 'Productos',
@@ -575,6 +504,34 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
                                 'Insumo: ${item.insumo!.nombre}',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
+                            if (item.llegoIncompleto)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    const Icon(
+                                      Icons.report_problem_rounded,
+                                      size: 16,
+                                      color: AppTheme.red,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        'Llegaron ${_quantity(item.cantidadRecibida!)} de ${_quantity(item.cantidad)}'
+                                        '${(item.novedadRecepcion ?? '').isEmpty ? '' : ' · ${item.novedadRecepcion}'}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: AppTheme.red,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -624,20 +581,43 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
                 child: Column(
                   children: order.historial.isEmpty
                       ? const <Widget>[Text('Sin cambios registrados.')]
-                      : order.historial
-                            .map(
-                              (event) => ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                leading: const Icon(Icons.history_rounded),
-                                title: Text(_label(event.estadoNuevo)),
-                                subtitle: Text(
-                                  '${event.cambiadoPor} · ${event.creadoEn == null ? '' : _date.format(event.creadoEn!.toLocal())}',
-                                ),
-                              ),
-                            )
-                            .toList(),
+                      : order.historial.map((event) {
+                          final esWoo = event.cambiadoPorRol == 'woocommerce';
+                          final quien = esWoo
+                              ? 'WooCommerce (verificado en la tienda)'
+                              : event.cambiadoPor;
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              esWoo
+                                  ? Icons.verified_rounded
+                                  : Icons.history_rounded,
+                              color: esWoo ? AppTheme.primary : null,
+                            ),
+                            title: Text(_stateName(event.estadoNuevo)),
+                            subtitle: Text(
+                              '$quien · ${event.creadoEn == null ? '' : _date.format(event.creadoEn!.toLocal())}',
+                            ),
+                          );
+                        }).toList(),
                 ),
               ),
+              if (order.transicionesPermitidas.contains(
+                'CANCELADO',
+              )) ...<Widget>[
+                const SizedBox(height: 12),
+                Center(
+                  child: TextButton.icon(
+                    onPressed: _acting ? null : () => _transition('CANCELADO'),
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    label: const Text('Cancelar pedido'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.red,
+                      minimumSize: const Size(48, 48),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
             ],
           ),
@@ -653,6 +633,348 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Siguiente paso del pedido: la acción principal, con una frase que explica
+/// qué pasa al confirmarla. Va en una tarjeta verde suave debajo del
+/// seguimiento -es el avance normal del pedido, no una alerta-, y "Cancelar"
+/// queda aparte y discreto para que nadie lo toque por error.
+class OrderNextStepCard extends StatelessWidget {
+  const OrderNextStepCard({
+    super.key,
+    required this.target,
+    required this.esConjunto,
+    required this.label,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  /// Estado al que pasaría el pedido (p. ej. `RECIBIDO`).
+  final String target;
+  final bool esConjunto;
+  final String label;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  ({String title, String message, String button, IconData icon}) get _copy {
+    switch (target) {
+      case 'RECIBIDO':
+        return (
+          title: '¿Ya llegó tu pedido?',
+          message: esConjunto
+              ? 'Revisa lo que llegó y avisa si algo falta. Al confirmar, lo '
+                    'recibido se suma automáticamente al inventario del '
+                    'conjunto y el pedido queda entregado.'
+              : 'Confirma cuando lo tengas en tus manos: el pedido quedará '
+                    'entregado.',
+          button: 'Confirmar recepción',
+          icon: Icons.inventory_2_rounded,
+        );
+      case 'ENTREGADO':
+        return (
+          title: 'Cierra tu pedido',
+          message: 'Marca el pedido como entregado cuando todo esté en orden.',
+          button: label,
+          icon: Icons.task_alt_rounded,
+        );
+      case 'PAGADO':
+        return (
+          title: 'Pago por confirmar',
+          message:
+              'Revisa el comprobante y confirma el pago para que el pedido '
+              'siga su curso.',
+          button: label,
+          icon: Icons.payments_rounded,
+        );
+      case 'PENDIENTE_ENVIO':
+        return (
+          title: 'Listo para preparar',
+          message:
+              'Pásalo a preparación. Quien hizo el pedido recibe un aviso.',
+          button: label,
+          icon: Icons.inventory_rounded,
+        );
+      case 'ENVIADO':
+        return (
+          title: 'Listo para despachar',
+          message:
+              'Al marcarlo en camino, el cliente recibe un aviso para '
+              'confirmar cuando llegue.',
+          button: label,
+          icon: Icons.local_shipping_rounded,
+        );
+      default:
+        return (
+          title: 'Siguiente paso',
+          message: 'Continúa con el pedido cuando estés listo.',
+          button: label,
+          icon: Icons.arrow_forward_rounded,
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = _copy;
+    final textTheme = Theme.of(context).textTheme;
+    return CommerceClayCard(
+      color: CommerceClayTokens.mint,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              CommerceClayIcon(
+                icon: copy.icon,
+                size: 44,
+                iconSize: 22,
+                backgroundColor: Colors.white,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      copy.title,
+                      style: textTheme.titleMedium?.copyWith(
+                        color: AppTheme.primaryDark,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      copy.message,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: CommerceClayTokens.ink.withValues(alpha: 0.78),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: enabled ? onPressed : null,
+              icon: const Icon(Icons.check_rounded),
+              label: Text(copy.button),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VerificacionComprobanteCard extends StatelessWidget {
+  const _VerificacionComprobanteCard({
+    required this.verificacion,
+    required this.money,
+  });
+
+  final ComprobanteVerificacion verificacion;
+  final NumberFormat money;
+
+  @override
+  Widget build(BuildContext context) {
+    final (
+      String titulo,
+      IconData icono,
+      Color color,
+    ) = switch (verificacion.veredicto) {
+      'COINCIDE' => (
+        'La lectura automática coincide con el pedido',
+        Icons.verified_rounded,
+        AppTheme.primary,
+      ),
+      'DUPLICADO' => (
+        'Posible comprobante repetido',
+        Icons.content_copy_rounded,
+        AppTheme.red,
+      ),
+      'ILEGIBLE' => (
+        'No se pudo leer el comprobante',
+        Icons.visibility_off_rounded,
+        AppTheme.red,
+      ),
+      _ => (
+        'Revisa este comprobante manualmente',
+        Icons.warning_amber_rounded,
+        AppTheme.red,
+      ),
+    };
+
+    return CommerceClayCard(
+      color: CommerceClayTokens.orangeSoft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icono, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  titulo,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Es una lectura automática de la imagen, no una confirmación del '
+            'banco: verifica que el dinero llegó a tu cuenta antes de '
+            'confirmar el pago.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (verificacion.montoDetectado != null ||
+              verificacion.referencia != null) ...<Widget>[
+            const SizedBox(height: 10),
+            if (verificacion.montoDetectado != null)
+              Text('Valor leído: ${money.format(verificacion.montoDetectado)}'),
+            if (verificacion.referencia != null)
+              Text('Referencia: ${verificacion.referencia}'),
+          ],
+          const SizedBox(height: 8),
+          for (final check in verificacion.checks)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(
+                    switch (check.ok) {
+                      true => Icons.check_circle_rounded,
+                      false => Icons.cancel_rounded,
+                      null => Icons.help_outline_rounded,
+                    },
+                    size: 18,
+                    color: switch (check.ok) {
+                      true => AppTheme.primary,
+                      false => AppTheme.red,
+                      null => Colors.grey,
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(check.detalle)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ComprobantePagoCard extends StatelessWidget {
+  const _ComprobantePagoCard({
+    required this.order,
+    required this.uploading,
+    required this.onPickFile,
+  });
+
+  final CommerceOrderDetail order;
+  final bool uploading;
+  final VoidCallback onPickFile;
+
+  @override
+  Widget build(BuildContext context) {
+    final metodo = order.metodoPago;
+    final qrAsset = metodo == null ? null : kMetodoPagoQrAsset[metodo];
+    final tieneComprobante = order.comprobanteUrl != null;
+
+    return CommerceClayCard(
+      color: tieneComprobante
+          ? CommerceClayTokens.mint
+          : CommerceClayTokens.orangeSoft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Pago',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Aún no hay pasarela de pago automática: transfiere y sube tu '
+            'comprobante. Un administrador lo revisará para confirmar el pago.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (metodo != null) ...<Widget>[
+            const SizedBox(height: 12),
+            Text(
+              'Método elegido: ${kMetodoPagoLabel[metodo] ?? metodo}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            if (qrAsset != null && !tieneComprobante) ...<Widget>[
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Image.asset(
+                  qrAsset,
+                  height: 200,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 120,
+                    alignment: Alignment.center,
+                    color: Colors.white,
+                    child: const Text(
+                      'QR no configurado todavía.\nPregunta a tu administrador cómo pagar.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+          const SizedBox(height: 14),
+          if (tieneComprobante)
+            Row(
+              children: <Widget>[
+                const Icon(Icons.check_circle_rounded, color: AppTheme.primary),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('Comprobante enviado. En revisión.'),
+                ),
+                TextButton(
+                  onPressed: () => launchUrl(
+                    Uri.parse(order.comprobanteUrl!),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                  child: const Text('Ver'),
+                ),
+              ],
+            )
+          else
+            FilledButton.icon(
+              onPressed: uploading ? null : onPickFile,
+              icon: uploading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.upload_file_rounded),
+              label: Text(
+                uploading ? 'Subiendo…' : 'Adjuntar comprobante de pago',
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

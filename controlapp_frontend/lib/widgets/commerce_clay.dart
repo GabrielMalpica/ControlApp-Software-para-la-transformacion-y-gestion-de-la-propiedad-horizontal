@@ -594,9 +594,18 @@ class CommerceNetworkImage extends StatelessWidget {
 }
 
 class CommerceStatusPill extends StatelessWidget {
-  const CommerceStatusPill({super.key, required this.status});
+  const CommerceStatusPill({
+    super.key,
+    required this.status,
+    this.onDark = false,
+  });
 
   final String status;
+
+  /// true cuando la etiqueta va sobre un fondo oscuro (p. ej. la tarjeta verde
+  /// de encabezado): con el fondo translúcido de siempre, el color del estado
+  /// se pierde contra el verde, así que se pinta sobre una píldora clara.
+  final bool onDark;
 
   String get _normalized => status.trim().toLowerCase();
 
@@ -677,9 +686,13 @@ class CommerceStatusPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.12),
+        color: onDark
+            ? Colors.white.withValues(alpha: 0.96)
+            : _color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: _color.withValues(alpha: 0.16)),
+        border: Border.all(
+          color: onDark ? Colors.white : _color.withValues(alpha: 0.16),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

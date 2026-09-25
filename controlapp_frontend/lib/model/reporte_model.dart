@@ -1173,3 +1173,43 @@ class ZonificacionPreventivasResponse {
     );
   }
 }
+
+/// Estado de un informe mensual que el backend arma en segundo plano.
+class InformeMensualEstado {
+  final String jobId;
+  final String estado;
+  final int progreso;
+  final String mensaje;
+  final String? error;
+  final int posicionCola;
+  final String? nombreArchivo;
+
+  const InformeMensualEstado({
+    required this.jobId,
+    required this.estado,
+    required this.progreso,
+    required this.mensaje,
+    this.error,
+    this.posicionCola = 0,
+    this.nombreArchivo,
+  });
+
+  bool get listo => estado == 'LISTO';
+  bool get fallo => estado == 'ERROR';
+
+  factory InformeMensualEstado.fromJson(Map<String, dynamic> json) {
+    return InformeMensualEstado(
+      jobId: (json['jobId'] ?? '').toString(),
+      estado: (json['estado'] ?? '').toString(),
+      progreso: (json['progreso'] is num)
+          ? (json['progreso'] as num).toInt().clamp(0, 100)
+          : 0,
+      mensaje: (json['mensaje'] ?? '').toString(),
+      error: json['error']?.toString(),
+      posicionCola: (json['posicionCola'] is num)
+          ? (json['posicionCola'] as num).toInt()
+          : 0,
+      nombreArchivo: json['nombreArchivo']?.toString(),
+    );
+  }
+}

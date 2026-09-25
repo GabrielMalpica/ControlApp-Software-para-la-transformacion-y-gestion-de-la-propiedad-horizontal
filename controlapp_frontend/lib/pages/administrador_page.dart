@@ -421,6 +421,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
               enableCart: true,
               initialConjuntoId: conjunto.nit,
               initialConjuntoNombre: conjunto.nombre,
+              initialConjuntoDireccion: conjunto.direccion,
             ),
           ),
         ),
@@ -432,6 +433,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
             ConjuntoCartPage(
               initialConjuntoId: conjunto.nit,
               initialConjuntoNombre: conjunto.nombre,
+              initialConjuntoDireccion: conjunto.direccion,
             ),
           ),
         ),

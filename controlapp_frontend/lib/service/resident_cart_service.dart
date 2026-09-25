@@ -25,19 +25,30 @@ class ResidentCartService extends ChangeNotifier {
     CommerceProduct product, {
     int quantity = 1,
     CommerceServiceSelection? service,
+    CommerceVariation? variation,
   }) {
     if (product.service?.enabled == true && service == null) return;
-    final cartKey = '${product.id}|${service?.signature ?? 'product'}';
+    if (product.isVariable && variation == null) return;
+
+    final cartKey =
+        '${product.id}|${variation?.id ?? 'base'}|${service?.signature ?? 'product'}';
     final current = _items[cartKey];
-    final imageUrl = product.images.isNotEmpty ? product.images.first.src : '';
+    final imageUrl = variation?.image.isNotEmpty == true
+        ? variation!.image
+        : product.images.isNotEmpty
+        ? product.images.first.src
+        : '';
     if (current == null) {
       _items[cartKey] = ResidentCartItem(
         cartKey: cartKey,
         productId: product.id,
-        name: product.name,
-        sku: product.sku,
+        variationId: variation?.id,
+        name: variation != null ? '${product.name} (${variation.label})' : product.name,
+        sku: variation != null && variation.sku.isNotEmpty ? variation.sku : product.sku,
         imageUrl: imageUrl,
-        unitPrice: product.price.current + (service?.addonsTotal ?? 0),
+        unitPrice:
+            (variation?.price.current ?? product.price.current) +
+            (service?.addonsTotal ?? 0),
         quantity: quantity,
         type: product.type,
         service: service,

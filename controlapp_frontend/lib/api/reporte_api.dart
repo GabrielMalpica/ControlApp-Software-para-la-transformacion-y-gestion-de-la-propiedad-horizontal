@@ -1,9 +1,11 @@
 // lib/api/reporte_api.dart
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_application_1/model/reporte_model.dart';
 import 'package:flutter_application_1/service/api_client.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/service/app_error.dart';
 
 class ReporteApi {
   final ApiClient _client = ApiClient();
@@ -239,5 +241,62 @@ class ReporteApi {
       'soloActivas': soloActivas ? 'true' : 'false',
     });
     return ZonificacionPreventivasResponse.fromJson(j);
+  }
+  // ---- Informe mensual en PDF: se genera en el servidor, sin bloquear la app ----
+
+  /// Pide generar el informe y responde al instante con el id del trabajo.
+  Future<InformeMensualEstado> iniciarInformeMensualPdf({
+    required DateTime desde,
+    required DateTime hasta,
+    String? conjuntoId,
+  }) async {
+    final resp = await _client.post(
+      '$_base/informe-mensual/pdf',
+      body: {
+        'desde': desde.toUtc().toIso8601String(),
+        'hasta': hasta.toUtc().toIso8601String(),
+        if (conjuntoId != null && conjuntoId.trim().isNotEmpty)
+          'conjuntoId': conjuntoId.trim(),
+      },
+    );
+    if (resp.statusCode != 200 && resp.statusCode != 202) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo iniciar el informe.',
+        ),
+      );
+    }
+    return InformeMensualEstado.fromJson(
+      (jsonDecode(resp.body) as Map).cast<String, dynamic>(),
+    );
+  }
+
+  Future<InformeMensualEstado> estadoInformeMensualPdf(String jobId) async {
+    final resp = await _client.get('$_base/informe-mensual/pdf/$jobId');
+    if (resp.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo consultar el estado del informe.',
+        ),
+      );
+    }
+    return InformeMensualEstado.fromJson(
+      (jsonDecode(resp.body) as Map).cast<String, dynamic>(),
+    );
+  }
+
+  Future<Uint8List> descargarInformeMensualPdf(String jobId) async {
+    final resp = await _client.get('$_base/informe-mensual/pdf/$jobId/archivo');
+    if (resp.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo descargar el informe.',
+        ),
+      );
+    }
+    return resp.bodyBytes;
   }
 }
