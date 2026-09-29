@@ -267,6 +267,22 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
     description: "Permite modificar catalogos y existencias de inventario.",
   },
   {
+    key: "inventario.crear_insumo_personalizado",
+    module: "inventario",
+    moduleLabel: "Inventario",
+    label: "Crear insumos personalizados",
+    description:
+      "Permite crear insumos propios del conjunto directamente en su inventario. Queda registrado en el kardex quien lo creo.",
+  },
+  {
+    key: "inventario.eliminar_insumo_personalizado",
+    module: "inventario",
+    moduleLabel: "Inventario",
+    label: "Eliminar insumos personalizados",
+    description:
+      "Permite eliminar del inventario los insumos personalizados de un conjunto.",
+  },
+  {
     key: "herramientas.gestionar",
     module: "herramientas",
     moduleLabel: "Herramientas",
@@ -447,7 +463,11 @@ const PERMISSIONS_THAT_GRANT_ACCESS: Readonly<Record<string, readonly string[]>>
     "cronograma.excluidas_ver",
   ],
   "solicitudes.ver": ["solicitudes.crear", "solicitudes.gestionar"],
-  "inventario.ver": ["inventario.gestionar"],
+  "inventario.ver": [
+    "inventario.gestionar",
+    "inventario.crear_insumo_personalizado",
+    "inventario.eliminar_insumo_personalizado",
+  ],
   "maquinaria.ver": [
     "maquinaria.asignar",
     "maquinaria.crear",
@@ -492,6 +512,7 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "cronograma.ver",
     "inventario.ver",
     "inventario.gestionar",
+    "inventario.crear_insumo_personalizado",
     "maquinaria.ver",
     "maquinaria.crear",
     "herramientas.ver",
@@ -521,6 +542,8 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "solicitudes.gestionar",
     "inventario.ver",
     "inventario.gestionar",
+    "inventario.crear_insumo_personalizado",
+    "inventario.eliminar_insumo_personalizado",
     "maquinaria.ver",
     "maquinaria.asignar",
     "maquinaria.crear",

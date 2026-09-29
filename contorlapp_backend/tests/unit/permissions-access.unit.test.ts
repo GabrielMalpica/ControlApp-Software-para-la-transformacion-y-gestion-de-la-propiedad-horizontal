@@ -79,6 +79,54 @@ describe("Permisos efectivos por modulo", () => {
     expect(jefe.has("maquinaria.gestionar_estado")).toBe(true);
     expect(jefe.has("herramientas.prestar")).toBe(true);
   });
+  test("insumos personalizados: el administrador crea pero no elimina", () => {
+    const gerente = PermissionService.defaultPermissionsForRole(Rol.gerente);
+    const jefe = PermissionService.defaultPermissionsForRole(
+      Rol.jefe_operaciones,
+    );
+    const administrador = PermissionService.defaultPermissionsForRole(
+      Rol.administrador,
+    );
+    const supervisor = PermissionService.defaultPermissionsForRole(
+      Rol.supervisor,
+    );
+
+    expect(gerente.has("inventario.crear_insumo_personalizado")).toBe(true);
+    expect(gerente.has("inventario.eliminar_insumo_personalizado")).toBe(true);
+    expect(jefe.has("inventario.crear_insumo_personalizado")).toBe(true);
+    expect(jefe.has("inventario.eliminar_insumo_personalizado")).toBe(true);
+    expect(administrador.has("inventario.crear_insumo_personalizado")).toBe(
+      true,
+    );
+    expect(administrador.has("inventario.eliminar_insumo_personalizado")).toBe(
+      false,
+    );
+    expect(supervisor.has("inventario.crear_insumo_personalizado")).toBe(false);
+  });
+
+  test("los permisos de insumos personalizados aparecen en el catálogo asignable", () => {
+    const keys = PermissionService.catalog().map((p) => p.key);
+    expect(keys).toContain("inventario.crear_insumo_personalizado");
+    expect(keys).toContain("inventario.eliminar_insumo_personalizado");
+    expect(
+      PermissionService.isValidPermission("inventario.crear_insumo_personalizado"),
+    ).toBe(true);
+  });
+
+  test("crear o eliminar insumo personalizado concede la lectura del inventario", () => {
+    expect(
+      PermissionService.hasAnyPermission(
+        new Set(["inventario.crear_insumo_personalizado"]),
+        ["inventario.ver"],
+      ),
+    ).toBe(true);
+    expect(
+      PermissionService.hasAnyPermission(
+        new Set(["inventario.ver"]),
+        ["inventario.crear_insumo_personalizado"],
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("Aislamiento de compromisos globales", () => {

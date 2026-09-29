@@ -179,18 +179,24 @@ export class InventarioService {
         },
       });
 
-      if (cantidadInicial > 0) {
-        await tx.consumoInsumo.create({
-          data: {
-            inventarioId: this.inventarioId,
-            insumoId: insumo.id,
-            tipo: TipoMovimientoInsumo.ENTRADA,
-            cantidad: toDec(cantidadInicial),
-            fecha: new Date(),
-            observacion: "Stock inicial - insumo personalizado",
-          },
-        });
-      }
+      // Siempre se deja un movimiento de creación en el kardex, con quien lo
+      // creó (registradoPorId), incluso si no hay stock inicial (cantidad 0):
+      // así la trazabilidad de "quién creó este insumo" no depende de que se
+      // haya cargado stock en ese momento.
+      await tx.consumoInsumo.create({
+        data: {
+          inventarioId: this.inventarioId,
+          insumoId: insumo.id,
+          tipo: TipoMovimientoInsumo.ENTRADA,
+          cantidad: toDec(cantidadInicial),
+          fecha: new Date(),
+          observacion:
+            cantidadInicial > 0
+              ? "Stock inicial - insumo personalizado"
+              : "Creación de insumo personalizado (sin stock inicial)",
+          registradoPorId: this.actor?.id ?? null,
+        },
+      });
 
       return {
         inventarioInsumoId: inventarioInsumo.id,
@@ -664,8 +670,25 @@ export class InventarioService {
       },
     });
 
+    // Los movimientos de creación de un insumo personalizado anteriores a que
+    // se guardara registradoPorId no dicen quién los hizo; para esos, se usa
+    // el creador guardado en el propio insumo.
+    const insumoCreador = await this.prisma.insumo.findUnique({
+      where: { id: insumoId },
+      select: { creadoPorId: true },
+    });
+    const esMovimientoDeCreacion = (m: (typeof movimientos)[number]) =>
+      m.tipo === TipoMovimientoInsumo.ENTRADA &&
+      !m.pedidoAppId &&
+      !m.tareaId &&
+      (m.observacion?.startsWith("Stock inicial - insumo personalizado") ||
+        m.observacion?.startsWith("Creación de insumo personalizado"));
+    const registradoPorDe = (m: (typeof movimientos)[number]) =>
+      ((m as any).registradoPorId as string | null) ??
+      (esMovimientoDeCreacion(m) ? insumoCreador?.creadoPorId ?? null : null);
+
     const nombresPorId = await this.nombresUsuarios(
-      movimientos.map((m) => (m as any).registradoPorId as string | null),
+      movimientos.map((m) => registradoPorDe(m)),
     );
 
     // Acumular en Decimal, no en number: sumar/restar cientos de
@@ -679,7 +702,7 @@ export class InventarioService {
         ? saldoDec.plus(m.cantidad)
         : saldoDec.minus(m.cantidad);
       const saldo = decToNumber(saldoDec);
-      const registradoPorId = (m as any).registradoPorId as string | null;
+      const registradoPorId = registradoPorDe(m);
       const operarioNombre = m.operario?.usuario.nombre ?? null;
       const registradoPorNombre = registradoPorId
         ? nombresPorId.get(registradoPorId) ?? null

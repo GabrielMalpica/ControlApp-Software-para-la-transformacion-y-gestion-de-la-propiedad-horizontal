@@ -58,10 +58,12 @@ router.get(
   requireConjuntoScope("nit"),
   c.listarInsumosBajosConjunto,
 );
+// Crear y eliminar se controlan solo por permiso (asignables desde la gestión
+// de accesos). Por defecto: crear = gerente, jefe de operaciones y
+// administrador; eliminar = gerente y jefe de operaciones.
 router.post(
   "/conjunto/:nit/insumos-personalizados",
-  requireRoles("gerente", "jefe_operaciones"),
-  requirePermission("inventario.gestionar"),
+  requirePermission("inventario.crear_insumo_personalizado"),
   requireConjuntoScope("nit"),
   c.crearInsumoPersonalizadoConjunto,
 );
@@ -74,8 +76,7 @@ router.patch(
 );
 router.delete(
   "/conjunto/:nit/insumos-personalizados/:insumoId",
-  requireRoles("gerente", "jefe_operaciones"),
-  requirePermission("inventario.gestionar"),
+  requirePermission("inventario.eliminar_insumo_personalizado"),
   requireConjuntoScope("nit"),
   c.eliminarInsumoPersonalizadoConjunto,
 );
