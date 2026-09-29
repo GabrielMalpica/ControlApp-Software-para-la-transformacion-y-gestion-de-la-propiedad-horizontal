@@ -22,16 +22,23 @@ const IdempotencyKeyDTO = z
   .regex(/^[A-Za-z0-9._:-]+$/, "La clave de idempotencia no es valida")
   .optional();
 
-// Sin pasarela de pago conectada todavia: el comprador transfiere a mano y
+// Metodo de pago manual: sin pasarela, el comprador transfiere a mano y
 // declara con que metodo va a pagar para que el checkout le muestre el QR
 // correspondiente. El comprobante se sube despues, ya con el pedido creado
-// (ver POST /commerce/pedidos/:id/comprobante).
+// (ver POST /commerce/pedidos/:id/comprobante). Se conserva como
+// contingencia -ver PAGOS_CONTINGENCIA_MANUAL- para cuando Factus no esta
+// disponible o el monto queda fuera de sus limites.
 export const MetodoPagoManualDTO = z.enum(["nequi", "bre_b"]);
+
+// "factus" es el metodo por defecto: el cobro se genera con Factus Pay (QR)
+// y el pago se confirma solo, sin comprobante (ver POST
+// /commerce/pedidos/:id/pago en CommerceLifecycleService).
+export const MetodoPagoDTO = z.enum(["factus", "nequi", "bre_b"]);
 
 export const CrearPedidoResidenteDTO = z.object({
   items: z.array(PedidoCommerceItemDTO).min(1, "Debes agregar al menos un producto al carrito"),
   direccionEntrega: z.string().trim().min(5, "Indica la direccion de entrega").max(300),
-  metodoPago: MetodoPagoManualDTO,
+  metodoPago: MetodoPagoDTO,
   notas: z.string().trim().max(500).optional(),
   idempotencyKey: IdempotencyKeyDTO,
 });
@@ -40,7 +47,7 @@ export const CrearPedidoConjuntoDTO = z.object({
   conjuntoId: z.string().trim().min(1, "Debes seleccionar un conjunto").optional(),
   items: z.array(PedidoCommerceItemDTO).min(1, "Debes agregar al menos un insumo al carrito"),
   direccionEntrega: z.string().trim().min(5, "Indica la direccion de entrega").max(300),
-  metodoPago: MetodoPagoManualDTO,
+  metodoPago: MetodoPagoDTO,
   notas: z.string().trim().max(500).optional(),
   idempotencyKey: IdempotencyKeyDTO,
 });

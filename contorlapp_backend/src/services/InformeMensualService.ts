@@ -122,6 +122,9 @@ export type ParametrosInforme = {
   conjuntoId?: string;
   desde: Date;
   hasta: Date;
+  /** Rol de quien pidió el informe; solo afecta cómo se etiquetan las
+   * tareas CORRECTIVA en el PDF ("actividad especial" para administrador). */
+  rolSolicitante?: string;
 };
 
 async function recolectarDatos(
@@ -234,6 +237,7 @@ export function crearEjecutorInforme(p: ParametrosInforme): EjecutorInforme {
     await renderizarInformeMensual(informe, {
       archivoDestino,
       cargarFoto: (raw) => fotos.get(raw),
+      rolSolicitante: p.rolSolicitante,
     });
 
     const [anio, mes] = claveDia(p.desde).split("-");

@@ -74,4 +74,48 @@ export class CommerceLifecycleController {
       next(error);
     }
   };
+
+  crearPago: RequestHandler = async (req, res, next) => {
+    try {
+      if (!req.user?.sub) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+      const { pedidoId } = PedidoDetalleParamDTO.parse(req.params);
+      res.status(201).json(await service.crearPago(req.user.sub, pedidoId));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  obtenerPago: RequestHandler = async (req, res, next) => {
+    try {
+      if (!req.user?.sub) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+      const { pedidoId } = PedidoDetalleParamDTO.parse(req.params);
+      const pago = await service.obtenerPago(req.user.sub, pedidoId);
+      if (!pago) {
+        res.status(404).json({ message: "Este pedido todavia no tiene un cobro generado" });
+        return;
+      }
+      res.json(pago);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  verificarPago: RequestHandler = async (req, res, next) => {
+    try {
+      if (!req.user?.sub) {
+        res.status(401).json({ message: "No autenticado" });
+        return;
+      }
+      const { pedidoId } = PedidoDetalleParamDTO.parse(req.params);
+      res.json(await service.verificarPago(req.user.sub, pedidoId));
+    } catch (error) {
+      next(error);
+    }
+  };
 }

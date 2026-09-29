@@ -8,7 +8,7 @@ import {
   operarioResumenSelect,
 } from "../utils/elementoHierarchy";
 import { cached } from "./RedisService";
-import { getFestivosSet } from "../utils/schedulerUtils";
+import { getFestivosSet, ymdLocal } from "../utils/schedulerUtils";
 
 /** ======================
  * DTOs
@@ -1303,18 +1303,89 @@ export class ReporteService {
       where: { id: { in: rows.map((r) => r.insumoId) }, empresaId: this.empresaId },
       select: { id: true, nombre: true, unidad: true },
     });
-
     const mapInfo = new Map(insumos.map((i) => [i.id, i]));
+
+    // Para el promedio diario y "en qué tareas se usó más" traemos las filas
+    // crudas (insumoId, fecha, tareaId, cantidad) del mismo rango/filtro y
+    // agregamos en memoria: son pocas filas por conjunto/mes, así que no
+    // hace falta otra vuelta a la BD por insumo.
+    const crudo = await this.prisma.consumoInsumo.findMany({
+      where,
+      select: { insumoId: true, fecha: true, tareaId: true, cantidad: true },
+    });
+
+    const diasActivosPorInsumo = new Map<number, Set<string>>();
+    const cantidadPorInsumoTarea = new Map<number, Map<number, number>>();
+    for (const c of crudo) {
+      // ymdLocal (no toISOString, que es UTC): el proceso corre con
+      // TZ=America/Bogota (ver src/index.ts), y el horario real de las
+      // tareas (tarde-noche) cruza medianoche UTC, así que agrupar por
+      // fecha UTC partiría un mismo día de Bogotá en dos.
+      const diaKey = ymdLocal(c.fecha);
+      const diasSet = diasActivosPorInsumo.get(c.insumoId) ?? new Set<string>();
+      diasSet.add(diaKey);
+      diasActivosPorInsumo.set(c.insumoId, diasSet);
+
+      if (c.tareaId != null) {
+        const porTarea = cantidadPorInsumoTarea.get(c.insumoId) ?? new Map<number, number>();
+        porTarea.set(c.tareaId, (porTarea.get(c.tareaId) ?? 0) + decToNumber(c.cantidad));
+        cantidadPorInsumoTarea.set(c.insumoId, porTarea);
+      }
+    }
+
+    // Solo las 3 tareas que más consumieron, por insumo, para no traer de
+    // más: primero se decide cuáles tareas hacen falta y luego se piden.
+    const top3PorInsumo = new Map<number, Array<{ tareaId: number; cantidad: number }>>();
+    const tareaIdsNecesarios = new Set<number>();
+    for (const [insumoId, porTarea] of cantidadPorInsumoTarea.entries()) {
+      const top3 = Array.from(porTarea.entries())
+        .map(([tareaId, cantidad]) => ({ tareaId, cantidad }))
+        .sort((a, b) => b.cantidad - a.cantidad)
+        .slice(0, 3);
+      top3PorInsumo.set(insumoId, top3);
+      for (const t of top3) tareaIdsNecesarios.add(t.tareaId);
+    }
+
+    const tareas = await this.prisma.tarea.findMany({
+      where: { id: { in: Array.from(tareaIdsNecesarios) } },
+      select: {
+        id: true,
+        descripcion: true,
+        ubicacion: { select: { nombre: true } },
+        elemento: { include: elementoParentChainInclude },
+      },
+    });
+    const mapTarea = new Map(tareas.map((t) => [t.id, t]));
 
     const data = rows
       .map((r) => {
         const info = mapInfo.get(r.insumoId);
+        const cantidad = decToNumber(r._sum.cantidad);
+        const diasActivos = diasActivosPorInsumo.get(r.insumoId)?.size ?? 0;
+        const topTareas = (top3PorInsumo.get(r.insumoId) ?? []).map((t) => {
+          const tarea = mapTarea.get(t.tareaId);
+          const ubicacion = tarea?.ubicacion?.nombre ?? null;
+          const elemento = tarea ? construirRutaElemento(tarea.elemento as any) : null;
+          const lugar = [ubicacion, elemento].filter(Boolean).join(" - ");
+          return {
+            tareaId: t.tareaId,
+            descripcion: tarea?.descripcion ?? `Tarea #${t.tareaId}`,
+            lugar: lugar || null,
+            cantidad: t.cantidad,
+          };
+        });
         return {
           insumoId: r.insumoId,
           nombre: info?.nombre ?? `Insumo ${r.insumoId}`,
           unidad: info?.unidad ?? "",
-          cantidad: decToNumber(r._sum.cantidad),
+          cantidad,
           usos: r._count?._all ?? 0,
+          diasActivos,
+          // Promedio sobre los días en que de verdad se consumió, no sobre
+          // todo el rango: si el insumo se agotó a mitad de mes, dividir
+          // entre el rango completo lo mostraría más bajo de lo real.
+          promedioDiario: diasActivos > 0 ? cantidad / diasActivos : 0,
+          topTareas,
         };
       })
       .sort((a, b) => b.cantidad - a.cantidad);
@@ -1886,7 +1957,7 @@ export class ReporteService {
         })
         .join(", ");
         const motivoTareaReemplazo = esTareaReemplazo
-          ? `Esta correctiva reemplazo ${resumenReemplazo}${reemplazaPreventivas.length > 3 ? ` y ${reemplazaPreventivas.length - 3} tarea(s) mas` : ""}.`
+          ? `Esta tarea reemplazo ${resumenReemplazo}${reemplazaPreventivas.length > 3 ? ` y ${reemplazaPreventivas.length - 3} tarea(s) mas` : ""}.`
           : null;
 
       return {

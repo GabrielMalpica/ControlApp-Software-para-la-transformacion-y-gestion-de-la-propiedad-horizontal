@@ -19,6 +19,13 @@ import { mensajeValidacionAmigable } from "./utils/errorFormat";
 import rutas from "./routes/Rutas";
 import { prisma } from "./db/prisma";
 import { bootstrapNotificacionesSchema } from "./services/NotificacionService";
+import { iniciarConciliacionPeriodica, iniciarPagoReconciler } from "./services/pagos/PagoReconciler";
+import { ejecutarConciliacion, fechaUltimaConciliacion } from "./services/pagos/conciliacionInstance";
+import { pagoService } from "./services/pagos/pagoServiceInstance";
+// Efecto secundario: registra en pagoService los callbacks de dominio de
+// pedidos (confirmar el pago, avisar, alertar). Debe importarse antes de que
+// el worker de abajo empiece a procesar cobros.
+import "./services/pagos/wiring";
 import { authRequiredUnlessPublic } from "./middlewares/auth.middleware";
 import { distributedRateLimit } from "./middlewares/rate-limit.middleware";
 import {
@@ -559,17 +566,31 @@ const HOST = process.env.HOST || "0.0.0.0";
     console.error("No se pudo inicializar tabla de notificaciones:", e);
   }
 
+  // Reemplaza al webhook que Factus no ofrece: verifica en segundo plano los
+  // cobros pendientes (ver docs/pagos-factus.md). Confirmadores por canal se
+  // registran donde vive cada dominio (CommerceLifecycleController, etc.).
+  const detenerWorker = iniciarPagoReconciler(pagoService);
+  const detenerConciliacion = iniciarConciliacionPeriodica({
+    ejecutar: ejecutarConciliacion,
+    ultima: fechaUltimaConciliacion,
+  });
+  const detenerPagos = () => {
+    detenerWorker();
+    detenerConciliacion();
+  };
+
   app.listen(PORT, HOST, () => {
     console.log(`API escuchando en http://${HOST}:${PORT}`);
   });
-})();
 
-/* -------------------------- cierre elegante Prisma ------------------------ */
-process.on("SIGINT", async () => {
-  await prisma.$disconnect();
-  process.exit(0);
-});
-process.on("SIGTERM", async () => {
-  await prisma.$disconnect();
-  process.exit(0);
-});
+  process.on("SIGINT", async () => {
+    detenerPagos();
+    await prisma.$disconnect();
+    process.exit(0);
+  });
+  process.on("SIGTERM", async () => {
+    detenerPagos();
+    await prisma.$disconnect();
+    process.exit(0);
+  });
+})();

@@ -354,7 +354,21 @@ export class AuthService {
             sector: true,
             unidad: true,
             conjunto: {
+              // direccion: para prellenar "dirección de entrega" en el
+              // checkout del residente con la del conjunto (ver
+              // resident_cart_page.dart), igual que ya se hace en el
+              // checkout de conjunto con conjunto.direccion.
+              select: { nit: true, nombre: true, direccion: true },
+            },
+          },
+        },
+        // El operario está vinculado a sus conjuntos (normalmente uno): el
+        // panel necesita el nombre, no solo el NIT.
+        operario: {
+          select: {
+            conjuntos: {
               select: { nit: true, nombre: true },
+              orderBy: { nombre: "asc" },
             },
           },
         },
@@ -402,6 +416,12 @@ export class AuthService {
       usuario.jefeOperaciones?.empresa?.conjuntos ??
       [];
     for (const item of conjuntosEmpresa) {
+      if (!conjuntos.some((conjunto) => conjunto.nit === item.nit)) {
+        conjuntos.push({ nit: item.nit, nombre: item.nombre });
+      }
+    }
+
+    for (const item of usuario.operario?.conjuntos ?? []) {
       if (!conjuntos.some((conjunto) => conjunto.nit === item.nit)) {
         conjuntos.push({ nit: item.nit, nombre: item.nombre });
       }

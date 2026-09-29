@@ -57,6 +57,32 @@ enum TipoMovimientoPuntos {
   AJUSTE
 }
 
+enum CanalPago {
+  CONTROLAPP
+  WOOCOMMERCE
+}
+
+// Ciclo de vida de un cobro creado en Factus Pay (ver PagoService). CREADO y
+// PENDIENTE son transitorios mientras se consulta el estado en Factus;
+// PAGADO es el unico que confirma el pedido. Los demas son terminales para
+// ese cobro (no vuelven a consultarse), salvo ABANDONADO que sigue en el
+// barrido diario por si Factus confirma tarde.
+enum EstadoCobro {
+  CREADO
+  PENDIENTE
+  PAGADO
+  FALLIDO
+  VENCIDO
+  ABANDONADO
+  PAGADO_HUERFANO
+  PAGADO_DUPLICADO
+  DISCREPANCIA
+  ERROR
+  // Cierres manuales (PagoAdminService.resolver): dinero devuelto / resuelto por otra via.
+  DEVUELTO
+  RESUELTO
+}
+
 enum EstadoCivil {
   SOLTERO
   CASADO
@@ -2169,6 +2195,7 @@ model PedidoApp {
   movimientosPuntos  MovimientoPuntos[]
   historialEstados   PedidoAppEstadoHistorico[]
   consumosInventario ConsumoInsumo[]            @relation("PedidoInventarioEntradas")
+  cobros             PagoCobro[]
 
   @@index([usuarioId])
   @@index([usuarioId, estado])
@@ -2238,6 +2265,82 @@ model PedidoAppEstadoHistorico {
   @@index([pedidoId, creadoEn])
   @@index([cambiadoPorId])
   @@map("PedidoAppEstadoHistorico")
+}
+
+/**
+ * Un cobro creado en Factus Pay (recaudo) para un pedido de ControlApp o una
+ * orden de WooCommerce. Es el registro central de pagos: PagoService lo crea
+ * al pedir el QR, el worker (PagoReconciler) lo actualiza consultando a
+ * Factus, y confirmarPagoSistema en CommerceLifecycleService lo usa para
+ * mover el pedido a PAGADO. Ver docs/pagos-factus.md.
+ */
+model PagoCobro {
+  id         Int       @id @default(autoincrement())
+  proveedor  String    @default("factus")
+  // "reference_code" enviado a Factus: unico, opaco (sin datos personales),
+  // uno por intento de cobro. Factus lo usa como clave de idempotencia.
+  referenceCode String    @unique
+  canal         CanalPago
+
+  pedidoApp   PedidoApp? @relation(fields: [pedidoAppId], references: [id], onDelete: SetNull)
+  pedidoAppId Int?
+  // Ordenes de WooCommerce sin PedidoApp (compras directas en la tienda).
+  wooOrderId  String?
+  usuarioId   String?
+
+  montoEsperado  Decimal @db.Decimal(14, 2)
+  montoProveedor Decimal? @db.Decimal(14, 2)
+  moneda         String  @default("COP")
+
+  estado          EstadoCobro @default(CREADO)
+  // Ultimo status crudo devuelto por Factus (started|ready|paid|failed|rejected).
+  estadoProveedor String?
+  qrBase64        String?
+
+  expiraLocalEn       DateTime?
+  proximaVerificacion DateTime?
+  intentosVerificacion Int      @default(0)
+  // Reclamo atomico del worker: evita que dos instancias consulten el mismo
+  // cobro a la vez (ver PagoReconciler).
+  lockedUntil         DateTime?
+
+  pagadoDetectadoEn       DateTime?
+  // Si Factus confirmo el pago pero fallo la sincronizacion con WooCommerce
+  // despues del commit, el worker la reintenta con este flag.
+  pendienteSincronizarWoo Boolean @default(false)
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  eventos PagoEvento[]
+
+  @@index([estado, proximaVerificacion])
+  @@index([pedidoAppId])
+  @@index([wooOrderId])
+  @@map("PagoCobro")
+}
+
+/**
+ * Bitacora de un PagoCobro (append-only) para auditoria: cada consulta a
+ * Factus, cada cambio de estado y cada accion manual sobre un huerfano o un
+ * duplicado queda aqui. payload es la respuesta de Factus ya saneada (sin el
+ * token ni el QR).
+ */
+model PagoEvento {
+  id      Int       @id @default(autoincrement())
+  cobro   PagoCobro @relation(fields: [cobroId], references: [id], onDelete: Cascade)
+  cobroId Int
+
+  // CREADO | CONSULTA | CAMBIO_ESTADO | CONFIRMACION_PEDIDO | SYNC_WOO | ERROR | ACCION_MANUAL
+  tipo           String
+  estadoAnterior String?
+  estadoNuevo    String?
+  payload        Json?
+  actorId        String?
+  creadoEn       DateTime @default(now())
+
+  @@index([cobroId, creadoEn])
+  @@map("PagoEvento")
 }
 
 model ConfigPuntosConjunto {

@@ -3270,6 +3270,7 @@ export class GerenteService {
           conjuntoId: dto.conjuntoId ?? null,
           supervisorId:
             dto.supervisorId != null ? String(dto.supervisorId) : null,
+          observaciones: dto.observaciones ?? null,
           ...(operariosIds.length
             ? { operarios: { connect: operariosIds.map((id) => ({ id })) } }
             : {}),
@@ -3985,6 +3986,7 @@ export class GerenteService {
           conjuntoId: dto.conjuntoId!,
           supervisorId:
             dto.supervisorId != null ? String(dto.supervisorId) : null,
+          observaciones: dto.observaciones ?? null,
           ...(operariosIds.length
             ? { operarios: { connect: operariosIds.map((id) => ({ id })) } }
             : {}),

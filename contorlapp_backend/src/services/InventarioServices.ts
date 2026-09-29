@@ -668,10 +668,17 @@ export class InventarioService {
       movimientos.map((m) => (m as any).registradoPorId as string | null),
     );
 
-    let saldo = 0;
+    // Acumular en Decimal, no en number: sumar/restar cientos de
+    // movimientos en punto flotante (aunque cada uno venga limpio) puede
+    // arrastrar ruido binario (ej. 19931.999999999996) que además de verse
+    // mal puede desbordar el layout del kardex en la app.
+    let saldoDec = new Prisma.Decimal(0);
     const conSaldo = movimientos.map((m) => {
       const cantidad = decToNumber(m.cantidad);
-      saldo += m.tipo === TipoMovimientoInsumo.ENTRADA ? cantidad : -cantidad;
+      saldoDec = m.tipo === TipoMovimientoInsumo.ENTRADA
+        ? saldoDec.plus(m.cantidad)
+        : saldoDec.minus(m.cantidad);
+      const saldo = decToNumber(saldoDec);
       const registradoPorId = (m as any).registradoPorId as string | null;
       const operarioNombre = m.operario?.usuario.nombre ?? null;
       const registradoPorNombre = registradoPorId

@@ -132,6 +132,9 @@ export type OpcionesRender = {
   archivoDestino: string;
   cargarFoto: (raw: string) => FotoCargada | null | undefined;
   generadoEn?: Date;
+  /** Rol de quien pidió el informe; solo cambia cómo se etiquetan las
+   * tareas CORRECTIVA en el texto ("actividad especial" para administrador). */
+  rolSolicitante?: string;
 };
 
 /* -------------------------------- render -------------------------------- */
@@ -177,6 +180,18 @@ function dibujar(
   // Modo medicion: recorre el mismo codigo de dibujo sin escribir nada, para
   // saber cuanto espacio necesita un bloque antes de decidir si cabe en la pagina.
   let seco = false;
+
+  // El administrador del conjunto ve las tareas CORRECTIVA como "actividad
+  // especial" en toda la app; el resto de roles sigue viendo "correctiva".
+  // El tipo en base de datos no cambia, es solo una etiqueta del PDF.
+  const esAdminSolicitante =
+    (opciones.rolSolicitante ?? "").trim().toLowerCase() === "administrador";
+  const etiquetaCorrSingular = esAdminSolicitante
+    ? "actividad especial"
+    : "correctiva";
+  const etiquetaCorrPlural = esAdminSolicitante
+    ? "actividades especiales"
+    : "correctivas";
 
   /* ------------------------- utilidades de dibujo ------------------------ */
 
@@ -318,7 +333,7 @@ function dibujar(
   );
   const m4 = meta(
     "Actividades",
-    `${informe.preventivas.length} preventivas, ${informe.correctivas.length} correctivas`,
+    `${informe.preventivas.length} preventivas, ${informe.correctivas.length} ${etiquetaCorrPlural}`,
     MARGIN_X + colW,
     y,
   );
@@ -391,7 +406,7 @@ function dibujar(
   }
   tarjeta("PREVENTIVAS", String(r.preventivas), "tareas registradas", MARGIN_X, y, tw);
   tarjeta(
-    "CORRECTIVAS",
+    etiquetaCorrPlural.toUpperCase(),
     String(r.correctivas),
     "tareas registradas",
     MARGIN_X + (tw + gap),
@@ -401,7 +416,7 @@ function dibujar(
   tarjeta(
     "REEMPLAZADAS",
     String(r.reemplazadas),
-    "por correctivas",
+    `por ${etiquetaCorrPlural}`,
     MARGIN_X + (tw + gap) * 2,
     y,
     tw,
@@ -591,7 +606,7 @@ function dibujar(
     const chipTxt = a.frecuenciaEtiqueta
       ? a.frecuenciaEtiqueta.toUpperCase()
       : a.tipo === "CORRECTIVA"
-        ? "CORRECTIVA"
+        ? etiquetaCorrSingular.toUpperCase()
         : "";
     doc.font(F_BOLD).fontSize(7.5);
     const chipW = chipTxt ? doc.widthOfString(chipTxt) + 16 : 0;
@@ -849,9 +864,13 @@ function dibujar(
   informe.preventivas.forEach((a, i) => dibujarActividad(a, i + 1));
 
   y += 4;
-  barraSeccion("TAREAS CORRECTIVAS", informe.correctivas.length, informe.correctivas[0]);
+  barraSeccion(
+    `TAREAS ${etiquetaCorrPlural.toUpperCase()}`,
+    informe.correctivas.length,
+    informe.correctivas[0],
+  );
   if (informe.correctivas.length === 0) {
-    notaVacia("No se registraron tareas correctivas en el periodo.");
+    notaVacia(`No se registraron tareas ${etiquetaCorrPlural} en el periodo.`);
   }
   informe.correctivas.forEach((a, i) => dibujarActividad(a, i + 1));
 

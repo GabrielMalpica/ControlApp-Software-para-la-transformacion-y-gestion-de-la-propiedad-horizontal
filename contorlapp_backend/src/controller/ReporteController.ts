@@ -224,11 +224,14 @@ export class ReporteController {
         }
       }
 
+      const rolSolicitante = (req.user?.rol ?? "").trim().toLowerCase();
+
       const clave = [
         empresaId,
         body.conjuntoId ?? "*",
         claveDia(body.desde),
         claveDia(body.hasta),
+        rolSolicitante || "*",
       ].join("|");
       const job = informeMensualJobs.iniciar({
         usuarioId,
@@ -239,6 +242,7 @@ export class ReporteController {
           conjuntoId: body.conjuntoId,
           desde: body.desde,
           hasta: body.hasta,
+          rolSolicitante,
         }),
       });
       res.status(202).json(estadoJobInforme(job));

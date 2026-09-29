@@ -4,6 +4,9 @@ import { CommerceLifecycleController } from "../controller/CommerceLifecycleCont
 import { CommerceOrderController } from "../controller/CommerceOrderController";
 import { CommercePointsController } from "../controller/CommercePointsController";
 import { CommerceWebhookController } from "../controller/CommerceWebhookController";
+import { PagoAdminController } from "../controller/PagoAdminController";
+import { PagoWooController } from "../controller/PagoWooController";
+import { requirePagosWooHmac } from "../middlewares/pagos-woo-hmac.middleware";
 import { authOptional, authRequired } from "../middlewares/auth.middleware";
 import { requirePermission, requirePermissionUnlessRoles } from "../middlewares/permission.middleware";
 import { distributedRateLimit } from "../middlewares/rate-limit.middleware";
@@ -16,6 +19,8 @@ const orderController = new CommerceOrderController();
 const lifecycleController = new CommerceLifecycleController();
 const pointsController = new CommercePointsController();
 const webhookController = new CommerceWebhookController();
+const pagoWooController = new PagoWooController();
+const pagoAdminController = new PagoAdminController();
 const strictMutationLimit = distributedRateLimit({
   name: "commerce:mutaciones",
   windowMs: 15 * 60 * 1000,
@@ -30,12 +35,28 @@ const orderCreationLimit = distributedRateLimit({
   key: (req) => req.user?.sub ?? req.ip ?? "sin-ip",
   message: "Has intentado crear demasiados pedidos. Intenta mas tarde",
 });
+// "Ya pague": ademas del limite general de mutaciones (strictMutationLimit),
+// como mucho una consulta a Factus cada 5s por pedido -Factus tambien tiene
+// su propio 429, esto es para no golpearlo sin necesidad-.
+const pagoVerificarLimit = distributedRateLimit({
+  name: "commerce:pago-verificar",
+  windowMs: 5 * 1000,
+  limit: 1,
+  key: (req) => `${req.user?.sub ?? req.ip ?? "sin-ip"}:${req.params.pedidoId}`,
+  message: "Espera unos segundos antes de volver a verificar el pago",
+});
 
 // Sin authRequired: WooCommerce se autentica con su propia firma HMAC
 // (verificada dentro del controller), no con un Bearer de ControlApp. Ver
 // isPublicRequest() en auth.middleware.ts, que exime justo esta ruta del
 // guard generico.
 router.post("/webhooks/woocommerce", webhookController.ordenActualizada);
+
+// Plugin controlapp-factus-pay de la tienda: sin JWT, firma HMAC (ver
+// requirePagosWooHmac e isPublicRequest en auth.middleware.ts).
+router.post("/pagos/woo/cobros", requirePagosWooHmac, pagoWooController.crear);
+router.get("/pagos/woo/cobros/:referenceCode", requirePagosWooHmac, pagoWooController.obtener);
+router.post("/pagos/woo/cobros/:referenceCode/verificar", requirePagosWooHmac, pagoWooController.verificar);
 
 router.get("/catalogo", authOptional, controller.listarCatalogo);
 router.get("/catalogo/:productId", authOptional, controller.obtenerProducto);
@@ -85,6 +106,66 @@ router.post(
   strictMutationLimit,
   ...uploadComprobante.single("comprobante"),
   lifecycleController.subirComprobante,
+);
+// Cobro por Factus Pay (QR): reemplaza a comprobante+OCR como metodo por
+// defecto. Mismos guards que /estado y /comprobante -residente gestiona lo
+// suyo, el resto necesita el permiso de comercio.pedidos.gestionar-.
+router.post(
+  "/pedidos/:pedidoId/pago",
+  authRequired,
+  requireRoles("residente", "administrador", "gerente", "jefe_operaciones"),
+  requirePermissionUnlessRoles(["residente"], "comercio.pedidos.gestionar"),
+  strictMutationLimit,
+  lifecycleController.crearPago,
+);
+router.get(
+  "/pedidos/:pedidoId/pago",
+  authRequired,
+  requireRoles("residente", "administrador", "gerente", "jefe_operaciones"),
+  requirePermissionUnlessRoles(["residente"], "comercio.pedidos.ver"),
+  lifecycleController.obtenerPago,
+);
+router.post(
+  "/pedidos/:pedidoId/pago/verificar",
+  authRequired,
+  requireRoles("residente", "administrador", "gerente", "jefe_operaciones"),
+  requirePermissionUnlessRoles(["residente"], "comercio.pedidos.gestionar"),
+  strictMutationLimit,
+  pagoVerificarLimit,
+  lifecycleController.verificarPago,
+);
+// Panel de pagos (gerente / jefe de operaciones): historial, cobros que
+// necesitan una decision, reporte de recaudo y conciliacion con Factus.
+// Las rutas fijas van antes de "/pagos/:cobroId".
+const equipoPagos = [authRequired, requireRoles("gerente", "jefe_operaciones")];
+router.get("/pagos", ...equipoPagos, requirePermission("comercio.pedidos.ver"), pagoAdminController.listar);
+router.get("/pagos/conteo", ...equipoPagos, requirePermission("comercio.pedidos.ver"), pagoAdminController.conteo);
+router.get(
+  "/pagos/reportes/recaudo",
+  ...equipoPagos,
+  requirePermission("comercio.pedidos.ver"),
+  pagoAdminController.reporteRecaudo,
+);
+router.get(
+  "/pagos/conciliacion",
+  ...equipoPagos,
+  requirePermission("comercio.pedidos.ver"),
+  pagoAdminController.ultimaConciliacion,
+);
+router.post(
+  "/pagos/conciliacion",
+  ...equipoPagos,
+  requirePermission("comercio.pedidos.gestionar"),
+  strictMutationLimit,
+  pagoAdminController.conciliar,
+);
+router.get("/pagos/:cobroId", ...equipoPagos, requirePermission("comercio.pedidos.ver"), pagoAdminController.obtener);
+router.post(
+  "/pagos/:cobroId/resolver",
+  ...equipoPagos,
+  requirePermission("comercio.pedidos.gestionar"),
+  strictMutationLimit,
+  pagoAdminController.resolver,
 );
 router.get(
   "/puntos/resumen",

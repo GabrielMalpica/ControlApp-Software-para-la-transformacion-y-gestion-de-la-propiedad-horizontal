@@ -31,7 +31,14 @@ function isPublicRequest(method: string, path: string): boolean {
   // Sin Bearer: WooCommerce no manda un JWT de ControlApp. Se autentica con
   // su propia firma HMAC (ver CommerceWebhookController), verificada dentro
   // del handler -esto solo lo exime del guard generico de Bearer token.
-  return method === "POST" && path === "/commerce/webhooks/woocommerce";
+  if (method === "POST" && path === "/commerce/webhooks/woocommerce") return true;
+
+  // Plugin controlapp-factus-pay de la tienda: se autentica con HMAC + nonce
+  // (ver requirePagosWooHmac), no con un JWT.
+  return (
+    (method === "POST" || method === "GET") &&
+    path.startsWith("/commerce/pagos/woo/cobros")
+  );
 }
 
 declare global {
