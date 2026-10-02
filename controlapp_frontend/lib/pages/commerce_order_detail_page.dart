@@ -47,6 +47,12 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
   bool _acting = false;
   bool _uploadingComprobante = false;
 
+  // Cobro por Factus Pay (QR): reemplaza a comprobante+OCR cuando
+  // order.metodoPago == 'factus' (ver _PagoFactusCard).
+  PagoCobroInfo? _pago;
+  bool _pagoBusy = false;
+  String? _pagoError;
+
   @override
   void initState() {
     super.initState();
@@ -97,12 +103,89 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
         _order = order;
         _loading = false;
       });
+      if (order.metodoPago == 'factus' && order.estado == 'PENDIENTE_PAGO') {
+        await _cargarOGenerarPago();
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = AppError.messageOf(error);
         _loading = false;
       });
+    }
+  }
+
+  /// Trae el último cobro del pedido; si nunca se generó uno (por ejemplo, si
+  /// falló justo al crear el pedido), lo genera aquí mismo -sin que quien
+  /// compra tenga que tocar un botón para conseguir su primer QR-.
+  Future<void> _cargarOGenerarPago() async {
+    setState(() {
+      _pagoBusy = true;
+      _pagoError = null;
+    });
+    try {
+      var pago = await _api.obtenerPago(widget.pedidoId);
+      pago ??= await _api.crearPago(widget.pedidoId);
+      if (!mounted) return;
+      setState(() => _pago = pago);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _pagoError = AppError.messageOf(error));
+    } finally {
+      if (mounted) setState(() => _pagoBusy = false);
+    }
+  }
+
+  /// Botón "Ya pagué": consulta a Factus ahora mismo. Si confirma el pago,
+  /// recarga todo el pedido para que el resto de la pantalla (progreso,
+  /// siguientes pasos) se actualice sin esperar el aviso de la campanita.
+  Future<void> _verificarPago() async {
+    setState(() {
+      _pagoBusy = true;
+      _pagoError = null;
+    });
+    try {
+      final pago = await _api.verificarPago(widget.pedidoId);
+      if (!mounted) return;
+      setState(() => _pago = pago);
+      if (pago.estaPagado) {
+        AppFeedback.showInfo(
+          context,
+          title: 'Pago confirmado',
+          message: 'Tu pedido ya quedó pagado.',
+        );
+        await _load();
+        return;
+      }
+      AppFeedback.showInfo(
+        context,
+        title: pago.fallo ? 'El pago no se confirmó' : 'Todavía no vemos el pago',
+        message: pago.fallo
+            ? 'Genera un código nuevo e intenta otra vez.'
+            : 'Si ya pagaste, espera unos segundos y vuelve a intentar.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      AppFeedback.showError(context, message: AppError.messageOf(error));
+    } finally {
+      if (mounted) setState(() => _pagoBusy = false);
+    }
+  }
+
+  Future<void> _generarPagoNuevo() async {
+    setState(() {
+      _pagoBusy = true;
+      _pagoError = null;
+    });
+    try {
+      final pago = await _api.crearPago(widget.pedidoId);
+      if (!mounted) return;
+      setState(() => _pago = pago);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _pagoError = AppError.messageOf(error));
+    } finally {
+      if (mounted) setState(() => _pagoBusy = false);
     }
   }
 
@@ -433,7 +516,18 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
                   ),
                 ),
               ],
-              if (order.estado == 'PENDIENTE_PAGO' ||
+              if (order.metodoPago == 'factus' &&
+                  order.estado == 'PENDIENTE_PAGO') ...<Widget>[
+                const SizedBox(height: 16),
+                _PagoFactusCard(
+                  pago: _pago,
+                  money: _money,
+                  busy: _pagoBusy,
+                  error: _pagoError,
+                  onVerificar: _verificarPago,
+                  onGenerarNuevo: _generarPagoNuevo,
+                ),
+              ] else if (order.estado == 'PENDIENTE_PAGO' ||
                   order.comprobanteUrl != null) ...<Widget>[
                 const SizedBox(height: 16),
                 _ComprobantePagoCard(
@@ -872,6 +966,138 @@ class _VerificacionComprobanteCard extends StatelessWidget {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// QR de Factus Pay: metodo de pago por defecto. El pago se confirma solo
+/// -sin comprobante ni revisión manual-, así que aquí solo hay dos acciones:
+/// esperar/"Ya pagué", o generar un código nuevo si el actual falló o venció.
+class _PagoFactusCard extends StatelessWidget {
+  const _PagoFactusCard({
+    required this.pago,
+    required this.money,
+    required this.busy,
+    required this.error,
+    required this.onVerificar,
+    required this.onGenerarNuevo,
+  });
+
+  final PagoCobroInfo? pago;
+  final NumberFormat money;
+  final bool busy;
+  final String? error;
+  final VoidCallback onVerificar;
+  final VoidCallback onGenerarNuevo;
+
+  @override
+  Widget build(BuildContext context) {
+    final qrBytes = pago?.qrBytes;
+    final vencidoOFallo = pago != null && (pago!.vencidoLocal || pago!.fallo);
+
+    return CommerceClayCard(
+      color: pago != null && pago!.fallo
+          ? CommerceClayTokens.orangeSoft
+          : CommerceClayTokens.mint,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Icon(Icons.qr_code_2_rounded, color: AppTheme.primaryDark),
+              const SizedBox(width: 8),
+              Text(
+                'Pagar',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Escanea el código desde tu app bancaria o Nequi. Se confirma '
+            'solo, sin comprobante.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (pago != null) ...<Widget>[
+            const SizedBox(height: 10),
+            Text(
+              'Monto: ${money.format(pago!.montoEsperado)}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ],
+          const SizedBox(height: 12),
+          if (error != null) ...<Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Icon(
+                  Icons.error_outline_rounded,
+                  color: AppTheme.red,
+                  size: 18,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(error!, style: const TextStyle(color: AppTheme.red)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (qrBytes != null && !vencidoOFallo)
+            Center(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Image.memory(
+                  qrBytes,
+                  height: 220,
+                  width: 220,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            )
+          else if (vencidoOFallo)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                pago!.fallo
+                    ? 'El pago no se pudo confirmar con este código.'
+                    : 'Este código ya venció.',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.red,
+                ),
+              ),
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: vencidoOFallo
+                ? FilledButton.icon(
+                    onPressed: busy ? null : onGenerarNuevo,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Generar código nuevo'),
+                  )
+                : FilledButton.icon(
+                    onPressed: busy ? null : onVerificar,
+                    icon: busy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.check_circle_outline_rounded),
+                    label: Text(busy ? 'Verificando…' : 'Ya pagué'),
+                  ),
+          ),
         ],
       ),
     );

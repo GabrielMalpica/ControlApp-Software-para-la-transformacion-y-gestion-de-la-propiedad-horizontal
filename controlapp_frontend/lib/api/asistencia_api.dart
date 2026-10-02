@@ -55,6 +55,7 @@ class AsistenciaApi {
     required String qrPayload,
     double? latitud,
     double? longitud,
+    double? precisionMetros,
   }) async {
     final resp = await _client.post(
       '$_base/checkin',
@@ -63,6 +64,7 @@ class AsistenciaApi {
         'qrPayload': qrPayload,
         if (latitud != null) 'latitud': latitud,
         if (longitud != null) 'longitud': longitud,
+        if (precisionMetros != null) 'precisionMetros': precisionMetros,
       },
     );
     final data = await _decode(resp) as Map<String, dynamic>;
@@ -84,6 +86,25 @@ class AsistenciaApi {
     final resp = await _client.get(uri.toString());
     final data = await _decode(resp) as Map<String, dynamic>;
     return AsistenciaGrid.fromJson(data);
+  }
+
+  Future<List<VisitasSupervisor>> getVisitasSupervisores({
+    String? conjuntoId,
+    required int anio,
+    required int mes,
+  }) async {
+    final uri = Uri.parse('$_base/visitas-supervisores').replace(
+      queryParameters: {
+        if (conjuntoId != null && conjuntoId.isNotEmpty) 'conjuntoId': conjuntoId,
+        'anio': '$anio',
+        'mes': '$mes',
+      },
+    );
+    final resp = await _client.get(uri.toString());
+    final data = await _decode(resp) as Map<String, dynamic>;
+    return ((data['supervisores'] as List?) ?? const [])
+        .map((e) => VisitasSupervisor.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<AsistenciaResumen> getResumen({

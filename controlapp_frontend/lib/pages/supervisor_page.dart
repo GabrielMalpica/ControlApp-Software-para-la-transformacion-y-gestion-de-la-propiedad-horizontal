@@ -27,6 +27,7 @@ import 'gerente/consignas_valor_agregado_page.dart';
 import '../model/recurso_calendario_item.dart';
 import 'gerente/agenda_recursos_page.dart';
 import 'gerente/mapa_conjunto_page.dart';
+import 'asistencia_checkin_page.dart';
 import 'asistencia_grid_page.dart';
 import 'asistencia_qr_page.dart';
 import 'turnos_extra_page.dart';
@@ -350,6 +351,13 @@ class _SupervisorPageState extends State<SupervisorPage> {
           ),
       ]),
       _SupervisorSection('Asistencia', [
+        if (_can('asistencia.marcar'))
+          _SupervisorTile(
+            'Marcar visita (QR)',
+            Icons.qr_code_scanner_rounded,
+            AppTheme.primary,
+            () => _go(const AsistenciaCheckinPage()),
+          ),
         if (_can('asistencia.ver'))
           _SupervisorTile(
             'Asistencia',

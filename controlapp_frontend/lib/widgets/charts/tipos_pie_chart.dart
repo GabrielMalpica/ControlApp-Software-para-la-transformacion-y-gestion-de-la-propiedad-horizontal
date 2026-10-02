@@ -1,6 +1,8 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../../service/tarea_labels.dart';
+
 class TiposDonutChart extends StatelessWidget {
   final int preventivas;
   final int correctivas;
@@ -70,7 +72,7 @@ class TiposDonutChart extends StatelessWidget {
                       const Color(0xFF22C55E),
                     ),
                     _LegendRow(
-                      'Correctivas',
+                      etiquetaCorrectiva(plural: true),
                       correctivas,
                       const Color(0xFFEF4444),
                     ),

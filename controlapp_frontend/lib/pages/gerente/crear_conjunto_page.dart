@@ -3,6 +3,7 @@ import '../../api/gerente_api.dart';
 import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/model/necesidad_operario_model.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
@@ -84,6 +85,14 @@ class _NecesidadForm {
     for (final d in _diasSemana) d: _NecesidadHorarioDia(),
   };
 
+  // Festivos: independiente de horarioEspecial (por día de semana).
+  // `festivoHorario.activo` es "trabaja festivos"; cualquier rol puede
+  // activarlo -reemplaza la regla fija anterior de que solo Salvavidas
+  // trabajaba festivos-.
+  final _NecesidadHorarioDia festivoHorario = _NecesidadHorarioDia();
+  bool descansoCompensatorio = true;
+  int diasDescansoCompensatorio = 1;
+
   _NecesidadForm({required this.roles, required this.etiquetaSugerida})
     : etiquetaCtrl = TextEditingController();
 
@@ -105,6 +114,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
   final _nitConjuntoCtrl = TextEditingController();
   final _nombreCtrl = TextEditingController();
   final _direccionCtrl = TextEditingController();
+  final _ubicacionMapsCtrl = TextEditingController();
   final _correoCtrl = TextEditingController();
   final _valorMensualCtrl = TextEditingController();
   final _consignasCtrl = TextEditingController();
@@ -402,6 +412,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                 )
                 .toList()
           : const <HorarioConjunto>[];
+      final trabajaFestivos = n.festivoHorario.completo;
       try {
         await _conjuntoApi.crearNecesidad(
           conjuntoNit: conjuntoNit,
@@ -409,6 +420,22 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
           etiqueta: etiqueta,
           horarioEspecial: n.horarioEspecial,
           horarios: horarios,
+          trabajaFestivos: trabajaFestivos,
+          horarioFestivo: trabajaFestivos
+              ? HorarioFranja(
+                  horaApertura: _formatTimeOfDay(n.festivoHorario.apertura!),
+                  horaCierre: _formatTimeOfDay(n.festivoHorario.cierre!),
+                  descansoInicio: n.festivoHorario.descansoCompleto
+                      ? _formatTimeOfDay(n.festivoHorario.descansoInicio!)
+                      : null,
+                  descansoFin: n.festivoHorario.descansoCompleto
+                      ? _formatTimeOfDay(n.festivoHorario.descansoFin!)
+                      : null,
+                )
+              : null,
+          descansoCompensatorio:
+              trabajaFestivos ? n.descansoCompensatorio : false,
+          diasDescansoCompensatorio: n.diasDescansoCompensatorio,
         );
       } catch (e) {
         errores.add('$etiqueta: $e');
@@ -497,6 +524,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
         nitConjunto: nitConjunto,
         nombre: _nombreCtrl.text.trim(),
         direccion: _direccionCtrl.text.trim(),
+        ubicacionMapsUrl: _ubicacionMapsCtrl.text.trim(),
         correo: _correoCtrl.text.trim(),
         empresaId: widget.nit,
         administradorId: _adminSeleccionadoId,
@@ -570,6 +598,7 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
     _nitConjuntoCtrl.dispose();
     _nombreCtrl.dispose();
     _direccionCtrl.dispose();
+    _ubicacionMapsCtrl.dispose();
     _correoCtrl.dispose();
     _valorMensualCtrl.dispose();
     _consignasCtrl.dispose();
@@ -683,6 +712,18 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                         validator: (v) => v == null || v.isEmpty
                             ? 'Ingrese la dirección'
                             : null,
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _ubicacionMapsCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Ubicación en Google Maps (enlace)',
+                          helperText:
+                              'Comparte el lugar desde Google Maps y pega el enlace. '
+                              'El QR de asistencia solo se podrá escanear en el conjunto.',
+                          helperMaxLines: 3,
+                          border: OutlineInputBorder(),
+                        ),
                       ),
                       const SizedBox(height: 8),
                       TextFormField(
@@ -1601,6 +1642,122 @@ class _NecesidadHorarioEspecialWidget extends StatelessWidget {
                     ),
                   );
                 }).toList(),
+              ),
+            const Divider(height: 20),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: const Text('Trabaja festivos'),
+              subtitle: const Text(
+                'Este cargo sí recibe tareas en un día festivo, con su propio '
+                'horario (independiente del rol: antes solo aplicaba a Salvavidas).',
+                style: TextStyle(fontSize: 11),
+              ),
+              value: necesidad.festivoHorario.activo,
+              onChanged: (v) {
+                necesidad.festivoHorario.activo = v ?? false;
+                onChanged();
+              },
+            ),
+            if (necesidad.festivoHorario.activo)
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 8),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final h = necesidad.festivoHorario;
+                    final botones = [
+                      OutlinedButton(
+                        onPressed: () => onSeleccionarHora(h: h, esApertura: true),
+                        child: Text(h.apertura == null ? 'Entrada' : _formatHora(h.apertura!)),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => onSeleccionarHora(
+                          h: h,
+                          esApertura: false,
+                          esDescansoInicio: true,
+                        ),
+                        child: Text(
+                          h.descansoInicio == null ? 'Desc. ini' : _formatHora(h.descansoInicio!),
+                        ),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => onSeleccionarHora(
+                          h: h,
+                          esApertura: false,
+                          esDescansoFin: true,
+                        ),
+                        child: Text(
+                          h.descansoFin == null ? 'Desc. fin' : _formatHora(h.descansoFin!),
+                        ),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => onSeleccionarHora(h: h, esApertura: false),
+                        child: Text(h.cierre == null ? 'Salida' : _formatHora(h.cierre!)),
+                      ),
+                    ];
+                    if (constraints.maxWidth >= 320) {
+                      return Row(
+                        children: [
+                          for (var i = 0; i < botones.length; i++) ...[
+                            if (i > 0) const SizedBox(width: 4),
+                            Expanded(child: botones[i]),
+                          ],
+                        ],
+                      );
+                    }
+                    return Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: botones
+                          .map((b) => SizedBox(width: (constraints.maxWidth - 4) / 2, child: b))
+                          .toList(),
+                    );
+                  },
+                ),
+              ),
+            if (necesidad.festivoHorario.activo)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        title: const Text('Descanso compensatorio'),
+                        subtitle: const Text(
+                          'Si trabaja un festivo que cae en su día de descanso, se le da otro día de descanso.',
+                          style: TextStyle(fontSize: 11),
+                        ),
+                        value: necesidad.descansoCompensatorio,
+                        onChanged: (v) {
+                          necesidad.descansoCompensatorio = v;
+                          onChanged();
+                        },
+                      ),
+                    ),
+                    if (necesidad.descansoCompensatorio)
+                      DropdownButton<int>(
+                        value: necesidad.diasDescansoCompensatorio,
+                        items: List.generate(6, (i) => i + 1)
+                            .map(
+                              (dias) => DropdownMenuItem(
+                                value: dias,
+                                child: Text(
+                                  dias == 1 ? 'Día siguiente' : '$dias días después',
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) {
+                          if (v == null) return;
+                          necesidad.diasDescansoCompensatorio = v;
+                          onChanged();
+                        },
+                      ),
+                  ],
+                ),
               ),
           ],
         ),

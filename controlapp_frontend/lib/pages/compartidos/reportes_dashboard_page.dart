@@ -17,6 +17,7 @@ import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/chart_style.dart';
 import 'package:flutter_application_1/service/permission_service.dart';
 import 'package:flutter_application_1/service/session_service.dart';
+import 'package:flutter_application_1/service/tarea_labels.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/utils/duration_format.dart';
 import 'package:flutter_application_1/utils/evidence_utils.dart';
@@ -347,16 +348,16 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       _p11Ctrl.text = 'Validar programación y confirmar operación del periodo.';
     } else if (corr > prev) {
       _a11Ctrl.text =
-          'Se observa mayor proporción de correctivas frente a preventivas. '
+          'Se observa mayor proporción de ${etiquetaCorrectiva(plural: true, minuscula: true)} frente a preventivas. '
           'Esto suele indicar recurrencia de fallas o baja ejecución preventiva.';
       _p11Ctrl.text =
-          'Reforzar plan preventivo, revisar causas raíz de correctivas repetidas y priorizar actividades de control.';
+          'Reforzar plan preventivo, revisar causas raíz de ${etiquetaCorrectiva(plural: true, minuscula: true)} repetidas y priorizar actividades de control.';
     } else {
       _a11Ctrl.text =
-          'La ejecución preventiva se mantiene estable frente a las correctivas. '
+          'La ejecución preventiva se mantiene estable frente a las ${etiquetaCorrectiva(plural: true, minuscula: true)}. '
           'Esto contribuye a reducir incidencias y mejorar continuidad del servicio.';
       _p11Ctrl.text =
-          'Mantener programación preventiva y monitorear correctivas para evitar recurrencia.';
+          'Mantener programación preventiva y monitorear ${etiquetaCorrectiva(plural: true, minuscula: true)} para evitar recurrencia.';
     }
 
     // 1.2 Estados
@@ -394,7 +395,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
       }
       if (noCompPorReemplazo > 0) {
         bullets.add(
-          'No completadas por reemplazo: $noCompPorReemplazo (confirmar trazabilidad con correctivas que las reemplazaron).',
+          'No completadas por reemplazo: $noCompPorReemplazo (confirmar trazabilidad con ${etiquetaCorrectiva(plural: true, minuscula: true)} que las reemplazaron).',
         );
       }
       if (pend > 0) {
@@ -862,7 +863,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 children: [
                   pw.Expanded(
                     child: pw.Text(
-                      '${t.tipo} | ${t.estado}',
+                      '${etiquetaTipoTarea(t.tipo)} | ${t.estado}',
                       style: pw.TextStyle(
                         fontSize: 10,
                         fontWeight: pw.FontWeight.bold,
@@ -963,7 +964,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                     motivoNoComp.isNotEmpty
                         ? motivoNoComp
                         : (refReemplazo != null
-                              ? 'No fue completada porque fue reemplazada por la correctiva $refReemplazo.'
+                              ? 'No fue completada porque fue reemplazada por la ${etiquetaCorrectiva(minuscula: true)} $refReemplazo.'
                               : 'No fue completada por reemplazo.'),
                     style: pw.TextStyle(
                       fontSize: 8,
@@ -1097,14 +1098,17 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                   ),
                   metricCard('% cierre', '${kd.tasaCierrePct}%'),
                   metricCard('Preventivas', totalPrev.toString()),
-                  metricCard('Correctivas', totalCorr.toString()),
+                  metricCard(
+                    etiquetaCorrectiva(plural: true),
+                    totalCorr.toString(),
+                  ),
                 ],
               ),
 
               pw.SizedBox(height: 10),
               sectionTitle('2. Distribución y Tendencias'),
               chartSection(
-                title: '2.1 Preventivas vs Correctivas',
+                title: '2.1 Preventivas vs ${etiquetaCorrectiva(plural: true)}',
                 imageBytes: charts['tipos']!,
                 analysis: _a11Ctrl.text,
                 actionPlan: _p11Ctrl.text,
@@ -1262,7 +1266,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Text(
-                      '${t.tipo} • ${t.estado}',
+                      '${etiquetaTipoTarea(t.tipo)} • ${t.estado}',
                       style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                     ),
                     pw.SizedBox(height: 3),
@@ -1345,7 +1349,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                           motivoNoComp.isNotEmpty
                               ? motivoNoComp
                               : (refReemplazo != null
-                                    ? 'No fue completada porque fue reemplazada por la correctiva $refReemplazo.'
+                                    ? 'No fue completada porque fue reemplazada por la ${etiquetaCorrectiva(minuscula: true)} $refReemplazo.'
                                     : 'No fue completada por reemplazo.'),
                           style: pw.TextStyle(
                             fontSize: 9,
@@ -1571,7 +1575,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               ),
               pw.SizedBox(height: 10),
               chartSection(
-                title: '1. Preventivas vs Correctivas',
+                title: '1. Preventivas vs ${etiquetaCorrectiva(plural: true)}',
                 imageBytes: charts['tipos']!,
                 analysis: _a11Ctrl.text,
                 actionPlan: _p11Ctrl.text,
@@ -3434,6 +3438,8 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                 _miniPill('Pend', r.pendientesAprobacion),
                 _miniTextPill('Sem', '$asigSem / $dispSem'),
                 _miniTextPill('Mes', '$asigMes / $dispMes'),
+                if (r.diasFestivoTrabajados > 0)
+                  _miniPill('Festivos', r.diasFestivoTrabajados),
               ],
             ),
           ],
@@ -3507,6 +3513,41 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                     'Cantidad: ${r.cantidad.toStringAsFixed(2)} ${r.unidad} • Usos: ${r.usos}',
                     style: const TextStyle(fontSize: 12, color: Colors.black87),
                   ),
+                  if (r.diasActivos > 0) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Promedio: ${r.promedioDiario.toStringAsFixed(1)} ${r.unidad}/día '
+                      '(sobre ${r.diasActivos} día${r.diasActivos == 1 ? '' : 's'} con uso)',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ],
+                  if (r.topTareas.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Dónde más se usó:',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    ...r.topTareas.map(
+                      (t) => Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          '• ${t.descripcion}${t.lugar != null ? ' (${t.lugar})' : ''}: '
+                          '${t.cantidad.toStringAsFixed(2)} ${r.unidad}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -3675,7 +3716,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        _sectionTitle('Preventivas vs Correctivas'),
+        _sectionTitle('Preventivas vs ${etiquetaCorrectiva(plural: true)}'),
         const SizedBox(height: 8),
         _card(
           child: SizedBox(
@@ -3699,7 +3740,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                       ),
                       const SizedBox(height: 10),
                       _legendItem(
-                        'Correctivas',
+                        etiquetaCorrectiva(plural: true),
                         corr,
                         corr / total,
                         ChartStyle.slot3,
@@ -3717,7 +3758,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
           ),
         ),
         const SizedBox(height: 14),
-        _sectionTitle('Cumplimiento de correctivas'),
+        _sectionTitle(
+          'Cumplimiento de ${etiquetaCorrectiva(plural: true, minuscula: true)}',
+        ),
         const SizedBox(height: 8),
         _cumplimientoCard(correctivas, mostrarFrecuencia: false),
         const SizedBox(height: 14),
@@ -3771,7 +3814,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
             .toList()
           ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
     return _buildCumplimientoSerie(
-      titulo: 'Correctivas del rango',
+      titulo: '${etiquetaCorrectiva(plural: true)} del rango',
       frecuencia: null,
       tareas: lista,
     );
@@ -3949,7 +3992,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         color: ChartStyle.slot1,
       ),
       _ChartSliceDatum(
-        label: 'Correctivas',
+        label: etiquetaCorrectiva(plural: true),
         value: corr.toDouble(),
         color: ChartStyle.slot3,
       ),
@@ -4127,7 +4170,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         children: [
           _analisisBlock(
             1,
-            'Tareas preventivas y correctivas',
+            'Tareas preventivas y ${etiquetaCorrectiva(plural: true, minuscula: true)}',
             _a11Ctrl,
             _p11Ctrl,
           ),
@@ -4626,18 +4669,18 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                             child: _diaFiltroDropdown(
                               label: 'Tipo',
                               value: tipoFiltro,
-                              items: const [
-                                DropdownMenuItem(
+                              items: [
+                                const DropdownMenuItem(
                                   value: 'TODAS',
                                   child: Text('Todas'),
                                 ),
-                                DropdownMenuItem(
+                                const DropdownMenuItem(
                                   value: 'PREVENTIVA',
                                   child: Text('Preventivas'),
                                 ),
                                 DropdownMenuItem(
                                   value: 'CORRECTIVA',
-                                  child: Text('Correctivas'),
+                                  child: Text(etiquetaCorrectiva(plural: true)),
                                 ),
                               ],
                               onChanged: (v) =>
@@ -4904,88 +4947,146 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     );
   }
 
-  /// Cuántas líneas de texto (hora, descripción, ubicación) mostrar dado
-  /// [alturaDisponible] (ya sin el padding/borde del Container, porque
-  /// LayoutBuilder recibe las constraints DESPUÉS de que Container los
-  /// descuenta). Es solo una heurística de CALIDAD -para que, ante muy poco
-  /// espacio, se oculten líneas en vez de mostrar texto ilegible- y no algo
-  /// de lo que dependa evitar el overflow: eso lo garantiza el `Flexible`
-  /// en cada línea (ver [_bloqueTareaTimeline]), así que no importa qué tan
-  /// preciso sea este número ni a qué escala de zoom esté el calendario.
-  int _lineasQueCaben(double alturaDisponible) {
-    const altoLinea = 15.0;
-    return (alturaDisponible / altoLinea).floor().clamp(0, 3);
-  }
-
   Widget _bloqueTareaTimeline(TareaDetalleRow t) {
     final color = _estadoColor(t.estado);
-    final onColor = _contrastTextColor(color);
     final df = DateFormat('HH:mm', 'es');
     final ubicacion = (t.ubicacion ?? '').trim();
+    final operarios = t.operarios
+        .map((o) => o.trim())
+        .where((o) => o.isNotEmpty)
+        .toSet()
+        .join(', ');
+    final horas = '${df.format(t.fechaInicio)} - ${df.format(t.fechaFin)}';
+    final tooltip = [
+      t.descripcion,
+      horas,
+      if (ubicacion.isNotEmpty) ubicacion,
+      if (operarios.isNotEmpty) operarios,
+    ].join('\n');
 
-    return InkWell(
-      onTap: () => _openTareaModal(t),
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color),
-        ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final lineas = _lineasQueCaben(constraints.maxHeight);
+    // Estilo agenda (Teams/Outlook): fondo suave del color del estado, franja
+    // sólida a la izquierda y texto oscuro legible.
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 250),
+      child: InkWell(
+        onTap: () => _openTareaModal(t),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: double.infinity,
+          clipBehavior: Clip.hardEdge,
+          padding: const EdgeInsets.fromLTRB(10, 4, 5, 4),
+          decoration: BoxDecoration(
+            color: Color.alphaBlend(
+              color.withValues(alpha: 0.14),
+              Colors.white,
+            ),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withValues(alpha: 0.55)),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final h = constraints.maxHeight;
+              final w = constraints.maxWidth;
+              // Carriles estrechos (varias tareas a la vez): menos texto y
+              // más líneas de título.
+              final narrow = w < 84;
+              final fontTitulo = narrow ? 10.0 : 11.0;
+              final mostrarHora = h >= 30;
+              final mostrarUbicacion =
+                  h >= 62 && !narrow && ubicacion.isNotEmpty;
+              final mostrarOperarios =
+                  h >= 78 && !narrow && operarios.isNotEmpty;
 
-            // Cada línea va en un Flexible: el Column reparte el alto que
-            // de verdad tiene entre las líneas visibles en vez de exigir la
-            // altura natural de cada Text. Así, sin importar la duración de
-            // la tarea, la escala de zoom elegida o cuántas tareas cortas
-            // haya seguidas, el Column jamás pide más espacio del que el
-            // bloque realmente tiene -nunca más "RenderFlex overflowed"-,
-            // en cualquier conjunto.
-            Widget linea(String texto, TextStyle style) => Flexible(
-              child: Text(
-                texto,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: style,
-              ),
-            );
+              // Alturas deterministas (height fijo en los TextStyle): el
+              // título toma las líneas que sobran tras reservar las demás.
+              final reservado =
+                  (mostrarHora ? 12.0 : 0.0) +
+                  (mostrarUbicacion ? 11.0 : 0.0) +
+                  (mostrarOperarios ? 11.0 : 0.0);
+              final maxLineasTitulo = ((h - reservado) / (fontTitulo * 1.2))
+                  .floor()
+                  .clamp(1, 6);
+              final lineasTitulo = narrow
+                  ? maxLineasTitulo
+                  : (h >= 44 ? 2 : 1).clamp(1, maxLineasTitulo);
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (lineas >= 3)
-                  linea(
-                    '${df.format(t.fechaInicio)}–${df.format(t.fechaFin)}',
-                    TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: onColor.withValues(alpha: 0.85),
+              // ClipRect + OverflowBox: si aun así algo no cabe (otra
+              // fuente, zoom del navegador) se recorta en vez de lanzar
+              // "RenderFlex overflowed".
+              return Stack(
+                fit: StackFit.expand,
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: -10,
+                    top: -4,
+                    bottom: -4,
+                    width: 4,
+                    child: ColoredBox(color: color),
+                  ),
+                  ClipRect(
+                    child: OverflowBox(
+                      alignment: Alignment.topLeft,
+                      minHeight: 0,
+                      maxHeight: double.infinity,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            t.descripcion,
+                            maxLines: lineasTitulo,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: fontTitulo,
+                              height: 1.2,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          if (mostrarHora)
+                            Text(
+                              narrow ? df.format(t.fechaInicio) : horas,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                height: 1.2,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          if (mostrarUbicacion)
+                            Text(
+                              ubicacion,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                height: 1.2,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          if (mostrarOperarios)
+                            Text(
+                              operarios,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                height: 1.2,
+                                color: Colors.black45,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
-                if (lineas >= 1)
-                  linea(
-                    t.descripcion,
-                    TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: onColor,
-                    ),
-                  ),
-                if (lineas >= 2 && ubicacion.isNotEmpty)
-                  linea(
-                    ubicacion,
-                    TextStyle(
-                      fontSize: 9,
-                      color: onColor.withValues(alpha: 0.85),
-                    ),
-                  ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
@@ -5145,7 +5246,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                       (t.motivoNoCompletada ?? '').trim().isNotEmpty
                           ? t.motivoNoCompletada!.trim()
                           : (t.reemplazadaPorTareaId != null
-                                ? 'No fue completada porque fue reemplazada por la correctiva #${t.reemplazadaPorTareaId}.'
+                                ? 'No fue completada porque fue reemplazada por la ${etiquetaCorrectiva(minuscula: true)} #${t.reemplazadaPorTareaId}.'
                                 : 'No fue completada por reemplazo.'),
                       style: const TextStyle(
                         fontSize: 12,
@@ -5197,7 +5298,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          _chipBadge(t.tipo),
+                          _chipBadge(etiquetaTipoTarea(t.tipo)),
                           _chipState(t.estado),
                           if (t.esTareaReemplazo) _replacementInfoChip(t),
                         ],
@@ -5269,7 +5370,7 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                           (t.motivoNoCompletada ?? '').trim().isNotEmpty
                               ? t.motivoNoCompletada!.trim()
                               : (t.reemplazadaPorTareaId != null
-                                    ? 'Fue reemplazada por la correctiva #${t.reemplazadaPorTareaId}.'
+                                    ? 'Fue reemplazada por la ${etiquetaCorrectiva(minuscula: true)} #${t.reemplazadaPorTareaId}.'
                                     : 'No completada por reemplazo.'),
                         ),
                     ],

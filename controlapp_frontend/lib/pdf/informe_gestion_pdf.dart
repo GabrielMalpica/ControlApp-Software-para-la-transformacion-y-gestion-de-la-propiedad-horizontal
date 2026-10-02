@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../service/tarea_labels.dart';
+
 Future<Uint8List> buildInformeGestionPdf({
   required String conjuntoNombre,
   required DateTime desde,
@@ -64,7 +66,7 @@ Future<Uint8List> buildInformeGestionPdf({
 
         pw.SizedBox(height: 12),
         pw.Text(
-          'Preventivas vs Correctivas',
+          'Preventivas vs ${etiquetaCorrectiva(plural: true)}',
           style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
         ),
         pw.SizedBox(height: 6),
@@ -144,7 +146,7 @@ pw.Widget _kpiRow(
       box('% Cierre', '${kpi['tasaCierrePct'] ?? 0}%'),
       pw.SizedBox(width: 8),
       box(
-        'Preventivas/Correctivas',
+        'Preventivas/${etiquetaCorrectiva(plural: true)}',
         '${tipos['preventivas'] ?? 0} / ${tipos['correctivas'] ?? 0}',
       ),
     ],

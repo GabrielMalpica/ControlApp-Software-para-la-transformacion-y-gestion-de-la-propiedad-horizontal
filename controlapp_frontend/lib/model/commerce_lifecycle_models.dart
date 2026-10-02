@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter_application_1/model/commerce_models.dart';
 
 class CommerceInsumoRef {
@@ -312,6 +315,84 @@ class ComprobanteVerificacion {
           )
           .toList(),
       analizadoEn: DateTime.tryParse(json['analizadoEn']?.toString() ?? ''),
+    );
+  }
+}
+
+/// Cobro por Factus Pay (QR) para un pedido: reemplaza a "transfiere y sube
+/// tu comprobante" como metodo por defecto. Ver POST/GET
+/// /commerce/pedidos/:id/pago y POST .../pago/verificar ("Ya pagué").
+class PagoCobroInfo {
+  const PagoCobroInfo({
+    required this.id,
+    required this.canal,
+    required this.referenceCode,
+    required this.estado,
+    required this.estadoProveedor,
+    required this.montoEsperado,
+    required this.moneda,
+    required this.qrBase64,
+    required this.expiraLocalEn,
+    required this.creadoEn,
+    required this.actualizadoEn,
+  });
+
+  final int id;
+  final String canal;
+  final String referenceCode;
+  /// CREADO, PENDIENTE, PAGADO, FALLIDO, VENCIDO, ABANDONADO,
+  /// PAGADO_HUERFANO, PAGADO_DUPLICADO, DISCREPANCIA o ERROR.
+  final String estado;
+  /// Ultimo estado crudo de Factus (started|ready|paid|failed|rejected).
+  final String? estadoProveedor;
+  final double montoEsperado;
+  final String moneda;
+  /// PNG en base64 ("data:image/png;base64,...") o null si aun no esta listo.
+  final String? qrBase64;
+  final DateTime? expiraLocalEn;
+  final DateTime? creadoEn;
+  final DateTime? actualizadoEn;
+
+  bool get estaPagado => estado == 'PAGADO';
+  bool get estaActivo =>
+      estado == 'CREADO' || estado == 'PENDIENTE' || estado == 'VENCIDO';
+  bool get fallo => estado == 'FALLIDO' || estado == 'ERROR';
+  bool get vencidoLocal =>
+      estado == 'VENCIDO' ||
+      (expiraLocalEn != null && DateTime.now().isAfter(expiraLocalEn!));
+  bool get tieneQr => qrBase64 != null && qrBase64!.isNotEmpty;
+
+  Uint8List? get qrBytes {
+    final raw = qrBase64;
+    if (raw == null || raw.isEmpty) return null;
+    final comma = raw.indexOf(',');
+    final data = comma >= 0 ? raw.substring(comma + 1) : raw;
+    try {
+      return base64Decode(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  factory PagoCobroInfo.fromJson(Map<String, dynamic> json) {
+    return PagoCobroInfo(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      canal: json['canal']?.toString() ?? '',
+      referenceCode: json['referenceCode']?.toString() ?? '',
+      estado: json['estado']?.toString() ?? '',
+      estadoProveedor: json['estadoProveedor']?.toString(),
+      montoEsperado: (json['montoEsperado'] as num?)?.toDouble() ?? 0,
+      moneda: json['moneda']?.toString() ?? 'COP',
+      qrBase64: json['qrBase64']?.toString(),
+      expiraLocalEn: json['expiraLocalEn'] != null
+          ? DateTime.tryParse(json['expiraLocalEn'].toString())
+          : null,
+      creadoEn: json['creadoEn'] != null
+          ? DateTime.tryParse(json['creadoEn'].toString())
+          : null,
+      actualizadoEn: json['actualizadoEn'] != null
+          ? DateTime.tryParse(json['actualizadoEn'].toString())
+          : null,
     );
   }
 }

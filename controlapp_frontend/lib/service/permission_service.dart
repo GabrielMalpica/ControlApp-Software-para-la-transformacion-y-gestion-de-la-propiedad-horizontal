@@ -24,7 +24,11 @@ class PermissionService {
       'cronograma.excluidas_ver',
     },
     'solicitudes.ver': {'solicitudes.crear', 'solicitudes.gestionar'},
-    'inventario.ver': {'inventario.gestionar'},
+    'inventario.ver': {
+      'inventario.gestionar',
+      'inventario.crear_insumo_personalizado',
+      'inventario.eliminar_insumo_personalizado',
+    },
     'maquinaria.ver': {
       'maquinaria.asignar',
       'maquinaria.crear',

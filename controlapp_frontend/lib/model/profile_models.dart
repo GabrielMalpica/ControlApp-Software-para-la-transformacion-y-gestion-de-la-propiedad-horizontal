@@ -1,13 +1,22 @@
 class ProfileConjunto {
   final String nit;
   final String nombre;
+  // Solo viene poblada para el conjunto del residente (ver
+  // ResidentProfile.conjunto); se usa para prellenar la dirección de entrega
+  // en su checkout. Es obligatoria al registrar el conjunto en la app.
+  final String? direccion;
 
-  const ProfileConjunto({required this.nit, required this.nombre});
+  const ProfileConjunto({
+    required this.nit,
+    required this.nombre,
+    this.direccion,
+  });
 
   factory ProfileConjunto.fromJson(Map<String, dynamic> json) {
     return ProfileConjunto(
       nit: json['nit']?.toString() ?? '',
       nombre: json['nombre']?.toString() ?? '',
+      direccion: json['direccion']?.toString(),
     );
   }
 }

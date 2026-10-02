@@ -129,6 +129,7 @@ class TareaModel {
   // general del conjunto).
   final List<String> necesidadesEtiquetas;
   final bool tieneHorarioEspecial;
+  final bool tieneTrabajaFestivos;
   final String? supervisorNombre;
   final String? ubicacionNombre;
   final String? elementoNombre;
@@ -184,6 +185,7 @@ class TareaModel {
     this.operariosCargos = const [],
     this.necesidadesEtiquetas = const [],
     this.tieneHorarioEspecial = false,
+    this.tieneTrabajaFestivos = false,
     this.supervisorNombre,
     this.ubicacionNombre,
     this.elementoNombre,
@@ -265,6 +267,11 @@ class TareaModel {
     final tieneHorarioEspecial = necesidadesJson
         .whereType<Map>()
         .any((n) => n['horarioEspecial'] == true);
+    // Distintivo visual: la tarea viene de una plaza que trabaja festivos
+    // (puede caer en un día festivo con su propio horario).
+    final tieneTrabajaFestivos = necesidadesJson
+        .whereType<Map>()
+        .any((n) => n['trabajaFestivos'] == true);
 
     // --- Supervisor nombre: plano o anidado ---
     String? supervisorNombre;
@@ -381,6 +388,7 @@ class TareaModel {
       operariosCargos: opCargos,
       necesidadesEtiquetas: necesidadesEtiquetas,
       tieneHorarioEspecial: tieneHorarioEspecial,
+      tieneTrabajaFestivos: tieneTrabajaFestivos,
       prioridad: prioridad,
       zonaCronograma: json['zonaCronograma'] is Map
           ? ZonaCronogramaModel.fromJson(
@@ -443,6 +451,7 @@ class TareaModel {
     'operariosCargos': operariosCargos,
     'necesidadesEtiquetas': necesidadesEtiquetas,
     'tieneHorarioEspecial': tieneHorarioEspecial,
+    'tieneTrabajaFestivos': tieneTrabajaFestivos,
     'supervisorNombre': supervisorNombre,
     'ubicacionNombre': ubicacionNombre,
     'elementoNombre': elementoNombre,
@@ -498,6 +507,7 @@ class TareaModel {
     List<String>? operariosCargos,
     List<String>? necesidadesEtiquetas,
     bool? tieneHorarioEspecial,
+    bool? tieneTrabajaFestivos,
     String? supervisorNombre,
     String? ubicacionNombre,
     String? elementoNombre,
@@ -547,6 +557,7 @@ class TareaModel {
       operariosCargos: operariosCargos ?? this.operariosCargos,
       necesidadesEtiquetas: necesidadesEtiquetas ?? this.necesidadesEtiquetas,
       tieneHorarioEspecial: tieneHorarioEspecial ?? this.tieneHorarioEspecial,
+      tieneTrabajaFestivos: tieneTrabajaFestivos ?? this.tieneTrabajaFestivos,
       supervisorNombre: supervisorNombre ?? this.supervisorNombre,
       ubicacionNombre: ubicacionNombre ?? this.ubicacionNombre,
       elementoNombre: elementoNombre ?? this.elementoNombre,

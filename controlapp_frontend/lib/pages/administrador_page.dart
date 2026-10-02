@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/administrador_api.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
-import 'package:flutter_application_1/model/inventario_activo_model.dart';
 import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
 import 'package:flutter_application_1/pages/conjunto_cart_page.dart';
 import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
@@ -21,20 +20,15 @@ import 'package:flutter_application_1/widgets/responsive_appbar_actions.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 import '../service/theme.dart';
 import 'compartidos/reportes_dashboard_page.dart';
-import 'agenda_herramientas_page.dart';
-import 'agenda_maquinaria_page.dart';
 import 'cronograma_impresion_page.dart';
 import 'cronograma_page.dart';
 import 'inventario_resumen_page.dart';
-import 'inventario_activos_page.dart';
 import 'jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'plan_esperanza_page.dart';
 import 'gerente/compromisos_page.dart';
 import 'gerente/compromisos_por_conjunto_page.dart';
 import 'gerente/carga_residentes_page.dart';
 import 'gerente/crear_residente_page.dart';
-import 'gerente/agenda_recursos_page.dart';
-import 'gerente/lista_insumos_page.dart';
 import 'gerente/residentes_page.dart';
 import 'gerente/mapa_conjunto_page.dart';
 
@@ -319,64 +313,6 @@ class _AdministradorPageState extends State<AdministradorPage> {
             Colors.teal,
             () => _go(MapaConjuntoPage(conjuntoNit: conjunto.nit)),
           ),
-        if (_can('maquinaria.ver'))
-          _AdminTile(
-            'Maquinaria',
-            Icons.precision_manufacturing,
-            AppTheme.red,
-            () => _go(AgendaMaquinariaPage(conjuntoId: conjunto.nit)),
-          ),
-        if (_can('herramientas.ver'))
-          _AdminTile(
-            'Herramientas',
-            Icons.handyman,
-            Colors.orange,
-            () => _go(AgendaHerramientasPage(conjuntoId: conjunto.nit)),
-          ),
-        if (_can('inventario.gestionar'))
-          _AdminTile(
-            'Gestionar insumos',
-            Icons.inventory_outlined,
-            AppTheme.yellow,
-            () => _go(const ListaInsumosPage()),
-          ),
-        if (_can('maquinaria.asignar')) ...[
-          _AdminTile(
-            'Gestionar maquinaria',
-            Icons.construction,
-            AppTheme.red,
-            () => _go(
-              InventarioActivosPage(
-                empresaId: AppConstants.empresaNit,
-                conjuntoId: conjunto.nit,
-              ),
-            ),
-          ),
-          _AdminTile(
-            'Agenda de recursos',
-            Icons.event_repeat,
-            AppTheme.red,
-            () => _go(
-              AgendaRecursosPage(
-                empresaNit: AppConstants.empresaNit,
-                conjuntoId: conjunto.nit,
-              ),
-            ),
-          ),
-        ],
-        if (_can('herramientas.gestionar'))
-          _AdminTile(
-            'Stock de herramientas',
-            Icons.home_repair_service_outlined,
-            Colors.orange,
-            () => _go(
-              InventarioActivosPage(
-                empresaId: AppConstants.empresaNit,
-                conjuntoId: conjunto.nit,
-                initialClase: ClaseActivoInventario.herramienta,
-              ),
-            ),
-          ),
       ]),
       _AdminSection('Analisis y control', [
         if (_can('reportes.ver'))
@@ -388,7 +324,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
               ReportesDashboardPage(
                 conjuntoIdInicial: conjunto.nit,
                 permitirInformesPdf: true,
-                soloResumenTipos: true,
+                soloResumenTipos: false,
                 mostrarAnalisisInformes: false,
                 mostrarDescargaInformes: false,
               ),
@@ -623,7 +559,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
                     ReportesDashboardPage(
                       conjuntoIdInicial: _conjuntoSeleccionado!.nit,
                       permitirInformesPdf: true,
-                      soloResumenTipos: true,
+                      soloResumenTipos: false,
                       mostrarAnalisisInformes: false,
                       mostrarDescargaInformes: false,
                     ),

@@ -5,6 +5,7 @@ import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_activo_model.dart';
 import 'package:flutter_application_1/pages/cumpleanos_page.dart';
 import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
+import 'package:flutter_application_1/pages/pagos_admin_page.dart';
 import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
 import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.dart';
 import 'package:flutter_application_1/pages/festivos_page.dart';
@@ -918,6 +919,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           Icons.receipt_long_outlined,
           Colors.deepOrange,
           () => _abrirYRecargar(ConjuntoOrdersPage(initialConjuntoId: nit)),
+        ),
+        _Tile(
+          "Pagos",
+          Icons.qr_code_2_rounded,
+          AppTheme.primaryDark,
+          () => _abrirYRecargar(const PagosAdminPage()),
         ),
         _Tile("Reporte conjunto", Icons.bar_chart, AppTheme.green, () {
           Navigator.push(

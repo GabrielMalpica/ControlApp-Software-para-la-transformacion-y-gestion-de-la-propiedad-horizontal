@@ -105,21 +105,47 @@ class RegistroAsistenciaDia {
   bool get faltaSalida => horaEntrada != null && horaSalida == null;
 }
 
+/// Descanso compensatorio programado por la plaza del operario para este
+/// día (festivo/domingo trabajado + N días, ver calendarioPlazaCore en el
+/// backend). Un registro manual ("C") ese mismo día es lo que lo confirma
+/// como tomado; sin registro, es solo la previsión.
+class DescansoProgramado {
+  final String? origen; // yyyy-MM-dd del festivo/domingo que lo originó.
+
+  DescansoProgramado({this.origen});
+
+  factory DescansoProgramado.fromJson(Map<String, dynamic> json) {
+    return DescansoProgramado(origen: json['origen']?.toString());
+  }
+}
+
 class AsistenciaDiaCelda {
   final int dia;
   final String fecha; // yyyy-MM-dd
   final int diaSemana; // 0=domingo
+  final bool esFestivo;
+  final String? festivoNombre;
+  // Día en que la plaza no debe ir (descanso semanal o festivo que no
+  // trabaja): se muestra como "D" sin necesidad de registro.
+  final bool esDescansoNormal;
+  final bool esFuturo;
   final bool pendiente;
   final bool incompleto;
   final RegistroAsistenciaDia? registro;
+  final DescansoProgramado? descansoProgramado;
 
   AsistenciaDiaCelda({
     required this.dia,
     required this.fecha,
     required this.diaSemana,
+    this.esFestivo = false,
+    this.festivoNombre,
+    this.esDescansoNormal = false,
+    this.esFuturo = false,
     required this.pendiente,
     required this.incompleto,
     this.registro,
+    this.descansoProgramado,
   });
 
   factory AsistenciaDiaCelda.fromJson(Map<String, dynamic> json) {
@@ -127,10 +153,19 @@ class AsistenciaDiaCelda {
       dia: int.parse(json['dia'].toString()),
       fecha: json['fecha']?.toString() ?? '',
       diaSemana: int.tryParse(json['diaSemana']?.toString() ?? '') ?? 0,
+      esFestivo: json['esFestivo'] == true,
+      festivoNombre: json['festivoNombre']?.toString(),
+      esDescansoNormal: json['esDescansoNormal'] == true,
+      esFuturo: json['esFuturo'] == true,
       pendiente: json['pendiente'] == true,
       incompleto: json['incompleto'] == true,
       registro: json['registro'] != null
           ? RegistroAsistenciaDia.fromJson(json['registro'] as Map<String, dynamic>)
+          : null,
+      descansoProgramado: json['descansoProgramado'] != null
+          ? DescansoProgramado.fromJson(
+              json['descansoProgramado'] as Map<String, dynamic>,
+            )
           : null,
     );
   }
@@ -297,6 +332,10 @@ class AsistenciaResumenOperario {
   final String cargo;
   final int pendientes;
   final Map<String, int> conteoPorConcepto;
+  final int descansosTrabajados;
+  final int festivosTrabajados;
+  final int compensatoriosProgramados;
+  final int compensatoriosTomados;
 
   AsistenciaResumenOperario({
     required this.operarioId,
@@ -305,6 +344,10 @@ class AsistenciaResumenOperario {
     required this.cargo,
     required this.pendientes,
     required this.conteoPorConcepto,
+    this.descansosTrabajados = 0,
+    this.festivosTrabajados = 0,
+    this.compensatoriosProgramados = 0,
+    this.compensatoriosTomados = 0,
   });
 
   factory AsistenciaResumenOperario.fromJson(Map<String, dynamic> json) {
@@ -318,6 +361,14 @@ class AsistenciaResumenOperario {
       conteoPorConcepto: conteo.map(
         (key, value) => MapEntry(key, int.tryParse(value.toString()) ?? 0),
       ),
+      descansosTrabajados:
+          int.tryParse(json['descansosTrabajados']?.toString() ?? '') ?? 0,
+      festivosTrabajados:
+          int.tryParse(json['festivosTrabajados']?.toString() ?? '') ?? 0,
+      compensatoriosProgramados:
+          int.tryParse(json['compensatoriosProgramados']?.toString() ?? '') ?? 0,
+      compensatoriosTomados:
+          int.tryParse(json['compensatoriosTomados']?.toString() ?? '') ?? 0,
     );
   }
 }
@@ -426,6 +477,97 @@ class AsistenciaCheckinResultado {
       registro: RegistroAsistenciaDia.fromJson(
         json['registro'] as Map<String, dynamic>,
       ),
+    );
+  }
+}
+
+
+/// Visita de un supervisor a un conjunto (una entrada y, si ya salió, su salida).
+class VisitaSupervisorDetalle {
+  final String fecha; // yyyy-MM-dd
+  final String conjuntoId;
+  final String conjuntoNombre;
+  final DateTime? horaEntrada;
+  final DateTime? horaSalida;
+  final int? distanciaEntradaMetros;
+  final int? distanciaSalidaMetros;
+
+  VisitaSupervisorDetalle({
+    required this.fecha,
+    required this.conjuntoId,
+    required this.conjuntoNombre,
+    this.horaEntrada,
+    this.horaSalida,
+    this.distanciaEntradaMetros,
+    this.distanciaSalidaMetros,
+  });
+
+  factory VisitaSupervisorDetalle.fromJson(Map<String, dynamic> json) {
+    return VisitaSupervisorDetalle(
+      fecha: json['fecha']?.toString() ?? '',
+      conjuntoId: json['conjuntoId']?.toString() ?? '',
+      conjuntoNombre: json['conjuntoNombre']?.toString() ?? '',
+      horaEntrada: json['horaEntrada'] != null
+          ? DateTime.tryParse(json['horaEntrada'].toString())
+          : null,
+      horaSalida: json['horaSalida'] != null
+          ? DateTime.tryParse(json['horaSalida'].toString())
+          : null,
+      distanciaEntradaMetros: int.tryParse('${json['distanciaEntradaMetros'] ?? ''}'),
+      distanciaSalidaMetros: int.tryParse('${json['distanciaSalidaMetros'] ?? ''}'),
+    );
+  }
+}
+
+class VisitasSupervisorConjunto {
+  final String conjuntoId;
+  final String conjuntoNombre;
+  final int visitas;
+
+  VisitasSupervisorConjunto({
+    required this.conjuntoId,
+    required this.conjuntoNombre,
+    required this.visitas,
+  });
+
+  factory VisitasSupervisorConjunto.fromJson(Map<String, dynamic> json) {
+    return VisitasSupervisorConjunto(
+      conjuntoId: json['conjuntoId']?.toString() ?? '',
+      conjuntoNombre: json['conjuntoNombre']?.toString() ?? '',
+      visitas: int.tryParse('${json['visitas'] ?? 0}') ?? 0,
+    );
+  }
+}
+
+class VisitasSupervisor {
+  final String supervisorId;
+  final String nombre;
+  final int visitas; // entradas
+  final int salidas;
+  final List<VisitasSupervisorConjunto> porConjunto;
+  final List<VisitaSupervisorDetalle> detalle;
+
+  VisitasSupervisor({
+    required this.supervisorId,
+    required this.nombre,
+    required this.visitas,
+    required this.salidas,
+    required this.porConjunto,
+    required this.detalle,
+  });
+
+  factory VisitasSupervisor.fromJson(Map<String, dynamic> json) {
+    return VisitasSupervisor(
+      supervisorId: json['supervisorId']?.toString() ?? '',
+      nombre: json['nombre']?.toString() ?? '',
+      visitas: int.tryParse('${json['visitas'] ?? 0}') ?? 0,
+      salidas: int.tryParse('${json['salidas'] ?? 0}') ?? 0,
+      porConjunto: ((json['porConjunto'] as List?) ?? const [])
+          .map((e) => VisitasSupervisorConjunto.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      detalle: ((json['detalle'] as List?) ?? const [])
+          .map((e) => VisitaSupervisorDetalle.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 }

@@ -1,6 +1,4 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/api/commerce_lifecycle_api.dart';
 import 'package:flutter_application_1/api/conjunto_orders_api.dart';
 import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
@@ -35,13 +33,13 @@ class ConjuntoCartPage extends StatefulWidget {
 class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
   final _cart = ConjuntoCartService.instance;
   final _ordersApi = ConjuntoOrdersApi();
-  final _lifecycleApi = CommerceLifecycleApi();
   final _gerenteApi = GerenteApi();
   final _session = SessionService();
   final _notesCtrl = TextEditingController();
   final _direccionCtrl = TextEditingController();
-  String? _metodoPago;
-  PlatformFile? _comprobanteFile;
+  // Único método de pago: se cobra con un código QR que se confirma solo, sin
+  // comprobantes. El backend sabe que "factus" significa eso.
+  static const _metodoPago = 'factus';
   final _money = NumberFormat.currency(locale: 'es_CO', symbol: 'COP ');
   final String _idempotencyKey =
       'conjunto-${DateTime.now().microsecondsSinceEpoch}';
@@ -149,17 +147,6 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
     }
   }
 
-  Future<void> _pickComprobante() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: <String>['jpg', 'jpeg', 'png', 'pdf'],
-      withData: true,
-    );
-    final file = result?.files.firstOrNull;
-    if (file == null || !mounted) return;
-    setState(() => _comprobanteFile = file);
-  }
-
   Future<void> _checkout() async {
     if (_cart.items.isEmpty || _submitting) return;
     if (_requiresSelector && _selectedConjuntoId == null) {
@@ -176,63 +163,31 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
       );
       return;
     }
-    if (_metodoPago == null) {
-      AppFeedback.showError(
-        context,
-        message: 'Elige con qué método vas a transferir el pago.',
-      );
-      return;
-    }
-    if (_comprobanteFile == null) {
-      AppFeedback.showError(
-        context,
-        message: 'Adjunta el comprobante de la transferencia para continuar.',
-      );
-      return;
-    }
 
     setState(() => _submitting = true);
     try {
       final pedido = await _ordersApi.crearPedido(
         items: _cart.items,
         direccionEntrega: _direccionCtrl.text,
-        metodoPago: _metodoPago!,
+        metodoPago: _metodoPago,
         conjuntoId: _checkoutConjuntoId,
         notas: _notesCtrl.text,
         idempotencyKey: _idempotencyKey,
       );
-      // El comprobante va pegado a la creación del pedido -no tiene sentido
-      // dejarlo para despues- pero si esta subida puntual falla (ej. se cae
-      // la red), el pedido ya existe: se avisa y se deja reintentar desde el
-      // detalle, que tiene la misma opcion de adjuntar.
-      String? uploadError;
-      try {
-        await _lifecycleApi.subirComprobante(
-          pedidoId: pedido.id,
-          file: _comprobanteFile!,
-          metodoPago: _metodoPago,
-        );
-      } catch (error) {
-        uploadError = AppError.messageOf(error);
-      }
       _cart.clear();
       if (!mounted) return;
 
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          icon: Icon(
-            uploadError == null
-                ? Icons.check_circle_rounded
-                : Icons.warning_amber_rounded,
-            color: uploadError == null ? AppTheme.primary : AppTheme.red,
+          icon: const Icon(
+            Icons.check_circle_rounded,
+            color: AppTheme.primary,
             size: 44,
           ),
           title: const Text('Pedido operativo creado'),
           content: Text(
-            uploadError == null
-                ? 'Pedido #${pedido.id} para ${pedido.conjuntoNombre ?? _selectedConjuntoNombre}.\n\nTotal: ${_money.format(pedido.total)}\nEstado: pendiente de pago.\n\nTu comprobante ya quedó adjunto, un administrador lo revisará.'
-                : 'Pedido #${pedido.id} creado, pero el comprobante no se pudo subir ($uploadError). Podrás adjuntarlo desde el detalle del pedido.',
+            'Pedido #${pedido.id} para ${pedido.conjuntoNombre ?? _selectedConjuntoNombre}.\n\nTotal: ${_money.format(pedido.total)}\nEstado: pendiente de pago.\n\nA continuación verás el código QR para pagar.',
             textAlign: TextAlign.center,
           ),
           actionsAlignment: MainAxisAlignment.center,
@@ -391,15 +346,33 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        MetodoPagoSelector(
-                          value: _metodoPago,
-                          onChanged: (value) =>
-                              setState(() => _metodoPago = value),
-                        ),
-                        const SizedBox(height: 12),
-                        ComprobantePickerCard(
-                          file: _comprobanteFile,
-                          onPickFile: _pickComprobante,
+                        const CommerceClayCard(
+                          color: CommerceClayTokens.mint,
+                          child: Row(
+                            children: <Widget>[
+                              Icon(
+                                Icons.qr_code_2_rounded,
+                                color: AppTheme.primaryDark,
+                              ),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Text(
+                                      'Pagar',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Al crear el pedido vas a ver un código QR para pagar. Se confirma solo, sin comprobante.',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 12),
                         CommerceClayCard(
@@ -421,124 +394,6 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
                 ),
         );
       },
-    );
-  }
-}
-
-/// Selector del comprobante de pago, adjuntado DURANTE el checkout (no
-/// despues) — compartido entre el checkout de conjunto y el de residente.
-class ComprobantePickerCard extends StatelessWidget {
-  const ComprobantePickerCard({
-    super.key,
-    required this.file,
-    required this.onPickFile,
-  });
-
-  final PlatformFile? file;
-  final VoidCallback onPickFile;
-
-  @override
-  Widget build(BuildContext context) {
-    final tiene = file != null;
-    return CommerceClayCard(
-      color: tiene ? CommerceClayTokens.mint : CommerceClayTokens.surface,
-      child: Row(
-        children: <Widget>[
-          Icon(
-            tiene ? Icons.check_circle_rounded : Icons.upload_file_rounded,
-            color: tiene ? AppTheme.primary : CommerceClayTokens.muted,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  tiene ? 'Comprobante adjunto' : 'Comprobante de pago',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                Text(
-                  tiene
-                      ? file!.name
-                      : 'Adjunta la captura o PDF de la transferencia.',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: onPickFile,
-            child: Text(tiene ? 'Cambiar' : 'Adjuntar'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Selector de método de pago manual (Nequi/Bre-B) con su QR — compartido
-/// entre el checkout de conjunto y el de residente, ver resident_cart_page.dart.
-class MetodoPagoSelector extends StatelessWidget {
-  const MetodoPagoSelector({
-    super.key,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String? value;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return CommerceClayCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            'Método de pago',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Aún no hay pasarela automática: transfieres y luego adjuntas '
-            'el comprobante en el detalle del pedido.',
-            style: TextStyle(color: CommerceClayTokens.muted, fontSize: 12),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: kMetodoPagoLabel.entries
-                .map(
-                  (entry) => ChoiceChip(
-                    selected: value == entry.key,
-                    label: Text(entry.value),
-                    onSelected: (_) => onChanged(entry.key),
-                  ),
-                )
-                .toList(),
-          ),
-          if (value != null && kMetodoPagoQrAsset[value] != null) ...<Widget>[
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Image.asset(
-                kMetodoPagoQrAsset[value]!,
-                height: 180,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 100,
-                  alignment: Alignment.center,
-                  color: Colors.white,
-                  child: const Text('QR no configurado todavía.'),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
     );
   }
 }

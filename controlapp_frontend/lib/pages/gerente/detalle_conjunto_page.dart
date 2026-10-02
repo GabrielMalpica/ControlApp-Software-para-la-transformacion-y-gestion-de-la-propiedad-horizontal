@@ -52,6 +52,8 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
   final TextEditingController _nombreCtrl = TextEditingController();
   final TextEditingController _direccionCtrl = TextEditingController();
   final TextEditingController _correoCtrl = TextEditingController();
+  final TextEditingController _ubicacionMapsCtrl = TextEditingController();
+  final TextEditingController _radioCtrl = TextEditingController();
   final TextEditingController _valorMensualCtrl = TextEditingController();
   final TextEditingController _consignasCtrl = TextEditingController();
   final TextEditingController _valorAgregadoCtrl = TextEditingController();
@@ -116,6 +118,8 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
     _nombreCtrl.text = c.nombre;
     _direccionCtrl.text = c.direccion;
     _correoCtrl.text = c.correo;
+    _ubicacionMapsCtrl.text = c.ubicacionMapsUrl ?? '';
+    _radioCtrl.text = '${c.radioAsistenciaMetros}';
     _valorMensualCtrl.text = c.valorMensual?.toStringAsFixed(0) ?? '';
     _consignasCtrl.text = c.consignasEspeciales.join('\n');
     _valorAgregadoCtrl.text = c.valorAgregado.join('\n');
@@ -319,6 +323,8 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
         nombre: _nombreCtrl.text.trim(),
         direccion: _direccionCtrl.text.trim(),
         correo: _correoCtrl.text.trim(),
+        ubicacionMapsUrl: _ubicacionMapsCtrl.text.trim(),
+        radioAsistenciaMetros: int.tryParse(_radioCtrl.text.trim()),
         activo: _activo,
         valorMensual: valorMensual,
         fechaInicioContrato: _fechaInicioContrato,
@@ -375,6 +381,8 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
     _nombreCtrl.dispose();
     _direccionCtrl.dispose();
     _correoCtrl.dispose();
+    _ubicacionMapsCtrl.dispose();
+    _radioCtrl.dispose();
     _valorMensualCtrl.dispose();
     _consignasCtrl.dispose();
     _valorAgregadoCtrl.dispose();
@@ -624,6 +632,12 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
           _infoRow('Inicio contrato', _dateText(c.fechaInicioContrato)),
           _infoRow('Fin contrato', _dateText(c.fechaFinContrato)),
           _infoRow('Valor mensual', _valorMensualText(c.valorMensual)),
+          _infoRow(
+            'Ubicación (asistencia)',
+            c.tieneUbicacion
+                ? 'Configurada · radio ${c.radioAsistenciaMetros} m'
+                : 'Sin configurar (el QR no valida distancia)',
+          ),
           _infoRow('Estado', c.activo ? 'Activo' : 'Inactivo'),
           const SizedBox(height: 10),
           Align(
@@ -689,6 +703,27 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
           _inputField(label: 'Dirección', controller: _direccionCtrl),
           const SizedBox(height: 10),
           _inputField(label: 'Correo', controller: _correoCtrl),
+          const SizedBox(height: 10),
+          _inputField(
+            label: 'Ubicación en Google Maps (enlace)',
+            controller: _ubicacionMapsCtrl,
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Abre el conjunto en Google Maps, toca Compartir y pega el enlace. '
+              'Con esto el QR de asistencia solo se puede escanear estando en el '
+              'conjunto. Déjalo vacío para no validar la ubicación.',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _inputField(
+            label: 'Distancia máxima para marcar (metros)',
+            controller: _radioCtrl,
+            number: true,
+          ),
           const SizedBox(height: 10),
           _inputField(
             label: 'Valor mensual',

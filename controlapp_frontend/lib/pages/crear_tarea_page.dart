@@ -7,12 +7,14 @@ import '../api/empresa_api.dart';
 import '../api/cronograma_api.dart';
 import '../api/herramienta_api.dart';
 
+import '../model/actividad_especial_pendiente.dart';
 import '../model/conjunto_model.dart';
 import '../model/herramienta_model.dart';
 import '../model/maquinaria_model.dart';
 import '../model/tarea_model.dart';
 import '../service/app_constants.dart';
 import '../service/app_router.dart';
+import '../service/tarea_labels.dart';
 import '../service/theme.dart';
 import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
@@ -45,9 +47,9 @@ class _CrearTareaPageState extends State<CrearTareaPage> {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
-        title: const Text(
-          'Crear tarea correctiva',
-          style: TextStyle(color: Colors.white),
+        title: Text(
+          'Crear tarea ${etiquetaCorrectiva(minuscula: true)}',
+          style: const TextStyle(color: Colors.white),
         ),
       ),
       body: CorrectivaSchedulerForm(
@@ -67,6 +69,12 @@ class CorrectivaSchedulerForm extends StatefulWidget {
   final Future<void> Function()? onCreated;
   final TareaModel? existingTask;
 
+  /// Cuando se define, el formulario entra en "modo pendiente": oculta
+  /// fecha/hora, no llama a la API y en su lugar arma una
+  /// [ActividadEspecialPendiente] y la entrega por este callback para que
+  /// el cronograma la muestre en la bandeja de arrastre.
+  final ValueChanged<ActividadEspecialPendiente>? onPendienteCreada;
+
   const CorrectivaSchedulerForm({
     super.key,
     required this.nit,
@@ -75,6 +83,7 @@ class CorrectivaSchedulerForm extends StatefulWidget {
     this.embedded = false,
     this.onCreated,
     this.existingTask,
+    this.onPendienteCreada,
   });
 
   @override
@@ -84,6 +93,8 @@ class CorrectivaSchedulerForm extends StatefulWidget {
 
 class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
   final _formKey = GlobalKey<FormState>();
+
+  bool get _modoPendiente => widget.onPendienteCreada != null;
 
   // APIs
   final TareaApi _tareaApi = TareaApi();
@@ -894,14 +905,16 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
   Future<void> _onSuccess() async {
     if (!mounted) return;
 
+    final etiqueta = etiquetaCorrectiva();
+
     if (widget.embedded) {
       AppFeedback.showFromSnackBar(
         context,
         SnackBar(
           content: Text(
             widget.existingTask == null
-                ? 'Tarea correctiva creada correctamente.'
-                : 'Tarea correctiva actualizada correctamente.',
+                ? '$etiqueta creada correctamente.'
+                : '$etiqueta actualizada correctamente.',
           ),
         ),
       );
@@ -919,8 +932,8 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
         title: const Text('Éxito'),
         content: Text(
           widget.existingTask == null
-              ? 'Tarea correctiva creada correctamente.'
-              : 'Tarea correctiva actualizada correctamente.',
+              ? '$etiqueta creada correctamente.'
+              : '$etiqueta actualizada correctamente.',
         ),
         actions: [
           TextButton(
@@ -1707,7 +1720,69 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
     return seleccionadas;
   }
 
+  void _guardarPendiente() {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_ubicacionSeleccionada == null || _elementoSeleccionado == null) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(content: Text('Seleccione ubicación y elemento')),
+      );
+      return;
+    }
+
+    final duracionMin = int.tryParse(_duracionCtrl.text.trim());
+    if (duracionMin == null || duracionMin <= 0) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(content: Text('Duración (minutos) inválida')),
+      );
+      return;
+    }
+
+    if (_operariosSeleccionadosIds.isEmpty) {
+      AppFeedback.showFromSnackBar(
+        context,
+        const SnackBar(content: Text('Seleccione al menos un operario')),
+      );
+      return;
+    }
+
+    final pendiente = ActividadEspecialPendiente(
+      localId: DateTime.now().microsecondsSinceEpoch.toString(),
+      descripcion: _descripcionCtrl.text.trim(),
+      prioridad: _prioridad,
+      duracionMinutos: duracionMin,
+      ubicacionId: _ubicacionSeleccionada!.id,
+      ubicacionNombre: _ubicacionSeleccionada!.nombre,
+      elementoId: _elementoSeleccionado!.id,
+      elementoNombre: _elementoSeleccionado!.nombre,
+      operariosIds: List<String>.from(_operariosSeleccionadosIds),
+      operariosNombres: _operarios
+          .where((o) => _operariosSeleccionadosIds.contains(o.cedula.trim()))
+          .map((o) => o.nombre)
+          .toList(),
+      supervisorId: _supervisorId,
+      observaciones: _observacionesCtrl.text.trim().isEmpty
+          ? null
+          : _observacionesCtrl.text.trim(),
+      maquinariaIds: List<int>.from(_maquinariaSeleccionadaIds),
+      herramientas: _herramientasSeleccionadas.entries
+          .map((e) => {'herramientaId': e.key, 'cantidad': e.value})
+          .toList(),
+    );
+
+    widget.onPendienteCreada!(pendiente);
+    if (!mounted) return;
+    Navigator.of(context).pop(true);
+  }
+
   Future<void> _guardarTarea() async {
+    if (_modoPendiente) {
+      _guardarPendiente();
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) return;
 
     final conjunto = _conjuntoSeleccionado;
@@ -2221,8 +2296,8 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
           SectionCard(
             title: '1. Dónde se realizará',
             subtitle: widget.embedded
-                ? 'Selecciona la ubicación y el elemento antes de programar la correctiva.'
-                : 'Selecciona el conjunto, la ubicación y el elemento antes de programar la correctiva.',
+                ? 'Selecciona la ubicación y el elemento de la ${etiquetaCorrectiva(minuscula: true)}.'
+                : 'Selecciona el conjunto, la ubicación y el elemento de la ${etiquetaCorrectiva(minuscula: true)}.',
             child: Column(
               children: [
                 if (!widget.embedded) ...[
@@ -2327,8 +2402,9 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
           const SizedBox(height: 24),
           SectionCard(
             title: '2. Qué se va a hacer',
-            subtitle:
-                'Define la descripcion, prioridad, horario y observaciones de la tarea.',
+            subtitle: _modoPendiente
+                ? 'Define la descripcion, prioridad, duración y observaciones. Elegirás dónde ubicarla arrastrándola en el cronograma.'
+                : 'Define la descripcion, prioridad, horario y observaciones de la tarea.',
             child: Column(
               children: [
                 TextFormField(
@@ -2352,59 +2428,61 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
                   ],
                   onChanged: (v) => setState(() => _prioridad = v ?? 2),
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: InkWell(
-                        onTap: _seleccionarFechaInicio,
-                        child: InputDecorator(
-                          decoration: const InputDecoration(
-                            labelText: "Fecha inicio",
-                            border: OutlineInputBorder(),
-                          ),
-                          child: Text(
-                            fechaInicio == null
-                                ? "Seleccionar"
-                                : "${fechaInicio!.day}/${fechaInicio!.month}/${fechaInicio!.year}",
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: InkWell(
-                        onTap: _seleccionarFechaFin,
-                        child: InputDecorator(
-                          decoration: const InputDecoration(
-                            labelText: "Fecha fin",
-                            border: OutlineInputBorder(),
-                          ),
-                          child: Text(
-                            fechaFin == null
-                                ? "Seleccionar"
-                                : "${fechaFin!.day}/${fechaFin!.month}/${fechaFin!.year}",
+                if (!_modoPendiente) ...[
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: _seleccionarFechaInicio,
+                          child: InputDecorator(
+                            decoration: const InputDecoration(
+                              labelText: "Fecha inicio",
+                              border: OutlineInputBorder(),
+                            ),
+                            child: Text(
+                              fechaInicio == null
+                                  ? "Seleccionar"
+                                  : "${fechaInicio!.day}/${fechaInicio!.month}/${fechaInicio!.year}",
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                InkWell(
-                  onTap: _seleccionarHoraInicio,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: "Hora de inicio",
-                      border: OutlineInputBorder(),
-                    ),
-                    child: Text(
-                      _horaInicio == null
-                          ? "Seleccionar"
-                          : _horaInicio!.format(context),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: InkWell(
+                          onTap: _seleccionarFechaFin,
+                          child: InputDecorator(
+                            decoration: const InputDecoration(
+                              labelText: "Fecha fin",
+                              border: OutlineInputBorder(),
+                            ),
+                            child: Text(
+                              fechaFin == null
+                                  ? "Seleccionar"
+                                  : "${fechaFin!.day}/${fechaFin!.month}/${fechaFin!.year}",
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  InkWell(
+                    onTap: _seleccionarHoraInicio,
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: "Hora de inicio",
+                        border: OutlineInputBorder(),
+                      ),
+                      child: Text(
+                        _horaInicio == null
+                            ? "Seleccionar"
+                            : _horaInicio!.format(context),
+                      ),
                     ),
                   ),
-                ),
+                ],
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _duracionCtrl,
@@ -2501,7 +2579,7 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
             SectionCard(
               title: '5. Con qué herramientas',
               subtitle:
-                  'Selecciona cantidades disponibles del conjunto o de la empresa para esta correctiva.',
+                  'Selecciona cantidades disponibles del conjunto o de la empresa para esta ${etiquetaCorrectiva(minuscula: true)}.',
               child: InkWell(
                 onTap: _mostrarSelectorHerramientas,
                 child: InputDecorator(
@@ -2535,9 +2613,11 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
             label: Text(
               _guardando
                   ? "Guardando..."
-                  : widget.existingTask == null
-                  ? "Guardar"
-                  : "Guardar cambios",
+                  : widget.existingTask != null
+                  ? "Guardar cambios"
+                  : _modoPendiente
+                  ? "Guardar y ubicar en el cronograma"
+                  : "Guardar",
             ),
             style: AppTheme.saveButtonStyle,
           ),

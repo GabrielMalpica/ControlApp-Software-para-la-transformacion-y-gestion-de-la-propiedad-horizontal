@@ -50,10 +50,19 @@ class _InventarioPageState extends State<InventarioPage> {
   bool get _canManageInventory =>
       PermissionService.instance.can('inventario.gestionar');
 
-  /// Crear insumos personalizados queda reservado a gerente y jefe de
-  /// operación, sin importar si otros roles tienen el permiso general
-  /// 'inventario.gestionar' (ej. para agregar stock a insumos existentes).
-  bool get _canCrearInsumoPersonalizado =>
+  /// Crear y eliminar insumos personalizados dependen de permisos propios
+  /// (asignables desde la gestión de accesos): por defecto crean gerente,
+  /// jefe de operaciones y administrador; eliminan solo gerente y jefe.
+  bool get _canCrearInsumoPersonalizado => PermissionService.instance.can(
+    'inventario.crear_insumo_personalizado',
+  );
+  bool get _canEliminarInsumoPersonalizado => PermissionService.instance.can(
+    'inventario.eliminar_insumo_personalizado',
+  );
+
+  /// Editar un insumo personalizado sigue reservado a gerente y jefe de
+  /// operación (el backend también lo exige).
+  bool get _canEditarInsumoPersonalizado =>
       _canManageInventory &&
       PermissionService.instance.hasAnyRole(['gerente', 'jefe_operaciones']);
 
@@ -612,7 +621,8 @@ class _InventarioPageState extends State<InventarioPage> {
                 source: _InventarioDataSource(
                   data: filtrados,
                   canManage: _canManageInventory,
-                  canManagePersonalizados: _canCrearInsumoPersonalizado,
+                  canEditarPersonalizados: _canEditarInsumoPersonalizado,
+                  canEliminarPersonalizados: _canEliminarInsumoPersonalizado,
                   onAgregarStock: _agregarStockInsumo,
                   onRegistrarSalida: _registrarSalidaInsumo,
                   onVerKardex: _verKardexInsumo,
@@ -658,7 +668,7 @@ class _InventarioPageState extends State<InventarioPage> {
           label: const Text('Ver kardex'),
         ),
       );
-      if (inv.personalizado && _canCrearInsumoPersonalizado) {
+      if (inv.personalizado && _canEditarInsumoPersonalizado) {
         acciones.add(
           OutlinedButton.icon(
             onPressed: () => _editarInsumoPersonalizado(inv),
@@ -666,6 +676,8 @@ class _InventarioPageState extends State<InventarioPage> {
             label: const Text('Editar'),
           ),
         );
+      }
+      if (inv.personalizado && _canEliminarInsumoPersonalizado) {
         acciones.add(
           OutlinedButton.icon(
             onPressed: () => _confirmarEliminarInsumoPersonalizado(inv),
@@ -1285,6 +1297,13 @@ class _InventarioPageState extends State<InventarioPage> {
   }
 }
 
+/// Formatea una cantidad de insumo sin decimales de sobra (ni "ruido" de
+/// coma flotante, ej. 19931.999999999996): entero si es entero, si no 2
+/// decimales. Insumos ahora medidos en ml/g suelen ser números grandes, así
+/// que interpolar el `num` crudo en un Text puede desbordar el layout.
+String _numTextoLimpio(num v) =>
+    v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
+
 String _trazabilidadTexto(InventarioItemResponse inv) {
   final nombre = inv.creadoPorNombre ?? inv.creadoPorId;
   if (nombre == null) return 'Sin datos de registro';
@@ -1302,8 +1321,11 @@ class _InventarioDataSource extends DataTableSource {
   /// Puede agregar stock a cualquier insumo (catálogo o personalizado).
   final bool canManage;
 
-  /// Puede editar/eliminar la definición de insumos personalizados.
-  final bool canManagePersonalizados;
+  /// Puede editar la definición de insumos personalizados.
+  final bool canEditarPersonalizados;
+
+  /// Puede eliminar insumos personalizados.
+  final bool canEliminarPersonalizados;
   final Future<void> Function(InventarioItemResponse item)? onAgregarStock;
   final Future<void> Function(InventarioItemResponse item)? onRegistrarSalida;
   final void Function(InventarioItemResponse item)? onVerKardex;
@@ -1313,7 +1335,8 @@ class _InventarioDataSource extends DataTableSource {
   _InventarioDataSource({
     required this.data,
     this.canManage = false,
-    this.canManagePersonalizados = false,
+    this.canEditarPersonalizados = false,
+    this.canEliminarPersonalizados = false,
     this.onAgregarStock,
     this.onRegistrarSalida,
     this.onVerKardex,
@@ -1449,12 +1472,13 @@ class _InventarioDataSource extends DataTableSource {
                       ? null
                       : () => onVerKardex!(inv),
                 ),
-                if (inv.personalizado && canManagePersonalizados) ...[
+                if (inv.personalizado && canEditarPersonalizados)
                   IconButton(
                     icon: const Icon(Icons.edit_outlined, size: 20),
                     tooltip: 'Editar',
                     onPressed: onEditar == null ? null : () => onEditar!(inv),
                   ),
+                if (inv.personalizado && canEliminarPersonalizados)
                   IconButton(
                     icon: Icon(
                       Icons.delete_outline,
@@ -1466,7 +1490,6 @@ class _InventarioDataSource extends DataTableSource {
                         ? null
                         : () => onEliminar!(inv),
                   ),
-                ],
               ],
             ),
           ),
@@ -2391,10 +2414,10 @@ class _AgregarStockDialogState extends State<_AgregarStockDialog> {
       final totalTxto = total == total.roundToDouble()
           ? total.toStringAsFixed(0)
           : total.toStringAsFixed(2);
-      return 'Nuevo stock: $nuevaCantidad ${widget.item.unidad} '
+      return 'Nuevo stock: ${_numTextoLimpio(nuevaCantidad)} ${widget.item.unidad} '
           '($totalTxto $unidadContenido)';
     }
-    return 'Nuevo stock: $nuevaCantidad ${widget.item.unidad}';
+    return 'Nuevo stock: ${_numTextoLimpio(nuevaCantidad)} ${widget.item.unidad}';
   }
 
   @override
@@ -2543,7 +2566,7 @@ class _RegistrarSalidaDialogState extends State<_RegistrarSalidaDialog> {
       return 'Quedarán: $totalTxto ${widget.item.unidadContenido} '
           '(≈$envases ${widget.item.unidad})';
     }
-    return 'Quedarán: $nuevaCantidad ${widget.item.unidad}';
+    return 'Quedarán: ${_numTextoLimpio(nuevaCantidad)} ${widget.item.unidad}';
   }
 
   @override
@@ -2707,7 +2730,7 @@ class _KardexInsumoPageState extends State<KardexInsumoPage> {
   /// Saldo (en unidad de conteo, ej. tarros) mostrado como "envases físicos"
   /// redondeados hacia arriba, más el total real en la medida si aplica.
   String _saldoTexto(num saldo) {
-    if (!_enMedida) return '$saldo ${widget.item.unidad}';
+    if (!_enMedida) return '${_numTexto(saldo)} ${widget.item.unidad}';
     final total = saldo * widget.item.contenidoPorUnidad!;
     return '${saldo.ceil()} ${widget.item.unidad} '
         '(${_numTexto(total)} ${widget.item.unidadContenido})';
@@ -2720,7 +2743,9 @@ class _KardexInsumoPageState extends State<KardexInsumoPage> {
   /// (puede ser fraccionario en salidas, ej. 0.56 tarro = 1 L de un tarro
   /// de 1.8 L), así que las salidas se muestran convertidas de vuelta.
   String _cantidadMovimientoTexto(MovimientoInsumoResponse m) {
-    if (!_enMedida || m.esEntrada) return '${m.cantidad} ${widget.item.unidad}';
+    if (!_enMedida || m.esEntrada) {
+      return '${_numTexto(m.cantidad)} ${widget.item.unidad}';
+    }
     final enMedida = m.cantidad * widget.item.contenidoPorUnidad!;
     return '${_numTexto(enMedida)} ${widget.item.unidadContenido}';
   }
@@ -2778,6 +2803,8 @@ class _KardexInsumoPageState extends State<KardexInsumoPage> {
                     title: Text(
                       '${m.esEntrada ? "ENTRADA" : "SALIDA"} · '
                       '${m.esEntrada ? "+" : "-"}${_cantidadMovimientoTexto(m)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         color: color,
@@ -2808,10 +2835,15 @@ class _KardexInsumoPageState extends State<KardexInsumoPage> {
                               if (corregido) _cargar();
                             },
                           ),
-                        Text(
-                          'Saldo\n${_saldoTexto(m.saldo)}',
-                          textAlign: TextAlign.right,
-                          style: const TextStyle(fontSize: 12),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 110),
+                          child: Text(
+                            'Saldo\n${_saldoTexto(m.saldo)}',
+                            textAlign: TextAlign.right,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         ),
                       ],
                     ),

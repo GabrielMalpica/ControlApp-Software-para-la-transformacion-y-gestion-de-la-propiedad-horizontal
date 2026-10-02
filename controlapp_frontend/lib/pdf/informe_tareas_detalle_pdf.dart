@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../service/tarea_labels.dart';
+
 Future<Uint8List> buildInformeTareasDetallePdf({
   required String conjuntoNombre,
   required DateTime desde,
@@ -89,7 +91,7 @@ Future<Uint8List> buildInformeTareasDetallePdf({
                   children: [
                     pw.Expanded(
                       child: pw.Text(
-                        '$tipo • ID $id • $estado',
+                        '${etiquetaTipoTarea(tipo)} • ID $id • $estado',
                         style: pw.TextStyle(
                           fontSize: 10,
                           fontWeight: pw.FontWeight.bold,

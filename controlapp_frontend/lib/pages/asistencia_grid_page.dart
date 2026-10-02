@@ -39,6 +39,7 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
   String? _error;
   AsistenciaGrid? _grid;
   AsistenciaResumen? _resumen;
+  List<VisitasSupervisor> _visitasSupervisores = [];
   List<ConceptoAsistencia> _conceptos = [];
 
   bool get _puedeEditar => PermissionService.instance.can(
@@ -52,7 +53,7 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _cargar();
   }
 
@@ -80,12 +81,18 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
           anio: _periodo.year,
           mes: _periodo.month,
         ),
+        _api.getVisitasSupervisores(
+          conjuntoId: widget.conjuntoId,
+          anio: _periodo.year,
+          mes: _periodo.month,
+        ),
       ]);
       if (!mounted) return;
       setState(() {
         _conceptos = results[0] as List<ConceptoAsistencia>;
         _grid = results[1] as AsistenciaGrid;
         _resumen = results[2] as AsistenciaResumen;
+        _visitasSupervisores = results[3] as List<VisitasSupervisor>;
       });
     } catch (e) {
       if (!mounted) return;
@@ -359,7 +366,13 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
           for (final dia in grid.operarios.first.dias)
             _headerCell(
               '${dia.dia}',
-              color: dia.diaSemana == 0 ? Colors.red : null,
+              color: dia.esFestivo
+                  ? Colors.deepOrange.shade700
+                  : (dia.diaSemana == 0 ? Colors.red : null),
+              tooltip: dia.esFestivo ? (dia.festivoNombre ?? 'Festivo') : null,
+              background: dia.esFestivo
+                  ? Colors.deepOrange.withValues(alpha: 0.08)
+                  : null,
             ),
         ],
       ),
@@ -439,9 +452,16 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
     );
   }
 
-  Widget _headerCell(String text, {bool alignLeft = false, Color? color}) {
-    return Container(
+  Widget _headerCell(
+    String text, {
+    bool alignLeft = false,
+    Color? color,
+    Color? background,
+    String? tooltip,
+  }) {
+    final cell = Container(
       height: _rowHeight,
+      color: background,
       alignment: alignLeft ? Alignment.centerLeft : Alignment.center,
       padding: alignLeft ? const EdgeInsets.symmetric(horizontal: 6) : EdgeInsets.zero,
       child: Text(
@@ -449,6 +469,7 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
         style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: color),
       ),
     );
+    return tooltip != null ? Tooltip(message: tooltip, child: cell) : cell;
   }
 
   Widget _nameCell(String nombre) {
@@ -468,6 +489,50 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
   Widget _buildCelda(AsistenciaDiaCelda dia) {
     final registro = dia.registro;
     if (registro == null) {
+      if (dia.descansoProgramado != null) {
+        // "C" fantasma: descanso compensatorio previsto por la plaza, sin
+        // registro todavía (no cuenta como pendiente, ver AsistenciaService).
+        return Tooltip(
+          message: dia.descansoProgramado!.origen != null
+              ? 'Descanso compensatorio (por el ${dia.descansoProgramado!.origen})'
+              : 'Descanso compensatorio previsto',
+          child: Container(
+            height: _rowHeight,
+            alignment: Alignment.center,
+            color: Colors.teal.withValues(alpha: 0.22),
+            child: Text(
+              'C',
+              style: TextStyle(
+                color: Colors.teal.shade700,
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+              ),
+            ),
+          ),
+        );
+      }
+      if (dia.esDescansoNormal) {
+        // "D": el operario no debe ir ese día (descanso semanal o festivo
+        // que no trabaja). No es una falta ni queda pendiente.
+        return Tooltip(
+          message: dia.esFestivo
+              ? 'Descanso (${dia.festivoNombre ?? 'festivo'})'
+              : 'Día de descanso',
+          child: Container(
+            height: _rowHeight,
+            alignment: Alignment.center,
+            color: Colors.grey.withValues(alpha: 0.18),
+            child: Text(
+              'D',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+              ),
+            ),
+          ),
+        );
+      }
       return Container(
         height: _rowHeight,
         alignment: Alignment.center,
@@ -536,6 +601,24 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
                     'Pendientes: ${op.pendientes}',
                     style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w700),
                   ),
+                if (op.descansosTrabajados > 0)
+                  Text(
+                    'Descansos trabajados: ${op.descansosTrabajados}',
+                    style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.w600),
+                  ),
+                if (op.festivosTrabajados > 0)
+                  Text(
+                    'Festivos: ${op.festivosTrabajados}',
+                    style: TextStyle(
+                      color: Colors.deepOrange.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                if (op.compensatoriosProgramados > 0)
+                  Text(
+                    'Compensatorios: ${op.compensatoriosTomados}/${op.compensatoriosProgramados}',
+                    style: TextStyle(color: Colors.teal.shade700, fontWeight: FontWeight.w600),
+                  ),
               ],
             ),
           ],
@@ -559,6 +642,71 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
           style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.primaryDark),
         ),
       ),
+    );
+  }
+
+  String _horaVisita(DateTime? dt) {
+    if (dt == null) return '—';
+    final l = dt.toLocal();
+    return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// Visitas de supervisores del mes: cuántas veces fue a cada conjunto
+  /// (entradas) y cuántas salidas registró, con el detalle de cada visita.
+  Widget _buildSupervisoresTab() {
+    if (_visitasSupervisores.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'No hay visitas de supervisores registradas en este periodo.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'Visitas de supervisores',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        for (final sup in _visitasSupervisores)
+          Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: ExpansionTile(
+              title: Text(sup.nombre, style: const TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text(
+                'Visitas: ${sup.visitas} · Salidas registradas: ${sup.salidas}',
+                style: const TextStyle(fontSize: 12),
+              ),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              expandedCrossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (widget.conjuntoId == null)
+                  for (final c in sup.porConjunto)
+                    Text('${c.conjuntoNombre}: ${c.visitas} visita(s)',
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                for (final v in sup.detalle)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      '${v.fecha} · ${v.conjuntoNombre} · '
+                      'entrada ${_horaVisita(v.horaEntrada)} · '
+                      '${v.horaSalida == null ? 'sin salida' : 'salida ${_horaVisita(v.horaSalida)}'}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: v.horaSalida == null ? Colors.orange.shade800 : Colors.black87,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
@@ -643,6 +791,7 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
           tabs: const [
             Tab(text: 'Grid mensual'),
             Tab(text: 'Resumen'),
+            Tab(text: 'Supervisores'),
           ],
         ),
       ),
@@ -687,7 +836,7 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
                 ? Center(child: Text(_error!))
                 : TabBarView(
                     controller: _tabController,
-                    children: [_buildGridTab(), _buildResumenTab()],
+                    children: [_buildGridTab(), _buildResumenTab(), _buildSupervisoresTab()],
                   ),
           ),
         ],

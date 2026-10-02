@@ -2,6 +2,8 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../service/tarea_labels.dart';
+
 Future<Uint8List> buildInformeGestionPdf({
   required String conjuntoNombre,
   required String conjuntoNit,
@@ -128,7 +130,7 @@ Future<Uint8List> buildInformeGestionPdf({
 
         // 1.3 Tipos
         pw.Text(
-          '1.3 Preventivas vs Correctivas',
+          '1.3 Preventivas vs ${etiquetaCorrectiva(plural: true)}',
           style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
         ),
         pw.SizedBox(height: 6),

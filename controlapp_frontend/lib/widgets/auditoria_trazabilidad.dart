@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../model/auditoria_model.dart';
+import '../service/tarea_labels.dart';
 
 /// Bloque compacto de "quién hizo qué" para el detalle de una tarea.
 ///
@@ -108,7 +109,7 @@ class AuditoriaTrazabilidad extends StatelessWidget {
       case 'AGENDAR_EXCLUIDA':
         return 'agendamiento';
       case 'PROGRAMAR_CORRECTIVA':
-        return 'programación como correctiva';
+        return 'programación como ${etiquetaCorrectiva(minuscula: true)}';
       case 'ELIMINAR':
         return 'eliminación';
       default:

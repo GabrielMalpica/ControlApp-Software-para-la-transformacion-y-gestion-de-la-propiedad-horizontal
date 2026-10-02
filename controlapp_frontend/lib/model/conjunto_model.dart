@@ -131,6 +131,11 @@ class Conjunto {
   final List<HorarioConjunto> horarios;
   final List<UbicacionConElementos> ubicaciones;
   final List<NecesidadOperario> necesidades;
+  // Ubicación para validar el QR de asistencia (enlace de Google Maps).
+  final String? ubicacionMapsUrl;
+  final double? latitud;
+  final double? longitud;
+  final int radioAsistenciaMetros;
   final String? mapaConjuntoNombreArchivo;
   final String? mapaConjuntoMimeType;
   final DateTime? mapaConjuntoActualizadoEn;
@@ -153,10 +158,16 @@ class Conjunto {
     this.horarios = const [],
     this.ubicaciones = const [],
     this.necesidades = const [],
+    this.ubicacionMapsUrl,
+    this.latitud,
+    this.longitud,
+    this.radioAsistenciaMetros = 150,
     this.mapaConjuntoNombreArchivo,
     this.mapaConjuntoMimeType,
     this.mapaConjuntoActualizadoEn,
   });
+
+  bool get tieneUbicacion => latitud != null && longitud != null;
 
   bool get tieneMapaConjunto =>
       (mapaConjuntoMimeType?.trim().isNotEmpty ?? false) &&
@@ -224,6 +235,15 @@ class Conjunto {
       necesidades: necesidadesJson
           .map((n) => NecesidadOperario.fromJson(n as Map<String, dynamic>))
           .toList(),
+      ubicacionMapsUrl: json['ubicacionMapsUrl'] as String?,
+      latitud: json['latitud'] != null
+          ? double.tryParse(json['latitud'].toString())
+          : null,
+      longitud: json['longitud'] != null
+          ? double.tryParse(json['longitud'].toString())
+          : null,
+      radioAsistenciaMetros:
+          int.tryParse('${json['radioAsistenciaMetros'] ?? ''}') ?? 150,
       mapaConjuntoNombreArchivo: json['mapaConjuntoNombreArchivo'] as String?,
       mapaConjuntoMimeType: json['mapaConjuntoMimeType'] as String?,
       mapaConjuntoActualizadoEn: json['mapaConjuntoActualizadoEn'] != null

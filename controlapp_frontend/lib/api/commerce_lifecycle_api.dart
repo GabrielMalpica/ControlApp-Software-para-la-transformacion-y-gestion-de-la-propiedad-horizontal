@@ -62,6 +62,42 @@ class CommerceLifecycleApi {
     );
   }
 
+  /// Genera (o devuelve el vigente) el cobro de Factus Pay para el pedido:
+  /// el QR que reemplaza a "transfiere y sube tu comprobante".
+  Future<PagoCobroInfo> crearPago(int pedidoId) async {
+    final response = await _client.post(
+      '${AppConstants.commerceBase}/pedidos/$pedidoId/pago',
+    );
+    _ensureSuccess(response.statusCode, response.body);
+    return PagoCobroInfo.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  /// Ultimo cobro generado para el pedido, o null si nunca se pidio uno.
+  Future<PagoCobroInfo?> obtenerPago(int pedidoId) async {
+    final response = await _client.get(
+      '${AppConstants.commerceBase}/pedidos/$pedidoId/pago',
+    );
+    if (response.statusCode == 404) return null;
+    _ensureSuccess(response.statusCode, response.body);
+    return PagoCobroInfo.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  /// Boton "Ya pagué": fuerza una consulta a Factus ahora mismo en vez de
+  /// esperar al siguiente turno del worker del backend.
+  Future<PagoCobroInfo> verificarPago(int pedidoId) async {
+    final response = await _client.post(
+      '${AppConstants.commerceBase}/pedidos/$pedidoId/pago/verificar',
+    );
+    _ensureSuccess(response.statusCode, response.body);
+    return PagoCobroInfo.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
   Future<ReceiptPreview> vistaPreviaRecepcion(int pedidoId) async {
     final response = await _client.get(
       '${AppConstants.commerceBase}/pedidos/$pedidoId/recepcion-preview',

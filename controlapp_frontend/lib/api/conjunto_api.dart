@@ -40,6 +40,10 @@ class EliminarNecesidadConfirmationRequired implements Exception {
   String toString() => mensaje;
 }
 
+/// Sentinel para distinguir "no pasado" de "pasado como null" en parámetros
+/// opcionales nulables (editarNecesidad.horarioFestivo).
+const Object _sinTocar = Object();
+
 class ConjuntoApi {
   final ApiClient _client = ApiClient();
   final SessionService _session = SessionService();
@@ -326,6 +330,34 @@ class ConjuntoApi {
         .toList();
   }
 
+  /// GET /conjunto/conjuntos/:nit/necesidades/calendario?anio&mes
+  ///
+  /// Días festivos/dominicales trabajados y descansos compensatorios de
+  /// cada plaza ocupada, para marcarlos en el borrador y en el calendario
+  /// del conjunto.
+  Future<List<NecesidadCalendarioPlaza>> calendarioNecesidades({
+    required String conjuntoNit,
+    required int anio,
+    required int mes,
+  }) async {
+    final resp = await _client.get(
+      '${_necesidadesBase(conjuntoNit)}/calendario?anio=$anio&mes=$mes',
+    );
+    if (resp.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo cargar el calendario de festivos de las plazas.',
+        ),
+      );
+    }
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    final plazas = (data['plazas'] as List?) ?? const [];
+    return plazas
+        .map((p) => NecesidadCalendarioPlaza.fromJson(p as Map<String, dynamic>))
+        .toList();
+  }
+
   /// POST /conjunto/conjuntos/:nit/necesidades
   Future<NecesidadOperario> crearNecesidad({
     required String conjuntoNit,
@@ -336,6 +368,10 @@ class ConjuntoApi {
     List<HorarioConjunto> horarios = const [],
     String? observaciones,
     String? operarioId,
+    bool trabajaFestivos = false,
+    HorarioFranja? horarioFestivo,
+    bool descansoCompensatorio = false,
+    int diasDescansoCompensatorio = 1,
   }) async {
     final body = <String, dynamic>{
       'roles': roles,
@@ -345,6 +381,10 @@ class ConjuntoApi {
       'horarios': horarios.map((h) => h.toJson()).toList(),
       if (observaciones != null) 'observaciones': observaciones,
       if (operarioId != null) 'operarioId': operarioId,
+      'trabajaFestivos': trabajaFestivos,
+      if (horarioFestivo != null) 'horarioFestivo': horarioFestivo.toJson(),
+      'descansoCompensatorio': descansoCompensatorio,
+      'diasDescansoCompensatorio': diasDescansoCompensatorio,
     };
     final resp = await _client.post(_necesidadesBase(conjuntoNit), body: body);
     if (resp.statusCode != 201) {
@@ -359,6 +399,10 @@ class ConjuntoApi {
   }
 
   /// PATCH /conjunto/conjuntos/:nit/necesidades/:necesidadId
+  ///
+  /// [horarioFestivo] usa un sentinel: no pasarlo deja el horario festivo
+  /// intacto; pasar un [HorarioFranja] lo reemplaza; pasar explícitamente
+  /// `null` lo borra (solo válido si [trabajaFestivos] también se apaga).
   Future<NecesidadOperario> editarNecesidad({
     required String conjuntoNit,
     required int necesidadId,
@@ -369,6 +413,10 @@ class ConjuntoApi {
     List<HorarioConjunto>? horarios,
     String? observaciones,
     bool? activo,
+    bool? trabajaFestivos,
+    Object? horarioFestivo = _sinTocar,
+    bool? descansoCompensatorio,
+    int? diasDescansoCompensatorio,
   }) async {
     final body = <String, dynamic>{
       if (roles != null) 'roles': roles,
@@ -379,6 +427,13 @@ class ConjuntoApi {
         'horarios': horarios.map((h) => h.toJson()).toList(),
       if (observaciones != null) 'observaciones': observaciones,
       if (activo != null) 'activo': activo,
+      if (trabajaFestivos != null) 'trabajaFestivos': trabajaFestivos,
+      if (!identical(horarioFestivo, _sinTocar))
+        'horarioFestivo': (horarioFestivo as HorarioFranja?)?.toJson(),
+      if (descansoCompensatorio != null)
+        'descansoCompensatorio': descansoCompensatorio,
+      if (diasDescansoCompensatorio != null)
+        'diasDescansoCompensatorio': diasDescansoCompensatorio,
     };
     final resp = await _client.patch(
       '${_necesidadesBase(conjuntoNit)}/$necesidadId',

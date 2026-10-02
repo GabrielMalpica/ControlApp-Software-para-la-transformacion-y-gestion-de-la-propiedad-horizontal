@@ -1,11 +1,8 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_application_1/api/commerce_lifecycle_api.dart';
+import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/api/resident_orders_api.dart';
 import 'package:flutter_application_1/model/resident_order_models.dart';
 import 'package:flutter_application_1/pages/commerce_order_detail_page.dart';
-import 'package:flutter_application_1/pages/conjunto_cart_page.dart'
-    show ComprobantePickerCard, MetodoPagoSelector;
 import 'package:flutter_application_1/pages/resident_orders_page.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -25,17 +22,32 @@ class ResidentCartPage extends StatefulWidget {
 class _ResidentCartPageState extends State<ResidentCartPage> {
   final _cart = ResidentCartService.instance;
   final _ordersApi = ResidentOrdersApi();
-  final _lifecycleApi = CommerceLifecycleApi();
+  final _authApi = AuthApi();
   final _notesCtrl = TextEditingController();
   final _direccionCtrl = TextEditingController();
-  String? _metodoPago;
-  PlatformFile? _comprobanteFile;
+  // Único método de pago: se cobra con un código QR que se confirma solo, sin
+  // comprobantes. El backend sabe que "factus" significa eso.
+  static const _metodoPago = 'factus';
   final _money = NumberFormat.currency(locale: 'es_CO', symbol: 'COP ');
   final String _idempotencyKey =
       'resident-${DateTime.now().microsecondsSinceEpoch}';
   bool _submitting = false;
+  // La dirección de entrega parte de la del conjunto donde vive (siempre se
+  // pide al registrarlo); el residente solo agrega su torre/apto encima. Se
+  // deja de prellenar en cuanto la persona la toca a mano.
+  bool _direccionEditadaManualmente = false;
+  bool _prefillingDireccion = false;
 
   int get _units => _cart.items.fold(0, (sum, item) => sum + item.quantity);
+
+  @override
+  void initState() {
+    super.initState();
+    _direccionCtrl.addListener(() {
+      if (!_prefillingDireccion) _direccionEditadaManualmente = true;
+    });
+    _prefillDireccionConjunto();
+  }
 
   @override
   void dispose() {
@@ -44,15 +56,18 @@ class _ResidentCartPageState extends State<ResidentCartPage> {
     super.dispose();
   }
 
-  Future<void> _pickComprobante() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: <String>['jpg', 'jpeg', 'png', 'pdf'],
-      withData: true,
-    );
-    final file = result?.files.firstOrNull;
-    if (file == null || !mounted) return;
-    setState(() => _comprobanteFile = file);
+  Future<void> _prefillDireccionConjunto() async {
+    try {
+      final perfil = await _authApi.perfilResumen();
+      final direccion = perfil.residente?.conjunto?.direccion;
+      if (!mounted || _direccionEditadaManualmente) return;
+      if (direccion == null || direccion.trim().isEmpty) return;
+      _prefillingDireccion = true;
+      setState(() => _direccionCtrl.text = direccion);
+      _prefillingDireccion = false;
+    } catch (_) {
+      // Sin conexión o lo que sea: el residente igual puede escribirla a mano.
+    }
   }
 
   Future<void> _checkout() async {
@@ -64,57 +79,29 @@ class _ResidentCartPageState extends State<ResidentCartPage> {
       );
       return;
     }
-    if (_metodoPago == null) {
-      AppFeedback.showError(
-        context,
-        message: 'Elige con qué método vas a transferir el pago.',
-      );
-      return;
-    }
-    if (_comprobanteFile == null) {
-      AppFeedback.showError(
-        context,
-        message: 'Adjunta el comprobante de la transferencia para continuar.',
-      );
-      return;
-    }
 
     setState(() => _submitting = true);
     try {
       final pedido = await _ordersApi.crearPedido(
         items: _cart.items,
         direccionEntrega: _direccionCtrl.text,
-        metodoPago: _metodoPago!,
+        metodoPago: _metodoPago,
         notas: _notesCtrl.text,
         idempotencyKey: _idempotencyKey,
       );
-      String? uploadError;
-      try {
-        await _lifecycleApi.subirComprobante(
-          pedidoId: pedido.id,
-          file: _comprobanteFile!,
-          metodoPago: _metodoPago,
-        );
-      } catch (error) {
-        uploadError = AppError.messageOf(error);
-      }
       _cart.clear();
       if (!mounted) return;
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          icon: Icon(
-            uploadError == null
-                ? Icons.check_circle_rounded
-                : Icons.warning_amber_rounded,
-            color: uploadError == null ? AppTheme.primary : AppTheme.red,
+          icon: const Icon(
+            Icons.check_circle_rounded,
+            color: AppTheme.primary,
             size: 44,
           ),
           title: const Text('Pedido creado'),
           content: Text(
-            uploadError == null
-                ? 'Tu pedido #${pedido.id} fue registrado.\n\nTotal: ${_money.format(pedido.total)}\nEstado: pendiente de pago.\n\nTu comprobante ya quedó adjunto, un administrador lo revisará.'
-                : 'Pedido #${pedido.id} creado, pero el comprobante no se pudo subir ($uploadError). Podrás adjuntarlo desde el detalle del pedido.',
+            'Tu pedido #${pedido.id} fue registrado.\n\nTotal: ${_money.format(pedido.total)}\nEstado: pendiente de pago.\n\nA continuación verás el código QR para pagar.',
             textAlign: TextAlign.center,
           ),
           actionsAlignment: MainAxisAlignment.center,
@@ -227,20 +214,40 @@ class _ResidentCartPageState extends State<ResidentCartPage> {
                           decoration: const InputDecoration(
                             labelText: 'Dirección o punto de entrega',
                             hintText: 'Ej: Torre 4, Apto 302',
+                            helperText:
+                                'Se sugiere la dirección registrada del conjunto; agrega tu torre/apto.',
                             prefixIcon: Icon(Icons.location_on_outlined),
                           ),
                         ),
                       ),
                       const SizedBox(height: 12),
-                      MetodoPagoSelector(
-                        value: _metodoPago,
-                        onChanged: (value) =>
-                            setState(() => _metodoPago = value),
-                      ),
-                      const SizedBox(height: 12),
-                      ComprobantePickerCard(
-                        file: _comprobanteFile,
-                        onPickFile: _pickComprobante,
+                      const CommerceClayCard(
+                        color: CommerceClayTokens.mint,
+                        child: Row(
+                          children: <Widget>[
+                            Icon(
+                              Icons.qr_code_2_rounded,
+                              color: AppTheme.primaryDark,
+                            ),
+                            SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                    'Pagar',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Al crear el pedido vas a ver un código QR para pagar. Se confirma solo, sin comprobante.',
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 12),
                       CommerceClayCard(

@@ -8,6 +8,7 @@ import 'package:flutter_application_1/pages/points_page.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
+import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class PerfilPage extends StatefulWidget {
@@ -86,7 +87,12 @@ class _PerfilPageState extends State<PerfilPage> {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: const Text('Mi perfil'),
-        actions: const [CambiarContrasenaAction()],
+        // El residente es el único rol sin esta campanita en su pantalla
+        // principal: sin ella, NotificacionesCenter.start() nunca se llama y
+        // el detalle de un pedido no se entera cuando el pago se confirma
+        // por fuera de la app (worker de Factus, WooCommerce) mientras está
+        // abierto.
+        actions: const [NotificacionesAction(), CambiarContrasenaAction()],
       ),
       body: _loading
           ? const SkeletonList()
@@ -127,141 +133,146 @@ class _PerfilPageState extends State<PerfilPage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  _InfoCard(
-                    title: 'Actividad comercial',
-                    children: [
-                      _MetricRow(
-                        label: 'Pedidos realizados',
-                        value: '${_perfil!.metricas.totalPedidos}',
-                      ),
-                      _MetricRow(
-                        label: 'Pedidos completados',
-                        value: '${_perfil!.metricas.pedidosCompletados}',
-                      ),
-                      _MetricRow(
-                        label: 'Compras totales',
-                        value:
-                            'COP ${_formatMoney(_perfil!.metricas.totalCompras)}',
-                      ),
-                      _MetricRow(
-                        label: 'Compras completadas',
-                        value:
-                            'COP ${_formatMoney(_perfil!.metricas.comprasCompletadas)}',
-                      ),
-                      _MetricRow(
-                        label: 'Puntos',
-                        value: '${_perfil!.metricas.puntos}',
-                      ),
-                      _MetricRow(
-                        label: 'Beneficios activos',
-                        value: '${_perfil!.metricas.beneficiosActivos}',
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _InfoCard(
-                    title: 'Puntos y beneficios',
-                    children: [
-                      Text(
-                        'Consulta tu saldo, las reglas activas y los canjes disponibles para tu conjunto.',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          final conjuntos = <String, String>{
-                            for (final item in _perfil!.conjuntos)
-                              item.nit: item.nombre,
-                          };
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute<void>(
-                              builder: (_) => PointsPage(
-                                conjuntos: conjuntos,
-                                canConfigure: const <String>{
-                                  'administrador',
-                                  'gerente',
-                                  'jefe_operaciones',
-                                }.contains(_perfil!.user.rol),
-                                canAdjust: const <String>{
-                                  'gerente',
-                                  'jefe_operaciones',
-                                }.contains(_perfil!.user.rol),
-                              ),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.stars_rounded),
-                        label: const Text('Ver mis puntos'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _InfoCard(
-                    title: 'Tienda y servicios',
-                    children: [
-                      Text(
-                        _perfil!.user.rol == 'residente'
-                            ? 'Encuentra productos y servicios para tu hogar en un solo lugar.'
-                            : 'Explora las opciones disponibles para residentes y conjuntos.',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          final initialScope = _perfil!.user.rol == 'residente'
-                              ? CommerceCatalogScope.residente
-                              : CommerceCatalogScope.todos;
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => CommerceCatalogPage(
-                                title: 'Tienda',
-                                initialScope: initialScope,
-                                enableCart: _perfil!.user.rol == 'residente',
-                              ),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.storefront_outlined),
-                        label: const Text('Explorar la tienda'),
-                      ),
-                      if (_perfil!.user.rol == 'residente') ...[
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const ResidentCartPage(),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.shopping_cart_outlined),
-                              label: const Text('Mi carrito'),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const ResidentOrdersPage(),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.receipt_long_outlined),
-                              label: const Text('Mis pedidos'),
-                            ),
-                          ],
+                  // El operario no compra: sin actividad comercial, puntos ni tienda.
+                  if (_perfil!.user.rol != 'operario') ...[
+                    const SizedBox(height: 16),
+                    _InfoCard(
+                      title: 'Actividad comercial',
+                      children: [
+                        _MetricRow(
+                          label: 'Pedidos realizados',
+                          value: '${_perfil!.metricas.totalPedidos}',
+                        ),
+                        _MetricRow(
+                          label: 'Pedidos completados',
+                          value: '${_perfil!.metricas.pedidosCompletados}',
+                        ),
+                        _MetricRow(
+                          label: 'Compras totales',
+                          value:
+                              'COP ${_formatMoney(_perfil!.metricas.totalCompras)}',
+                        ),
+                        _MetricRow(
+                          label: 'Compras completadas',
+                          value:
+                              'COP ${_formatMoney(_perfil!.metricas.comprasCompletadas)}',
+                        ),
+                        _MetricRow(
+                          label: 'Puntos',
+                          value: '${_perfil!.metricas.puntos}',
+                        ),
+                        _MetricRow(
+                          label: 'Beneficios activos',
+                          value: '${_perfil!.metricas.beneficiosActivos}',
                         ),
                       ],
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 16),
+                    _InfoCard(
+                      title: 'Puntos y beneficios',
+                      children: [
+                        Text(
+                          'Consulta tu saldo, las reglas activas y los canjes disponibles para tu conjunto.',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            final conjuntos = <String, String>{
+                              for (final item in _perfil!.conjuntos)
+                                item.nit: item.nombre,
+                            };
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute<void>(
+                                builder: (_) => PointsPage(
+                                  conjuntos: conjuntos,
+                                  canConfigure: const <String>{
+                                    'administrador',
+                                    'gerente',
+                                    'jefe_operaciones',
+                                  }.contains(_perfil!.user.rol),
+                                  canAdjust: const <String>{
+                                    'gerente',
+                                    'jefe_operaciones',
+                                  }.contains(_perfil!.user.rol),
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.stars_rounded),
+                          label: const Text('Ver mis puntos'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _InfoCard(
+                      title: 'Tienda y servicios',
+                      children: [
+                        Text(
+                          _perfil!.user.rol == 'residente'
+                              ? 'Encuentra productos y servicios para tu hogar en un solo lugar.'
+                              : 'Explora las opciones disponibles para residentes y conjuntos.',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            final initialScope =
+                                _perfil!.user.rol == 'residente'
+                                ? CommerceCatalogScope.residente
+                                : CommerceCatalogScope.todos;
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CommerceCatalogPage(
+                                  title: 'Tienda',
+                                  initialScope: initialScope,
+                                  enableCart: _perfil!.user.rol == 'residente',
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.storefront_outlined),
+                          label: const Text('Explorar la tienda'),
+                        ),
+                        if (_perfil!.user.rol == 'residente') ...[
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const ResidentCartPage(),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.shopping_cart_outlined),
+                                label: const Text('Mi carrito'),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const ResidentOrdersPage(),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.receipt_long_outlined),
+                                label: const Text('Mis pedidos'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
                   if (_perfil!.conjuntos.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     _InfoCard(

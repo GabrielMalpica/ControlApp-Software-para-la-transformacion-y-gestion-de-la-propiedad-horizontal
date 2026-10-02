@@ -506,6 +506,8 @@ class ResumenOperarioRow {
   final double usoSemanalPct;
   final double usoMensualPct;
   final String? conjuntoCapacidadId;
+  final int tareasFestivo;
+  final int diasFestivoTrabajados;
 
   ResumenOperarioRow({
     required this.operarioId,
@@ -523,6 +525,8 @@ class ResumenOperarioRow {
     required this.usoSemanalPct,
     required this.usoMensualPct,
     required this.conjuntoCapacidadId,
+    this.tareasFestivo = 0,
+    this.diasFestivoTrabajados = 0,
   });
 
   factory ResumenOperarioRow.fromJson(Map<String, dynamic> json) =>
@@ -542,6 +546,8 @@ class ResumenOperarioRow {
         usoSemanalPct: _toDouble(json['usoSemanalPct']),
         usoMensualPct: _toDouble(json['usoMensualPct']),
         conjuntoCapacidadId: json['conjuntoCapacidadId']?.toString(),
+        tareasFestivo: _toInt(json['tareasFestivo']),
+        diasFestivoTrabajados: _toInt(json['diasFestivoTrabajados']),
       );
 
   static int _toInt(dynamic v) =>
@@ -550,12 +556,41 @@ class ResumenOperarioRow {
       (v is num) ? v.toDouble() : double.tryParse('$v') ?? 0.0;
 }
 
+class TareaUsoInsumo {
+  final int tareaId;
+  final String descripcion;
+  final String? lugar;
+  final double cantidad;
+
+  TareaUsoInsumo({
+    required this.tareaId,
+    required this.descripcion,
+    required this.lugar,
+    required this.cantidad,
+  });
+
+  factory TareaUsoInsumo.fromJson(Map<String, dynamic> json) =>
+      TareaUsoInsumo(
+        tareaId: (json['tareaId'] is num)
+            ? (json['tareaId'] as num).toInt()
+            : int.tryParse('${json['tareaId']}') ?? 0,
+        descripcion: (json['descripcion'] ?? '').toString(),
+        lugar: (json['lugar'] as String?),
+        cantidad: (json['cantidad'] is num)
+            ? (json['cantidad'] as num).toDouble()
+            : double.tryParse('${json['cantidad']}') ?? 0.0,
+      );
+}
+
 class InsumoUsoRow {
   final int insumoId;
   final String nombre;
   final String unidad;
   final double cantidad;
   final int usos;
+  final int diasActivos;
+  final double promedioDiario;
+  final List<TareaUsoInsumo> topTareas;
 
   InsumoUsoRow({
     required this.insumoId,
@@ -563,6 +598,9 @@ class InsumoUsoRow {
     required this.unidad,
     required this.cantidad,
     required this.usos,
+    required this.diasActivos,
+    required this.promedioDiario,
+    required this.topTareas,
   });
 
   factory InsumoUsoRow.fromJson(Map<String, dynamic> json) => InsumoUsoRow(
@@ -577,6 +615,17 @@ class InsumoUsoRow {
     usos: (json['usos'] is num)
         ? (json['usos'] as num).toInt()
         : int.tryParse('${json['usos']}') ?? 0,
+    diasActivos: (json['diasActivos'] is num)
+        ? (json['diasActivos'] as num).toInt()
+        : int.tryParse('${json['diasActivos']}') ?? 0,
+    promedioDiario: (json['promedioDiario'] is num)
+        ? (json['promedioDiario'] as num).toDouble()
+        : double.tryParse('${json['promedioDiario']}') ?? 0.0,
+    topTareas: (json['topTareas'] is List)
+        ? (json['topTareas'] as List)
+              .map((e) => TareaUsoInsumo.fromJson((e as Map).cast<String, dynamic>()))
+              .toList()
+        : const <TareaUsoInsumo>[],
   );
 }
 

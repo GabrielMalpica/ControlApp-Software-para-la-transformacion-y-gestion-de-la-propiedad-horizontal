@@ -93,6 +93,7 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
         qrPayload: valor,
         latitud: posicion?.latitude,
         longitud: posicion?.longitude,
+        precisionMetros: posicion?.accuracy,
       );
       if (!mounted) return;
       setState(() {
@@ -102,10 +103,7 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
       final texto = resultado.tipo == 'ENTRADA'
           ? 'Entrada registrada en ${resultado.conjuntoNombre}'
           : 'Salida registrada en ${resultado.conjuntoNombre}';
-      AppFeedback.showInfo(
-        context,
-        message: posicion == null ? '$texto. No se pudo verificar tu ubicacion.' : texto,
-      );
+      AppFeedback.showInfo(context, message: texto);
     } catch (e) {
       if (!mounted) return;
       final msg = AppError.messageOf(e, fallback: 'No se pudo registrar la asistencia.');
@@ -264,7 +262,7 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
               Icon(Icons.qr_code_scanner_rounded, size: 96, color: AppTheme.primary),
               const SizedBox(height: 16),
               const Text(
-                'Escanea el codigo QR pegado en el sitio para registrar tu entrada o salida del dia.',
+                'Escanea el codigo QR pegado en el sitio para registrar tu entrada o salida. Debes estar en el conjunto y tener la ubicacion (GPS) activada.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 15),
               ),

@@ -334,8 +334,11 @@ class GerenteApi {
     DateTime? fechaInicioContrato,
     List<Map<String, String>> horarios = const [],
     List<Map<String, dynamic>> ubicaciones = const [],
+    String? ubicacionMapsUrl,
   }) async {
     final body = <String, dynamic>{
+      if (ubicacionMapsUrl != null && ubicacionMapsUrl.isNotEmpty)
+        'ubicacionMapsUrl': ubicacionMapsUrl,
       'nit': nitConjunto,
       'nombre': nombre,
       'direccion': direccion,
@@ -360,7 +363,10 @@ class GerenteApi {
 
     if (resp.statusCode >= 400) {
       throw Exception(
-        'Error creando conjunto: ${resp.statusCode} ${resp.body}',
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'Error creando conjunto: ${resp.statusCode}',
+        ),
       );
     }
   }
@@ -530,8 +536,15 @@ class GerenteApi {
     List<String>? operariosIds,
     List<Map<String, dynamic>>? ubicaciones,
     List<Map<String, String>>? horarios,
+    // Enlace de Google Maps del conjunto; "" borra la ubicación.
+    String? ubicacionMapsUrl,
+    int? radioAsistenciaMetros,
   }) async {
     final Map<String, dynamic> body = {};
+    if (ubicacionMapsUrl != null) body['ubicacionMapsUrl'] = ubicacionMapsUrl;
+    if (radioAsistenciaMetros != null) {
+      body['radioAsistenciaMetros'] = radioAsistenciaMetros;
+    }
     if (nombre != null) body['nombre'] = nombre;
     if (direccion != null) body['direccion'] = direccion;
     if (correo != null) body['correo'] = correo;
@@ -559,7 +572,10 @@ class GerenteApi {
 
     if (resp.statusCode >= 400) {
       throw Exception(
-        'Error actualizando conjunto: ${resp.statusCode} ${resp.body}',
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'Error actualizando conjunto: ${resp.statusCode}',
+        ),
       );
     }
 

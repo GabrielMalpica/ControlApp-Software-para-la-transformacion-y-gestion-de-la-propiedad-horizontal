@@ -8,7 +8,6 @@ import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 import '../service/permission_service.dart';
 import '../service/theme.dart';
 import 'tareas_page.dart';
-import 'solicitudes_page.dart';
 import 'agenda_herramientas_page.dart';
 import 'agenda_maquinaria_page.dart';
 import 'cronograma_impresion_page.dart';
@@ -51,16 +50,33 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
     _refreshSessionProfile();
   }
 
+  // Nombre real del conjunto (se resuelve desde el perfil; mientras carga o
+  // si falla, se muestra el NIT en vez de un texto genérico).
+  String? _nombreConjunto;
+
+  String get _nombreConjuntoMostrado => _nombreConjunto ?? widget.nit;
+
   Future<void> _refreshSessionProfile() async {
     try {
       await _authApi.me();
       if (mounted) setState(() {});
     } catch (_) {}
+    try {
+      final perfil = await _authApi.perfilResumen();
+      String? nombre;
+      for (final c in perfil.conjuntos) {
+        if (c.nit == widget.nit && c.nombre.trim().isNotEmpty) {
+          nombre = c.nombre.trim();
+          break;
+        }
+      }
+      if (mounted && nombre != null) setState(() => _nombreConjunto = nombre);
+    } catch (_) {}
   }
 
   Conjunto get _conjuntoActual => Conjunto(
     nit: widget.nit,
-    nombre: 'Conjunto asignado',
+    nombre: _nombreConjuntoMostrado,
     direccion: '',
     correo: '',
     activo: true,
@@ -173,45 +189,16 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
         leadingBadge: null,
         trailing: LayoutBuilder(
           builder: (context, constraints) {
-            final compact = constraints.maxWidth < 420;
-            // Sin Expanded aquí: cuando compact==true estas cards se apilan
-            // en un Column dentro de un LayoutBuilder con alto no acotado
-            // (el hero vive dentro de un scroll), y un Expanded ahí revienta
-            // con "incoming height constraints are unbounded". Expanded
-            // solo tiene sentido para repartir ANCHO en la fila horizontal.
             final cards = <Widget>[
               DashboardStatusCard(
                 label: 'Conjunto vinculado',
-                value: widget.nit,
+                value: _nombreConjuntoMostrado,
                 icon: Icons.apartment_rounded,
                 color: AppTheme.primary,
               ),
-              const DashboardStatusCard(
-                label: 'Accesos principales',
-                value: '3',
-                icon: Icons.touch_app_rounded,
-                color: AppTheme.green,
-              ),
             ];
 
-            if (compact) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  cards[0],
-                  const SizedBox(height: 12),
-                  cards[1],
-                ],
-              );
-            }
-
-            return Row(
-              children: <Widget>[
-                Expanded(child: cards[0]),
-                const SizedBox(width: 12),
-                Expanded(child: cards[1]),
-              ],
-            );
+            return cards[0];
           },
         ),
         child: DashboardSurface(
@@ -222,6 +209,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                 conjuntoActual: _conjuntoActual,
                 conjuntos: <Conjunto>[_conjuntoActual],
                 selectedNit: widget.nit,
+                permitirCambiar: false,
                 onChanged: (_) {},
               ),
               const SizedBox(height: 18),
@@ -282,20 +270,6 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                           );
                         },
                       ),
-                    if (_can('solicitudes.ver'))
-                      _simpleCard(
-                        'Solicitudes',
-                        AppTheme.primary,
-                        Icons.pending_actions,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => SolicitudesPage(nit: widget.nit),
-                            ),
-                          );
-                        },
-                      ),
                     if (_can('mapa_areas.ver'))
                       _simpleCard(
                         'Mapa de áreas',
@@ -322,7 +296,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                             MaterialPageRoute(
                               builder: (_) => CompromisosPage(
                                 nit: widget.nit,
-                                nombreConjunto: 'Conjunto asignado',
+                                nombreConjunto: _nombreConjuntoMostrado,
                               ),
                             ),
                           );
@@ -401,7 +375,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                             MaterialPageRoute(
                               builder: (_) => PlanEsperanzaPage(
                                 nit: widget.nit,
-                                nombreConjunto: 'Conjunto asignado',
+                                nombreConjunto: _nombreConjuntoMostrado,
                               ),
                             ),
                           );

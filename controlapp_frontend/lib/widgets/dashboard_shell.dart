@@ -202,8 +202,12 @@ class ConjuntoSelectorCard extends StatelessWidget {
     required this.conjuntos,
     required this.selectedNit,
     required this.onChanged,
+    this.permitirCambiar = true,
   });
 
+  /// false para roles vinculados a un solo conjunto (operario): se muestra
+  /// el conjunto sin el selector para cambiarlo.
+  final bool permitirCambiar;
   final Conjunto conjuntoActual;
   final List<Conjunto> conjuntos;
   final String? selectedNit;
@@ -279,6 +283,8 @@ class ConjuntoSelectorCard extends StatelessWidget {
               onChanged: onChanged,
             ),
           );
+
+          if (!permitirCambiar) return Row(children: info);
 
           if (compact) {
             return Column(

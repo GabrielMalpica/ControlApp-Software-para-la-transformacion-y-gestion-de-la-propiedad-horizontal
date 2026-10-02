@@ -38,6 +38,9 @@ const _etiquetaRol = <String, String>{
 String _etiquetaRoles(Iterable<String> roles) =>
     roles.map((r) => _etiquetaRol[r] ?? r).join('-');
 
+String _etiquetaDescanso(int dias) =>
+    dias == 1 ? 'día siguiente' : '$dias días después';
+
 /// Sección "Necesidades de operarios" del detalle del conjunto: lista las
 /// plazas/cargos (ConjuntoNecesidadOperario), permite crearlas, editarlas,
 /// eliminarlas y asignar/liberar al operario que las ocupa. Ver la sección
@@ -220,6 +223,17 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
                         ),
                       ),
                     ],
+                    if (n.trabajaFestivos) ...[
+                      const SizedBox(width: 6),
+                      Tooltip(
+                        message: 'Trabaja festivos',
+                        child: Icon(
+                          Icons.celebration_outlined,
+                          size: 16,
+                          color: Colors.deepOrange.shade400,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -298,6 +312,31 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
                     ),
                   )
                   .toList(),
+            ),
+          ],
+          if (n.trabajaFestivos && n.horarioFestivo != null) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  backgroundColor: Colors.deepOrange.shade50,
+                  label: Text(
+                    'Festivos ${n.horarioFestivo!.horaApertura}-${n.horarioFestivo!.horaCierre}',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ),
+                if (n.descansoCompensatorio)
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text(
+                      'Descanso: ${_etiquetaDescanso(n.diasDescansoCompensatorio)}',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  ),
+              ],
             ),
           ],
         ],
@@ -728,6 +767,24 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
           : null;
     }
 
+    // Festivos: independiente de horarioEspecial/horarios por día.
+    final festivoHorario = _DiaHorarioEdit();
+    final horarioFestivoExistente = existente?.horarioFestivo;
+    festivoHorario.activo = existente?.trabajaFestivos ?? false;
+    if (horarioFestivoExistente != null) {
+      festivoHorario.apertura = _parseHora(horarioFestivoExistente.horaApertura);
+      festivoHorario.cierre = _parseHora(horarioFestivoExistente.horaCierre);
+      festivoHorario.descansoInicio =
+          horarioFestivoExistente.descansoInicio != null
+          ? _parseHora(horarioFestivoExistente.descansoInicio!)
+          : null;
+      festivoHorario.descansoFin = horarioFestivoExistente.descansoFin != null
+          ? _parseHora(horarioFestivoExistente.descansoFin!)
+          : null;
+    }
+    bool descansoCompensatorio = existente?.descansoCompensatorio ?? true;
+    int diasDescansoCompensatorio = existente?.diasDescansoCompensatorio ?? 1;
+
     final guardado = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -896,6 +953,150 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
                       ),
                     );
                   }),
+                const Divider(height: 20),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('Trabaja festivos'),
+                  subtitle: const Text(
+                    'Recibe tareas en festivo, con su propio horario (no depende '
+                    'del rol).',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  value: festivoHorario.activo,
+                  onChanged: (v) =>
+                      setDialogState(() => festivoHorario.activo = v ?? false),
+                ),
+                if (festivoHorario.activo)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, bottom: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final picked = await showTimePicker(
+                                context: context,
+                                initialTime:
+                                    festivoHorario.apertura ??
+                                    const TimeOfDay(hour: 8, minute: 0),
+                              );
+                              if (picked != null) {
+                                setDialogState(() => festivoHorario.apertura = picked);
+                              }
+                            },
+                            child: Text(
+                              festivoHorario.apertura == null
+                                  ? 'Entrada'
+                                  : _formatHora(festivoHorario.apertura!),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final picked = await showTimePicker(
+                                context: context,
+                                initialTime:
+                                    festivoHorario.descansoInicio ??
+                                    const TimeOfDay(hour: 12, minute: 0),
+                              );
+                              if (picked != null) {
+                                setDialogState(
+                                  () => festivoHorario.descansoInicio = picked,
+                                );
+                              }
+                            },
+                            child: Text(
+                              festivoHorario.descansoInicio == null
+                                  ? 'Desc. ini'
+                                  : _formatHora(festivoHorario.descansoInicio!),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final picked = await showTimePicker(
+                                context: context,
+                                initialTime:
+                                    festivoHorario.descansoFin ??
+                                    const TimeOfDay(hour: 13, minute: 0),
+                              );
+                              if (picked != null) {
+                                setDialogState(
+                                  () => festivoHorario.descansoFin = picked,
+                                );
+                              }
+                            },
+                            child: Text(
+                              festivoHorario.descansoFin == null
+                                  ? 'Desc. fin'
+                                  : _formatHora(festivoHorario.descansoFin!),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final picked = await showTimePicker(
+                                context: context,
+                                initialTime:
+                                    festivoHorario.cierre ??
+                                    const TimeOfDay(hour: 17, minute: 0),
+                              );
+                              if (picked != null) {
+                                setDialogState(() => festivoHorario.cierre = picked);
+                              }
+                            },
+                            child: Text(
+                              festivoHorario.cierre == null
+                                  ? 'Salida'
+                                  : _formatHora(festivoHorario.cierre!),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (festivoHorario.activo)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          title: const Text('Descanso compensatorio'),
+                          subtitle: const Text(
+                            'Solo si el festivo cae en su día de descanso.',
+                            style: TextStyle(fontSize: 11),
+                          ),
+                          value: descansoCompensatorio,
+                          onChanged: (v) =>
+                              setDialogState(() => descansoCompensatorio = v),
+                        ),
+                      ),
+                      if (descansoCompensatorio)
+                        DropdownButton<int>(
+                          value: diasDescansoCompensatorio,
+                          items: List.generate(6, (i) => i + 1)
+                              .map(
+                                (dias) => DropdownMenuItem(
+                                  value: dias,
+                                  child: Text(_etiquetaDescanso(dias)),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) {
+                            if (v == null) return;
+                            setDialogState(() => diasDescansoCompensatorio = v);
+                          },
+                        ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -950,6 +1151,23 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
               .toList()
         : const <HorarioConjunto>[];
 
+    final trabajaFestivos =
+        festivoHorario.activo &&
+        festivoHorario.apertura != null &&
+        festivoHorario.cierre != null;
+    final horarioFestivo = trabajaFestivos
+        ? HorarioFranja(
+            horaApertura: _formatHora(festivoHorario.apertura!),
+            horaCierre: _formatHora(festivoHorario.cierre!),
+            descansoInicio: festivoHorario.descansoCompleto
+                ? _formatHora(festivoHorario.descansoInicio!)
+                : null,
+            descansoFin: festivoHorario.descansoCompleto
+                ? _formatHora(festivoHorario.descansoFin!)
+                : null,
+          )
+        : null;
+
     try {
       if (existente == null) {
         await _api.crearNecesidad(
@@ -958,6 +1176,10 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
           etiqueta: etiqueta,
           horarioEspecial: horarioEspecial,
           horarios: horarios,
+          trabajaFestivos: trabajaFestivos,
+          horarioFestivo: horarioFestivo,
+          descansoCompensatorio: trabajaFestivos ? descansoCompensatorio : false,
+          diasDescansoCompensatorio: diasDescansoCompensatorio,
         );
       } else {
         await _api.editarNecesidad(
@@ -967,6 +1189,10 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
           etiqueta: etiqueta,
           horarioEspecial: horarioEspecial,
           horarios: horarios,
+          trabajaFestivos: trabajaFestivos,
+          horarioFestivo: horarioFestivo,
+          descansoCompensatorio: trabajaFestivos ? descansoCompensatorio : false,
+          diasDescansoCompensatorio: diasDescansoCompensatorio,
         );
       }
       _reload();
