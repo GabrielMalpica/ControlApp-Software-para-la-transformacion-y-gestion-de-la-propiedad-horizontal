@@ -659,6 +659,163 @@ describe('reordenamiento coordinado del borrador', () => {
     expect(tareas.find((tarea) => tarea.id === 61)?.operarios[0].id).toBe('op-2');
   });
 
+  test('operarios distintos siguen en paralelo: no se apilan en una sola linea de tiempo', async () => {
+    const fecha = new Date(2026, 2, 4);
+    const tareas: any[] = [
+      {
+        id: 70,
+        descripcion: 'Limpieza Ana',
+        fechaInicio: new Date(2026, 2, 4, 8),
+        fechaFin: new Date(2026, 2, 4, 12),
+        duracionMinutos: 240,
+        ocurrenciaPlanId: null,
+        grupoPlanId: null,
+        operarios: [{ id: 'op-1', usuario: { nombre: 'Ana' } }],
+      },
+      {
+        id: 71,
+        descripcion: 'Poda Luis',
+        fechaInicio: new Date(2026, 2, 4, 8),
+        fechaFin: new Date(2026, 2, 4, 12),
+        duracionMinutos: 240,
+        ocurrenciaPlanId: null,
+        grupoPlanId: null,
+        operarios: [{ id: 'op-2', usuario: { nombre: 'Luis' } }],
+      },
+      {
+        id: 72,
+        descripcion: 'Toma de parametros Luis',
+        fechaInicio: new Date(2026, 2, 4, 13),
+        fechaFin: new Date(2026, 2, 4, 16),
+        duracionMinutos: 180,
+        ocurrenciaPlanId: null,
+        grupoPlanId: null,
+        operarios: [{ id: 'op-2', usuario: { nombre: 'Luis' } }],
+      },
+    ];
+    const prisma = construirPrisma(tareas);
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    // 4h + 4h + 3h = 11h apiladas no caben en 8h de jornada, pero por
+    // operario si: Luis pasa la toma de parametros primero y Ana no se mueve.
+    const resultado = await service.reordenarTareasBorradorDia({
+      conjuntoId: '9001',
+      fecha,
+      tareaIds: [72, 70, 71],
+    });
+
+    expect(resultado).toMatchObject({ ok: true, requiereConfirmacion: false, aplicado: true });
+    expect(resultado.cambiosCascada).toEqual([]);
+    expect(tareas.find((t) => t.id === 72)?.fechaInicio.getHours()).toBe(8);
+    expect(tareas.find((t) => t.id === 70)?.fechaInicio.getHours()).toBe(8);
+    expect(tareas.find((t) => t.id === 71)?.fechaInicio.getHours()).toBe(11);
+  });
+
+  test('si el nuevo orden desborda la jornada, propone excluir la que no cabe y pide confirmacion', async () => {
+    const fecha = new Date(2026, 2, 4);
+    const base = {
+      ocurrenciaPlanId: null,
+      grupoPlanId: null,
+      conjuntoId: '9001',
+      ubicacionId: 1,
+      elementoId: 1,
+      prioridad: 2,
+      frecuencia: null,
+      periodoAnio: 2026,
+      periodoMes: 3,
+    };
+    const ana = { id: 'op-1', usuario: { nombre: 'Ana' } };
+    const luis = { id: 'op-2', usuario: { nombre: 'Luis' } };
+    const tareas: any[] = [
+      {
+        ...base,
+        id: 80,
+        descripcion: 'Compartida',
+        fechaInicio: new Date(2026, 2, 4, 8),
+        fechaFin: new Date(2026, 2, 4, 9),
+        duracionMinutos: 60,
+        operarios: [ana, luis],
+      },
+      {
+        ...base,
+        id: 81,
+        descripcion: 'Larga Ana',
+        fechaInicio: new Date(2026, 2, 4, 9),
+        fechaFin: new Date(2026, 2, 4, 17),
+        duracionMinutos: 420,
+        operarios: [ana],
+      },
+      {
+        ...base,
+        id: 82,
+        descripcion: 'Larga Luis',
+        fechaInicio: new Date(2026, 2, 4, 9),
+        fechaFin: new Date(2026, 2, 4, 17),
+        duracionMinutos: 420,
+        operarios: [luis],
+      },
+    ];
+    const prisma = construirPrisma(tareas);
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    // Jornada util de 8 h. Si la larga de Ana va primero, la compartida
+    // queda para las 16:00 y la larga de Luis (7 h) ya no cabe despues.
+    const preview = await service.reordenarTareasBorradorDia({
+      conjuntoId: '9001',
+      fecha,
+      tareaIds: [81, 80, 82],
+    });
+
+    expect(preview).toMatchObject({ requiereConfirmacion: true, aplicado: false });
+    expect(preview.cambiosCascada).toEqual([
+      expect.objectContaining({ tareaId: 82, accion: 'EXCLUIDA' }),
+    ]);
+    expect(prisma.tarea.update).not.toHaveBeenCalled();
+    expect(prisma.tarea.delete).not.toHaveBeenCalled();
+  });
+
+  test('cascada: reacomoda la bloqueadora en un hueco mas temprano del dia antes de proponer excluirla', async () => {
+    const fecha = new Date(2026, 2, 4);
+    const ana = { id: 'op-1', usuario: { nombre: 'Ana' } };
+    const luis = { id: 'op-2', usuario: { nombre: 'Luis' } };
+    const tareas: any[] = [
+      {
+        id: 10, descripcion: 'Corta', fechaInicio: new Date(2026, 2, 4, 10),
+        fechaFin: new Date(2026, 2, 4, 10, 30), duracionMinutos: 30,
+        ocurrenciaPlanId: null, grupoPlanId: null, operarios: [ana],
+      },
+      {
+        id: 11, descripcion: 'Larga', fechaInicio: new Date(2026, 2, 4, 10, 30),
+        fechaFin: new Date(2026, 2, 4, 12), duracionMinutos: 90,
+        ocurrenciaPlanId: null, grupoPlanId: null, operarios: [ana],
+      },
+      {
+        id: 20, descripcion: 'Equipo', fechaInicio: new Date(2026, 2, 4, 11),
+        fechaFin: new Date(2026, 2, 4, 11, 15), duracionMinutos: 15,
+        ocurrenciaPlanId: null, grupoPlanId: null, operarios: [ana, luis],
+      },
+      {
+        id: 30, descripcion: 'Luis ocupado', fechaInicio: new Date(2026, 2, 4, 11, 15),
+        fechaFin: new Date(2026, 2, 4, 17), duracionMinutos: 345,
+        ocurrenciaPlanId: null, grupoPlanId: null, operarios: [luis],
+      },
+    ];
+    const prisma = construirPrisma(tareas);
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    const resultado = await service.reordenarTareasBorradorDia({
+      conjuntoId: '9001',
+      fecha,
+      tareaIds: [11, 10],
+    });
+
+    expect(resultado).toMatchObject({ aplicado: true, requiereConfirmacion: false });
+    expect(resultado.cambiosCascada).toEqual([
+      expect.objectContaining({ tareaId: 20, accion: 'MOVIDA' }),
+    ]);
+    expect(tareas.find((t) => t.id === 20)?.fechaInicio.getHours()).toBe(8);
+  });
+
   test('permite reordenar un bloque de tarea multidia cuando es el unico bloque del grupo en ese dia', async () => {
     const fecha = new Date(2026, 2, 4);
     const tareas: any[] = [

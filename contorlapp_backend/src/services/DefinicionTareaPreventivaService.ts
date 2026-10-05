@@ -7274,29 +7274,39 @@ export class DefinicionTareaPreventivaService {
         parejaQueBloquea = pareja;
         throw replanificarPareja;
       }
-      if (
-        bloqueadora.grupoPlanId &&
-        (bloquesPorGrupo.get(bloqueadora.grupoPlanId)?.length ?? 0) > 1
-      ) {
-        throw new Error(
-          `La tarea "${bloqueadora.descripcion}" tiene varios bloques en este día y no se puede reubicar por separado.`,
-        );
-      }
-
       const operariosIdsBloqueadora = bloqueadora.operarios.map((o) => o.id);
       const nombresBloqueadora = bloqueadora.operarios.map(
         (o) => o.usuario?.nombre?.trim() || `Operario ${o.id}`,
       );
       const duracion = Math.max(1, bloqueadora.duracionMinutos);
 
-      const nuevoInicioMin = buscarHuecoDiaEarliest({
-        startMin: horario.startMin,
-        endMin: horario.endMin,
-        durMin: duracion,
-        operariosIds: operariosIdsBloqueadora,
-        agendaPorOperario: agendaCascada,
-        desiredStartMin: toMinOfDaySafe(bloqueadora.fechaInicio),
-      });
+      // Una tarea con varios bloques el mismo día (que no sea la pareja del
+      // almuerzo) no se reubica por separado: en vez de abortar todo el
+      // reordenamiento, se propone excluirla y el usuario decide.
+      const variosBloquesEnElDia =
+        !!bloqueadora.grupoPlanId &&
+        (bloquesPorGrupo.get(bloqueadora.grupoPlanId)?.length ?? 0) > 1;
+
+      // Primero busca hueco desde su hora original; si no hay, desde la
+      // apertura (puede haber un hueco libre más temprano ese mismo día).
+      const nuevoInicioMin = variosBloquesEnElDia
+        ? null
+        : (buscarHuecoDiaEarliest({
+            startMin: horario.startMin,
+            endMin: horario.endMin,
+            durMin: duracion,
+            operariosIds: operariosIdsBloqueadora,
+            agendaPorOperario: agendaCascada,
+            desiredStartMin: toMinOfDaySafe(bloqueadora.fechaInicio),
+          }) ??
+          buscarHuecoDiaEarliest({
+            startMin: horario.startMin,
+            endMin: horario.endMin,
+            durMin: duracion,
+            operariosIds: operariosIdsBloqueadora,
+            agendaPorOperario: agendaCascada,
+            desiredStartMin: horario.startMin,
+          }));
 
       if (nuevoInicioMin != null) {
         const fechaInicioNueva = toDateAtMin(dto.fecha, nuevoInicioMin);
@@ -7333,7 +7343,44 @@ export class DefinicionTareaPreventivaService {
       });
     };
 
-    let cursor = toDateAtMin(dto.fecha, primeraVentana.i);
+    // Cada operario lleva su propio cursor: las tareas de operarios distintos
+    // siguen siendo paralelas. Antes todas se apilaban en una sola línea de
+    // tiempo y la suma de duraciones superaba la jornada ("no cabe").
+    const SIN_OPERARIO = "__sin_operario__";
+    const cursoresMin = new Map<string, number>();
+    const idsOperariosDeUnidad = (unidad: typeof tareasDiaDisponibles) => {
+      const ids = Array.from(
+        new Set(unidad.flatMap((bloque) => bloque.operarios.map((o) => o.id))),
+      );
+      return ids.length ? ids : [SIN_OPERARIO];
+    };
+
+    // Si una tarea no cabe (ni en las ventanas ocupadas ni en toda la
+    // jornada) se propone excluirla en lugar de abortar el reordenamiento:
+    // se respeta el orden pedido y solo lo que desborda queda como candidato,
+    // que el usuario debe confirmar.
+    const proponerExclusionPorFaltaDeEspacio = (
+      unidad: typeof tareasDiaDisponibles,
+      detalle: string,
+    ) => {
+      for (const bloque of unidad) {
+        cambiosCascada.push({
+          tareaId: bloque.id,
+          descripcion: bloque.descripcion,
+          operariosNombres: bloque.operarios.map(
+            (o) => o.usuario?.nombre?.trim() || `Operario ${o.id}`,
+          ),
+          accion: "EXCLUIDA",
+          fechaInicioOriginal: bloque.fechaInicio,
+          fechaFinOriginal: bloque.fechaFin,
+          motivo:
+            `Con el nuevo orden no queda espacio ese día para "${bloque.descripcion}" ` +
+            `(estaba de ${formatHoraLocal(bloque.fechaInicio)} a ` +
+            `${formatHoraLocal(bloque.fechaFin)}). ${detalle}`,
+        });
+      }
+    };
+
     try {
     for (const originales of seleccionOrdenada) {
       const tarea = originales[0];
@@ -7341,12 +7388,25 @@ export class DefinicionTareaPreventivaService {
         (total, bloque) => total + calcularDuracionLaboralReordenamiento({ tarea: bloque, horario }),
         0,
       );
+      const operariosUnidad = idsOperariosDeUnidad(originales);
+      const cursorUnidadMin = Math.max(
+        ...operariosUnidad.map((id) => cursoresMin.get(id) ?? primeraVentana.i),
+      );
+      // Ventanas ocupadas solo por las tareas de los mismos operarios.
+      const ventanasUnidad = construirVentanasOcupadasReordenamiento({
+        tareas: tareasInvolucradas.filter((otra) =>
+          idsOperariosDeUnidad([otra]).some((id) => operariosUnidad.includes(id)),
+        ),
+        ventanasTrabajo,
+      });
+      const cursor = toDateAtMin(dto.fecha, cursorUnidadMin);
+
       let segmentos: Array<{ fechaInicio: Date; fechaFin: Date }>;
       try {
         segmentos =
           intentarDistribuirDuracionReordenamiento({
             fecha: dto.fecha,
-            ventanas: ventanasReordenamiento,
+            ventanas: ventanasUnidad,
             inicioCursor: cursor,
             duracionMinutos: duracion,
             horario,
@@ -7360,6 +7420,13 @@ export class DefinicionTareaPreventivaService {
           });
       } catch (error) {
         const detalle = error instanceof Error ? error.message : String(error);
+        if (detalle === MENSAJE_REORDEN_NO_CABE) {
+          proponerExclusionPorFaltaDeEspacio(
+            originales,
+            "Las tareas de ese operario ya ocupan toda la jornada.",
+          );
+          continue;
+        }
         throw new Error(
           `No se pudo aplicar el nuevo orden al llegar a la tarea "${tarea.descripcion}". ` +
           `${detalle}${contextoInvolucrados}`,
@@ -7420,6 +7487,36 @@ export class DefinicionTareaPreventivaService {
       }
       const operariosIds = Array.from(new Set(operariosPorSegmento.flat()));
 
+      let fueraDeJornadaOperario: string | null = null;
+      for (const [index, segmento] of segmentos.entries()) {
+        const validacion = await validarIntervaloProgramacion({
+          prisma: this.prisma,
+          conjuntoId: dto.conjuntoId,
+          fechaInicio: segmento.fechaInicio,
+          fechaFin: segmento.fechaFin,
+          operariosIds: operariosPorSegmento[index],
+        });
+        if (!validacion.ok) {
+          // Quedar fuera de la jornada del operario/conjunto equivale a "no
+          // cabe": se propone excluir. Otros motivos siguen siendo error.
+          if (
+            validacion.motivo === "FUERA_HORARIO_OPERARIO" ||
+            validacion.motivo === "FUERA_HORARIO_CONJUNTO"
+          ) {
+            fueraDeJornadaOperario = validacion.mensaje;
+            break;
+          }
+          throw new Error(
+            `No se pudo ubicar la tarea "${tarea.descripcion}": ${validacion.mensaje}` +
+              contextoInvolucrados,
+          );
+        }
+      }
+      if (fueraDeJornadaOperario) {
+        proponerExclusionPorFaltaDeEspacio(originales, fueraDeJornadaOperario);
+        continue;
+      }
+
       // Se registra el nuevo horario de esta tarea en la agenda en memoria
       // ANTES de resolver sus propios solapes: si otra tarea choca contra
       // ESTE nuevo horario, la cascada debe verla como ocupada, no como
@@ -7430,22 +7527,6 @@ export class DefinicionTareaPreventivaService {
           i: toMinOfDaySafe(segmento.fechaInicio),
           f: toMinOfDaySafe(segmento.fechaFin),
         }]);
-      }
-
-      for (const [index, segmento] of segmentos.entries()) {
-        const validacion = await validarIntervaloProgramacion({
-          prisma: this.prisma,
-          conjuntoId: dto.conjuntoId,
-          fechaInicio: segmento.fechaInicio,
-          fechaFin: segmento.fechaFin,
-          operariosIds: operariosPorSegmento[index],
-        });
-        if (!validacion.ok) {
-          throw new Error(
-            `No se pudo ubicar la tarea "${tarea.descripcion}": ${validacion.mensaje}` +
-              contextoInvolucrados,
-          );
-        }
       }
       if (operariosIds.length) {
         const disponibilidad = await validarOperariosDisponiblesEnFecha({
@@ -7467,8 +7548,10 @@ export class DefinicionTareaPreventivaService {
           // con este segmento: cada vuelta resuelve UNA bloqueadora (la
           // mueve o la marca para excluir) y la saca de la búsqueda, así
           // que el ciclo siempre termina. El tope es solo una salvaguarda.
+          // Salvaguarda alta: un tope bajo dejaba solapes sin resolver en
+          // silencio cuando un segmento chocaba con muchas tareas.
           let vueltas = 0;
-          while (vueltas++ < 10) {
+          while (vueltas++ < 200) {
             const solape = await this.prisma.tarea.findFirst({
               where: {
                 conjuntoId: dto.conjuntoId,
@@ -7508,7 +7591,8 @@ export class DefinicionTareaPreventivaService {
       } else {
         recreaciones.push({ originales, segmentos });
       }
-      cursor = fechaFin;
+      const finMin = toMinOfDaySafe(fechaFin);
+      for (const id of operariosUnidad) cursoresMin.set(id, finMin);
     }
     } catch (error) {
       if (error !== replanificarPareja || !parejaQueBloquea) throw error;
@@ -9062,6 +9146,9 @@ function construirVentanasTrabajoDia(horario: HorarioDia): Intervalo[] {
   return ventanas.filter((ventana) => ventana.f > ventana.i);
 }
 
+const MENSAJE_REORDEN_NO_CABE =
+  "No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día.";
+
 function distribuirDuracionReordenamiento(params: {
   fecha: Date;
   ventanas: Intervalo[];
@@ -9114,9 +9201,7 @@ function distribuirDuracionReordenamiento(params: {
     ];
   }
 
-  throw new Error(
-    "No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día.",
-  );
+  throw new Error(MENSAJE_REORDEN_NO_CABE);
 }
 
 function intentarDistribuirDuracionReordenamiento(params: {
@@ -9131,11 +9216,7 @@ function intentarDistribuirDuracionReordenamiento(params: {
   try {
     return distribuirDuracionReordenamiento(params);
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message ===
-        "No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día."
-    ) {
+    if (error instanceof Error && error.message === MENSAJE_REORDEN_NO_CABE) {
       return null;
     }
     throw error;
