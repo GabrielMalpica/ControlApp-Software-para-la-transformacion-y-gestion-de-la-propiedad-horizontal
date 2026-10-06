@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:flutter_application_1/api/catalogo_operativo_api.dart';
 import 'package:flutter_application_1/api/conjunto_api.dart';
+import 'package:flutter_application_1/model/catalogo_operativo_model.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/necesidad_operario_model.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
@@ -208,7 +210,7 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        _etiquetaRoles(n.roles),
+                        n.perfilNombre ?? _etiquetaRoles(n.roles),
                         style: const TextStyle(fontSize: 11),
                       ),
                     ),
@@ -745,7 +747,65 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
   }
 
   Future<void> _mostrarFormulario({NecesidadOperario? existente}) async {
-    final etiquetaCtrl = TextEditingController(text: existente?.etiqueta ?? '');
+    // Perfiles del catálogo de la empresa: la plaza elige uno y de él salen
+    // sus roles y las categorías que puede ejecutar.
+    List<PerfilOperativo> perfiles = const [];
+    List<CategoriaTarea> categorias = const [];
+    List<NecesidadOperario> plazasActuales = const [];
+    try {
+      plazasActuales = await _future;
+    } catch (_) {
+      // Solo se usa para sugerir la numeración de la etiqueta.
+    }
+    try {
+      final catalogo = CatalogoOperativoApi();
+      final cargados = await Future.wait([
+        catalogo.listarPerfiles(),
+        catalogo.listarCategorias(),
+      ]);
+      perfiles = cargados[0] as List<PerfilOperativo>;
+      categorias = cargados[1] as List<CategoriaTarea>;
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showError(
+        context,
+        message: AppError.messageOf(
+          e,
+          fallback: 'No se pudieron cargar los perfiles operativos.',
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    // Solo perfiles activos (más el actual de la plaza aunque esté inactivo).
+    final perfilesElegibles = perfiles
+        .where((p) => p.activo || p.id == existente?.perfilId)
+        .toList();
+    final usaPerfiles = perfilesElegibles.isNotEmpty;
+    final nombreCategoria = {for (final c in categorias) c.id: c.nombre};
+    int? perfilSeleccionadoId =
+        existente?.perfilId ??
+        (existente == null && usaPerfiles ? perfilesElegibles.first.id : null);
+    PerfilOperativo? perfilSeleccionado() {
+      for (final p in perfilesElegibles) {
+        if (p.id == perfilSeleccionadoId) return p;
+      }
+      return null;
+    }
+
+    String etiquetaSugerida(PerfilOperativo p) {
+      final usadas = plazasActuales.where((n) => n.perfilId == p.id).length;
+      return '${p.nombre} #${usadas + 1}';
+    }
+
+    final etiquetaCtrl = TextEditingController(
+      text:
+          existente?.etiqueta ??
+          (perfilSeleccionado() != null
+              ? etiquetaSugerida(perfilSeleccionado()!)
+              : ''),
+    );
+    var etiquetaPersonalizada = existente != null;
     final roles = <String>{
       ...(existente?.roles ?? [_rolesNecesidad[0]]),
     };
@@ -772,7 +832,9 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
     final horarioFestivoExistente = existente?.horarioFestivo;
     festivoHorario.activo = existente?.trabajaFestivos ?? false;
     if (horarioFestivoExistente != null) {
-      festivoHorario.apertura = _parseHora(horarioFestivoExistente.horaApertura);
+      festivoHorario.apertura = _parseHora(
+        horarioFestivoExistente.horaApertura,
+      );
       festivoHorario.cierre = _parseHora(horarioFestivoExistente.horaCierre);
       festivoHorario.descansoInicio =
           horarioFestivoExistente.descansoInicio != null
@@ -797,38 +859,105 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Rol(es): puedes combinar varios (ej. Todero + Salvavidas)',
-                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                if (usaPerfiles) ...[
+                  DropdownButtonFormField<int>(
+                    initialValue: perfilSeleccionadoId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Perfil operativo',
+                      border: OutlineInputBorder(),
+                      helperText:
+                          'Define los roles y las categorías de tarea que puede ejecutar la plaza.',
+                      helperMaxLines: 2,
+                    ),
+                    items: perfilesElegibles
+                        .map(
+                          (p) => DropdownMenuItem<int>(
+                            value: p.id,
+                            child: Text(
+                              '${p.nombre}${p.activo ? '' : ' (inactivo)'} · ${p.etiquetaRoles}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (id) => setDialogState(() {
+                      perfilSeleccionadoId = id;
+                      final p = perfilSeleccionado();
+                      if (p != null && !etiquetaPersonalizada) {
+                        etiquetaCtrl.text = etiquetaSugerida(p);
+                      }
+                    }),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: _rolesNecesidad.map((r) {
-                    final selected = roles.contains(r);
-                    return FilterChip(
-                      label: Text(_etiquetaRol[r] ?? r),
-                      selected: selected,
-                      onSelected: (v) {
-                        if (v) {
-                          roles.add(r);
-                        } else if (roles.length > 1) {
-                          roles.remove(r);
-                        } else {
-                          return; // al menos un rol debe quedar seleccionado
-                        }
-                        setDialogState(() {});
-                      },
-                    );
-                  }).toList(),
-                ),
+                  const SizedBox(height: 6),
+                  Builder(
+                    builder: (context) {
+                      final p = perfilSeleccionado();
+                      final capacidades = (p?.categoriasIds ?? const <int>[])
+                          .map((id) => nombreCategoria[id])
+                          .whereType<String>()
+                          .toList();
+                      return Align(
+                        alignment: Alignment.centerLeft,
+                        child: capacidades.isEmpty
+                            ? const Text(
+                                'Este perfil aún no tiene categorías configuradas '
+                                '(Atajos → Categorías y perfiles).',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.black54,
+                                ),
+                              )
+                            : Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: capacidades
+                                    .map(
+                                      (n) => Chip(
+                                        label: Text(n),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                      );
+                    },
+                  ),
+                ] else ...[
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Rol(es): puedes combinar varios (ej. Todero + Salvavidas)',
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: _rolesNecesidad.map((r) {
+                      final selected = roles.contains(r);
+                      return FilterChip(
+                        label: Text(_etiquetaRol[r] ?? r),
+                        selected: selected,
+                        onSelected: (v) {
+                          if (v) {
+                            roles.add(r);
+                          } else if (roles.length > 1) {
+                            roles.remove(r);
+                          } else {
+                            return; // al menos un rol debe quedar seleccionado
+                          }
+                          setDialogState(() {});
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 TextField(
                   controller: etiquetaCtrl,
+                  onChanged: (_) => etiquetaPersonalizada = true,
                   decoration: const InputDecoration(
                     labelText: 'Etiqueta (ej. "Todero #1")',
                     border: OutlineInputBorder(),
@@ -982,7 +1111,9 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
                                     const TimeOfDay(hour: 8, minute: 0),
                               );
                               if (picked != null) {
-                                setDialogState(() => festivoHorario.apertura = picked);
+                                setDialogState(
+                                  () => festivoHorario.apertura = picked,
+                                );
                               }
                             },
                             child: Text(
@@ -1049,7 +1180,9 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
                                     const TimeOfDay(hour: 17, minute: 0),
                               );
                               if (picked != null) {
-                                setDialogState(() => festivoHorario.cierre = picked);
+                                setDialogState(
+                                  () => festivoHorario.cierre = picked,
+                                );
                               }
                             },
                             child: Text(
@@ -1172,26 +1305,32 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
       if (existente == null) {
         await _api.crearNecesidad(
           conjuntoNit: widget.conjuntoNit,
-          roles: roles.toList(),
+          roles: usaPerfiles ? null : roles.toList(),
+          perfilId: usaPerfiles ? perfilSeleccionadoId : null,
           etiqueta: etiqueta,
           horarioEspecial: horarioEspecial,
           horarios: horarios,
           trabajaFestivos: trabajaFestivos,
           horarioFestivo: horarioFestivo,
-          descansoCompensatorio: trabajaFestivos ? descansoCompensatorio : false,
+          descansoCompensatorio: trabajaFestivos
+              ? descansoCompensatorio
+              : false,
           diasDescansoCompensatorio: diasDescansoCompensatorio,
         );
       } else {
         await _api.editarNecesidad(
           conjuntoNit: widget.conjuntoNit,
           necesidadId: existente.id,
-          roles: roles.toList(),
+          roles: usaPerfiles ? null : roles.toList(),
+          perfilId: usaPerfiles ? perfilSeleccionadoId : null,
           etiqueta: etiqueta,
           horarioEspecial: horarioEspecial,
           horarios: horarios,
           trabajaFestivos: trabajaFestivos,
           horarioFestivo: horarioFestivo,
-          descansoCompensatorio: trabajaFestivos ? descansoCompensatorio : false,
+          descansoCompensatorio: trabajaFestivos
+              ? descansoCompensatorio
+              : false,
           diasDescansoCompensatorio: diasDescansoCompensatorio,
         );
       }

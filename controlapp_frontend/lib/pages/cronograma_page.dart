@@ -30,7 +30,9 @@ import '../service/tarea_labels.dart';
 import '../service/theme.dart';
 import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
+import '../utils/week_layout.dart';
 import 'dart:async';
+import 'dart:math' as math;
 
 import '../api/auditoria_api.dart';
 import '../model/auditoria_model.dart';
@@ -164,6 +166,12 @@ class _CronogramaPageState extends State<CronogramaPage> {
   final _tareaCierreService = TareaCierreService();
 
   bool _loading = true;
+
+  /// Recarga en segundo plano tras una acción (mover, reordenar, excluir...):
+  /// el contenido se mantiene en pantalla (y su scroll) en vez de volver al
+  /// esqueleto de carga.
+  bool _recargando = false;
+  bool _yaCargo = false;
   String? _error;
 
   Set<String> _festivosYmd = {};
@@ -883,6 +891,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       _initMes();
       _semanaBase = DateTime(_anioActual, _mesActual, 1);
       _diaFoco = null;
+      _yaCargo = false;
       _informeOperarioId = null;
     });
 
@@ -890,8 +899,13 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   Future<void> _cargarDatos() async {
+    final silenciosa = _yaCargo;
     setState(() {
-      _loading = true;
+      if (silenciosa) {
+        _recargando = true;
+      } else {
+        _loading = true;
+      }
       _error = null;
     });
 
@@ -983,7 +997,13 @@ class _CronogramaPageState extends State<CronogramaPage> {
       if (!mounted) return;
       setState(() => _error = AppError.messageOf(e));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _recargando = false;
+          _yaCargo = true;
+        });
+      }
     }
   }
 
@@ -3021,6 +3041,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       padding: const EdgeInsets.all(12),
       child: Column(
         children: [
+          if (_recargando) const LinearProgressIndicator(minHeight: 2),
           _buildTopBar(mesNombre),
           if (_vista == _VistaCronograma.mensual)
             AnimatedCrossFade(
@@ -5404,6 +5425,14 @@ Color _cronogramaColorBaseTareaSemana(TareaModel t) {
   final tipo = (t.tipo ?? '').toUpperCase().trim();
   if (tipo == 'CORRECTIVA') return Colors.red.shade500;
 
+  // El color de la categoría manda: así una categoría se reconoce de un vistazo
+  // en el borrador y en el cronograma publicado.
+  final colorCategoria = t.categoriaColorHex?.replaceFirst('#', '');
+  if (colorCategoria != null &&
+      RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(colorCategoria)) {
+    return Color(int.parse('FF$colorCategoria', radix: 16));
+  }
+
   final colorZona = t.zonaCronograma?.colorHex.replaceFirst('#', '');
   if (colorZona != null && RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(colorZona)) {
     return Color(int.parse('FF$colorZona', radix: 16));
@@ -5525,6 +5554,10 @@ class _WeekTaskPlacement {
   /// los carriles contiguos estén libres en su franja horaria.
   final int laneSpan;
 
+  /// Fin con el que se dibuja (>= fin real): la altura mínima legible se
+  /// recorta para no pisar a la tarea siguiente.
+  final DateTime? visualFin;
+
   const _WeekTaskPlacement({
     required this.tarea,
     required this.dayIndex,
@@ -5533,6 +5566,7 @@ class _WeekTaskPlacement {
     this.lane = 0,
     this.laneCount = 1,
     this.laneSpan = 1,
+    this.visualFin,
   });
 }
 
@@ -5657,6 +5691,14 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
         ..write(tarea.fechaInicio.millisecondsSinceEpoch)
         ..write(':')
         ..write(tarea.fechaFin.millisecondsSinceEpoch)
+        ..write(':')
+        ..write(tarea.estado)
+        ..write(':')
+        ..write(tarea.prioridad)
+        ..write(':')
+        ..write(tarea.operariosIds.join(','))
+        ..write(':')
+        ..write(tarea.descripcion.hashCode)
         ..write(';');
     }
     return buffer.toString();
@@ -6747,15 +6789,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     return start.add(const Duration(minutes: 1));
   }
 
-  /// Fin visual de la tarjeta: nunca menor a la altura mínima dibujable, para
-  /// que dos tareas cortas pegadas no se pisen y compartan carril.
-  DateTime _effectiveGroupEnd(_WeekTaskSpan span) {
-    final normalized = _ensureEndAfterStart(span.inicio, span.fin);
-    final minMinutes = (18 / pxPorMin).ceil();
-    final visualMinEnd = span.inicio.add(Duration(minutes: minMinutes));
-    return normalized.isAfter(visualMinEnd) ? normalized : visualMinEnd;
-  }
-
   List<_WeekTaskPlacement> _buildTaskPlacements() {
     final spansByDay = List.generate(_dias, (_) => <_WeekTaskSpan>[]);
 
@@ -6796,108 +6829,39 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     }
 
     final out = <_WeekTaskPlacement>[];
+    final minVisual = Duration(minutes: (18 / pxPorMin).ceil());
 
     for (int day = 0; day < _dias; day++) {
-      final daySpans = spansByDay[day]
-        ..sort((a, b) {
-          final byStart = a.inicio.compareTo(b.inicio);
-          if (byStart != 0) return byStart;
-          final byEnd = a.fin.compareTo(b.fin);
-          if (byEnd != 0) return byEnd;
-          return a.tarea.id.compareTo(b.tarea.id);
-        });
-
+      final daySpans = spansByDay[day];
       if (daySpans.isEmpty) continue;
 
-      final group = <_WeekTaskSpan>[];
-      DateTime? groupEnd;
+      // Solo se reparten el ancho las tareas que se solapan de verdad; ver
+      // utils/week_layout.dart.
+      final layout = layoutWeekDayTasks([
+        for (final span in daySpans)
+          WeekLayoutInput(
+            inicio: span.inicio,
+            fin: _ensureEndAfterStart(span.inicio, span.fin),
+          ),
+      ], minVisual: minVisual);
 
-      void flushGroup() {
-        if (group.isEmpty) return;
-        out.addAll(_buildGroupPlacements(group, day));
-        group.clear();
-        groupEnd = null;
+      for (var i = 0; i < daySpans.length; i++) {
+        out.add(
+          _WeekTaskPlacement(
+            tarea: daySpans[i].tarea,
+            dayIndex: day,
+            inicio: daySpans[i].inicio,
+            fin: daySpans[i].fin,
+            lane: layout[i].lane,
+            laneCount: layout[i].laneCount,
+            laneSpan: layout[i].laneSpan,
+            visualFin: layout[i].visualFin,
+          ),
+        );
       }
-
-      for (final span in daySpans) {
-        final effectiveEnd = _effectiveGroupEnd(span);
-        if (group.isEmpty) {
-          group.add(span);
-          groupEnd = effectiveEnd;
-          continue;
-        }
-
-        final overlapsGroup = span.inicio.isBefore(groupEnd!);
-        if (overlapsGroup) {
-          group.add(span);
-          if (effectiveEnd.isAfter(groupEnd!)) groupEnd = effectiveEnd;
-          continue;
-        }
-
-        flushGroup();
-        group.add(span);
-        groupEnd = effectiveEnd;
-      }
-
-      flushGroup();
     }
 
     return out;
-  }
-
-  List<_WeekTaskPlacement> _buildGroupPlacements(
-    List<_WeekTaskSpan> group,
-    int dayIndex,
-  ) {
-    // Reparto en carriles (primer carril libre): la tarea se coloca en el
-    // primer carril cuyo último bloque ya terminó; si ninguno sirve, abre uno
-    // nuevo. El grupo está ordenado por inicio.
-    final laneEnds = <DateTime>[];
-    final laneOf = <int>[];
-    for (final span in group) {
-      final visualEnd = _effectiveGroupEnd(span);
-      var lane = laneEnds.indexWhere((end) => !end.isAfter(span.inicio));
-      if (lane < 0) {
-        laneEnds.add(visualEnd);
-        lane = laneEnds.length - 1;
-      } else {
-        laneEnds[lane] = visualEnd;
-      }
-      laneOf.add(lane);
-    }
-
-    final ends = [for (final span in group) _effectiveGroupEnd(span)];
-    final laneCount = laneEnds.length;
-    int spanDe(int i) {
-      var span = 1;
-      for (var l = laneOf[i] + 1; l < laneCount; l++) {
-        var libre = true;
-        for (var j = 0; j < group.length; j++) {
-          if (j == i || laneOf[j] != l) continue;
-          if (group[j].inicio.isBefore(ends[i]) &&
-              ends[j].isAfter(group[i].inicio)) {
-            libre = false;
-            break;
-          }
-        }
-        if (!libre) break;
-        span++;
-      }
-      return span;
-    }
-
-    return [
-      for (var i = 0; i < group.length; i++)
-        _WeekTaskPlacement(
-          tarea: group[i].tarea,
-          dayIndex: dayIndex,
-          inicio: group[i].inicio,
-          fin: group[i].fin,
-          lane: laneOf[i],
-          laneCount: laneCount,
-          laneSpan: spanDe(i),
-        ),
-    ];
   }
 
   @override
@@ -7263,9 +7227,20 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                     (t.tipo ?? '').trim().toUpperCase() ==
                                     'CORRECTIVA';
 
-                                final height =
-                                    ((durMin <= 0 ? 1 : durMin) * pxPorMin)
-                                        .clamp(18.0, 9999.0);
+                                final alturaReal =
+                                    (durMin <= 0 ? 1 : durMin) * pxPorMin;
+                                final alturaVisual =
+                                    (placement.visualFin ?? placement.fin)
+                                        .difference(placement.inicio)
+                                        .inSeconds /
+                                    60 *
+                                    pxPorMin;
+                                final height = math
+                                    .max(
+                                      alturaReal,
+                                      math.min(18.0, alturaVisual),
+                                    )
+                                    .clamp(1.0, 9999.0);
 
                                 final padV = height < 30
                                     ? 1.0
@@ -7648,7 +7623,13 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                           },
                                     );
 
-                                return Positioned(
+                                // AnimatedPositioned con clave por tarea: al reordenar, excluir o
+                                // cambiar de carril, la tarjeta se desliza y se
+                                // redimensiona en vez de saltar.
+                                return AnimatedPositioned(
+                                  key: ValueKey('tarea-${t.id}'),
+                                  duration: const Duration(milliseconds: 220),
+                                  curve: Curves.easeOutCubic,
                                   left: left,
                                   top: top,
                                   width: fullWidth,

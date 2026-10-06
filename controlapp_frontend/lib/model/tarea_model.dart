@@ -148,6 +148,23 @@ class TareaModel {
   final List<InsumoProgramado> insumosProgramados;
 
   final String? insumoPrincipalUnidad;
+
+  /// Prioridad de programación (snapshot de la preventiva al generar):
+  /// categoría y orden interno dentro de ella. Null en datos antiguos.
+  final int? categoriaId;
+
+  /// Categoría con la que se pinta la tarjeta en el cronograma. El backend la
+  /// resuelve (de la tarea o de su preventiva); null si no tiene categoría.
+  final String? categoriaNombre;
+  final String? categoriaColorHex;
+  final int? ordenEnCategoria;
+
+  /// La tarea la ejecuta otra plaza porque la prevista no tenía espacio
+  /// (reasignación automática por capacidades); [necesidadPrevistaId] es la
+  /// plaza prevista originalmente.
+  final bool reasignadaAutomaticamente;
+  final int? necesidadPrevistaId;
+
   final bool reprogramada;
   final DateTime? reprogramadaEn;
   final String? reprogramadaMotivo;
@@ -198,6 +215,12 @@ class TareaModel {
     this.maquinariasAsignadas = const [],
     this.insumosProgramados = const [],
     this.insumoPrincipalUnidad,
+    this.categoriaId,
+    this.categoriaNombre,
+    this.categoriaColorHex,
+    this.ordenEnCategoria,
+    this.reasignadaAutomaticamente = false,
+    this.necesidadPrevistaId,
     this.reprogramada = false,
     this.reprogramadaEn,
     this.reprogramadaMotivo,
@@ -264,14 +287,14 @@ class TareaModel {
         .map((n) => (n['etiqueta'] ?? '').toString())
         .where((e) => e.isNotEmpty)
         .toList();
-    final tieneHorarioEspecial = necesidadesJson
-        .whereType<Map>()
-        .any((n) => n['horarioEspecial'] == true);
+    final tieneHorarioEspecial = necesidadesJson.whereType<Map>().any(
+      (n) => n['horarioEspecial'] == true,
+    );
     // Distintivo visual: la tarea viene de una plaza que trabaja festivos
     // (puede caer en un día festivo con su propio horario).
-    final tieneTrabajaFestivos = necesidadesJson
-        .whereType<Map>()
-        .any((n) => n['trabajaFestivos'] == true);
+    final tieneTrabajaFestivos = necesidadesJson.whereType<Map>().any(
+      (n) => n['trabajaFestivos'] == true,
+    );
 
     // --- Supervisor nombre: plano o anidado ---
     String? supervisorNombre;
@@ -348,6 +371,14 @@ class TareaModel {
         .toList();
 
     final insumoPrincipalUnidad = json['insumoPrincipalUnidad']?.toString();
+    final categoriaId = int.tryParse('${json['categoriaId'] ?? ''}');
+    final categoriaNombre = json['categoriaNombre']?.toString();
+    final categoriaColorHex = json['categoriaColorHex']?.toString();
+    final ordenEnCategoria = int.tryParse('${json['ordenEnCategoria'] ?? ''}');
+    final reasignadaAutomaticamente = json['reasignadaAutomaticamente'] == true;
+    final necesidadPrevistaId = int.tryParse(
+      '${json['necesidadPrevistaId'] ?? ''}',
+    );
     final reprogramada = json['reprogramada'] == true;
     final reprogramadaEn = json['reprogramadaEn'] != null
         ? DateTime.tryParse(json['reprogramadaEn'].toString())?.toLocal()
@@ -413,6 +444,12 @@ class TareaModel {
       maquinariasAsignadas: maquinariasAsignadas,
       insumosProgramados: insumosProg,
       insumoPrincipalUnidad: insumoPrincipalUnidad,
+      categoriaId: categoriaId,
+      categoriaNombre: categoriaNombre,
+      categoriaColorHex: categoriaColorHex,
+      ordenEnCategoria: ordenEnCategoria,
+      reasignadaAutomaticamente: reasignadaAutomaticamente,
+      necesidadPrevistaId: necesidadPrevistaId,
       reprogramada: reprogramada,
       reprogramadaEn: reprogramadaEn,
       reprogramadaMotivo: reprogramadaMotivo,
@@ -467,6 +504,12 @@ class TareaModel {
         .toList(),
     'insumosProgramados': insumosProgramados.map((e) => e.toJson()).toList(),
     'insumoPrincipalUnidad': insumoPrincipalUnidad,
+    'categoriaId': categoriaId,
+    'categoriaNombre': categoriaNombre,
+    'categoriaColorHex': categoriaColorHex,
+    'ordenEnCategoria': ordenEnCategoria,
+    'reasignadaAutomaticamente': reasignadaAutomaticamente,
+    'necesidadPrevistaId': necesidadPrevistaId,
     'reprogramada': reprogramada,
     'reprogramadaEn': reprogramadaEn?.toIso8601String(),
     'reprogramadaMotivo': reprogramadaMotivo,
@@ -524,6 +567,12 @@ class TareaModel {
     List<MaquinariaAsignada>? maquinariasAsignadas,
     List<InsumoProgramado>? insumosProgramados,
     String? insumoPrincipalUnidad,
+    int? categoriaId,
+    String? categoriaNombre,
+    String? categoriaColorHex,
+    int? ordenEnCategoria,
+    bool? reasignadaAutomaticamente,
+    int? necesidadPrevistaId,
     bool? reprogramada,
     DateTime? reprogramadaEn,
     String? reprogramadaMotivo,
@@ -578,6 +627,13 @@ class TareaModel {
       insumosProgramados: insumosProgramados ?? this.insumosProgramados,
       insumoPrincipalUnidad:
           insumoPrincipalUnidad ?? this.insumoPrincipalUnidad,
+      categoriaId: categoriaId ?? this.categoriaId,
+      categoriaNombre: categoriaNombre ?? this.categoriaNombre,
+      categoriaColorHex: categoriaColorHex ?? this.categoriaColorHex,
+      ordenEnCategoria: ordenEnCategoria ?? this.ordenEnCategoria,
+      reasignadaAutomaticamente:
+          reasignadaAutomaticamente ?? this.reasignadaAutomaticamente,
+      necesidadPrevistaId: necesidadPrevistaId ?? this.necesidadPrevistaId,
       reprogramada: reprogramada ?? this.reprogramada,
       reprogramadaEn: reprogramadaEn ?? this.reprogramadaEn,
       reprogramadaMotivo: reprogramadaMotivo ?? this.reprogramadaMotivo,

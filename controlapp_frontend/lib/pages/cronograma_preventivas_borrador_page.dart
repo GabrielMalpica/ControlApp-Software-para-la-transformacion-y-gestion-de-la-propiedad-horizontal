@@ -2,14 +2,20 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 
 import 'dart:async';
+import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart'
+    show GestureBinding, PointerEvent, PointerMoveEvent, PointerScrollEvent;
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/api/catalogo_operativo_api.dart';
 import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:flutter_application_1/api/preventiva_api.dart';
+import 'package:flutter_application_1/model/catalogo_operativo_model.dart';
 import 'package:flutter_application_1/model/cronograma_actividad_informe_model.dart';
 import 'package:flutter_application_1/model/cronograma_informe_jerarquico_model.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/model/necesidad_operario_model.dart';
 import 'package:flutter_application_1/model/novedad_cronograma_model.dart';
 import 'package:flutter_application_1/model/preventiva_excluida_borrador_model.dart';
 import 'package:intl/intl.dart';
@@ -21,6 +27,7 @@ import '../service/tarea_labels.dart';
 import '../service/theme.dart';
 import '../utils/duration_format.dart';
 import '../utils/schedule_utils.dart';
+import '../utils/week_layout.dart';
 import '../model/maquinaria_model.dart';
 import '../utils/frecuencia_utils.dart';
 import '../widgets/impacto_reordenamiento_dialog.dart';
@@ -96,9 +103,21 @@ class _CronogramaPreventivasBorradorPageState
   final _conjuntoApi = ConjuntoApi();
   final _festivoApi = FestivoApi();
   final _preventivaApi = DefinicionPreventivaApi();
+  final _catalogoApi = CatalogoOperativoApi();
   final ScrollController _mensualHCtrl = ScrollController();
 
+  /// Categorías de la empresa y etiquetas de las plazas del conjunto: solo
+  /// para mostrar nombres en el detalle (si fallan la carga, se ven ids).
+  Map<int, CategoriaTarea> _categoriasPorId = {};
+  Map<int, String> _plazaEtiquetaPorId = {};
+
   bool _loading = true;
+
+  /// Recarga en segundo plano tras una acción (mover, reordenar, excluir...):
+  /// el contenido se mantiene en pantalla (y su scroll) en vez de volver al
+  /// esqueleto de carga.
+  bool _recargando = false;
+  bool _yaCargo = false;
   bool _publicando = false;
   String? _error;
   Set<String> _festivosYmd = {};
@@ -305,7 +324,7 @@ class _CronogramaPreventivasBorradorPageState
         barrierDismissible: false,
         builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
-            title: const Text('Prioridad y colores de zonas'),
+            title: const Text('Colores de zonas'),
             content: SizedBox(
               width: 620,
               height: 520,
@@ -313,21 +332,14 @@ class _CronogramaPreventivasBorradorPageState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Este orden se aplica a las horas de cada día después de distribuir el mes.',
+                    'El color identifica cada zona en el cronograma. El orden de '
+                    'las tareas dentro del día lo define la categoría de cada '
+                    'preventiva (Atajos → Categorías y perfiles).',
                   ),
                   const SizedBox(height: 12),
                   Expanded(
-                    child: ReorderableListView.builder(
-                      buildDefaultDragHandles: false,
+                    child: ListView.builder(
                       itemCount: zonas.length,
-                      onReorderItem: guardando
-                          ? (_, __) {}
-                          : (oldIndex, newIndex) {
-                              setDialogState(() {
-                                final item = zonas.removeAt(oldIndex);
-                                zonas.insert(newIndex, item);
-                              });
-                            },
                       itemBuilder: (context, index) {
                         final zona = zonas[index];
                         return Card(
@@ -372,10 +384,6 @@ class _CronogramaPreventivasBorradorPageState
                             ),
                             title: Text(zona.nombre),
                             subtitle: Text(zona.ubicacionNombre ?? '—'),
-                            trailing: ReorderableDragStartListener(
-                              index: index,
-                              child: const Icon(Icons.drag_handle),
-                            ),
                           ),
                         );
                       },
@@ -817,6 +825,8 @@ class _CronogramaPreventivasBorradorPageState
     'tipo',
     'frecuencia',
     'prioridad',
+    'categoria',
+    'reasignacion',
     'fechaInicio',
     'fechaFin',
     'duracion',
@@ -855,7 +865,9 @@ class _CronogramaPreventivasBorradorPageState
     'estado': 'Estado',
     'tipo': 'Tipo',
     'frecuencia': 'Frecuencia',
-    'prioridad': 'Prioridad',
+    'prioridad': 'Prioridad de selección',
+    'categoria': 'Categoría y orden del día',
+    'reasignacion': 'Reasignación automática',
     'fechaInicio': 'Fecha inicio',
     'fechaFin': 'Fecha fin',
     'duracion': 'Duración',
@@ -1509,6 +1521,7 @@ class _CronogramaPreventivasBorradorPageState
       _initMes();
       _semanaBase = DateTime(_anioActual, _mesActual, 1);
       _diaFoco = null;
+      _yaCargo = false;
       _informeOperarioId = null;
     });
     _confirmacionesReemplazoPorCaso.clear();
@@ -1691,6 +1704,8 @@ class _CronogramaPreventivasBorradorPageState
           return Icons.warning;
         case 'SIN_HUECO':
           return Icons.schedule;
+        case 'REASIGNADA_POR_CAPACIDAD':
+          return Icons.assignment_ind_outlined;
         default:
           return Icons.info;
       }
@@ -1710,6 +1725,8 @@ class _CronogramaPreventivasBorradorPageState
           return Colors.orange.shade800;
         case 'SIN_HUECO':
           return Colors.deepOrange.shade800;
+        case 'REASIGNADA_POR_CAPACIDAD':
+          return Colors.teal.shade700;
         default:
           return Colors.grey.shade800;
       }
@@ -1769,6 +1786,8 @@ class _CronogramaPreventivasBorradorPageState
           return 'Sin candidatas para reemplazo';
         case 'SIN_HUECO':
           return 'Sin hueco en agenda';
+        case 'REASIGNADA_POR_CAPACIDAD':
+          return 'Reasignada a otro perfil habilitado';
         default:
           final tipoTxt = n.tipo.replaceAll('_', ' ').trim();
           if (tipoTxt.isEmpty || tipoTxt == 'OTRO') {
@@ -1843,6 +1862,12 @@ class _CronogramaPreventivasBorradorPageState
             '${reglaPrioridad(n.prioridad)}\n'
             'La novedad queda registrada en el informe.'
             '${extra.isEmpty ? '' : '\n$extra'}';
+      }
+
+      if (n.tipo == 'REASIGNADA_POR_CAPACIDAD') {
+        final msg = (n.mensaje ?? '').trim();
+        return '$desc\n$pr\nFecha: $fecha\n'
+            '${msg.isEmpty ? 'Su responsable previsto no tenía espacio; la ejecuta otra plaza habilitada para su categoría.' : msg}';
       }
 
       if (n.tipo == 'SIN_HUECO') {
@@ -2346,8 +2371,13 @@ class _CronogramaPreventivasBorradorPageState
   }
 
   Future<void> _cargarDatos() async {
+    final silenciosa = _yaCargo;
     setState(() {
-      _loading = true;
+      if (silenciosa) {
+        _recargando = true;
+      } else {
+        _loading = true;
+      }
       _error = null;
     });
 
@@ -2358,6 +2388,13 @@ class _CronogramaPreventivasBorradorPageState
       final horariosFuture = _conjuntoApi
           .obtenerHorariosConjunto(widget.nit)
           .catchError((_) => <HorarioConjunto>[]);
+
+      final categoriasFuture = _catalogoApi.listarCategorias().catchError(
+        (_) => <CategoriaTarea>[],
+      );
+      final plazasFuture = _conjuntoApi
+          .listarNecesidades(widget.nit)
+          .catchError((_) => <NecesidadOperario>[]);
 
       final results = await Future.wait([
         _cronogramaApi.cronogramaMensual(
@@ -2383,9 +2420,13 @@ class _CronogramaPreventivasBorradorPageState
               ? _startOfWeekMonday(_semanaBase)
               : null,
         ),
+        categoriasFuture,
+        plazasFuture,
       ]);
 
       final lista = results[0] as List<TareaModel>;
+      final categorias = results[5] as List<CategoriaTarea>;
+      final plazas = results[6] as List<NecesidadOperario>;
       final festivos = results[1] as List<FestivoItem>;
       final horarios = results[2] as List<HorarioConjunto>;
       final excluidas = results[3] as List<PreventivaExcluidaBorradorModel>;
@@ -2407,6 +2448,8 @@ class _CronogramaPreventivasBorradorPageState
 
       if (!mounted) return;
       setState(() {
+        _categoriasPorId = {for (final c in categorias) c.id: c};
+        _plazaEtiquetaPorId = {for (final p in plazas) p.id: p.etiqueta};
         _tareasMes = filtradas;
         _excluidasMes = excluidas;
         _informeJerarquico = informe;
@@ -2420,7 +2463,13 @@ class _CronogramaPreventivasBorradorPageState
     } catch (e) {
       if (mounted) setState(() => _error = AppError.messageOf(e));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _recargando = false;
+          _yaCargo = true;
+        });
+      }
     }
   }
 
@@ -3125,7 +3174,19 @@ class _CronogramaPreventivasBorradorPageState
         )
         .length;
 
+    final divididas = (resultado['divididas'] as num?)?.toInt() ?? 0;
+    final unidas = (resultado['unidas'] as num?)?.toInt() ?? 0;
+
     final mensaje = StringBuffer('Orden del día actualizado.');
+    if (divididas > 0) {
+      mensaje.write(
+        ' $divididas tarea(s) quedaron divididas alrededor del almuerzo '
+        'porque ya no cabían completas antes de él.',
+      );
+    }
+    if (unidas > 0) {
+      mensaje.write(' $unidas tarea(s) volvieron a quedar en un solo bloque.');
+    }
     if (movidas > 0) {
       mensaje.write(' $movidas tarea(s) de otros operarios se reacomodaron.');
     }
@@ -4972,6 +5033,19 @@ class _CronogramaPreventivasBorradorPageState
         t.ubicacionNombre ?? 'ID ${t.ubicacionId.toString()}';
     final elementoLabel = t.elementoNombre ?? 'ID ${t.elementoId.toString()}';
     final prioridadLabel = _labelPrioridad(t.prioridad);
+    final categoriaDeTarea = t.categoriaId != null
+        ? _categoriasPorId[t.categoriaId]
+        : null;
+    final categoriaLabel = t.categoriaId == null
+        ? 'Sin categoría (va al final del día)'
+        : '${categoriaDeTarea?.nombre ?? 'Categoría #${t.categoriaId}'}'
+              '${categoriaDeTarea != null && !categoriaDeTarea.activa ? ' (inactiva)' : ''}'
+              '${t.ordenEnCategoria != null ? ' · orden interno ${t.ordenEnCategoria}' : ''}';
+    final reasignacionLabel =
+        'La ejecuta ${t.operariosNombres.isEmpty ? 'otra plaza' : t.operariosNombres.join(', ')}'
+        ' porque la plaza prevista '
+        '(${_plazaEtiquetaPorId[t.necesidadPrevistaId] ?? 'no disponible'}) '
+        'no tenía espacio; su perfil está habilitado para la categoría.';
 
     final supervisorLabel =
         t.supervisorNombre ??
@@ -5023,7 +5097,19 @@ class _CronogramaPreventivasBorradorPageState
                     fechaReferencia: t.fechaInicio.toLocal(),
                   ),
                 );
-                addRow('prioridad', 'Prioridad', prioridadLabel);
+                addRow('prioridad', 'Prioridad de selección', prioridadLabel);
+                addRow(
+                  'categoria',
+                  'Categoría y orden del día',
+                  categoriaLabel,
+                );
+                if (t.reasignadaAutomaticamente) {
+                  addRow(
+                    'reasignacion',
+                    'Reasignación automática',
+                    reasignacionLabel,
+                  );
+                }
                 rows.add(const SizedBox(height: 8));
                 addRow('fechaInicio', 'Fecha inicio', fechaIniStr);
                 addRow('fechaFin', 'Fecha fin', fechaFinStr);
@@ -5298,8 +5384,8 @@ class _CronogramaPreventivasBorradorPageState
                   child: ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(Icons.palette_outlined),
-                    title: Text('Prioridad y colores de zonas'),
-                    subtitle: Text('Ordena las horas dentro de cada día'),
+                    title: Text('Colores de zonas'),
+                    subtitle: Text('Identifica cada zona en el cronograma'),
                   ),
                 ),
                 const PopupMenuItem<String>(
@@ -5438,6 +5524,7 @@ class _CronogramaPreventivasBorradorPageState
       padding: const EdgeInsets.all(12),
       child: Column(
         children: [
+          if (_recargando) const LinearProgressIndicator(minHeight: 2),
           _buildBannerBorrador(),
           _buildTopBar(mesNombre),
           if (_vista == _VistaCronograma.mensual)
@@ -6271,6 +6358,14 @@ Color _cronogramaBorradorColorBaseTareaSemana(TareaModel t) {
   final tipo = (t.tipo ?? '').toUpperCase().trim();
   if (tipo == 'CORRECTIVA') return Colors.red.shade500;
 
+  // El color de la categoría manda: así una categoría se reconoce de un vistazo
+  // en el borrador y en el cronograma publicado.
+  final colorCategoria = t.categoriaColorHex?.replaceFirst('#', '');
+  if (colorCategoria != null &&
+      RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(colorCategoria)) {
+    return Color(int.parse('FF$colorCategoria', radix: 16));
+  }
+
   final colorZona = t.zonaCronograma?.colorHex.replaceFirst('#', '');
   if (colorZona != null && RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(colorZona)) {
     return Color(int.parse('FF$colorZona', radix: 16));
@@ -6390,6 +6485,10 @@ class _WeekTaskPlacement {
   /// los carriles contiguos estén libres en su franja horaria.
   final int laneSpan;
 
+  /// Fin con el que se dibuja (>= fin real): la altura mínima legible se
+  /// recorta para no pisar a la tarea siguiente.
+  final DateTime? visualFin;
+
   const _WeekTaskPlacement({
     required this.tarea,
     required this.dayIndex,
@@ -6398,6 +6497,7 @@ class _WeekTaskPlacement {
     this.lane = 0,
     this.laneCount = 1,
     this.laneSpan = 1,
+    this.visualFin,
   });
 }
 
@@ -6608,6 +6708,14 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
         ..write(tarea.fechaInicio.millisecondsSinceEpoch)
         ..write(':')
         ..write(tarea.fechaFin.millisecondsSinceEpoch)
+        ..write(':')
+        ..write(tarea.estado)
+        ..write(':')
+        ..write(tarea.prioridad)
+        ..write(':')
+        ..write(tarea.operariosIds.join(','))
+        ..write(':')
+        ..write(tarea.descripcion.hashCode)
         ..write(';');
     }
     buffer.write('|completas:');
@@ -7563,14 +7671,6 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     );
   }
 
-  /// Fin visual de la tarjeta: nunca menor a la altura mínima dibujable.
-  DateTime _effectiveGroupEnd(_WeekTaskSpan span) {
-    final normalized = _ensureEndAfterStart(span.inicio, span.fin);
-    final minMinutes = (18 / pxPorMin).ceil();
-    final visualMinEnd = span.inicio.add(Duration(minutes: minMinutes));
-    return normalized.isAfter(visualMinEnd) ? normalized : visualMinEnd;
-  }
-
   List<_WeekTaskPlacement> _buildTaskPlacements() {
     final spansByDay = List.generate(_dias, (_) => <_WeekTaskSpan>[]);
 
@@ -7611,107 +7711,39 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
     }
 
     final out = <_WeekTaskPlacement>[];
+    final minVisual = Duration(minutes: (18 / pxPorMin).ceil());
 
     for (int day = 0; day < _dias; day++) {
-      final daySpans = spansByDay[day]
-        ..sort((a, b) {
-          final byStart = a.inicio.compareTo(b.inicio);
-          if (byStart != 0) return byStart;
-          final byEnd = a.fin.compareTo(b.fin);
-          if (byEnd != 0) return byEnd;
-          return a.tarea.id.compareTo(b.tarea.id);
-        });
-
+      final daySpans = spansByDay[day];
       if (daySpans.isEmpty) continue;
 
-      final group = <_WeekTaskSpan>[];
-      DateTime? groupEnd;
+      // Solo se reparten el ancho las tareas que se solapan de verdad; ver
+      // utils/week_layout.dart.
+      final layout = layoutWeekDayTasks([
+        for (final span in daySpans)
+          WeekLayoutInput(
+            inicio: span.inicio,
+            fin: _ensureEndAfterStart(span.inicio, span.fin),
+          ),
+      ], minVisual: minVisual);
 
-      void flushGroup() {
-        if (group.isEmpty) return;
-        out.addAll(_buildGroupPlacements(group, day));
-        group.clear();
-        groupEnd = null;
+      for (var i = 0; i < daySpans.length; i++) {
+        out.add(
+          _WeekTaskPlacement(
+            tarea: daySpans[i].tarea,
+            dayIndex: day,
+            inicio: daySpans[i].inicio,
+            fin: daySpans[i].fin,
+            lane: layout[i].lane,
+            laneCount: layout[i].laneCount,
+            laneSpan: layout[i].laneSpan,
+            visualFin: layout[i].visualFin,
+          ),
+        );
       }
-
-      for (final span in daySpans) {
-        final effectiveEnd = _effectiveGroupEnd(span);
-        if (group.isEmpty) {
-          group.add(span);
-          groupEnd = effectiveEnd;
-          continue;
-        }
-
-        final overlapsGroup = span.inicio.isBefore(groupEnd!);
-        if (overlapsGroup) {
-          group.add(span);
-          if (effectiveEnd.isAfter(groupEnd!)) groupEnd = effectiveEnd;
-          continue;
-        }
-
-        flushGroup();
-        group.add(span);
-        groupEnd = effectiveEnd;
-      }
-
-      flushGroup();
     }
 
     return out;
-  }
-
-  List<_WeekTaskPlacement> _buildGroupPlacements(
-    List<_WeekTaskSpan> group,
-    int dayIndex,
-  ) {
-    // Primer carril libre: la tarea va al primer carril cuyo último bloque ya
-    // terminó; si ninguno sirve, abre uno nuevo. El grupo viene ordenado.
-    final laneEnds = <DateTime>[];
-    final laneOf = <int>[];
-    for (final span in group) {
-      final visualEnd = _effectiveGroupEnd(span);
-      var lane = laneEnds.indexWhere((end) => !end.isAfter(span.inicio));
-      if (lane < 0) {
-        laneEnds.add(visualEnd);
-        lane = laneEnds.length - 1;
-      } else {
-        laneEnds[lane] = visualEnd;
-      }
-      laneOf.add(lane);
-    }
-
-    final ends = [for (final span in group) _effectiveGroupEnd(span)];
-    final laneCount = laneEnds.length;
-    int spanDe(int i) {
-      var span = 1;
-      for (var l = laneOf[i] + 1; l < laneCount; l++) {
-        var libre = true;
-        for (var j = 0; j < group.length; j++) {
-          if (j == i || laneOf[j] != l) continue;
-          if (group[j].inicio.isBefore(ends[i]) &&
-              ends[j].isAfter(group[i].inicio)) {
-            libre = false;
-            break;
-          }
-        }
-        if (!libre) break;
-        span++;
-      }
-      return span;
-    }
-
-    return [
-      for (var i = 0; i < group.length; i++)
-        _WeekTaskPlacement(
-          tarea: group[i].tarea,
-          dayIndex: dayIndex,
-          inicio: group[i].inicio,
-          fin: group[i].fin,
-          lane: laneOf[i],
-          laneCount: laneCount,
-          laneSpan: spanDe(i),
-        ),
-    ];
   }
 
   @override
@@ -8122,9 +8154,20 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                   'HH:mm',
                                 ).format(fin);
 
-                                final height =
-                                    ((durMin <= 0 ? 1 : durMin) * pxPorMin)
-                                        .clamp(18.0, 9999.0);
+                                final alturaReal =
+                                    (durMin <= 0 ? 1 : durMin) * pxPorMin;
+                                final alturaVisual =
+                                    (placement.visualFin ?? placement.fin)
+                                        .difference(placement.inicio)
+                                        .inSeconds /
+                                    60 *
+                                    pxPorMin;
+                                final height = math
+                                    .max(
+                                      alturaReal,
+                                      math.min(18.0, alturaVisual),
+                                    )
+                                    .clamp(1.0, 9999.0);
 
                                 final draggedData = _DraggedWeekTask.fromTarea(
                                   tarea: t,
@@ -8133,7 +8176,13 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                 final divisionAlmuerzo =
                                     (t.bloquesTotales ?? 0) > 1;
 
-                                return Positioned(
+                                // AnimatedPositioned con clave por tarea: al reordenar, excluir o
+                                // cambiar de carril, la tarjeta se desliza y se
+                                // redimensiona en vez de saltar.
+                                return AnimatedPositioned(
+                                  key: ValueKey('tarea-${t.id}'),
+                                  duration: const Duration(milliseconds: 220),
+                                  curve: Curves.easeOutCubic,
                                   left: left,
                                   top: top,
                                   width: fullWidth,
@@ -8453,6 +8502,84 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
   final Set<int> _excluidasExpandidaIds = <int>{};
   bool _reordenandoDia = false;
 
+  // Scroll mientras se arrastra una tarea para reordenar: la lista de tareas
+  // vive dentro de un ListView padre y el arrastre por sí solo no lo mueve.
+  final ScrollController _scrollAgenda = ScrollController();
+  final GlobalKey _listaAgendaKey = GlobalKey();
+  Timer? _autoScrollTimer;
+  double _punteroGlobalY = double.nan;
+  bool _arrastrandoTarea = false;
+
+  static const double _zonaAutoScroll = 70;
+  static const double _velocidadMaxAutoScroll = 14;
+
+  @override
+  void dispose() {
+    _detenerSeguimientoArrastre();
+    _scrollAgenda.dispose();
+    super.dispose();
+  }
+
+  void _iniciarSeguimientoArrastre() {
+    if (_arrastrandoTarea) return;
+    _arrastrandoTarea = true;
+    _punteroGlobalY = double.nan;
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_onPunteroArrastre);
+    _autoScrollTimer = Timer.periodic(
+      const Duration(milliseconds: 16),
+      (_) => _autoScrollPorBorde(),
+    );
+  }
+
+  void _detenerSeguimientoArrastre() {
+    if (!_arrastrandoTarea) return;
+    _arrastrandoTarea = false;
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPunteroArrastre);
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
+  }
+
+  void _desplazarAgenda(double delta) {
+    if (!_scrollAgenda.hasClients) return;
+    final pos = _scrollAgenda.position;
+    final destino = (pos.pixels + delta).clamp(
+      pos.minScrollExtent,
+      pos.maxScrollExtent,
+    );
+    if (destino != pos.pixels) _scrollAgenda.jumpTo(destino);
+  }
+
+  void _onPunteroArrastre(PointerEvent event) {
+    if (event is PointerMoveEvent) {
+      _punteroGlobalY = event.position.dy;
+    } else if (event is PointerScrollEvent) {
+      // La rueda también debe mover la lista mientras se sostiene la tarea.
+      // Si un Scrollable bajo el puntero ya se registró, gana ese y no se
+      // duplica el desplazamiento.
+      GestureBinding.instance.pointerSignalResolver.register(event, (e) {
+        _desplazarAgenda((e as PointerScrollEvent).scrollDelta.dy);
+      });
+    }
+  }
+
+  void _autoScrollPorBorde() {
+    if (_punteroGlobalY.isNaN) return;
+    final box = _listaAgendaKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.attached) return;
+    final top = box.localToGlobal(Offset.zero).dy;
+    final bottom = top + box.size.height;
+    if (_punteroGlobalY < top + _zonaAutoScroll) {
+      final f = ((top + _zonaAutoScroll - _punteroGlobalY) / _zonaAutoScroll)
+          .clamp(0.0, 1.0);
+      _desplazarAgenda(-_velocidadMaxAutoScroll * f);
+    } else if (_punteroGlobalY > bottom - _zonaAutoScroll) {
+      final f =
+          ((_punteroGlobalY - (bottom - _zonaAutoScroll)) / _zonaAutoScroll)
+              .clamp(0.0, 1.0);
+      _desplazarAgenda(_velocidadMaxAutoScroll * f);
+    }
+  }
+
   bool _esParejaAlmuerzo(List<TareaModel> pareja, DateTime fecha) {
     if (pareja.length != 2) return false;
     for (final horario in widget.horariosConjunto) {
@@ -8593,6 +8720,8 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
             const Divider(height: 18),
             Expanded(
               child: ListView(
+                key: _listaAgendaKey,
+                controller: _scrollAgenda,
                 children: [
                   Text(
                     'Programadas (${tareasDia.length})',
@@ -8621,6 +8750,10 @@ class _SidebarAgendaDiaState extends State<_SidebarAgendaDia> {
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: tareasDia.length,
                       buildDefaultDragHandles: false,
+                      onReorderStart: (_) {
+                        _iniciarSeguimientoArrastre();
+                      },
+                      onReorderEnd: (_) => _detenerSeguimientoArrastre(),
                       onReorderItem: (oldIndex, newIndex) async {
                         if (_reordenandoDia) return;
                         final nuevas = [...tareasDia];

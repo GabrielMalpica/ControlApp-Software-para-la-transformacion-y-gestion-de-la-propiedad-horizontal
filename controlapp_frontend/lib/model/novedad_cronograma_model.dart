@@ -1,7 +1,7 @@
 // lib/model/novedad_cronograma_model.dart
 
 class NovedadCronogramaModel {
-  /// Ejemplos: FESTIVO_MOVIDO | FESTIVO_OMITIDO | REEMPLAZO_PRIORIDAD | SIN_CANDIDATAS | SIN_HUECO | OTRO
+  /// Ejemplos: FESTIVO_MOVIDO | FESTIVO_OMITIDO | REEMPLAZO_PRIORIDAD | SIN_CANDIDATAS | SIN_HUECO | REASIGNADA_POR_CAPACIDAD | OTRO
   final String tipo;
 
   final int? defId;
@@ -131,6 +131,8 @@ class NovedadCronogramaModel {
         case 'REQUIERE_CONFIRMACION_REEMPLAZO':
         case 'REQUIERECONFIRMACIONREEMPLAZO':
           return 'REQUIERE_CONFIRMACION_REEMPLAZO';
+        case 'REASIGNADA_POR_CAPACIDAD':
+          return 'REASIGNADA_POR_CAPACIDAD';
       }
 
       final text = '${descripcion ?? ''} ${mensaje ?? ''}'.toUpperCase();

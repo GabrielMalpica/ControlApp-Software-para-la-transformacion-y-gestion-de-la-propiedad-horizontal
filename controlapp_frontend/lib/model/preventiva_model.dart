@@ -1,5 +1,6 @@
 // lib/model/preventiva_model.dart
 
+import 'catalogo_operativo_model.dart';
 import 'maquinaria_model.dart';
 
 double? _toDouble(dynamic v) {
@@ -121,7 +122,15 @@ class DefinicionPreventiva {
 
   final String descripcion;
   final String frecuencia;
+
+  /// Prioridad de SELECCIÓN (1 alta, 2 media, 3 baja): qué entra primero al mes.
   final int prioridad;
+
+  /// Prioridad de PROGRAMACIÓN: categoría (orden del día) y orden interno
+  /// dentro de ella (1 = primero). Ambas son opcionales (datos antiguos).
+  final int? categoriaId;
+  final CategoriaResumen? categoria;
+  final int? ordenEnCategoria;
 
   final String? diaSemanaProgramado;
   final int? diaMesProgramado;
@@ -171,6 +180,9 @@ class DefinicionPreventiva {
     required this.descripcion,
     required this.frecuencia,
     required this.prioridad,
+    this.categoriaId,
+    this.categoria,
+    this.ordenEnCategoria,
     this.diaSemanaProgramado,
     this.diaMesProgramado,
     this.fechasProgramadas = const [],
@@ -230,6 +242,9 @@ class DefinicionPreventiva {
       descripcion: json['descripcion']?.toString() ?? '',
       frecuencia: json['frecuencia']?.toString() ?? '',
       prioridad: _toInt(json['prioridad']) ?? 2,
+      categoriaId: _toInt(json['categoriaId']),
+      categoria: CategoriaResumen.tryFromJson(json['categoria']),
+      ordenEnCategoria: _toInt(json['ordenEnCategoria']),
 
       // programación
       diaSemanaProgramado: json['diaSemanaProgramado']?.toString(),
@@ -337,6 +352,12 @@ class DefinicionPreventivaRequest {
   final String frecuencia;
   final int prioridad;
 
+  /// Categoría de tarea y orden interno. Solo viajan si [incluirCategoria]:
+  /// así `null` significa "quitar la categoría" y omitirlos "no tocarla".
+  final bool incluirCategoria;
+  final int? categoriaId;
+  final int? ordenEnCategoria;
+
   final String? diaSemanaProgramado;
   final int? diaMesProgramado;
   final List<String>? fechasProgramadasJson;
@@ -379,6 +400,9 @@ class DefinicionPreventivaRequest {
     required this.descripcion,
     required this.frecuencia,
     required this.prioridad,
+    this.incluirCategoria = false,
+    this.categoriaId,
+    this.ordenEnCategoria,
     this.diaSemanaProgramado,
     this.diaMesProgramado,
     this.fechasProgramadasJson,
@@ -410,6 +434,10 @@ class DefinicionPreventivaRequest {
     'descripcion': descripcion,
     'frecuencia': frecuencia,
     'prioridad': prioridad,
+    if (incluirCategoria) ...{
+      'categoriaId': categoriaId,
+      'ordenEnCategoria': categoriaId == null ? null : ordenEnCategoria,
+    },
 
     // programación
     if (diaSemanaProgramado != null) 'diaSemanaProgramado': diaSemanaProgramado,

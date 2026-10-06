@@ -347,21 +347,28 @@ class ConjuntoApi {
       throw Exception(
         AppError.fromResponseBody(
           resp.body,
-          fallback: 'No se pudo cargar el calendario de festivos de las plazas.',
+          fallback:
+              'No se pudo cargar el calendario de festivos de las plazas.',
         ),
       );
     }
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
     final plazas = (data['plazas'] as List?) ?? const [];
     return plazas
-        .map((p) => NecesidadCalendarioPlaza.fromJson(p as Map<String, dynamic>))
+        .map(
+          (p) => NecesidadCalendarioPlaza.fromJson(p as Map<String, dynamic>),
+        )
         .toList();
   }
 
   /// POST /conjunto/conjuntos/:nit/necesidades
   Future<NecesidadOperario> crearNecesidad({
     required String conjuntoNit,
-    required List<String> roles,
+    // Se envía `perfilId` (los roles salen del perfil del catálogo) o, sin
+    // perfiles configurados, solo `roles` (el backend reutiliza o crea el
+    // perfil de esa combinación).
+    List<String>? roles,
+    int? perfilId,
     required String etiqueta,
     int orden = 0,
     bool horarioEspecial = false,
@@ -374,7 +381,8 @@ class ConjuntoApi {
     int diasDescansoCompensatorio = 1,
   }) async {
     final body = <String, dynamic>{
-      'roles': roles,
+      if (roles != null) 'roles': roles,
+      if (perfilId != null) 'perfilId': perfilId,
       'etiqueta': etiqueta,
       'orden': orden,
       'horarioEspecial': horarioEspecial,
@@ -407,6 +415,7 @@ class ConjuntoApi {
     required String conjuntoNit,
     required int necesidadId,
     List<String>? roles,
+    int? perfilId,
     String? etiqueta,
     int? orden,
     bool? horarioEspecial,
@@ -420,6 +429,7 @@ class ConjuntoApi {
   }) async {
     final body = <String, dynamic>{
       if (roles != null) 'roles': roles,
+      if (perfilId != null) 'perfilId': perfilId,
       if (etiqueta != null) 'etiqueta': etiqueta,
       if (orden != null) 'orden': orden,
       if (horarioEspecial != null) 'horarioEspecial': horarioEspecial,
@@ -469,7 +479,8 @@ class ConjuntoApi {
       } catch (_) {
         data = null;
       }
-      if (data is Map<String, dynamic> && data['requiresConfirmation'] == true) {
+      if (data is Map<String, dynamic> &&
+          data['requiresConfirmation'] == true) {
         throw EliminarNecesidadConfirmationRequired.fromJson(data);
       }
     }
@@ -581,14 +592,14 @@ class VinculacionDefinicionesResultado {
     required this.saltadas,
   });
 
-  factory VinculacionDefinicionesResultado.fromJson(
-    Map<String, dynamic> json,
-  ) {
+  factory VinculacionDefinicionesResultado.fromJson(Map<String, dynamic> json) {
     final vinculadas = (json['vinculadas'] as List?) ?? const [];
     final saltadas = (json['saltadas'] as List?) ?? const [];
     return VinculacionDefinicionesResultado(
       vinculadas: vinculadas
-          .map((v) => (v as Map<String, dynamic>)['descripcion']?.toString() ?? '')
+          .map(
+            (v) => (v as Map<String, dynamic>)['descripcion']?.toString() ?? '',
+          )
           .where((e) => e.isNotEmpty)
           .toList(),
       saltadas: saltadas

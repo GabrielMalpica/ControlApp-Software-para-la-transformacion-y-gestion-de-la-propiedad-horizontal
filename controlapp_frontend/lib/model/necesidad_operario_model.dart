@@ -68,6 +68,15 @@ class NecesidadOperario {
   final String? operarioNombre;
   final List<HorarioConjunto> horarios;
 
+  /// Perfil operativo del catálogo de la empresa (null en datos antiguos sin
+  /// perfil). Define las categorías de tarea que la plaza puede ejecutar.
+  final int? perfilId;
+  final String? perfilNombre;
+  final bool perfilActivo;
+
+  /// Ids de las categorías habilitadas en el perfil de la plaza.
+  final List<int> perfilCategoriasIds;
+
   NecesidadOperario({
     required this.id,
     required this.conjuntoId,
@@ -84,9 +93,19 @@ class NecesidadOperario {
     this.operarioId,
     this.operarioNombre,
     this.horarios = const [],
+    this.perfilId,
+    this.perfilNombre,
+    this.perfilActivo = true,
+    this.perfilCategoriasIds = const [],
   });
 
   bool get ocupada => operarioId != null;
+
+  /// ¿La plaza puede ejecutar esa categoría? Un perfil sin categorías
+  /// configuradas no bloquea (se configura después en el catálogo), igual que
+  /// valida el backend al crear/editar una preventiva.
+  bool admiteCategoria(int categoriaId) =>
+      perfilCategoriasIds.isEmpty || perfilCategoriasIds.contains(categoriaId);
 
   factory NecesidadOperario.fromJson(Map<String, dynamic> json) {
     final operarioJson = json['operario'] as Map<String, dynamic>?;
@@ -95,6 +114,9 @@ class NecesidadOperario {
     final rolesJson = (json['roles'] as List?) ?? const [];
     final festivoHoraApertura = json['festivoHoraApertura'] as String?;
     final festivoHoraCierre = json['festivoHoraCierre'] as String?;
+    final perfilJson = json['perfil'] is Map
+        ? Map<String, dynamic>.from(json['perfil'] as Map)
+        : null;
 
     return NecesidadOperario(
       id: json['id'] as int,
@@ -116,10 +138,18 @@ class NecesidadOperario {
       diasDescansoCompensatorio: json['diasDescansoCompensatorio'] as int? ?? 1,
       activo: json['activo'] as bool? ?? true,
       observaciones: json['observaciones'] as String?,
-      operarioId: json['operarioId'] as String? ?? operarioJson?['id'] as String?,
+      operarioId:
+          json['operarioId'] as String? ?? operarioJson?['id'] as String?,
       operarioNombre: usuarioJson?['nombre'] as String?,
       horarios: horariosJson
           .map((h) => HorarioConjunto.fromJson(h as Map<String, dynamic>))
+          .toList(),
+      perfilId: json['perfilId'] as int? ?? perfilJson?['id'] as int?,
+      perfilNombre: perfilJson?['nombre'] as String?,
+      perfilActivo: perfilJson?['activo'] as bool? ?? true,
+      perfilCategoriasIds: ((perfilJson?['categorias'] as List?) ?? const [])
+          .map((c) => (c as Map)['categoriaId'])
+          .whereType<int>()
           .toList(),
     );
   }
@@ -150,7 +180,11 @@ class NecesidadCalendarioDia {
   final String tipo; // FESTIVO | DESCANSO
   final String? origen; // Para DESCANSO: fecha (yyyy-MM-dd) que lo originó.
 
-  NecesidadCalendarioDia({required this.fecha, required this.tipo, this.origen});
+  NecesidadCalendarioDia({
+    required this.fecha,
+    required this.tipo,
+    this.origen,
+  });
 
   factory NecesidadCalendarioDia.fromJson(Map<String, dynamic> json) {
     return NecesidadCalendarioDia(
@@ -181,7 +215,9 @@ class NecesidadCalendarioPlaza {
       etiqueta: json['etiqueta'] as String,
       operarioId: json['operarioId'] as String,
       dias: diasJson
-          .map((d) => NecesidadCalendarioDia.fromJson(d as Map<String, dynamic>))
+          .map(
+            (d) => NecesidadCalendarioDia.fromJson(d as Map<String, dynamic>),
+          )
           .toList(),
     );
   }

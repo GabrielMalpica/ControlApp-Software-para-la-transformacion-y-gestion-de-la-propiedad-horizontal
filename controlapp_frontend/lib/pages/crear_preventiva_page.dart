@@ -14,6 +14,9 @@ import '../api/gerente_api.dart';
 
 import '../model/preventiva_model.dart';
 import '../model/conjunto_model.dart';
+import '../api/catalogo_operativo_api.dart';
+import '../service/app_error.dart';
+import '../model/catalogo_operativo_model.dart';
 import '../model/necesidad_operario_model.dart';
 import '../model/usuario_model.dart';
 import '../model/insumo_model.dart';
@@ -61,6 +64,12 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   // Controllers básicos
   final _descripcionCtrl = TextEditingController();
   final _prioridadCtrl = TextEditingController(text: '2');
+
+  // Prioridad de programación: categoría (orden del día) y orden interno.
+  final CatalogoOperativoApi _catalogoApi = CatalogoOperativoApi();
+  List<CategoriaTarea> _categorias = [];
+  int? _categoriaId;
+  final _ordenEnCategoriaCtrl = TextEditingController();
 
   // Duración – rendimiento
   bool _usaRendimiento = true;
@@ -111,6 +120,18 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   /// plazas configuradas, la preventiva se vincula a la(s) plaza(s) en vez
   /// de a operarios directos (ver sección 7 del plan de necesidades).
   bool get _usaNecesidades => _necesidades.isNotEmpty;
+
+  String _nombresOperariosDirectos() {
+    return _operariosSeleccionadosCedulas
+        .map(
+          (ced) => _operarios
+              .where((o) => o.cedula == ced)
+              .map((o) => o.nombre)
+              .firstOrNull,
+        )
+        .whereType<String>()
+        .join(', ');
+  }
 
   /// SEMANAL y QUINCENAL se programan eligiendo uno o varios dias de la semana.
   bool get _frecuenciaUsaDiaSemana =>
@@ -172,6 +193,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       _cargarCatalogoInsumos(),
       _cargarCatalogoHerramientas(),
       _cargarSupervisores(),
+      _cargarCategorias(),
     ]);
 
     if (!mounted) return;
@@ -222,6 +244,60 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     });
   }
 
+  Future<void> _cargarCategorias() async {
+    try {
+      final lista = await _catalogoApi.listarCategorias();
+      if (!mounted) return;
+      setState(() => _categorias = lista);
+    } catch (e) {
+      if (!mounted) return;
+      _snack(
+        'No se pudieron cargar las categorías: ${AppError.messageOf(e)}',
+        type: SnackType.error,
+      );
+    }
+  }
+
+  /// Categoría elegida (si ya no existe o está inactiva, igual se conserva).
+  CategoriaTarea? get _categoriaSeleccionada {
+    for (final c in _categorias) {
+      if (c.id == _categoriaId) return c;
+    }
+    return null;
+  }
+
+  /// Plazas elegidas que no pueden ejecutar la categoría actual.
+  List<NecesidadOperario> _plazasIncompatibles() {
+    final categoriaId = _categoriaId;
+    if (categoriaId == null) return const [];
+    return _necesidades
+        .where(
+          (n) =>
+              _necesidadesSeleccionadasIds.contains(n.id) &&
+              !n.admiteCategoria(categoriaId),
+        )
+        .toList();
+  }
+
+  void _cambiarCategoria(int? nuevaId) {
+    setState(() {
+      if (nuevaId != _categoriaId) _ordenEnCategoriaCtrl.clear();
+      _categoriaId = nuevaId;
+    });
+    final incompatibles = _plazasIncompatibles();
+    if (incompatibles.isNotEmpty) {
+      setState(() {
+        _necesidadesSeleccionadasIds.removeWhere(
+          (id) => incompatibles.any((n) => n.id == id),
+        );
+      });
+      _snack(
+        'Se quitaron ${incompatibles.map((n) => n.etiqueta).join(', ')}: '
+        'su perfil no está habilitado para esta categoría.',
+      );
+    }
+  }
+
   Future<void> _cargarCatalogoInsumos() async {
     try {
       final lista = await _empresaApi.listarCatalogo();
@@ -254,8 +330,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         );
         final pagina = ((raw['data'] as List?) ?? const [])
             .map(
-              (e) =>
-                  HerramientaResponse.fromJson((e as Map).cast<String, dynamic>()),
+              (e) => HerramientaResponse.fromJson(
+                (e as Map).cast<String, dynamic>(),
+              ),
             )
             .toList();
         acumulado.addAll(pagina);
@@ -302,6 +379,8 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     if (existente != null) {
       _descripcionCtrl.text = existente.descripcion;
       _prioridadCtrl.text = (existente.prioridad.clamp(1, 3)).toString();
+      _categoriaId = existente.categoriaId;
+      _ordenEnCategoriaCtrl.text = existente.ordenEnCategoria?.toString() ?? '';
       _frecuencia = existente.frecuencia;
       _unidadCalculo = existente.unidadCalculo;
 
@@ -484,6 +563,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   void dispose() {
     _descripcionCtrl.dispose();
     _prioridadCtrl.dispose();
+    _ordenEnCategoriaCtrl.dispose();
     _cantidadCtrl.dispose();
     _rendimientoCtrl.dispose();
     _duracionFijaMinCtrl.dispose();
@@ -633,7 +713,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   }
 
   String _etiquetaNecesidad(NecesidadOperario n) {
-    final ocupante = n.ocupada ? (n.operarioNombre ?? n.operarioId!) : 'vacante';
+    final ocupante = n.ocupada
+        ? (n.operarioNombre ?? n.operarioId!)
+        : 'vacante';
     return '${n.etiqueta} · $ocupante';
   }
 
@@ -660,22 +742,31 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                   itemBuilder: (_, index) {
                     final n = _necesidades[index];
                     final checked = seleccionTemp.contains(n.id);
+                    final categoria = _categoriaSeleccionada;
+                    final habilitada =
+                        _categoriaId == null ||
+                        n.admiteCategoria(_categoriaId!);
                     return CheckboxListTile(
-                      value: checked,
+                      value: checked && habilitada,
                       title: Text(n.etiqueta),
                       subtitle: Text(
-                        n.ocupada
+                        !habilitada
+                            ? 'No habilitado para ${categoria?.nombre ?? 'esta categoría'}'
+                                  '${n.perfilNombre != null ? ' (perfil ${n.perfilNombre})' : ''}'
+                            : n.ocupada
                             ? 'Ocupada por ${n.operarioNombre ?? n.operarioId}'
                             : 'Vacante',
                       ),
-                      onChanged: (v) {
-                        if (v == true) {
-                          seleccionTemp.add(n.id);
-                        } else {
-                          seleccionTemp.remove(n.id);
-                        }
-                        setStateDialog(() {});
-                      },
+                      onChanged: !habilitada
+                          ? null
+                          : (v) {
+                              if (v == true) {
+                                seleccionTemp.add(n.id);
+                              } else {
+                                seleccionTemp.remove(n.id);
+                              }
+                              setStateDialog(() {});
+                            },
                     );
                   },
                 ),
@@ -898,6 +989,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         descripcion: _descripcionCtrl.text.trim(),
         frecuencia: _frecuencia!,
         prioridad: prioridad,
+        incluirCategoria: true,
+        categoriaId: _categoriaId,
+        ordenEnCategoria: int.tryParse(_ordenEnCategoriaCtrl.text.trim()),
         diaSemanaProgramado: _frecuenciaUsaDiaSemana
             ? diaSemanaProgramado
             : null,
@@ -1456,7 +1550,11 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     DropdownButtonFormField<int>(
                       key: ValueKey<String>('prioridad_$prioridadValue'),
                       decoration: const InputDecoration(
-                        labelText: 'Prioridad',
+                        labelText: 'Prioridad de selección',
+                        helperText:
+                            'Decide qué tareas entran primero al mes. El orden '
+                            'dentro del día lo define la categoría.',
+                        helperMaxLines: 2,
                         border: OutlineInputBorder(),
                       ),
                       initialValue: prioridadValue,
@@ -1469,6 +1567,64 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         () => _prioridadCtrl.text = (v ?? 2).toString(),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int?>(
+                      key: ValueKey<String>('categoria_${_categoriaId ?? 0}'),
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Categoría de tarea',
+                        helperText:
+                            'Define el orden de la tarea dentro del día y qué '
+                            'perfiles pueden ejecutarla.',
+                        helperMaxLines: 2,
+                        border: OutlineInputBorder(),
+                      ),
+                      initialValue: _categoriaId,
+                      items: [
+                        const DropdownMenuItem<int?>(
+                          value: null,
+                          child: Text('Sin categoría'),
+                        ),
+                        ..._categorias
+                            .where((c) => c.activa || c.id == _categoriaId)
+                            .map(
+                              (c) => DropdownMenuItem<int?>(
+                                value: c.id,
+                                child: Text(
+                                  c.activa
+                                      ? c.nombre
+                                      : '${c.nombre} (inactiva)',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                      ],
+                      onChanged: _cambiarCategoria,
+                    ),
+                    if (_categoriaId != null) ...[
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _ordenEnCategoriaCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Orden dentro de la categoría',
+                          helperText:
+                              '1 = primero (ej. Shock antes que Aspirado). '
+                              'Vacío = al final de su categoría.',
+                          helperMaxLines: 2,
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (v) {
+                          final t = v?.trim() ?? '';
+                          if (t.isEmpty) return null;
+                          final n = int.tryParse(t);
+                          if (n == null || n < 1 || n > 9999) {
+                            return 'Usa un número entre 1 y 9999';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1581,7 +1737,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     const SizedBox(height: 12),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Dividir en varios días si es muy larga'),
+                      title: const Text(
+                        'Dividir en varios días si es muy larga',
+                      ),
                       subtitle: const Text(
                         'Reparte la duración total en partes equilibradas, una por '
                         'día. Se usa normalmente en tareas prioridad 1, que el '
@@ -1602,8 +1760,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         keyboardType: TextInputType.number,
                         decoration: InputDecoration(
                           labelText: 'Días para completar',
-                          helperText:
-                              _previewHorasPorDia() ?? 'Mínimo 2 días.',
+                          helperText: _previewHorasPorDia() ?? 'Mínimo 2 días.',
                           border: const OutlineInputBorder(),
                         ),
                         onChanged: (_) => setState(() {}),
@@ -1803,8 +1960,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                                       ? 'Seleccionar cargo(s)'
                                       : _necesidades
                                             .where(
-                                              (n) => _necesidadesSeleccionadasIds
-                                                  .contains(n.id),
+                                              (n) =>
+                                                  _necesidadesSeleccionadasIds
+                                                      .contains(n.id),
                                             )
                                             .map(_etiquetaNecesidad)
                                             .join(', '),
@@ -1825,6 +1983,21 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           style: TextStyle(fontSize: 12, color: Colors.black54),
                         ),
                       ),
+                      if (_necesidadesSeleccionadasIds.isEmpty &&
+                          _operariosSeleccionadosCedulas.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6, left: 4),
+                          child: Text(
+                            'Hoy esta preventiva está asignada directamente a: '
+                            '${_nombresOperariosDirectos()}. Si eliges un '
+                            'cargo, pasará a asignarse por plaza y dejarán de '
+                            'valer estos operarios.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange.shade800,
+                            ),
+                          ),
+                        ),
                     ] else
                       InkWell(
                         onTap: _mostrarSelectorOperarios,

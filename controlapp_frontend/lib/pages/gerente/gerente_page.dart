@@ -13,6 +13,7 @@ import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_p
 import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_recursos_page.dart';
 import 'package:flutter_application_1/pages/gerente/agenda_general_recursos_page.dart';
+import 'package:flutter_application_1/pages/gerente/catalogo_operativo_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/consignas_valor_agregado_page.dart';
@@ -98,6 +99,7 @@ enum _QuickAction {
   catalogoMaquinaria,
   catalogoHerramientas,
   stockHerramientasEmpresa,
+  catalogoOperativo,
 
   // Creación
   crearInsumo,
@@ -401,6 +403,12 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         Icons.inventory_2,
         enabled: true,
       ),
+      item(
+        _QuickAction.catalogoOperativo,
+        "Categorías y perfiles",
+        Icons.category_outlined,
+        enabled: true,
+      ),
 
       const PopupMenuDivider(),
 
@@ -634,6 +642,10 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
             soloEmpresa: true,
           ),
         );
+        return;
+
+      case _QuickAction.catalogoOperativo:
+        await go(const CatalogoOperativoPage());
         return;
 
       case _QuickAction.stockHerramientasEmpresa:
