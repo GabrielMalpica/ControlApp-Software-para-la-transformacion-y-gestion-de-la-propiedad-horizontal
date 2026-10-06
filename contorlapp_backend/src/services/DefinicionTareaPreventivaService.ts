@@ -362,6 +362,22 @@ function versionesDefinicionesDesdeMetadata(
   return versiones;
 }
 
+/**
+ * Preventivas que, al generar el borrador, no produjeron ninguna tarea,
+ * excluida ni ocurrencia en el periodo (p. ej. una semestral cuyas fechas caen
+ * en otros meses). No son "pendientes": regenerar no las va a planificar.
+ */
+function definicionesSinOcurrenciaDesdeMetadata(metadata: unknown): Set<number> {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return new Set();
+  }
+  const raw = (metadata as Record<string, unknown>).definicionesSinOcurrencia;
+  if (!Array.isArray(raw)) return new Set();
+  return new Set(
+    raw.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
+  );
+}
+
 function versionActualDefinicion(def: {
   actualizadoEn?: Date | null;
   creadoEn?: Date | null;
@@ -1225,10 +1241,16 @@ export class DefinicionTareaPreventivaService {
       periodoMes: mes,
     });
 
+    // Las que el generador ya evaluó y no tocaban este periodo no cuentan como
+    // pendientes: antes quedaban como "nueva(s)" para siempre.
+    const sinOcurrenciaEnPeriodo = definicionesSinOcurrenciaDesdeMetadata(
+      marcaGeneracion?.metadataJson,
+    );
     const sinPlanificar = definiciones.filter(
       (def) =>
         !enBorrador.defIds.has(def.id) &&
-        !enBorrador.claves.has(claveDefinicionBorrador(def)),
+        !enBorrador.claves.has(claveDefinicionBorrador(def)) &&
+        !sinOcurrenciaEnPeriodo.has(def.id),
     );
 
     const versionesGuardadas = versionesDefinicionesDesdeMetadata(
@@ -1271,6 +1293,9 @@ export class DefinicionTareaPreventivaService {
       totalTareas,
       totalOcurrencias,
       excluidasPendientes,
+      definicionesSinOcurrenciaEnPeriodo: definiciones.filter((def) =>
+        sinOcurrenciaEnPeriodo.has(def.id),
+      ).length,
       definicionesSinPlanificar: sinPlanificar.length,
       descripcionesSinPlanificar: sinPlanificar
         .slice(0, 5)
@@ -6704,6 +6729,28 @@ export class DefinicionTareaPreventivaService {
       };
     });
 
+    // Lo que quedó sin tarea, excluida ni ocurrencia tras generar no toca este
+    // periodo (o no se puede planificar): se deja constancia para no avisarlo
+    // como "nueva" en cada visita.
+    let definicionesSinOcurrencia: number[] = [];
+    try {
+      const resultadoFinal = await this.definicionesConBorrador({
+        conjuntoId,
+        periodoAnio,
+        periodoMes,
+      });
+      definicionesSinOcurrencia = defs
+        .filter(
+          (def) =>
+            !resultadoFinal.defIds.has(def.id) &&
+            !resultadoFinal.claves.has(claveDefinicionBorrador(def)),
+        )
+        .map((def) => def.id);
+    } catch {
+      // Dato informativo: si no se puede calcular, no debe abortar la
+      // generación; solo volverían a avisarse esas preventivas como nuevas.
+    }
+
     await this.registrarEventoBorrador({
       conjuntoId,
       periodoAnio,
@@ -6718,6 +6765,7 @@ export class DefinicionTareaPreventivaService {
       metadataJson: {
         modo,
         versionesDefiniciones,
+        definicionesSinOcurrencia,
         ordenamientoDia,
         rescateCapacidad: {
           reasignadas: rescateCapacidad.reasignadas,
