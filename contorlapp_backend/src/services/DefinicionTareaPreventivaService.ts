@@ -4,6 +4,7 @@ import type {
   PrismaClient,
   PreventivaExcluidaBorrador as PreventivaExcluidaBorradorRow,
 } from "@prisma/client";
+import { adjuntarCategoriaCronograma } from "../utils/categoriaCronograma";
 import { randomUUID } from "node:crypto";
 import {
   Prisma,
@@ -9301,7 +9302,7 @@ export class DefinicionTareaPreventivaService {
   }) {
     const { conjuntoId, anio, mes } = params;
 
-    return this.prisma.tarea.findMany({
+    const tareas = await this.prisma.tarea.findMany({
       where: {
         conjuntoId,
         borrador: true,
@@ -9312,6 +9313,8 @@ export class DefinicionTareaPreventivaService {
       include: tareaBorradorDetalleInclude,
       orderBy: [{ grupoPlanId: "asc" }, { bloqueIndex: "asc" }, { id: "asc" }],
     });
+    // Color de la categoría para pintar las tarjetas del cronograma.
+    return adjuntarCategoriaCronograma(this.prisma, tareas);
   }
 
   async informeMensualActividad(params: {

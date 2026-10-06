@@ -1,5 +1,6 @@
 // src/services/CronogramaService.ts
 import { EstadoTarea, Prisma, TipoTarea, type PrismaClient } from "@prisma/client";
+import { adjuntarCategoriaCronograma } from "../utils/categoriaCronograma";
 import { z } from "zod";
 import {
   buildAgendaPorOperarioDia,
@@ -358,7 +359,8 @@ export class CronogramaService {
       configuraciones.map((item) => [item.elementoZonaId, item]),
     );
 
-    return tareas.map((tarea) => ({
+    const conCategoria = await adjuntarCategoriaCronograma(this.prisma, tareas);
+    return conCategoria.map((tarea) => ({
       ...tarea,
       zonaCronograma: resolverConfiguracionZona(
         tarea.elemento,

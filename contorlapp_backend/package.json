@@ -10,7 +10,10 @@
     "test": "node --max-old-space-size=4096 ./node_modules/jest/bin/jest.js --runInBand",
     "test:watch": "jest --watch",
     "test-prisma": "ts-node test.ts",
-    "clear-maquinaria": "node ./scripts/clear-maquinaria.js"
+    "clear-maquinaria": "node ./scripts/clear-maquinaria.js",
+    "vincular-preventivas-plazas": "tsx scripts/vincular-preventivas-a-plazas.ts",
+    "categorizar-preventivas": "tsx scripts/categorizar-preventivas.ts",
+    "configurar-capacidades-perfiles": "tsx scripts/configurar-capacidades-perfiles.ts"
   },
   "keywords": [],
   "author": "",
