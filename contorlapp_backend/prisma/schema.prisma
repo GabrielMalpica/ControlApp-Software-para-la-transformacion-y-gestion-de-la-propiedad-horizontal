@@ -557,6 +557,10 @@ model Empresa {
   conceptosAsistencia ConceptoAsistencia[]
   turnosExtra         TurnoExtra[]
 
+  // Catálogo operativo: categorías de tarea y perfiles (capacidades)
+  categoriasTarea  CategoriaTarea[]
+  perfilesOperativos PerfilOperativo[]
+
   @@map("Empresa")
 }
 
@@ -1007,11 +1011,80 @@ model ConjuntoNecesidadOperario {
   definiciones DefinicionTareaPreventiva[] @relation("DefinicionNecesidades")
   tareas       Tarea[]                     @relation("TareaNecesidades")
 
+  // Perfil operativo del catálogo de la empresa: define qué categorías de
+  // tarea puede ejecutar la plaza (fuente de verdad de las capacidades).
+  // `roles` se conserva sincronizado con el perfil.
+  perfil   PerfilOperativo? @relation(fields: [perfilId], references: [id], onDelete: Restrict)
+  perfilId Int?
+
+  @@index([perfilId])
   @@unique([conjuntoId, etiqueta])
   @@unique([conjuntoId, operarioId])
   @@index([conjuntoId, activo])
   @@index([operarioId])
   @@map("ConjuntoNecesidadOperario")
+}
+
+/// Categoría de tarea (Mantenimiento de piscinas, Poda, ...). Administrable por
+/// empresa. `ordenProgramacion` define el orden de las actividades dentro del
+/// día (1 = primero); NO afecta qué tareas se seleccionan para el mes.
+model CategoriaTarea {
+  id Int @id @default(autoincrement())
+
+  empresa   Empresa @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
+  empresaId String
+
+  nombre            String
+  ordenProgramacion Int      @default(100)
+  colorHex          String?
+  palabrasClave     String[] @default([])
+  activa            Boolean  @default(true)
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  perfiles     PerfilOperativoCategoria[]
+  definiciones DefinicionTareaPreventiva[]
+
+  @@unique([empresaId, nombre])
+  @@index([empresaId, activa, ordenProgramacion])
+  @@map("CategoriaTarea")
+}
+
+/// Perfil operativo reutilizable entre conjuntos (Todero, Todero-Salvavidas,
+/// ...). Las categorías que puede ejecutar son la única fuente de verdad de
+/// sus capacidades: nunca se infieren por el nombre del cargo.
+model PerfilOperativo {
+  id Int @id @default(autoincrement())
+
+  empresa   Empresa @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
+  empresaId String
+
+  nombre      String
+  roles       TipoFuncion[]
+  descripcion String?
+  activo      Boolean       @default(true)
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  categorias PerfilOperativoCategoria[]
+  plazas     ConjuntoNecesidadOperario[]
+
+  @@unique([empresaId, nombre])
+  @@index([empresaId, activo])
+  @@map("PerfilOperativo")
+}
+
+model PerfilOperativoCategoria {
+  perfil      PerfilOperativo @relation(fields: [perfilId], references: [id], onDelete: Cascade)
+  perfilId    Int
+  categoria   CategoriaTarea  @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  categoriaId Int
+
+  @@id([perfilId, categoriaId])
+  @@index([categoriaId])
+  @@map("PerfilOperativoCategoria")
 }
 
 /// Horario propio de una ConjuntoNecesidadOperario. Mismo shape que
@@ -1641,10 +1714,17 @@ model DefinicionTareaPreventiva {
 
   descripcion           String
   frecuencia            Frecuencia
+  // Prioridad de SELECCIÓN (1 alta, 2 media, 3 baja): qué entra primero al mes.
   prioridad             Int        @default(2)
   diaSemanaProgramado   DiaSemana?
   diaMesProgramado      Int?
   fechasProgramadasJson Json?
+
+  // Prioridad de PROGRAMACIÓN: categoría (orden del día) y orden interno
+  // dentro de ella (1 = primero; null = al final de su categoría).
+  categoria        CategoriaTarea? @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
+  categoriaId      Int?
+  ordenEnCategoria Int?
 
   // Duración planificada
   unidadCalculo         UnidadCalculo?
@@ -1689,6 +1769,7 @@ model DefinicionTareaPreventiva {
   insumosSiteOverrideJson Json?
 
   @@index([conjuntoId, activo])
+  @@index([categoriaId])
   @@map("DefinicionTareaPreventiva")
 }
 
@@ -1742,6 +1823,15 @@ model Tarea {
   // Origen preventivo (trazabilidad hacia la definición que la generó)
   definicionId        Int?
   diaSemanaProgramado DiaSemana?
+
+  // Copia (snapshot) de la categoría/orden de la definición al generar, para
+  // ordenar el día y conservar el historial aunque la definición cambie.
+  categoriaId      Int?
+  ordenEnCategoria Int?
+  // Reasignación automática por capacidades: la plaza prevista originalmente
+  // cuando el dueño no tenía espacio y otro perfil compatible la ejecutó.
+  reasignadaAutomaticamente Boolean @default(false)
+  necesidadPrevistaId       Int?
 
   // Planificación / cronograma
   borrador         Boolean @default(false)

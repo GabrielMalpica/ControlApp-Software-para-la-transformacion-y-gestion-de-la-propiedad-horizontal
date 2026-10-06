@@ -119,7 +119,12 @@ export const CrearDefinicionPreventivaDTO = z
     descripcion: z.string().min(3),
     frecuencia: z.nativeEnum(Frecuencia),
 
+    // Prioridad de SELECCIÓN (1 alta, 2 media, 3 baja): qué entra primero al mes.
     prioridad: z.number().int().min(1).max(3).default(2),
+    // Prioridad de PROGRAMACIÓN: categoría (orden del día) y orden interno
+    // dentro de la categoría (1 = primero).
+    categoriaId: z.number().int().positive().optional().nullable(),
+    ordenEnCategoria: z.number().int().min(1).max(9999).optional().nullable(),
 
     // programación específica
     diaSemanaProgramado: z.nativeEnum(DiaSemana).optional().nullable(),
@@ -186,6 +191,8 @@ export const EditarDefinicionPreventivaDTO = z.object({
   descripcion: z.string().min(3).optional(),
   frecuencia: z.nativeEnum(Frecuencia).optional(),
   prioridad: z.number().int().min(1).max(3).optional(),
+  categoriaId: z.number().int().positive().optional().nullable(),
+  ordenEnCategoria: z.number().int().min(1).max(9999).optional().nullable(),
 
   diaSemanaProgramado: z.nativeEnum(DiaSemana).optional().nullable(),
   diaMesProgramado: z.number().int().min(1).max(31).optional().nullable(),
@@ -222,6 +229,18 @@ export const EditarDefinicionPreventivaDTO = z.object({
 
   supervisorId: UsuarioIdDTO.optional().nullable(),
   activo: z.boolean().optional(),
+});
+
+/** Asignar (o quitar con null) la categoría a varias preventivas */
+export const AsignarCategoriaLoteDTO = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(500),
+  categoriaId: z.number().int().positive().nullable(),
+});
+
+/** Orden interno (1..n) de las preventivas de una categoría en el conjunto */
+export const OrdenEnCategoriaDTO = z.object({
+  categoriaId: z.number().int().positive(),
+  ids: z.array(z.number().int().positive()).min(1).max(500),
 });
 
 /** Borrado en lote de definiciones preventivas */

@@ -37,7 +37,12 @@ export const CrearNecesidadDTO = z
     // roles listados (ver ConjuntoNecesidadService.validarYPrepararOperario).
     roles: z
       .array(z.nativeEnum(TipoFuncion))
-      .min(1, "Selecciona al menos un rol"),
+      .min(1, "Selecciona al menos un rol")
+      .optional(),
+    // Perfil del catálogo de la empresa: de él salen los roles y las
+    // categorías que la plaza puede ejecutar. Si no viene, se resuelve (o se
+    // crea) el perfil de esa combinación de `roles`.
+    perfilId: z.coerce.number().int().positive().optional().nullable(),
     etiqueta: z.string().trim().min(1, "La etiqueta es obligatoria").max(80),
     orden: z.coerce.number().int().min(0).optional().default(0),
     horarioEspecial: z.boolean().optional().default(false),
@@ -52,6 +57,10 @@ export const CrearNecesidadDTO = z
     observaciones: z.string().trim().max(500).optional().nullable(),
     // Permite crear la plaza ya ocupada en la misma llamada.
     operarioId: z.string().trim().min(1).optional().nullable(),
+  })
+  .refine((d) => (d.roles?.length ?? 0) > 0 || d.perfilId != null, {
+    message: "Selecciona un perfil o al menos un rol.",
+    path: ["perfilId"],
   })
   .refine((d) => !d.horarioEspecial || d.horarios.length > 0, {
     message: "Si marcas horario especial, debes configurar al menos un día.",
@@ -73,6 +82,7 @@ export const EditarNecesidadDTO = z
       .array(z.nativeEnum(TipoFuncion))
       .min(1, "Selecciona al menos un rol")
       .optional(),
+    perfilId: z.coerce.number().int().positive().optional(),
     etiqueta: z.string().trim().min(1).max(80).optional(),
     orden: z.coerce.number().int().min(0).optional(),
     horarioEspecial: z.boolean().optional(),
@@ -117,6 +127,15 @@ export const necesidadPublicSelect = {
   id: true,
   conjuntoId: true,
   roles: true,
+  perfilId: true,
+  perfil: {
+    select: {
+      id: true,
+      nombre: true,
+      activo: true,
+      categorias: { select: { categoriaId: true } },
+    },
+  },
   etiqueta: true,
   orden: true,
   horarioEspecial: true,

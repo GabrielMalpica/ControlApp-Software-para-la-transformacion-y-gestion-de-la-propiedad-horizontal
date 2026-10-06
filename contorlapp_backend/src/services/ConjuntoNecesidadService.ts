@@ -7,6 +7,8 @@ import {
   necesidadPublicSelect,
 } from "../model/ConjuntoNecesidad";
 import { obtenerCalendariosOperarios } from "../utils/operarioAvailability";
+import { mismosRoles } from "../utils/perfilOperativo";
+import { CatalogoOperativoService } from "./CatalogoOperativoService";
 
 const ETIQUETA_ROL: Record<TipoFuncion, string> = {
   TODERO: "Todero",
@@ -43,10 +45,41 @@ type ResultadoEliminar =
  * plaza por conjunto).
  */
 export class ConjuntoNecesidadService {
+  private catalogo: CatalogoOperativoService;
+
   constructor(
     private prisma: PrismaClient,
     private conjuntoId: string,
-  ) {}
+  ) {
+    this.catalogo = new CatalogoOperativoService(prisma);
+  }
+
+  /**
+   * Resuelve perfil y roles de una plaza. Con `perfilId` los roles salen del
+   * perfil (fuente de verdad); solo con `roles` se reutiliza o crea el perfil
+   * de esa combinación, así ninguna plaza queda aislada del catálogo. Un
+   * conjunto sin empresa no puede tener perfil (queda en null).
+   */
+  private async resolverPerfilYRoles(params: {
+    perfilId?: number | null;
+    roles?: TipoFuncion[];
+  }): Promise<{ perfilId: number | null; roles: TipoFuncion[] }> {
+    const conjunto = await this.prisma.conjunto.findUnique({
+      where: { nit: this.conjuntoId },
+      select: { empresaId: true },
+    });
+    const empresaId = conjunto?.empresaId ?? null;
+    if (params.perfilId != null) {
+      if (!empresaId) throw new Error("El conjunto no pertenece a una empresa.");
+      const perfil = await this.catalogo.obtenerPerfilDeEmpresa(empresaId, params.perfilId);
+      return { perfilId: perfil.id, roles: perfil.roles };
+    }
+    const roles = params.roles ?? [];
+    if (!roles.length) throw new Error("Selecciona un perfil o al menos un rol.");
+    if (!empresaId) return { perfilId: null, roles };
+    const perfil = await this.catalogo.resolverPerfilParaRoles(empresaId, roles);
+    return { perfilId: perfil.id, roles };
+  }
 
   private async conjuntoExiste() {
     const conjunto = await this.prisma.conjunto.findUnique({
@@ -197,14 +230,19 @@ export class ConjuntoNecesidadService {
     await this.conjuntoExiste();
     const dto = CrearNecesidadDTO.parse(payload);
     await this.validarEtiquetaUnica(dto.etiqueta);
+    const { perfilId, roles } = await this.resolverPerfilYRoles({
+      perfilId: dto.perfilId,
+      roles: dto.roles,
+    });
     if (dto.operarioId) {
-      await this.validarYPrepararOperario(dto.operarioId, dto.roles);
+      await this.validarYPrepararOperario(dto.operarioId, roles);
     }
 
     return this.prisma.conjuntoNecesidadOperario.create({
       data: {
         conjuntoId: this.conjuntoId,
-        roles: dto.roles,
+        roles,
+        perfilId,
         etiqueta: dto.etiqueta,
         orden: dto.orden,
         horarioEspecial: dto.horarioEspecial,
@@ -244,21 +282,39 @@ export class ConjuntoNecesidadService {
         trabajaFestivos: true,
         festivoHoraApertura: true,
         festivoHoraCierre: true,
+        perfilId: true,
+        roles: true,
       },
     });
     if (!actual) throw new Error("Necesidad no encontrada.");
 
     if (dto.etiqueta) await this.validarEtiquetaUnica(dto.etiqueta, id);
 
+    // Perfil/roles finales: con `perfilId` mandan los roles del perfil; con
+    // solo `roles`, la plaza conserva su perfil si ya tiene esa combinación y
+    // si no se enlaza al perfil de la nueva (creándolo si hace falta).
+    let rolesFinal: TipoFuncion[] | undefined = dto.roles;
+    let perfilIdFinal: number | undefined;
+    if (dto.perfilId != null) {
+      if (dto.perfilId !== actual.perfilId) {
+        const r = await this.resolverPerfilYRoles({ perfilId: dto.perfilId });
+        rolesFinal = r.roles;
+        perfilIdFinal = r.perfilId ?? undefined;
+      }
+    } else if (dto.roles && !(actual.perfilId != null && mismosRoles(dto.roles, actual.roles))) {
+      const r = await this.resolverPerfilYRoles({ roles: dto.roles });
+      perfilIdFinal = r.perfilId ?? undefined;
+    }
+
     // Si cambian los roles y la plaza está ocupada, el operario actual debe
     // seguir cumpliendo TODOS los roles nuevos (si no, primero hay que
     // liberar la plaza).
-    if (dto.roles && actual.operarioId) {
+    if (rolesFinal && actual.operarioId) {
       const operario = await this.prisma.operario.findUnique({
         where: { id: actual.operarioId },
         select: { funciones: true },
       });
-      const faltantes = dto.roles.filter((r) => !(operario?.funciones.includes(r) ?? false));
+      const faltantes = rolesFinal.filter((r) => !(operario?.funciones.includes(r) ?? false));
       if (faltantes.length > 0) {
         throw new Error(
           `El operario que ocupa esta plaza no tiene el rol ${etiquetaRoles(faltantes)}; libera la plaza antes de cambiarlo.`,
@@ -305,7 +361,8 @@ export class ConjuntoNecesidadService {
       return tx.conjuntoNecesidadOperario.update({
         where: { id },
         data: {
-          roles: dto.roles,
+          roles: rolesFinal,
+          perfilId: perfilIdFinal,
           etiqueta: dto.etiqueta,
           orden: dto.orden,
           horarioEspecial: dto.horarioEspecial,
@@ -452,6 +509,10 @@ export class ConjuntoNecesidadService {
       contadorPorClave.set(clave, (contadorPorClave.get(clave) ?? 0) + 1);
     }
 
+    const conjunto = await this.prisma.conjunto.findUnique({
+      where: { nit: this.conjuntoId },
+      select: { empresaId: true },
+    });
     const creadas: Array<{ etiqueta: string; operarioId: string }> = [];
     for (const operario of operarios) {
       if (ocupadas.has(operario.id)) continue;
@@ -463,10 +524,14 @@ export class ConjuntoNecesidadService {
       const siguiente = (contadorPorClave.get(clave) ?? 0) + 1;
       contadorPorClave.set(clave, siguiente);
       const etiqueta = `${etiquetaRoles(roles)} #${siguiente}`;
+      const perfil = conjunto?.empresaId
+        ? await this.catalogo.resolverPerfilParaRoles(conjunto.empresaId, roles)
+        : null;
       await this.prisma.conjuntoNecesidadOperario.create({
         data: {
           conjuntoId: this.conjuntoId,
           roles,
+          perfilId: perfil?.id ?? null,
           etiqueta,
           orden: siguiente,
           horarioEspecial: false,

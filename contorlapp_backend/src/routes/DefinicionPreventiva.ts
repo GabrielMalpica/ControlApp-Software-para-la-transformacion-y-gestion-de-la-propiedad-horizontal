@@ -20,6 +20,20 @@ router.post("/conjuntos/:nit/preventivas", asyncHandler(ctrl.crear));
 
 router.get("/conjuntos/:nit/preventivas", asyncHandler(ctrl.listar));
 
+// Rutas literales de categoría ANTES de `/:id`.
+router.patch(
+  "/conjuntos/:nit/preventivas/categoria-lote",
+  asyncHandler(ctrl.asignarCategoriaLote),
+);
+router.put(
+  "/conjuntos/:nit/preventivas/orden-categoria",
+  asyncHandler(ctrl.ordenarEnCategoria),
+);
+router.get(
+  "/conjuntos/:nit/preventivas/sugerencias-categoria",
+  asyncHandler(ctrl.sugerirCategorias),
+);
+
 router.patch("/conjuntos/:nit/preventivas/:id", asyncHandler(ctrl.actualizar));
 
 // ⚠️ Las rutas con segmento literal van SIEMPRE antes que `/:id`, o Express

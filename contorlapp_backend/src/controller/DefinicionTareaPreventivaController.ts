@@ -3,10 +3,13 @@ import { prisma } from "../db/prisma";
 import { DefinicionTareaPreventivaService } from "../services/DefinicionTareaPreventivaService";
 import { extraerActorAuditoriaConNombre } from "../utils/auditoria";
 import {
+  AsignarCategoriaLoteDTO,
   CrearDefinicionPreventivaDTO,
   EditarDefinicionPreventivaDTO,
   GenerarCronogramaDTO,
+  OrdenEnCategoriaDTO,
 } from "../model/DefinicionTareaPreventiva";
+import { CatalogoOperativoService } from "../services/CatalogoOperativoService";
 
 /**
  * Delega en el manejador de errores central (`src/index.ts`), que es el unico
@@ -51,6 +54,26 @@ export class DefinicionTareaPreventivaController {
     const svc = new DefinicionTareaPreventivaService(prisma, await extraerActorAuditoriaConNombre(req));
     const def = await svc.actualizar(conjuntoId, id, dto);
     res.json(def);
+  };
+
+  /** PATCH /conjuntos/:nit/preventivas/categoria-lote  body: { ids, categoriaId|null } */
+  asignarCategoriaLote = async (req: Request, res: Response) => {
+    const dto = AsignarCategoriaLoteDTO.parse(req.body);
+    const out = await new CatalogoOperativoService(prisma).asignarCategoriaLote(req.params.nit, dto);
+    res.json(out);
+  };
+
+  /** PUT /conjuntos/:nit/preventivas/orden-categoria  body: { categoriaId, ids } */
+  ordenarEnCategoria = async (req: Request, res: Response) => {
+    const dto = OrdenEnCategoriaDTO.parse(req.body);
+    const out = await new CatalogoOperativoService(prisma).ordenarEnCategoria(req.params.nit, dto);
+    res.json(out);
+  };
+
+  /** GET /conjuntos/:nit/preventivas/sugerencias-categoria (solo propone, no guarda) */
+  sugerirCategorias = async (req: Request, res: Response) => {
+    const out = await new CatalogoOperativoService(prisma).sugerirCategorias(req.params.nit);
+    res.json(out);
   };
 
   /** DELETE /conjuntos/:nit/preventivas/:id */

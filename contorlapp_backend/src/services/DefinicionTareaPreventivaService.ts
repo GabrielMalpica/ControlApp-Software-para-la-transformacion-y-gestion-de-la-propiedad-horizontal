@@ -1,6 +1,9 @@
 // src/services/DefinicionTareaPreventivaService.ts
 
-import type { PrismaClient } from "@prisma/client";
+import type {
+  PrismaClient,
+  PreventivaExcluidaBorrador as PreventivaExcluidaBorradorRow,
+} from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import {
   Prisma,
@@ -35,6 +38,18 @@ import {
   type ActorAuditoria,
 } from "../model/Auditoria";
 import { AuditoriaService } from "./AuditoriaService";
+import { CatalogoOperativoService } from "./CatalogoOperativoService";
+import {
+  ordenarCandidatasPorCarga,
+  ordenarExcluidasParaRescate,
+  motivoRescatablePorCapacidad,
+  plazasCandidatas,
+  type PlazaRecurso,
+} from "../utils/capacidadCandidatos";
+import {
+  ordenarPorProgramacion,
+  type DatosOrdenProgramacion,
+} from "../utils/ordenProgramacion";
 import { parseMaquinariaIdsComprometidos } from "../utils/maquinariaNecesidades";
 import {
   DIAS_ENTREGA_RECOGIDA,
@@ -69,11 +84,6 @@ import {
   operarioResumenSelect,
   supervisorResumenSelect,
 } from "../utils/elementoHierarchy";
-import {
-  normalizarNombreZona,
-  resolverConfiguracionZona,
-  type ConfiguracionZonaGuardada,
-} from "../utils/cronogramaZona";
 import {
   allowedIntervalsForUserWithAvailability,
   diaSemanaFromDate,
@@ -184,6 +194,22 @@ type NovedadCronograma =
       nuevaTareaIds: number[];
       bloques: { fechaInicio: string; fechaFin: string }[];
       mensaje: string;
+    }
+  | {
+      // El responsable previsto no tenia espacio y otra plaza con la categoria
+      // habilitada en su perfil ejecuto la tarea (ver rescatarExcluidasPorCapacidad).
+      tipo: "REASIGNADA_POR_CAPACIDAD";
+      defId: number;
+      descripcion: string;
+      prioridad: number;
+      fecha: string;
+      fechaObjetivo: string;
+      nuevaTareaIds: number[];
+      desdeNecesidadId: number | null;
+      haciaNecesidadId: number;
+      haciaEtiqueta: string;
+      haciaOperarioId: string;
+      mensaje: string;
     };
 
 type ExclusionMotivoTipo =
@@ -200,6 +226,37 @@ type ExclusionMotivoTipo =
   // La definición requiere una necesidad/plaza (ConjuntoNecesidadOperario)
   // que actualmente no tiene operario asignado: no se agenda a medias.
   | "NECESIDAD_SIN_OPERARIO";
+
+/**
+ * Identidad "de negocio" de una tarea para la regla de no repetir el mismo
+ * día: descripción + ubicación + elemento. Dos definiciones distintas con la
+ * misma firma son, para el usuario, la misma tarea (p. ej. un barrido cargado
+ * tres veces con distinto id de definición).
+ */
+function firmaTareaPreventiva(params: {
+  descripcion?: string | null;
+  ubicacionId?: number | null;
+  elementoId?: number | null;
+}): string | null {
+  if (
+    !params.descripcion ||
+    params.ubicacionId == null ||
+    params.elementoId == null
+  ) {
+    return null;
+  }
+  const descripcion = params.descripcion.trim().toLowerCase().replace(/\s+/g, " ");
+  return `${descripcion}|${params.ubicacionId}|${params.elementoId}`;
+}
+
+type IdentidadTareaDia = {
+  definicionId?: number | null;
+  descripcion?: string | null;
+  ubicacionId?: number | null;
+  elementoId?: number | null;
+  ocurrenciaPlanId?: string | null;
+  grupoPlanId?: string | null;
+};
 
 type ExcluidaSnapshot = {
   conjuntoId: string;
@@ -461,8 +518,13 @@ export class DefinicionTareaPreventivaService {
   // conjunto de operarios en un periodo. Clave: `${conjuntoId}|${ids}|${anio}-${mes}`.
   private diasDescansoCache = new Map<string, Set<string>>();
   private agendaSchedulerActiva = false;
+  /** Excluidas creadas durante la generacion en curso (candidatas al rescate por capacidades). */
+  private excluidasDeLaCorrida: PreventivaExcluidaBorradorRow[] = [];
+  private rastreoExcluidas = false;
   private agendaScheduler = new Map<string, IntervaloAgendaScheduler[]>();
   private ocurrenciasDefinicionDiaScheduler = new Map<string, Set<string>>();
+  /** definicionId -> firma (descripción|ubicación|elemento) de la generación en curso. */
+  private firmaPorDefinicionScheduler = new Map<number, string>();
   private ocurrenciaPlanRunId = randomUUID();
 
   constructor(
@@ -805,17 +867,35 @@ export class DefinicionTareaPreventivaService {
     definicionId: number;
     ocurrenciaPlanId: string;
     bloques: BloqueProgramacion[];
+    firma?: string | null;
   }) {
+    const firma =
+      params.firma ?? this.firmaPorDefinicionScheduler.get(params.definicionId);
     for (const bloque of params.bloques) {
-      const clave = this.claveDefinicionDiaScheduler(
-        params.definicionId,
-        bloque.fechaInicio,
-      );
-      const ocurrencias =
-        this.ocurrenciasDefinicionDiaScheduler.get(clave) ?? new Set<string>();
-      ocurrencias.add(params.ocurrenciaPlanId);
-      this.ocurrenciasDefinicionDiaScheduler.set(clave, ocurrencias);
+      const claves = [
+        this.claveDefinicionDiaScheduler(params.definicionId, bloque.fechaInicio),
+        ...(firma ? [`F|${firma}|${dayKey(bloque.fechaInicio)}`] : []),
+      ];
+      for (const clave of claves) {
+        const ocurrencias =
+          this.ocurrenciasDefinicionDiaScheduler.get(clave) ?? new Set<string>();
+        ocurrencias.add(params.ocurrenciaPlanId);
+        this.ocurrenciasDefinicionDiaScheduler.set(clave, ocurrencias);
+      }
     }
+  }
+
+  /** Registra una tarea que no pertenece a una definición (solo por su firma). */
+  private registrarOcurrenciaFirmaDiaScheduler(params: {
+    firma: string;
+    ocurrenciaPlanId: string;
+    fecha: Date;
+  }) {
+    const clave = `F|${params.firma}|${dayKey(params.fecha)}`;
+    const ocurrencias =
+      this.ocurrenciasDefinicionDiaScheduler.get(clave) ?? new Set<string>();
+    ocurrencias.add(params.ocurrenciaPlanId);
+    this.ocurrenciasDefinicionDiaScheduler.set(clave, ocurrencias);
   }
 
   private hayOtraOcurrenciaDefinicionEnDia(params: {
@@ -823,15 +903,20 @@ export class DefinicionTareaPreventivaService {
     ocurrenciaPlanId: string;
     fecha: Date;
   }) {
-    const ocurrencias = this.ocurrenciasDefinicionDiaScheduler.get(
+    const firma = this.firmaPorDefinicionScheduler.get(params.definicionId);
+    const claves = [
       this.claveDefinicionDiaScheduler(params.definicionId, params.fecha),
-    );
-    return (
-      ocurrencias != null &&
-      Array.from(ocurrencias).some(
-        (ocurrenciaId) => ocurrenciaId !== params.ocurrenciaPlanId,
-      )
-    );
+      ...(firma ? [`F|${firma}|${dayKey(params.fecha)}`] : []),
+    ];
+    return claves.some((clave) => {
+      const ocurrencias = this.ocurrenciasDefinicionDiaScheduler.get(clave);
+      return (
+        ocurrencias != null &&
+        Array.from(ocurrencias).some(
+          (ocurrenciaId) => ocurrenciaId !== params.ocurrenciaPlanId,
+        )
+      );
+    });
   }
 
   /**
@@ -875,7 +960,11 @@ export class DefinicionTareaPreventivaService {
         fechaInicio: true,
         fechaFin: true,
         ocurrenciaPlanId: true,
+        grupoPlanId: true,
         definicionId: true,
+        descripcion: true,
+        ubicacionId: true,
+        elementoId: true,
         borrador: true,
         operarios: { select: { id: true } },
       },
@@ -889,13 +978,26 @@ export class DefinicionTareaPreventivaService {
         operariosIds: tarea.operarios.map((operario) => operario.id),
         borrador: tarea.borrador,
       });
-      if (tarea.definicionId != null && tarea.ocurrenciaPlanId != null) {
+      // Una tarea sin ocurrenciaPlanId (creada a mano o heredada) también
+      // cuenta como ocurrencia de su definición ese día; antes se ignoraba y
+      // el generador podía repetir la tarea.
+      const ocurrenciaTarea =
+        tarea.ocurrenciaPlanId ?? tarea.grupoPlanId ?? `tarea:${tarea.id}`;
+      const firmaTarea = firmaTareaPreventiva(tarea);
+      if (tarea.definicionId != null) {
         this.registrarOcurrenciaDefinicionDiaScheduler({
           definicionId: tarea.definicionId,
-          ocurrenciaPlanId: tarea.ocurrenciaPlanId,
+          ocurrenciaPlanId: ocurrenciaTarea,
           bloques: [
             { fechaInicio: tarea.fechaInicio, fechaFin: tarea.fechaFin },
           ],
+          firma: firmaTarea,
+        });
+      } else if (firmaTarea) {
+        this.registrarOcurrenciaFirmaDiaScheduler({
+          firma: firmaTarea,
+          ocurrenciaPlanId: ocurrenciaTarea,
+          fecha: tarea.fechaInicio,
         });
       }
     }
@@ -1585,6 +1687,8 @@ export class DefinicionTareaPreventivaService {
       },
     });
 
+    if (this.rastreoExcluidas) this.excluidasDeLaCorrida.push(created);
+
     await this.registrarEventoBorrador({
       conjuntoId: snapshot.conjuntoId,
       periodoAnio: snapshot.periodoAnio,
@@ -1751,12 +1855,95 @@ export class DefinicionTareaPreventivaService {
     }
   }
 
+  /**
+   * Regla: la misma tarea (definición) no se repite dos veces el mismo día.
+   * Los bloques de una misma ocurrencia (o grupo) sí pueden compartir día.
+   * Lanza un error accionable si el día ya tiene otra ocurrencia.
+   */
+  private async validarNoRepiteDefinicionEnDia(params: {
+    conjuntoId: string;
+    fecha: Date;
+    identidad: IdentidadTareaDia;
+    excluirTareaId?: number;
+  }) {
+    const { conjuntoId, fecha, identidad, excluirTareaId } = params;
+    const inicioDia = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate());
+    const finDia = new Date(
+      fecha.getFullYear(),
+      fecha.getMonth(),
+      fecha.getDate(),
+      23,
+      59,
+      59,
+      999,
+    );
+    const mismaTarea: Prisma.TareaWhereInput[] = [];
+    if (identidad.definicionId != null) {
+      mismaTarea.push({ definicionId: identidad.definicionId });
+    }
+    if (
+      identidad.descripcion &&
+      identidad.ubicacionId != null &&
+      identidad.elementoId != null
+    ) {
+      mismaTarea.push({
+        descripcion: { equals: identidad.descripcion, mode: "insensitive" },
+        ubicacionId: identidad.ubicacionId,
+        elementoId: identidad.elementoId,
+      });
+    }
+    if (!mismaTarea.length) return;
+
+    const existentes = await this.prisma.tarea.findMany({
+      where: {
+        conjuntoId,
+        borrador: true,
+        tipo: TipoTarea.PREVENTIVA,
+        estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
+        fechaInicio: { gte: inicioDia, lte: finDia },
+        ...(excluirTareaId != null ? { id: { not: excluirTareaId } } : {}),
+        OR: mismaTarea,
+      },
+      select: { id: true, ocurrenciaPlanId: true, grupoPlanId: true },
+    });
+    const propia = identidad.ocurrenciaPlanId ?? identidad.grupoPlanId ?? null;
+    const otra = existentes.find((tarea) => {
+      const firma = tarea.ocurrenciaPlanId ?? tarea.grupoPlanId ?? `tarea:${tarea.id}`;
+      return propia == null || firma !== propia;
+    });
+    if (otra) {
+      throw new Error(
+        `"${identidad.descripcion ?? "Esta tarea"}" ya está programada ese día. ` +
+          "La misma tarea no se repite dos veces el mismo día: elige otro día.",
+      );
+    }
+  }
+
+  private identidadDeExcluida(excluida: {
+    id: number;
+    defId?: number | null;
+    descripcion?: string | null;
+    ubicacionId?: number | null;
+    elementoId?: number | null;
+    ocurrenciaPlanId?: string | null;
+  }): IdentidadTareaDia {
+    return {
+      definicionId: excluida.defId ?? null,
+      descripcion: excluida.descripcion ?? null,
+      ubicacionId: excluida.ubicacionId ?? null,
+      elementoId: excluida.elementoId ?? null,
+      ocurrenciaPlanId: excluida.ocurrenciaPlanId ?? `excluida:${excluida.id}`,
+    };
+  }
+
   private async validarSlotPreventivaBorrador(params: {
     conjuntoId: string;
     fechaInicio: Date;
     fechaFin: Date;
     operariosIds: string[];
     excluirTareaId?: number;
+    /** Si se envía, también se valida que la tarea no se repita ese día. */
+    identidad?: IdentidadTareaDia;
   }) {
     const { conjuntoId, fechaInicio, fechaFin, operariosIds, excluirTareaId } = params;
 
@@ -1772,6 +1959,15 @@ export class DefinicionTareaPreventivaService {
       operariosIds,
     });
     if (!validacionIntervalo.ok) throw new Error(validacionIntervalo.mensaje);
+
+    if (params.identidad) {
+      await this.validarNoRepiteDefinicionEnDia({
+        conjuntoId,
+        fecha: fechaInicio,
+        identidad: params.identidad,
+        excluirTareaId,
+      });
+    }
 
     const inicioEsFestivo = await isFestivoDate({
       prisma: this.prisma,
@@ -1941,6 +2137,10 @@ export class DefinicionTareaPreventivaService {
       duracionMinutos: number;
       fechaObjetivo: Date;
       operariosIds: string[];
+      defId?: number | null;
+      ubicacionId?: number | null;
+      elementoId?: number | null;
+      ocurrenciaPlanId?: string | null;
     };
     fechaPreferida?: Date;
     maxOpciones?: number;
@@ -2131,6 +2331,7 @@ export class DefinicionTareaPreventivaService {
               fechaInicio: bloque.fechaInicio,
               fechaFin: bloque.fechaFin,
               operariosIds: excluida.operariosIds,
+              identidad: this.identidadDeExcluida(excluida),
             });
           }
           pushOpcion(bloquesPlan);
@@ -2492,9 +2693,9 @@ export class DefinicionTareaPreventivaService {
         estado: { notIn: ["PENDIENTE_REPROGRAMACION"] as any },
         OR: [
           { definicionId: params.definicionId },
+          // Misma tarea cargada en otra definición (o sin definición).
           {
-            definicionId: null,
-            descripcion: params.descripcion,
+            descripcion: { equals: params.descripcion, mode: "insensitive" },
             ubicacionId: params.ubicacionId,
             elementoId: params.elementoId,
           },
@@ -2599,98 +2800,16 @@ export class DefinicionTareaPreventivaService {
     return mejor;
   }
 
-  private ordenarTareasDiversasPorZona(
-    tareas: any[],
-    configuraciones: ReadonlyMap<number, ConfiguracionZonaGuardada>,
-    dificilesPrimero = true,
-  ): any[] {
-    const decoradas = tareas.map((tarea) => ({
-      tarea,
-      prioridad: Number(tarea.prioridad ?? 2),
-      zona: resolverConfiguracionZona(tarea.elemento, configuraciones),
-      cantidadOperarios: new Set(
-        (tarea.operarios ?? []).map((operario: { id: string }) => operario.id),
-      ).size,
-      duracionMinutos: Math.max(1, Number(tarea.duracionMinutos ?? 0)),
-      claveActividad: [
-        normalizarNombreZona(tarea.descripcion ?? ""),
-        tarea.ubicacionId,
-        tarea.elementoId,
-      ].join("|"),
-    }));
-    // La prioridad manda sobre la zona: una P1 siempre va antes que una
-    // P2/P3 sin importar en qué zona esté. Dentro de la misma prioridad
-    // manda el orden de zona (húmedas primero, luego verdes, tránsito, etc).
-    const grupos = Array.from(
-      new Set(
-        decoradas.map(
-          (item) => `${item.prioridad}|${item.zona?.orden ?? 100}`,
-        ),
-      ),
-    )
-      .map((clave) => {
-        const [prioridad, orden] = clave.split("|").map(Number);
-        return { prioridad, orden };
-      })
-      .sort((a, b) => a.prioridad - b.prioridad || a.orden - b.orden);
-    const resultado: any[] = [];
-
-    for (const { prioridad, orden } of grupos) {
-      const nivel = decoradas
-        .filter(
-          (item) => item.prioridad === prioridad && (item.zona?.orden ?? 100) === orden,
-        )
-        .sort(
-          (a, b) =>
-            (dificilesPrimero
-              ? b.cantidadOperarios - a.cantidadOperarios ||
-                b.duracionMinutos - a.duracionMinutos
-              : 0) ||
-            +a.tarea.fechaInicio - +b.tarea.fechaInicio ||
-            a.tarea.id - b.tarea.id,
-        );
-      const cubetas = new Map<string, typeof nivel>();
-      for (const item of nivel) {
-        const cubeta = cubetas.get(item.claveActividad) ?? [];
-        cubeta.push(item);
-        cubetas.set(item.claveActividad, cubeta);
-      }
-      const claves = Array.from(cubetas.keys()).sort((a, b) => {
-        const primeraA = cubetas.get(a)?.[0];
-        const primeraB = cubetas.get(b)?.[0];
-        return (
-          (dificilesPrimero
-            ? (primeraB?.cantidadOperarios ?? 0) -
-                (primeraA?.cantidadOperarios ?? 0) ||
-              (primeraB?.duracionMinutos ?? 0) -
-                (primeraA?.duracionMinutos ?? 0)
-            : 0) ||
-          +(primeraA?.tarea.fechaInicio ?? 0) -
-            +(primeraB?.tarea.fechaInicio ?? 0) ||
-          (primeraA?.tarea.id ?? 0) - (primeraB?.tarea.id ?? 0)
-        );
-      });
-
-      let pendientes = nivel.length;
-      while (pendientes > 0) {
-        for (const clave of claves) {
-          const siguiente = cubetas.get(clave)?.shift();
-          if (!siguiente) continue;
-          resultado.push(siguiente.tarea);
-          pendientes--;
-        }
-      }
-    }
-
-    return resultado;
-  }
-
   /**
    * Segunda pasada del scheduler: conserva el dia y los recursos de cada
-   * tarea, y reempaca las horas por prioridad de zona. Los componentes sin
-   * operarios en comun pueden permanecer en paralelo.
+   * tarea, y reempaca las horas del dia por orden de programacion:
+   * categoria (su ordenProgramacion) -> orden interno dentro de la categoria
+   * -> prioridad de seleccion -> definicion. Nunca cambia que tareas quedaron
+   * seleccionadas ni quien las ejecuta. Las tareas sin categoria activa van al
+   * final del dia. Los componentes sin operarios en comun pueden permanecer
+   * en paralelo.
    */
-  private async reordenarBorradorGeneradoPorZonas(params: {
+  private async reordenarBorradorGeneradoPorCategoria(params: {
     conjuntoId: string;
     periodoAnio: number;
     periodoMes: number;
@@ -2719,7 +2838,6 @@ export class DefinicionTareaPreventivaService {
       },
       include: {
         operarios: { select: { id: true } },
-        elemento: { include: elementoParentChainInclude },
       },
       orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
     });
@@ -2728,12 +2846,15 @@ export class DefinicionTareaPreventivaService {
     }
 
     // Los dos tramos que rodean el almuerzo forman una unidad funcional. Se
-    // dejan fijos para que el ordenamiento por zonas nunca los separe ni los
-    // convierta en huecos arbitrarios.
+    // dejan fijos para que el ordenamiento nunca los separe ni los convierta
+    // en huecos arbitrarios. Solo cuentan los bloques de la misma ocurrencia
+    // EN EL MISMO DIA: las partes de una tarea de varios dias estan cada una en
+    // un dia distinto y si pueden ordenarse como cualquier otra tarea.
     const tareasPorOcurrencia = new Map<string, typeof tareas>();
     for (const tarea of tareas) {
-      const clave = tarea.ocurrenciaPlanId ?? tarea.grupoPlanId;
-      if (!clave) continue;
+      const base = tarea.ocurrenciaPlanId ?? tarea.grupoPlanId;
+      if (!base) continue;
+      const clave = `${base}|${dayKey(tarea.fechaInicio)}`;
       const grupo = tareasPorOcurrencia.get(clave) ?? [];
       grupo.push(tarea);
       tareasPorOcurrencia.set(clave, grupo);
@@ -2750,18 +2871,41 @@ export class DefinicionTareaPreventivaService {
       return { reordenadas: 0, componentesSinOrdenar: 0 };
     }
 
-    const configuracionRepo = (this.prisma as any)
-      .configuracionZonaCronograma;
-    const configuracionesRows: ConfiguracionZonaGuardada[] =
-      configuracionRepo?.findMany
-        ? await configuracionRepo.findMany({
-            where: { conjuntoId: params.conjuntoId },
-            select: { elementoZonaId: true, orden: true, colorHex: true },
-          })
-        : [];
-    const configuraciones = new Map<number, ConfiguracionZonaGuardada>(
-      configuracionesRows.map((item) => [item.elementoZonaId, item]),
+    // Categorias vigentes (orden y estado) de las tareas a reordenar: una
+    // categoria desactivada se trata como "sin categoria".
+    const categoriasIds = Array.from(
+      new Set(
+        tareasReordenables
+          .map((tarea) => tarea.categoriaId)
+          .filter((id): id is number => id != null),
+      ),
     );
+    const categoriasRows = categoriasIds.length
+      ? await this.prisma.categoriaTarea.findMany({
+          where: { id: { in: categoriasIds } },
+          select: { id: true, ordenProgramacion: true, activa: true },
+        })
+      : [];
+    const categorias = new Map(categoriasRows.map((c) => [c.id, c]));
+    // `estricto` aplica el orden completo; el reintento solo conserva el orden
+    // de categorias y el horario previo dentro de cada una.
+    const datosOrden = (
+      tarea: (typeof tareas)[number],
+      estricto: boolean,
+    ): DatosOrdenProgramacion => {
+      const categoria =
+        tarea.categoriaId != null ? categorias.get(tarea.categoriaId) : undefined;
+      const vigente = categoria?.activa ? categoria : undefined;
+      return {
+        categoriaOrden: vigente?.ordenProgramacion ?? null,
+        categoriaId: vigente?.id ?? null,
+        ordenEnCategoria: estricto ? tarea.ordenEnCategoria : null,
+        prioridad: estricto ? Number(tarea.prioridad ?? 2) : 0,
+        definicionId: estricto ? tarea.definicionId : null,
+        fechaInicioMs: +tarea.fechaInicio,
+        id: tarea.id,
+      };
+    };
     const porDia = new Map<string, typeof tareas>();
     for (const tarea of tareasReordenables) {
       const clave = dayKey(tarea.fechaInicio);
@@ -2867,17 +3011,16 @@ export class DefinicionTareaPreventivaService {
         };
         let propuestas: PropuestaZona[] | null = null;
 
-        // El orden de mayor dificultad suele dejar mas espacio util para las
-        // cuadrillas. Si la sincronizacion concreta del dia no encaja, se
-        // reintenta conservando el orden horario previo dentro de cada zona.
-        for (const dificilesPrimero of [true, false]) {
+        // Primero el orden completo (categoria -> orden interno -> prioridad
+        // -> definicion). Si la sincronizacion concreta del dia no encaja, se
+        // reintenta conservando solo el orden de categorias y el horario
+        // previo dentro de cada una.
+        for (const estricto of [true, false]) {
           this.retirarTareasAgendaScheduler(
             componente.map((tarea) => tarea.id),
           );
-          const ordenadas = this.ordenarTareasDiversasPorZona(
-            componente,
-            configuraciones,
-            dificilesPrimero,
+          const ordenadas = ordenarPorProgramacion(componente, (tarea) =>
+            datosOrden(tarea, estricto),
           );
           const intento: PropuestaZona[] = [];
           let valido = true;
@@ -2985,6 +3128,334 @@ export class DefinicionTareaPreventivaService {
       reordenadas: actualizaciones.length,
       componentesSinOrdenar,
     };
+  }
+
+  /**
+   * Rescate por capacidades. Una tarea solo debe quedar excluida cuando no
+   * existe ningun recurso compatible y disponible. Para cada excluida de ESTA
+   * corrida por falta de cupo (SIN_HUECO, SIN_CANDIDATAS, SIN_CAPACIDAD_P1,
+   * NECESIDAD_SIN_OPERARIO o desplazada por prioridad) se buscan plazas del
+   * mismo conjunto, distintas de la del responsable, cuyo PERFIL tenga la
+   * categoria de la preventiva entre sus capacidades configuradas (nunca se
+   * infiere por el nombre del cargo). La tarea se coloca con los mismos
+   * criterios que el rescate mensual del responsable: fecha objetivo, luego
+   * dias cercanos y menos cargados, respetando horario de esa plaza,
+   * festivos, descanso compensatorio, disponibilidad, solapes, tope semanal y
+   * la regla de no repetir la misma tarea el mismo dia.
+   *
+   * Solo puede reducir las excluidas: lo que no encuentra recurso queda como
+   * estaba. No aplica a cuadrillas (varios responsables), a tareas de varios
+   * dias ni a definiciones sin categoria activa.
+   */
+  private async rescatarExcluidasPorCapacidad(params: {
+    conjuntoId: string;
+    periodoAnio: number;
+    periodoMes: number;
+    defsPorId: Map<number, any>;
+    festivosSet: Set<string>;
+    incluirPublicadasEnAgenda: boolean;
+    novedades: NovedadCronograma[];
+  }): Promise<{ reasignadas: number; tareasCreadas: number; sinRecursoCompatible: number }> {
+    const resultado = { reasignadas: 0, tareasCreadas: 0, sinRecursoCompatible: 0 };
+    const { conjuntoId, periodoAnio, periodoMes } = params;
+
+    const excluidas = this.excluidasDeLaCorrida.filter(
+      (e) =>
+        e.conjuntoId === conjuntoId &&
+        e.periodoAnio === periodoAnio &&
+        e.periodoMes === periodoMes &&
+        e.estado === "PENDIENTE" &&
+        e.defId != null &&
+        motivoRescatablePorCapacidad(e.motivoTipo),
+    );
+    if (!excluidas.length) return resultado;
+
+    const plazasDb = await this.prisma.conjuntoNecesidadOperario.findMany({
+      where: { conjuntoId, activo: true },
+      include: {
+        perfil: {
+          select: { activo: true, categorias: { select: { categoriaId: true } } },
+        },
+        operario: { select: { id: true, usuario: { select: { nombre: true } } } },
+      },
+    });
+    const plazas: PlazaRecurso[] = plazasDb.map((p) => ({
+      id: p.id,
+      orden: p.orden,
+      operarioId: p.operarioId,
+      plazaActiva: p.activo,
+      perfilActivo: p.perfil?.activo ?? false,
+      categoriasPermitidas: new Set(p.perfil?.categorias.map((c) => c.categoriaId) ?? []),
+    }));
+    // Sin capacidades configuradas no hay a quien reasignar: el generador se
+    // comporta exactamente como antes.
+    if (!plazas.some((p) => p.operarioId != null && p.categoriasPermitidas.size > 0)) {
+      return resultado;
+    }
+    const plazaPorId = new Map(plazasDb.map((p) => [p.id, p]));
+
+    const categoriasIds = Array.from(
+      new Set(
+        excluidas
+          .map((e) => params.defsPorId.get(e.defId as number)?.categoriaId)
+          .filter((id): id is number => id != null),
+      ),
+    );
+    if (!categoriasIds.length) return resultado;
+    const categorias = new Map(
+      (
+        await this.prisma.categoriaTarea.findMany({
+          where: { id: { in: categoriasIds } },
+          select: { id: true, ordenProgramacion: true, activa: true },
+        })
+      ).map((c) => [c.id, c]),
+    );
+
+    const items = excluidas.flatMap((excluida) => {
+      const def = params.defsPorId.get(excluida.defId as number);
+      if (!def || def.categoriaId == null) return [];
+      const categoria = categorias.get(def.categoriaId);
+      if (!categoria?.activa) return [];
+      if (Math.max(1, Math.floor(Number(def.diasParaCompletar ?? 1))) > 1) return [];
+      // Un solo responsable (plaza u operario directo): las cuadrillas no se reasignan.
+      const cantidadResponsables = def.necesidades?.length || excluida.operariosIds.length;
+      if (cantidadResponsables !== 1) return [];
+      return [
+        {
+          id: excluida.id,
+          defId: def.id as number,
+          prioridad: excluida.prioridad,
+          categoriaOrden: categoria.ordenProgramacion as number | null,
+          ordenEnCategoria: (def.ordenEnCategoria ?? null) as number | null,
+          fechaObjetivoMs: +excluida.fechaObjetivo,
+          excluida,
+          def,
+          categoriaId: categoria.id as number,
+        },
+      ];
+    });
+    if (!items.length) return resultado;
+
+    const inicioMes = new Date(periodoAnio, periodoMes - 1, 1);
+    const finMes = new Date(periodoAnio, periodoMes, 0, 23, 59, 59, 999);
+    const inicioDia = (fecha: Date) =>
+      new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()).getTime();
+
+    for (const item of ordenarExcluidasParaRescate(items)) {
+      const { excluida, def } = item;
+      try {
+        const operariosDuenos: string[] = excluida.operariosIds;
+        const plazasDuenasIds: number[] = def.necesidades?.length
+          ? def.necesidades.map((n: { id: number }) => n.id)
+          : plazas
+              .filter((p) => p.operarioId != null && operariosDuenos.includes(p.operarioId))
+              .map((p) => p.id);
+        const alternativas = plazasCandidatas({
+          categoriaId: item.categoriaId,
+          plazasDuenasIds,
+          plazas,
+        }).filter((p) => !operariosDuenos.includes(p.operarioId as string));
+        if (!alternativas.length) {
+          resultado.sinRecursoCompatible++;
+          continue;
+        }
+
+        const ocurrenciaPlanId =
+          excluida.ocurrenciaPlanId ??
+          (await this.registrarOcurrenciaEsperada({
+            def,
+            conjuntoId,
+            periodoAnio,
+            periodoMes,
+            fechaObjetivo: excluida.fechaObjetivo,
+            duracionEsperadaMin: excluida.duracionMinutos,
+            operariosIds: operariosDuenos,
+          }));
+
+        type Opcion = {
+          plaza: PlazaRecurso;
+          operarioId: string;
+          plan: BloqueProgramacion[];
+          distancia: number;
+        };
+        const opciones: Opcion[] = [];
+        for (const plaza of alternativas) {
+          const altIds = [plaza.operarioId as string];
+          const horarios = await this.horariosPorDiaParaOperarios(conjuntoId, altIds);
+          const festivoHorario = await this.festivoHorarioParaOperarios(conjuntoId, altIds);
+          const diasDescanso = await this.diasDescansoParaOperarios(
+            conjuntoId,
+            altIds,
+            inicioMes,
+            finMes,
+          );
+          const festivosSetPlaza = new Set<string>([
+            ...(festivoHorario != null ? [] : params.festivosSet),
+            ...diasDescanso,
+          ]);
+          const dias = await this.diasMesPorAprovechamiento({
+            conjuntoId,
+            fechaObjetivo: excluida.fechaObjetivo,
+            periodoAnio,
+            periodoMes,
+            operariosIds: altIds,
+            horariosPorDia: horarios,
+            festivosSet: festivosSetPlaza,
+            festivosSetRaw: params.festivosSet,
+            festivoHorario,
+            definicionId: def.id,
+            descripcion: def.descripcion,
+            ubicacionId: def.ubicacionId,
+            elementoId: def.elementoId,
+          });
+          if (!dias.length) continue;
+          const plan = await this.construirMejorPlanEnDias({
+            conjuntoId,
+            duracionMinutos: excluida.duracionMinutos,
+            operariosIds: altIds,
+            dias,
+            horariosPorDia: horarios,
+            festivosSet: festivosSetPlaza,
+            festivosSetRaw: params.festivosSet,
+            festivoHorario,
+            incluirPublicadasEnAgenda: params.incluirPublicadasEnAgenda,
+          });
+          if (!plan.length) continue;
+          opciones.push({
+            plaza,
+            operarioId: altIds[0],
+            plan,
+            distancia: Math.abs(
+              inicioDia(plan[0].fechaInicio) - inicioDia(excluida.fechaObjetivo),
+            ),
+          });
+        }
+        if (!opciones.length) {
+          resultado.sinRecursoCompatible++;
+          continue;
+        }
+
+        // Mas cercana a la fecha objetivo, luego menos fragmentos, luego la
+        // plaza menos cargada ese dia, luego orden e id de plaza (determinista).
+        const minDistancia = Math.min(...opciones.map((o) => o.distancia));
+        let finalistas = opciones.filter((o) => o.distancia === minDistancia);
+        const minBloques = Math.min(...finalistas.map((o) => o.plan.length));
+        finalistas = finalistas.filter((o) => o.plan.length === minBloques);
+        let elegida = finalistas[0];
+        if (finalistas.length > 1) {
+          const cargas = new Map<number, number>();
+          for (const f of finalistas) {
+            const cargaDia = await this.cargaOperariosEnDias({
+              conjuntoId,
+              dias: [f.plan[0].fechaInicio],
+              operariosIds: [f.operarioId],
+              horariosPorDia: await this.horariosPorDiaParaOperarios(conjuntoId, [f.operarioId]),
+            });
+            cargas.set(f.plaza.id, cargaDia.get(dayKey(f.plan[0].fechaInicio)) ?? 0);
+          }
+          const primera = ordenarCandidatasPorCarga(
+            finalistas.map((f) => f.plaza),
+            (id) => cargas.get(id) ?? 0,
+          )[0];
+          elegida = finalistas.find((f) => f.plaza.id === primera.id) as Opcion;
+        }
+
+        const plazaElegida = plazaPorId.get(elegida.plaza.id);
+        const nuevaTareaIds = await this.crearBloquesPreventivosDeDefinicion({
+          def,
+          conjuntoId,
+          periodoAnio,
+          periodoMes,
+          ocurrenciaPlanId,
+          prioridad: Number(excluida.prioridad),
+          operariosIds: [elegida.operarioId],
+          bloques: elegida.plan,
+          grupoPlanId: null,
+          bloqueIndexBase: 1,
+          bloquesTotales: elegida.plan.length,
+          reasignacion: {
+            necesidadId: elegida.plaza.id,
+            necesidadPrevistaId: plazasDuenasIds[0] ?? null,
+          },
+        });
+
+        const fechaNueva = dayKey(elegida.plan[0].fechaInicio);
+        const fechaObjetivo = dayKey(excluida.fechaObjetivo);
+        const nombreOperario =
+          plazaElegida?.operario?.usuario?.nombre ?? elegida.operarioId;
+        const etiqueta = plazaElegida?.etiqueta ?? `plaza ${elegida.plaza.id}`;
+        const mensaje =
+          `'${def.descripcion}' no tenia espacio con su responsable; la ejecuta ${nombreOperario} (${etiqueta}), ` +
+          `cuyo perfil esta habilitado para esa categoria, el ${fechaNueva}.`;
+
+        await this.prisma.preventivaExcluidaBorrador.update({
+          where: { id: excluida.id },
+          data: {
+            estado: "AGENDADA",
+            tareaProgramadaId: nuevaTareaIds[0] ?? null,
+            resueltaEn: new Date(),
+            metadataJson: {
+              ...this.metadataAsObject(excluida.metadataJson),
+              reasignacionAutomatica: {
+                desdeNecesidadId: plazasDuenasIds[0] ?? null,
+                haciaNecesidadId: elegida.plaza.id,
+                haciaOperarioId: elegida.operarioId,
+              },
+            } as Prisma.InputJsonValue,
+          },
+        });
+        await this.registrarEventoBorrador({
+          conjuntoId,
+          periodoAnio,
+          periodoMes,
+          tipo: "REASIGNADA_POR_CAPACIDAD",
+          accionAuditoria: AccionAuditoria.REASIGNAR_OPERARIO,
+          origenAuditoria: OrigenAuditoria.SCHEDULER,
+          detalle: mensaje,
+          excluidaId: excluida.id,
+          tareaId: nuevaTareaIds[0] ?? null,
+          metadataJson: {
+            defId: def.id,
+            fechaObjetivo,
+            fechaNueva,
+            desdeNecesidadId: plazasDuenasIds[0] ?? null,
+            haciaNecesidadId: elegida.plaza.id,
+            haciaOperarioId: elegida.operarioId,
+            nuevaTareaIds,
+          },
+        });
+
+        // La novedad de "sin espacio" de esa ocurrencia ya no aplica.
+        const idx = params.novedades.findIndex(
+          (n) =>
+            (n.tipo === "SIN_HUECO" || n.tipo === "SIN_CANDIDATAS") &&
+            n.defId === def.id &&
+            n.fecha === fechaObjetivo,
+        );
+        if (idx >= 0) params.novedades.splice(idx, 1);
+        params.novedades.push({
+          tipo: "REASIGNADA_POR_CAPACIDAD",
+          defId: def.id,
+          descripcion: def.descripcion,
+          prioridad: Number(excluida.prioridad),
+          fecha: fechaNueva,
+          fechaObjetivo,
+          nuevaTareaIds,
+          desdeNecesidadId: plazasDuenasIds[0] ?? null,
+          haciaNecesidadId: elegida.plaza.id,
+          haciaEtiqueta: etiqueta,
+          haciaOperarioId: elegida.operarioId,
+          mensaje,
+        });
+        resultado.reasignadas++;
+        resultado.tareasCreadas += nuevaTareaIds.length;
+      } catch (error) {
+        // Mejora best-effort: si falla una reasignacion, la excluida queda
+        // pendiente como siempre y la generacion continua.
+        console.error("[rescate-capacidad] no se pudo reasignar la excluida", excluida.id, error);
+      }
+    }
+    return resultado;
   }
 
   /** Comprueba que todos los operarios sigan bajo su tope semanal tras sumar `minutosAdicionales`. */
@@ -3209,6 +3680,8 @@ export class DefinicionTareaPreventivaService {
     bloqueIndexBase: number;
     bloquesTotales: number;
     ocurrenciaPlanId: string;
+    /** Reasignacion automatica por capacidades: plaza que ejecuta y plaza prevista. */
+    reasignacion?: { necesidadId: number; necesidadPrevistaId: number | null };
   }): Promise<number[]> {
     const {
       def,
@@ -3222,6 +3695,7 @@ export class DefinicionTareaPreventivaService {
       bloqueIndexBase,
       bloquesTotales,
       ocurrenciaPlanId,
+      reasignacion,
     } = params;
 
     const grupoPlanEfectivo =
@@ -3285,6 +3759,12 @@ export class DefinicionTareaPreventivaService {
 
           supervisorId: def.supervisorId ?? null,
 
+          // Snapshot de la prioridad de programacion de la definicion.
+          categoriaId: def.categoriaId ?? null,
+          ordenEnCategoria: def.ordenEnCategoria ?? null,
+          reasignadaAutomaticamente: reasignacion != null,
+          necesidadPrevistaId: reasignacion?.necesidadPrevistaId ?? null,
+
           insumosPlanJson: def.insumosPlanJson
             ? (def.insumosPlanJson as Prisma.InputJsonValue)
             : undefined,
@@ -3300,10 +3780,13 @@ export class DefinicionTareaPreventivaService {
             : undefined,
           // Vínculo durable a la(s) plaza(s) de origen (si la definición
           // resolvió por necesidad): permite que reasignar el titular de la
-          // plaza no requiera editar esta tarea ya creada.
-          necesidades: def.necesidades?.length
-            ? { connect: def.necesidades.map((n: { id: number }) => ({ id: n.id })) }
-            : undefined,
+          // plaza no requiera editar esta tarea ya creada. En una
+          // reasignacion automatica se vincula la plaza que ejecuta.
+          necesidades: reasignacion
+            ? { connect: [{ id: reasignacion.necesidadId }] }
+            : def.necesidades?.length
+              ? { connect: def.necesidades.map((n: { id: number }) => ({ id: n.id })) }
+              : undefined,
         },
         select: { id: true },
       });
@@ -3427,6 +3910,7 @@ export class DefinicionTareaPreventivaService {
         fechaInicio: bloque.fechaInicio,
         fechaFin: bloque.fechaFin,
         operariosIds: excluida.operariosIds,
+        identidad: this.identidadDeExcluida(excluida),
       });
     }
 
@@ -3672,6 +4156,19 @@ export class DefinicionTareaPreventivaService {
       });
     }
 
+    if (dto.categoriaId != null) {
+      await new CatalogoOperativoService(this.prisma).validarCategoriaDeDefinicion({
+        conjuntoId: dto.conjuntoId,
+        categoriaId: dto.categoriaId,
+        necesidadesIds: dto.necesidadesIds ?? [],
+        operariosIds: dto.operariosIds?.length
+          ? dto.operariosIds.map(String)
+          : dto.responsableSugeridoId != null
+            ? [String(dto.responsableSugeridoId)]
+            : [],
+      });
+    }
+
     const supervisorIdResuelto =
       dto.supervisorId != null
         ? await this.resolverSupervisorId(dto.supervisorId)
@@ -3691,6 +4188,11 @@ export class DefinicionTareaPreventivaService {
       descripcion: dto.descripcion,
       frecuencia: dto.frecuencia,
       prioridad: dto.prioridad ?? 2,
+      categoria:
+        dto.categoriaId != null ? { connect: { id: dto.categoriaId } } : undefined,
+      // El orden interno solo tiene sentido dentro de una categoría.
+      ordenEnCategoria:
+        dto.categoriaId != null ? (dto.ordenEnCategoria ?? null) : null,
 
       diaSemanaProgramado: dto.diaSemanaProgramado ?? null,
       diaMesProgramado: dto.diaMesProgramado ?? null,
@@ -3774,6 +4276,9 @@ export class DefinicionTareaPreventivaService {
       include: {
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
+        categoria: {
+          select: { id: true, nombre: true, ordenProgramacion: true, colorHex: true, activa: true },
+        },
         // El frontend (DefinicionPreventiva.fromJson) solo lee operarios[].id
         // y el supervisorId plano; no necesita la fila Usuario completa.
         operarios: { select: { id: true } },
@@ -3791,6 +4296,9 @@ export class DefinicionTareaPreventivaService {
       include: {
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
+        categoria: {
+          select: { id: true, nombre: true, ordenProgramacion: true, colorHex: true, activa: true },
+        },
         operarios: { select: { id: true } },
         necesidades: {
           select: { id: true, etiqueta: true, roles: true, operarioId: true },
@@ -3821,7 +4329,9 @@ export class DefinicionTareaPreventivaService {
         diaSemanaProgramado: true,
         diaMesProgramado: true,
         fechasProgramadasJson: true,
+        categoriaId: true,
         necesidades: { select: { id: true } },
+        operarios: { select: { id: true } },
       } as any,
     });
     if (!actual) {
@@ -3860,6 +4370,33 @@ export class DefinicionTareaPreventivaService {
       });
     }
 
+    // Categoría efectiva: se valida (existe, activa si cambió y compatible con
+    // los responsables efectivos) cuando cambia la categoría o los responsables.
+    const categoriaIdEfectiva: number | null =
+      dto.categoriaId === undefined ? (actual.categoriaId ?? null) : dto.categoriaId;
+    const categoriaCambio = dto.categoriaId !== undefined && dto.categoriaId !== actual.categoriaId;
+    const responsablesCambian =
+      dto.necesidadesIds !== undefined ||
+      (dto as any).operariosIds !== undefined ||
+      (dto as any).responsableSugeridoId !== undefined;
+    if (categoriaIdEfectiva != null && (categoriaCambio || responsablesCambian)) {
+      const operariosEfectivos: string[] =
+        (dto as any).operariosIds !== undefined
+          ? ((dto as any).operariosIds ?? []).map(String)
+          : (dto as any).responsableSugeridoId !== undefined
+            ? (dto as any).responsableSugeridoId != null
+              ? [String((dto as any).responsableSugeridoId)]
+              : []
+            : actual.operarios.map((o: { id: string }) => o.id);
+      await new CatalogoOperativoService(this.prisma).validarCategoriaDeDefinicion({
+        conjuntoId,
+        categoriaId: categoriaIdEfectiva,
+        necesidadesIds: necesidadesIdsEfectivas,
+        operariosIds: operariosEfectivos,
+        exigirActiva: categoriaCambio,
+      });
+    }
+
     // recalcular duración si vienen campos
     const durMinFija =
       (dto as any).duracionMinutosFija === undefined &&
@@ -3875,6 +4412,22 @@ export class DefinicionTareaPreventivaService {
       frecuencia: dto.frecuencia,
       prioridad: dto.prioridad,
       activo: dto.activo,
+      categoria:
+        dto.categoriaId === undefined
+          ? undefined
+          : dto.categoriaId === null
+            ? { disconnect: true }
+            : { connect: { id: dto.categoriaId } },
+      // Sin categoría no hay orden interno; al cambiar de categoría el orden
+      // anterior (de otra categoría) ya no aplica salvo que se envíe uno nuevo.
+      ordenEnCategoria:
+        dto.categoriaId === null
+          ? null
+          : dto.ordenEnCategoria !== undefined
+            ? dto.ordenEnCategoria
+            : categoriaCambio
+              ? null
+              : undefined,
 
       ubicacion:
         dto.ubicacionId === undefined
@@ -4638,6 +5191,12 @@ export class DefinicionTareaPreventivaService {
       orderBy: [{ prioridad: "asc" }, { id: "asc" }],
     });
 
+    this.firmaPorDefinicionScheduler.clear();
+    for (const def of defs) {
+      const firma = firmaTareaPreventiva(def);
+      if (firma) this.firmaPorDefinicionScheduler.set(def.id, firma);
+    }
+
     // El orden base conserva P1 > P2 > P3. Más abajo, las P3 se ejecutan en
     // dos fases para que cada definición tenga una primera oportunidad antes
     // de planificar sus repeticiones. Dentro del nivel se priorizan las tareas
@@ -4796,6 +5355,11 @@ export class DefinicionTareaPreventivaService {
       inicio: inicioMes,
       fin: finMes,
     });
+
+    // Solo las excluidas creadas en ESTA corrida son candidatas al rescate por
+    // capacidades: se registran en memoria al crearlas (ver crearExcluida).
+    this.excluidasDeLaCorrida = [];
+    this.rastreoExcluidas = true;
 
     const publicadasPeriodo = await this.prisma.tarea.findMany({
       where: {
@@ -6068,15 +6632,30 @@ export class DefinicionTareaPreventivaService {
       }
     }
 
-    // Reempaquetado por zonas: pasada global que mezcla tareas de varias
-    // definiciones/plazas por día. Resuelve el horario POR COMPONENTE (los
-    // operarios que comparten las tareas agrupadas), no uno solo por día
-    // para todo el conjunto: así una plaza con horario especial conserva su
-    // propia ventana aunque ese día de la semana también tenga fila en el
-    // horario general del conjunto (ver reordenarBorradorGeneradoPorZonas).
-    const ordenamientoZonas =
+    // Rescate por capacidades: antes de dejar excluida una tarea por falta de
+    // cupo, se busca otra plaza compatible (perfil con esa categoria entre sus
+    // capacidades) con disponibilidad real. Solo puede reducir las excluidas.
+    const rescateCapacidad = await this.rescatarExcluidasPorCapacidad({
+      conjuntoId,
+      periodoAnio,
+      periodoMes,
+      defsPorId: new Map(defs.map((def) => [def.id, def])),
+      festivosSet,
+      incluirPublicadasEnAgenda,
+      novedades,
+    });
+    creadas += rescateCapacidad.tareasCreadas;
+    this.rastreoExcluidas = false;
+    this.excluidasDeLaCorrida = [];
+
+    // Orden del dia: pasada global que mezcla tareas de varias definiciones y
+    // plazas por dia. Resuelve el horario POR COMPONENTE (los operarios que
+    // comparten las tareas agrupadas), no uno solo por dia para todo el
+    // conjunto: asi una plaza con horario especial conserva su propia ventana
+    // (ver reordenarBorradorGeneradoPorCategoria).
+    const ordenamientoDia =
       modo === "RESET"
-        ? await this.reordenarBorradorGeneradoPorZonas({
+        ? await this.reordenarBorradorGeneradoPorCategoria({
             conjuntoId,
             periodoAnio,
             periodoMes,
@@ -6084,19 +6663,19 @@ export class DefinicionTareaPreventivaService {
         : { reordenadas: 0, componentesSinOrdenar: 0 };
 
     if (
-      ordenamientoZonas.reordenadas > 0 ||
-      ordenamientoZonas.componentesSinOrdenar > 0
+      ordenamientoDia.reordenadas > 0 ||
+      ordenamientoDia.componentesSinOrdenar > 0
     ) {
       await this.registrarEventoBorrador({
         conjuntoId,
         periodoAnio,
         periodoMes,
-        tipo: "ORDEN_ZONAS_APLICADO",
+        tipo: "ORDEN_CATEGORIAS_APLICADO",
         detalle:
-          ordenamientoZonas.componentesSinOrdenar > 0
-            ? "Se ordenaron las horas por zona; algunos grupos conservaron su horario por restricciones de agenda."
-            : "Se ordenaron las horas del borrador por prioridad de zona.",
-        metadataJson: ordenamientoZonas,
+          ordenamientoDia.componentesSinOrdenar > 0
+            ? "Se ordenaron las horas por categoria; algunos grupos conservaron su horario por restricciones de agenda."
+            : "Se ordenaron las horas del borrador por categoria y orden interno.",
+        metadataJson: ordenamientoDia,
       });
     }
 
@@ -6138,7 +6717,11 @@ export class DefinicionTareaPreventivaService {
       metadataJson: {
         modo,
         versionesDefiniciones,
-        ordenamientoZonas,
+        ordenamientoDia,
+        rescateCapacidad: {
+          reasignadas: rescateCapacidad.reasignadas,
+          sinRecursoCompatible: rescateCapacidad.sinRecursoCompatible,
+        },
       },
     });
 
@@ -6234,6 +6817,10 @@ export class DefinicionTareaPreventivaService {
         fechaFin: true,
         ocurrenciaPlanId: true,
         grupoPlanId: true,
+        definicionId: true,
+        descripcion: true,
+        ubicacionId: true,
+        elementoId: true,
         operarios: { select: { id: true } },
       },
     });
@@ -6252,6 +6839,10 @@ export class DefinicionTareaPreventivaService {
       fechaFin,
       operariosIds,
       excluirTareaId: dto.tareaId,
+      // Solo si cambia de día: no se bloquean ediciones (operarios, horas)
+      // por duplicados que ya existían.
+      identidad:
+        dayKey(fechaInicio) !== dayKey(t.fechaInicio) ? t : undefined,
     });
     await this.validarEdicionMantieneDivisionAlmuerzo({
       tareaId: t.id,
@@ -6367,6 +6958,9 @@ export class DefinicionTareaPreventivaService {
         fechaInicio: true,
         fechaFin: true,
         ocurrenciaPlanId: true,
+        definicionId: true,
+        ubicacionId: true,
+        elementoId: true,
         operarios: { select: { id: true } },
       },
     });
@@ -6397,6 +6991,8 @@ export class DefinicionTareaPreventivaService {
       fechaFin,
       operariosIds: operariosIdsFinal,
       excluirTareaId: tareaId,
+      identidad:
+        dayKey(fechaInicio) !== dayKey(tarea.fechaInicio) ? tarea : undefined,
     });
     await this.validarEdicionMantieneDivisionAlmuerzo({
       tareaId: tarea.id,
@@ -6934,6 +7530,7 @@ export class DefinicionTareaPreventivaService {
       fechaInicio,
       fechaFin,
       operariosIds: excluida.operariosIds,
+      identidad: this.identidadDeExcluida(excluida),
     });
 
     const grupoPlanId = `EXC-MANUAL-${excluida.id}`;
@@ -7126,8 +7723,14 @@ export class DefinicionTareaPreventivaService {
         : undefined,
       descansoEndMin: horarioDia.descansoFin ? toMin(horarioDia.descansoFin) : undefined,
     };
-    // Solo los dos tramos que tocan ambos bordes del descanso forman una
-    // unidad. Un grupo puede tener otros bloques en días distintos.
+    // Un "bloque" nunca se reordena solo cuando es parte de una tarea dividida
+    // ese mismo día: todos sus tramos forman una unidad y se recalculan juntos
+    // (se pueden volver a unir o a partir alrededor del almuerzo). Antes solo
+    // el par pegado al almuerzo era unidad y cualquier otra división quedaba
+    // con tramos sueltos de tamaño desactualizado. Los tramos de otros días
+    // del mismo grupo no entran. Si los tramos tienen operarios/plazas
+    // distintos no se pueden fusionar: solo el par del almuerzo sigue siendo
+    // unidad (el caso conocido), el resto se mueve tramo por tramo.
     const bloquesPorGrupo = new Map<string, typeof tareasDiaDisponibles>();
     for (const tarea of tareasDiaDisponibles) {
       if (!tarea.grupoPlanId) continue;
@@ -7135,19 +7738,27 @@ export class DefinicionTareaPreventivaService {
       bloques.push(tarea);
       bloquesPorGrupo.set(tarea.grupoPlanId, bloques);
     }
+    const firmaAsignacion = (t: (typeof tareasDiaDisponibles)[number]) =>
+      t.operarios.map((o) => o.id).sort().join("|") +
+      "#" +
+      (t.necesidades ?? []).map((n) => n.id).sort().join("|");
     const parejaPorId = new Map<number, typeof tareasDiaDisponibles>();
-    for (const bloques of bloquesPorGrupo.values()) {
-      if (bloques.length !== 2) continue;
-      const [antes, despues] = bloques;
-      if (
+    for (const bloquesGrupo of bloquesPorGrupo.values()) {
+      if (bloquesGrupo.length < 2) continue;
+      const bloques = [...bloquesGrupo].sort(
+        (a, b) => +a.fechaInicio - +b.fechaInicio || a.id - b.id,
+      );
+      const esParAlmuerzo =
+        bloques.length === 2 &&
         horario.descansoStartMin != null &&
         horario.descansoEndMin != null &&
-        toMinOfDaySafe(antes.fechaFin) === horario.descansoStartMin &&
-        toMinOfDaySafe(despues.fechaInicio) === horario.descansoEndMin
-      ) {
-        parejaPorId.set(antes.id, bloques);
-        parejaPorId.set(despues.id, bloques);
-      }
+        toMinOfDaySafe(bloques[0].fechaFin) === horario.descansoStartMin &&
+        toMinOfDaySafe(bloques[1].fechaInicio) === horario.descansoEndMin;
+      const mismaAsignacion = bloques.every(
+        (b) => firmaAsignacion(b) === firmaAsignacion(bloques[0]),
+      );
+      if (!esParAlmuerzo && !mismaAsignacion) continue;
+      for (const bloque of bloques) parejaPorId.set(bloque.id, bloques);
     }
     // Se incluyen ambos tramos aunque la vista filtrada solo haya enviado uno.
     const idsInvolucrados = new Set(idsSolicitados);
@@ -7381,14 +7992,14 @@ export class DefinicionTareaPreventivaService {
       }
     };
 
-    try {
-    for (const originales of seleccionOrdenada) {
-      const tarea = originales[0];
-      const duracion = originales.reduce(
+    // Calcula (sin escribir nada) dónde caería una unidad con los cursores
+    // actuales de sus operarios. Lanza MENSAJE_REORDEN_NO_CABE si no cabe.
+    const planificarUnidad = (unidad: typeof tareasDiaDisponibles) => {
+      const duracion = unidad.reduce(
         (total, bloque) => total + calcularDuracionLaboralReordenamiento({ tarea: bloque, horario }),
         0,
       );
-      const operariosUnidad = idsOperariosDeUnidad(originales);
+      const operariosUnidad = idsOperariosDeUnidad(unidad);
       const cursorUnidadMin = Math.max(
         ...operariosUnidad.map((id) => cursoresMin.get(id) ?? primeraVentana.i),
       );
@@ -7400,24 +8011,31 @@ export class DefinicionTareaPreventivaService {
         ventanasTrabajo,
       });
       const cursor = toDateAtMin(dto.fecha, cursorUnidadMin);
+      const segmentos =
+        intentarDistribuirDuracionReordenamiento({
+          fecha: dto.fecha,
+          ventanas: ventanasUnidad,
+          inicioCursor: cursor,
+          duracionMinutos: duracion,
+          horario,
+        }) ??
+        distribuirDuracionReordenamiento({
+          fecha: dto.fecha,
+          ventanas: ventanasTrabajo,
+          inicioCursor: cursor,
+          duracionMinutos: duracion,
+          horario,
+        });
+      return { segmentos, operariosUnidad, duracion };
+    };
+    try {
+    for (const originales of seleccionOrdenada) {
+      const tarea = originales[0];
+      const operariosUnidad = idsOperariosDeUnidad(originales);
 
       let segmentos: Array<{ fechaInicio: Date; fechaFin: Date }>;
       try {
-        segmentos =
-          intentarDistribuirDuracionReordenamiento({
-            fecha: dto.fecha,
-            ventanas: ventanasUnidad,
-            inicioCursor: cursor,
-            duracionMinutos: duracion,
-            horario,
-          }) ??
-          distribuirDuracionReordenamiento({
-            fecha: dto.fecha,
-            ventanas: ventanasTrabajo,
-            inicioCursor: cursor,
-            duracionMinutos: duracion,
-            horario,
-          });
+        segmentos = planificarUnidad(originales).segmentos;
       } catch (error) {
         const detalle = error instanceof Error ? error.message : String(error);
         if (detalle === MENSAJE_REORDEN_NO_CABE) {
@@ -7472,14 +8090,11 @@ export class DefinicionTareaPreventivaService {
       const operariosPorSegmento = segmentos.map((_, index) =>
         originales[Math.min(index, originales.length - 1)].operarios.map((item) => item.id),
       );
-      if (originales.length === 2 && segmentos.length === 1) {
-        const mismosOperarios =
-          originales[0].operarios.map((item) => item.id).sort().join("|") ===
-          originales[1].operarios.map((item) => item.id).sort().join("|");
-        const mismasPlazas =
-          (originales[0].necesidades ?? []).map((item) => item.id).sort().join("|") ===
-          (originales[1].necesidades ?? []).map((item) => item.id).sort().join("|");
-        if (!mismosOperarios || !mismasPlazas) {
+      if (originales.length >= 2 && segmentos.length < originales.length) {
+        const mismaAsignacionUnidad = originales.every(
+          (bloque) => firmaAsignacion(bloque) === firmaAsignacion(originales[0]),
+        );
+        if (!mismaAsignacionUnidad) {
           throw new Error(
             `No se puede unir la tarea "${tarea.descripcion}" porque sus bloques tienen asignaciones distintas.`,
           );
@@ -7677,20 +8292,36 @@ export class DefinicionTareaPreventivaService {
             bloquesTotales: item.segmentos.length,
           },
         });
-        if (item.segmentos.length === 2) {
-          const segundo = item.segmentos[1];
-          await tx.tarea.create({
-            data: {
-              ...buildTareaBorradorCreateData(original, segundo.fechaInicio, segundo.fechaFin),
-              grupoPlanId,
-              bloqueIndex: (original.bloqueIndex ?? 1) + 1,
-              bloquesTotales: 2,
-            },
-          });
-        } else if (item.originales.length === 2) {
-          const sobranteId = item.originales[1].id;
-          await tx.usoMaquinaria.deleteMany({ where: { tareaId: { in: [sobranteId] } } });
-          await tx.tarea.delete({ where: { id: sobranteId } });
+        // Tramos restantes: se reutilizan los existentes, se crean los que
+        // faltan y se borran los que sobran (p. ej. 3 bloques -> 1).
+        const totalTramos = Math.max(item.segmentos.length, item.originales.length);
+        for (let i = 1; i < totalTramos; i++) {
+          const segmento = item.segmentos[i];
+          const existente = item.originales[i];
+          if (segmento && existente) {
+            await tx.tarea.update({
+              where: { id: existente.id },
+              data: {
+                ...segmento,
+                duracionMinutos: Math.round((+segmento.fechaFin - +segmento.fechaInicio) / 60000),
+                grupoPlanId,
+                bloqueIndex: i + 1,
+                bloquesTotales: item.segmentos.length,
+              },
+            });
+          } else if (segmento) {
+            await tx.tarea.create({
+              data: {
+                ...buildTareaBorradorCreateData(original, segmento.fechaInicio, segmento.fechaFin),
+                grupoPlanId,
+                bloqueIndex: i + 1,
+                bloquesTotales: item.segmentos.length,
+              },
+            });
+          } else if (existente) {
+            await tx.usoMaquinaria.deleteMany({ where: { tareaId: { in: [existente.id] } } });
+            await tx.tarea.delete({ where: { id: existente.id } });
+          }
         }
       }
       for (const grupoPlanId of gruposAReindexar) {
@@ -7767,6 +8398,9 @@ export class DefinicionTareaPreventivaService {
       reordenadas: actualizaciones.length + recreaciones.length,
       divididas: recreaciones.filter(
         (item) => item.segmentos.length > item.originales.length,
+      ).length,
+      unidas: recreaciones.filter(
+        (item) => item.segmentos.length < item.originales.length,
       ).length,
       // Ya no se amplía el conjunto por operario compartido, así que esto
       // siempre es 0; se conserva por compatibilidad con el frontend.
@@ -8090,6 +8724,7 @@ export class DefinicionTareaPreventivaService {
         fechaFin,
         operariosIds: excluida.operariosIds,
         excluirTareaId: tarea.id,
+        identidad: this.identidadDeExcluida(excluida),
       });
     } catch {
       const sugerencias = await this.sugerirHuecosParaExcluidaCore({
@@ -9149,6 +9784,9 @@ function construirVentanasTrabajoDia(horario: HorarioDia): Intervalo[] {
 const MENSAJE_REORDEN_NO_CABE =
   "No se pudo reordenar porque el nuevo orden no cabe dentro de la jornada laboral del día.";
 
+/** Un tramo menor a esto antes del almuerzo se salta en vez de partir la tarea. */
+const MIN_TRAMO_ANTES_ALMUERZO_MIN = 15;
+
 function distribuirDuracionReordenamiento(params: {
   fecha: Date;
   ventanas: Intervalo[];
@@ -9156,6 +9794,31 @@ function distribuirDuracionReordenamiento(params: {
   duracionMinutos: number;
   horario: HorarioDia;
 }): Array<{ fechaInicio: Date; fechaFin: Date }> {
+  // Primero se evita dejar un tramo diminuto pegado al almuerzo (la tarea
+  // se ve cortada); si así no cabe, se permite como antes.
+  try {
+    return distribuirDuracionReordenamientoBase(
+      params,
+      MIN_TRAMO_ANTES_ALMUERZO_MIN,
+    );
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== MENSAJE_REORDEN_NO_CABE) {
+      throw error;
+    }
+    return distribuirDuracionReordenamientoBase(params, 0);
+  }
+}
+
+function distribuirDuracionReordenamientoBase(
+  params: {
+    fecha: Date;
+    ventanas: Intervalo[];
+    inicioCursor: Date;
+    duracionMinutos: number;
+    horario: HorarioDia;
+  },
+  minTramoAntesAlmuerzo: number,
+): Array<{ fechaInicio: Date; fechaFin: Date }> {
   const { fecha, ventanas, inicioCursor, duracionMinutos, horario } = params;
   const duracion = Math.max(1, Math.round(duracionMinutos));
   const cursorMin = toMinOfDay(inicioCursor);
@@ -9184,6 +9847,7 @@ function distribuirDuracionReordenamiento(params: {
       siguienteVentana?.i === horario.descansoEndMin;
 
     if (!puedeCruzarAlmuerzo) continue;
+    if (disponibleActual < minTramoAntesAlmuerzo) continue;
 
     const restante = duracion - disponibleActual;
     const disponibleSiguiente = (siguienteVentana?.f ?? 0) - (siguienteVentana?.i ?? 0);

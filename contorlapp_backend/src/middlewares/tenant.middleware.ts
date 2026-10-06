@@ -6,6 +6,7 @@ const permissionService = new PermissionService(prisma);
 
 type ScopedResource =
   | "administrador"
+  | "categoriaTarea"
   | "compromiso"
   | "conceptoAsistencia"
   | "diagnostico"
@@ -15,6 +16,7 @@ type ScopedResource =
   | "insumo"
   | "maquinaria"
   | "operario"
+  | "perfilOperativo"
   | "plan"
   | "registroAsistencia"
   | "residente"
@@ -276,6 +278,20 @@ async function resourceBelongsToEmpresa(
     case "herramienta":
       return Boolean(
         await prisma.herramienta.findFirst({ where: { id: numericId, empresaId }, select: { id: true } }),
+      );
+    case "categoriaTarea":
+      return Boolean(
+        await prisma.categoriaTarea.findFirst({
+          where: { id: numericId, empresaId },
+          select: { id: true },
+        }),
+      );
+    case "perfilOperativo":
+      return Boolean(
+        await prisma.perfilOperativo.findFirst({
+          where: { id: numericId, empresaId },
+          select: { id: true },
+        }),
       );
     case "conceptoAsistencia":
       return Boolean(

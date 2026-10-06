@@ -816,6 +816,36 @@ describe('reordenamiento coordinado del borrador', () => {
     expect(tareas.find((t) => t.id === 20)?.fechaInicio.getHours()).toBe(8);
   });
 
+  test('una tarea partida en bloques sueltos (no pegados al almuerzo) se reordena completa', async () => {
+    const fecha = new Date(2026, 2, 4);
+    const luis = [{ id: 'op-2', usuario: { nombre: 'Luis' } }];
+    const base = { ocurrenciaPlanId: null, ubicacionId: 1, elementoId: 1, operarios: luis };
+    const tareas: any[] = [
+      { ...base, id: 90, descripcion: 'Mantenimiento', fechaInicio: new Date(2026, 2, 4, 8),
+        fechaFin: new Date(2026, 2, 4, 9), duracionMinutos: 60, grupoPlanId: 'G-90', bloqueIndex: 1, bloquesTotales: 2 },
+      { ...base, id: 91, descripcion: 'Toma de parametros', fechaInicio: new Date(2026, 2, 4, 9),
+        fechaFin: new Date(2026, 2, 4, 10), duracionMinutos: 60, grupoPlanId: null },
+      { ...base, id: 92, descripcion: 'Mantenimiento', fechaInicio: new Date(2026, 2, 4, 10),
+        fechaFin: new Date(2026, 2, 4, 11), duracionMinutos: 60, grupoPlanId: 'G-90', bloqueIndex: 2, bloquesTotales: 2 },
+    ];
+    const prisma = construirPrisma(tareas);
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    // Toma de parametros primero. Los dos bloques de "Mantenimiento" deben
+    // volver a juntarse en un solo bloque de 2 h (tamano completo).
+    const resultado = await service.reordenarTareasBorradorDia({
+      conjuntoId: '9001', fecha, tareaIds: [91, 90, 92],
+    });
+
+    expect(resultado).toMatchObject({ aplicado: true });
+    const mant = tareas.filter((t) => t.descripcion === 'Mantenimiento');
+    expect(mant).toHaveLength(1);
+    expect(mant[0].fechaInicio.getHours()).toBe(9);
+    expect(mant[0].fechaFin.getHours()).toBe(11);
+    expect(mant[0].duracionMinutos).toBe(120);
+    expect(mant[0].grupoPlanId).toBeNull();
+  });
+
   test('permite reordenar un bloque de tarea multidia cuando es el unico bloque del grupo en ese dia', async () => {
     const fecha = new Date(2026, 2, 4);
     const tareas: any[] = [
