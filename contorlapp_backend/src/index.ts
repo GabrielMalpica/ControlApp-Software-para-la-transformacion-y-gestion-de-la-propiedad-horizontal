@@ -18,6 +18,7 @@ import { ZodError } from "zod";
 import { mensajeValidacionAmigable } from "./utils/errorFormat";
 import rutas from "./routes/Rutas";
 import { prisma } from "./db/prisma";
+import { avisarBaseDeDatos } from "./utils/avisoBaseDeDatos";
 import { bootstrapNotificacionesSchema } from "./services/NotificacionService";
 import { iniciarConciliacionPeriodica, iniciarPagoReconciler } from "./services/pagos/PagoReconciler";
 import { ejecutarConciliacion, fechaUltimaConciliacion } from "./services/pagos/conciliacionInstance";
@@ -36,6 +37,8 @@ import {
 if (!process.env.JWT_SECRET) {
   throw new Error("Falta JWT_SECRET en el archivo .env");
 }
+
+avisarBaseDeDatos();
 
 const app = express();
 app.set("trust proxy", 1);
