@@ -1400,19 +1400,41 @@ export class ReporteService {
     const { desde, hasta, conjuntoId } =
       RangoConConjuntoOpcionalDTO.parse(payload);
 
-    const rows = await this.prisma.usoMaquinaria.groupBy({
-      by: ["maquinariaId"],
-      where: {
-        fechaInicio: { gte: desde, lte: hasta },
-        tarea: {
-          ...(conjuntoId ? { conjuntoId } : {}),
-          conjunto: { empresaId: this.empresaId },
-        },
-      },
-      _count: { _all: true },
-    });
+    const filtroTarea = {
+      ...(conjuntoId ? { conjuntoId } : {}),
+      conjunto: { empresaId: this.empresaId },
+    };
 
-    const maquinariaIds = rows.map((r) => r.maquinariaId);
+    // Dos fuentes: el uso real registrado al cerrar (UsoMaquinaria) y las
+    // reservas finalizadas de la agenda de recursos. Un mismo par
+    // tarea+máquina cuenta una sola vez.
+    const [usos, reservas] = await Promise.all([
+      this.prisma.usoMaquinaria.findMany({
+        where: { fechaInicio: { gte: desde, lte: hasta }, tarea: filtroTarea },
+        select: { tareaId: true, maquinariaId: true },
+      }),
+      this.prisma.reservaRecurso.findMany({
+        where: {
+          empresaId: this.empresaId,
+          clase: "MAQUINARIA",
+          tipo: "TAREA",
+          estado: "FINALIZADA",
+          usoInicio: { gte: desde, lte: hasta },
+          ...(conjuntoId ? { conjuntoId } : {}),
+        },
+        select: { tareaId: true, maquinariaId: true },
+      }),
+    ]);
+
+    const pares = new Map<number, Set<string>>();
+    for (const r of [...usos, ...reservas]) {
+      if (r.maquinariaId == null) continue;
+      const set = pares.get(r.maquinariaId) ?? new Set<string>();
+      set.add(String(r.tareaId ?? `sin-tarea-${set.size}`));
+      pares.set(r.maquinariaId, set);
+    }
+
+    const maquinariaIds = Array.from(pares.keys());
 
     const maqs = maquinariaIds.length
       ? await this.prisma.maquinaria.findMany({
@@ -1431,15 +1453,13 @@ export class ReporteService {
       maqs.map((m) => [m.id, m]),
     );
 
-    const data = rows
-      .map((r) => {
-        const info = mapInfo.get(r.maquinariaId);
-        return {
-          maquinariaId: r.maquinariaId,
-          nombre: info?.nombre ?? `Maquinaria ${r.maquinariaId}`,
-          usos: r._count._all,
-        };
-      })
+    const data = maquinariaIds
+      .filter((id) => mapInfo.has(id))
+      .map((id) => ({
+        maquinariaId: id,
+        nombre: mapInfo.get(id)?.nombre ?? `Maquinaria ${id}`,
+        usos: pares.get(id)!.size,
+      }))
       .sort((a, b) => b.usos - a.usos);
 
     return { ok: true, data };
@@ -1452,20 +1472,55 @@ export class ReporteService {
     const { desde, hasta, conjuntoId } =
       RangoConConjuntoOpcionalDTO.parse(payload);
 
-    const rows = await this.prisma.usoHerramienta.groupBy({
-      by: ["herramientaId"],
-      where: {
-        fechaInicio: { gte: desde, lte: hasta },
-        tarea: {
-          ...(conjuntoId ? { conjuntoId } : {}),
-          conjunto: { empresaId: this.empresaId },
-        },
-      },
-      _count: { _all: true },
-      _sum: { cantidad: true },
-    });
+    const filtroTarea = {
+      ...(conjuntoId ? { conjuntoId } : {}),
+      conjunto: { empresaId: this.empresaId },
+    };
 
-    const herramientaIds = rows.map((r) => r.herramientaId);
+    const [usos, reservas] = await Promise.all([
+      this.prisma.usoHerramienta.findMany({
+        where: { fechaInicio: { gte: desde, lte: hasta }, tarea: filtroTarea },
+        select: { tareaId: true, herramientaId: true, cantidad: true },
+      }),
+      // Reservas finalizadas por unidad física (HerramientaItem).
+      this.prisma.reservaRecurso.findMany({
+        where: {
+          empresaId: this.empresaId,
+          clase: "HERRAMIENTA",
+          tipo: "TAREA",
+          estado: "FINALIZADA",
+          usoInicio: { gte: desde, lte: hasta },
+          ...(conjuntoId ? { conjuntoId } : {}),
+        },
+        select: {
+          tareaId: true,
+          herramientaItem: { select: { herramientaId: true } },
+        },
+      }),
+    ]);
+
+    // herramientaId -> { tareas, cantidad }. Si la tarea ya tiene uso real
+    // registrado para esa herramienta, sus reservas no se suman otra vez.
+    const acum = new Map<number, { tareas: Set<string>; cantidad: number }>();
+    const conUsoReal = new Set<string>();
+    for (const u of usos) {
+      const a = acum.get(u.herramientaId) ?? { tareas: new Set<string>(), cantidad: 0 };
+      a.tareas.add(String(u.tareaId));
+      a.cantidad += decToNumber(u.cantidad);
+      acum.set(u.herramientaId, a);
+      conUsoReal.add(`${u.tareaId}|${u.herramientaId}`);
+    }
+    for (const r of reservas) {
+      const herramientaId = r.herramientaItem?.herramientaId;
+      if (herramientaId == null) continue;
+      if (r.tareaId != null && conUsoReal.has(`${r.tareaId}|${herramientaId}`)) continue;
+      const a = acum.get(herramientaId) ?? { tareas: new Set<string>(), cantidad: 0 };
+      a.tareas.add(String(r.tareaId ?? `sin-tarea-${a.tareas.size}`));
+      a.cantidad += 1;
+      acum.set(herramientaId, a);
+    }
+
+    const herramientaIds = Array.from(acum.keys());
 
     const herrs = herramientaIds.length
       ? await this.prisma.herramienta.findMany({
@@ -1479,15 +1534,17 @@ export class ReporteService {
       { id: number; nombre: string; unidad: string }
     >(herrs.map((h) => [h.id, h]));
 
-    const data = rows
-      .map((r) => {
-        const info = mapInfo.get(r.herramientaId);
+    const data = herramientaIds
+      .filter((id) => mapInfo.has(id))
+      .map((id) => {
+        const info = mapInfo.get(id);
+        const a = acum.get(id)!;
         return {
-          herramientaId: r.herramientaId,
-          nombre: info?.nombre ?? `Herramienta ${r.herramientaId}`,
+          herramientaId: id,
+          nombre: info?.nombre ?? `Herramienta ${id}`,
           unidad: info?.unidad ?? null,
-          usos: r._count._all,
-          cantidad: decToNumber(r._sum.cantidad), // Decimal -> number
+          usos: a.tareas.size,
+          cantidad: a.cantidad,
         };
       })
       .sort((a, b) => b.usos - a.usos);

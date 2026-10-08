@@ -13,6 +13,13 @@ import { buildEvidenciaFileName, uploadEvidenciaToDrive } from "../utils/drive_e
 import fs from "fs";
 import { NotificacionService } from "./NotificacionService";
 import { elementoParentChainInclude } from "../utils/elementoHierarchy";
+import { adjuntarCategoriaCronograma } from "../utils/categoriaCronograma";
+
+function httpError(status: number, message: string) {
+  const err = new Error(message) as Error & { status: number };
+  err.status = status;
+  return err;
+}
 
 const TareaIdDTO = z.object({ tareaId: z.number().int().positive() });
 
@@ -88,15 +95,25 @@ export class OperarioService {
     });
   }
 
-  /** Inicia una tarea (cambia estado a EN_PROCESO) */
+  /**
+   * Inicia una tarea (cambia estado a EN_PROCESO). Solo la puede iniciar un
+   * operario asignado a ella, igual que el cierre.
+   */
   async iniciarTarea(payload: unknown) {
     const { tareaId } = TareaIdDTO.parse(payload);
     const tarea = await this.prisma.tarea.findUnique({
       where: { id: tareaId },
-      select: { id: true, borrador: true },
+      select: { id: true, borrador: true, estado: true, operarios: { select: { id: true } } },
     });
     if (!tarea || tarea.borrador) {
-      throw new Error("La tarea no existe o está en borrador.");
+      throw httpError(404, "La tarea no existe o está en borrador.");
+    }
+    const asignado = tarea.operarios.some((o) => o.id === this.operarioId.toString());
+    if (!asignado) {
+      throw httpError(403, "Esta tarea no está asignada al operario autenticado.");
+    }
+    if (tarea.estado !== "ASIGNADA") {
+      throw httpError(409, "Esta actividad ya fue iniciada o cerrada.");
     }
     const tareaService = new TareaService(this.prisma, tareaId);
     await tareaService.iniciarTarea();
@@ -198,11 +215,25 @@ export class OperarioService {
     });
   }
 
-  async listarTareas() {
-    return this.prisma.tarea.findMany({
+  /**
+   * Actividades del operario. Con `desde`/`hasta` limita por fecha de inicio
+   * (sin rango devuelve todo, como antes). Incluye a los compañeros de las
+   * actividades compartidas, la categoría con la que se pintan y quién las
+   * cerró, para que la app del operario muestre lo mismo que el cronograma.
+   */
+  async listarTareas(rango: { desde?: Date; hasta?: Date } = {}) {
+    const fechaInicio =
+      rango.desde || rango.hasta
+        ? {
+            ...(rango.desde ? { gte: rango.desde } : {}),
+            ...(rango.hasta ? { lte: rango.hasta } : {}),
+          }
+        : undefined;
+    const tareas = await this.prisma.tarea.findMany({
       where: {
         operarios: { some: { id: this.operarioId.toString() } },
         borrador: false,
+        ...(fechaInicio ? { fechaInicio } : {}),
       },
       orderBy: { fechaInicio: "asc" },
       include: {
@@ -211,8 +242,33 @@ export class OperarioService {
         // Nunca `conjunto: true`: trae mapaConjuntoBytes (la imagen del mapa)
         // por cada tarea y la respuesta de Prisma revienta por tamaño.
         conjunto: { select: { nit: true, nombre: true, direccion: true, activo: true } },
+        operarios: {
+          select: { id: true, funciones: true, usuario: { select: { nombre: true } } },
+        },
       },
     });
+
+    const conCategoria = await adjuntarCategoriaCronograma(this.prisma, tareas);
+
+    const cerradoresIds = Array.from(
+      new Set(
+        conCategoria
+          .map((t) => t.finalizadaPorId)
+          .filter((id): id is string => typeof id === "string" && id.length > 0),
+      ),
+    );
+    const cerradores = cerradoresIds.length
+      ? await this.prisma.usuario.findMany({
+          where: { id: { in: cerradoresIds } },
+          select: { id: true, nombre: true },
+        })
+      : [];
+    const nombrePorId = new Map(cerradores.map((u) => [u.id, u.nombre]));
+
+    return conCategoria.map((t) => ({
+      ...t,
+      finalizadaPorNombre: t.finalizadaPorId ? (nombrePorId.get(t.finalizadaPorId) ?? null) : null,
+    }));
   }
 
   async cerrarTareaConEvidencias(

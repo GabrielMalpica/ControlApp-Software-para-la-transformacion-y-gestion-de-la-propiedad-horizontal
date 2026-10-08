@@ -26,7 +26,13 @@ describe('Validación del plan de maquinaria', () => {
     });
 
     expect(primerParse.maquinariaPlanJson).toEqual([
-      { tipo: TipoMaquinaria.GUADANIA, cantidad: 2, maquinariaSugeridaId: null },
+      {
+        tipoCatalogoId: null,
+        tipo: TipoMaquinaria.GUADANIA,
+        cantidad: 2,
+        obligatorio: true,
+        maquinariaSugeridaId: null,
+      },
     ]);
 
     expect(() => CrearDefinicionPreventivaDTO.parse(primerParse)).not.toThrow();
@@ -44,8 +50,10 @@ describe('Validación del plan de maquinaria', () => {
 
     expect(primerParse.maquinariaPlanJson).toEqual([
       {
+        tipoCatalogoId: null,
         tipo: TipoMaquinaria.CORTASETOS_MANO,
         cantidad: 1,
+        obligatorio: true,
         maquinariaSugeridaId: null,
       },
     ]);
@@ -53,6 +61,30 @@ describe('Validación del plan de maquinaria', () => {
     expect(() =>
       EditarDefinicionPreventivaDTO.parse(primerParse),
     ).not.toThrow();
+  });
+
+  test('PU-V3b - el tipo se declara por catálogo de la empresa, con obligatorio', () => {
+    const out = CrearDefinicionPreventivaDTO.parse({
+      ...basePreventiva,
+      maquinariaPlanJson: [{ tipoCatalogoId: 14, cantidad: 2, obligatorio: false }],
+      herramientasPlanJson: [{ herramientaId: 3, cantidad: 1.4 }],
+    });
+    expect(out.maquinariaPlanJson).toEqual([
+      { tipoCatalogoId: 14, tipo: null, cantidad: 2, obligatorio: false, maquinariaSugeridaId: null },
+    ]);
+    // Las herramientas se reservan por unidad física: la cantidad es entera.
+    expect(out.herramientasPlanJson).toEqual([{ herramientaId: 3, cantidad: 2, obligatorio: true }]);
+    // Idempotente.
+    expect(CrearDefinicionPreventivaDTO.parse(out).maquinariaPlanJson).toEqual(out.maquinariaPlanJson);
+  });
+
+  test('PU-V3c - una maquinaria sin tipo se rechaza con mensaje claro', () => {
+    const r = CrearDefinicionPreventivaDTO.safeParse({
+      ...basePreventiva,
+      maquinariaPlanJson: [{ cantidad: 1 }],
+    });
+    expect(r.success).toBe(false);
+    expect(r.success ? '' : r.error.issues[0].message).toBe('Cada maquinaria requerida debe indicar su tipo.');
   });
 
   test('PU-V3 - acepta null explícito y maquinariaId como sugerencia', () => {

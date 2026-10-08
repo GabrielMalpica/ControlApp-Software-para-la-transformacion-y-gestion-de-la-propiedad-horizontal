@@ -217,6 +217,33 @@ function fixMojibake(text: string) {
   ];
 
   let out = text;
+  const windows1252: Record<number, number> = {
+    0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84,
+    0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88,
+    0x2030: 0x89, 0x0160: 0x8a, 0x2039: 0x8b, 0x0152: 0x8c,
+    0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92, 0x201c: 0x93,
+    0x201d: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97,
+    0x02dc: 0x98, 0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b,
+    0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f,
+  };
+  for (let attempt = 0; attempt < 3 && /[ÃÂâ]/.test(out); attempt++) {
+    const bytes: number[] = [];
+    let encodable = true;
+    for (const char of out) {
+      const code = char.codePointAt(0)!;
+      const byte = code <= 0xff ? code : windows1252[code];
+      if (byte == null) {
+        encodable = false;
+        break;
+      }
+      bytes.push(byte);
+    }
+    if (!encodable) break;
+    const repaired = Buffer.from(bytes).toString("utf8");
+    if (repaired.includes("�") || repaired === out) break;
+    out = repaired;
+  }
+
   for (const [from, to] of replacements) {
     out = out.split(from).join(to);
   }
@@ -224,9 +251,28 @@ function fixMojibake(text: string) {
   return out.replace(/\s+/g, " ").trim();
 }
 
+function fixMojibakeDeep(value: unknown): unknown {
+  if (typeof value === "string") return fixMojibake(value);
+  if (Array.isArray(value)) return value.map(fixMojibakeDeep);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, fixMojibakeDeep(entry)]),
+    );
+  }
+  return value;
+}
+
 function normalizeBusinessMessage(rawMessage: string) {
   const clean = fixMojibake(rawMessage);
   if (!clean) return { message: "" };
+
+  if (clean === "USER_ALREADY_EXISTS") {
+    return {
+      code: clean,
+      message:
+        "Ya existe una cuenta con esa cédula. Puede estar asociada a otra empresa o sin conjunto asignado.",
+    };
+  }
 
   if (/^MAQUINARIA_OCUPADA_\d+$/i.test(clean)) {
     return {
@@ -375,17 +421,20 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     (err as any).ok === false &&
     typeof (err as any).message === "string"
   ) {
+    const safePayload = fixMojibakeDeep(err) as Record<string, unknown>;
     const status =
       typeof (err as any).status === "number"
         ? Number((err as any).status)
         : inferStatusFromMessage(String((err as any).message));
 
     res.status(status).json({
-      ...(err as Record<string, unknown>),
-      error:
+      ...safePayload,
+      message: fixMojibake(String((err as any).message)),
+      error: fixMojibake(
         typeof (err as any).error === "string"
           ? (err as any).error
           : String((err as any).message),
+      ),
     });
     return;
   }

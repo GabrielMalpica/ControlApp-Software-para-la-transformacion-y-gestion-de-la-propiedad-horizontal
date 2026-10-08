@@ -1,6 +1,7 @@
 // src/services/CronogramaService.ts
 import { EstadoTarea, Prisma, TipoTarea, type PrismaClient } from "@prisma/client";
 import { adjuntarCategoriaCronograma } from "../utils/categoriaCronograma";
+import { adjuntarRecursosPlan } from "../utils/recursosPlanTarea";
 import { z } from "zod";
 import {
   buildAgendaPorOperarioDia,
@@ -32,6 +33,11 @@ import {
   type ActorAuditoria,
 } from "../model/Auditoria";
 import { AuditoriaService } from "./AuditoriaService";
+import {
+  aplicarCambioTareaEnRecursos,
+  cancelarReservasDeTareas,
+  materializarNecesidadesDeTareas,
+} from "./ReservaRecursoService";
 import { GerenteService } from "./GerenteServices";
 import {
   politicaZonaPredeterminada,
@@ -296,6 +302,12 @@ export class CronogramaService {
         data: { tareaId: null },
       });
 
+      // Reservas de recursos: canceladas con motivo, nunca borradas.
+      await cancelarReservasDeTareas(tx, {
+        tareaIds: ids,
+        motivo: `Se eliminó el cronograma publicado de ${periodo.mes}/${periodo.anio}.`,
+        actor: this.actor,
+      });
       await tx.usoMaquinaria.deleteMany({ where: { tareaId: { in: ids } } });
       await tx.usoHerramienta.deleteMany({ where: { tareaId: { in: ids } } });
       await tx.consumoInsumo.deleteMany({ where: { tareaId: { in: ids } } });
@@ -359,7 +371,10 @@ export class CronogramaService {
       configuraciones.map((item) => [item.elementoZonaId, item]),
     );
 
-    const conCategoria = await adjuntarCategoriaCronograma(this.prisma, tareas);
+    const conCategoria = await adjuntarRecursosPlan(
+      this.prisma,
+      await adjuntarCategoriaCronograma(this.prisma, tareas),
+    );
     return conCategoria.map((tarea) => ({
       ...tarea,
       zonaCronograma: resolverConfiguracionZona(
@@ -1080,6 +1095,10 @@ export class CronogramaService {
       fechaFin: fechaFin.toISOString(),
     };
 
+    // La correctiva hereda las necesidades de recursos de la preventiva
+    // excluida (antes se perdían): plan de la definición o de la tarea origen.
+    const planes = await this.planesRecursosDeExcluida(excluida);
+
     await this.prisma.$transaction(async (tx) => {
       await tx.preventivaExcluidaBorrador.update({
         where: { id: excluida.id },
@@ -1089,6 +1108,21 @@ export class CronogramaService {
           resueltaEn: new Date(),
         },
       });
+
+      if (tareaProgramadaId && (planes.maquinariaPlanJson != null || planes.herramientasPlanJson != null)) {
+        await tx.tarea.update({
+          where: { id: tareaProgramadaId },
+          data: {
+            ...(planes.maquinariaPlanJson != null
+              ? { maquinariaPlanJson: planes.maquinariaPlanJson as Prisma.InputJsonValue }
+              : {}),
+            ...(planes.herramientasPlanJson != null
+              ? { herramientasPlanJson: planes.herramientasPlanJson as Prisma.InputJsonValue }
+              : {}),
+          },
+        });
+        await materializarNecesidadesDeTareas(tx, [tareaProgramadaId]);
+      }
 
       await tx.preventivaBorradorEvento.create({
         data: {
@@ -1474,6 +1508,28 @@ export class CronogramaService {
   }
 
   /* ==================== Helpers de excluidas ==================== */
+
+  private async planesRecursosDeExcluida(excluida: {
+    defId: number | null;
+    origenTareaId: number | null;
+  }): Promise<{ maquinariaPlanJson: Prisma.JsonValue | null; herramientasPlanJson: Prisma.JsonValue | null }> {
+    const select = { maquinariaPlanJson: true, herramientasPlanJson: true } as const;
+    if (excluida.defId != null) {
+      const def = await this.prisma.definicionTareaPreventiva.findUnique({
+        where: { id: excluida.defId },
+        select,
+      });
+      if (def) return def;
+    }
+    if (excluida.origenTareaId != null) {
+      const tarea = await this.prisma.tarea.findUnique({
+        where: { id: excluida.origenTareaId },
+        select,
+      });
+      if (tarea) return tarea;
+    }
+    return { maquinariaPlanJson: null, herramientasPlanJson: null };
+  }
 
   private async cargarExcluidaPendiente(excluidaId: number) {
     const excluida = await this.prisma.preventivaExcluidaBorrador.findUnique({
@@ -2189,9 +2245,26 @@ export class CronogramaService {
       }
     }
 
-    return this.prisma.tarea.update({
+    const antes = await this.prisma.tarea.findUnique({
       where: { id: tareaId },
-      data: { fechaInicio, fechaFin },
+      select: { fechaInicio: true, fechaFin: true, conjuntoId: true },
+    });
+    if (!antes) throw new Error("Tarea no encontrada.");
+
+    // Las reservas de recursos se mueven con la tarea; si algún recurso no
+    // está libre en el nuevo horario, no se mueve nada (409).
+    return this.prisma.$transaction(async (tx) => {
+      const t = await tx.tarea.update({
+        where: { id: tareaId },
+        data: { fechaInicio, fechaFin },
+      });
+      await aplicarCambioTareaEnRecursos(tx, {
+        tareaId,
+        antes,
+        despues: { fechaInicio, fechaFin, conjuntoId: antes.conjuntoId },
+        actor: this.actor,
+      });
+      return t;
     });
   }
 

@@ -10,6 +10,7 @@ export const ModuloAuditoria = {
   CRONOGRAMA: "CRONOGRAMA",
   PREVENTIVA: "PREVENTIVA",
   EXCLUIDA: "EXCLUIDA",
+  RECURSOS: "RECURSOS",
 } as const;
 
 export type ModuloAuditoria = (typeof ModuloAuditoria)[keyof typeof ModuloAuditoria];
@@ -19,6 +20,8 @@ export const EntidadAuditoria = {
   DEFINICION_PREVENTIVA: "DefinicionTareaPreventiva",
   EXCLUIDA_BORRADOR: "PreventivaExcluidaBorrador",
   CRONOGRAMA_PERIODO: "CronogramaPeriodo",
+  RESERVA_RECURSO: "ReservaRecurso",
+  EMPRESA: "Empresa",
 } as const;
 
 export type EntidadAuditoria = (typeof EntidadAuditoria)[keyof typeof EntidadAuditoria];
@@ -43,6 +46,11 @@ export const AccionAuditoria = {
   ASIGNAR_HERRAMIENTA: "ASIGNAR_HERRAMIENTA",
   LIBERAR_HERRAMIENTA: "LIBERAR_HERRAMIENTA",
   CORREGIR_CIERRE: "CORREGIR_CIERRE",
+  RESERVAR_RECURSO: "RESERVAR_RECURSO",
+  CANCELAR_RESERVA_RECURSO: "CANCELAR_RESERVA_RECURSO",
+  REEMPLAZAR_RESERVA_RECURSO: "REEMPLAZAR_RESERVA_RECURSO",
+  BLOQUEAR_MANTENIMIENTO: "BLOQUEAR_MANTENIMIENTO",
+  CONFIGURAR_LOGISTICA_RECURSOS: "CONFIGURAR_LOGISTICA_RECURSOS",
 } as const;
 
 export type AccionAuditoria = (typeof AccionAuditoria)[keyof typeof AccionAuditoria];

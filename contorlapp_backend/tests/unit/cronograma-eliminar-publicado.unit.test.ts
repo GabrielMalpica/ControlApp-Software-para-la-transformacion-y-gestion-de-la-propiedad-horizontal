@@ -19,6 +19,9 @@ describe("Eliminacion de cronograma publicado", () => {
       consumoInsumo: {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
+      reservaRecurso: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       preventivaOcurrenciaPlan: {
         deleteMany: jest.fn().mockResolvedValue({ count: tareas.length }),
       },
@@ -68,6 +71,14 @@ describe("Eliminacion de cronograma publicado", () => {
       where: { tareaId: { in: ids } },
       data: { tareaId: null },
     });
+    // Las reservas de recursos se cancelan (no se borran) en una sola consulta.
+    expect(tx.reservaRecurso.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.reservaRecurso.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tareaId: { in: ids }, estado: "RESERVADA", tipo: "TAREA" },
+        data: expect.objectContaining({ estado: "CANCELADA" }),
+      }),
+    );
     expect(tx.usoMaquinaria.deleteMany).toHaveBeenCalledTimes(1);
     expect(tx.usoHerramienta.deleteMany).toHaveBeenCalledTimes(1);
     expect(tx.consumoInsumo.deleteMany).toHaveBeenCalledTimes(1);

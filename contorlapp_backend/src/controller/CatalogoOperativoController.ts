@@ -13,12 +13,14 @@ const Rol = z.enum(["TODERO", "SALVAVIDAS", "ASEO", "PISCINERO", "JARDINERO"]);
 const CrearCategoriaBody = z.object({
   nombre: z.string().min(1).max(80),
   colorHex: z.string().nullable().optional(),
+  icono: z.string().max(40).nullable().optional(),
   palabrasClave: z.array(z.string().max(60)).max(50).optional(),
 });
 
 const EditarCategoriaBody = z.object({
   nombre: z.string().min(1).max(80).optional(),
   colorHex: z.string().nullable().optional(),
+  icono: z.string().max(40).nullable().optional(),
   palabrasClave: z.array(z.string().max(60)).max(50).optional(),
   activa: z.boolean().optional(),
 });

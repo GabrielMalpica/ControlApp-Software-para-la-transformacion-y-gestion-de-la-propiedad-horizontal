@@ -22,10 +22,21 @@ describe('Necesidades de maquinaria', () => {
 
       expect(out).toEqual([
         {
+          tipoCatalogoId: null,
           tipo: TipoMaquinaria.GUADANIA,
           cantidad: 2,
+          obligatorio: true,
           maquinariaSugeridaId: 12,
         },
+      ]);
+    });
+
+    test('PU-M1b - lee el formato por tipo de catálogo y respeta obligatorio', () => {
+      const out = parseNecesidadesMaquinaria([
+        { tipoCatalogoId: 9, cantidad: 2, obligatorio: false },
+      ]);
+      expect(out).toEqual([
+        { tipoCatalogoId: 9, tipo: null, cantidad: 2, obligatorio: false, maquinariaSugeridaId: null },
       ]);
     });
 
@@ -68,6 +79,10 @@ describe('Necesidades de maquinaria', () => {
       ).toEqual([12, 5]);
     });
 
+    test('PU-M7b - un item por tipo de catálogo tampoco compromete máquina', () => {
+      expect(parseMaquinariaIdsComprometidos([{ tipoCatalogoId: 3, maquinariaId: 12 }])).toEqual([]);
+    });
+
     test('PU-M7 - una necesidad por tipo no compromete ninguna máquina', () => {
       // Esto es lo que hace que publicar deje de fallar por maquinaria.
       expect(
@@ -87,8 +102,16 @@ describe('Necesidades de maquinaria', () => {
       ]),
     );
 
-    expect(agrupado.get(TipoMaquinaria.GUADANIA)).toBe(3);
-    expect(agrupado.get(TipoMaquinaria.TALADRO)).toBe(1);
+    expect(agrupado.get(`enum:${TipoMaquinaria.GUADANIA}`)).toBe(3);
+    expect(agrupado.get(`enum:${TipoMaquinaria.TALADRO}`)).toBe(1);
+
+    const porCatalogo = agruparNecesidadesPorTipo(
+      parseNecesidadesMaquinaria([
+        { tipoCatalogoId: 4, cantidad: 1 },
+        { tipoCatalogoId: 4, cantidad: 2 },
+      ]),
+    );
+    expect(porCatalogo.get('cat:4')).toBe(3);
   });
 
   describe('calcularRangoReserva', () => {

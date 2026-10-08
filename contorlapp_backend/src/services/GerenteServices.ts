@@ -50,6 +50,12 @@ import {
 import { necesidadPublicSelect } from "../model/ConjuntoNecesidad";
 import { ConjuntoExcelTemplateService } from "./ConjuntoExcelTemplateService";
 import { ConjuntoCargaMasivaService } from "./ConjuntoCargaMasivaService";
+import {
+  aplicarCambioTareaEnRecursos,
+  cancelarReservasDeTareas,
+  reservarRecursosDeTareaManual,
+  reubicarReservasDeTarea,
+} from "./ReservaRecursoService";
 
 import { CrearTareaDTO, EditarTareaDTO } from "../model/Tarea";
 import {
@@ -846,7 +852,11 @@ export class GerenteService {
       this.prisma.usuario.findUnique({ where: { correo: dto.correo } }),
     ]);
 
-    if (existeId) throw new Error("Ya existe un usuario con esa cÃƒÂ©dula.");
+    if (existeId) {
+      const error = new Error("USER_ALREADY_EXISTS");
+      Object.assign(error, { status: 409 });
+      throw error;
+    }
     if (existeCorreo) throw new Error("Ya existe un usuario con ese correo.");
 
     const hash = await bcrypt.hash(dto.contrasena, 10);
@@ -905,10 +915,17 @@ export class GerenteService {
 
     const currentRole = String(actual.rol).trim().toLowerCase() as Rol;
     const nextRole = dto.rol ?? currentRole;
+    if (dto.conjuntoId && nextRole !== Rol.administrador) {
+      throw new Error("Solo se puede asignar un conjunto a un administrador.");
+    }
+    const empresaIdConjunto = dto.conjuntoId
+      ? await this.resolverEmpresaNit()
+      : null;
 
     const data: any = { ...dto };
 
     delete data.disponibilidadPeriodos;
+    delete data.conjuntoId;
 
     if (dto.fechaNacimiento !== undefined) {
       data.fechaNacimiento = new Date(dto.fechaNacimiento);
@@ -935,6 +952,25 @@ export class GerenteService {
         data,
         select: usuarioPublicSelect,
       });
+
+      if (dto.conjuntoId && empresaIdConjunto) {
+        const [conjunto, administrador] = await Promise.all([
+          tx.conjunto.findFirst({
+            where: { nit: dto.conjuntoId, empresaId: empresaIdConjunto },
+            select: { nit: true, administradorId: true },
+          }),
+          tx.administrador.findUnique({ where: { id }, select: { id: true } }),
+        ]);
+        if (!conjunto) throw new Error("Conjunto no encontrado en la empresa.");
+        if (!administrador) throw new Error("Perfil de administrador no encontrado.");
+        if (conjunto.administradorId && conjunto.administradorId !== id) {
+          throw new Error("El conjunto ya tiene otro administrador asignado.");
+        }
+        await tx.conjunto.update({
+          where: { nit: conjunto.nit },
+          data: { administrador: { connect: { id } } },
+        });
+      }
 
       if (dto.disponibilidadPeriodos !== undefined) {
         const operario = await tx.operario.findUnique({
@@ -994,10 +1030,25 @@ export class GerenteService {
     if (usuario.rol !== Rol.administrador)
       throw new Error("El usuario no tiene rol 'administrador'.");
 
-    return this.prisma.administrador.create({
-      data: { id: dto.Id },
-      include: { usuario: true, conjuntos: true },
-    });
+    const empresaId = await this.resolverEmpresaNit();
+    return this.prisma.$transaction(async (tx) => {
+      const conjunto = await tx.conjunto.findFirst({
+        where: { nit: dto.conjuntoId, empresaId },
+        select: { nit: true, administradorId: true },
+      });
+      if (!conjunto) throw new Error("Conjunto no encontrado en la empresa.");
+      if (conjunto.administradorId) {
+        throw new Error("El conjunto ya tiene un administrador asignado.");
+      }
+
+      return tx.administrador.create({
+        data: {
+          id: dto.Id,
+          conjuntos: { connect: { nit: conjunto.nit } },
+        },
+        include: { usuario: true, conjuntos: true },
+      });
+    }, { isolationLevel: "Serializable" });
   }
 
   async asignarJefeOperaciones(payload: unknown) {
@@ -1105,6 +1156,7 @@ export class GerenteService {
         { supervisor: { empresaId } },
         { operario: { empresaId } },
         { administrador: { conjuntos: { some: { empresaId } } } },
+        { administrador: { conjuntos: { none: {} } } },
         { residente: { conjunto: { empresaId } } },
       ],
     };
@@ -2474,124 +2526,6 @@ export class GerenteService {
     return { suggestedInicio, suggestedFin };
   }
 
-  private async resolverOrigenHerramienta(params: {
-    tx: Prisma.TransactionClient;
-    empresaId: string;
-    conjuntoId: string;
-    herramientaId: number;
-    cantidad: number;
-    inicio: Date;
-    fin: Date;
-    tareaExcluidaId?: number;
-  }): Promise<"CONJUNTO" | "EMPRESA"> {
-    const {
-      tx,
-      empresaId,
-      conjuntoId,
-      herramientaId,
-      cantidad,
-      inicio,
-      fin,
-      tareaExcluidaId,
-    } = params;
-
-    const [stockConjunto, stockEmpresa, reservas] = await Promise.all([
-      tx.conjuntoHerramientaStock.findMany({
-        where: {
-          conjuntoId,
-          herramientaId,
-          estado: "OPERATIVA" as any,
-        },
-        select: { cantidad: true },
-      }),
-      (tx as any).empresaHerramientaStock.findUnique({
-        where: {
-          empresaId_herramientaId: {
-            empresaId,
-            herramientaId,
-          },
-        },
-        select: { cantidad: true },
-      }),
-      (tx.usoHerramienta as any).findMany({
-        where: {
-          herramientaId,
-          fechaInicio: { lt: fin },
-          OR: [{ fechaFin: null }, { fechaFin: { gt: inicio } }],
-          estado: { in: ["RESERVADA", "EN_USO"] as any },
-          ...(tareaExcluidaId ? { tareaId: { not: tareaExcluidaId } } : {}),
-          tarea: {
-            estado: {
-              notIn: ["COMPLETADA", "NO_COMPLETADA", "CANCELADA"] as any,
-            },
-          },
-        },
-        select: { cantidad: true, origenStock: true },
-      }),
-    ]);
-
-    const totalConjunto = stockConjunto.reduce(
-      (acc, row) => acc + Number(row.cantidad),
-      0,
-    );
-    const totalEmpresa = Number(stockEmpresa?.cantidad ?? 0);
-    const reservadoConjunto = reservas
-      .filter((r) => String(r.origenStock) === "CONJUNTO")
-      .reduce((acc, row) => acc + Number(row.cantidad), 0);
-    const reservadoEmpresa = reservas
-      .filter((r) => String(r.origenStock) === "EMPRESA")
-      .reduce((acc, row) => acc + Number(row.cantidad), 0);
-
-    const disponibleConjunto = Math.max(0, totalConjunto - reservadoConjunto);
-    const disponibleEmpresa = Math.max(0, totalEmpresa - reservadoEmpresa);
-
-    if (disponibleConjunto >= cantidad) return "CONJUNTO";
-    if (disponibleEmpresa >= cantidad) return "EMPRESA";
-
-    throw new Error(
-      `HERRAMIENTA_SIN_STOCK_${herramientaId}_${disponibleConjunto}_${disponibleEmpresa}`,
-    );
-  }
-
-  private async reservarHerramientasTarea(params: {
-    tx: Prisma.TransactionClient;
-    empresaId: string;
-    conjuntoId: string;
-    tareaId: number;
-    herramientas: Array<{ herramientaId: number; cantidad: number }>;
-    inicio: Date;
-    fin: Date;
-    operarioId?: string | null;
-  }) {
-    const { tx, empresaId, conjuntoId, tareaId, herramientas, inicio, fin, operarioId } = params;
-
-    for (const item of herramientas) {
-      const origenStock = await this.resolverOrigenHerramienta({
-        tx,
-        empresaId,
-        conjuntoId,
-        herramientaId: item.herramientaId,
-        cantidad: Number(item.cantidad),
-        inicio,
-        fin,
-      });
-
-      await (tx.usoHerramienta as any).create({
-        data: {
-          tarea: { connect: { id: tareaId } },
-          herramienta: { connect: { id: item.herramientaId } },
-          cantidad: Number(item.cantidad) as any,
-          origenStock: origenStock as any,
-          estado: "RESERVADA" as any,
-          fechaInicio: inicio,
-          fechaFin: fin,
-          observacion: `Reserva herramienta ${origenStock.toLowerCase()} para tarea`,
-          ...(operarioId ? { operario: { connect: { id: operarioId } } } : {}),
-        },
-      });
-    }
-  }
-
   private async buscarOpcionesReemplazoParaCorrectiva(params: {
     prisma: PrismaClient;
     conjuntoId: string;
@@ -3167,42 +3101,6 @@ export class GerenteService {
     // =========================
     // Helpers de logÃƒÂ­stica (maquinaria)
     // =========================
-    const LOGISTICA_DOW = new Set([1, 3, 6]); // lun, miÃƒÂ©, sÃƒÂ¡b
-
-    const startDay = (d: Date) =>
-      new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-    const endDay = (d: Date) =>
-      new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-
-    const isLogistica = (d: Date) => LOGISTICA_DOW.has(d.getDay());
-
-    const entregaLogistica = (uso: Date) => {
-      const base = startDay(uso);
-      if (isLogistica(base)) return base;
-      for (let i = 1; i <= 7; i++) {
-        const d = new Date(base);
-        d.setDate(d.getDate() - i);
-        if (isLogistica(d)) return startDay(d);
-      }
-      return base;
-    };
-
-    const recogidaLogistica = (uso: Date) => {
-      const base = startDay(uso);
-      for (let i = 1; i <= 14; i++) {
-        const d = new Date(base);
-        d.setDate(d.getDate() + i);
-        if (isLogistica(d)) return startDay(d);
-      }
-      return base;
-    };
-
-    const esPropia = (tipoTenencia: any) => {
-      const v = String(tipoTenencia ?? "").toUpperCase();
-      return v.includes("PROPIA") || v.includes("CONJUNTO");
-    };
-
-    // =========================
     // TRANSACCIÃƒâ€œN
     // =========================
     return this.prisma.$transaction(async (tx) => {
@@ -3278,87 +3176,17 @@ export class GerenteService {
         select: { id: true },
       });
 
-      // 2Ã¯Â¸ÂÃ¢Æ’Â£ Resolver maquinaria por conjunto
-      if (dto.conjuntoId && maquinariaIds.length) {
-        const registros = await tx.maquinariaConjunto.findMany({
-          where: {
-            conjuntoId: dto.conjuntoId,
-            maquinariaId: { in: maquinariaIds },
-            estado: "ACTIVA",
-          },
-          select: { maquinariaId: true, tipoTenencia: true },
-        });
-
-        const tenenciaMap = new Map<number, any>();
-        for (const r of registros)
-          tenenciaMap.set(r.maquinariaId, r.tipoTenencia);
-
-        for (const maqId of maquinariaIds) {
-          const propia = esPropia(tenenciaMap.get(maqId));
-
-          let reservaInicio: Date;
-          let reservaFin: Date;
-          let obs: string;
-
-          if (propia) {
-            reservaInicio = inicio;
-            reservaFin = fin;
-            obs = "Reserva maquinaria propia (uso real)";
-          } else {
-            const entrega = entregaLogistica(inicio);
-            const recogida = recogidaLogistica(fin);
-            reservaInicio = startDay(entrega);
-            reservaFin = endDay(recogida);
-            obs = `Reserva logÃƒÂ­stica (${entrega.toDateString()} Ã¢â€ â€™ ${recogida.toDateString()})`;
-          }
-
-          // Validar solape REAL maquinaria
-          const choque = await tx.usoMaquinaria.findFirst({
-            where: {
-              maquinariaId: maqId,
-              fechaInicio: { lt: reservaFin },
-              fechaFin: { gt: reservaInicio },
-            },
-          });
-
-          if (choque) {
-            throw new Error(
-              `MAQUINARIA_OCUPADA: maquinaria ${maqId} ya estÃƒÂ¡ reservada`,
-            );
-          }
-
-          // Crear uso
-          await tx.usoMaquinaria.create({
-            data: {
-              tarea: { connect: { id: tarea.id } },
-              maquinaria: { connect: { id: maqId } },
-              fechaInicio: reservaInicio,
-              fechaFin: reservaFin,
-              observacion: obs,
-            },
-          });
-
-          await tx.maquinariaConjunto.updateMany({
-            where: {
-              conjuntoId: dto.conjuntoId,
-              maquinariaId: maqId,
-              estado: "ACTIVA",
-            },
-            data: { tareaId: tarea.id },
-          });
-        }
-      }
-
-      if (dto.conjuntoId && herramientas.length) {
-        await this.reservarHerramientasTarea({
-          tx,
+      // 2) Recursos elegidos: necesidad MANUAL + reserva de cada unidad con
+      // la misma validación y protección de solape que la agenda de recursos.
+      const herramientaItemIds = dto.herramientaItemIds ?? [];
+      if (dto.conjuntoId && (maquinariaIds.length || herramientaItemIds.length || herramientas.length)) {
+        await reservarRecursosDeTareaManual(tx, {
           empresaId: await this.resolverEmpresaNit(),
-          conjuntoId: dto.conjuntoId,
           tareaId: tarea.id,
-          herramientas,
-          inicio,
-          fin,
-          operarioId: operariosIds[0] ?? null,
+          maquinariaIds,
+          herramientaItemIds,
+          herramientasPorTipo: herramientas,
+          actor: { id: asignadorId },
         });
       }
 
@@ -3786,6 +3614,12 @@ export class GerenteService {
           )
       : [];
 
+    const herramientaItemIds: number[] = Array.isArray((dto as any).herramientaItemIds)
+      ? (dto as any).herramientaItemIds
+          .map((x: any) => Number(x))
+          .filter((n: number) => Number.isFinite(n) && n > 0)
+      : [];
+
     const prioridadesPermitidas =
       this.prioridadesPreventivaReemplazables(prioridad);
 
@@ -4043,6 +3877,15 @@ export class GerenteService {
               fechaFinOriginal: t.fechaFinOriginal ?? t.fechaFin,
             } as any,
           });
+          // Sus recursos reservados se mueven con ella; si alguno no está
+          // libre en la nueva franja, se bloquea todo el reemplazo (409).
+          await reubicarReservasDeTarea(tx, {
+            tareaId: t.id,
+            fechaInicio: seleccion.fechaInicio,
+            fechaFin: seleccion.fechaFin,
+            conjuntoId: dto.conjuntoId!,
+            actor: { id: asignadorId },
+          });
           reprogramadasIds.push(t.id);
           reemplazosDetalle.push({
             id: t.id,
@@ -4083,110 +3926,21 @@ export class GerenteService {
         });
       }
 
-      // reserva maquinaria (mismo comportamiento de asignaciÃƒÂ³n normal)
       const noCompletadasIds = Array.from(
         new Set([...canceladasIds, ...canceladasSinCupoIds]),
       );
 
-      const LOGISTICA_DOW = new Set([1, 3, 6]);
-      const startDay = (d: Date) =>
-        new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-      const endDay = (d: Date) =>
-        new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-      const isLogistica = (d: Date) => LOGISTICA_DOW.has(d.getDay());
-      const entregaLogistica = (uso: Date) => {
-        const base = startDay(uso);
-        if (isLogistica(base)) return base;
-        for (let i = 1; i <= 7; i++) {
-          const d = new Date(base);
-          d.setDate(d.getDate() - i);
-          if (isLogistica(d)) return startDay(d);
-        }
-        return base;
-      };
-      const recogidaLogistica = (uso: Date) => {
-        const base = startDay(uso);
-        for (let i = 1; i <= 14; i++) {
-          const d = new Date(base);
-          d.setDate(d.getDate() + i);
-          if (isLogistica(d)) return startDay(d);
-        }
-        return base;
-      };
-      const esPropia = (tipoTenencia: any) => {
-        const v = String(tipoTenencia ?? "").toUpperCase();
-        return v.includes("PROPIA") || v.includes("CONJUNTO");
-      };
-
-      if (maquinariaIds.length) {
-        const registros = await tx.maquinariaConjunto.findMany({
-          where: {
-            conjuntoId: dto.conjuntoId!,
-            maquinariaId: { in: maquinariaIds },
-            estado: "ACTIVA",
-          },
-          select: { maquinariaId: true, tipoTenencia: true },
-        });
-        const tenenciaMap = new Map<number, any>();
-        for (const r of registros) tenenciaMap.set(r.maquinariaId, r.tipoTenencia);
-
-        for (const maqId of maquinariaIds) {
-          const propia = esPropia(tenenciaMap.get(maqId));
-          let reservaInicio: Date;
-          let reservaFin: Date;
-          let obs: string;
-
-          if (propia) {
-            reservaInicio = inicio;
-            reservaFin = fin;
-            obs = `Reserva maquinaria propia (correctiva P${prioridad})`;
-          } else {
-            const entrega = entregaLogistica(inicio);
-            const recogida = recogidaLogistica(fin);
-            reservaInicio = startDay(entrega);
-            reservaFin = endDay(recogida);
-            obs = `Reserva logÃƒÂ­stica correctiva P${prioridad} (${entrega.toDateString()} -> ${recogida.toDateString()})`;
-          }
-
-          const choque = await tx.usoMaquinaria.findFirst({
-            where: {
-              maquinariaId: maqId,
-              fechaInicio: { lt: reservaFin },
-              fechaFin: { gt: reservaInicio },
-            },
-          });
-          if (choque) throw new Error(`MAQUINARIA_OCUPADA_${maqId}`);
-
-          await tx.usoMaquinaria.create({
-            data: {
-              tarea: { connect: { id: nuevaCorrectiva.id } },
-              maquinaria: { connect: { id: maqId } },
-              fechaInicio: reservaInicio,
-              fechaFin: reservaFin,
-              observacion: obs,
-            },
-          });
-          await tx.maquinariaConjunto.updateMany({
-            where: {
-              conjuntoId: dto.conjuntoId!,
-              maquinariaId: maqId,
-              estado: "ACTIVA",
-            },
-            data: { tareaId: nuevaCorrectiva.id },
-          });
-        }
-      }
-
-      if (dto.conjuntoId && herramientas.length) {
-        await this.reservarHerramientasTarea({
-          tx,
+      // Recursos elegidos para la correctiva: necesidad MANUAL + reserva de
+      // cada unidad con la misma validación y protección de solape que la
+      // agenda de recursos.
+      if (dto.conjuntoId && (maquinariaIds.length || herramientaItemIds.length || herramientas.length)) {
+        await reservarRecursosDeTareaManual(tx, {
           empresaId: await this.resolverEmpresaNit(),
-          conjuntoId: dto.conjuntoId,
           tareaId: nuevaCorrectiva.id,
-          herramientas,
-          inicio,
-          fin,
-          operarioId: operariosIds[0] ?? null,
+          maquinariaIds,
+          herramientaItemIds,
+          herramientasPorTipo: herramientas,
+          actor: { id: asignadorId },
         });
       }
 
@@ -4577,6 +4331,7 @@ export class GerenteService {
         elementoId: true,
         observaciones: true,
         supervisorId: true,
+        estado: true,
         operarios: { select: { id: true } },
       },
     });
@@ -4718,9 +4473,31 @@ export class GerenteService {
       };
     }
 
-    const updated = await this.prisma.tarea.update({
-      where: { id: tareaId },
-      data,
+    // Tarea y reservas de recursos cambian juntas: si un recurso reservado
+    // no está libre en el nuevo horario, no se mueve nada (409
+    // RECURSO_OCUPADO), salvo que el usuario pida liberarlos.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const t = await tx.tarea.update({
+        where: { id: tareaId },
+        data,
+      });
+      await aplicarCambioTareaEnRecursos(tx, {
+        tareaId,
+        antes: {
+          fechaInicio: tareaAntes.fechaInicio,
+          fechaFin: tareaAntes.fechaFin,
+          conjuntoId: tareaAntes.conjuntoId,
+          estado: tareaAntes.estado,
+        },
+        despues: {
+          fechaInicio: t.fechaInicio,
+          fechaFin: t.fechaFin,
+          conjuntoId: t.conjuntoId,
+          estado: t.estado,
+        },
+        liberarOcupadas: dto.liberarRecursosOcupados === true,
+      });
+      return t;
     });
 
     if (dto.operariosIds !== undefined) {
@@ -4974,6 +4751,63 @@ export class GerenteService {
     });
   }
 
+  async reemplazarSupervisorYEliminar(supervisorId: string, payload: unknown) {
+    const { supervisorDestinoId } = z
+      .object({ supervisorDestinoId: z.string().trim().min(5) })
+      .parse(payload);
+    if (supervisorId === supervisorDestinoId) {
+      throw new Error("Selecciona un supervisor diferente.");
+    }
+
+    const empresaId = await this.resolverEmpresaNit();
+    return this.prisma.$transaction(async (tx) => {
+      const [origen, destino] = await Promise.all([
+        tx.supervisor.findFirst({
+          where: { id: supervisorId, empresaId },
+          select: { id: true },
+        }),
+        tx.supervisor.findFirst({
+          where: { id: supervisorDestinoId, empresaId },
+          select: { id: true, usuario: { select: { nombre: true } } },
+        }),
+      ]);
+      if (!origen) throw new Error("Supervisor de origen no encontrado en la empresa.");
+      if (!destino) throw new Error("Supervisor de destino no encontrado en la empresa.");
+
+      const [tareas, preventivas, visitas, borradores] = await Promise.all([
+        tx.tarea.updateMany({
+          where: { supervisorId },
+          data: { supervisorId: supervisorDestinoId },
+        }),
+        tx.definicionTareaPreventiva.updateMany({
+          where: { supervisorId },
+          data: { supervisorId: supervisorDestinoId },
+        }),
+        tx.visitaSupervisor.updateMany({
+          where: { supervisorId },
+          data: { supervisorId: supervisorDestinoId },
+        }),
+        tx.preventivaExcluidaBorrador.updateMany({
+          where: { supervisorId },
+          data: {
+            supervisorId: supervisorDestinoId,
+            supervisorNombre: destino.usuario.nombre,
+          },
+        }),
+      ]);
+
+      await tx.supervisor.delete({ where: { id: supervisorId } });
+      await tx.usuario.delete({ where: { id: supervisorId } });
+
+      return {
+        tareas: tareas.count,
+        preventivas: preventivas.count,
+        visitas: visitas.count,
+        borradores: borradores.count,
+      };
+    }, { isolationLevel: "Serializable" });
+  }
+
   async eliminarJefeOperaciones(jefeOperacionesId: string) {
     await this.prisma.$transaction(async (tx) => {
       // 1) Borrar el JefeOperaciones (si existe)
@@ -5072,6 +4906,13 @@ export class GerenteService {
       await tx.maquinariaConjunto.updateMany({
         where: { tareaId: id },
         data: { tareaId: null },
+      });
+
+      // Reservas de recursos: se cancelan (no se borran) para conservar el
+      // histórico de cada unidad.
+      await cancelarReservasDeTareas(tx, {
+        tareaIds: [id],
+        motivo: "La tarea fue eliminada.",
       });
 
       // 2) Borrar usos de maquinaria/herramienta ligados a la tarea (FK dura)

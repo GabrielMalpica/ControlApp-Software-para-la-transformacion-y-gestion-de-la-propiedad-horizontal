@@ -407,6 +407,40 @@ enum EstadoHerramienta {
   RETIRADA
 }
 
+/**
+ * =========================================
+ * ENUMS - AGENDA DE RECURSOS
+ * =========================================
+ */
+
+enum ClaseRecurso {
+  MAQUINARIA
+  HERRAMIENTA
+}
+
+enum TipoReservaRecurso {
+  TAREA
+  PRESTAMO
+  MANTENIMIENTO
+}
+
+enum EstadoReservaRecurso {
+  RESERVADA
+  FINALIZADA
+  CANCELADA
+}
+
+/// CONJUNTO = unidad propia del conjunto o en custodia (préstamo activo) en él.
+enum OrigenRecurso {
+  CONJUNTO
+  EMPRESA
+}
+
+enum OrigenNecesidadRecurso {
+  PLAN_PREVENTIVA
+  MANUAL
+}
+
 enum EstadoAprobacionActivo {
   PENDIENTE
   APROBADA
@@ -520,6 +554,13 @@ model Empresa {
   nit               String @unique
   limiteHorasSemana Int    @default(42)
 
+  // Agenda de recursos: días (0=domingo..6=sábado) en que la empresa entrega y
+  // recoge maquinaria/herramientas prestadas a los conjuntos. Vacío = la
+  // empresa trabaja "por horas" y solo se aplica `margenTrasladoMinutos`
+  // antes y después de cada uso como tiempo de traslado.
+  diasEntregaRecursos   Int[] @default([1, 3, 6])
+  margenTrasladoMinutos Int   @default(0)
+
   // Roles
   gerentes         Gerente[]
   jefesOperaciones JefeOperaciones[]
@@ -558,8 +599,10 @@ model Empresa {
   turnosExtra         TurnoExtra[]
 
   // Catálogo operativo: categorías de tarea y perfiles (capacidades)
-  categoriasTarea  CategoriaTarea[]
+  categoriasTarea    CategoriaTarea[]
   perfilesOperativos PerfilOperativo[]
+
+  reservasRecurso ReservaRecurso[]
 
   @@map("Empresa")
 }
@@ -777,10 +820,10 @@ model VisitaSupervisor {
   horaEntrada DateTime
   horaSalida  DateTime?
 
-  latitudEntrada  Decimal? @db.Decimal(10, 7)
-  longitudEntrada Decimal? @db.Decimal(10, 7)
-  latitudSalida   Decimal? @db.Decimal(10, 7)
-  longitudSalida  Decimal? @db.Decimal(10, 7)
+  latitudEntrada         Decimal? @db.Decimal(10, 7)
+  longitudEntrada        Decimal? @db.Decimal(10, 7)
+  latitudSalida          Decimal? @db.Decimal(10, 7)
+  longitudSalida         Decimal? @db.Decimal(10, 7)
   distanciaEntradaMetros Int?
   distanciaSalidaMetros  Int?
 
@@ -890,9 +933,9 @@ model Conjunto {
   // `radioAsistenciaMetros` metros. `ubicacionMapsUrl` es el enlace de Google
   // Maps que se pegó (latitud/longitud salen de ahí).
   ubicacionMapsUrl      String?
-  latitud               Decimal?  @db.Decimal(10, 7)
-  longitud              Decimal?  @db.Decimal(10, 7)
-  radioAsistenciaMetros Int       @default(150)
+  latitud               Decimal? @db.Decimal(10, 7)
+  longitud              Decimal? @db.Decimal(10, 7)
+  radioAsistenciaMetros Int      @default(150)
 
   // Overrides / maquinaria
   limiteHorasSemanaOverride  Int?
@@ -908,6 +951,7 @@ model Conjunto {
   pedidos                    PedidoApp[]
   configPuntos               ConfigPuntosConjunto?
   movimientosPuntos          MovimientoPuntos[]
+  reservasRecurso            ReservaRecurso[]
 
   // Plan Esperanza
   planEsperanzaConfig PlanEsperanzaConfig?
@@ -982,9 +1026,9 @@ model ConjuntoNecesidadOperario {
   // `trabajaFestivos` es true, la plaza SÍ recibe tareas en un festivo,
   // dentro de esta franja (obligatoria en ese caso). Si es false, un
   // festivo es día no laborable para esta plaza, sin importar el rol.
-  trabajaFestivos      Boolean @default(false)
-  festivoHoraApertura  String?
-  festivoHoraCierre    String?
+  trabajaFestivos       Boolean @default(false)
+  festivoHoraApertura   String?
+  festivoHoraCierre     String?
   festivoDescansoInicio String?
   festivoDescansoFin    String?
 
@@ -1017,9 +1061,9 @@ model ConjuntoNecesidadOperario {
   perfil   PerfilOperativo? @relation(fields: [perfilId], references: [id], onDelete: Restrict)
   perfilId Int?
 
-  @@index([perfilId])
   @@unique([conjuntoId, etiqueta])
   @@unique([conjuntoId, operarioId])
+  @@index([perfilId])
   @@index([conjuntoId, activo])
   @@index([operarioId])
   @@map("ConjuntoNecesidadOperario")
@@ -1037,6 +1081,9 @@ model CategoriaTarea {
   nombre            String
   ordenProgramacion Int      @default(100)
   colorHex          String?
+  // Clave del ícono que identifica la categoría en el cronograma (ver
+  // utils/categoriaIconos.ts). Null = la app sugiere uno por el nombre.
+  icono             String?
   palabrasClave     String[] @default([])
   activa            Boolean  @default(true)
 
@@ -1267,6 +1314,7 @@ model Herramienta {
   usosTarea      UsoHerramienta[]
   solicitudItems SolicitudHerramientaItem[]
   itemsFisicos   HerramientaItem[]
+  necesidades    NecesidadRecursoTarea[]
 
   @@unique([empresaId, nombre, unidad])
   @@index([empresaId, nombreNormalizado])
@@ -1317,6 +1365,7 @@ model HerramientaItem {
 
   asignaciones HerramientaItemConjunto[]
   usos         UsoHerramienta[]
+  reservas     ReservaRecurso[]
 
   @@unique([empresaId, codigoInterno])
   @@index([empresaId, herramientaId, estadoAprobacion, estado])
@@ -1608,6 +1657,7 @@ model Maquinaria {
   operarioId           String?
   solicitudMaquinarias SolicitudMaquinaria[]
   usoMaquinarias       UsoMaquinaria[]
+  reservas             ReservaRecurso[]
 
   @@unique([empresaId, codigoInterno])
   @@index([empresaId, tipoCatalogoId, estadoAprobacion, estado])
@@ -1641,6 +1691,7 @@ model TipoMaquinariaCatalogo {
   fusionadoEn   TipoMaquinariaCatalogo?  @relation("TipoMaquinariaFusion", fields: [fusionadoEnId], references: [id], onDelete: SetNull)
   aliases       TipoMaquinariaCatalogo[] @relation("TipoMaquinariaFusion")
   maquinarias   Maquinaria[]
+  necesidades   NecesidadRecursoTarea[]
 
   @@unique([empresaId, nombreNormalizado])
   @@index([empresaId, activo, estadoAprobacion])
@@ -1693,6 +1744,123 @@ model UsoMaquinaria {
 
   @@index([tareaId])
   @@index([maquinariaId])
+}
+
+/**
+ * =========================================
+ * MODELOS - AGENDA DE RECURSOS (necesidad vs reserva)
+ * =========================================
+ * Capa de planificación sobre el inventario existente (Maquinaria /
+ * HerramientaItem). No crea activos: solo registra QUÉ necesita una tarea
+ * (NecesidadRecursoTarea) y QUÉ unidad física quedó comprometida y cuándo
+ * (ReservaRecurso). Ver docs/agenda-recursos.md.
+ */
+
+/// Una fila por tarea publicada × tipo de recurso requerido. Se materializa al
+/// publicar el cronograma desde Tarea.maquinariaPlanJson/herramientasPlanJson
+/// (o al crear una correctiva con recursos). Exactamente uno de
+/// tipoMaquinariaId / herramientaId según `clase` (CHECK en la migración).
+model NecesidadRecursoTarea {
+  id Int @id @default(autoincrement())
+
+  tarea   Tarea @relation(fields: [tareaId], references: [id], onDelete: Cascade)
+  tareaId Int
+
+  clase ClaseRecurso
+
+  tipoMaquinaria   TipoMaquinariaCatalogo? @relation(fields: [tipoMaquinariaId], references: [id], onDelete: Restrict)
+  tipoMaquinariaId Int?
+  herramienta      Herramienta?            @relation(fields: [herramientaId], references: [id], onDelete: Restrict)
+  herramientaId    Int?
+
+  cantidad    Int                    @default(1)
+  obligatorio Boolean                @default(true)
+  origen      OrigenNecesidadRecurso @default(PLAN_PREVENTIVA)
+
+  creadoEn DateTime @default(now())
+
+  reservas ReservaRecurso[]
+
+  @@unique([tareaId, tipoMaquinariaId])
+  @@unique([tareaId, herramientaId])
+  @@index([tipoMaquinariaId])
+  @@index([herramientaId])
+  @@map("NecesidadRecursoTarea")
+}
+
+/// Compromiso de UNA unidad física en una ventana de tiempo. Nunca se borra:
+/// se cancela o se finaliza, para conservar el histórico.
+///
+/// Dos restricciones de exclusión (SQL en la migración, Prisma no las modela)
+/// impiden la doble reserva aunque dos usuarios reserven a la vez:
+///  1. misma unidad + uso [usoInicio, usoFin) solapado (salvo PRESTAMO);
+///  2. misma unidad + conjunto distinto + bloqueo [bloqueoInicio, bloqueoFin)
+///     solapado (incluye la ventana de entrega/recogida o traslado).
+model ReservaRecurso {
+  id Int @id @default(autoincrement())
+
+  empresa   Empresa @relation(fields: [empresaId], references: [nit], onDelete: Cascade)
+  empresaId String
+
+  clase ClaseRecurso
+
+  maquinaria        Maquinaria?      @relation(fields: [maquinariaId], references: [id], onDelete: Restrict)
+  maquinariaId      Int?
+  herramientaItem   HerramientaItem? @relation(fields: [herramientaItemId], references: [id], onDelete: Restrict)
+  herramientaItemId Int?
+
+  tipo   TipoReservaRecurso   @default(TAREA)
+  estado EstadoReservaRecurso @default(RESERVADA)
+  origen OrigenRecurso
+
+  // Conjunto destino. null = bodega de la empresa (p. ej. mantenimiento).
+  conjunto   Conjunto? @relation(fields: [conjuntoId], references: [nit], onDelete: SetNull)
+  conjuntoId String?
+
+  tarea       Tarea?                 @relation(fields: [tareaId], references: [id], onDelete: SetNull)
+  tareaId     Int?
+  necesidad   NecesidadRecursoTarea? @relation(fields: [necesidadId], references: [id], onDelete: SetNull)
+  necesidadId Int?
+
+  // Horas reales de uso (las de la tarea).
+  usoInicio     DateTime
+  usoFin        DateTime
+  // Ventana física en que la unidad está comprometida con el conjunto:
+  // = uso para recursos del conjunto; entrega→recogida (o uso ± margen) para
+  // recursos de la empresa.
+  bloqueoInicio DateTime
+  bloqueoFin    DateTime
+
+  // Snapshots para que el histórico sobreviva a borrados/cambios.
+  recursoEtiqueta  String
+  tareaDescripcion String?
+  conjuntoNombre   String?
+  responsablesJson Json?
+
+  observacion       String?
+  motivoCancelacion String?
+
+  // Vínculo al préstamo de inventario (MaquinariaConjunto /
+  // HerramientaItemConjunto) cuando tipo = PRESTAMO.
+  prestamoMaquinariaId  Int?
+  prestamoHerramientaId Int?
+
+  creadoPorId    String?
+  creadoEn       DateTime  @default(now())
+  canceladoPorId String?
+  canceladoEn    DateTime?
+  finalizadaEn   DateTime?
+  actualizadoEn  DateTime  @updatedAt
+
+  @@index([maquinariaId, bloqueoInicio])
+  @@index([herramientaItemId, bloqueoInicio])
+  @@index([empresaId, estado, bloqueoInicio])
+  @@index([conjuntoId, usoInicio])
+  @@index([tareaId])
+  @@index([necesidadId])
+  @@index([prestamoMaquinariaId])
+  @@index([prestamoHerramientaId])
+  @@map("ReservaRecurso")
 }
 
 /**
@@ -1826,8 +1994,8 @@ model Tarea {
 
   // Copia (snapshot) de la categoría/orden de la definición al generar, para
   // ordenar el día y conservar el historial aunque la definición cambie.
-  categoriaId      Int?
-  ordenEnCategoria Int?
+  categoriaId               Int?
+  ordenEnCategoria          Int?
   // Reasignación automática por capacidades: la plaza prevista originalmente
   // cuando el dueño no tenía espacio y otro perfil compatible la ejecutó.
   reasignadaAutomaticamente Boolean @default(false)
@@ -1860,6 +2028,11 @@ model Tarea {
   usoHerramientas      UsoHerramienta[]
   herramientasPlanJson Json?
   maquinariaConjuntos  MaquinariaConjunto[]
+
+  // Agenda de recursos: necesidades materializadas al publicar y reservas de
+  // unidades físicas (ver ReservaRecurso).
+  necesidadesRecurso NecesidadRecursoTarea[]
+  reservasRecurso    ReservaRecurso[]
 
   reprogramada           Boolean   @default(false)
   reprogramadaEn         DateTime?
@@ -2258,10 +2431,10 @@ model PedidoApp {
   // administrador/gerente lo revisa DENTRO de la app (no en WordPress) y
   // recien ahi puede pasar el pedido a PAGADO -ver el guard en
   // CommerceLifecycleService.transicionar.
-  direccionEntrega    String?
-  metodoPago          String?
-  comprobanteUrl      String?
-  comprobanteSubidoEn DateTime?
+  direccionEntrega        String?
+  metodoPago              String?
+  comprobanteUrl          String?
+  comprobanteSubidoEn     DateTime?
   // Lectura automatica (OCR) del comprobante -ayuda al revisor, no confirma el
   // pago por si sola-. Referencia y hash sirven para detectar el mismo
   // comprobante reutilizado en otro pedido.
@@ -2301,8 +2474,8 @@ model PedidoAppItem {
   pedido   PedidoApp @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
   pedidoId Int
 
-  wooProductId       Int?
-  wooVariationId     Int?
+  wooProductId        Int?
+  wooVariationId      Int?
   // Factor de conversion declarado EN WOOCOMMERCE (campo propio del plugin,
   // ej. "este tarro trae 60 pastillas") al momento de comprar. Se guarda
   // aqui -no se relee de Woo durante la recepcion- para no depender de una
@@ -2311,17 +2484,17 @@ model PedidoAppItem {
   // edite el campo en WordPress. Null = Woo no declaro nada para este
   // producto/variacion; en ese caso se usa el factor manual del Insumo
   // (Insumo.wooFactorConversion), como antes de este campo existir.
-  wooFactorInventario Decimal? @db.Decimal(12, 4)
-  nombreProducto     String
-  sku                String?
-  cantidad           Decimal   @db.Decimal(14, 4)
-  precioUnitario     Decimal   @db.Decimal(14, 2)
-  subtotal           Decimal   @db.Decimal(14, 2)
-  pagarAhora         Decimal   @default(0) @db.Decimal(14, 2)
-  fechaServicio      DateTime? @db.Date
-  turnoServicio      String?
-  opcionPagoServicio String?
-  addonsServicio     Json?
+  wooFactorInventario Decimal?  @db.Decimal(12, 4)
+  nombreProducto      String
+  sku                 String?
+  cantidad            Decimal   @db.Decimal(14, 4)
+  precioUnitario      Decimal   @db.Decimal(14, 2)
+  subtotal            Decimal   @db.Decimal(14, 2)
+  pagarAhora          Decimal   @default(0) @db.Decimal(14, 2)
+  fechaServicio       DateTime? @db.Date
+  turnoServicio       String?
+  opcionPagoServicio  String?
+  addonsServicio      Json?
 
   insumo   Insumo? @relation(fields: [insumoId], references: [id], onDelete: SetNull)
   insumoId Int?
@@ -2365,8 +2538,8 @@ model PedidoAppEstadoHistorico {
  * mover el pedido a PAGADO. Ver docs/pagos-factus.md.
  */
 model PagoCobro {
-  id         Int       @id @default(autoincrement())
-  proveedor  String    @default("factus")
+  id            Int       @id @default(autoincrement())
+  proveedor     String    @default("factus")
   // "reference_code" enviado a Factus: unico, opaco (sin datos personales),
   // uno por intento de cobro. Factus lo usa como clave de idempotencia.
   referenceCode String    @unique
@@ -2378,26 +2551,26 @@ model PagoCobro {
   wooOrderId  String?
   usuarioId   String?
 
-  montoEsperado  Decimal @db.Decimal(14, 2)
+  montoEsperado  Decimal  @db.Decimal(14, 2)
   montoProveedor Decimal? @db.Decimal(14, 2)
-  moneda         String  @default("COP")
+  moneda         String   @default("COP")
 
   estado          EstadoCobro @default(CREADO)
   // Ultimo status crudo devuelto por Factus (started|ready|paid|failed|rejected).
   estadoProveedor String?
   qrBase64        String?
 
-  expiraLocalEn       DateTime?
-  proximaVerificacion DateTime?
-  intentosVerificacion Int      @default(0)
+  expiraLocalEn        DateTime?
+  proximaVerificacion  DateTime?
+  intentosVerificacion Int       @default(0)
   // Reclamo atomico del worker: evita que dos instancias consulten el mismo
   // cobro a la vez (ver PagoReconciler).
-  lockedUntil         DateTime?
+  lockedUntil          DateTime?
 
   pagadoDetectadoEn       DateTime?
   // Si Factus confirmo el pago pero fallo la sincronizacion con WooCommerce
   // despues del commit, el worker la reintenta con este flag.
-  pendienteSincronizarWoo Boolean @default(false)
+  pendienteSincronizarWoo Boolean   @default(false)
 
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt

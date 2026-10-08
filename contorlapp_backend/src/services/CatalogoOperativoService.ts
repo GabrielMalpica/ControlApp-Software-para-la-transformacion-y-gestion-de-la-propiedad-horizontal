@@ -8,6 +8,7 @@ import {
   rolesNormalizados,
 } from "../utils/perfilOperativo";
 import { sugerirCategoriaPorTexto } from "../utils/sugerenciaCategoria";
+import { limpiarIconoCategoria, type IconoCategoria } from "../utils/categoriaIconos";
 
 type Cliente = PrismaClient | Prisma.TransactionClient;
 
@@ -21,31 +22,36 @@ function httpError(status: number, message: string) {
 export const CATEGORIAS_POR_DEFECTO: ReadonlyArray<{
   nombre: string;
   colorHex: string;
+  icono: IconoCategoria;
   palabrasClave: string[];
 }> = [
   {
     nombre: "Mantenimiento de piscinas",
     colorHex: "#0288D1",
+    icono: "piscina",
     palabrasClave: ["piscin", "shock", "choque", "choke", "aspir", "clorar", "cloro", "vidrios de encerramiento", "parametros", "cepillar paredes y fondo"],
   },
-  { nombre: "Poda", colorHex: "#558B2F", palabrasClave: ["poda", "podar", "deshierb", "deshoj", "cesped", "corte de"] },
+  { nombre: "Poda", colorHex: "#558B2F", icono: "arboles", palabrasClave: ["poda", "podar", "deshierb", "deshoj", "cesped", "corte de"] },
   {
     nombre: "Jardinería",
     colorHex: "#2E7D32",
+    icono: "jardin",
     palabrasClave: ["jardin", "riego", "fertiliz", "herbicida", "plaga", "matera", "zona verde", "zonas verdes", "maleza"],
   },
   {
     nombre: "Aseo",
-    colorHex: "#8E24AA",
+    colorHex: "#1F6FB2",
+    icono: "limpieza",
     palabrasClave: ["aseo", "barr", "trape", "limpi", "lav", "desinfec", "despapel", "shut", "vaciar", "retirar residuos", "recoger residuos", "cepill", "desempolv"],
   },
   {
     nombre: "Mantenimientos básicos",
     colorHex: "#EF6C00",
+    icono: "mantenimiento",
     palabrasClave: ["mantenimiento general", "inspecc", "revis", "verific", "extintor", "repar"],
   },
-  { nombre: "Salvamento acuático", colorHex: "#D32F2F", palabrasClave: ["salvavidas", "salvamento"] },
-  { nombre: "Actividades de supervisión", colorHex: "#455A64", palabrasClave: ["supervis"] },
+  { nombre: "Salvamento acuático", colorHex: "#D32F2F", icono: "salvamento", palabrasClave: ["salvavidas", "salvamento"] },
+  { nombre: "Actividades de supervisión", colorHex: "#455A64", icono: "supervision", palabrasClave: ["supervis"] },
 ];
 
 const HEX = /^#[0-9A-Fa-f]{6}$/;
@@ -91,6 +97,7 @@ export class CatalogoOperativoService {
         nombre: c.nombre,
         ordenProgramacion: i + 1,
         colorHex: c.colorHex,
+        icono: c.icono,
         palabrasClave: c.palabrasClave,
       })),
       skipDuplicates: true,
@@ -116,7 +123,12 @@ export class CatalogoOperativoService {
 
   async crearCategoria(
     empresaId: string,
-    dto: { nombre: string; colorHex?: string | null; palabrasClave?: string[] },
+    dto: {
+      nombre: string;
+      colorHex?: string | null;
+      icono?: string | null;
+      palabrasClave?: string[];
+    },
   ) {
     await this.asegurarCategoriasPorDefecto(empresaId);
     const nombre = limpiarNombre(dto.nombre, "El nombre");
@@ -131,6 +143,7 @@ export class CatalogoOperativoService {
         nombre,
         ordenProgramacion: (ultimo._max.ordenProgramacion ?? 0) + 1,
         colorHex: limpiarColor(dto.colorHex),
+        icono: limpiarIconoCategoria(dto.icono),
         palabrasClave: limpiarPalabrasClave(dto.palabrasClave),
       },
     });
@@ -142,6 +155,7 @@ export class CatalogoOperativoService {
     dto: {
       nombre?: string;
       colorHex?: string | null;
+      icono?: string | null;
       palabrasClave?: string[];
       activa?: boolean;
     },
@@ -156,6 +170,7 @@ export class CatalogoOperativoService {
       data.nombre = nombre;
     }
     if (dto.colorHex !== undefined) data.colorHex = limpiarColor(dto.colorHex);
+    if (dto.icono !== undefined) data.icono = limpiarIconoCategoria(dto.icono);
     if (dto.palabrasClave !== undefined) data.palabrasClave = limpiarPalabrasClave(dto.palabrasClave);
     if (dto.activa !== undefined) data.activa = dto.activa;
     return this.prisma.categoriaTarea.update({ where: { id }, data });

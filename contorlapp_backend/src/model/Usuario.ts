@@ -125,6 +125,7 @@ export const EditarUsuarioDTO = z.object({
     .optional(),
   contrasena: z.string().min(8).optional(),
   rol: z.nativeEnum(Rol).optional(),
+  conjuntoId: z.string().trim().min(3).optional(),
   telefono: z.coerce.bigint().optional(),
   fechaNacimiento: z.coerce.date().optional(),
   direccion: z.string().optional().nullable(),

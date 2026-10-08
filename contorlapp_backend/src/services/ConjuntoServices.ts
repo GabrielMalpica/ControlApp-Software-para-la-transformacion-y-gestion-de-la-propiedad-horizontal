@@ -257,6 +257,42 @@ export class ConjuntoService {
     }
   }
 
+  async recuperarAdministradorSinConjunto(administradorId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const conjunto = await tx.conjunto.findUnique({
+        where: { nit: this.conjuntoId },
+        select: { administradorId: true },
+      });
+      if (!conjunto) throw new Error("Conjunto no encontrado.");
+      if (conjunto.administradorId) {
+        throw new Error("El conjunto ya tiene un administrador asignado.");
+      }
+
+      const administrador = await tx.administrador.findUnique({
+        where: { id: administradorId },
+        select: {
+          id: true,
+          usuario: { select: { rol: true } },
+          conjuntos: { select: { nit: true } },
+        },
+      });
+      if (!administrador || administrador.usuario.rol !== "administrador") {
+        throw new Error("No existe una cuenta de administrador con esa cédula.");
+      }
+      if (administrador.conjuntos.length > 0) {
+        throw new Error(
+          "La cuenta ya está asignada a un conjunto y no se puede recuperar desde aquí.",
+        );
+      }
+
+      await tx.conjunto.update({
+        where: { nit: this.conjuntoId },
+        data: { administrador: { connect: { id: administradorId } } },
+      });
+      return { ok: true };
+    }, { isolationLevel: "Serializable" });
+  }
+
   async eliminarAdministrador() {
     try {
       await this.prisma.conjunto.update({

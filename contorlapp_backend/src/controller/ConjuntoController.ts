@@ -14,6 +14,9 @@ const OperarioIdSchema = z.object({
 const AdminIdSchema = z.object({
   administradorId: z.coerce.number().int().positive(),
 });
+const AdminCedulaSchema = z.object({
+  administradorId: z.string().trim().min(1),
+});
 const MaquinariaIdSchema = z.object({
   maquinariaId: z.coerce.number().int().positive(),
 });
@@ -193,6 +196,18 @@ export class ConjuntoController {
         return;
       }
       res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  recuperarAdministradorSinConjunto: RequestHandler = async (req, res, next) => {
+    try {
+      const conjuntoId = resolveConjuntoId(req);
+      const service = new ConjuntoService(prisma, conjuntoId);
+      const body = AdminCedulaSchema.parse(req.body);
+      await service.recuperarAdministradorSinConjunto(body.administradorId);
+      res.status(200).json({ ok: true });
     } catch (err) {
       next(err);
     }

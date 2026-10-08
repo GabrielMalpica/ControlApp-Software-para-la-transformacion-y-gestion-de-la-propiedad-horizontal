@@ -17,6 +17,7 @@ conjuntoRouter.put("/conjuntos/:nit/activo", requirePermission("conjuntos.gestio
 
 conjuntoRouter.post("/conjuntos/:nit/operarios", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), c.asignarOperario);
 conjuntoRouter.put("/conjuntos/:nit/administrador", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), c.asignarAdministrador);
+conjuntoRouter.post("/conjuntos/:nit/administrador/recuperar", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), c.recuperarAdministradorSinConjunto);
 conjuntoRouter.delete("/conjuntos/:nit/administrador", requirePermission("conjuntos.gestionar"), requireConjuntoScope("nit"), c.eliminarAdministrador);
 
 conjuntoRouter.post("/conjuntos/:nit/maquinaria", requirePermission("maquinaria.asignar"), requireConjuntoScope("nit"), c.agregarMaquinaria);

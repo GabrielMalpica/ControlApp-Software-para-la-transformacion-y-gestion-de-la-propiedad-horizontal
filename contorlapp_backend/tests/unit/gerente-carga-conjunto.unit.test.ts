@@ -39,7 +39,11 @@ function makePrisma(existingOperario = true) {
   const prisma: any = {
     $transaction: jest.fn(),
     conjunto: {
-      findUnique: jest.fn().mockResolvedValue(null),
+      // El duplicado (select nit) no existe; la validación del plan de
+      // recursos (select empresaId) ve el conjunto creado en la transacción.
+      findUnique: jest.fn().mockImplementation(({ select }: any) =>
+        Promise.resolve(select?.empresaId ? { empresaId: "EMP-1" } : null),
+      ),
       create: jest.fn().mockResolvedValue({
         nit: "900123456-7",
         nombre: "Conjunto Mirador del Parque",
@@ -130,7 +134,12 @@ function makePrisma(existingOperario = true) {
     elemento: {
       create: jest.fn().mockImplementation(() => Promise.resolve({ id: elementId++ })),
     },
-    herramienta: { findMany: jest.fn().mockResolvedValue([]) },
+    herramienta: {
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockImplementation(({ where }: any) =>
+        Promise.resolve(where?.id?.in?.length ?? 0),
+      ),
+    },
     conjuntoHerramientaStock: { createMany: jest.fn() },
     definicionTareaPreventiva: {
       create: jest.fn().mockImplementation(({ data }: any) =>
@@ -333,7 +342,7 @@ describe("GerenteService.cargarConjuntoMasivo", () => {
               cantidad: 1,
             }),
           ],
-          herramientasPlanJson: [{ herramientaId: 2, cantidad: 2 }],
+          herramientasPlanJson: [{ herramientaId: 2, cantidad: 2, obligatorio: true }],
         }),
       }),
     );

@@ -3,13 +3,18 @@ import { TipoMaquinaria } from "@prisma/client";
 
 /**
  * Una definicion preventiva declara QUE TIPO de maquina necesita, no una maquina
- * concreta. La maquina real se asigna despues, para toda la empresa, desde el
- * cronograma de maquinaria.
+ * concreta. La maquina real se asigna despues desde la agenda de recursos.
+ *
+ * El tipo se expresa con `tipoCatalogoId` (TipoMaquinariaCatalogo de la
+ * empresa). Los planes antiguos solo traen `tipo` (enum legado), que al
+ * publicar se resuelve al catalogo por `tipoLegacy`.
  */
 export type NecesidadMaquinaria = {
-  tipo: TipoMaquinaria;
+  tipoCatalogoId: number | null;
+  tipo: TipoMaquinaria | null;
   cantidad: number;
-  /** Preselección en el cronograma de maquinaria. No compromete la máquina. */
+  obligatorio: boolean;
+  /** Preselección en la agenda de recursos. No compromete la máquina. */
   maquinariaSugeridaId: number | null;
 };
 
@@ -25,12 +30,20 @@ function normalizarTipo(value: unknown): TipoMaquinaria | null {
   return TIPOS_VALIDOS.has(texto) ? (texto as TipoMaquinaria) : null;
 }
 
+function aBooleano(value: unknown, porDefecto: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  if (value === "false" || value === 0) return false;
+  if (value === "true" || value === 1) return true;
+  return porDefecto;
+}
+
 /**
  * Lee `maquinariaPlanJson` de una definicion o de una tarea.
  *
- * Tolerante con el historico: acepta el formato nuevo `{tipo, cantidad,
- * maquinariaSugeridaId}` y el antiguo `{maquinariaId}`. Los items sin tipo
- * resoluble se descartan, porque sin tipo no hay necesidad que asignar.
+ * Tolerante con el historico: acepta `{tipoCatalogoId, cantidad, obligatorio}`,
+ * `{tipo, cantidad, maquinariaSugeridaId}` y el antiguo `{maquinariaId}`. Los
+ * items sin tipo resoluble se descartan, porque sin tipo no hay necesidad que
+ * asignar. Sin `obligatorio`, la necesidad es obligatoria.
  */
 export function parseNecesidadesMaquinaria(json: unknown): NecesidadMaquinaria[] {
   if (!Array.isArray(json)) return [];
@@ -41,12 +54,15 @@ export function parseNecesidadesMaquinaria(json: unknown): NecesidadMaquinaria[]
     if (!item || typeof item !== "object") continue;
 
     const raw = item as Record<string, unknown>;
+    const tipoCatalogoId = aEntero(raw.tipoCatalogoId);
     const tipo = normalizarTipo(raw.tipo);
-    if (!tipo) continue;
+    if (tipoCatalogoId == null && !tipo) continue;
 
     salida.push({
+      tipoCatalogoId,
       tipo,
       cantidad: aEntero(raw.cantidad) ?? 1,
+      obligatorio: aBooleano(raw.obligatorio, true),
       maquinariaSugeridaId:
         aEntero(raw.maquinariaSugeridaId) ?? aEntero(raw.maquinariaId),
     });
@@ -68,22 +84,30 @@ export function parseMaquinariaIdsComprometidos(json: unknown): number[] {
       if (!item || typeof item !== "object") return null;
       const raw = item as Record<string, unknown>;
       // Si el item ya declara un tipo, `maquinariaId` es solo una sugerencia.
-      if (normalizarTipo(raw.tipo)) return null;
+      if (normalizarTipo(raw.tipo) || aEntero(raw.tipoCatalogoId)) return null;
       return aEntero(raw.maquinariaId);
     })
     .filter((id): id is number => id != null);
 }
 
+/**
+ * Clave estable de un tipo dentro de un plan: el catalogo si se conoce y, si no,
+ * el enum legado. Sirve para sumar cantidades repetidas del mismo tipo.
+ */
+export function claveTipoNecesidad(necesidad: NecesidadMaquinaria): string {
+  return necesidad.tipoCatalogoId != null
+    ? `cat:${necesidad.tipoCatalogoId}`
+    : `enum:${necesidad.tipo}`;
+}
+
 /** Suma las cantidades por tipo de un plan de maquinaria. */
 export function agruparNecesidadesPorTipo(
   necesidades: NecesidadMaquinaria[],
-): Map<TipoMaquinaria, number> {
-  const salida = new Map<TipoMaquinaria, number>();
+): Map<string, number> {
+  const salida = new Map<string, number>();
   for (const necesidad of necesidades) {
-    salida.set(
-      necesidad.tipo,
-      (salida.get(necesidad.tipo) ?? 0) + necesidad.cantidad,
-    );
+    const clave = claveTipoNecesidad(necesidad);
+    salida.set(clave, (salida.get(clave) ?? 0) + necesidad.cantidad);
   }
   return salida;
 }

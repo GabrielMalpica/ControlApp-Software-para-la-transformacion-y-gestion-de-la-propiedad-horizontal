@@ -52,8 +52,10 @@ export interface DefinicionTareaPreventivaDominio {
 
   maquinariaPlanJson?:
     | {
-        tipo: TipoMaquinaria;
+        tipoCatalogoId?: number | null;
+        tipo?: TipoMaquinaria | null;
         cantidad: number;
+        obligatorio?: boolean;
         maquinariaSugeridaId?: number | null;
       }[]
     | null;
@@ -62,6 +64,7 @@ export interface DefinicionTareaPreventivaDominio {
     | {
         herramientaId: number;
         cantidad?: number;
+        obligatorio?: boolean;
       }[]
     | null;
 
@@ -91,23 +94,45 @@ const InsumoPlanItemDTO = z.object({
  * lo vuelve a parsear, así que el esquema tiene que aceptar su propia salida
  * (donde `maquinariaSugeridaId` ya es `null`).
  */
+/**
+ * El tipo se declara con `tipoCatalogoId` (catálogo de la empresa, admite
+ * tipos propios como "Mampara"). `tipo` (enum legado) se sigue aceptando para
+ * clientes antiguos; al publicar se resuelve al catálogo por `tipoLegacy`.
+ */
 const MaquinariaPlanItemDTO = z
   .object({
-    tipo: z.nativeEnum(TipoMaquinaria),
+    tipoCatalogoId: z.number().int().positive().nullish(),
+    tipo: z.nativeEnum(TipoMaquinaria).nullish(),
     cantidad: z.coerce.number().int().min(1).default(1),
+    obligatorio: z.boolean().default(true),
     maquinariaSugeridaId: z.number().int().positive().nullish(),
     maquinariaId: z.number().int().positive().nullish(),
   })
-  .transform(({ tipo, cantidad, maquinariaSugeridaId, maquinariaId }) => ({
-    tipo,
-    cantidad,
-    maquinariaSugeridaId: maquinariaSugeridaId ?? maquinariaId ?? null,
-  }));
+  .refine((item) => item.tipoCatalogoId != null || item.tipo != null, {
+    message: "Cada maquinaria requerida debe indicar su tipo.",
+  })
+  .transform(
+    ({ tipoCatalogoId, tipo, cantidad, obligatorio, maquinariaSugeridaId, maquinariaId }) => ({
+      tipoCatalogoId: tipoCatalogoId ?? null,
+      tipo: tipo ?? null,
+      cantidad,
+      obligatorio,
+      maquinariaSugeridaId: maquinariaSugeridaId ?? maquinariaId ?? null,
+    }),
+  );
 
-const HerramientaPlanItemDTO = z.object({
-  herramientaId: z.number().int().positive(),
-  cantidad: z.coerce.number().min(0).optional(),
-});
+/** Las herramientas se reservan por unidad física: la cantidad es entera. */
+const HerramientaPlanItemDTO = z
+  .object({
+    herramientaId: z.number().int().positive(),
+    cantidad: z.coerce.number().min(0).optional(),
+    obligatorio: z.boolean().default(true),
+  })
+  .transform(({ herramientaId, cantidad, obligatorio }) => ({
+    herramientaId,
+    cantidad: Math.max(1, Math.ceil(cantidad ?? 1)),
+    obligatorio,
+  }));
 
 /** Crear definición (molde) de tarea preventiva */
 export const CrearDefinicionPreventivaDTO = z

@@ -13,7 +13,8 @@
     "clear-maquinaria": "node ./scripts/clear-maquinaria.js",
     "vincular-preventivas-plazas": "tsx scripts/vincular-preventivas-a-plazas.ts",
     "categorizar-preventivas": "tsx scripts/categorizar-preventivas.ts",
-    "configurar-capacidades-perfiles": "tsx scripts/configurar-capacidades-perfiles.ts"
+    "configurar-capacidades-perfiles": "tsx scripts/configurar-capacidades-perfiles.ts",
+    "migrar-agenda-recursos": "tsx scripts/migrar-agenda-recursos.ts"
   },
   "keywords": [],
   "author": "",

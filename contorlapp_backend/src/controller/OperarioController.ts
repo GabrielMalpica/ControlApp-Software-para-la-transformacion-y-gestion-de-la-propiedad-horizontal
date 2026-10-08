@@ -12,6 +12,12 @@ const TareaIdParam   = z.object({ tareaId: z.coerce.number().int().positive() })
 // Query/body helpers
 const FechaQuery = z.object({ fecha: z.coerce.date() });
 
+// Rango opcional (ISO 8601) para no traer todo el historial del operario.
+const RangoTareasQuery = z.object({
+  desde: z.coerce.date().optional(),
+  hasta: z.coerce.date().optional(),
+});
+
 const AsignarBody = z.object({
   tareaId: z.number().int().positive(),
 });
@@ -190,8 +196,9 @@ export class OperarioController {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
       assertOperarioMatchesSession(req, operarioId);
+      const rango = RangoTareasQuery.parse(req.query);
       const service = new OperarioService(prisma, operarioId);
-      const list = await service.listarTareas();
+      const list = await service.listarTareas(rango);
       res.json(list);
     } catch (err) { next(err); }
   };

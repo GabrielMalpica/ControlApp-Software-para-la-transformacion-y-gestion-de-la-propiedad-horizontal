@@ -258,6 +258,7 @@ router.post("/administradores/reemplazos", requirePermission("usuarios.gestionar
 
 router.delete("/operarios/:operarioId", requirePermission("usuarios.gestionar"), requireResourceScope("operario", "operarioId"), ctrl.eliminarOperario);
 router.delete("/supervisores/:supervisorId", requirePermission("usuarios.gestionar"), requireResourceScope("supervisor", "supervisorId"), ctrl.eliminarSupervisor);
+router.post("/supervisores/:supervisorId/reemplazar", requirePermission("usuarios.gestionar"), requireResourceScope("supervisor", "supervisorId"), ctrl.reemplazarSupervisorYEliminar);
 
 router.delete("/conjuntos/:conjuntoId", requirePermission("conjuntos.gestionar"), requireConjuntoScope("conjuntoId"), ctrl.eliminarConjunto);
 router.delete("/maquinaria/:maquinariaId", requirePermission("maquinaria.asignar"), requireResourceScope("maquinaria", "maquinariaId"), ctrl.eliminarMaquinaria);

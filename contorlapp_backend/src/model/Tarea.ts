@@ -72,6 +72,12 @@ export const CrearTareaDTO = z
       )
       .optional()
       .default([]),
+
+    // Unidades físicas de herramienta (HerramientaItem) a reservar por código.
+    herramientaItemIds: z
+      .array(z.coerce.number().int().positive())
+      .optional()
+      .default([]),
   })
   .superRefine((d, ctx) => {
     // ✅ debe existir al menos uno: fechaFin o duración
@@ -148,6 +154,11 @@ export const EditarTareaDTO = z.object({
 
   operariosIds: z.array(z.string().min(1)).optional(),
   operarioId: z.string().min(1).optional(),
+
+  // Agenda de recursos: si al mover la tarea algún recurso reservado no está
+  // libre, por defecto se rechaza (409 RECURSO_OCUPADO). Con true, el usuario
+  // decide liberar esas reservas (quedan canceladas en el histórico).
+  liberarRecursosOcupados: z.boolean().optional(),
 });
 
 /** Filtros para listar/consultar tareas */

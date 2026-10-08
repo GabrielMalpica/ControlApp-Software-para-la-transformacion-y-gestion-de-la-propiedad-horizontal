@@ -618,6 +618,20 @@ export class GerenteController {
     }
   };
 
+  reemplazarSupervisorYEliminar: RequestHandler = async (req, res, next) => {
+    try {
+      const supervisorId = String(req.params.supervisorId ?? "").trim();
+      if (!supervisorId) throw new Error("Cédula de supervisor obligatoria.");
+      const result = await serviceFor(req).reemplazarSupervisorYEliminar(
+        supervisorId,
+        req.body,
+      );
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  };
+
   eliminarUsuario: RequestHandler = async (req, res, next) => {
     try {
       const { id } = UsuarioIdParam.parse(req.params);

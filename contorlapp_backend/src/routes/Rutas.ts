@@ -4,8 +4,6 @@ import AsistenciaRoutes from "./Asistencia"
 import CatalogoOperativoRoutes from "./CatalogoOperativo"
 import ConjuntoRoutes from "./Conjuntos"
 import CronogramaRoutes from "./Cronograma"
-import CronogramaMaquinariaRoutes from "./CronogramaMaquinaria"
-import CronogramaHerramientaRoutes from "./CronogramaHerramienta"
 import DefinicionPreventivaRoutes from "./DefinicionPreventiva"
 import EmpresaRoutes from "./Empresa"
 import GerenteRoutes from "./Gerente"
@@ -25,7 +23,7 @@ import HerramientasRoutes from "./Herramienta"
 import SolicitudHerramientasRoutes from "./SolicitudHerramienta"
 import HerramientasStockRoutes from "./HerramientaStock"
 import AuthRoutes from "./auth"
-import AgendaRoutes from './Agenda';
+import RecursoAgendaRoutes from "./RecursoAgenda";
 import JefeOperacionesRoutes from './JefeOperaciones'
 import NotificacionesRoutes from "./Notificaciones";
 import PlanEsperanzaRoutes from "./PlanEsperanza";
@@ -39,8 +37,6 @@ rutas.use('/asistencia', AsistenciaRoutes);
 rutas.use('/catalogo-operativo', CatalogoOperativoRoutes);
 rutas.use('/conjunto', ConjuntoRoutes);
 rutas.use('/cronograma', CronogramaRoutes);
-rutas.use('/cronograma-maquinaria', CronogramaMaquinariaRoutes);
-rutas.use('/cronograma-herramienta', CronogramaHerramientaRoutes);
 rutas.use('/definicion-preventiva', DefinicionPreventivaRoutes);
 rutas.use('/empresa', EmpresaRoutes);
 rutas.use('/gerente', GerenteRoutes);
@@ -60,7 +56,7 @@ rutas.use('/herramientas', HerramientasRoutes);
 rutas.use('/solicitud-herramientas', SolicitudHerramientasRoutes);
 rutas.use('/herramientas', HerramientasStockRoutes);
 rutas.use('/auth', AuthRoutes);
-rutas.use('/agenda', AgendaRoutes);
+rutas.use('/recursos', RecursoAgendaRoutes);
 rutas.use('/jefe-operaciones', JefeOperacionesRoutes);
 rutas.use('/notificaciones', NotificacionesRoutes);
 rutas.use('/plan-esperanza', PlanEsperanzaRoutes);

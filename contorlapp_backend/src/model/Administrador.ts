@@ -24,6 +24,7 @@ export type AdministradorPublico = AdministradorDominio;
  */
 export const CrearAdministradorDTO = z.object({
   Id: z.string().min(1, "El id (cédula) del usuario es obligatorio"),
+  conjuntoId: z.string().trim().min(3),
 });
 
 /**

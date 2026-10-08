@@ -14,6 +14,11 @@ import {
 import type { ActorAuditoria } from "../model/Auditoria";
 import { AuditoriaService } from "./AuditoriaService";
 import {
+  cerrarPrestamoEnAgenda,
+  registrarPrestamoEnAgenda,
+  reservasFuturasDeUnidad,
+} from "./ReservaRecursoService";
+import {
   eliminarFotoInventario,
   obtenerFotoInventario,
   subirFotoInventario,
@@ -946,7 +951,18 @@ export class InventarioActivoService {
         datosAntes: before,
         datosDespues: after,
       });
-      return after;
+      // La unidad dañada/en mantenimiento no se puede reservar más; las
+      // reservas que ya tenía se devuelven para que el usuario las cambie (la
+      // agenda las muestra como alerta). No se cancelan solas: es una decisión
+      // logística.
+      const reservasAfectadas =
+        estado === "OPERATIVA"
+          ? []
+          : await reservasFuturasDeUnidad(tx, {
+              clase: kind === "maquinaria" ? "MAQUINARIA" : "HERRAMIENTA",
+              unidadId: id,
+            });
+      return { ...after, reservasAfectadas };
     });
   }
 
@@ -990,9 +1006,21 @@ export class InventarioActivoService {
         ? await tx.maquinariaConjunto.findFirst({ where: { maquinariaId: id, estado: { in: ["RESERVADA", "ACTIVA"] }, fechaInicio: { lt: dto.fechaDevolucionEstimada }, OR: [{ fechaFin: null }, { fechaFin: { gt: dto.fechaInicio } }] } })
         : await tx.herramientaItemConjunto.findFirst({ where: { herramientaItemId: id, estado: { in: ["RESERVADA", "ACTIVA"] }, fechaInicio: { lt: dto.fechaDevolucionEstimada }, OR: [{ fechaFin: null }, { fechaFin: { gt: dto.fechaInicio } }] } });
       if (overlap) throw httpError(409, "El activo ya está prestado o reservado en ese rango.");
-      const assignment = kind === "maquinaria"
+      const assignment: any = kind === "maquinaria"
         ? await tx.maquinariaConjunto.create({ data: { maquinariaId: id, conjuntoId: dto.conjuntoId, tipoTenencia: "PRESTADA", estado: dto.fechaInicio > new Date() ? "RESERVADA" : "ACTIVA", fechaInicio: dto.fechaInicio, fechaDevolucionEstimada: dto.fechaDevolucionEstimada, operarioId: dto.responsableId ?? null, tareaId: dto.tareaId ?? null } })
         : await tx.herramientaItemConjunto.create({ data: { herramientaItemId: id, conjuntoId: dto.conjuntoId, estado: dto.fechaInicio > new Date() ? "RESERVADA" : "ACTIVA", fechaInicio: dto.fechaInicio, fechaDevolucionEstimada: dto.fechaDevolucionEstimada, responsableId: dto.responsableId ?? null, tareaId: dto.tareaId ?? null, creadoPorId: this.actor.id } });
+      // Agenda de recursos: el préstamo ubica la unidad en el conjunto y
+      // bloquea a los demás; falla (409) si choca con reservas de otros.
+      await registrarPrestamoEnAgenda(tx, {
+        empresaId: this.empresaId,
+        clase: kind === "maquinaria" ? "MAQUINARIA" : "HERRAMIENTA",
+        unidadId: id,
+        conjuntoId: dto.conjuntoId,
+        desde: dto.fechaInicio,
+        hasta: dto.fechaDevolucionEstimada,
+        prestamoId: assignment.id,
+        actor: this.actor,
+      });
       await new AuditoriaService(tx).registrarEstricto({ modulo: kind === "maquinaria" ? "INVENTARIO_MAQUINARIA" : "INVENTARIO_HERRAMIENTAS", entidad: kind === "maquinaria" ? "Maquinaria" : "HerramientaItem", entidadId: id, accion: "PRESTAR", empresaId: this.empresaId, conjuntoId: dto.conjuntoId, actor: this.actor, datosDespues: assignment });
       return assignment;
     });
@@ -1011,6 +1039,11 @@ export class InventarioActivoService {
       const closed = kind === "maquinaria"
         ? await tx.maquinariaConjunto.update({ where: { id: assignment.id }, data: { estado: "DEVUELTA", fechaFin: new Date(), tareaId: null } })
         : await tx.herramientaItemConjunto.update({ where: { id: assignment.id }, data: { estado: "DEVUELTA", fechaFin: new Date() } });
+      await cerrarPrestamoEnAgenda(tx, {
+        clase: kind === "maquinaria" ? "MAQUINARIA" : "HERRAMIENTA",
+        prestamoId: assignment.id,
+        actor: this.actor,
+      });
       await new AuditoriaService(tx).registrarEstricto({ modulo: kind === "maquinaria" ? "INVENTARIO_MAQUINARIA" : "INVENTARIO_HERRAMIENTAS", entidad: kind === "maquinaria" ? "Maquinaria" : "HerramientaItem", entidadId: id, accion: "DEVOLVER", empresaId: this.empresaId, conjuntoId: assignment.conjuntoId, actor: this.actor, datosAntes: assignment, datosDespues: closed });
       return closed;
     });
@@ -1099,6 +1132,16 @@ export class InventarioActivoService {
       ? await this.prisma.maquinaria.findFirst({ where: { id, empresaId: this.empresaId } })
       : await this.prisma.herramientaItem.findFirst({ where: { id, empresaId: this.empresaId } });
     if (!before) throw httpError(404, "Activo no encontrado.");
+
+    const reservas = await this.prisma.reservaRecurso.count({
+      where: kind === "maquinaria" ? { maquinariaId: id } : { herramientaItemId: id },
+    });
+    if (reservas > 0) {
+      throw httpError(
+        409,
+        "No se puede eliminar: el activo tiene reservas en la agenda de recursos (histórico). Usa 'Cambiar estado' para retirarlo en su lugar.",
+      );
+    }
 
     const [asignaciones, usos, solicitudes] = kind === "maquinaria"
       ? await Promise.all([

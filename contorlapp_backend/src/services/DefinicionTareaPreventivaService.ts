@@ -52,6 +52,8 @@ import {
   type DatosOrdenProgramacion,
 } from "../utils/ordenProgramacion";
 import { parseMaquinariaIdsComprometidos } from "../utils/maquinariaNecesidades";
+import { materializarNecesidadesDeTareas } from "./ReservaRecursoService";
+import { adjuntarRecursosPlan } from "../utils/recursosPlanTarea";
 import {
   DIAS_ENTREGA_RECOGIDA,
   calcularRangoReserva,
@@ -4165,12 +4167,55 @@ export class DefinicionTareaPreventivaService {
     }
   }
 
+  /**
+   * Los tipos de maquinaria (catalogo) y las herramientas del plan deben ser
+   * de la empresa del conjunto: la necesidad se materializa al publicar y no
+   * puede apuntar a catalogos ajenos.
+   */
+  private async validarPlanRecursos(
+    client: PrismaClient | Prisma.TransactionClient,
+    conjuntoId: string,
+    maquinaria: Array<{ tipoCatalogoId?: number | null }> | null | undefined,
+    herramientas: Array<{ herramientaId: number }> | null | undefined,
+  ) {
+    const tipoIds = Array.from(
+      new Set((maquinaria ?? []).map((m) => m.tipoCatalogoId).filter((id): id is number => id != null)),
+    );
+    const herramientaIds = Array.from(new Set((herramientas ?? []).map((h) => h.herramientaId)));
+    if (!tipoIds.length && !herramientaIds.length) return;
+
+    const conjunto = await client.conjunto.findUnique({
+      where: { nit: conjuntoId },
+      select: { empresaId: true },
+    });
+    const empresaId = conjunto?.empresaId;
+    if (!empresaId) throw new Error("El conjunto no tiene empresa asociada.");
+
+    if (tipoIds.length) {
+      const validos = await client.tipoMaquinariaCatalogo.count({
+        where: { id: { in: tipoIds }, empresaId, activo: true },
+      });
+      if (validos !== tipoIds.length) {
+        throw new Error("Alguno de los tipos de maquinaria seleccionados no existe o está inactivo en el catálogo de la empresa.");
+      }
+    }
+    if (herramientaIds.length) {
+      const validas = await client.herramienta.count({
+        where: { id: { in: herramientaIds }, empresaId },
+      });
+      if (validas !== herramientaIds.length) {
+        throw new Error("Alguna de las herramientas seleccionadas no existe en el catálogo de la empresa.");
+      }
+    }
+  }
+
   private async crearConCliente(
     client: PrismaClient | Prisma.TransactionClient,
     payload: unknown,
   ) {
     const dto = CrearDefinicionPreventivaDTO.parse(payload);
     this.validarProgramacionFrecuencia(dto);
+    await this.validarPlanRecursos(client, dto.conjuntoId, dto.maquinariaPlanJson, dto.herramientasPlanJson);
     if (dto.necesidadesIds?.length) {
       await this.validarNecesidadesDelConjunto(dto.conjuntoId, dto.necesidadesIds);
       await this.validarCompatibilidadHorarioNecesidades({
@@ -4303,7 +4348,7 @@ export class DefinicionTareaPreventivaService {
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
         categoria: {
-          select: { id: true, nombre: true, ordenProgramacion: true, colorHex: true, activa: true },
+          select: { id: true, nombre: true, ordenProgramacion: true, colorHex: true, icono: true, activa: true },
         },
         // El frontend (DefinicionPreventiva.fromJson) solo lee operarios[].id
         // y el supervisorId plano; no necesita la fila Usuario completa.
@@ -4323,7 +4368,7 @@ export class DefinicionTareaPreventivaService {
         ubicacion: true,
         elemento: { include: elementoParentChainInclude },
         categoria: {
-          select: { id: true, nombre: true, ordenProgramacion: true, colorHex: true, activa: true },
+          select: { id: true, nombre: true, ordenProgramacion: true, colorHex: true, icono: true, activa: true },
         },
         operarios: { select: { id: true } },
         necesidades: {
@@ -4347,6 +4392,7 @@ export class DefinicionTareaPreventivaService {
     if (dto.necesidadesIds?.length) {
       await this.validarNecesidadesDelConjunto(conjuntoId, dto.necesidadesIds);
     }
+    await this.validarPlanRecursos(this.prisma, conjuntoId, dto.maquinariaPlanJson, dto.herramientasPlanJson);
 
     const actual: any = await this.prisma.definicionTareaPreventiva.findUnique({
       where: { id },
@@ -5098,29 +5144,30 @@ export class DefinicionTareaPreventivaService {
       return { ok: true, publicadas: 0, reservas: 0 };
     }
 
-    // Publicar solo materializa las tareas y sus necesidades por tipo. La
-    // maquina concreta se reserva despues desde el cronograma de maquinaria,
-    // donde se valida disponibilidad entre todos los conjuntos de la empresa.
-
-    await this.prisma.tarea.updateMany({
-      where: {
-        conjuntoId,
-        borrador: true,
-        periodoAnio: anio,
-        periodoMes: mes,
-        tipo: TipoTarea.PREVENTIVA,
+    // Publicar materializa las tareas y sus NECESIDADES de recursos
+    // (NecesidadRecursoTarea), en la misma transaccion. No reserva ninguna
+    // unidad: la asignacion es manual desde la agenda de recursos, donde se
+    // valida disponibilidad entre todos los conjuntos de la empresa.
+    const tareaIdsPublicadas = borradores.map((tarea) => tarea.id);
+    const necesidades = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.tarea.updateMany({
+          where: { id: { in: tareaIdsPublicadas }, borrador: true },
+          data: { borrador: false },
+        });
+        await (tx as any).preventivaOcurrenciaPlan?.updateMany({
+          where: {
+            conjuntoId,
+            periodoAnio: anio,
+            periodoMes: mes,
+            borrador: true,
+          },
+          data: { borrador: false },
+        });
+        return materializarNecesidadesDeTareas(tx, tareaIdsPublicadas);
       },
-      data: { borrador: false },
-    });
-    await (this.prisma as any).preventivaOcurrenciaPlan?.updateMany({
-      where: {
-        conjuntoId,
-        periodoAnio: anio,
-        periodoMes: mes,
-        borrador: true,
-      },
-      data: { borrador: false },
-    });
+      { timeout: 60_000 },
+    );
 
     await this.auditoria.registrar({
       modulo: ModuloAuditoria.CRONOGRAMA,
@@ -5135,7 +5182,9 @@ export class DefinicionTareaPreventivaService {
       metadataJson: {
         publicadas: borradores.length,
         reservas: 0,
-        tareaIds: borradores.map((tarea: any) => tarea.id),
+        necesidadesRecurso: necesidades.creadas,
+        necesidadesDescartadas: necesidades.descartadas,
+        tareaIds: tareaIdsPublicadas,
       },
     });
 
@@ -5143,6 +5192,7 @@ export class DefinicionTareaPreventivaService {
       ok: true,
       publicadas: borradores.length,
       reservas: 0,
+      necesidadesRecurso: necesidades.creadas,
       excluidasDescartadas: 0,
     };
   }
@@ -8887,17 +8937,29 @@ export class DefinicionTareaPreventivaService {
       select: { id: true, nombre: true, tipo: true, marca: true, estado: true },
     });
 
-    const empresa = await this.prisma.maquinaria.findMany({
-      where: { propietarioTipo: "EMPRESA", estado: "OPERATIVA" },
-      select: {
-        id: true,
-        nombre: true,
-        tipo: true,
-        marca: true,
-        estado: true,
-        empresaId: true,
-      },
+    // Solo la empresa duena del conjunto: sin este filtro se listaban las
+    // maquinas de TODAS las empresas (fuga entre tenants).
+    const conjuntoEmpresa = await this.prisma.conjunto.findUnique({
+      where: { nit: conjuntoId },
+      select: { empresaId: true },
     });
+    const empresa = conjuntoEmpresa?.empresaId
+      ? await this.prisma.maquinaria.findMany({
+          where: {
+            propietarioTipo: "EMPRESA",
+            estado: "OPERATIVA",
+            empresaId: conjuntoEmpresa.empresaId,
+          },
+          select: {
+            id: true,
+            nombre: true,
+            tipo: true,
+            marca: true,
+            estado: true,
+            empresaId: true,
+          },
+        })
+      : [];
 
     const idsInteres = Array.from(
       new Set([...propias.map((m) => m.id), ...empresa.map((m) => m.id)]),
@@ -9361,8 +9423,9 @@ export class DefinicionTareaPreventivaService {
       include: tareaBorradorDetalleInclude,
       orderBy: [{ grupoPlanId: "asc" }, { bloqueIndex: "asc" }, { id: "asc" }],
     });
-    // Color de la categoría para pintar las tarjetas del cronograma.
-    return adjuntarCategoriaCronograma(this.prisma, tareas);
+    // Color de la categoría para pintar las tarjetas del cronograma y
+    // recursos que pide cada tarea (con nombre del tipo).
+    return adjuntarRecursosPlan(this.prisma, await adjuntarCategoriaCronograma(this.prisma, tareas));
   }
 
   async informeMensualActividad(params: {

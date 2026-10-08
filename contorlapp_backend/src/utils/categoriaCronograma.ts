@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
+import { esIconoCategoria } from "./categoriaIconos";
+
 type TareaConCategoria = {
   categoriaId?: number | null;
   definicionId?: number | null;
@@ -9,6 +11,7 @@ export type CategoriaCronograma = {
   categoriaId: number | null;
   categoriaNombre: string | null;
   categoriaColorHex: string | null;
+  categoriaIcono: string | null;
 };
 
 function normalizarColor(valor: string | null | undefined): string | null {
@@ -59,7 +62,7 @@ export async function adjuntarCategoriaCronograma<T extends TareaConCategoria>(
   const categorias = ids.length
     ? await prisma.categoriaTarea.findMany({
         where: { id: { in: ids } },
-        select: { id: true, nombre: true, colorHex: true },
+        select: { id: true, nombre: true, colorHex: true, icono: true },
       })
     : [];
   const porId = new Map(categorias.map((c) => [c.id, c]));
@@ -72,6 +75,7 @@ export async function adjuntarCategoriaCronograma<T extends TareaConCategoria>(
       categoriaId,
       categoriaNombre: categoria?.nombre ?? null,
       categoriaColorHex: normalizarColor(categoria?.colorHex),
+      categoriaIcono: esIconoCategoria(categoria?.icono) ? categoria!.icono : null,
     };
   });
 }

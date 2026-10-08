@@ -18,6 +18,10 @@ import {
 } from "../model/Tarea";
 import { isFestivoDate } from "../utils/schedulerUtils";
 import {
+  aplicarCambioTareaEnRecursos,
+  cancelarReservasDeTareas,
+} from "./ReservaRecursoService";
+import {
   validarIntervaloProgramacion,
   validarOperariosDisponiblesEnFecha,
   validarLimiteSemanalOperarios,
@@ -363,6 +367,7 @@ export class TareaService {
         supervisorId: true,
         fechaInicio: true,
         fechaFin: true,
+        estado: true,
         operarios: { select: { id: true } },
       },
     });
@@ -477,10 +482,31 @@ export class TareaService {
       }
     }
 
-    const actualizada = await prisma.tarea.update({
-      where: { id },
-      data,
-      select: tareaPublicSelect,
+    // Tarea y reservas de recursos cambian juntas: si un recurso reservado
+    // no está libre en el nuevo horario, no se mueve nada (409).
+    const actualizada = await prisma.$transaction(async (tx) => {
+      const t = await tx.tarea.update({
+        where: { id },
+        data,
+        select: tareaPublicSelect,
+      });
+      await aplicarCambioTareaEnRecursos(tx, {
+        tareaId: id,
+        antes: {
+          fechaInicio: actual.fechaInicio,
+          fechaFin: actual.fechaFin,
+          conjuntoId: actual.conjuntoId,
+          estado: actual.estado,
+        },
+        despues: {
+          fechaInicio: fechaInicioFinal ?? actual.fechaInicio,
+          fechaFin: fechaFinFinal ?? actual.fechaFin,
+          conjuntoId: conjuntoIdFinal ?? null,
+          estado: dto.estado ?? actual.estado,
+        },
+        liberarOcupadas: dto.liberarRecursosOcupados === true,
+      });
+      return t;
     });
 
     return toTareaPublica(actualizada);
@@ -592,14 +618,12 @@ export class TareaService {
         data: { tareaId: null },
       });
 
-      const [um, uh, ci, mc] = await Promise.all([
-        prisma.usoMaquinaria.count({ where: { tarea } }),
-        prisma.usoHerramienta.count({ where: { tarea } }),
-        prisma.consumoInsumo.count({ where: { tarea } }),
-        prisma.maquinariaConjunto.count({ where: { tarea } }),
-      ]);
-
-      console.log("refs tarea", { um, uh, ci, mc });
+      // Las reservas de recursos se cancelan (no se borran): el histórico de
+      // la unidad conserva el registro aunque la tarea desaparezca.
+      await cancelarReservasDeTareas(tx, {
+        tareaIds: [id],
+        motivo: "La tarea fue eliminada.",
+      });
 
       // 2) Borrar usos de maquinaria/herramienta ligados a la tarea (FK dura)
       await tx.usoMaquinaria.deleteMany({

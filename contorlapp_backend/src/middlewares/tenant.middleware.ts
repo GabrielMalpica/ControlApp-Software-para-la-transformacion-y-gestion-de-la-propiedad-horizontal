@@ -325,6 +325,7 @@ async function resourceBelongsToEmpresa(
               { supervisor: { empresaId } },
               { operario: { empresaId } },
               { administrador: { conjuntos: { some: { empresaId } } } },
+              { administrador: { conjuntos: { none: {} } } },
               { residente: { conjunto: { empresaId } } },
             ],
           },
