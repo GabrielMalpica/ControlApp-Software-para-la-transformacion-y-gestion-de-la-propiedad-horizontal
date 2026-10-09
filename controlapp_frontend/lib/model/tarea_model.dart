@@ -3,6 +3,54 @@ import 'package:flutter_application_1/model/preventiva_model.dart';
 import 'package:flutter_application_1/utils/evidence_utils.dart';
 import 'package:flutter_application_1/model/zona_cronograma_model.dart';
 
+/// Recurso (maquinaria o herramienta) que pide una tarea, con el nombre del
+/// tipo y, si la tarea está publicada, cuántas unidades tiene asignadas en la
+/// agenda de recursos. Viene en `recursosPlan` del backend.
+class RecursoPlanTarea {
+  final String clase; // MAQUINARIA | HERRAMIENTA
+  final String tipoNombre;
+  final int cantidad;
+  final bool obligatorio;
+
+  /// null en borradores (todavía no hay necesidad materializada).
+  final int? asignadas;
+  final List<String> unidades;
+
+  const RecursoPlanTarea({
+    required this.clase,
+    required this.tipoNombre,
+    required this.cantidad,
+    required this.obligatorio,
+    required this.asignadas,
+    required this.unidades,
+  });
+
+  bool get esMaquinaria => clase == 'MAQUINARIA';
+  bool get cubierta => asignadas != null && asignadas! >= cantidad;
+
+  factory RecursoPlanTarea.fromJson(Map<String, dynamic> json) {
+    return RecursoPlanTarea(
+      clase: json['clase']?.toString() ?? 'MAQUINARIA',
+      tipoNombre: json['tipoNombre']?.toString() ?? 'Recurso',
+      cantidad: (json['cantidad'] as num?)?.toInt() ?? 1,
+      obligatorio: json['obligatorio'] != false,
+      asignadas: (json['asignadas'] as num?)?.toInt(),
+      unidades: (json['unidades'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+    );
+  }
+
+  /// "Guadaña × 2 · 1/2 asignadas (GUA-01)" para el detalle de la tarea.
+  String get resumen {
+    final base = cantidad > 1 ? '$tipoNombre × $cantidad' : tipoNombre;
+    final opcional = obligatorio ? '' : ' (opcional)';
+    if (asignadas == null) return '$base$opcional';
+    final unidadesTxt = unidades.isEmpty ? '' : ' · ${unidades.join(', ')}';
+    return '$base$opcional · $asignadas/$cantidad asignadas$unidadesTxt';
+  }
+}
+
 class InsumoProgramado {
   final int insumoId;
   final String nombre;
@@ -134,8 +182,11 @@ class TareaModel {
   final String? ubicacionNombre;
   final String? elementoNombre;
 
-  // Planificación de maquinaria (si la necesitas más adelante)
+  // Planificación de maquinaria (formato crudo del plan).
   final List<MaquinariaPlanItem>? maquinariaPlan;
+
+  /// Maquinaria y herramientas que pide la tarea, con nombre y cobertura.
+  final List<RecursoPlanTarea> recursosPlan;
 
   // 🔹 Nuevos campos para detalle de planificación:
   final num? tiempoEstimadoHoras;
@@ -157,7 +208,17 @@ class TareaModel {
   /// resuelve (de la tarea o de su preventiva); null si no tiene categoría.
   final String? categoriaNombre;
   final String? categoriaColorHex;
+
+  /// Clave del ícono de la categoría (ver utils/cronograma/categoria_iconos.dart).
+  /// Null si la categoría no tiene ícono configurado.
+  final String? categoriaIcono;
   final int? ordenEnCategoria;
+
+  /// Quién cerró la actividad y cuándo (null mientras esté abierta).
+  final String? finalizadaPorId;
+  final String? finalizadaPorNombre;
+  final DateTime? fechaIniciarTarea;
+  final DateTime? fechaFinalizarTarea;
 
   /// La tarea la ejecuta otra plaza porque la prevista no tenía espacio
   /// (reasignación automática por capacidades); [necesidadPrevistaId] es la
@@ -207,6 +268,7 @@ class TareaModel {
     this.ubicacionNombre,
     this.elementoNombre,
     this.maquinariaPlan,
+    this.recursosPlan = const [],
     this.tiempoEstimadoHoras,
     this.insumoPrincipalNombre,
     this.consumoPrincipalPorUnidad,
@@ -218,7 +280,12 @@ class TareaModel {
     this.categoriaId,
     this.categoriaNombre,
     this.categoriaColorHex,
+    this.categoriaIcono,
     this.ordenEnCategoria,
+    this.finalizadaPorId,
+    this.finalizadaPorNombre,
+    this.fechaIniciarTarea,
+    this.fechaFinalizarTarea,
     this.reasignadaAutomaticamente = false,
     this.necesidadPrevistaId,
     this.reprogramada = false,
@@ -374,6 +441,9 @@ class TareaModel {
     final categoriaId = int.tryParse('${json['categoriaId'] ?? ''}');
     final categoriaNombre = json['categoriaNombre']?.toString();
     final categoriaColorHex = json['categoriaColorHex']?.toString();
+    final categoriaIcono = json['categoriaIcono']?.toString();
+    DateTime? fechaLocal(dynamic v) =>
+        v == null ? null : DateTime.tryParse(v.toString())?.toLocal();
     final ordenEnCategoria = int.tryParse('${json['ordenEnCategoria'] ?? ''}');
     final reasignadaAutomaticamente = json['reasignadaAutomaticamente'] == true;
     final necesidadPrevistaId = int.tryParse(
@@ -433,7 +503,14 @@ class TareaModel {
       supervisorNombre: supervisorNombre,
       ubicacionNombre: ubicacionNombre,
       elementoNombre: elementoNombre,
-      maquinariaPlan: null,
+      maquinariaPlan: (json['maquinariaPlanJson'] as List?)
+          ?.whereType<Map>()
+          .map((e) => MaquinariaPlanItem.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+      recursosPlan: (json['recursosPlan'] as List? ?? const [])
+          .whereType<Map>()
+          .map((e) => RecursoPlanTarea.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
       tiempoEstimadoHoras: tiempoEstimadoHoras,
       insumoPrincipalNombre: insumoPrincipalNombre,
       consumoPrincipalPorUnidad: consumoPrincipalPorUnidad,
@@ -447,7 +524,12 @@ class TareaModel {
       categoriaId: categoriaId,
       categoriaNombre: categoriaNombre,
       categoriaColorHex: categoriaColorHex,
+      categoriaIcono: categoriaIcono,
       ordenEnCategoria: ordenEnCategoria,
+      finalizadaPorId: json['finalizadaPorId']?.toString(),
+      finalizadaPorNombre: json['finalizadaPorNombre']?.toString(),
+      fechaIniciarTarea: fechaLocal(json['fechaIniciarTarea']),
+      fechaFinalizarTarea: fechaLocal(json['fechaFinalizarTarea']),
       reasignadaAutomaticamente: reasignadaAutomaticamente,
       necesidadPrevistaId: necesidadPrevistaId,
       reprogramada: reprogramada,
@@ -507,7 +589,12 @@ class TareaModel {
     'categoriaId': categoriaId,
     'categoriaNombre': categoriaNombre,
     'categoriaColorHex': categoriaColorHex,
+    'categoriaIcono': categoriaIcono,
     'ordenEnCategoria': ordenEnCategoria,
+    'finalizadaPorId': finalizadaPorId,
+    'finalizadaPorNombre': finalizadaPorNombre,
+    'fechaIniciarTarea': fechaIniciarTarea?.toIso8601String(),
+    'fechaFinalizarTarea': fechaFinalizarTarea?.toIso8601String(),
     'reasignadaAutomaticamente': reasignadaAutomaticamente,
     'necesidadPrevistaId': necesidadPrevistaId,
     'reprogramada': reprogramada,
@@ -555,6 +642,7 @@ class TareaModel {
     String? ubicacionNombre,
     String? elementoNombre,
     List<MaquinariaPlanItem>? maquinariaPlan,
+    List<RecursoPlanTarea>? recursosPlan,
     num? tiempoEstimadoHoras,
     String? insumoPrincipalNombre,
     num? consumoPrincipalPorUnidad,
@@ -570,7 +658,12 @@ class TareaModel {
     int? categoriaId,
     String? categoriaNombre,
     String? categoriaColorHex,
+    String? categoriaIcono,
     int? ordenEnCategoria,
+    String? finalizadaPorId,
+    String? finalizadaPorNombre,
+    DateTime? fechaIniciarTarea,
+    DateTime? fechaFinalizarTarea,
     bool? reasignadaAutomaticamente,
     int? necesidadPrevistaId,
     bool? reprogramada,
@@ -611,6 +704,7 @@ class TareaModel {
       ubicacionNombre: ubicacionNombre ?? this.ubicacionNombre,
       elementoNombre: elementoNombre ?? this.elementoNombre,
       maquinariaPlan: maquinariaPlan ?? this.maquinariaPlan,
+      recursosPlan: recursosPlan ?? this.recursosPlan,
       tiempoEstimadoHoras: tiempoEstimadoHoras ?? this.tiempoEstimadoHoras,
       insumoPrincipalNombre:
           insumoPrincipalNombre ?? this.insumoPrincipalNombre,
@@ -630,7 +724,12 @@ class TareaModel {
       categoriaId: categoriaId ?? this.categoriaId,
       categoriaNombre: categoriaNombre ?? this.categoriaNombre,
       categoriaColorHex: categoriaColorHex ?? this.categoriaColorHex,
+      categoriaIcono: categoriaIcono ?? this.categoriaIcono,
       ordenEnCategoria: ordenEnCategoria ?? this.ordenEnCategoria,
+      finalizadaPorId: finalizadaPorId ?? this.finalizadaPorId,
+      finalizadaPorNombre: finalizadaPorNombre ?? this.finalizadaPorNombre,
+      fechaIniciarTarea: fechaIniciarTarea ?? this.fechaIniciarTarea,
+      fechaFinalizarTarea: fechaFinalizarTarea ?? this.fechaFinalizarTarea,
       reasignadaAutomaticamente:
           reasignadaAutomaticamente ?? this.reasignadaAutomaticamente,
       necesidadPrevistaId: necesidadPrevistaId ?? this.necesidadPrevistaId,

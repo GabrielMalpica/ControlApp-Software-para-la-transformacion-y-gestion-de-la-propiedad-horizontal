@@ -9,13 +9,13 @@ import 'package:intl/intl.dart';
 
 import 'package:image_picker/image_picker.dart';
 
-import 'package:flutter_application_1/utils/pickers/camera_capture_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 import 'package:flutter_application_1/utils/evidence_utils.dart';
 
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/service/evidencia_camara_service.dart';
 import 'package:flutter_application_1/service/permission_service.dart';
 import 'package:flutter_application_1/widgets/evidencia_gallery.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
@@ -265,7 +265,7 @@ class _JefeOperacionesPendientesPageState
                 return;
               }
               try {
-                final captura = await CameraCapture.pickPhoto();
+                final captura = await EvidenciaCamara.tomarFoto();
                 if (captura == null) return;
                 setModal(() => archivos.add(captura));
               } catch (e) {

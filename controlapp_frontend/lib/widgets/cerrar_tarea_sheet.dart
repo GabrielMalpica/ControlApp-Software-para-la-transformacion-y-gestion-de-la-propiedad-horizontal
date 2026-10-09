@@ -7,7 +7,8 @@ import '../model/tarea_model.dart';
 import '../model/inventario_item_model.dart';
 import '../model/evidencia_adjunto_model.dart';
 import '../utils/pickers/clipboard_image_capture_bridge.dart';
-import '../utils/pickers/camera_capture_bridge.dart';
+import '../utils/pickers/optimizar_imagen_bridge.dart';
+import '../service/evidencia_camara_service.dart';
 import '../utils/pickers/selected_upload_file.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -84,6 +85,8 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
     super.initState();
     // Si hay inventario, arrancamos con una fila para facilitar
     if (widget.inventario.isNotEmpty) _rows.add(_ConsumoRow());
+    // La hora y el GPS de cada foto van en su marca de agua de auditoría.
+    if (_puedeTomarFoto) EvidenciaCamara.precalentarUbicacion();
     if (_puedePegarImagen) {
       _disposeClipboardListener = ClipboardImageCapture.registerPasteListener(
         _onClipboardImagePasted,
@@ -122,21 +125,28 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
 
     if (picked == null) return;
 
+    // Web: bytes, con las fotos reducidas a 1920 px para que el cierre suba
+    // rápido (los PDF pasan igual).
+    if (kIsWeb) {
+      final optimizados = await OptimizadorImagen.optimizarTodas(
+        picked.files
+            .where((f) => f.bytes != null && f.bytes!.isNotEmpty)
+            .map(
+              (f) => SelectedUploadFile(
+                name: f.name.trim().isEmpty ? 'archivo' : f.name.trim(),
+                bytes: f.bytes,
+              ),
+            ),
+      );
+      if (!mounted) return;
+      _agregarEvidencias(_evidenciasDesdeSeleccion(optimizados));
+      return;
+    }
+
     final nuevos = <EvidenciaAdjunto>[];
 
     for (final f in picked.files) {
       final nombre = (f.name).trim().isEmpty ? 'archivo' : f.name.trim();
-
-      // Web: bytes
-      if (kIsWeb) {
-        final bytes = f.bytes;
-        if (bytes != null && bytes.isNotEmpty) {
-          nuevos.add(
-            EvidenciaAdjunto(path: null, nombre: nombre, bytes: bytes),
-          );
-        }
-        continue;
-      }
 
       // Mobile/Desktop: path
       final path = f.path;
@@ -154,7 +164,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
     if (!_puedeTomarFoto) return;
 
     try {
-      final captura = await CameraCapture.pickPhoto();
+      final captura = await EvidenciaCamara.tomarFoto();
       if (captura == null) return;
 
       _agregarEvidencias(_evidenciasDesdeSeleccion([captura]));
@@ -179,9 +189,10 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
     );
   }
 
-  void _onClipboardImagePasted(SelectedUploadFile file) {
+  Future<void> _onClipboardImagePasted(SelectedUploadFile file) async {
+    final optimizada = await OptimizadorImagen.optimizar(file);
     if (!mounted) return;
-    _agregarEvidencias(_evidenciasDesdeSeleccion([file]));
+    _agregarEvidencias(_evidenciasDesdeSeleccion([optimizada]));
     setState(() => _esperandoPegado = false);
     AppFeedback.showFromSnackBar(
       context,
@@ -228,7 +239,12 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
         final bytes = archivo.bytes;
         if (bytes != null && bytes.isNotEmpty) {
           nuevos.add(
-            EvidenciaAdjunto(path: null, nombre: nombre, bytes: bytes),
+            EvidenciaAdjunto(
+              path: null,
+              nombre: nombre,
+              bytes: bytes,
+              captura: archivo.captura,
+            ),
           );
         }
         continue;
@@ -237,7 +253,12 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
       final path = archivo.path;
       if (path != null && path.trim().isNotEmpty) {
         nuevos.add(
-          EvidenciaAdjunto(path: path.trim(), nombre: nombre, bytes: null),
+          EvidenciaAdjunto(
+            path: path.trim(),
+            nombre: nombre,
+            bytes: null,
+            captura: archivo.captura,
+          ),
         );
       }
     }

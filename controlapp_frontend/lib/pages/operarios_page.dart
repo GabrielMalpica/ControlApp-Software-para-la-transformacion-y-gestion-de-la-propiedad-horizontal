@@ -7,11 +7,11 @@ import 'package:flutter_application_1/widgets/dashboard_shell.dart';
 
 import '../service/permission_service.dart';
 import '../service/theme.dart';
-import 'tareas_page.dart';
-import 'agenda_herramientas_page.dart';
-import 'agenda_maquinaria_page.dart';
+import 'cronograma/hoy_operario_card.dart';
+import 'cronograma/mis_actividades_page.dart';
+import 'recursos/recursos_conjunto_page.dart';
 import 'cronograma_impresion_page.dart';
-import 'cronograma_page.dart';
+import 'cronograma_claro_page.dart';
 import 'inventario_resumen_page.dart';
 import 'inventario_activos_page.dart';
 import 'jefe_operaciones/jefe_operaciones_pendientes_page.dart';
@@ -26,8 +26,6 @@ import 'package:flutter_application_1/widgets/perfil_action.dart';
 import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
-import 'package:flutter_application_1/model/recurso_calendario_item.dart';
-import 'package:flutter_application_1/pages/gerente/agenda_recursos_page.dart';
 import 'package:flutter_application_1/pages/gerente/lista_insumos_page.dart';
 import 'package:flutter_application_1/pages/asistencia_checkin_page.dart';
 
@@ -213,6 +211,10 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                 onChanged: (_) {},
               ),
               const SizedBox(height: 18),
+              if (_can('tareas.ver')) ...[
+                HoyOperarioCard(nit: widget.nit),
+                const SizedBox(height: 18),
+              ],
               if (_can('cumpleanos.ver')) ...[
                 const CumpleanosBanner(),
                 const SizedBox(height: 18),
@@ -242,14 +244,15 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                       ),
                     if (_can('tareas.ver'))
                       _simpleCard(
-                        'Tareas',
+                        'Mis actividades',
                         AppTheme.green,
                         Icons.assignment,
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => TareasPage(nit: widget.nit),
+                              builder: (_) =>
+                                  MisActividadesPage(nit: widget.nit),
                             ),
                           );
                         },
@@ -311,7 +314,7 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => CronogramaPage(nit: widget.nit),
+                              builder: (_) => CronogramaClaroPage(nit: widget.nit),
                             ),
                           );
                         },
@@ -333,32 +336,18 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                           );
                         },
                       ),
-                    if (_can('maquinaria.ver'))
+                    if (_can('maquinaria.ver') || _can('herramientas.ver'))
                       _simpleCard(
-                        'Maquinaria',
+                        'Recursos del conjunto',
                         AppTheme.red,
                         Icons.precision_manufacturing,
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  AgendaMaquinariaPage(conjuntoId: widget.nit),
-                            ),
-                          );
-                        },
-                      ),
-                    if (_can('herramientas.ver'))
-                      _simpleCard(
-                        'Herramientas',
-                        Colors.orange,
-                        Icons.handyman,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AgendaHerramientasPage(
+                              builder: (_) => RecursosConjuntoPage(
                                 conjuntoId: widget.nit,
+                                empresaNit: AppConstants.empresaNit,
                               ),
                             ),
                           );
@@ -459,23 +448,23 @@ class _OperarioDashboardPageState extends State<OperarioDashboardPage> {
                           );
                         },
                       ),
-                      _simpleCard(
-                        'Agenda de recursos',
-                        AppTheme.red,
-                        Icons.event_repeat,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AgendaRecursosPage(
-                                empresaNit: AppConstants.empresaNit,
-                                conjuntoId: widget.nit,
-                                tipoInicial: TipoRecursoCal.maquinaria,
+                      if (!_can('maquinaria.ver') && !_can('herramientas.ver'))
+                        _simpleCard(
+                          'Recursos del conjunto',
+                          AppTheme.red,
+                          Icons.event_repeat,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => RecursosConjuntoPage(
+                                  conjuntoId: widget.nit,
+                                  empresaNit: AppConstants.empresaNit,
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
+                            );
+                          },
+                        ),
                     ],
                     if (_can('herramientas.gestionar'))
                       _simpleCard(

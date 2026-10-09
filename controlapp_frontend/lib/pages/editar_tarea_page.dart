@@ -1,12 +1,14 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/widgets/recursos/reprogramar_con_recursos.dart';
 
 import '../api/tarea_api.dart';
 import '../api/gerente_api.dart';
 import '../model/conjunto_model.dart';
 import '../model/tarea_model.dart';
 import '../model/usuario_model.dart';
+import '../service/api_exception.dart';
 import '../service/theme.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -303,9 +305,16 @@ class _EditarTareaPageState extends State<EditarTareaPage> {
             : _observacionesCtrl.text.trim(),
       );
 
-      await _tareaApi.editarTarea(widget.tarea.id, req);
-
-      if (!mounted) return;
+      final resp = await editarTareaConRecursos(
+        context,
+        api: _tareaApi,
+        tareaId: widget.tarea.id,
+        req: req,
+      );
+      if (!mounted || resp == null) return;
+      if (resp['ok'] == false) {
+        throw ApiException.fromMap(resp, fallback: 'No se pudo actualizar la tarea.');
+      }
       AppFeedback.showFromSnackBar(
         context,
         const SnackBar(

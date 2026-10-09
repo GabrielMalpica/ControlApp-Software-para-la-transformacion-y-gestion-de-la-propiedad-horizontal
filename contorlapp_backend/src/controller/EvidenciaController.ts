@@ -1,6 +1,7 @@
 // src/controller/EvidenciaController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
+import { buscarDireccionGps } from "../utils/direccion_gps";
 import { getEvidenciaStream } from "../utils/drive_evidencias";
 
 // IDs de archivo de Google Drive: alfanuméricos + "-"/"_", normalmente 25-45 chars.
@@ -8,7 +9,25 @@ const FileIdParamSchema = z.object({
   fileId: z.string().regex(/^[a-zA-Z0-9_-]{10,80}$/),
 });
 
+const DireccionQuerySchema = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lng: z.coerce.number().min(-180).max(180),
+});
+
 export class EvidenciaController {
+  // GET /evidencias/direccion?lat=&lng=
+  // La app la pide apenas se toma una foto de evidencia, en segundo plano:
+  // así, al cerrar la tarea, la dirección de la marca de agua ya está en
+  // caché y el cierre no espera al servicio de mapas.
+  direccion: RequestHandler = async (req, res, next) => {
+    try {
+      const { lat, lng } = DireccionQuerySchema.parse(req.query);
+      res.json({ direccion: await buscarDireccionGps(lat, lng) });
+    } catch (err) {
+      next(err);
+    }
+  };
+
   // GET /evidencias/:fileId
   obtener: RequestHandler = async (req, res, next) => {
     try {

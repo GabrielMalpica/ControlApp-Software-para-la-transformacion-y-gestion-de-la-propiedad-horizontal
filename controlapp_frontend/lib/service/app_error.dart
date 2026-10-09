@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../utils/text_encoding.dart';
+
 class AppError {
   static const String _defaultFallback = 'No se pudo completar la solicitud.';
 
@@ -298,6 +300,7 @@ class AppError {
   }
 
   static String _fixMojibake(String text) {
+    text = repairMojibake(text);
     return text
         .replaceAll('Ã¡', 'a')
         .replaceAll('Ã©', 'e')

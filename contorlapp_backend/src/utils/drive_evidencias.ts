@@ -111,6 +111,33 @@ async function getOrCreateFolder(drive: any, parentId: string, name: string) {
   return createFolder(drive, parentId, name);
 }
 
+// Ids de carpetas ya resueltas (conjunto y mes). Antes cada foto hacía dos
+// búsquedas en Drive antes de subirse; las carpetas casi nunca cambian. Se
+// guarda la promesa, así las fotos de un mismo cierre que suben a la vez
+// comparten la búsqueda y no crean la carpeta del mes dos veces. Vigencia
+// corta: si alguien manda una carpeta a la papelera, pronto se vuelve a buscar.
+const CARPETAS_TTL_MS = 10 * 60 * 1000;
+const carpetasCache = new Map<string, { id: Promise<string>; expira: number }>();
+
+/** Olvida las carpetas guardadas (pruebas con un Drive simulado que se vacía). */
+export function vaciarCacheCarpetasDrive() {
+  carpetasCache.clear();
+}
+
+function carpeta(drive: any, parentId: string, name: string): Promise<string> {
+  const clave = `${parentId}/${name}`;
+  const hit = carpetasCache.get(clave);
+  if (hit && hit.expira > Date.now()) return hit.id;
+  const id = getOrCreateFolder(drive, parentId, name);
+  carpetasCache.set(clave, { id, expira: Date.now() + CARPETAS_TTL_MS });
+  id.catch(() => carpetasCache.delete(clave));
+  return id;
+}
+
+function esNoEncontrado(err: any): boolean {
+  return (err?.code ?? err?.response?.status) === 404;
+}
+
 export async function uploadEvidenciaToDrive(params: {
   filePath: string;
   fileName: string;
@@ -134,26 +161,34 @@ export async function uploadEvidenciaToDrive(params: {
     `Conjunto ${params.conjuntoNit}${params.conjuntoNombre ? " - " + params.conjuntoNombre : ""}`
   );
 
-  const conjuntoFolderId = await getOrCreateFolder(drive, rootId, carpetaConjunto);
-  const destinoFolderId = await getOrCreateFolder(
-    drive,
-    conjuntoFolderId,
-    params.subcarpeta ? safeName(params.subcarpeta) : monthFolderLabel(params.fecha),
-  );
+  const nombreDestino = params.subcarpeta ? safeName(params.subcarpeta) : monthFolderLabel(params.fecha);
 
-  const media = {
-    mimeType: params.mimeType,
-    body: fs.createReadStream(params.filePath),
+  const subir = async () => {
+    const conjuntoFolderId = await carpeta(drive, rootId, carpetaConjunto);
+    const destinoFolderId = await carpeta(drive, conjuntoFolderId, nombreDestino);
+    return drive.files.create({
+      requestBody: {
+        name: safeName(params.fileName),
+        parents: [destinoFolderId],
+      },
+      media: {
+        mimeType: params.mimeType,
+        body: fs.createReadStream(params.filePath),
+      },
+      fields: "id",
+    });
   };
 
-  const res = await drive.files.create({
-    requestBody: {
-      name: safeName(params.fileName),
-      parents: [destinoFolderId],
-    },
-    media,
-    fields: "id",
-  });
+  let res;
+  try {
+    res = await subir();
+  } catch (err) {
+    // Alguien borró la carpeta en Drive después de guardarla en caché: se
+    // olvida lo guardado y se vuelve a resolver una vez.
+    if (!esNoEncontrado(err)) throw err;
+    carpetasCache.clear();
+    res = await subir();
+  }
 
   const file = res.data as DriveFile;
   if (!file.id) throw new Error("No se pudo obtener id del archivo en Drive");

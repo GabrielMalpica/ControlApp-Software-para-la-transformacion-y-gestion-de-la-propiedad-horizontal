@@ -204,6 +204,15 @@ class SessionService {
 
   String? getConjuntoIdSync() => _memConjuntoId;
 
+  /// Nombre de la persona en sesión (para saludarla en su agenda).
+  Future<String?> getNombre() async {
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_kNombre);
+    }
+    return _secure.read(key: _kNombre);
+  }
+
   Future<String?> getRol() async {
     if (_memRol != null && _memRol!.isNotEmpty) return _memRol;
 

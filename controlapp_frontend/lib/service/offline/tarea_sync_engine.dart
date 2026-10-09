@@ -157,9 +157,14 @@ class TareaSyncEngine {
         return EvidenciaAdjunto(
           nombre: e.nombre,
           bytes: base64Decode(e.bytesBase64!),
+          captura: e.captura,
         );
       }
-      return EvidenciaAdjunto(nombre: e.nombre, path: e.path);
+      return EvidenciaAdjunto(
+        nombre: e.nombre,
+        path: e.path,
+        captura: e.captura,
+      );
     }).toList();
 
     try {

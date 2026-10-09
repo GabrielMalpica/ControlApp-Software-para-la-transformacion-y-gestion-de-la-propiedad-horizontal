@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+import 'package:flutter_application_1/api/evidencias_multipart.dart';
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:http/http.dart' as http;
 
@@ -88,40 +88,7 @@ class JefeOperacionesApi {
       req.fields['insumosUsados'] = jsonEncode(insumosUsados);
     }
 
-    for (final evidencia in evidencias) {
-      final path = evidencia.path?.trim();
-      final bytes = evidencia.bytes;
-      final fileName = evidencia.nombre.trim().isNotEmpty
-          ? evidencia.nombre.trim()
-          : (path?.split(RegExp(r'[\\/]')).last ?? 'evidencia.jpg');
-      final contentType = uploadMediaTypeFromName(fileName);
-
-      if (path != null && path.isNotEmpty) {
-        final file = File(path);
-        if (await file.exists()) {
-          req.files.add(
-            await http.MultipartFile.fromPath(
-              'files',
-              path,
-              filename: fileName,
-              contentType: contentType,
-            ),
-          );
-          continue;
-        }
-      }
-
-      if (kIsWeb && bytes != null && bytes.isNotEmpty) {
-        req.files.add(
-          http.MultipartFile.fromBytes(
-            'files',
-            bytes,
-            filename: fileName,
-            contentType: contentType,
-          ),
-        );
-      }
-    }
+    await adjuntarEvidencias(req, evidencias);
 
     final streamed = await req.send();
     final body = await streamed.stream.bytesToString();
@@ -197,6 +164,7 @@ class JefeOperacionesApi {
       req.fields['fechaVerificacion'] = fechaVerificacion.toIso8601String();
     }
 
+    final capturas = <CapturaEvidencia?>[];
     for (final f in archivos) {
       // WEB: siempre bytes
       if (kIsWeb) {
@@ -214,6 +182,7 @@ class JefeOperacionesApi {
             ),
           ),
         );
+        capturas.add(f.captura);
         continue;
       }
 
@@ -230,6 +199,7 @@ class JefeOperacionesApi {
             ),
           ),
         );
+        capturas.add(f.captura);
       } else if (f.hasBytes) {
         req.files.add(
           http.MultipartFile.fromBytes(
@@ -242,10 +212,12 @@ class JefeOperacionesApi {
             ),
           ),
         );
+        capturas.add(f.captura);
       } else {
         throw Exception('El archivo "${f.name}" no tiene path ni bytes.');
       }
     }
+    agregarCampoCapturas(req, capturas);
 
     final streamed = await req.send();
     final resp = await http.Response.fromStream(streamed);

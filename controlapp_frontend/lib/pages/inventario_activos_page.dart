@@ -3,6 +3,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/gerente_api.dart';
 import 'package:flutter_application_1/api/inventario_activo_api.dart';
+import 'package:flutter_application_1/api/recursos_api.dart';
+import 'package:flutter_application_1/model/conjunto_model.dart';
+import 'package:flutter_application_1/model/recurso_agenda_model.dart';
+import 'package:flutter_application_1/widgets/recursos/reserva_acciones.dart';
+import 'package:flutter_application_1/widgets/searchable_select_field.dart';
 import 'package:flutter_application_1/model/inventario_activo_model.dart';
 import 'package:flutter_application_1/pdf/acta_inventario_pdf.dart';
 import 'package:flutter_application_1/pdf/pdf_actions.dart';
@@ -474,15 +479,30 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
     }
     final reason = await _ask('Justificación', 'Motivo del cambio');
     if (reason == null) return;
-    await _action(
-      () => _api.cambiarEstado(
+    var afectadas = const <Map<String, dynamic>>[];
+    await _action(() async {
+      afectadas = await _api.cambiarEstado(
         item.clase,
         item.id,
         state,
         reason,
         condicion: condicion,
-      ),
-      'Estado actualizado.',
+      );
+    }, 'Estado actualizado.');
+    if (!mounted || afectadas.isEmpty) return;
+    // La unidad ya no se puede reservar, pero tenía reservas: hay que
+    // cambiarle la unidad a esas tareas (la agenda las muestra como alerta).
+    final fmt = DateFormat("EEE d MMM, h:mm a", 'es');
+    AppFeedback.showInfo(
+      context,
+      title: 'Reservas afectadas',
+      message:
+          'Esta unidad tenía ${afectadas.length} reserva(s) próxima(s). Cámbiale la unidad '
+          'desde el Centro de recursos (pestaña Alertas):\n'
+          '${afectadas.map((r) {
+            final ini = DateTime.tryParse(r['usoInicio']?.toString() ?? '')?.toLocal();
+            return '• ${r['conjuntoNombre'] ?? ''} · ${r['tareaDescripcion'] ?? ''}${ini != null ? ' · ${fmt.format(ini)}' : ''}';
+          }).join('\n')}',
     );
   }
 
@@ -508,16 +528,95 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
   }
 
   Future<void> _loan(ActivoInventario item) async {
-    final nit = await _ask('Prestar activo', 'NIT del conjunto');
-    if (nit == null) return;
+    List<Conjunto> conjuntos;
+    try {
+      conjuntos = await GerenteApi().listarConjuntosSelector();
+    } catch (error) {
+      if (!mounted) return;
+      AppFeedback.showError(context, message: AppError.messageOf(error));
+      return;
+    }
+    if (!mounted) return;
+    String? conjuntoId;
+    var devolucion = DateTime.now().add(const Duration(days: 30));
+    final fmt = DateFormat("d 'de' MMMM yyyy", 'es');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialog) => AlertDialog(
+          title: const Text('Prestar a un conjunto'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SearchableSelectField<String>(
+                  label: 'Conjunto',
+                  value: conjuntoId,
+                  prefixIcon: const Icon(Icons.apartment_outlined),
+                  options: [
+                    for (final c in conjuntos)
+                      SearchableSelectOption(value: c.nit, label: c.nombre, subtitle: c.nit),
+                  ],
+                  onChanged: (v) => setDialog(() => conjuntoId = v),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.event_outlined),
+                  title: const Text('Devolución estimada'),
+                  subtitle: Text(fmt.format(devolucion)),
+                  trailing: const Icon(Icons.edit_calendar_outlined),
+                  onTap: () async {
+                    final elegido = await showDatePicker(
+                      context: context,
+                      firstDate: DateTime.now().add(const Duration(days: 1)),
+                      lastDate: DateTime.now().add(const Duration(days: 730)),
+                      initialDate: devolucion,
+                    );
+                    if (elegido != null) setDialog(() => devolucion = elegido);
+                  },
+                ),
+                const Text(
+                  'Mientras dure el préstamo la unidad queda en ese conjunto en la agenda de '
+                  'recursos: el conjunto puede usarla y los demás no pueden reservarla.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancelar')),
+            FilledButton(
+              onPressed: conjuntoId == null ? null : () => Navigator.pop(dialogContext, true),
+              child: const Text('Prestar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || conjuntoId == null) return;
     await _action(
       () => _api.prestar(
         clase: item.clase,
         id: item.id,
-        conjuntoId: nit,
-        fechaDevolucion: DateTime.now().add(const Duration(days: 30)),
+        conjuntoId: conjuntoId!,
+        fechaDevolucion: devolucion,
       ),
-      'Préstamo registrado por 30 días.',
+      'Préstamo registrado hasta el ${fmt.format(devolucion)}.',
+    );
+  }
+
+  Future<void> _historial(ActivoInventario item) {
+    return mostrarHistorialUnidad(
+      context,
+      api: RecursosApi(),
+      clase: item.clase == ClaseActivoInventario.maquinaria
+          ? ClaseRecurso.maquinaria
+          : ClaseRecurso.herramienta,
+      unidadId: item.id,
+      empresaNit: widget.empresaId,
     );
   }
 
@@ -732,6 +831,7 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
                     if (action == 'delete_photo') _deletePhoto(item);
                     if (action == 'state') _changeStatus(item);
                     if (action == 'loan') _loan(item);
+                    if (action == 'history') _historial(item);
                     if (action == 'return') {
                       _action(
                         () => _api.devolver(item.clase, item.id),
@@ -772,6 +872,11 @@ class _InventarioActivosPageState extends State<InventarioActivosPage> {
                       const PopupMenuItem(
                         value: 'return',
                         child: Text('Registrar devolución'),
+                      ),
+                    if (item.estadoAprobacion == 'APROBADA')
+                      const PopupMenuItem(
+                        value: 'history',
+                        child: Text('Agenda e historial de uso'),
                       ),
                     if (_canDelete)
                       const PopupMenuItem(

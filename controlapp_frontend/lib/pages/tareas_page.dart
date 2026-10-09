@@ -24,6 +24,7 @@ import 'crear_tarea_page.dart';
 import 'editar_tarea_page.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/utils/cronograma/estado_visual.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 
 class TareasPage extends StatefulWidget {
@@ -196,7 +197,10 @@ class _TareasPageState extends State<TareasPage> {
 
     if (resp.statusCode != 200) {
       throw Exception(
-        'Error al listar actividades del operario: ${resp.statusCode} - ${resp.body}',
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudieron cargar tus actividades.',
+        ),
       );
     }
 
@@ -392,18 +396,19 @@ class _TareasPageState extends State<TareasPage> {
 
       if (!mounted) return;
       final mensaje = resultado == CierreTareaResultado.guardadoLocalPendiente
-          ? '📶 Sin conexión: la tarea se guardó en este dispositivo y se enviará sola cuando vuelva la señal.'
+          ? 'Sin conexión: el cierre quedó guardado en este teléfono y se enviará solo cuando vuelva la señal.'
           : (result.accion == 'NO_COMPLETADA'
-                ? '✅ Tarea marcada como no completada.'
-                : '✅ Tarea cerrada. Quedó pendiente aprobación.');
+                ? 'Quedó registrado que la actividad no se pudo hacer.'
+                : 'Actividad cerrada.');
       AppFeedback.showFromSnackBar(context, SnackBar(content: Text(mensaje)));
       await _cargarCierresPendientes();
       await _cargarTareas();
     } catch (e) {
       if (!mounted) return;
-      AppFeedback.showFromSnackBar(
+      AppFeedback.showError(
         context,
-        SnackBar(content: Text('❌ Error cerrando tarea: $e')),
+        title: 'No se pudo cerrar',
+        message: AppError.messageOf(e, fallback: 'Revisa los datos e intenta de nuevo.'),
       );
     }
   }
@@ -432,7 +437,10 @@ class _TareasPageState extends State<TareasPage> {
 
   Widget _taskTile(TareaModel t) {
     final c = _estadoColor(t.estado);
-    final estado = (t.estado ?? 'SIN_ESTADO').replaceAll('_', ' ');
+    // El operario ve el estado en palabras; los demás roles, el de siempre.
+    final estado = _esOperario()
+        ? EstadoVisual.de(t).etiqueta
+        : (t.estado ?? 'SIN_ESTADO').replaceAll('_', ' ');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -492,9 +500,9 @@ class _TareasPageState extends State<TareasPage> {
         ),
         trailing: _esOperario()
             ? (_puedeCerrar(t)
-                  ? IconButton(
-                      tooltip: 'Cerrar tarea',
-                      icon: const Icon(Icons.task_alt, color: Colors.green),
+                  ? TextButton.icon(
+                      icon: const Icon(Icons.task_alt),
+                      label: const Text('Cerrar'),
                       onPressed: () => _cerrarComoOperario(t),
                     )
                   : const Icon(Icons.chevron_right, color: Colors.black38))
@@ -540,7 +548,7 @@ class _TareasPageState extends State<TareasPage> {
 
   Future<void> _abrirDetalleTarea(TareaModel t) async {
     final c = _estadoColor(t.estado);
-    final estado = (t.estado ?? 'SIN_ESTADO').replaceAll('_', ' ');
+    final estado = EstadoVisual.de(t).etiqueta;
     final puedeCerrar = _puedeCerrar(t);
 
     await showModalBottomSheet<void>(
@@ -767,7 +775,14 @@ class _TareasPageState extends State<TareasPage> {
           children: [
             for (final f in opts)
               ChoiceChip(
-                label: Text(f.replaceAll('_', ' ')),
+                label: Text(const {
+                  'HOY': 'Hoy',
+                  'PENDIENTES': 'Pendientes',
+                  'VENCIDAS': 'Atrasadas',
+                  'RECHAZADAS': 'Devueltas',
+                  'PENDIENTE_APROBACION': 'En revisión',
+                  'TODAS': 'Todas',
+                }[f] ?? f),
                 selected: _filtroOperario == f,
                 onSelected: (_) => setState(() => _filtroOperario = f),
               ),
@@ -920,7 +935,7 @@ class _TareasPageState extends State<TareasPage> {
         _searchBox(),
         const SizedBox(height: 10),
         const Text(
-          'TODO por día',
+          'Por día',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
         const SizedBox(height: 10),

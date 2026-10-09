@@ -1,3 +1,5 @@
+import 'evidencia_adjunto_model.dart';
+
 /// Estado de sincronización de un cierre de tarea guardado localmente
 /// mientras el operario no tenía conexión.
 enum CierreSyncEstado { pendiente, sincronizando, sincronizado, error }
@@ -18,12 +20,22 @@ class EvidenciaPendiente {
   final String? path;
   final String? bytesBase64;
 
-  const EvidenciaPendiente({required this.nombre, this.path, this.bytesBase64});
+  /// Hora y GPS de la toma: se conservan para que la marca de agua muestre
+  /// cuándo se tomó la foto aunque se suba horas después.
+  final CapturaEvidencia? captura;
+
+  const EvidenciaPendiente({
+    required this.nombre,
+    this.path,
+    this.bytesBase64,
+    this.captura,
+  });
 
   Map<String, dynamic> toJson() => {
     'nombre': nombre,
     'path': path,
     'bytesBase64': bytesBase64,
+    if (captura != null) 'captura': captura!.toJson(),
   };
 
   factory EvidenciaPendiente.fromJson(Map<String, dynamic> json) {
@@ -31,6 +43,7 @@ class EvidenciaPendiente {
       nombre: (json['nombre'] ?? '').toString(),
       path: json['path'] as String?,
       bytesBase64: json['bytesBase64'] as String?,
+      captura: CapturaEvidencia.fromJson(json['captura']),
     );
   }
 }
@@ -130,11 +143,16 @@ class CierreTareaPendiente {
       accion: (json['accion'] ?? 'COMPLETADA').toString(),
       observaciones: json['observaciones'] as String?,
       insumosUsados: ((json['insumosUsados'] as List?) ?? const [])
-          .map((e) => (e as Map).map((k, v) => MapEntry(k.toString(), v as num)))
+          .map(
+            (e) => (e as Map).map((k, v) => MapEntry(k.toString(), v as num)),
+          )
           .toList(),
       fechaCierreLocal: DateTime.parse(json['fechaCierreLocal']),
       evidencias: ((json['evidencias'] as List?) ?? const [])
-          .map((e) => EvidenciaPendiente.fromJson((e as Map).cast<String, dynamic>()))
+          .map(
+            (e) =>
+                EvidenciaPendiente.fromJson((e as Map).cast<String, dynamic>()),
+          )
           .toList(),
       estadoSync: cierreSyncEstadoFromName(json['estadoSync'] as String?),
       intentos: (json['intentos'] as num?)?.toInt() ?? 0,

@@ -33,6 +33,7 @@ import {
   extraerDriveId,
   uploadEvidenciaToDrive,
 } from "../utils/drive_evidencias";
+import { subirEvidenciasConMarca } from "../utils/marca_agua_evidencia";
 import { AuditoriaService } from "./AuditoriaService";
 import { AccionAuditoria, EntidadAuditoria, ModuloAuditoria } from "../model/Auditoria";
 
@@ -681,7 +682,9 @@ export class TareaService {
         conjuntoId: true,
         fechaFinalizarTarea: true,
         fechaFin: true,
-        conjunto: { select: { nit: true, nombre: true } },
+        conjunto: {
+          select: { nit: true, nombre: true, direccion: true, latitud: true, longitud: true },
+        },
       },
     });
 
@@ -703,27 +706,26 @@ export class TareaService {
     const restantes = actuales.filter((url) => !eliminarSet.has(url));
 
     // Subir evidencias nuevas a Drive: mismo patrón que el cierre directo.
-    const urlsNuevas: string[] = [];
+    let urlsNuevas: string[] = [];
     try {
-      let indice = 0;
-      for (const f of files ?? []) {
-        indice++;
-        const url = await uploadEvidenciaToDrive({
-          filePath: f.path,
-          fileName: buildEvidenciaFileName({
-            subidoPor: actor.nombre ?? actor.id,
-            rol: actor.rol,
+      urlsNuevas = await subirEvidenciasConMarca(
+        { files: files ?? [], capturas: dto.evidenciasCaptura, conjunto: tarea.conjunto },
+        (f, indice) =>
+          uploadEvidenciaToDrive({
+            filePath: f.path,
+            fileName: buildEvidenciaFileName({
+              subidoPor: actor.nombre ?? actor.id,
+              rol: actor.rol,
+              fecha: new Date(),
+              originalName: f.originalname,
+              indice,
+            }),
+            mimeType: f.mimetype,
+            conjuntoNit: tarea.conjunto?.nit ?? tarea.conjuntoId ?? "SIN_CONJUNTO",
+            conjuntoNombre: tarea.conjunto?.nombre ?? undefined,
             fecha: new Date(),
-            originalName: f.originalname,
-            indice,
           }),
-          mimeType: f.mimetype,
-          conjuntoNit: tarea.conjunto?.nit ?? tarea.conjuntoId ?? "SIN_CONJUNTO",
-          conjuntoNombre: tarea.conjunto?.nombre ?? undefined,
-          fecha: new Date(),
-        });
-        urlsNuevas.push(url);
-      }
+      );
     } finally {
       for (const f of files ?? []) {
         try {

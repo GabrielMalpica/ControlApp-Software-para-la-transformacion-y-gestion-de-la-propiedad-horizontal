@@ -9,10 +9,8 @@ import 'package:flutter_application_1/pages/pagos_admin_page.dart';
 import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
 import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.dart';
 import 'package:flutter_application_1/pages/festivos_page.dart';
-import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_page.dart';
-import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
-import 'package:flutter_application_1/pages/gerente/agenda_recursos_page.dart';
-import 'package:flutter_application_1/pages/gerente/agenda_general_recursos_page.dart';
+import 'package:flutter_application_1/pages/recursos/centro_recursos_page.dart';
+import 'package:flutter_application_1/pages/recursos/recursos_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/catalogo_operativo_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
@@ -115,8 +113,6 @@ enum _QuickAction {
 
   // Solicitudes y agenda
   solicitudInsumo,
-  agendaMaquinaria,
-  agendaHerramientas,
 
   // Extras
   cumpleanos,
@@ -449,13 +445,13 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
       ),
       item(
         _QuickAction.agendaRecursos,
-        "Agenda de recursos",
+        "Centro de recursos (asignar maquinaria y herramientas)",
         Icons.event_repeat,
       ),
       item(
         _QuickAction.agendaGeneralRecursos,
-        "Agenda general de recursos (todos los conjuntos)",
-        Icons.calendar_view_month,
+        "Agenda general de recursos (dónde está cada equipo)",
+        Icons.view_timeline_outlined,
       ),
       item(_QuickAction.festivosCrear, "Crear días festivos", Icons.event),
 
@@ -466,18 +462,6 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         _QuickAction.solicitudInsumo,
         "Solicitudes de insumos",
         Icons.inventory_2_outlined,
-        enabled: enabledNit,
-      ),
-      item(
-        _QuickAction.agendaMaquinaria,
-        "Agenda maquinaria",
-        Icons.precision_manufacturing,
-        enabled: enabledNit,
-      ),
-      item(
-        _QuickAction.agendaHerramientas,
-        "Agenda herramientas",
-        Icons.handyman,
         enabled: enabledNit,
       ),
 
@@ -668,27 +652,16 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         // go(SolicitudInsumoPage(nit: nit!));
         return;
 
-      case _QuickAction.agendaMaquinaria:
-        if (!_requiereConjuntoOrWarn()) return;
-        await go(
-          AgendaMaquinariaGlobalExcelPage(empresaNit: AppConstants.empresaNit),
-        );
-        return;
-
       case _QuickAction.agendaRecursos:
-        await go(AgendaRecursosPage(empresaNit: AppConstants.empresaNit));
+        await go(CentroRecursosPage(empresaNit: AppConstants.empresaNit));
         return;
 
       case _QuickAction.agendaGeneralRecursos:
         await go(
-          AgendaGeneralRecursosPage(empresaNit: AppConstants.empresaNit),
-        );
-        return;
-
-      case _QuickAction.agendaHerramientas:
-        if (!_requiereConjuntoOrWarn()) return;
-        await go(
-          AgendaHerramientasGlobalPage(empresaNit: AppConstants.empresaNit),
+          CentroRecursosPage(
+            empresaNit: AppConstants.empresaNit,
+            pestanaInicial: 1,
+          ),
         );
         return;
 
@@ -807,13 +780,13 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
         _Tile("Cronograma", Icons.calendar_month, Colors.purple, () {
           _abrirYRecargar(CronogramaPage(nit: nit));
         }),
-        _Tile("Agenda de recursos", Icons.event_repeat, AppTheme.yellow, () {
+        _Tile("Recursos del conjunto", Icons.event_repeat, AppTheme.yellow, () {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => AgendaRecursosPage(
-                empresaNit: AppConstants.empresaNit,
+              builder: (_) => RecursosConjuntoPage(
                 conjuntoId: nit,
+                empresaNit: AppConstants.empresaNit,
               ),
             ),
           );

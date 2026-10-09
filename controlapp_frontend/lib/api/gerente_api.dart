@@ -320,6 +320,31 @@ class GerenteApi {
         .toList();
   }
 
+  Future<Map<String, int>> reemplazarSupervisorYEliminar({
+    required String supervisorOrigenId,
+    required String supervisorDestinoId,
+  }) async {
+    final response = await _apiClient.post(
+      '${AppConstants.gerenteBase}/supervisores/$supervisorOrigenId/reemplazar',
+      body: {'supervisorDestinoId': supervisorDestinoId},
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          response.body,
+          fallback: 'No se pudo cambiar el supervisor de las tareas.',
+        ),
+      );
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return {
+      'tareas': (data['tareas'] as num?)?.toInt() ?? 0,
+      'preventivas': (data['preventivas'] as num?)?.toInt() ?? 0,
+      'visitas': (data['visitas'] as num?)?.toInt() ?? 0,
+      'borradores': (data['borradores'] as num?)?.toInt() ?? 0,
+    };
+  }
+
   Future<void> crearConjunto({
     required String nitConjunto,
     required String nombre,

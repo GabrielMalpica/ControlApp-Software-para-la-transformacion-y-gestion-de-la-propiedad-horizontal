@@ -36,7 +36,8 @@ class EvidenciaPersistencia {
         '${indice.toString().padLeft(2, '0')}_$nombre',
       );
 
-      if (esNombreDeImagenComprimible(nombre)) {
+      if (esNombreDeImagenComprimible(nombre) &&
+          await origenFile.length() > bytesMinimosParaComprimir) {
         try {
           final bytes = await origenFile.readAsBytes();
           final comprimido = await compute(comprimirImagenEvidencia, bytes);
@@ -48,7 +49,13 @@ class EvidenciaPersistencia {
         await origenFile.copy(destinoPath);
       }
 
-      out.add(EvidenciaPendiente(nombre: nombre, path: destinoPath));
+      out.add(
+        EvidenciaPendiente(
+          nombre: nombre,
+          path: destinoPath,
+          captura: e.captura,
+        ),
+      );
     }
 
     return out;

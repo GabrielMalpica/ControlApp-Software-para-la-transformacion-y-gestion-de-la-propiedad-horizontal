@@ -48,6 +48,24 @@ class ConjuntoApi {
   final ApiClient _client = ApiClient();
   final SessionService _session = SessionService();
 
+  Future<void> recuperarAdministradorSinConjunto({
+    required String conjuntoNit,
+    required String administradorId,
+  }) async {
+    final response = await _client.post(
+      '/conjuntos/$conjuntoNit/administrador/recuperar',
+      body: {'administradorId': administradorId},
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          response.body,
+          fallback: 'No se pudo recuperar el administrador.',
+        ),
+      );
+    }
+  }
+
   Future<Map<String, String>> _authHeaders({bool json = true}) async {
     final token = await _session.getToken();
     final headers = <String, String>{'Accept': 'application/json'};

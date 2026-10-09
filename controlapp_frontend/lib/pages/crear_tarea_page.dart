@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/widgets/recursos/reprogramar_con_recursos.dart';
 import 'package:flutter_application_1/model/usuario_model.dart';
 
 import '../api/tarea_api.dart';
@@ -140,7 +141,10 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
   final List<int> _maquinariaSeleccionadaIds = [];
 
   // Herramientas
-  List<HerramientaDisponibilidadResponse> _herramientasDisponibles = [];
+  /// Catálogo de herramientas de la empresa. La correctiva declara cuántas
+  /// unidades necesita de cada una; las unidades (por código) se asignan
+  /// desde la agenda de recursos.
+  List<HerramientaResponse> _herramientasDisponibles = [];
   final Map<int, num> _herramientasSeleccionadas = {};
 
   int? _limiteMinSemana;
@@ -353,21 +357,28 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
 
   Future<void> _cargarHerramientasConjunto(String conjuntoNit) async {
     try {
-      final raw = await _herramientaApi.listarDisponibilidadConjunto(
-        nitConjunto: conjuntoNit,
-        empresaId: AppConstants.empresaNit,
-      );
+      const pageSize = 100;
+      final acumulado = <HerramientaResponse>[];
+      var skip = 0;
+      while (true) {
+        final raw = await _herramientaApi.listarHerramientas(
+          empresaId: AppConstants.empresaNit,
+          take: pageSize,
+          skip: skip,
+        );
+        final pagina = ((raw['data'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => HerramientaResponse.fromJson(e.cast<String, dynamic>()))
+            .toList();
+        acumulado.addAll(pagina);
+        final total = (raw['total'] as num?)?.toInt() ?? acumulado.length;
+        skip += pageSize;
+        if (pagina.isEmpty || acumulado.length >= total) break;
+      }
       if (!mounted) return;
       setState(() {
-        _herramientasDisponibles = raw
-            .whereType<Map>()
-            .map(
-              (e) => HerramientaDisponibilidadResponse.fromJson(
-                e.cast<String, dynamic>(),
-              ),
-            )
-            .where((h) => h.totalDisponible > 0)
-            .toList();
+        _herramientasDisponibles = acumulado
+          ..sort((a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()));
       });
     } catch (_) {
       if (!mounted) return;
@@ -604,6 +615,7 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
               ].join(' ').toLowerCase().contains(q);
             }).toList();
 
+
             return AlertDialog(
               title: const Text('Herramientas para la tarea'),
               content: SizedBox(
@@ -628,7 +640,9 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
                       const Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Si hay stock propio del conjunto se usa primero. Si no alcanza, la reserva sale del stock de empresa.',
+                          'Indica cuántas unidades necesita la tarea. Quedan como necesidad '
+                          'y las unidades (por código) se asignan desde la agenda de recursos: '
+                          'primero las del conjunto y, si no alcanzan, las de la empresa.',
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -638,44 +652,34 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
                           itemCount: filtered.length,
                           itemBuilder: (_, index) {
                             final h = filtered[index];
-                            final actual = seleccionTemp[h.herramientaId];
+                            final actual = seleccionTemp[h.id];
                             return ListTile(
                               contentPadding: EdgeInsets.zero,
                               title: Text(h.nombre),
-                              subtitle: Text(
-                                '${h.categoria.label} · conjunto: ${h.disponibleConjunto} · empresa: ${h.disponibleEmpresa} · total: ${h.totalDisponible}',
-                              ),
+                              subtitle: Text(h.categoria.label),
                               trailing: SizedBox(
                                 width: 96,
                                 child: TextFormField(
                                   initialValue: actual != null
                                       ? actual.toString()
                                       : '',
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
+                                  keyboardType: TextInputType.number,
                                   decoration: const InputDecoration(
-                                    labelText: 'Cant.',
+                                    labelText: 'Unid.',
                                     border: OutlineInputBorder(),
                                   ),
                                   onChanged: (value) {
-                                    final parsed = num.tryParse(value.trim());
+                                    final parsed = int.tryParse(value.trim());
                                     if (parsed == null || parsed <= 0) {
-                                      seleccionTemp.remove(h.herramientaId);
+                                      seleccionTemp.remove(h.id);
                                     } else {
-                                      seleccionTemp[h.herramientaId] = parsed;
+                                      seleccionTemp[h.id] = parsed;
                                     }
                                   },
                                 ),
                               ),
-                              isThreeLine: true,
                               dense: false,
-                              leading: Icon(
-                                h.disponibleConjunto > 0
-                                    ? Icons.home_repair_service_outlined
-                                    : Icons.inventory_2_outlined,
-                              ),
+                              leading: const Icon(Icons.handyman_outlined),
                             );
                           },
                         ),
@@ -1890,11 +1894,13 @@ class _CorrectivaSchedulerFormState extends State<CorrectivaSchedulerForm> {
       );
 
       if (widget.existingTask != null) {
-        final editResp = await _tareaApi.editarTareaConRespuesta(
-          widget.existingTask!.id,
-          req,
+        final editResp = await editarTareaConRecursos(
+          context,
+          api: _tareaApi,
+          tareaId: widget.existingTask!.id,
+          req: req,
         );
-        if (!mounted) return;
+        if (!mounted || editResp == null) return;
         if (editResp['ok'] == false) {
           await _mostrarErrorBackend(editResp);
           return;

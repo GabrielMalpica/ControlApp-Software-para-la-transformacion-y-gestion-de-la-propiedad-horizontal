@@ -24,7 +24,8 @@ class EvidenciaPersistencia {
       if (bytes == null || bytes.isEmpty) continue;
 
       var finalBytes = bytes;
-      if (esNombreDeImagenComprimible(nombre)) {
+      if (esNombreDeImagenComprimible(nombre) &&
+          bytes.length > bytesMinimosParaComprimir) {
         try {
           finalBytes = await compute(comprimirImagenEvidencia, bytes);
         } catch (_) {
@@ -36,6 +37,7 @@ class EvidenciaPersistencia {
         EvidenciaPendiente(
           nombre: nombre,
           bytesBase64: base64Encode(finalBytes),
+          captura: e.captura,
         ),
       );
     }

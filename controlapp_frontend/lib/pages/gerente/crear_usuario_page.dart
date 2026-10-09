@@ -6,6 +6,7 @@ import 'package:flutter_application_1/model/necesidad_operario_model.dart';
 
 import '../../service/theme.dart';
 import '../../service/app_error.dart';
+import '../../service/api_exception.dart';
 import '../../model/usuario_model.dart';
 import '../../repositories/usuario_repository.dart';
 import '../../utils/enums/usuario_enums.dart';
@@ -281,10 +282,24 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
     setState(() => _isSaving = true);
 
     Usuario? usuarioCreado;
+    var administradorRecuperado = false;
 
     try {
       // 1️⃣ Crear el usuario base
-      usuarioCreado = await _usuarioRepository.crearUsuario(usuario);
+      try {
+        usuarioCreado = await _usuarioRepository.crearUsuario(usuario);
+      } on ApiException catch (error) {
+        if (error.reason != 'USER_ALREADY_EXISTS' ||
+            rolSeleccionado != 'administrador') {
+          rethrow;
+        }
+        await _conjuntoApi.recuperarAdministradorSinConjunto(
+          conjuntoNit: widget.nit,
+          administradorId: usuario.cedula,
+        );
+        administradorRecuperado = true;
+        usuarioCreado = usuario;
+      }
 
       // 2️⃣ Asignar el rol correspondiente usando endpoints del gerente
       switch (rolSeleccionado) {
@@ -321,10 +336,12 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
           break;
 
         case 'administrador':
-          await _gerenteApi.asignarAdministrador(
-            usuarioId: usuarioCreado.cedula,
-            conjuntoId: widget.nit,
-          );
+          if (!administradorRecuperado) {
+            await _gerenteApi.asignarAdministrador(
+              usuarioId: usuarioCreado.cedula,
+              conjuntoId: widget.nit,
+            );
+          }
           break;
 
         case 'jefe_operaciones':
@@ -335,9 +352,11 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
       }
 
       if (!mounted) return;
-      await _mostrarGuardadoYVolverMenu();
+      await _mostrarGuardadoYVolverMenu(
+        administradorRecuperado: administradorRecuperado,
+      );
     } catch (e) {
-      if (usuarioCreado != null) {
+      if (usuarioCreado != null && !administradorRecuperado) {
         try {
           await _usuarioRepository.eliminarUsuario(usuarioCreado.cedula);
         } catch (_) {
@@ -349,7 +368,7 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
       AppFeedback.showFromSnackBar(
         context,
         SnackBar(
-          content: Text("❌ Error al crear usuario: $e"),
+          content: Text('Error al crear usuario: ${AppError.messageOf(e)}'),
           backgroundColor: Colors.red,
         ),
       );
@@ -358,13 +377,19 @@ class _CrearUsuarioPageState extends State<CrearUsuarioPage> {
     }
   }
 
-  Future<void> _mostrarGuardadoYVolverMenu() async {
+  Future<void> _mostrarGuardadoYVolverMenu({
+    bool administradorRecuperado = false,
+  }) async {
     if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Éxito'),
-        content: const Text('Guardado correctamente.'),
+        content: Text(
+          administradorRecuperado
+              ? 'La cuenta existente fue vinculada al conjunto. Se conservaron sus datos y contraseña.'
+              : 'Guardado correctamente.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),

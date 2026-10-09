@@ -39,6 +39,7 @@ class CatalogoOperativoApi {
   Future<CategoriaTarea> crearCategoria({
     required String nombre,
     String? colorHex,
+    String? icono,
     List<String> palabrasClave = const [],
   }) async {
     final resp = await _client.post(
@@ -46,6 +47,7 @@ class CatalogoOperativoApi {
       body: {
         'nombre': nombre,
         if (colorHex != null) 'colorHex': colorHex,
+        if (icono != null) 'icono': icono,
         'palabrasClave': palabrasClave,
       },
     );
@@ -63,6 +65,7 @@ class CatalogoOperativoApi {
     int id, {
     String? nombre,
     String? colorHex,
+    String? icono,
     List<String>? palabrasClave,
     bool? activa,
   }) async {
@@ -71,6 +74,7 @@ class CatalogoOperativoApi {
       body: {
         if (nombre != null) 'nombre': nombre,
         if (colorHex != null) 'colorHex': colorHex,
+        if (icono != null) 'icono': icono,
         if (palabrasClave != null) 'palabrasClave': palabrasClave,
         if (activa != null) 'activa': activa,
       },

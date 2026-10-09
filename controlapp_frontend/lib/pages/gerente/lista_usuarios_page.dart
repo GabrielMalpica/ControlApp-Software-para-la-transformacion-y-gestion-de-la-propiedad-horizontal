@@ -166,12 +166,29 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
     if (confirma != true) return;
 
     try {
-      await _usuarioRepository.eliminarUsuario(usuario.cedula);
+      Map<String, int>? traslado;
+      if (usuario.rol == 'supervisor') {
+        final destino = await _seleccionarSupervisorDestino(usuario);
+        if (destino == null) return;
+        traslado = await _gerenteApi.reemplazarSupervisorYEliminar(
+          supervisorOrigenId: usuario.cedula,
+          supervisorDestinoId: destino.cedula,
+        );
+      } else {
+        await _usuarioRepository.eliminarUsuario(usuario.cedula);
+      }
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
-        const SnackBar(
-          content: Text("✅ Usuario eliminado correctamente"),
+        SnackBar(
+          content: Text(
+            traslado == null
+                ? 'Usuario eliminado correctamente.'
+                : 'Perfil eliminado. ${traslado['tareas']} tareas, '
+                      '${traslado['preventivas']} preventivas y '
+                      '${traslado['visitas']} visitas y '
+                      '${traslado['borradores']} borradores fueron transferidos.',
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -182,10 +199,74 @@ class _ListaUsuariosPageState extends State<ListaUsuariosPage> {
       AppFeedback.showFromSnackBar(
         context,
         SnackBar(
-          content: Text("❌ Error al eliminar usuario: $e"),
+          content: Text(AppError.messageOf(e)),
           backgroundColor: Colors.red,
         ),
       );
+    }
+  }
+
+  Future<Usuario?> _seleccionarSupervisorDestino(Usuario origen) async {
+    try {
+      final candidatos = (await _gerenteApi.listarSupervisores())
+          .where((usuario) => usuario.cedula != origen.cedula)
+          .toList();
+      if (!mounted) return null;
+      if (candidatos.isEmpty) {
+        AppFeedback.showFromSnackBar(
+          context,
+          const SnackBar(
+            content: Text('No hay otro supervisor activo para recibir las tareas.'),
+          ),
+        );
+        return null;
+      }
+
+      Usuario? seleccionado = candidatos.first;
+      return await showDialog<Usuario>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Reasignar tareas del supervisor'),
+            content: DropdownButtonFormField<Usuario>(
+              initialValue: seleccionado,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Supervisor que recibirá las tareas',
+              ),
+              items: candidatos
+                  .map(
+                    (candidato) => DropdownMenuItem<Usuario>(
+                      value: candidato,
+                      child: Text('${candidato.nombre} (${candidato.cedula})'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (valor) => setDialogState(() => seleccionado = valor),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: seleccionado == null
+                    ? null
+                    : () => Navigator.of(context).pop(seleccionado),
+                child: const Text('Transferir y eliminar perfil'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        AppFeedback.showFromSnackBar(
+          context,
+          SnackBar(content: Text(AppError.messageOf(error))),
+        );
+      }
+      return null;
     }
   }
 

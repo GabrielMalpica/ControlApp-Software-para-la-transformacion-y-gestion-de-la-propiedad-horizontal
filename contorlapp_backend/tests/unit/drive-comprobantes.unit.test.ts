@@ -46,7 +46,7 @@ jest.mock("googleapis", () => ({
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { uploadEvidenciaToDrive } from "../../src/utils/drive_evidencias";
+import { uploadEvidenciaToDrive, vaciarCacheCarpetasDrive } from "../../src/utils/drive_evidencias";
 
 let archivo: string;
 
@@ -62,6 +62,8 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
+  // Cada prueba arranca con un Drive vacío: también se olvidan los ids guardados.
+  vaciarCacheCarpetasDrive();
   carpetas.length = 0;
   archivos.length = 0;
   creadas.length = 0;

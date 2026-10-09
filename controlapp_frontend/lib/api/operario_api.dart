@@ -1,13 +1,11 @@
 import 'dart:convert';
-import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter_application_1/api/evidencias_multipart.dart';
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:http/http.dart' as http;
-import '../service/upload_media_type.dart';
 
 class OperarioApi {
   final SessionService _session = SessionService();
@@ -20,19 +18,27 @@ class OperarioApi {
     return {'Authorization': 'Bearer $token', 'Accept': 'application/json'};
   }
 
+  /// Actividades del operario. Con [desde]/[hasta] solo trae ese rango (por
+  /// fecha de inicio); sin rango trae todo el historial.
   Future<List<TareaModel>> listarTareasOperario({
     required int operarioId,
+    DateTime? desde,
+    DateTime? hasta,
   }) async {
-    final uri = Uri.parse(
-      '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas',
-    );
+    final uri =
+        Uri.parse(
+          '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas',
+        ).replace(
+          queryParameters: {
+            if (desde != null) 'desde': desde.toUtc().toIso8601String(),
+            if (hasta != null) 'hasta': hasta.toUtc().toIso8601String(),
+          },
+        );
 
     final resp = await http.get(uri, headers: await _authHeaders());
 
     if (resp.statusCode != 200) {
-      throw Exception(
-        'Error al listar tareas del operario: ${resp.statusCode} - ${resp.body}',
-      );
+      throw ApiError(resp.statusCode, resp.body);
     }
 
     final decoded = jsonDecode(resp.body);
@@ -42,6 +48,23 @@ class OperarioApi {
         .map((e) => TareaModel.fromJson((e as Map).cast<String, dynamic>()))
         .where((t) => !t.borrador)
         .toList();
+  }
+
+  /// Marca la actividad como iniciada (EN_PROCESO). Solo para actividades
+  /// asignadas al operario.
+  Future<void> iniciarTarea({
+    required int operarioId,
+    required int tareaId,
+  }) async {
+    final uri = Uri.parse(
+      '${AppConstants.baseUrl}/operario/operarios/$operarioId/tareas/$tareaId/iniciar',
+    );
+    final resp = await http
+        .post(uri, headers: await _authHeaders())
+        .timeout(const Duration(seconds: 20));
+    if (resp.statusCode != 200 && resp.statusCode != 204) {
+      throw ApiError(resp.statusCode, resp.body);
+    }
   }
 
   Future<void> cerrarTareaConEvidencias({
@@ -87,41 +110,7 @@ class OperarioApi {
       req.fields['insumosUsados'] = jsonEncode(insumosUsados);
     }
 
-    // ✅ adjuntar evidencias (web: bytes, mobile: path)
-    for (final e in evidencias) {
-      final path = e.path?.trim();
-      final bytes = e.bytes;
-      final fileName = e.nombre.trim().isNotEmpty
-          ? e.nombre.trim()
-          : (path?.split(RegExp(r'[\\/]')).last ?? 'evidencia.jpg');
-      final contentType = uploadMediaTypeFromName(fileName);
-
-      if (path != null && path.isNotEmpty) {
-        final file = File(path);
-        if (await file.exists()) {
-          req.files.add(
-            await http.MultipartFile.fromPath(
-              'files',
-              path,
-              filename: fileName,
-              contentType: contentType,
-            ),
-          );
-          continue;
-        }
-      }
-
-      if (kIsWeb && bytes != null && bytes.isNotEmpty) {
-        req.files.add(
-          http.MultipartFile.fromBytes(
-            'files',
-            bytes,
-            filename: fileName,
-            contentType: contentType,
-          ),
-        );
-      }
-    }
+    await adjuntarEvidencias(req, evidencias);
 
     final streamed = await req.send().timeout(timeout);
     final body = await streamed.stream.bytesToString().timeout(timeout);

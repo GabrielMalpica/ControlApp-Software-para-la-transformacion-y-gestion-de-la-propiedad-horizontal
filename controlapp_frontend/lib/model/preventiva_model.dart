@@ -48,27 +48,44 @@ class InsumoPlanItem {
 
 /// 🔹 Plan de maquinaria asociada a la definición / tarea
 class MaquinariaPlanItem {
+  /// Tipo del catálogo de maquinaria de la empresa (formato actual).
+  final int? tipoCatalogoId;
+
+  /// Tipo legado (enum fijo); planes antiguos.
   final String? tipo;
   final double? cantidad;
 
-  /// Máquina que se venía usando. Solo preselecciona en el cronograma de
-  /// maquinaria; no reserva nada.
+  /// Si es false la tarea puede hacerse sin este recurso (no genera alerta alta).
+  final bool obligatorio;
+
+  /// Máquina que se venía usando. Solo preselecciona en la agenda de
+  /// recursos; no reserva nada.
   final int? maquinariaSugeridaId;
 
-  MaquinariaPlanItem({this.tipo, this.cantidad, this.maquinariaSugeridaId});
+  MaquinariaPlanItem({
+    this.tipoCatalogoId,
+    this.tipo,
+    this.cantidad,
+    this.obligatorio = true,
+    this.maquinariaSugeridaId,
+  });
 
   factory MaquinariaPlanItem.fromJson(Map<String, dynamic> json) {
     return MaquinariaPlanItem(
+      tipoCatalogoId: _toInt(json['tipoCatalogoId']),
       tipo: json['tipo']?.toString(),
       cantidad: _toDouble(json['cantidad']),
+      obligatorio: json['obligatorio'] != false,
       maquinariaSugeridaId:
           _toInt(json['maquinariaSugeridaId']) ?? _toInt(json['maquinariaId']),
     );
   }
 
   Map<String, dynamic> toJson() => {
+    if (tipoCatalogoId != null) 'tipoCatalogoId': tipoCatalogoId,
     if (tipo != null) 'tipo': tipo,
     if (cantidad != null) 'cantidad': cantidad,
+    'obligatorio': obligatorio,
     if (maquinariaSugeridaId != null)
       'maquinariaSugeridaId': maquinariaSugeridaId,
   };
@@ -87,13 +104,17 @@ class MaquinariaPlanItem {
 /// ✅ Plan de herramientas asociadas a la definición / tarea
 class HerramientaPlanItem {
   final int herramientaId;
+
+  /// Unidades físicas (HerramientaItem) requeridas.
   final double cantidad;
   final String estado; // OPERATIVA | DANADA | PERDIDA | BAJA
+  final bool obligatorio;
 
   HerramientaPlanItem({
     required this.herramientaId,
     required this.cantidad,
     required this.estado,
+    this.obligatorio = true,
   });
 
   factory HerramientaPlanItem.fromJson(Map<String, dynamic> json) {
@@ -103,6 +124,7 @@ class HerramientaPlanItem {
       estado: (json['estado']?.toString().trim().isNotEmpty ?? false)
           ? json['estado'].toString()
           : 'OPERATIVA',
+      obligatorio: json['obligatorio'] != false,
     );
   }
 
@@ -110,6 +132,7 @@ class HerramientaPlanItem {
     'herramientaId': herramientaId,
     'cantidad': cantidad,
     'estado': estado,
+    'obligatorio': obligatorio,
   };
 }
 
@@ -304,23 +327,30 @@ class InsumoPlanItemRequest {
   };
 }
 
-/// La definición preventiva declara la NECESIDAD de maquinaria (qué tipo y
-/// cuántas). La máquina concreta se asigna después desde el cronograma de
-/// maquinaria; aquí solo puede viajar como sugerencia.
+/// La definición preventiva declara la NECESIDAD de maquinaria (qué tipo del
+/// catálogo de la empresa y cuántas). La máquina concreta se asigna después
+/// desde la agenda de recursos; aquí solo puede viajar como sugerencia.
 class MaquinariaPlanItemRequest {
-  final TipoMaquinariaFlutter tipo;
+  /// Tipo del catálogo de la empresa. Si falta, se envía el tipo legado.
+  final int? tipoCatalogoId;
+  final TipoMaquinariaFlutter? tipo;
   final int cantidad;
+  final bool obligatorio;
   final int? maquinariaSugeridaId;
 
   MaquinariaPlanItemRequest({
-    required this.tipo,
+    this.tipoCatalogoId,
+    this.tipo,
     this.cantidad = 1,
+    this.obligatorio = true,
     this.maquinariaSugeridaId,
-  });
+  }) : assert(tipoCatalogoId != null || tipo != null);
 
   Map<String, dynamic> toJson() => {
-    'tipo': tipo.backendValue,
+    if (tipoCatalogoId != null) 'tipoCatalogoId': tipoCatalogoId,
+    if (tipoCatalogoId == null && tipo != null) 'tipo': tipo!.backendValue,
     'cantidad': cantidad,
+    'obligatorio': obligatorio,
     if (maquinariaSugeridaId != null)
       'maquinariaSugeridaId': maquinariaSugeridaId,
   };
@@ -328,19 +358,21 @@ class MaquinariaPlanItemRequest {
 
 class HerramientaPlanItemRequest {
   final int herramientaId;
-  final double cantidad;
-  final String estado;
+
+  /// Unidades físicas requeridas (se reservan por código).
+  final int cantidad;
+  final bool obligatorio;
 
   HerramientaPlanItemRequest({
     required this.herramientaId,
     required this.cantidad,
-    required this.estado,
+    this.obligatorio = true,
   });
 
   Map<String, dynamic> toJson() => {
     'herramientaId': herramientaId,
     'cantidad': cantidad,
-    'estado': estado,
+    'obligatorio': obligatorio,
   };
 }
 

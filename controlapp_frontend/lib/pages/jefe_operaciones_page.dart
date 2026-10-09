@@ -4,10 +4,7 @@ import '../api/gerente_api.dart';
 import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_activo_model.dart';
 import 'package:flutter_application_1/pages/jefe_operaciones/jefe_operaciones_pendientes_page.dart';
-import 'package:flutter_application_1/pages/gerente/agenda_maquinaria_global_page.dart';
-import 'package:flutter_application_1/pages/gerente/agenda_recursos_page.dart';
-import 'package:flutter_application_1/pages/gerente/agenda_general_recursos_page.dart';
-import 'package:flutter_application_1/pages/gerente/agenda_herramientas_global_page.dart';
+import 'package:flutter_application_1/pages/recursos/centro_recursos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
@@ -288,54 +285,28 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
           }),
       ]),
       _JefeSection('Planeacion y recursos', [
-        if (_can('maquinaria.ver'))
-          _JefeTile(
-            'Maquinaria',
-            Icons.precision_manufacturing,
-            AppTheme.red,
-            () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => AgendaMaquinariaGlobalExcelPage(
-                    empresaNit: AppConstants.empresaNit,
-                  ),
-                ),
-              );
-            },
-          ),
-        if (_can('herramientas.ver'))
-          _JefeTile('Herramientas', Icons.handyman, Colors.orange, () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => AgendaHerramientasGlobalPage(
-                  empresaNit: AppConstants.empresaNit,
-                ),
-              ),
-            );
-          }),
         if (_can('maquinaria.asignar') || _can('herramientas.asignar'))
-          _JefeTile('Agenda de recursos', Icons.event_repeat, AppTheme.red, () {
+          _JefeTile('Centro de recursos', Icons.event_repeat, AppTheme.red, () {
             Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) =>
-                    AgendaRecursosPage(empresaNit: AppConstants.empresaNit),
+                    CentroRecursosPage(empresaNit: AppConstants.empresaNit),
               ),
             );
           }),
-        if (_can('maquinaria.asignar') || _can('herramientas.asignar'))
+        if (_can('maquinaria.ver') || _can('herramientas.ver'))
           _JefeTile(
-            'Agenda general de recursos',
-            Icons.calendar_view_month,
+            'Agenda de recursos',
+            Icons.view_timeline_outlined,
             AppTheme.primary,
             () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => AgendaGeneralRecursosPage(
+                  builder: (_) => CentroRecursosPage(
                     empresaNit: AppConstants.empresaNit,
+                    pestanaInicial: 1,
                   ),
                 ),
               );

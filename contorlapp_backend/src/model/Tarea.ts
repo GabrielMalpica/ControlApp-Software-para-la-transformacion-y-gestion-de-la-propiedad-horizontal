@@ -258,6 +258,7 @@ export const CorregirCierreDTO = z.object({
       }
     }),
   observaciones: z.string().optional(),
+  evidenciasCaptura: z.string().optional(), // JSON: [{tomadaEn, latitud, longitud} | null]
 });
 
 /* ===================== SELECT BASE PARA PRISMA ===================== */

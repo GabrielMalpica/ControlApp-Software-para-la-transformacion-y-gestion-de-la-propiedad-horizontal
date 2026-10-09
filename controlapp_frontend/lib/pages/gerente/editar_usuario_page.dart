@@ -238,6 +238,9 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
         // ✅ NUEVOS
         'activo': activo,
         'patronJornada': jornada == 'MEDIO_TIEMPO' ? patronJornada : null,
+        if (rolSeleccionado == 'administrador' &&
+            _conjuntoSeleccionadoNit != null)
+          'conjuntoId': _conjuntoSeleccionadoNit,
       };
 
       // Las funciones viven en Operario, no en Usuario: van por un
@@ -908,6 +911,61 @@ class _EditarUsuarioPageState extends State<EditarUsuarioPage> {
                   ),
                 ),
               ),
+
+              if (rolSeleccionado == 'administrador') ...[
+                Card(
+                  elevation: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Conjunto asignado',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_cargandoConjuntos)
+                          const LinearProgressIndicator()
+                        else if (_errorConjuntos != null)
+                          Text(
+                            'Error cargando conjuntos: $_errorConjuntos',
+                            style: const TextStyle(color: Colors.red),
+                          )
+                        else if (_conjuntos.isEmpty)
+                          const Text('No hay conjuntos creados.')
+                        else
+                          DropdownButtonFormField<String>(
+                            initialValue: _conjuntos.any(
+                              (conjunto) =>
+                                  conjunto.nit == _conjuntoSeleccionadoNit,
+                            )
+                                ? _conjuntoSeleccionadoNit
+                                : null,
+                            decoration: const InputDecoration(
+                              labelText: 'Asignar a conjunto',
+                              helperText:
+                                  'El conjunto debe estar libre de otro administrador.',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: _conjuntos
+                                .map(
+                                  (conjunto) => DropdownMenuItem<String>(
+                                    value: conjunto.nit,
+                                    child: Text(conjunto.nombre),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (valor) => setState(
+                              () => _conjuntoSeleccionadoNit = valor,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
 
               const SizedBox(height: 20),
 

@@ -51,7 +51,10 @@ router.post("/herramientas/lotes/:loteId/aprobar", requireRoles("gerente", "jefe
 router.post("/herramientas/lotes/:loteId/rechazar", requireRoles("gerente", "jefe_operaciones", "supervisor"), requirePermission("herramientas.aprobar"), activos.rechazarLoteHerramientas);
 
 // ✅ por conjunto
-router.get("/conjunto/:nit/insumos", requirePermission("inventario.ver"), requireConjuntoScope("nit"), c.listarInsumosConjunto);
+// Quien puede cerrar tareas necesita consultar el stock del conjunto para
+// registrar los insumos consumidos durante el cierre. El alcance por conjunto
+// sigue limitando esta lectura al conjunto autorizado.
+router.get("/conjunto/:nit/insumos", requirePermission("inventario.ver", "tareas.cerrar"), requireConjuntoScope("nit"), c.listarInsumosConjunto);
 router.get(
   "/conjunto/:nit/insumos-bajos",
   requirePermission("inventario.ver"),

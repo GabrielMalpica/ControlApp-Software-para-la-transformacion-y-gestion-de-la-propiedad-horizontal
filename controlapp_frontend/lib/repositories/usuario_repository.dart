@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../model/usuario_model.dart';
 import '../service/api_client.dart';
+import '../service/api_exception.dart';
 import '../service/app_constants.dart';
 
 class UsuarioRepository {
@@ -27,7 +28,11 @@ class UsuarioRepository {
     final response = await _apiClient.post(AppConstants.usuarios, body: body);
 
     if (response.statusCode != 201 && response.statusCode != 200) {
-      throw Exception('Error al crear usuario: ${response.body}');
+      throw ApiException.fromResponse(
+        statusCode: response.statusCode,
+        body: response.body,
+        fallback: 'No se pudo crear el usuario.',
+      );
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;

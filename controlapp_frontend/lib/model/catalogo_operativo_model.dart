@@ -29,6 +29,10 @@ class CategoriaTarea {
   /// 1 = primero en el día. Solo ordena; no decide qué tareas entran al mes.
   final int ordenProgramacion;
   final String? colorHex;
+
+  /// Clave del ícono (ver utils/cronograma/categoria_iconos.dart); null =
+  /// la app sugiere uno por el nombre.
+  final String? icono;
   final List<String> palabrasClave;
   final bool activa;
 
@@ -40,6 +44,7 @@ class CategoriaTarea {
     required this.nombre,
     required this.ordenProgramacion,
     this.colorHex,
+    this.icono,
     this.palabrasClave = const [],
     this.activa = true,
     this.preventivas = 0,
@@ -51,6 +56,7 @@ class CategoriaTarea {
       nombre: json['nombre']?.toString() ?? '',
       ordenProgramacion: _toInt(json['ordenProgramacion']) ?? 100,
       colorHex: json['colorHex']?.toString(),
+      icono: json['icono']?.toString(),
       palabrasClave: _toStringList(json['palabrasClave']),
       activa: json['activa'] as bool? ?? true,
       preventivas: _toInt(json['preventivas']) ?? 0,
@@ -64,6 +70,7 @@ class CategoriaResumen {
   final String nombre;
   final int ordenProgramacion;
   final String? colorHex;
+  final String? icono;
   final bool activa;
 
   const CategoriaResumen({
@@ -71,6 +78,7 @@ class CategoriaResumen {
     required this.nombre,
     required this.ordenProgramacion,
     this.colorHex,
+    this.icono,
     this.activa = true,
   });
 
@@ -83,6 +91,7 @@ class CategoriaResumen {
       nombre: json['nombre']?.toString() ?? '',
       ordenProgramacion: _toInt(json['ordenProgramacion']) ?? 100,
       colorHex: json['colorHex']?.toString(),
+      icono: json['icono']?.toString(),
       activa: json['activa'] as bool? ?? true,
     );
   }

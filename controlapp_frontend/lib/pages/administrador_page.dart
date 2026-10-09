@@ -5,6 +5,8 @@ import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
 import 'package:flutter_application_1/pages/conjunto_cart_page.dart';
 import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
+import 'package:flutter_application_1/pages/asistencia_grid_page.dart';
+import 'package:flutter_application_1/pages/asistencia_qr_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/permission_service.dart';
@@ -21,7 +23,7 @@ import 'package:flutter_application_1/widgets/skeleton.dart';
 import '../service/theme.dart';
 import 'compartidos/reportes_dashboard_page.dart';
 import 'cronograma_impresion_page.dart';
-import 'cronograma_page.dart';
+import 'cronograma_claro_page.dart';
 import 'inventario_resumen_page.dart';
 import 'jefe_operaciones/jefe_operaciones_pendientes_page.dart';
 import 'plan_esperanza_page.dart';
@@ -304,7 +306,7 @@ class _AdministradorPageState extends State<AdministradorPage> {
             'Cronograma',
             Icons.calendar_month,
             Colors.purple,
-            () => _go(CronogramaPage(nit: conjunto.nit)),
+            () => _go(CronogramaClaroPage(nit: conjunto.nit)),
           ),
         if (_can('mapa_areas.ver'))
           _AdminTile(
@@ -315,6 +317,30 @@ class _AdministradorPageState extends State<AdministradorPage> {
           ),
       ]),
       _AdminSection('Analisis y control', [
+        if (_can('asistencia.ver'))
+          _AdminTile(
+            'Resumen de asistencia',
+            Icons.fact_check_outlined,
+            Colors.teal,
+            () => _go(
+              AsistenciaGridPage(
+                conjuntoId: conjunto.nit,
+                conjuntoNombre: conjunto.nombre,
+              ),
+            ),
+          ),
+        if (_can('asistencia.qr.gestionar'))
+          _AdminTile(
+            'QR de asistencia',
+            Icons.qr_code_2_rounded,
+            Colors.teal,
+            () => _go(
+              AsistenciaQrPage(
+                conjuntoId: conjunto.nit,
+                conjuntoNombre: conjunto.nombre,
+              ),
+            ),
+          ),
         if (_can('reportes.ver'))
           _AdminTile(
             'Reportes',

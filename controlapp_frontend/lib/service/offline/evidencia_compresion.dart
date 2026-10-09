@@ -5,6 +5,11 @@ import 'package:image/image.dart' as img;
 const int maxLadoEvidencia = 1920;
 const int calidadJpegEvidencia = 80;
 
+/// Por debajo de esto la foto ya viene reducida (la cámara y los adjuntos se
+/// optimizan al agregarse) y recomprimirla solo gasta tiempo: en web esto
+/// corre en el hilo principal y congela la pantalla.
+const int bytesMinimosParaComprimir = 900 * 1024;
+
 /// Redimensiona y reencodea una imagen para que ocupe menos espacio en la
 /// cola offline. Pensado para correr dentro de `compute()` (isolate aparte)
 /// ya que decodificar/reencodear fotos de cámara puede tardar cientos de ms.

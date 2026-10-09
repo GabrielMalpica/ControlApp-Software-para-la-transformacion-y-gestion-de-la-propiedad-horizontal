@@ -145,6 +145,7 @@ export class SupervisorController {
             observaciones: req.body.observaciones,
             fechaFinalizarTarea: req.body.fechaFinalizarTarea,
             insumosUsados: req.body.insumosUsados,
+            evidenciasCaptura: req.body.evidenciasCaptura,
           },
           files,
         );
@@ -173,6 +174,7 @@ export class SupervisorController {
           observaciones: req.body.observaciones,
           fechaFinalizarTarea: req.body.fechaFinalizarTarea,
           insumosUsados: req.body.insumosUsados,
+          evidenciasCaptura: req.body.evidenciasCaptura,
         },
         files,
       );

@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import '../api/preventiva_api.dart';
 import '../api/empresa_api.dart';
 import '../api/herramienta_api.dart';
+import '../api/inventario_activo_api.dart';
 import '../api/gerente_api.dart';
 
 import '../model/preventiva_model.dart';
@@ -22,6 +23,7 @@ import '../model/usuario_model.dart';
 import '../model/insumo_model.dart';
 import '../model/maquinaria_model.dart';
 import '../model/herramienta_model.dart';
+import '../model/inventario_activo_model.dart';
 import '../widgets/searchable_select_field.dart';
 
 import '../service/theme.dart';
@@ -56,9 +58,14 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   final _gerenteApi = GerenteApi();
   final _empresaApi = EmpresaApi();
   final _herramientaApi = HerramientaApi();
+  final _inventarioActivoApi = InventarioActivoApi();
 
   List<InsumoResponse> _catalogoInsumos = [];
   List<HerramientaResponse> _catalogoHerramientas = [];
+
+  /// Tipos de maquinaria del catálogo de la empresa (incluye tipos propios
+  /// como "Mampara"; no se limita al enum fijo).
+  List<CatalogoActivo> _catalogoMaquinaria = [];
   List<Usuario> _supervisores = [];
 
   // Controllers básicos
@@ -192,6 +199,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     await Future.wait([
       _cargarCatalogoInsumos(),
       _cargarCatalogoHerramientas(),
+      _cargarCatalogoMaquinaria(),
       _cargarSupervisores(),
       _cargarCategorias(),
     ]);
@@ -308,6 +316,39 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
     } catch (e) {
       if (!mounted) return;
       _snack('Error cargando catálogo de insumos: $e', type: SnackType.error);
+    }
+  }
+
+  Future<void> _cargarCatalogoMaquinaria() async {
+    try {
+      final lista = await _inventarioActivoApi.catalogo(
+        empresaId: AppConstants.empresaNit,
+        clase: ClaseActivoInventario.maquinaria,
+      );
+      if (!mounted) return;
+      setState(() {
+        _catalogoMaquinaria = lista
+          ..sort((a, b) => a.nombre.toLowerCase().compareTo(b.nombre.toLowerCase()));
+        _resolverTiposLegados();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      _snack(
+        'Error cargando tipos de maquinaria: ${AppError.messageOf(e)}',
+        type: SnackType.error,
+      );
+    }
+  }
+
+  /// Planes antiguos traen el tipo como enum: se ubica su tipo de catálogo
+  /// por `tipoLegacy` para que el selector lo muestre y se guarde el formato nuevo.
+  void _resolverTiposLegados() {
+    for (final row in _maquinariaPlanRows) {
+      if (row.tipoCatalogoId != null || row.tipoLegacy == null) continue;
+      final match = _catalogoMaquinaria
+          .where((c) => c.tipoLegacy == row.tipoLegacy)
+          .firstOrNull;
+      if (match != null) row.tipoCatalogoId = match.id;
     }
   }
 
@@ -442,22 +483,26 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         ..clear()
         ..addAll(
           existente.maquinariaPlan
-              .where((m) => m.tipoEnum != null)
+              .where((m) => m.tipoCatalogoId != null || m.tipoEnum != null)
               .map(
                 (m) => _MaquinariaPlanRow(
-                  tipo: m.tipoEnum,
+                  tipoCatalogoId: m.tipoCatalogoId,
+                  tipoLegacy: m.tipoEnum?.name,
                   cantidad: (m.cantidad ?? 1).round().clamp(1, 99),
+                  obligatorio: m.obligatorio,
                   maquinariaSugeridaId: m.maquinariaSugeridaId,
                 ),
               ),
         );
+      _resolverTiposLegados();
 
       _herramientasPlanRows.clear();
       for (final h in existente.herramientasPlan) {
         _herramientasPlanRows.add(
           _HerramientaPlanRow(
             herramientaId: h.herramientaId,
-            cantidadInicial: h.cantidad,
+            cantidadInicial: h.cantidad.ceil().clamp(1, 999),
+            obligatorio: h.obligatorio,
           ),
         );
       }
@@ -956,26 +1001,25 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         .toList();
 
     final maquinariaPlanRequests = _maquinariaPlanRows
-        .where((r) => r.tipo != null)
+        .where((r) => r.tipoCatalogoId != null || r.tipoLegacyEnum != null)
         .map(
           (r) => MaquinariaPlanItemRequest(
-            tipo: r.tipo!,
+            tipoCatalogoId: r.tipoCatalogoId,
+            tipo: r.tipoCatalogoId == null ? r.tipoLegacyEnum : null,
             cantidad: r.cantidad,
+            obligatorio: r.obligatorio,
             maquinariaSugeridaId: r.maquinariaSugeridaId,
           ),
         )
         .toList();
 
     final herramientasPlanRequests = _herramientasPlanRows
-        .where(
-          (r) =>
-              r.herramientaId != null && r.cantidadCtrl.text.trim().isNotEmpty,
-        )
+        .where((r) => r.herramientaId != null)
         .map(
           (r) => HerramientaPlanItemRequest(
             herramientaId: r.herramientaId!,
-            cantidad: _tryDouble(r.cantidadCtrl.text.trim()) ?? 0,
-            estado: 'OPERATIVA',
+            cantidad: (int.tryParse(r.cantidadCtrl.text.trim()) ?? 1).clamp(1, 999),
+            obligatorio: r.obligatorio,
           ),
         )
         .toList();
@@ -1881,9 +1925,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                           const SizedBox(width: 8),
                           const Expanded(
                             child: Text(
-                              'Indica solo el tipo de máquina que hace falta. '
-                              'La máquina concreta se asigna después, para toda la '
-                              'empresa, desde el cronograma de maquinaria.',
+                              'Indica solo el tipo de máquina que hace falta y cuántas. '
+                              'Al publicar el cronograma queda como necesidad; la máquina '
+                              'concreta (primero la del conjunto, si no la de la empresa) '
+                              'se asigna después desde la agenda de recursos.',
                               style: TextStyle(fontSize: 12),
                             ),
                           ),
@@ -2137,52 +2182,83 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
 
   Widget _buildMaquinariaPlanRow(int index) {
     final row = _maquinariaPlanRows[index];
+    final sinCatalogo = row.tipoCatalogoId == null &&
+        row.tipoLegacy != null &&
+        _catalogoMaquinaria.isNotEmpty;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: SearchableSelectField<TipoMaquinariaFlutter>(
-              label: 'Tipo de maquinaria',
-              value: row.tipo,
-              prefixIcon: const Icon(Icons.precision_manufacturing),
-              searchHint: 'Buscar tipo de maquinaria',
-              clearLabel: 'Sin definir',
-              options: TipoMaquinariaFlutter.values
-                  .map(
-                    (tipo) => SearchableSelectOption<TipoMaquinariaFlutter>(
-                      value: tipo,
-                      label: tipo.label,
-                    ),
-                  )
-                  .toList(),
-              onChanged: (tipo) => setState(() => row.tipo = tipo),
-            ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 120,
-            child: TextFormField(
-              key: ValueKey('maqCantidad_${index}_${row.cantidad}'),
-              initialValue: '${row.cantidad}',
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Cantidad',
-                border: OutlineInputBorder(),
+          Row(
+            children: [
+              Expanded(
+                child: SearchableSelectField<int>(
+                  label: 'Tipo de maquinaria',
+                  value: row.tipoCatalogoId,
+                  prefixIcon: const Icon(Icons.precision_manufacturing),
+                  searchHint: 'Buscar tipo de maquinaria',
+                  placeholder: row.tipoLegacyEnum?.label ?? 'Seleccionar',
+                  clearLabel: 'Sin definir',
+                  options: _catalogoMaquinaria
+                      .map(
+                        (tipo) => SearchableSelectOption<int>(
+                          value: tipo.id,
+                          label: tipo.nombre,
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (id) => setState(() {
+                    row.tipoCatalogoId = id;
+                    if (id == null) row.tipoLegacy = null;
+                  }),
+                ),
               ),
-              onChanged: (value) {
-                final n = int.tryParse(value.trim());
-                if (n != null && n > 0) row.cantidad = n;
-              },
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 110,
+                child: TextFormField(
+                  key: ValueKey('maqCantidad_${index}_${row.cantidad}'),
+                  initialValue: '${row.cantidad}',
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Cantidad',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) {
+                    final n = int.tryParse(value.trim());
+                    if (n != null && n > 0) row.cantidad = n;
+                  },
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Quitar',
+                onPressed: () =>
+                    setState(() => _maquinariaPlanRows.removeAt(index)),
+              ),
+            ],
+          ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            value: row.obligatorio,
+            onChanged: (v) => setState(() => row.obligatorio = v),
+            title: const Text('Obligatoria'),
+            subtitle: Text(
+              row.obligatorio
+                  ? 'Sin esta máquina la tarea no se puede hacer: se alerta si no tiene una asignada.'
+                  : 'Opcional: ayuda, pero la tarea se puede hacer sin ella.',
+              style: const TextStyle(fontSize: 12),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'Quitar',
-            onPressed: () =>
-                setState(() => _maquinariaPlanRows.removeAt(index)),
-          ),
+          if (sinCatalogo)
+            Text(
+              'El tipo "${row.tipoLegacyEnum?.label ?? row.tipoLegacy}" no está en el catálogo '
+              'de la empresa; se creará al publicar. Puedes elegir un tipo del catálogo.',
+              style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
+            ),
         ],
       ),
     );
@@ -2222,11 +2298,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                 flex: 2,
                 child: TextFormField(
                   controller: row.cantidadCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
+                  keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'Cantidad',
+                    labelText: 'Unidades',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -2243,17 +2317,20 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
               ),
             ],
           ),
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            value: row.obligatorio,
+            onChanged: (v) => setState(() => row.obligatorio = v),
+            title: const Text('Obligatoria'),
+          ),
           if (seleccionada != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'La herramienta real se cubre después desde el cronograma de '
-                  'herramientas: primero con el stock del conjunto y, si no alcanza, '
-                  'en préstamo automático de la empresa.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Las unidades (por código) se asignan después desde la agenda de '
+                'recursos: primero las del conjunto y, si no alcanzan, las de la empresa.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
               ),
             ),
         ],
@@ -2272,14 +2349,34 @@ class _InsumoPlanRow {
       );
 }
 
-/// Necesidad de maquinaria de la preventiva: que tipo y cuantas.
-/// La maquina concreta se asigna despues desde el cronograma de maquinaria.
+/// Necesidad de maquinaria de la preventiva: que tipo (del catálogo de la
+/// empresa) y cuantas. La maquina concreta se asigna despues desde la agenda
+/// de recursos.
 class _MaquinariaPlanRow {
-  TipoMaquinariaFlutter? tipo;
+  int? tipoCatalogoId;
+
+  /// Tipo legado (enum) de planes antiguos sin tipo de catálogo.
+  String? tipoLegacy;
   int cantidad;
+  bool obligatorio;
   int? maquinariaSugeridaId;
 
-  _MaquinariaPlanRow({this.tipo, this.cantidad = 1, this.maquinariaSugeridaId});
+  _MaquinariaPlanRow({
+    this.tipoCatalogoId,
+    this.tipoLegacy,
+    this.cantidad = 1,
+    this.obligatorio = true,
+    this.maquinariaSugeridaId,
+  });
+
+  TipoMaquinariaFlutter? get tipoLegacyEnum {
+    final clave = tipoLegacy?.trim().toUpperCase();
+    if (clave == null || clave.isEmpty) return null;
+    for (final valor in TipoMaquinariaFlutter.values) {
+      if (valor.name == clave) return valor;
+    }
+    return null;
+  }
 }
 
 /// Necesidad de herramienta de la preventiva: que herramienta del catálogo y
@@ -2287,10 +2384,12 @@ class _MaquinariaPlanRow {
 /// se decide despues desde el cronograma de herramientas.
 class _HerramientaPlanRow {
   int? herramientaId;
+  bool obligatorio;
   final TextEditingController cantidadCtrl;
 
-  _HerramientaPlanRow({this.herramientaId, num? cantidadInicial})
-    : cantidadCtrl = TextEditingController(
-        text: cantidadInicial != null ? cantidadInicial.toString() : '',
-      );
+  _HerramientaPlanRow({
+    this.herramientaId,
+    int? cantidadInicial,
+    this.obligatorio = true,
+  }) : cantidadCtrl = TextEditingController(text: '${cantidadInicial ?? 1}');
 }

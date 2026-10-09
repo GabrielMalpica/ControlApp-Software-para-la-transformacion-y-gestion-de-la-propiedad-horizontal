@@ -8,6 +8,8 @@ import 'package:flutter/gestures.dart'
     show GestureBinding, PointerEvent, PointerMoveEvent, PointerScrollEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/catalogo_operativo_api.dart';
+import 'package:flutter_application_1/api/recursos_api.dart';
+import 'package:flutter_application_1/model/recurso_agenda_model.dart';
 import 'package:flutter_application_1/api/conjunto_api.dart';
 import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:flutter_application_1/api/preventiva_api.dart';
@@ -117,6 +119,10 @@ class _CronogramaPreventivasBorradorPageState
   /// el contenido se mantiene en pantalla (y su scroll) en vez de volver al
   /// esqueleto de carga.
   bool _recargando = false;
+
+  /// Días del borrador en que se piden más máquinas/herramientas de las que
+  /// existen operativas (aviso informativo: el borrador no reserva nada).
+  List<CapacidadBorradorDia> _capacidadInsuficiente = const [];
   bool _yaCargo = false;
   bool _publicando = false;
   String? _error;
@@ -2471,6 +2477,69 @@ class _CronogramaPreventivasBorradorPageState
         });
       }
     }
+    unawaited(_cargarCapacidadRecursos());
+  }
+
+  /// Aviso de capacidad proyectada de recursos (no bloquea ni reserva).
+  Future<void> _cargarCapacidadRecursos() async {
+    try {
+      final insuficientes = await RecursosApi().capacidadBorrador(
+        conjuntoId: widget.nit,
+        anio: _anioActual,
+        mes: _mesActual,
+      );
+      if (mounted) setState(() => _capacidadInsuficiente = insuficientes);
+    } catch (_) {
+      // Es solo un aviso: si falla, el borrador sigue funcionando.
+      if (mounted) setState(() => _capacidadInsuficiente = const []);
+    }
+  }
+
+  Widget _buildAvisoCapacidadRecursos() {
+    if (_capacidadInsuficiente.isEmpty) return const SizedBox.shrink();
+    final fmt = DateFormat('EEE d', 'es');
+    final lineas = _capacidadInsuficiente.take(6).map((d) {
+      return '${fmt.format(d.fecha)} · ${d.tipoNombre}: piden ${d.requeridas}, '
+          'hay ${d.capacidad} operativa(s)';
+    }).toList();
+    final resto = _capacidadInsuficiente.length - lineas.length;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.precision_manufacturing_outlined, color: Colors.orange.shade800),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Recursos insuficientes proyectados',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Estos días el borrador pide más unidades de las que existen operativas '
+                  '(del conjunto + empresa). No bloquea la publicación; considera mover tareas.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 6),
+                for (final l in lineas) Text('• $l', style: const TextStyle(fontSize: 12.5)),
+                if (resto > 0) Text('… y $resto más', style: const TextStyle(fontSize: 12.5)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _cargarInformeJerarquico() async {
@@ -5053,13 +5122,16 @@ class _CronogramaPreventivasBorradorPageState
 
     final durMin = t.duracionMinutos;
 
+    // Recursos que pide la tarea (maquinaria y herramientas) con el nombre del
+    // tipo; en tareas publicadas incluye cuántas unidades tiene asignadas en
+    // la agenda de recursos.
     final maquinariaLista = t.maquinariaPlan ?? const [];
-    final maquinariaTxt = maquinariaLista.isEmpty
-        ? 'Sin maquinaria planificada'
+    final maquinariaTxt = t.recursosPlan.isNotEmpty
+        ? t.recursosPlan.map((r) => r.resumen).join('\n')
+        : maquinariaLista.isEmpty
+        ? 'Sin maquinaria ni herramientas planificadas'
         : maquinariaLista
               .map((m) {
-                // La preventiva declara el tipo necesario; la máquina concreta
-                // se asigna desde el cronograma de maquinaria.
                 final tipo = m.tipoEnum?.label ?? m.tipo ?? 'Sin tipo';
                 final cantidad = (m.cantidad ?? 1).round();
                 return cantidad > 1 ? '$tipo × $cantidad' : tipo;
@@ -5121,7 +5193,7 @@ class _CronogramaPreventivasBorradorPageState
                 addRow('supervisor', 'Supervisor', supervisorLabel);
                 rows.add(const SizedBox(height: 8));
                 addRow('operarios', 'Operarios', operarios);
-                addRow('maquinaria', 'Maquinaria planificada', maquinariaTxt);
+                addRow('maquinaria', 'Maquinaria y herramientas', maquinariaTxt);
                 rows.add(const SizedBox(height: 8));
                 addRow(
                   'observaciones',
@@ -5526,6 +5598,7 @@ class _CronogramaPreventivasBorradorPageState
         children: [
           if (_recargando) const LinearProgressIndicator(minHeight: 2),
           _buildBannerBorrador(),
+          _buildAvisoCapacidadRecursos(),
           _buildTopBar(mesNombre),
           if (_vista == _VistaCronograma.mensual)
             AnimatedCrossFade(

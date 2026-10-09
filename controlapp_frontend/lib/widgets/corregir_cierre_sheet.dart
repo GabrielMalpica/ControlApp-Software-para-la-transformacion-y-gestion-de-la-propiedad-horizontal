@@ -8,9 +8,9 @@ import 'package:flutter_application_1/model/inventario_item_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
+import 'package:flutter_application_1/service/evidencia_camara_service.dart';
 import 'package:flutter_application_1/service/permission_service.dart';
 import 'package:flutter_application_1/utils/evidence_utils.dart';
-import 'package:flutter_application_1/utils/pickers/camera_capture_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/clipboard_image_capture_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/file_pick_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
@@ -206,7 +206,7 @@ class _CorregirCierreSheetState extends State<CorregirCierreSheet> {
   Future<void> _tomarFoto() async {
     if (!_puedeTomarFoto) return;
     try {
-      final captura = await CameraCapture.pickPhoto();
+      final captura = await EvidenciaCamara.tomarFoto();
       if (captura == null) return;
       setState(() => _evidenciasNuevas.add(captura));
     } catch (e) {

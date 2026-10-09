@@ -4,6 +4,9 @@ import 'package:flutter_application_1/model/catalogo_operativo_model.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/utils/cronograma/categoria_iconos.dart';
+import 'package:flutter_application_1/utils/cronograma/categoria_visual.dart';
+import 'package:flutter_application_1/widgets/cronograma/cronograma_ui.dart';
 
 const List<String> _rolesPerfil = [
   'TODERO',
@@ -13,16 +16,26 @@ const List<String> _rolesPerfil = [
   'JARDINERO',
 ];
 
-const List<String> _coloresCategoria = [
-  '#0288D1',
-  '#558B2F',
-  '#2E7D32',
-  '#8E24AA',
-  '#EF6C00',
-  '#D32F2F',
-  '#455A64',
-  '#00897B',
+const List<(String, String)> _coloresCategoria = [
+  ('#1F6FB2', 'Azul'),
+  ('#3B7A1E', 'Verde hoja'),
+  ('#0F766E', 'Turquesa'),
+  ('#B8520A', 'Naranja'),
+  ('#8A5A2B', 'Tierra'),
+  ('#8A6500', 'Mostaza'),
+  ('#A3266B', 'Fucsia'),
+  ('#3F4FB5', 'Índigo'),
+  ('#B91C1C', 'Rojo'),
+  ('#4B5563', 'Pizarra'),
 ];
+
+/// true si [hex] se confunde con el morado de las actividades especiales.
+bool _pareceMoradoEspecial(String hex) {
+  final c = colorDesdeHex(hex);
+  if (c == null) return false;
+  final hsl = HSLColor.fromColor(c);
+  return hsl.saturation > 0.3 && hsl.hue >= 255 && hsl.hue <= 300;
+}
 
 Color _colorDe(String? hex, {Color fallback = AppTheme.primary}) {
   final limpio = hex?.replaceFirst('#', '');
@@ -125,7 +138,8 @@ class _CatalogoOperativoPageState extends State<CatalogoOperativoPage> {
     final clavesCtrl = TextEditingController(
       text: existente?.palabrasClave.join(', ') ?? '',
     );
-    String color = existente?.colorHex ?? _coloresCategoria.first;
+    String color = existente?.colorHex ?? _coloresCategoria.first.$1;
+    String? icono = existente?.icono;
     bool activa = existente?.activa ?? true;
     String? errorNombre;
 
@@ -148,35 +162,125 @@ class _CatalogoOperativoPageState extends State<CatalogoOperativoPage> {
                       errorText: errorNombre,
                     ),
                     textCapitalization: TextCapitalization.sentences,
+                    onChanged: (_) => setLocal(() {}),
                   ),
                   const SizedBox(height: 14),
-                  const Text('Color'),
-                  const SizedBox(height: 6),
+                  const Text(
+                    'Color',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _coloresCategoria.map((hex) {
-                      final seleccionado =
-                          color.toUpperCase() == hex.toUpperCase();
-                      return InkWell(
-                        onTap: () => setLocal(() => color = hex),
-                        customBorder: const CircleBorder(),
-                        child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            color: _colorDe(hex),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: seleccionado
-                                  ? AppTheme.text
-                                  : Colors.transparent,
-                              width: 3,
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      for (final (hex, nombre) in [
+                        ..._coloresCategoria,
+                        if (!_coloresCategoria.any(
+                          (c) => c.$1.toUpperCase() == color.toUpperCase(),
+                        ))
+                          (color, 'Color actual'),
+                      ])
+                        Semantics(
+                          button: true,
+                          selected: color.toUpperCase() == hex.toUpperCase(),
+                          label: nombre,
+                          excludeSemantics: true,
+                          child: Tooltip(
+                            message: nombre,
+                            child: InkWell(
+                              onTap: () => setLocal(() => color = hex),
+                              customBorder: const CircleBorder(),
+                              child: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: _colorDe(hex),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color:
+                                        color.toUpperCase() == hex.toUpperCase()
+                                        ? AppTheme.text
+                                        : Colors.transparent,
+                                    width: 3,
+                                  ),
+                                ),
+                                child: color.toUpperCase() == hex.toUpperCase()
+                                    ? const Icon(Icons.check, color: Colors.white)
+                                    : null,
+                              ),
                             ),
                           ),
                         ),
+                    ],
+                  ),
+                  if (_pareceMoradoEspecial(color)) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Este color se parece al morado de las actividades especiales. Elige otro para que no se confundan.',
+                      style: TextStyle(color: Color(0xFFB45309), fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Ícono',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Ayuda a reconocer la actividad en el cronograma sin depender solo del color.',
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _OpcionIcono(
+                        icono: Icons.auto_awesome,
+                        etiqueta: 'Automático',
+                        seleccionado: icono == null,
+                        onTap: () => setLocal(() => icono = null),
+                      ),
+                      for (final i in kIconosCategoria)
+                        _OpcionIcono(
+                          icono: i.icono,
+                          etiqueta: i.etiqueta,
+                          seleccionado: icono == i.clave,
+                          onTap: () => setLocal(() => icono = i.clave),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Así se verá',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Builder(
+                    builder: (_) {
+                      final visual = CategoriaVisual.deCategoria(
+                        nombre: nombreCtrl.text.trim().isEmpty
+                            ? 'Nueva categoría'
+                            : nombreCtrl.text.trim(),
+                        colorHex: color,
+                        icono: icono,
                       );
-                    }).toList(),
+                      final ratio = contraste(visual.acento, Colors.white);
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          CategoriaChip(visual: visual),
+                          const SizedBox(height: 6),
+                          Text(
+                            ratio >= 4.5
+                                ? 'Contraste del ícono: ${ratio.toStringAsFixed(1).replaceAll('.', ',')}:1 · cumple'
+                                : 'Contraste bajo: la app oscurecerá un poco el tono al pintarlo.',
+                            style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(height: 14),
                   TextField(
@@ -240,6 +344,7 @@ class _CatalogoOperativoPageState extends State<CatalogoOperativoPage> {
         await _api.crearCategoria(
           nombre: nombre,
           colorHex: color,
+          icono: icono,
           palabrasClave: claves,
         );
       } else {
@@ -247,6 +352,8 @@ class _CatalogoOperativoPageState extends State<CatalogoOperativoPage> {
           existente.id,
           nombre: nombre,
           colorHex: color,
+          // "Automático" se guarda como vacío (el servidor lo deja en null).
+          icono: icono ?? '',
           palabrasClave: claves,
           activa: activa,
         );
@@ -561,15 +668,13 @@ class _CatalogoOperativoPageState extends State<CatalogoOperativoPage> {
                 key: ValueKey('categoria_${c.id}'),
                 margin: const EdgeInsets.symmetric(vertical: 4),
                 child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: _colorDe(c.colorHex),
-                    child: Text(
-                      '${i + 1}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  leading: CategoriaTile(
+                    visual: CategoriaVisual.deCategoria(
+                      nombre: c.nombre,
+                      colorHex: c.colorHex,
+                      icono: c.icono,
                     ),
+                    tamano: 42,
                   ),
                   title: Row(
                     children: [
@@ -593,7 +698,7 @@ class _CatalogoOperativoPageState extends State<CatalogoOperativoPage> {
                     ],
                   ),
                   subtitle: Text(
-                    '${c.preventivas} preventiva(s)'
+                    'Orden ${i + 1} · ${c.preventivas} preventiva(s)'
                     '${c.palabrasClave.isEmpty ? '' : ' · ${c.palabrasClave.take(4).join(', ')}${c.palabrasClave.length > 4 ? '…' : ''}'}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -779,6 +884,64 @@ class _CatalogoOperativoPageState extends State<CatalogoOperativoPage> {
                 onAccion: _cargar,
               )
             : TabBarView(children: [_tabCategorias(), _tabPerfiles()]),
+      ),
+    );
+  }
+}
+
+class _OpcionIcono extends StatelessWidget {
+  final IconData icono;
+  final String etiqueta;
+  final bool seleccionado;
+  final VoidCallback onTap;
+
+  const _OpcionIcono({
+    required this.icono,
+    required this.etiqueta,
+    required this.seleccionado,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: seleccionado,
+      label: 'Ícono $etiqueta',
+      excludeSemantics: true,
+      child: Material(
+        color: seleccionado ? AppTheme.surfaceSoft : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: seleccionado
+                ? AppTheme.primary
+                : AppTheme.primary.withValues(alpha: 0.15),
+            width: seleccionado ? 2 : 1,
+          ),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: SizedBox(
+            width: 86,
+            height: 72,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icono, size: 26, color: AppTheme.primaryDark),
+                const SizedBox(height: 4),
+                Text(
+                  etiqueta,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11.5, height: 1.1),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

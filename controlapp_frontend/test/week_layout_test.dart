@@ -82,4 +82,57 @@ void main() {
     expect(r[0].visualFin, _t(10));
     expect(r[1].visualFin, _t(8));
   });
+
+  test('ninguna pareja de tarjetas se pisa en días aleatorios', () {
+    var semilla = 12345;
+    int siguiente(int tope) {
+      semilla = (semilla * 1103515245 + 12345) & 0x7fffffff;
+      return semilla % tope;
+    }
+
+    for (var caso = 0; caso < 400; caso++) {
+      final n = 3 + siguiente(14);
+      final items = <WeekLayoutInput>[];
+      for (var i = 0; i < n; i++) {
+        final inicio = 7 * 60 + siguiente(10 * 60);
+        final duracion = 5 + siguiente(120);
+        items.add(
+          _i(
+            _t(inicio ~/ 60, inicio % 60),
+            _t((inicio + duracion) ~/ 60, (inicio + duracion) % 60),
+          ),
+        );
+      }
+      final r = layoutWeekDayTasks(items, minVisual: _minVisual);
+
+      double desde(int i) => r[i].lane / r[i].laneCount;
+      double hasta(int i) => (r[i].lane + r[i].laneSpan) / r[i].laneCount;
+
+      for (var a = 0; a < n; a++) {
+        expect(r[a].lane + r[a].laneSpan, lessThanOrEqualTo(r[a].laneCount));
+        expect(r[a].visualFin.isBefore(items[a].fin), isFalse);
+        for (var b = a + 1; b < n; b++) {
+          final zona = desde(a) < hasta(b) - 1e-9 && desde(b) < hasta(a) - 1e-9;
+          if (!zona) continue;
+          // Misma zona horizontal: no pueden coincidir en el horario real...
+          final solapan =
+              items[a].inicio.isBefore(items[b].fin) &&
+              items[b].inicio.isBefore(items[a].fin);
+          expect(
+            solapan,
+            isFalse,
+            reason: 'caso $caso: $a y $b comparten zona y se solapan',
+          );
+          // ...ni al dibujarse (altura mínima incluida).
+          final primero = items[a].inicio.isBefore(items[b].inicio) ? a : b;
+          final segundo = primero == a ? b : a;
+          expect(
+            r[primero].visualFin.isAfter(items[segundo].inicio),
+            isFalse,
+            reason: 'caso $caso: $primero pisa visualmente a $segundo',
+          );
+        }
+      }
+    }
+  });
 }

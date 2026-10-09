@@ -24,8 +24,7 @@ import 'reportes_page.dart';
 import 'gerente/compromisos_page.dart';
 import 'gerente/compromisos_por_conjunto_page.dart';
 import 'gerente/consignas_valor_agregado_page.dart';
-import '../model/recurso_calendario_item.dart';
-import 'gerente/agenda_recursos_page.dart';
+import 'recursos/recursos_conjunto_page.dart';
 import 'gerente/mapa_conjunto_page.dart';
 import 'asistencia_checkin_page.dart';
 import 'asistencia_grid_page.dart';
@@ -314,14 +313,13 @@ class _SupervisorPageState extends State<SupervisorPage> {
             ),
           ),
           _SupervisorTile(
-            'Agenda de recursos',
+            'Recursos del conjunto',
             Icons.event_repeat,
             AppTheme.red,
             () => _go(
-              AgendaRecursosPage(
-                empresaNit: AppConstants.empresaNit,
+              RecursosConjuntoPage(
                 conjuntoId: nit,
-                tipoInicial: TipoRecursoCal.maquinaria,
+                empresaNit: AppConstants.empresaNit,
               ),
             ),
           ),

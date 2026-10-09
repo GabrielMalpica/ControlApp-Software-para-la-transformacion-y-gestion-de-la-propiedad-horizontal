@@ -95,28 +95,29 @@ List<WeekLayoutOutput> layoutWeekDayTasks(
     final total = finCarril.length;
 
     // 3) Ensanchar hacia ambos lados mientras el carril contiguo esté libre
-    // durante toda la franja de la tarea.
+    // durante toda la franja de la tarea. Se hace de a una tarea y teniendo en
+    // cuenta lo que las demás ya reclamaron: si todas se ensancharan contra
+    // los carriles originales, dos tarjetas podrían tomar a la vez el mismo
+    // carril libre y pisarse.
+    final izquierda = <int, int>{for (final i in grupo) i: lane[i]};
+    final derecha = <int, int>{for (final i in grupo) i: lane[i]};
+
     bool carrilLibre(int i, int l) {
       for (final j in grupo) {
-        if (j == i || lane[j] != l) continue;
+        if (j == i) continue;
+        if (l < izquierda[j]! || l > derecha[j]!) continue;
         if (solapa(i, j)) return false;
       }
       return true;
     }
 
-    final izquierda = <int, int>{};
-    final derecha = <int, int>{};
     for (final i in grupo) {
-      var l = lane[i];
-      var r = lane[i];
-      while (r + 1 < total && carrilLibre(i, r + 1)) {
-        r++;
+      while (derecha[i]! + 1 < total && carrilLibre(i, derecha[i]! + 1)) {
+        derecha[i] = derecha[i]! + 1;
       }
-      while (l - 1 >= 0 && carrilLibre(i, l - 1)) {
-        l--;
+      while (izquierda[i]! - 1 >= 0 && carrilLibre(i, izquierda[i]! - 1)) {
+        izquierda[i] = izquierda[i]! - 1;
       }
-      izquierda[i] = l;
-      derecha[i] = r;
     }
     for (final i in grupo) {
       laneCount[i] = total;

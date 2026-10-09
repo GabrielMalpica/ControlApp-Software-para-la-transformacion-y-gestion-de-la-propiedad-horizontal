@@ -1,6 +1,7 @@
 // lib/pages/cronograma_definitivo_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_application_1/widgets/recursos/reprogramar_con_recursos.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:intl/intl.dart';
@@ -1374,7 +1375,19 @@ class _CronogramaPageState extends State<CronogramaPage> {
       observaciones: tarea.observaciones,
     );
 
-    final resp = await _tareaApi.editarTareaConRespuesta(tarea.id, req);
+    // Si la tarea tiene maquinaria/herramientas reservadas y no están libres
+    // en el nuevo horario, se muestra el conflicto; solo se mueve si el
+    // usuario decide liberar esos recursos.
+    final resp = await editarTareaConRecursos(
+      context,
+      api: _tareaApi,
+      tareaId: tarea.id,
+      req: req,
+    );
+    if (resp == null) {
+      if (mounted) await _cargarDatos();
+      return;
+    }
     if (resp['ok'] == false) {
       if ((resp['reason'] ?? '').toString().toUpperCase() ==
           'MAQUINARIA_NO_DISPONIBLE') {
@@ -2619,13 +2632,16 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
     final durMin = t.duracionMinutos;
 
+    // Recursos que pide la tarea (maquinaria y herramientas) con el nombre del
+    // tipo; en tareas publicadas incluye cuántas unidades tiene asignadas en
+    // la agenda de recursos.
     final maquinariaLista = t.maquinariaPlan ?? const [];
-    final maquinariaTxt = maquinariaLista.isEmpty
-        ? 'Sin maquinaria planificada'
+    final maquinariaTxt = t.recursosPlan.isNotEmpty
+        ? t.recursosPlan.map((r) => r.resumen).join('\n')
+        : maquinariaLista.isEmpty
+        ? 'Sin maquinaria ni herramientas planificadas'
         : maquinariaLista
               .map((m) {
-                // La preventiva declara el tipo necesario; la máquina concreta
-                // se asigna desde el cronograma de maquinaria.
                 final tipo = m.tipoEnum?.label ?? m.tipo ?? 'Sin tipo';
                 final cantidad = (m.cantidad ?? 1).round();
                 return cantidad > 1 ? '$tipo × $cantidad' : tipo;
@@ -2681,7 +2697,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 addRow('supervisor', 'Supervisor', supervisorLabel);
                 rows.add(const SizedBox(height: 8));
                 addRow('operarios', 'Operarios', operarios);
-                addRow('maquinaria', 'Maquinaria planificada', maquinariaTxt);
+                addRow('maquinaria', 'Maquinaria y herramientas', maquinariaTxt);
                 rows.add(const SizedBox(height: 8));
                 addRow(
                   'observaciones',

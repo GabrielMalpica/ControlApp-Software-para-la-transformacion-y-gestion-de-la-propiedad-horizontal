@@ -2,6 +2,7 @@
 import { PrismaClient, EstadoTarea } from "@prisma/client";
 import { z } from "zod";
 import { uploadEvidenciaToDrive } from "../utils/drive_evidencias";
+import { subirEvidenciasConMarca } from "../utils/marca_agua_evidencia";
 import fs from "fs";
 import {
   elementoParentChainInclude,
@@ -22,6 +23,7 @@ const VeredictoMultipartDTO = z.object({
   observacionesRechazo: z.string().optional(),
   fechaVerificacion: z.string().optional(),
   evidenciasExtra: z.string().optional(),
+  evidenciasCaptura: z.string().optional(), // JSON: [{tomadaEn, latitud, longitud} | null]
 });
 
 export class JefeOperacionesService {
@@ -94,7 +96,9 @@ export class JefeOperacionesService {
         estado: true,
         evidencias: true,
         conjuntoId: true,
-        conjunto: { select: { nit: true, nombre: true } },
+        conjunto: {
+          select: { nit: true, nombre: true, direccion: true, latitud: true, longitud: true },
+        },
       },
     });
 
@@ -117,20 +121,21 @@ export class JefeOperacionesService {
       }
     }
 
-    const urlsDrive: string[] = [];
+    let urlsDrive: string[] = [];
     try {
-      for (const f of files ?? []) {
-        const url = await uploadEvidenciaToDrive({
-          filePath: f.path,
-          fileName: `Aprobacion_Tarea_${tareaId}_${fechaVer.toISOString().replace(/[:.]/g, "-")}_${f.originalname}`,
-          mimeType: f.mimetype,
-          conjuntoNit:
-            tarea.conjunto?.nit ?? tarea.conjuntoId ?? "SIN_CONJUNTO",
-          conjuntoNombre: tarea.conjunto?.nombre ?? undefined,
-          fecha: fechaVer,
-        });
-        urlsDrive.push(url);
-      }
+      urlsDrive = await subirEvidenciasConMarca(
+        { files: files ?? [], capturas: dto.evidenciasCaptura, conjunto: tarea.conjunto },
+        (f) =>
+          uploadEvidenciaToDrive({
+            filePath: f.path,
+            fileName: `Aprobacion_Tarea_${tareaId}_${fechaVer.toISOString().replace(/[:.]/g, "-")}_${f.originalname}`,
+            mimeType: f.mimetype,
+            conjuntoNit:
+              tarea.conjunto?.nit ?? tarea.conjuntoId ?? "SIN_CONJUNTO",
+            conjuntoNombre: tarea.conjunto?.nombre ?? undefined,
+            fecha: fechaVer,
+          }),
+      );
     } finally {
       for (const f of files ?? []) {
         try {

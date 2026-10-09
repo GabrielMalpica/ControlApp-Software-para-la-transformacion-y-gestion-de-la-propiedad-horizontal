@@ -528,6 +528,8 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "residentes.cargar_masivo",
     "comercio.pedidos.ver",
     "comercio.pedidos.gestionar",
+    "asistencia.ver",
+    "asistencia.qr.gestionar",
   ]),
   [Rol.jefe_operaciones]: new Set([
     "conjuntos.ver",

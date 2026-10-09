@@ -10,6 +10,7 @@ import { z } from "zod";
 import { TareaService } from "./TareaServices";
 import { InventarioService } from "./InventarioServices";
 import { buildEvidenciaFileName, uploadEvidenciaToDrive } from "../utils/drive_evidencias";
+import { subirEvidenciasConMarca } from "../utils/marca_agua_evidencia";
 import fs from "fs";
 import { NotificacionService } from "./NotificacionService";
 import { elementoParentChainInclude } from "../utils/elementoHierarchy";
@@ -44,6 +45,7 @@ const CerrarMultipartDTO = z.object({
   fechaFinalizarTarea: z.string().optional(),
   insumosUsados: z.string().optional(),
   clienteCierreId: z.string().uuid().optional(),
+  evidenciasCaptura: z.string().optional(), // JSON: [{tomadaEn, latitud, longitud} | null]
 });
 
 export class OperarioService {
@@ -312,7 +314,9 @@ export class OperarioService {
         conjuntoId: true,
         supervisorId: true,
         operarios: { select: { id: true } },
-        conjunto: { select: { nit: true, nombre: true } },
+        conjunto: {
+          select: { nit: true, nombre: true, direccion: true, latitud: true, longitud: true },
+        },
       },
     });
 
@@ -368,27 +372,28 @@ export class OperarioService {
     });
     const subidoPor = actor?.nombre ?? this.operarioId.toString();
 
-    const urls: string[] = [];
+    let urls: string[] = [];
     try {
-      let indice = 0;
-      for (const f of files ?? []) {
-        indice++;
-        const url = await uploadEvidenciaToDrive({
-          filePath: f.path,
-          fileName: buildEvidenciaFileName({
-            subidoPor,
-            rol: "OPERARIO",
+      // Marca de agua de auditoría (hora, conjunto, dirección) antes de
+      // subir; se estampa una foto mientras la anterior sube.
+      urls = await subirEvidenciasConMarca(
+        { files: files ?? [], capturas: dto.evidenciasCaptura, conjunto: tarea.conjunto },
+        (f, indice) =>
+          uploadEvidenciaToDrive({
+            filePath: f.path,
+            fileName: buildEvidenciaFileName({
+              subidoPor,
+              rol: "OPERARIO",
+              fecha: fechaCierre,
+              originalName: f.originalname,
+              indice,
+            }),
+            mimeType: f.mimetype,
+            conjuntoNit: tarea.conjunto?.nit ?? tarea.conjuntoId ?? "SIN_CONJUNTO",
+            conjuntoNombre: tarea.conjunto?.nombre ?? undefined,
             fecha: fechaCierre,
-            originalName: f.originalname,
-            indice,
           }),
-          mimeType: f.mimetype,
-          conjuntoNit: tarea.conjunto?.nit ?? tarea.conjuntoId ?? "SIN_CONJUNTO",
-          conjuntoNombre: tarea.conjunto?.nombre ?? undefined,
-          fecha: fechaCierre,
-        });
-        urls.push(url);
-      }
+      );
     } finally {
       for (const f of files ?? []) {
         try {

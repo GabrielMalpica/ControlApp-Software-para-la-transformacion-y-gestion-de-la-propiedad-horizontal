@@ -194,7 +194,9 @@ class InventarioActivoApi {
     }
   }
 
-  Future<void> cambiarEstado(
+  /// Devuelve las reservas futuras de la agenda de recursos que quedan
+  /// afectadas si la unidad deja de estar operativa (para avisar al usuario).
+  Future<List<Map<String, dynamic>>> cambiarEstado(
     ClaseActivoInventario clase,
     int id,
     String estado,
@@ -212,6 +214,11 @@ class InventarioActivoApi {
     if (response.statusCode != 200) {
       _throw(response, 'No se pudo actualizar el estado.');
     }
+    final body = jsonDecode(response.body);
+    final afectadas = body is Map ? body['reservasAfectadas'] : null;
+    return afectadas is List
+        ? afectadas.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList()
+        : const [];
   }
 
   Future<void> prestar({

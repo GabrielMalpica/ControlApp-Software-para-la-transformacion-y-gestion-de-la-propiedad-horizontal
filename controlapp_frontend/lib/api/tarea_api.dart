@@ -1,8 +1,8 @@
 // lib/api/tarea_api.dart
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_application_1/api/evidencias_multipart.dart';
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
@@ -37,6 +37,9 @@ class TareaRequest {
   final List<int> maquinariaIds;
   final List<Map<String, dynamic>> herramientas;
 
+  /// Unidades físicas de herramienta (por código) a reservar en la agenda.
+  final List<int> herramientaItemIds;
+
   TareaRequest({
     required this.descripcion,
     required this.fechaInicio,
@@ -52,6 +55,7 @@ class TareaRequest {
     this.observaciones,
     this.maquinariaIds = const [],
     this.herramientas = const [],
+    this.herramientaItemIds = const [],
   });
 
   Map<String, dynamic> toJson() => {
@@ -73,6 +77,7 @@ class TareaRequest {
       'observaciones': observaciones,
     'maquinariaIds': maquinariaIds,
     'herramientas': herramientas,
+    if (herramientaItemIds.isNotEmpty) 'herramientaItemIds': herramientaItemIds,
   };
 }
 
@@ -113,10 +118,20 @@ class TareaApi {
     throw Exception('Error HTTP ${resp.statusCode}: ${resp.body}');
   }
 
-  Future<void> editarTarea(int id, TareaRequest req) async {
+  /// [liberarRecursosOcupados]: si al mover la tarea algún recurso reservado
+  /// (maquinaria/herramienta) no está libre, el backend responde 409
+  /// RECURSO_OCUPADO. Con true, el usuario decidió liberar esas reservas.
+  Future<void> editarTarea(
+    int id,
+    TareaRequest req, {
+    bool liberarRecursosOcupados = false,
+  }) async {
     final resp = await _client.patch(
       '${AppConstants.gerenteBase}/tareas/$id',
-      body: req.toJson(),
+      body: {
+        ...req.toJson(),
+        if (liberarRecursosOcupados) 'liberarRecursosOcupados': true,
+      },
     );
 
     if (resp.statusCode != 200) {
@@ -130,11 +145,15 @@ class TareaApi {
 
   Future<Map<String, dynamic>> editarTareaConRespuesta(
     int id,
-    TareaRequest req,
-  ) async {
+    TareaRequest req, {
+    bool liberarRecursosOcupados = false,
+  }) async {
     final resp = await _client.patch(
       '${AppConstants.gerenteBase}/tareas/$id',
-      body: req.toJson(),
+      body: {
+        ...req.toJson(),
+        if (liberarRecursosOcupados) 'liberarRecursosOcupados': true,
+      },
     );
 
     Map<String, dynamic> data = {};
@@ -237,40 +256,7 @@ class TareaApi {
       req.fields['insumosUsados'] = jsonEncode(insumosUsados);
     }
 
-    for (final evidencia in evidencias) {
-      final path = evidencia.path?.trim();
-      final bytes = evidencia.bytes;
-      final fileName = evidencia.nombre.trim().isNotEmpty
-          ? evidencia.nombre.trim()
-          : (path?.split(RegExp(r'[\\/]')).last ?? 'evidencia.jpg');
-      final contentType = uploadMediaTypeFromName(fileName);
-
-      if (path != null && path.isNotEmpty) {
-        final file = File(path);
-        if (await file.exists()) {
-          req.files.add(
-            await http.MultipartFile.fromPath(
-              'files',
-              path,
-              filename: fileName,
-              contentType: contentType,
-            ),
-          );
-          continue;
-        }
-      }
-
-      if (kIsWeb && bytes != null && bytes.isNotEmpty) {
-        req.files.add(
-          http.MultipartFile.fromBytes(
-            'files',
-            bytes,
-            filename: fileName,
-            contentType: contentType,
-          ),
-        );
-      }
-    }
+    await adjuntarEvidencias(req, evidencias);
 
     final streamed = await req.send();
     final body = await streamed.stream.bytesToString();
@@ -323,6 +309,7 @@ class TareaApi {
       req.fields['observaciones'] = observaciones.trim();
     }
 
+    final capturas = <CapturaEvidencia?>[];
     for (final f in nuevasEvidencias) {
       if (kIsWeb) {
         if (!f.hasBytes) {
@@ -339,6 +326,7 @@ class TareaApi {
             ),
           ),
         );
+        capturas.add(f.captura);
         continue;
       }
 
@@ -354,6 +342,7 @@ class TareaApi {
             ),
           ),
         );
+        capturas.add(f.captura);
       } else if (f.hasBytes) {
         req.files.add(
           http.MultipartFile.fromBytes(
@@ -366,8 +355,10 @@ class TareaApi {
             ),
           ),
         );
+        capturas.add(f.captura);
       }
     }
+    agregarCampoCapturas(req, capturas);
 
     final streamed = await req.send();
     final body = await streamed.stream.bytesToString();

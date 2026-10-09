@@ -1,16 +1,14 @@
 // lib/api/supervisor_api.dart
 import 'dart:convert';
-import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_application_1/model/tarea_model.dart';
+import 'package:flutter_application_1/api/evidencias_multipart.dart';
 import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:http/http.dart' as http;
 
 import '../service/api_client.dart';
-import '../service/upload_media_type.dart';
 
 class SupervisorApi {
   final ApiClient _client = ApiClient();
@@ -94,40 +92,7 @@ class SupervisorApi {
       req.fields['insumosUsados'] = jsonEncode(insumosUsados);
     }
 
-    for (final evidencia in evidencias) {
-      final path = evidencia.path?.trim();
-      final bytes = evidencia.bytes;
-      final fileName = evidencia.nombre.trim().isNotEmpty
-          ? evidencia.nombre.trim()
-          : (path?.split(RegExp(r'[\\/]')).last ?? 'evidencia.jpg');
-      final contentType = uploadMediaTypeFromName(fileName);
-
-      if (path != null && path.isNotEmpty) {
-        final file = File(path);
-        if (await file.exists()) {
-          req.files.add(
-            await http.MultipartFile.fromPath(
-              'files',
-              path,
-              filename: fileName,
-              contentType: contentType,
-            ),
-          );
-          continue;
-        }
-      }
-
-      if (kIsWeb && bytes != null && bytes.isNotEmpty) {
-        req.files.add(
-          http.MultipartFile.fromBytes(
-            'files',
-            bytes,
-            filename: fileName,
-            contentType: contentType,
-          ),
-        );
-      }
-    }
+    await adjuntarEvidencias(req, evidencias);
 
     final streamed = await req.send();
     final body = await streamed.stream.bytesToString();
