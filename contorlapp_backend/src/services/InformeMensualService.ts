@@ -5,6 +5,7 @@ import sharp from "sharp";
 import { extraerDriveId, getEvidenciaBuffer } from "../utils/drive_evidencias";
 import { CronogramaService } from "./CronogramaServices";
 import {
+  actividadesDelCuerpo,
   claveDia,
   construirInformeMensual,
   type CronogramaInformeMes,
@@ -13,6 +14,11 @@ import {
   type TareaDetalleInforme,
 } from "./InformeMensualModelo";
 import type { EjecutorInforme, ReportarProgreso } from "./InformeMensualJobs";
+import {
+  opcionesPorDefecto,
+  type CalidadFotoInforme,
+  type OpcionesInforme,
+} from "./InformeMensualOpciones";
 import {
   limpiarTexto,
   renderizarInformeMensual,
@@ -23,9 +29,13 @@ import { ReporteService } from "./ReporteService";
 // Se reexporta porque las pruebas del informe lo importan desde aqui.
 export { extraerDriveId };
 
-/** Lado maximo de las fotos dentro del PDF: nitidas al imprimir y livianas. */
-const FOTO_LADO_MAX = 800;
-const FOTO_CALIDAD_JPEG = 72;
+/** Lado maximo y calidad JPEG de las fotos dentro del PDF segun la calidad elegida. */
+const CALIDAD_FOTO: Record<CalidadFotoInforme, { lado: number; jpeg: number }> = {
+  LIVIANA: { lado: 600, jpeg: 60 },
+  // La de siempre: nitida al imprimir y liviana.
+  ESTANDAR: { lado: 800, jpeg: 72 },
+  ALTA: { lado: 1200, jpeg: 80 },
+};
 /** Descargas/conversiones simultaneas en TODO el servidor (todos los informes). */
 const FOTOS_SIMULTANEAS = Number(process.env.INFORME_PDF_FOTOS_SIMULTANEAS ?? 6);
 const MAX_CONJUNTOS_CRONOGRAMA = 25;
@@ -52,22 +62,26 @@ function crearLimitador(maximo: number) {
 
 const limitarFotos = crearLimitador(Math.max(1, FOTOS_SIMULTANEAS));
 
-async function cargarFotoDrive(raw: string): Promise<FotoCargada | null> {
+async function cargarFotoDrive(
+  raw: string,
+  calidad: CalidadFotoInforme,
+): Promise<FotoCargada | null> {
   const id = extraerDriveId(raw);
   if (!id) return null;
+  const { lado, jpeg } = CALIDAD_FOTO[calidad] ?? CALIDAD_FOTO.ESTANDAR;
   for (let intento = 0; intento < 2; intento++) {
     try {
       const original = await getEvidenciaBuffer(id);
       const { data, info } = await sharp(original, { failOn: "none" })
         .rotate()
         .resize({
-          width: FOTO_LADO_MAX,
-          height: FOTO_LADO_MAX,
+          width: lado,
+          height: lado,
           fit: "inside",
           withoutEnlargement: true,
         })
         .flatten({ background: "#ffffff" })
-        .jpeg({ quality: FOTO_CALIDAD_JPEG })
+        .jpeg({ quality: jpeg })
         .toBuffer({ resolveWithObject: true });
       return { buffer: data, width: info.width, height: info.height };
     } catch (err) {
@@ -125,10 +139,29 @@ export type ParametrosInforme = {
   /** Rol de quien pidió el informe; solo afecta cómo se etiquetan las
    * tareas CORRECTIVA en el PDF ("actividad especial" para administrador). */
   rolSolicitante?: string;
+  /** Ya normalizadas para el rol (ver normalizarOpciones). */
+  opciones?: OpcionesInforme;
+  /** Quien pidió el informe: su nombre va en la portada. */
+  usuarioId?: string;
 };
+
+/** Nombres de usuarios en una sola consulta (sin N+1). */
+async function nombresDeUsuarios(
+  prisma: PrismaClient,
+  ids: string[],
+): Promise<Map<string, string>> {
+  const unicos = Array.from(new Set(ids.filter((id) => id && id.trim())));
+  if (unicos.length === 0) return new Map();
+  const usuarios = await prisma.usuario.findMany({
+    where: { id: { in: unicos } },
+    select: { id: true, nombre: true },
+  });
+  return new Map(usuarios.map((u) => [u.id, u.nombre]));
+}
 
 async function recolectarDatos(
   p: ParametrosInforme,
+  opciones: OpcionesInforme,
   reportar: ReportarProgreso,
 ): Promise<InformeMensual> {
   reportar(5, "Consultando las tareas del periodo");
@@ -143,7 +176,23 @@ async function recolectarDatos(
   const reemplazos: ReemplazoInforme[] =
     detalle.reemplazosPreventivaPorCorrectiva ?? [];
 
-  const conjuntoIds = p.conjuntoId
+  // Interno: solo se resuelve si se pidió y el rol puede verlo.
+  if (opciones.campos.cerradoPor) {
+    const nombres = await nombresDeUsuarios(
+      p.prisma,
+      tareas.map((t: any) => String(t.finalizadaPorId ?? "")),
+    );
+    for (const t of tareas as any[]) {
+      t.cerradoPor = t.finalizadaPorId ? (nombres.get(t.finalizadaPorId) ?? null) : null;
+    }
+  }
+
+  // Sin preventivas en el informe, el cronograma no aporta nada.
+  const usaCronograma =
+    !opciones.filtros.tipos || opciones.filtros.tipos.includes("PREVENTIVA");
+  const conjuntoIds = !usaCronograma
+    ? []
+    : p.conjuntoId
     ? [p.conjuntoId]
     : Array.from(
         new Set(
@@ -189,14 +238,17 @@ async function recolectarDatos(
       p.conjuntoId;
   }
 
-  return construirInformeMensual({
-    conjuntoNombre,
-    desde: p.desde,
-    hasta: p.hasta,
-    tareas,
-    reemplazos,
-    cronogramas,
-  });
+  return construirInformeMensual(
+    {
+      conjuntoNombre,
+      desde: p.desde,
+      hasta: p.hasta,
+      tareas,
+      reemplazos,
+      cronogramas,
+    },
+    opciones,
+  );
 }
 
 /** Descarga todas las fotos que el informe va a imprimir, en paralelo. */
@@ -205,9 +257,10 @@ async function precargarFotos(
   reportar: ReportarProgreso,
 ): Promise<Map<string, FotoCargada | null>> {
   const raws = new Set<string>();
-  for (const a of [...informe.preventivas, ...informe.correctivas]) {
+  for (const a of actividadesDelCuerpo(informe)) {
     for (const f of a.fotos) raws.add(f.raw);
   }
+  const calidad = informe.opciones.fotos.calidad;
   const fotos = new Map<string, FotoCargada | null>();
   const total = raws.size;
   if (total === 0) return fotos;
@@ -216,7 +269,7 @@ async function precargarFotos(
   await Promise.all(
     Array.from(raws).map((raw) =>
       limitarFotos(async () => {
-        fotos.set(raw, await cargarFotoDrive(raw));
+        fotos.set(raw, await cargarFotoDrive(raw, calidad));
         listas += 1;
         reportar(
           20 + (listas / total) * 65,
@@ -229,20 +282,29 @@ async function precargarFotos(
 }
 
 export function crearEjecutorInforme(p: ParametrosInforme): EjecutorInforme {
-  return async ({ archivoDestino, reportar }) => {
-    const informe = await recolectarDatos(p, reportar);
+  return async ({ jobId, archivoDestino, reportar }) => {
+    const opciones = p.opciones ?? opcionesPorDefecto();
+    const informe = await recolectarDatos(p, opciones, reportar);
     const fotos = await precargarFotos(informe, reportar);
+    const generadoPor = p.usuarioId
+      ? ((await nombresDeUsuarios(p.prisma, [p.usuarioId])).get(p.usuarioId) ?? null)
+      : null;
 
     reportar(90, "Armando el PDF");
     await renderizarInformeMensual(informe, {
       archivoDestino,
       cargarFoto: (raw) => fotos.get(raw),
       rolSolicitante: p.rolSolicitante,
+      generadoPor,
+      idInforme: jobId,
     });
+    fotos.clear();
 
     const [anio, mes] = claveDia(p.desde).split("-");
+    // Un informe filtrado no debe confundirse con el completo.
+    const sufijo = informe.filtrado ? "_filtrado" : "";
     return {
-      nombreArchivo: `Informe_mensual_${nombreArchivoSeguro(informe.conjuntoNombre)}_${anio}_${mes}.pdf`,
+      nombreArchivo: `Informe_mensual_${nombreArchivoSeguro(informe.conjuntoNombre)}_${anio}_${mes}${sufijo}.pdf`,
     };
   };
 }

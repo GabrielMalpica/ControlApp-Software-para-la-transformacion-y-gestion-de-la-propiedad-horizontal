@@ -9,6 +9,12 @@ import fs from "fs";
 import { claveDia } from "../services/InformeMensualModelo";
 import { informeMensualJobs, type JobInforme } from "../services/InformeMensualJobs";
 import { crearEjecutorInforme } from "../services/InformeMensualService";
+import {
+  OpcionesInformeSchema,
+  hashOpciones,
+  normalizarOpciones,
+  opcionesPorDefecto,
+} from "../services/InformeMensualOpciones";
 
 async function serviceFor(req: Request) {
   return new ReporteService(prisma, await empresaIdAutenticada(req));
@@ -73,6 +79,8 @@ const InformeMensualPdfBody = z
     desde: z.coerce.date(),
     hasta: z.coerce.date(),
     conjuntoId: z.string().trim().min(1).optional(),
+    // Que se incluye y como se ve; sin opciones sale el informe de siempre.
+    opciones: OpcionesInformeSchema.optional(),
   })
   .refine((d) => d.hasta >= d.desde, {
     path: ["hasta"],
@@ -206,7 +214,7 @@ export class ReporteController {
     }
   };
 
-  // POST /reporte/informe-mensual/pdf  { desde, hasta, conjuntoId? }
+  // POST /reporte/informe-mensual/pdf  { desde, hasta, conjuntoId?, opciones? }
   // Responde 202 al instante; el PDF se arma en segundo plano.
   iniciarInformeMensualPdf: RequestHandler = async (req, res, next) => {
     try {
@@ -225,13 +233,20 @@ export class ReporteController {
       }
 
       const rolSolicitante = (req.user?.rol ?? "").trim().toLowerCase();
+      // El rol decide lo que se puede ver (el administrador no recibe lo interno).
+      const opciones = normalizarOpciones(
+        body.opciones ?? opcionesPorDefecto(),
+        rolSolicitante,
+      );
 
+      // Mismas opciones = mismo trabajo: un doble clic no genera dos informes.
       const clave = [
         empresaId,
         body.conjuntoId ?? "*",
         claveDia(body.desde),
         claveDia(body.hasta),
         rolSolicitante || "*",
+        hashOpciones(opciones),
       ].join("|");
       const job = informeMensualJobs.iniciar({
         usuarioId,
@@ -243,9 +258,27 @@ export class ReporteController {
           desde: body.desde,
           hasta: body.hasta,
           rolSolicitante,
+          opciones,
+          usuarioId,
         }),
       });
       res.status(202).json(estadoJobInforme(job));
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  // GET /reporte/informe-mensual/pdf/activo
+  // El informe en curso del usuario (o el listo sin descargar), para retomarlo
+  // al volver a la pagina. 204 si no hay ninguno.
+  informeMensualActivo: RequestHandler = async (req, res, next) => {
+    try {
+      const job = informeMensualJobs.ultimoDelUsuario(usuarioIdDe(req));
+      if (!job) {
+        res.status(204).end();
+        return;
+      }
+      res.json(estadoJobInforme(job));
     } catch (err) {
       next(err);
     }
@@ -292,6 +325,7 @@ export class ReporteController {
         `attachment; filename="${job.nombreArchivo.replace(/[^A-Za-z0-9._-]/g, "_")}"`,
       );
       res.setHeader("Cache-Control", "private, no-store");
+      res.on("finish", () => informeMensualJobs.marcarDescargado(job.id));
       const stream = fs.createReadStream(job.archivo);
       stream.on("error", (e) => {
         console.error("[informe-mensual] error leyendo el PDF:", e);

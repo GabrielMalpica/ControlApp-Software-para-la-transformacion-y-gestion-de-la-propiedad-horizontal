@@ -21,6 +21,8 @@ router.get("/mensual-detalle", c.reporteMensualDetalle);
 
 // INFORME MENSUAL EN PDF (asincrono: se inicia, se consulta el estado y se descarga)
 router.post("/informe-mensual/pdf", c.iniciarInformeMensualPdf);
+// Antes de "/:jobId": "activo" no es un id.
+router.get("/informe-mensual/pdf/activo", c.informeMensualActivo);
 router.get("/informe-mensual/pdf/:jobId", c.estadoInformeMensualPdf);
 router.get("/informe-mensual/pdf/:jobId/archivo", c.descargarInformeMensualPdf);
 

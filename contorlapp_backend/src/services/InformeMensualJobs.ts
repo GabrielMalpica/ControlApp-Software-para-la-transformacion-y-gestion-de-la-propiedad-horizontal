@@ -22,11 +22,14 @@ export type JobInforme = {
   nombreArchivo: string;
   creadoEn: number;
   terminadoEn: number | null;
+  /** Cuando se descargo por ultima vez (null = listo pero sin descargar). */
+  descargadoEn: number | null;
 };
 
 export type ReportarProgreso = (porcentaje: number, mensaje: string) => void;
 
 export type EjecutorInforme = (ctx: {
+  jobId: string;
   archivoDestino: string;
   reportar: ReportarProgreso;
 }) => Promise<{ nombreArchivo: string }>;
@@ -129,6 +132,7 @@ export class InformeMensualJobs {
       nombreArchivo: "Informe_mensual.pdf",
       creadoEn: Date.now(),
       terminadoEn: null,
+      descargadoEn: null,
     };
     this.jobs.set(id, job);
     this.ejecutores.set(id, params.ejecutar);
@@ -142,6 +146,29 @@ export class InformeMensualJobs {
     const job = this.jobs.get(id);
     if (!job || job.usuarioId !== usuarioId) return undefined;
     return job;
+  }
+
+  /**
+   * El informe que el usuario deberia ver al volver a la pagina: el que esta
+   * en curso o, si no hay, el ultimo listo que todavia no descargo. Asi salir y
+   * volver no dispara un segundo informe.
+   */
+  ultimoDelUsuario(usuarioId: string, ahora = Date.now()): JobInforme | undefined {
+    const activo = this.activoDelUsuario(usuarioId);
+    if (activo) return activo;
+    let ultimo: JobInforme | undefined;
+    for (const job of this.jobs.values()) {
+      if (job.usuarioId !== usuarioId || job.estado !== "LISTO") continue;
+      if (job.descargadoEn != null || job.terminadoEn == null) continue;
+      if (ahora - job.terminadoEn >= TTL_MS) continue;
+      if (!ultimo || job.terminadoEn > (ultimo.terminadoEn ?? 0)) ultimo = job;
+    }
+    return ultimo;
+  }
+
+  marcarDescargado(id: string, ahora = Date.now()) {
+    const job = this.jobs.get(id);
+    if (job) job.descargadoEn = ahora;
   }
 
   /** Posicion en la cola (1 = siguiente), o 0 si ya se esta generando. */
@@ -173,6 +200,7 @@ export class InformeMensualJobs {
     try {
       const res = await Promise.race([
         ejecutor({
+          jobId: job.id,
           archivoDestino: job.archivo,
           reportar: (porcentaje, mensaje) => {
             job.progreso = Math.max(

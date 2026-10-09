@@ -6,6 +6,7 @@ import request from 'supertest';
 
 const conjuntoFindFirstMock = jest.fn();
 let usuarioActual = 'usuario-1';
+let rolActual = 'gerente';
 
 jest.mock('../../src/db/prisma', () => ({
   prisma: { conjunto: { findFirst: (...args: any[]) => conjuntoFindFirstMock(...args) } },
@@ -13,7 +14,7 @@ jest.mock('../../src/db/prisma', () => ({
 
 jest.mock('../../src/middlewares/auth.middleware', () => ({
   authRequired: (req: any, _res: any, next: any) => {
-    req.user = { sub: usuarioActual, rol: 'gerente', correo: 'x@x.com' };
+    req.user = { sub: usuarioActual, rol: rolActual, correo: 'x@x.com' };
     next();
   },
   authOptional: (_req: any, _res: any, next: any) => next(),
@@ -58,6 +59,7 @@ const esperar = (ms = 20) => new Promise((r) => setTimeout(r, ms));
 describe('Informe mensual en PDF (HTTP)', () => {
   beforeEach(() => {
     usuarioActual = 'usuario-1';
+    rolActual = 'gerente';
     conjuntoFindFirstMock.mockReset().mockResolvedValue({ nit: '900904193-8' });
     ejecutarMock.mockReset().mockImplementation(async (_p: any, ctx: any) => {
       fs.writeFileSync(ctx.archivoDestino, '%PDF-1.4 demo');
@@ -153,6 +155,93 @@ describe('Informe mensual en PDF (HTTP)', () => {
     const estado = await request(app()).get(`/reporte/informe-mensual/pdf/${inicio.body.jobId}`);
     expect(estado.body.estado).toBe('ERROR');
     expect(JSON.stringify(estado.body)).not.toMatch(/ECONNRESET|drive interno/);
+  });
+
+  test('IM-6 - rechaza opciones invalidas sin encolar nada', async () => {
+    usuarioActual = 'usuario-6';
+    const fotos = await request(app())
+      .post('/reporte/informe-mensual/pdf')
+      .send({ ...body, opciones: { fotos: { porTarea: 50 } } });
+    expect(fotos.status).toBeGreaterThanOrEqual(400);
+    const sinSecciones = await request(app())
+      .post('/reporte/informe-mensual/pdf')
+      .send({
+        ...body,
+        opciones: { secciones: { resumen: false, detalle: false, reemplazadas: false } },
+      });
+    expect(sinSecciones.status).toBeGreaterThanOrEqual(400);
+    expect(ejecutarMock).not.toHaveBeenCalled();
+  });
+
+  test('IM-7 - un doble clic reutiliza el informe; otras opciones esperan', async () => {
+    usuarioActual = 'usuario-7';
+    let liberar!: () => void;
+    const bloqueo = new Promise<void>((r) => (liberar = r));
+    ejecutarMock.mockImplementationOnce(async (_p: any, ctx: any) => {
+      await bloqueo;
+      fs.writeFileSync(ctx.archivoDestino, '%PDF-1.4 demo');
+      return { nombreArchivo: 'Informe_demo.pdf' };
+    });
+    const opciones = { organizacion: 'CRONOLOGICO', fotos: { porTarea: 2 } };
+    const [a, b] = await Promise.all([
+      request(app()).post('/reporte/informe-mensual/pdf').send({ ...body, opciones }),
+      request(app()).post('/reporte/informe-mensual/pdf').send({ ...body, opciones }),
+    ]);
+    expect(a.status).toBe(202);
+    expect(b.body.jobId).toBe(a.body.jobId);
+    expect(ejecutarMock).toHaveBeenCalledTimes(1);
+
+    const otro = await request(app())
+      .post('/reporte/informe-mensual/pdf')
+      .send({ ...body, opciones: { organizacion: 'UBICACION' } });
+    expect(otro.status).toBe(409);
+    liberar();
+  });
+
+  test('IM-8 - permite retomar el informe en curso y el listo sin descargar', async () => {
+    usuarioActual = 'usuario-8';
+    const nada = await request(app()).get('/reporte/informe-mensual/pdf/activo');
+    expect(nada.status).toBe(204);
+
+    let liberar!: () => void;
+    const bloqueo = new Promise<void>((r) => (liberar = r));
+    ejecutarMock.mockImplementationOnce(async (_p: any, ctx: any) => {
+      await bloqueo;
+      fs.writeFileSync(ctx.archivoDestino, '%PDF-1.4 demo');
+      return { nombreArchivo: 'Informe_demo.pdf' };
+    });
+    const inicio = await request(app()).post('/reporte/informe-mensual/pdf').send(body);
+    const enCurso = await request(app()).get('/reporte/informe-mensual/pdf/activo');
+    expect(enCurso.status).toBe(200);
+    expect(enCurso.body.jobId).toBe(inicio.body.jobId);
+
+    // Otro usuario no ve el informe ajeno.
+    usuarioActual = 'usuario-9';
+    expect((await request(app()).get('/reporte/informe-mensual/pdf/activo')).status).toBe(204);
+    usuarioActual = 'usuario-8';
+
+    liberar();
+    await esperar();
+    const listo = await request(app()).get('/reporte/informe-mensual/pdf/activo');
+    expect(listo.body).toMatchObject({ jobId: inicio.body.jobId, estado: 'LISTO' });
+
+    await request(app()).get(`/reporte/informe-mensual/pdf/${inicio.body.jobId}/archivo`);
+    await esperar();
+    expect((await request(app()).get('/reporte/informe-mensual/pdf/activo')).status).toBe(204);
+  });
+
+  test('IM-9 - al administrador no se le entrega informacion interna', async () => {
+    usuarioActual = 'usuario-10';
+    rolActual = 'administrador';
+    const res = await request(app())
+      .post('/reporte/informe-mensual/pdf')
+      .send({ ...body, opciones: { campos: { motivoRechazo: true, cerradoPor: true } } });
+    expect(res.status).toBe(202);
+    await esperar();
+    const params = ejecutarMock.mock.calls[0][0];
+    expect(params.rolSolicitante).toBe('administrador');
+    expect(params.opciones.campos).toMatchObject({ motivoRechazo: false, cerradoPor: false });
+    expect(params.usuarioId).toBe('usuario-10');
   });
 
   afterAll(() => {
