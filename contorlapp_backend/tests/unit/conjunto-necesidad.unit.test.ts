@@ -142,6 +142,10 @@ function makeFakePrisma() {
       necesidades.delete(where.id);
       horarios.delete(where.id);
     }),
+    findUnique: jest.fn(async ({ where }: any) => {
+      const n = necesidades.get(where.id);
+      return n ? proyectar(n) : null;
+    }),
   };
 
   const conjuntoNecesidadHorario = {
@@ -172,6 +176,17 @@ function makeFakePrisma() {
       return Array.from(operarios.values())
         .filter((op) => !nit || conjuntos.get(nit)?.operariosIds.has(op.id))
         .map((op) => ({ id: op.id, funciones: op.funciones }));
+    }),
+    update: jest.fn(async ({ where, data }: any) => {
+      for (const { id } of data.tareas?.disconnect ?? []) {
+        const t = tareas.get(id);
+        if (t) t.operariosIds = t.operariosIds.filter((o) => o !== where.id);
+      }
+      for (const { id } of data.tareas?.connect ?? []) {
+        const t = tareas.get(id);
+        if (t && !t.operariosIds.includes(where.id)) t.operariosIds.push(where.id);
+      }
+      return { id: where.id };
     }),
   };
 
@@ -211,6 +226,18 @@ function makeFakePrisma() {
       if (where.operarios?.some) {
         out = out.filter((d) => d.operariosIds.length > 0);
       }
+      if (where.necesidades?.some) {
+        const plazaId = where.necesidades.some.id;
+        return out
+          .filter((d) => d.necesidadesIds.includes(plazaId))
+          .map((d) => ({
+            id: d.id,
+            necesidades: d.necesidadesIds.map((id) => ({
+              id,
+              operarioId: necesidades.get(id)?.operarioId ?? null,
+            })),
+          }));
+      }
       return out.map((d) => ({
         id: d.id,
         descripcion: d.descripcion,
@@ -227,12 +254,86 @@ function makeFakePrisma() {
     }),
   };
 
+  // Actividades (Tarea) con su vínculo a plazas, para probar que el cambio de
+  // titular de una plaza llega al cronograma.
+  const tareas = new Map<
+    number,
+    {
+      id: number;
+      conjuntoId: string;
+      descripcion: string;
+      estado: string;
+      fechaInicio: Date;
+      operariosIds: string[];
+      necesidadesIds: number[];
+    }
+  >();
+  const tarea = {
+    findMany: jest.fn(async ({ where }: any) => {
+      return Array.from(tareas.values())
+        .filter((t) => t.conjuntoId === where.conjuntoId)
+        .filter((t) => t.necesidadesIds.includes(where.necesidades.some.id))
+        .filter((t) => where.estado.in.includes(t.estado))
+        .filter((t) => t.fechaInicio >= where.fechaInicio.gte)
+        .map((t) => ({
+          id: t.id,
+          descripcion: t.descripcion,
+          periodoAnio: 2026,
+          periodoMes: 10,
+          operarios: t.operariosIds.map((id) => ({ id })),
+          necesidades: t.necesidadesIds.map((id) => ({
+            id,
+            operarioId: necesidades.get(id)?.operarioId ?? null,
+          })),
+        }));
+    }),
+  };
+
+  const excluidas = new Map<
+    number,
+    {
+      id: number;
+      conjuntoId: string;
+      defId: number;
+      estado: string;
+      fechaObjetivo: Date;
+      operariosIds: string[];
+      operariosNombres: string[];
+    }
+  >();
+  const preventivaExcluidaBorrador = {
+    findMany: jest.fn(async ({ where }: any) =>
+      Array.from(excluidas.values())
+        .filter((e) => e.conjuntoId === where.conjuntoId && e.estado === where.estado)
+        .filter((e) => where.defId.in.includes(e.defId))
+        .filter((e) => e.fechaObjetivo >= where.fechaObjetivo.gte)
+        .map((e) => ({ id: e.id, defId: e.defId, operariosIds: [...e.operariosIds] })),
+    ),
+    update: jest.fn(async ({ where, data }: any) => {
+      const e = excluidas.get(where.id)!;
+      e.operariosIds = data.operariosIds;
+      e.operariosNombres = data.operariosNombres;
+      return e;
+    }),
+  };
+
+  const usuario = {
+    findMany: jest.fn(async ({ where }: any) =>
+      (where.id.in as string[]).map((id) => ({ id, nombre: `Nombre ${id}` })),
+    ),
+  };
+  const auditoriaEvento = { createMany: jest.fn(async () => ({ count: 0 })) };
+
   const prisma: any = {
     conjuntoNecesidadOperario,
     conjuntoNecesidadHorario,
     operario,
     conjunto,
     definicionTareaPreventiva,
+    tarea,
+    preventivaExcluidaBorrador,
+    usuario,
+    auditoriaEvento,
     $transaction: async (fn: any) => fn(prisma),
   };
 
@@ -255,6 +356,40 @@ function makeFakePrisma() {
         necesidadesIds: [],
       }),
     definicionesGuardadas: definiciones,
+    seedTarea: (t: {
+      id: number;
+      conjuntoId?: string;
+      estado?: string;
+      fechaInicio: Date;
+      operariosIds: string[];
+      necesidadesIds: number[];
+    }) =>
+      tareas.set(t.id, {
+        conjuntoId: "C-1",
+        estado: "ASIGNADA",
+        descripcion: `Actividad ${t.id}`,
+        ...t,
+        operariosIds: [...t.operariosIds],
+      }),
+    operariosDeTarea: (id: number) => tareas.get(id)?.operariosIds ?? [],
+    vincularDefinicion: (defId: number, plazasIds: number[]) => {
+      const def = definiciones.get(defId);
+      if (def) def.necesidadesIds = plazasIds;
+    },
+    seedExcluida: (e: {
+      id: number;
+      defId: number;
+      fechaObjetivo: Date;
+      operariosIds: string[];
+    }) =>
+      excluidas.set(e.id, {
+        conjuntoId: "C-1",
+        estado: "PENDIENTE",
+        operariosNombres: [],
+        ...e,
+        operariosIds: [...e.operariosIds],
+      }),
+    excluidaGuardada: (id: number) => excluidas.get(id),
   };
 }
 
@@ -576,5 +711,135 @@ describe("ConjuntoNecesidadService - invariante de festivos contra el estado en 
     await service.editar(plaza.id, { trabajaFestivos: false });
     const reactivada = await service.editar(plaza.id, { trabajaFestivos: true });
     expect(reactivada.trabajaFestivos).toBe(true);
+  });
+});
+
+describe("ConjuntoNecesidadService - cambio de titular llega al cronograma", () => {
+  const manana = () => new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const ayer = () => new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  function escenario() {
+    const fake = makeFakePrisma();
+    fake.seedConjunto("C-1");
+    fake.seedOperario("pepito", [TipoFuncion.TODERO], "C-1");
+    fake.seedOperario("juanito", [TipoFuncion.TODERO], "C-1");
+    fake.seedOperario("maria", [TipoFuncion.TODERO], "C-1");
+    fake.seedOperario("carlos", [TipoFuncion.TODERO], "C-1");
+    return fake;
+  }
+
+  test("reemplazar al titular pasa sus actividades pendientes al nuevo y respeta lo ya trabajado", async () => {
+    const fake = escenario();
+    const service = new ConjuntoNecesidadService(fake.prisma, "C-1");
+    const t1 = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #1", operarioId: "pepito" });
+    const t2 = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #2", operarioId: "maria" });
+
+    fake.seedTarea({ id: 1, fechaInicio: manana(), operariosIds: ["pepito"], necesidadesIds: [t1.id] });
+    fake.seedTarea({ id: 2, fechaInicio: ayer(), operariosIds: ["pepito"], necesidadesIds: [t1.id] });
+    fake.seedTarea({
+      id: 3,
+      estado: "COMPLETADA",
+      fechaInicio: manana(),
+      operariosIds: ["pepito"],
+      necesidadesIds: [t1.id],
+    });
+    // Compartida entre dos plazas.
+    fake.seedTarea({
+      id: 4,
+      fechaInicio: manana(),
+      operariosIds: ["pepito", "maria"],
+      necesidadesIds: [t1.id, t2.id],
+    });
+    // Excepción puntual: se le asignó a mano a otra persona.
+    fake.seedTarea({ id: 5, fechaInicio: manana(), operariosIds: ["carlos"], necesidadesIds: [t1.id] });
+
+    // Sin "reemplazar", una plaza ocupada no cambia de titular.
+    await expect(service.asignarOperario(t1.id, { operarioId: "juanito" })).rejects.toThrow(
+      /Reemplazar/,
+    );
+
+    const out = await service.asignarOperario(t1.id, { operarioId: "juanito", reemplazar: true });
+    expect(out.operarioId).toBe("juanito");
+    expect(out.cronograma).toEqual({
+      tareasActualizadas: 2,
+      tareasAsignadasAlNuevo: 2,
+      tareasSinOperario: 0,
+      excluidasActualizadas: 0,
+    });
+    expect(fake.operariosDeTarea(1)).toEqual(["juanito"]);
+    expect(fake.operariosDeTarea(2)).toEqual(["pepito"]); // ya pasó
+    expect(fake.operariosDeTarea(3)).toEqual(["pepito"]); // ya se trabajó
+    expect(fake.operariosDeTarea(4).sort()).toEqual(["juanito", "maria"]);
+    expect(fake.operariosDeTarea(5)).toEqual(["carlos"]);
+    expect(fake.prisma.auditoriaEvento.createMany).toHaveBeenCalledTimes(1);
+  });
+
+  test("liberar deja las actividades sin el titular que se fue y asignar se las entrega al nuevo", async () => {
+    const fake = escenario();
+    const service = new ConjuntoNecesidadService(fake.prisma, "C-1");
+    const t1 = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #1", operarioId: "pepito" });
+    const t2 = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #2", operarioId: "maria" });
+    fake.seedTarea({ id: 1, fechaInicio: manana(), operariosIds: ["pepito"], necesidadesIds: [t1.id] });
+    fake.seedTarea({
+      id: 2,
+      fechaInicio: manana(),
+      operariosIds: ["pepito", "maria"],
+      necesidadesIds: [t1.id, t2.id],
+    });
+    fake.seedTarea({ id: 3, fechaInicio: manana(), operariosIds: ["carlos"], necesidadesIds: [t1.id] });
+
+    const liberada = await service.liberarOperario(t1.id);
+    expect(liberada.operarioId).toBeNull();
+    expect(liberada.cronograma).toEqual({
+      tareasActualizadas: 2,
+      tareasAsignadasAlNuevo: 0,
+      tareasSinOperario: 1,
+      excluidasActualizadas: 0,
+    });
+    expect(fake.operariosDeTarea(1)).toEqual([]);
+    expect(fake.operariosDeTarea(2)).toEqual(["maria"]);
+
+    const asignada = await service.asignarOperario(t1.id, { operarioId: "juanito" });
+    expect(asignada.cronograma.tareasActualizadas).toBe(2);
+    expect(asignada.cronograma.tareasAsignadasAlNuevo).toBe(2);
+    expect(fake.operariosDeTarea(1)).toEqual(["juanito"]);
+    expect(fake.operariosDeTarea(2).sort()).toEqual(["juanito", "maria"]);
+    expect(fake.operariosDeTarea(3)).toEqual(["carlos"]);
+  });
+
+  test("mover a alguien de plaza le quita las actividades de la anterior y le da las de la nueva", async () => {
+    const fake = escenario();
+    const service = new ConjuntoNecesidadService(fake.prisma, "C-1");
+    const t1 = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #1", operarioId: "pepito" });
+    const t2 = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #2", operarioId: "maria" });
+    fake.seedTarea({ id: 1, fechaInicio: manana(), operariosIds: ["pepito"], necesidadesIds: [t1.id] });
+    fake.seedTarea({ id: 2, fechaInicio: manana(), operariosIds: ["maria"], necesidadesIds: [t2.id] });
+
+    // María pasa a Todero #1 en reemplazo de Pepito; Todero #2 queda vacante.
+    const out = await service.asignarOperario(t1.id, { operarioId: "maria", reemplazar: true });
+    expect(out.cronograma).toEqual({
+      tareasActualizadas: 2,
+      tareasAsignadasAlNuevo: 1,
+      tareasSinOperario: 1,
+      excluidasActualizadas: 0,
+    });
+    expect(fake.operariosDeTarea(1)).toEqual(["maria"]);
+    expect(fake.operariosDeTarea(2)).toEqual([]);
+  });
+
+  test("las excluidas pendientes del borrador también cambian de operario sugerido", async () => {
+    const fake = escenario();
+    const service = new ConjuntoNecesidadService(fake.prisma, "C-1");
+    const t1 = await service.crear({ roles: ["TODERO"], etiqueta: "Todero #1", operarioId: "pepito" });
+    fake.seedDefinicion({ id: 70, conjuntoId: "C-1", descripcion: "Barrer", operariosIds: [] });
+    fake.vincularDefinicion(70, [t1.id]);
+    fake.seedExcluida({ id: 900, defId: 70, fechaObjetivo: manana(), operariosIds: ["pepito"] });
+    fake.seedExcluida({ id: 901, defId: 70, fechaObjetivo: ayer(), operariosIds: ["pepito"] });
+
+    const out = await service.asignarOperario(t1.id, { operarioId: "juanito", reemplazar: true });
+    expect(out.cronograma.excluidasActualizadas).toBe(1);
+    expect(fake.excluidaGuardada(900)?.operariosIds).toEqual(["juanito"]);
+    expect(fake.excluidaGuardada(900)?.operariosNombres).toEqual(["Nombre juanito"]);
+    expect(fake.excluidaGuardada(901)?.operariosIds).toEqual(["pepito"]);
   });
 });

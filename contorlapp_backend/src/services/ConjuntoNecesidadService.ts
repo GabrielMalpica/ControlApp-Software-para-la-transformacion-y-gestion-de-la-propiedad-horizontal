@@ -6,9 +6,20 @@ import {
   AsignarOperarioNecesidadDTO,
   necesidadPublicSelect,
 } from "../model/ConjuntoNecesidad";
+import type { ActorAuditoria } from "../model/Auditoria";
 import { obtenerCalendariosOperarios } from "../utils/operarioAvailability";
 import { mismosRoles } from "../utils/perfilOperativo";
 import { CatalogoOperativoService } from "./CatalogoOperativoService";
+import {
+  SIN_CAMBIOS_TITULAR,
+  sincronizarActividadesConTitularDePlaza,
+  sumarResultadosTitular,
+  type ResultadoCambioTitular,
+} from "./PlazaTitularSync";
+
+// Una plaza puede tener cientos de actividades por delante: el cambio de
+// titular las actualiza en la misma transacción.
+const TIMEOUT_CAMBIO_TITULAR_MS = 60_000;
 
 const ETIQUETA_ROL: Record<TipoFuncion, string> = {
   TODERO: "Todero",
@@ -50,6 +61,7 @@ export class ConjuntoNecesidadService {
   constructor(
     private prisma: PrismaClient,
     private conjuntoId: string,
+    private actor?: ActorAuditoria | null,
   ) {
     this.catalogo = new CatalogoOperativoService(prisma);
   }
@@ -116,12 +128,15 @@ export class ConjuntoNecesidadService {
    * alguien de plaza sin el paso manual de liberar primero) la libera aquí
    * mismo; sin esa opción (usado por `crear`, donde pre-asignar un operario
    * a una plaza nueva es una acción más deliberada) rechaza la operación.
+   * Al liberar esa otra plaza, sus actividades pendientes dejan de estar a
+   * nombre del operario (ver PlazaTitularSync); devuelve ese resultado.
    */
   private async validarYPrepararOperario(
     operarioId: string,
     roles: TipoFuncion[],
     options: { moverSiOcupada?: boolean; tx?: Prisma.TransactionClient } = {},
-  ) {
+  ): Promise<ResultadoCambioTitular> {
+    let resultado: ResultadoCambioTitular = { ...SIN_CAMBIOS_TITULAR };
     const db = options.tx ?? this.prisma;
     const operario = await db.operario.findUnique({
       where: { id: operarioId },
@@ -148,10 +163,20 @@ export class ConjuntoNecesidadService {
           `El operario ya ocupa la plaza "${operario.necesidadesOcupadas[0].etiqueta}" en este conjunto; libérala primero.`,
         );
       }
+      const plazaAnteriorId = operario.necesidadesOcupadas[0].id;
       await db.conjuntoNecesidadOperario.update({
-        where: { id: operario.necesidadesOcupadas[0].id },
+        where: { id: plazaAnteriorId },
         data: { operarioId: null },
       });
+      if (options.tx) {
+        resultado = await sincronizarActividadesConTitularDePlaza(options.tx, {
+          conjuntoId: this.conjuntoId,
+          plazaId: plazaAnteriorId,
+          anteriorId: operarioId,
+          nuevoId: null,
+          actor: this.actor,
+        });
+      }
     }
     if (!operario.conjuntos.length) {
       await db.conjunto.update({
@@ -159,6 +184,7 @@ export class ConjuntoNecesidadService {
         data: { operarios: { connect: { id: operarioId } } },
       });
     }
+    return resultado;
   }
 
   async listar() {
@@ -437,44 +463,89 @@ export class ConjuntoNecesidadService {
    * plaza en este mismo conjunto, lo mueve: libera la anterior y ocupa esta,
    * en una sola transacción (evita el paso manual "liberar y luego
    * asignar" para cambiar a alguien de cargo).
+   *
+   * Con `reemplazar: true` la plaza puede estar ocupada: el nuevo operario
+   * toma el lugar del actual en un solo paso (rotación de personal).
+   *
+   * En los dos casos las actividades pendientes de la plaza (publicadas y del
+   * borrador, de ahora en adelante) pasan al nuevo titular; el resumen viene
+   * en `cronograma`.
    */
   async asignarOperario(id: number, payload: unknown) {
-    const { operarioId } = AsignarOperarioNecesidadDTO.parse(payload);
-    return this.prisma.$transaction(async (tx) => {
-      const necesidad = await tx.conjuntoNecesidadOperario.findFirst({
-        where: { id, conjuntoId: this.conjuntoId },
-        select: { id: true, roles: true, operarioId: true, etiqueta: true },
-      });
-      if (!necesidad) throw new Error("Necesidad no encontrada.");
-      if (necesidad.operarioId) {
-        throw new Error(
-          `La plaza "${necesidad.etiqueta}" ya está ocupada; libérala antes de asignar otro operario.`,
+    const { operarioId, reemplazar } = AsignarOperarioNecesidadDTO.parse(payload);
+    return this.prisma.$transaction(
+      async (tx) => {
+        const necesidad = await tx.conjuntoNecesidadOperario.findFirst({
+          where: { id, conjuntoId: this.conjuntoId },
+          select: { id: true, roles: true, operarioId: true, etiqueta: true },
+        });
+        if (!necesidad) throw new Error("Necesidad no encontrada.");
+        const anteriorId = necesidad.operarioId;
+        if (anteriorId === operarioId) {
+          throw new Error(`Ese operario ya ocupa la plaza "${necesidad.etiqueta}".`);
+        }
+        if (anteriorId && !reemplazar) {
+          throw new Error(
+            `La plaza "${necesidad.etiqueta}" ya está ocupada; usa "Reemplazar" o libérala antes de asignar otro operario.`,
+          );
+        }
+        const porMovimiento = await this.validarYPrepararOperario(
+          operarioId,
+          necesidad.roles,
+          { moverSiOcupada: true, tx },
         );
-      }
-      await this.validarYPrepararOperario(operarioId, necesidad.roles, {
-        moverSiOcupada: true,
-        tx,
-      });
 
-      return tx.conjuntoNecesidadOperario.update({
-        where: { id },
-        data: { operarioId },
-        select: necesidadPublicSelect,
-      });
-    });
+        const actualizada = await tx.conjuntoNecesidadOperario.update({
+          where: { id },
+          data: { operarioId },
+          select: necesidadPublicSelect,
+        });
+        const porEstaPlaza = await sincronizarActividadesConTitularDePlaza(tx, {
+          conjuntoId: this.conjuntoId,
+          plazaId: id,
+          anteriorId,
+          nuevoId: operarioId,
+          actor: this.actor,
+        });
+
+        return {
+          ...actualizada,
+          cronograma: sumarResultadosTitular(porEstaPlaza, porMovimiento),
+        };
+      },
+      { timeout: TIMEOUT_CAMBIO_TITULAR_MS },
+    );
   }
 
+  /**
+   * Deja la plaza vacante. Sus actividades pendientes dejan de estar a nombre
+   * de quien se va (no debe verse info vieja en el cronograma); cuando se
+   * asigne a alguien, las recibe.
+   */
   async liberarOperario(id: number) {
-    const necesidad = await this.prisma.conjuntoNecesidadOperario.findFirst({
-      where: { id, conjuntoId: this.conjuntoId },
-      select: { id: true },
-    });
-    if (!necesidad) throw new Error("Necesidad no encontrada.");
-    return this.prisma.conjuntoNecesidadOperario.update({
-      where: { id },
-      data: { operarioId: null },
-      select: necesidadPublicSelect,
-    });
+    return this.prisma.$transaction(
+      async (tx) => {
+        const necesidad = await tx.conjuntoNecesidadOperario.findFirst({
+          where: { id, conjuntoId: this.conjuntoId },
+          select: { id: true, operarioId: true },
+        });
+        if (!necesidad) throw new Error("Necesidad no encontrada.");
+        const actualizada = await tx.conjuntoNecesidadOperario.update({
+          where: { id },
+          data: { operarioId: null },
+          select: necesidadPublicSelect,
+        });
+        const cronograma = await sincronizarActividadesConTitularDePlaza(tx, {
+          conjuntoId: this.conjuntoId,
+          plazaId: id,
+          anteriorId: necesidad.operarioId,
+          nuevoId: null,
+          actor: this.actor,
+        });
+        return { ...actualizada, cronograma };
+      },
+      { timeout: TIMEOUT_CAMBIO_TITULAR_MS },
+    );
   }
 
   /**

@@ -86,6 +86,7 @@ import {
   buildBloqueosPorPatronJornada,
 } from "./DefinicionTareaPreventivaService";
 import { NotificacionService } from "./NotificacionService";
+import { sincronizarActividadesConTitularDePlaza } from "./PlazaTitularSync";
 import {
   construirRutaElemento,
   elementoParentChainInclude,
@@ -2238,11 +2239,24 @@ export class GerenteService {
       // reemplaza por solo el destino): libera cualquier plaza/necesidad que
       // ocupara en ellos para que quede vacante en vez de asignada a alguien
       // que ya no está ahí. La tarea/definición vinculada a esa plaza sigue
-      // intacta; solo queda sin operario hasta que se reasigne.
+      // intacta; solo queda sin operario hasta que se reasigne (lo publicado
+      // ya está cerrado por la validación de arriba; esto alcanza al borrador).
+      const plazasOcupadas = await tx.conjuntoNecesidadOperario.findMany({
+        where: { operarioId, activo: true },
+        select: { id: true, conjuntoId: true },
+      });
       await tx.conjuntoNecesidadOperario.updateMany({
         where: { operarioId, activo: true },
         data: { operarioId: null },
       });
+      for (const plaza of plazasOcupadas) {
+        await sincronizarActividadesConTitularDePlaza(tx, {
+          conjuntoId: plaza.conjuntoId,
+          plazaId: plaza.id,
+          anteriorId: operarioId,
+          nuevoId: null,
+        });
+      }
       await tx.operario.update({
         where: { id: operarioId },
         data: { conjuntos: { set: [{ nit: dto.conjuntoId }] } },

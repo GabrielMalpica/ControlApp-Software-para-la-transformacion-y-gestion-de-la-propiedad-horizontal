@@ -3,6 +3,7 @@ import { RequestHandler } from "express";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
 import { ConjuntoNecesidadService } from "../services/ConjuntoNecesidadService";
+import { extraerActorAuditoriaConNombre } from "../utils/auditoria";
 
 const NitSchema = z.object({ nit: z.string().min(3) });
 const NecesidadIdSchema = z.object({ necesidadId: z.coerce.number().int().positive() });
@@ -99,7 +100,8 @@ export class ConjuntoNecesidadController {
     try {
       const conjuntoId = resolveConjuntoId(req);
       const necesidadId = resolveNecesidadId(req);
-      const service = new ConjuntoNecesidadService(prisma, conjuntoId);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      const service = new ConjuntoNecesidadService(prisma, conjuntoId, actor);
       const data = await service.asignarOperario(necesidadId, req.body);
       res.json(data);
     } catch (err) {
@@ -112,7 +114,8 @@ export class ConjuntoNecesidadController {
     try {
       const conjuntoId = resolveConjuntoId(req);
       const necesidadId = resolveNecesidadId(req);
-      const service = new ConjuntoNecesidadService(prisma, conjuntoId);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      const service = new ConjuntoNecesidadService(prisma, conjuntoId, actor);
       const data = await service.liberarOperario(necesidadId);
       res.json(data);
     } catch (err) {

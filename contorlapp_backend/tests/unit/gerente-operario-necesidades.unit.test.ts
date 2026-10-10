@@ -28,6 +28,12 @@ function makeFakePrisma() {
     },
     tarea: {
       count: jest.fn().mockResolvedValue(0),
+      // Sin actividades pendientes en el borrador: la sincronización de la
+      // plaza liberada no tiene nada que mover.
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    definicionTareaPreventiva: {
+      findMany: jest.fn().mockResolvedValue([]),
     },
     conjuntoNecesidadOperario: {
       updateMany: jest.fn(async ({ where, data }: any) => {
@@ -43,7 +49,7 @@ function makeFakePrisma() {
       findMany: jest.fn(async ({ where }: any) => {
         return Array.from(necesidades.values())
           .filter((n) => n.operarioId === where.operarioId && n.activo === where.activo)
-          .map((n) => ({ etiqueta: n.etiqueta, roles: n.roles }));
+          .map((n) => ({ id: n.id, conjuntoId: "C-ORIGEN", etiqueta: n.etiqueta, roles: n.roles }));
       }),
     },
     $transaction: async (fn: any) => fn(prisma),
@@ -66,6 +72,16 @@ describe("GerenteService: necesidades operativas al trasladar/editar un operario
       where: { operarioId: "1", activo: true },
       data: { operarioId: null },
     });
+    // Las actividades pendientes de la plaza liberada se revisan para que no
+    // queden a nombre de quien se fue.
+    expect(prisma.tarea.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          conjuntoId: "C-ORIGEN",
+          necesidades: { some: { id: 501 } },
+        }),
+      }),
+    );
   });
 
   test("editarOperario rechaza quitar un rol que una plaza ocupada exige", async () => {

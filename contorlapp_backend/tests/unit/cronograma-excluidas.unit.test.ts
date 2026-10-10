@@ -85,7 +85,10 @@ function prismaConExcluida(overrides: Record<string, any> = {}) {
     },
     usuario: { findMany: jest.fn().mockResolvedValue([]) },
     conjuntoHorario: { findFirst: jest.fn().mockResolvedValue(null) },
-    operario: { findUnique: jest.fn().mockResolvedValue(null) },
+    operario: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     operarioDisponibilidadPeriodo: { findFirst: jest.fn().mockResolvedValue(null) },
     auditoriaEvento: {
       create: jest.fn(async ({ data }: any) => {
@@ -235,10 +238,9 @@ describe('Excluidas en el cronograma definitivo', () => {
     test('PU-C5 - cambia solo la excluida y nunca la definicion preventiva', async () => {
       const prisma = prismaConExcluida();
       prisma.conjuntoHorario.findFirst.mockResolvedValue(horarioAbierto);
-      prisma.operario.findUnique.mockResolvedValue({
-        id: 'op-2',
-        usuario: { nombre: 'Luis Gomez' },
-      });
+      prisma.operario.findMany.mockResolvedValue([
+        { id: 'op-2', usuario: { nombre: 'Luis Gomez' } },
+      ]);
       prisma.definicionTareaPreventiva = { update: jest.fn() };
 
       const service = new CronogramaService(prisma, CONJUNTO, ACTOR);
@@ -264,13 +266,31 @@ describe('Excluidas en el cronograma definitivo', () => {
       expect(prisma.auditorias[0].accion).toBe('REASIGNAR_OPERARIO');
     });
 
+    test('PU-C5b - una excluida compartida puede quedar con varios operarios', async () => {
+      const prisma = prismaConExcluida();
+      prisma.conjuntoHorario.findFirst.mockResolvedValue(horarioAbierto);
+      prisma.operario.findMany.mockResolvedValue([
+        { id: 'op-1', usuario: { nombre: 'Pedro Ruiz' } },
+        { id: 'op-3', usuario: { nombre: 'Ana Diaz' } },
+      ]);
+
+      const service = new CronogramaService(prisma, CONJUNTO, ACTOR);
+      await service.reasignarOperarioExcluidaPublicada({
+        excluidaId: 42,
+        nuevosOperariosIds: ['op-1', 'op-3'],
+      });
+
+      const update = prisma.tx.preventivaExcluidaBorrador.update.mock.calls[0][0];
+      expect(update.data.operariosIds).toEqual(['op-1', 'op-3']);
+      expect(update.data.operariosNombres).toEqual(['Pedro Ruiz', 'Ana Diaz']);
+    });
+
     test('PU-C6 - rechaza al operario que no tiene ventana libre ese dia', async () => {
       const prisma = prismaConExcluida();
       prisma.conjuntoHorario.findFirst.mockResolvedValue(horarioAbierto);
-      prisma.operario.findUnique.mockResolvedValue({
-        id: 'op-2',
-        usuario: { nombre: 'Luis Gomez' },
-      });
+      prisma.operario.findMany.mockResolvedValue([
+        { id: 'op-2', usuario: { nombre: 'Luis Gomez' } },
+      ]);
       // Jornada completa ocupada: no caben las 3h de la excluida.
       prisma.tarea.findMany.mockResolvedValue([
         {

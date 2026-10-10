@@ -121,6 +121,9 @@ export type EditarNecesidadInput = z.infer<typeof EditarNecesidadDTO>;
 
 export const AsignarOperarioNecesidadDTO = z.object({
   operarioId: z.string().trim().min(1, "El operario es obligatorio"),
+  // true = la plaza está ocupada y se reemplaza a quien la ocupa en un solo
+  // paso (sus actividades pendientes pasan al nuevo titular).
+  reemplazar: z.boolean().optional().default(false),
 });
 
 export const necesidadPublicSelect = {

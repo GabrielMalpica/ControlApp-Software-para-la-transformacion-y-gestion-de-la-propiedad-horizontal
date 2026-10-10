@@ -453,10 +453,33 @@ const EditarBloqueBorradorDTO = z.object({
   tiempoEstimadoMinutos: z.number().positive().nullable().optional(),
 });
 
+// Una tarea puede quedar con varios operarios (p.ej. A y B pasan a ser A y
+// C): `nuevosOperariosIds` lleva la lista completa. `nuevoOperarioId` (uno
+// solo) se conserva por compatibilidad.
+const NuevosOperariosFields = {
+  nuevoOperarioId: z.coerce.number().int().positive().optional(),
+  nuevosOperariosIds: z.array(z.coerce.number().int().positive()).max(10).optional(),
+};
+
+/** Lista final de operarios pedida (sin repetidos y al menos uno). */
+function operariosSolicitados(dto: {
+  nuevoOperarioId?: number;
+  nuevosOperariosIds?: number[];
+}): number[] {
+  const ids = dto.nuevosOperariosIds?.length
+    ? dto.nuevosOperariosIds
+    : dto.nuevoOperarioId != null
+      ? [dto.nuevoOperarioId]
+      : [];
+  const unicos = Array.from(new Set(ids));
+  if (!unicos.length) throw new Error("Selecciona al menos un operario.");
+  return unicos;
+}
+
 const ReasignarOperarioBorradorDTO = z.object({
   conjuntoId: z.string().min(3),
   tareaId: z.number().int().positive(),
-  nuevoOperarioId: z.coerce.number().int().positive(),
+  ...NuevosOperariosFields,
   modoAplicacion: z
     .enum(["SOLO_TAREA", "TODO_BORRADOR", "TAMBIEN_DEFINICION"])
     .optional(),
@@ -466,12 +489,20 @@ const ReasignarOperarioBorradorDTO = z.object({
 const ReasignarOperarioExcluidaDTO = z.object({
   conjuntoId: z.string().min(3),
   excluidaId: z.number().int().positive(),
-  nuevoOperarioId: z.coerce.number().int().positive(),
+  ...NuevosOperariosFields,
   modoAplicacion: z
     .enum(["SOLO_TAREA", "TODO_BORRADOR", "TAMBIEN_DEFINICION"])
     .optional(),
   aplicarADefinicion: z.boolean().optional().default(false),
 });
+
+/**
+ * Aviso cuando se pide guardar el cambio "también en la definición" pero la
+ * preventiva sale de plazas: el próximo cronograma la asigna a quien ocupe
+ * esas plazas, no a los operarios guardados en la definición.
+ */
+const AVISO_DEFINICION_POR_PLAZAS =
+  "Se cambió en este borrador, pero la preventiva está vinculada a plazas: los próximos cronogramas la asignan a quien ocupe esas plazas. Para cambiarlo de forma permanente, edita las plazas de la preventiva.";
 
 const tareaBorradorDetalleInclude = {
   operarios: { select: operarioResumenSelect },
@@ -7219,6 +7250,7 @@ export class DefinicionTareaPreventivaService {
 
   async reasignarOperarioTareaBorrador(payload: unknown) {
     const dto = ReasignarOperarioBorradorDTO.parse(payload);
+    const nuevosOperariosIds = operariosSolicitados(dto);
     const modoAplicacion = dto.modoAplicacion ??
       (dto.aplicarADefinicion ? "TAMBIEN_DEFINICION" : "SOLO_TAREA");
     const tarea = await this.prisma.tarea.findUnique({
@@ -7294,7 +7326,7 @@ export class DefinicionTareaPreventivaService {
         {
           fechaInicio: tareaObjetivo.fechaInicio,
           fechaFin: tareaObjetivo.fechaFin,
-          operariosIds: [dto.nuevoOperarioId],
+          operariosIds: nuevosOperariosIds,
         },
       );
       if (tareaObjetivo.id === dto.tareaId) {
@@ -7305,11 +7337,12 @@ export class DefinicionTareaPreventivaService {
         tareaId: tareaObjetivo.id,
         conjuntoId: dto.conjuntoId,
         accion: AccionAuditoria.REASIGNAR_OPERARIO,
-        descripcion: `Se reasigno la tarea '${tarea.descripcion}' al operario ${dto.nuevoOperarioId}.`,
+        descripcion: `Se reasigno la tarea '${tarea.descripcion}' a: ${nuevosOperariosIds.join(", ")}.`,
         periodoAnio: tarea.periodoAnio,
         periodoMes: tarea.periodoMes,
         metadataJson: {
-          nuevoOperarioId: dto.nuevoOperarioId,
+          nuevoOperarioId: nuevosOperariosIds[0],
+          nuevosOperariosIds,
           modoAplicacion,
         },
       });
@@ -7329,7 +7362,7 @@ export class DefinicionTareaPreventivaService {
           ...(tarea.frecuencia == null ? {} : { frecuencia: tarea.frecuencia }),
           ...(tarea.supervisorId == null ? {} : { supervisorId: tarea.supervisorId }),
         },
-        select: { id: true },
+        select: { id: true, _count: { select: { necesidades: true } } },
         orderBy: { id: "asc" },
         take: 2,
       });
@@ -7337,9 +7370,12 @@ export class DefinicionTareaPreventivaService {
       if (candidatas.length === 1) {
         definicionId = candidatas[0].id;
         await this.actualizar(dto.conjuntoId, definicionId, {
-          operariosIds: [dto.nuevoOperarioId],
+          operariosIds: nuevosOperariosIds,
         });
         definicionActualizada = true;
+        if (candidatas[0]._count.necesidades > 0) {
+          warning = AVISO_DEFINICION_POR_PLAZAS;
+        }
       } else if (candidatas.length === 0) {
         warning =
           "Se actualizó el borrador, pero no se encontró una definición única para aplicar el cambio definitivo.";
@@ -7384,11 +7420,11 @@ export class DefinicionTareaPreventivaService {
       throw new Error("La tarea excluida ya no se puede editar.");
     }
 
-    const nuevoOperarioId = dto.nuevoOperarioId.toString();
+    const nuevosOperariosIds = operariosSolicitados(dto).map((id) => id.toString());
     const disponibilidad = await validarOperariosDisponiblesEnFecha({
       prisma: this.prisma,
       fecha: excluida.fechaObjetivo,
-      operariosIds: [nuevoOperarioId],
+      operariosIds: nuevosOperariosIds,
     });
     if (!disponibilidad.ok) {
       throw new Error(
@@ -7396,7 +7432,10 @@ export class DefinicionTareaPreventivaService {
       );
     }
 
-    const nombreOperario = await getOperarioNombre(this.prisma, nuevoOperarioId);
+    const nombresOperarios = await Promise.all(
+      nuevosOperariosIds.map((id) => getOperarioNombre(this.prisma, id)),
+    );
+    const nombresTexto = nombresOperarios.join(", ");
     let excluidasObjetivo = [dto.excluidaId];
     if (modoAplicacion !== "SOLO_TAREA" && excluida.defId != null) {
       const relacionadas = await this.prisma.preventivaExcluidaBorrador.findMany({
@@ -7418,8 +7457,8 @@ export class DefinicionTareaPreventivaService {
     await this.prisma.preventivaExcluidaBorrador.updateMany({
       where: { id: { in: excluidasObjetivo } },
       data: {
-        operariosIds: [nuevoOperarioId],
-        operariosNombres: nombreOperario ? [nombreOperario] : [],
+        operariosIds: nuevosOperariosIds,
+        operariosNombres: nombresOperarios,
       },
     });
     const excluidaActualizada = await this.prisma.preventivaExcluidaBorrador.findUnique({
@@ -7432,9 +7471,11 @@ export class DefinicionTareaPreventivaService {
     if (modoAplicacion === "TAMBIEN_DEFINICION") {
       if (excluida.defId != null) {
         await this.actualizar(dto.conjuntoId, excluida.defId, {
-          operariosIds: [dto.nuevoOperarioId],
+          operariosIds: nuevosOperariosIds,
         });
         definicionActualizada = true;
+        const plazasVinculadas = await this.necesidadesIdsDeDefId(excluida.defId);
+        if (plazasVinculadas.length) warning = AVISO_DEFINICION_POR_PLAZAS;
       } else {
         warning =
           "Se actualizó la excluida, pero no se encontró la definición base para aplicar el cambio definitivo.";
@@ -7448,10 +7489,12 @@ export class DefinicionTareaPreventivaService {
       tipo: "EXCLUIDA_REASIGNADA",
       accionAuditoria: AccionAuditoria.REASIGNAR_OPERARIO,
       excluidaId: excluida.id,
-        detalle: `Se reasignó el operario de la tarea excluida al operario ${nombreOperario || nuevoOperarioId}.`,
+        detalle: `Se reasignaron los operarios de la tarea excluida: ${nombresTexto}.`,
         metadataJson: {
-          nuevoOperarioId,
-          nuevoOperarioNombre: nombreOperario,
+          nuevoOperarioId: nuevosOperariosIds[0],
+          nuevoOperarioNombre: nombresOperarios[0] ?? null,
+          nuevosOperariosIds,
+          nuevosOperariosNombres: nombresOperarios,
           modoAplicacion,
           aplicarADefinicion: modoAplicacion === "TAMBIEN_DEFINICION",
           excluidasActualizadas: excluidasObjetivo.length,

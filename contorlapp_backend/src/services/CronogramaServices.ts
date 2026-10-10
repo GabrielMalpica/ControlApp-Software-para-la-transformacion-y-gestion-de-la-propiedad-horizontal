@@ -109,11 +109,19 @@ const OpcionesReemplazoExcluidaDTO = z.object({
   fecha: z.coerce.date(),
 });
 
-const ReasignarOperarioExcluidaPublicadaDTO = z.object({
-  excluidaId: z.coerce.number().int().positive(),
-  nuevoOperarioId: z.coerce.string().min(1),
-  motivo: z.string().trim().max(500).optional(),
-});
+const ReasignarOperarioExcluidaPublicadaDTO = z
+  .object({
+    excluidaId: z.coerce.number().int().positive(),
+    // Uno (compatibilidad) o varios operarios: una tarea compartida puede
+    // pasar de "A y B" a "A y C".
+    nuevoOperarioId: z.coerce.string().trim().min(1).optional(),
+    nuevosOperariosIds: z.array(z.coerce.string().trim().min(1)).max(10).optional(),
+    motivo: z.string().trim().max(500).optional(),
+  })
+  .refine((d) => !!d.nuevoOperarioId || !!d.nuevosOperariosIds?.length, {
+    message: "Selecciona al menos un operario.",
+    path: ["nuevosOperariosIds"],
+  });
 
 const InformeExcluidasDTO = z.object({
   anio: z.coerce.number().int().min(2000).max(2100),
@@ -1305,57 +1313,77 @@ export class CronogramaService {
       );
     }
 
-    const nuevoOperarioId = dto.nuevoOperarioId.trim();
+    const nuevosOperariosIds = Array.from(
+      new Set(
+        (dto.nuevosOperariosIds?.length
+          ? dto.nuevosOperariosIds
+          : [dto.nuevoOperarioId as string]
+        ).map((id) => id.trim()),
+      ),
+    );
 
-    const operario = await this.prisma.operario.findUnique({
-      where: { id: nuevoOperarioId },
+    const operarios = await this.prisma.operario.findMany({
+      where: { id: { in: nuevosOperariosIds } },
       select: { id: true, usuario: { select: { nombre: true } } },
     });
-    if (!operario) {
-      throw new Error("El operario seleccionado no existe.");
+    const nombrePorId = new Map(
+      operarios.map((op) => [op.id, op.usuario?.nombre ?? null]),
+    );
+    if (operarios.length !== nuevosOperariosIds.length) {
+      throw new Error("Uno de los operarios seleccionados no existe.");
     }
 
     const disponibilidad = await validarOperariosDisponiblesEnFecha({
       prisma: this.prisma,
       fecha: excluida.fechaObjetivo,
-      operariosIds: [nuevoOperarioId],
+      operariosIds: nuevosOperariosIds,
     });
     if (!disponibilidad.ok) {
-      throw new Error(
-        `${operario.usuario?.nombre ?? "El operario"} no trabaja el dia objetivo de esta tarea.`,
-      );
+      const nombres = disponibilidad.noDisponibles
+        .map((id) => nombrePorId.get(id) ?? id)
+        .join(", ");
+      throw new Error(`${nombres} no trabaja el dia objetivo de esta tarea.`);
     }
 
-    const tieneEspacio = await this.tieneVentanaLibre({
-      operarioId: nuevoOperarioId,
-      fecha: excluida.fechaObjetivo,
-      duracionMinutos: excluida.duracionMinutos,
-    });
-    if (!tieneEspacio) {
-      throw new Error(
-        `${operario.usuario?.nombre ?? "El operario"} no tiene horas libres suficientes ese dia para asumir esta tarea.`,
-      );
+    // Solo se exige hueco a quien entra: quien ya estaba en la tarea la
+    // tenía contemplada.
+    for (const operarioId of nuevosOperariosIds) {
+      if (excluida.operariosIds.includes(operarioId)) continue;
+      const tieneEspacio = await this.tieneVentanaLibre({
+        operarioId,
+        fecha: excluida.fechaObjetivo,
+        duracionMinutos: excluida.duracionMinutos,
+      });
+      if (!tieneEspacio) {
+        throw new Error(
+          `${nombrePorId.get(operarioId) ?? "El operario"} no tiene horas libres suficientes ese dia para asumir esta tarea.`,
+        );
+      }
     }
 
-    const nombreOperario = operario.usuario?.nombre ?? null;
+    const nombresOperarios = nuevosOperariosIds.map(
+      (id) => nombrePorId.get(id) ?? id,
+    );
     const metadataActual = metadataComoObjeto(excluida.metadataJson);
     const excepcionOperario = {
       operariosOriginalesIds: excluida.operariosIds,
       operariosOriginalesNombres: excluida.operariosNombres,
-      nuevoOperarioId,
-      nuevoOperarioNombre: nombreOperario,
+      nuevoOperarioId: nuevosOperariosIds[0],
+      nuevoOperarioNombre: nombresOperarios[0] ?? null,
+      nuevosOperariosIds,
+      nuevosOperariosNombres: nombresOperarios,
       motivo: dto.motivo ?? null,
       aplicadoEn: new Date().toISOString(),
     };
 
-    const detalle = `Se asigno a ${nombreOperario ?? nuevoOperarioId} como excepcion para la tarea excluida '${excluida.descripcion}'. No cambia el plan preventivo.`;
+    const detalle = `Se asigno a ${nombresOperarios.join(", ")} como excepcion para la tarea excluida '${excluida.descripcion}'. No cambia el plan preventivo.`;
 
     const actualizada = await this.prisma.$transaction(async (tx) => {
       const row = await tx.preventivaExcluidaBorrador.update({
         where: { id: excluida.id },
         data: {
-          operariosIds: [nuevoOperarioId],
-          operariosNombres: nombreOperario ? [nombreOperario] : [],
+          operariosIds: nuevosOperariosIds,
+          operariosNombres: nombresOperarios,
           metadataJson: {
             ...metadataActual,
             excepcionOperario,
@@ -1392,8 +1420,8 @@ export class CronogramaService {
           operariosNombres: excluida.operariosNombres,
         },
         datosDespues: {
-          operariosIds: [nuevoOperarioId],
-          operariosNombres: nombreOperario ? [nombreOperario] : [],
+          operariosIds: nuevosOperariosIds,
+          operariosNombres: nombresOperarios,
         },
         metadataJson: excepcionOperario,
       });

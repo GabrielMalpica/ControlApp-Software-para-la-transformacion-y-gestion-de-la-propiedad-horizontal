@@ -388,6 +388,7 @@ export class DefinicionTareaPreventivaController {
       conjuntoId,
       tareaId,
       nuevoOperarioId: req.body?.nuevoOperarioId,
+      nuevosOperariosIds: req.body?.nuevosOperariosIds,
       modoAplicacion: req.body?.modoAplicacion,
       aplicarADefinicion: req.body?.aplicarADefinicion,
     });
@@ -403,6 +404,7 @@ export class DefinicionTareaPreventivaController {
       conjuntoId,
       excluidaId,
       nuevoOperarioId: req.body?.nuevoOperarioId,
+      nuevosOperariosIds: req.body?.nuevosOperariosIds,
       modoAplicacion: req.body?.modoAplicacion,
       aplicarADefinicion: req.body?.aplicarADefinicion,
     });
