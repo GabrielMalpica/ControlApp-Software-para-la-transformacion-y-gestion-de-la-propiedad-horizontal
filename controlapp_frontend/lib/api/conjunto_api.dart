@@ -513,14 +513,19 @@ class ConjuntoApi {
   }
 
   /// POST /conjunto/conjuntos/:nit/necesidades/:necesidadId/operario
+  ///
+  /// Con [reemplazar] la plaza puede estar ocupada: el nuevo operario toma el
+  /// lugar del actual y recibe sus actividades pendientes del cronograma
+  /// (el resumen viene en [NecesidadOperario.cambioCronograma]).
   Future<NecesidadOperario> asignarOperarioNecesidad({
     required String conjuntoNit,
     required int necesidadId,
     required String operarioId,
+    bool reemplazar = false,
   }) async {
     final resp = await _client.post(
       '${_necesidadesBase(conjuntoNit)}/$necesidadId/operario',
-      body: {'operarioId': operarioId},
+      body: {'operarioId': operarioId, if (reemplazar) 'reemplazar': true},
     );
     if (resp.statusCode != 200) {
       throw Exception(

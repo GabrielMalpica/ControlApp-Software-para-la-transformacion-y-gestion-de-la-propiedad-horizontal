@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_application_1/api/commerce_lifecycle_api.dart';
 import 'package:flutter_application_1/model/commerce_lifecycle_models.dart';
 import 'package:flutter_application_1/service/app_error.dart';
@@ -53,6 +56,13 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
   bool _pagoBusy = false;
   String? _pagoError;
 
+  // "Ya pagué" no aparece apenas se muestra el código: el pago se confirma
+  // solo y la pantalla se recarga con el aviso de la campanita. Pasados
+  // kEsperaVerificacionManual sin confirmación queda como respaldo. Este
+  // temporizador de un solo disparo solo redibuja la tarjeta en ese momento:
+  // no consulta nada.
+  Timer? _yaPagueTimer;
+
   @override
   void initState() {
     super.initState();
@@ -64,10 +74,25 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
 
   @override
   void dispose() {
+    _yaPagueTimer?.cancel();
     NotificacionesCenter.instance.pedidoActualizado.removeListener(
       _onPedidoActualizado,
     );
     super.dispose();
+  }
+
+  /// Guarda el cobro y agenda el momento en que se ofrece "Ya pagué".
+  /// Llamar dentro de setState.
+  void _usarPago(PagoCobroInfo? pago) {
+    _yaPagueTimer?.cancel();
+    _yaPagueTimer = null;
+    _pago = pago;
+    final falta = pago?.faltaParaVerificarManual(DateTime.now());
+    if (falta != null && falta > Duration.zero) {
+      _yaPagueTimer = Timer(falta, () {
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   /// El backend crea una notificación cuando el pedido cambia por fuera de la
@@ -127,7 +152,7 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
       var pago = await _api.obtenerPago(widget.pedidoId);
       pago ??= await _api.crearPago(widget.pedidoId);
       if (!mounted) return;
-      setState(() => _pago = pago);
+      setState(() => _usarPago(pago));
     } catch (error) {
       if (!mounted) return;
       setState(() => _pagoError = AppError.messageOf(error));
@@ -147,7 +172,7 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
     try {
       final pago = await _api.verificarPago(widget.pedidoId);
       if (!mounted) return;
-      setState(() => _pago = pago);
+      setState(() => _usarPago(pago));
       if (pago.estaPagado) {
         AppFeedback.showInfo(
           context,
@@ -159,7 +184,9 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
       }
       AppFeedback.showInfo(
         context,
-        title: pago.fallo ? 'El pago no se confirmó' : 'Todavía no vemos el pago',
+        title: pago.fallo
+            ? 'El pago no se confirmó'
+            : 'Todavía no vemos el pago',
         message: pago.fallo
             ? 'Genera un código nuevo e intenta otra vez.'
             : 'Si ya pagaste, espera unos segundos y vuelve a intentar.',
@@ -180,7 +207,7 @@ class _CommerceOrderDetailPageState extends State<CommerceOrderDetailPage> {
     try {
       final pago = await _api.crearPago(widget.pedidoId);
       if (!mounted) return;
-      setState(() => _pago = pago);
+      setState(() => _usarPago(pago));
     } catch (error) {
       if (!mounted) return;
       setState(() => _pagoError = AppError.messageOf(error));
@@ -973,8 +1000,9 @@ class _VerificacionComprobanteCard extends StatelessWidget {
 }
 
 /// QR de Factus Pay: metodo de pago por defecto. El pago se confirma solo
-/// -sin comprobante ni revisión manual-, así que aquí solo hay dos acciones:
-/// esperar/"Ya pagué", o generar un código nuevo si el actual falló o venció.
+/// (aviso de Factus), así que al principio solo se espera; "Ya pagué" aparece
+/// como respaldo pasados kEsperaVerificacionManual, y "Generar código nuevo"
+/// si el actual falló o venció.
 class _PagoFactusCard extends StatelessWidget {
   const _PagoFactusCard({
     required this.pago,
@@ -1018,8 +1046,7 @@ class _PagoFactusCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Escanea el código desde tu app bancaria o Nequi. Se confirma '
-            'solo, sin comprobante.',
+            'Escanea el código desde tu app bancaria o Nequi.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           if (pago != null) ...<Widget>[
@@ -1028,6 +1055,12 @@ class _PagoFactusCard extends StatelessWidget {
               'Monto: ${money.format(pago!.montoEsperado)}',
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
+            if (!vencidoOFallo && pago!.expiraLocalEn != null)
+              Text(
+                'Puedes pagar este código hasta el '
+                '${DateFormat('dd/MM/yyyy · h:mm a').format(pago!.expiraLocalEn!.toLocal())}.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
           ],
           const SizedBox(height: 12),
           if (error != null) ...<Widget>[
@@ -1041,23 +1074,35 @@ class _PagoFactusCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(error!, style: const TextStyle(color: AppTheme.red)),
+                  child: Text(
+                    error!,
+                    style: const TextStyle(color: AppTheme.red),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 10),
           ],
           if (qrBytes != null && !vencidoOFallo)
-            Center(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Image.memory(
-                  qrBytes,
-                  height: 220,
-                  width: 220,
-                  fit: BoxFit.contain,
+            Column(
+              children: <Widget>[
+                Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.memory(
+                      qrBytes,
+                      height: 220,
+                      width: 220,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
                 ),
-              ),
+                if (pago!.brebKey != null)
+                  _LlaveBrebRow(
+                    llave: pago!.brebKey!,
+                    monto: money.format(pago!.montoEsperado),
+                  ),
+              ],
             )
           else if (vencidoOFallo)
             Padding(
@@ -1078,25 +1123,103 @@ class _PagoFactusCard extends StatelessWidget {
               child: Center(child: CircularProgressIndicator()),
             ),
           const SizedBox(height: 14),
+          SizedBox(width: double.infinity, child: _accion()),
+        ],
+      ),
+    );
+  }
+
+  Widget _accion() {
+    final pago = this.pago;
+    if (pago == null) {
+      // No se pudo traer ni generar el código: reintentar.
+      if (error == null) return const SizedBox.shrink();
+      return FilledButton.icon(
+        onPressed: busy ? null : onGenerarNuevo,
+        icon: const Icon(Icons.refresh_rounded),
+        label: const Text('Intentar de nuevo'),
+      );
+    }
+    if (pago.vencidoLocal || pago.fallo) {
+      return FilledButton.icon(
+        onPressed: busy ? null : onGenerarNuevo,
+        icon: const Icon(Icons.refresh_rounded),
+        label: const Text('Generar código nuevo'),
+      );
+    }
+    // Recién generado: el pago se confirma solo; "Ya pagué" (consultar a
+    // mano) solo aparece como respaldo si pasado un rato no se confirmó.
+    if (!pago.puedeVerificarManual(DateTime.now())) {
+      return const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
           SizedBox(
-            width: double.infinity,
-            child: vencidoOFallo
-                ? FilledButton.icon(
-                    onPressed: busy ? null : onGenerarNuevo,
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Generar código nuevo'),
-                  )
-                : FilledButton.icon(
-                    onPressed: busy ? null : onVerificar,
-                    icon: busy
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.check_circle_outline_rounded),
-                    label: Text(busy ? 'Verificando…' : 'Ya pagué'),
-                  ),
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 10),
+          Text('Esperando tu pago…'),
+        ],
+      );
+    }
+    return FilledButton.icon(
+      onPressed: busy ? null : onVerificar,
+      icon: busy
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.check_circle_outline_rounded),
+      label: Text(busy ? 'Verificando…' : 'Ya pagué'),
+    );
+  }
+}
+
+/// Alternativa al QR: transferir a la llave Bre-B del código. Solo sirve por
+/// el monto exacto y mientras el código esté vigente.
+class _LlaveBrebRow extends StatelessWidget {
+  const _LlaveBrebRow({required this.llave, required this.monto});
+
+  final String llave;
+  final String monto;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'O transfiere exactamente $monto a esta llave Bre-B:',
+            style: textTheme.bodySmall,
+          ),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: SelectableText(
+                  llave,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Copiar llave',
+                icon: const Icon(Icons.copy_rounded),
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: llave));
+                  if (!context.mounted) return;
+                  AppFeedback.showInfo(
+                    context,
+                    title: 'Llave copiada',
+                    message:
+                        'Pégala en tu app bancaria y paga el monto exacto.',
+                  );
+                },
+              ),
+            ],
           ),
         ],
       ),

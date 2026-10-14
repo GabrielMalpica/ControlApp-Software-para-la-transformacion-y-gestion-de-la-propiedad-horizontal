@@ -200,7 +200,9 @@ class _CorregirCierreSheetState extends State<CorregirCierreSheet> {
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'pdf'],
     );
     if (archivos.isEmpty) return;
-    setState(() => _evidenciasNuevas.addAll(archivos));
+    final preparados = await EvidenciaCamara.prepararDeGaleria(archivos);
+    if (!mounted) return;
+    setState(() => _evidenciasNuevas.addAll(preparados));
   }
 
   Future<void> _tomarFoto() async {

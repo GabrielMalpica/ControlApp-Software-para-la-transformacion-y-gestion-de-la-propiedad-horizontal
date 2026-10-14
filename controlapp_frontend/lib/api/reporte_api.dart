@@ -2,10 +2,21 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter_application_1/model/informe_detallado_opciones.dart';
 import 'package:flutter_application_1/model/reporte_model.dart';
 import 'package:flutter_application_1/service/api_client.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
+
+/// El usuario ya tiene otro informe generándose (409): se puede retomar con
+/// [ReporteApi.informeMensualActivo] en vez de mostrar un error.
+class InformeEnCursoException implements Exception {
+  final String mensaje;
+  const InformeEnCursoException(this.mensaje);
+
+  @override
+  String toString() => mensaje;
+}
 
 class ReporteApi {
   final ApiClient _client = ApiClient();
@@ -245,10 +256,12 @@ class ReporteApi {
   // ---- Informe mensual en PDF: se genera en el servidor, sin bloquear la app ----
 
   /// Pide generar el informe y responde al instante con el id del trabajo.
+  /// Las mismas opciones dos veces devuelven el mismo trabajo (doble clic).
   Future<InformeMensualEstado> iniciarInformeMensualPdf({
     required DateTime desde,
     required DateTime hasta,
     String? conjuntoId,
+    OpcionesInformeDetallado? opciones,
   }) async {
     final resp = await _client.post(
       '$_base/informe-mensual/pdf',
@@ -257,13 +270,40 @@ class ReporteApi {
         'hasta': hasta.toUtc().toIso8601String(),
         if (conjuntoId != null && conjuntoId.trim().isNotEmpty)
           'conjuntoId': conjuntoId.trim(),
+        if (opciones != null) 'opciones': opciones.toJson(),
       },
     );
+    if (resp.statusCode == 409) {
+      throw InformeEnCursoException(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'Ya tienes un informe generándose.',
+        ),
+      );
+    }
     if (resp.statusCode != 200 && resp.statusCode != 202) {
       throw Exception(
         AppError.fromResponseBody(
           resp.body,
           fallback: 'No se pudo iniciar el informe.',
+        ),
+      );
+    }
+    return InformeMensualEstado.fromJson(
+      (jsonDecode(resp.body) as Map).cast<String, dynamic>(),
+    );
+  }
+
+  /// El informe en curso del usuario (o el listo sin descargar), para
+  /// retomarlo al volver a la página. null si no hay ninguno.
+  Future<InformeMensualEstado?> informeMensualActivo() async {
+    final resp = await _client.get('$_base/informe-mensual/pdf/activo');
+    if (resp.statusCode == 204 || resp.body.trim().isEmpty) return null;
+    if (resp.statusCode != 200) {
+      throw Exception(
+        AppError.fromResponseBody(
+          resp.body,
+          fallback: 'No se pudo consultar el informe en curso.',
         ),
       );
     }

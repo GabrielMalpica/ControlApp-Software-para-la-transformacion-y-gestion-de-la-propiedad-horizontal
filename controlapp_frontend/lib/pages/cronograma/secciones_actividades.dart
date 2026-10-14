@@ -249,9 +249,14 @@ List<Widget> seccionesPorTrabajador({
   required int? seleccionadaId,
   required ValueChanged<TareaModel> onAbrir,
   ValueChanged<String>? onElegirTrabajador,
+
+  /// Con un trabajador elegido en el filtro, solo se muestra su sección: las
+  /// compañeras de sus actividades compartidas no salen como secciones aparte.
+  String? soloTrabajadorId,
 }) {
   final out = <Widget>[];
   for (final w in trabajadoresDe(tareas)) {
+    if (soloTrabajadorId != null && w.id != soloTrabajadorId) continue;
     final suyas = tareas.where((t) => tareaEsDe(t, w.id)).toList();
     if (suyas.isEmpty) continue;
     final suyasBase = base.where((t) => tareaEsDe(t, w.id)).toList();

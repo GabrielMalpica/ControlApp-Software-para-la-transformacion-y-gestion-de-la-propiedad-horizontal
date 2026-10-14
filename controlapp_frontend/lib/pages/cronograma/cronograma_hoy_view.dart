@@ -41,6 +41,9 @@ class CronogramaHoyView extends StatelessWidget {
   /// elige "Por trabajador".
   final Widget? selectorTrabajador;
 
+  /// Trabajador elegido en el filtro (null = todos).
+  final String? trabajadorSel;
+
   const CronogramaHoyView({
     super.key,
     required this.dia,
@@ -58,6 +61,7 @@ class CronogramaHoyView extends StatelessWidget {
     this.festivo,
     this.onQuitarFiltros,
     this.selectorTrabajador,
+    this.trabajadorSel,
   });
 
   bool get _esHoy => mismoDia(dia, ahora);
@@ -89,7 +93,12 @@ class CronogramaHoyView extends StatelessWidget {
         ),
       ),
       if (_esHoy && base.isNotEmpty) ...[
-        _AhoraMismo(base: base, ahora: ahora, onAbrir: onAbrir),
+        _AhoraMismo(
+          base: base,
+          ahora: ahora,
+          onAbrir: onAbrir,
+          soloTrabajadorId: trabajadorSel,
+        ),
         const SizedBox(height: 16),
       ],
       if (festivo != null)
@@ -180,6 +189,7 @@ class CronogramaHoyView extends StatelessWidget {
         seleccionadaId: seleccionadaId,
         onAbrir: onAbrir,
         onElegirTrabajador: onElegirTrabajador,
+        soloTrabajadorId: trabajadorSel,
       );
     }
     final out = <Widget>[];
@@ -257,11 +267,13 @@ class _AhoraMismo extends StatelessWidget {
   final List<TareaModel> base;
   final DateTime ahora;
   final ValueChanged<TareaModel> onAbrir;
+  final String? soloTrabajadorId;
 
   const _AhoraMismo({
     required this.base,
     required this.ahora,
     required this.onAbrir,
+    this.soloTrabajadorId,
   });
 
   static final _hm = DateFormat('HH:mm');
@@ -269,7 +281,9 @@ class _AhoraMismo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final trabajadores = trabajadoresDe(base);
+    final trabajadores = trabajadoresDe(base)
+        .where((w) => soloTrabajadorId == null || w.id == soloTrabajadorId)
+        .toList();
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(

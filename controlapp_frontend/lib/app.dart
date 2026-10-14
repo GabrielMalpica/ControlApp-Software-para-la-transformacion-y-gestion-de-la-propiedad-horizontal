@@ -3,6 +3,7 @@ import 'package:flutter_application_1/model/notificacion_model.dart';
 import 'package:flutter_application_1/service/app_router.dart';
 import 'package:flutter_application_1/service/notificaciones_center.dart';
 import 'package:flutter_application_1/service/theme.dart';
+import 'package:flutter_application_1/widgets/aviso_version_nueva.dart';
 
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
@@ -20,9 +21,7 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    NotificacionesCenter.instance.stockBajoNueva.addListener(
-      _onStockBajoNueva,
-    );
+    NotificacionesCenter.instance.stockBajoNueva.addListener(_onStockBajoNueva);
   }
 
   @override
@@ -73,6 +72,8 @@ class _MyAppState extends State<MyApp> {
       scaffoldMessengerKey: MyApp.scaffoldMessengerKey,
       initialRoute: AppRouter.splash,
       routes: AppRouter.routes,
+      builder: (context, child) =>
+          AvisoVersionNueva(child: child ?? const SizedBox.shrink()),
     );
   }
 }

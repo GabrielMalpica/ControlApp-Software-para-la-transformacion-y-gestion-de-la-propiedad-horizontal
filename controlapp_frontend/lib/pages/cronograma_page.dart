@@ -16,6 +16,10 @@ import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
 import 'package:flutter_application_1/widgets/corregir_cierre_sheet.dart';
 import 'package:flutter_application_1/widgets/cronograma_informe_jerarquico.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
+import 'package:flutter_application_1/widgets/seleccionar_operarios_sheet.dart';
+import 'package:flutter_application_1/utils/cronograma/categoria_visual.dart';
+import 'package:flutter_application_1/utils/cronograma/estado_visual.dart';
+import 'package:flutter_application_1/widgets/cronograma/actividad_card.dart';
 
 import '../api/cronograma_api.dart';
 import '../model/actividad_especial_pendiente.dart';
@@ -219,7 +223,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
   // Vista y semana seleccionada
   _VistaCronograma _vista = _VistaCronograma.mensual;
   late DateTime _semanaBase;
-  int _escalaSemanalMinutos = 60;
+  // Escala de la cuadrícula semanal: 30 min (una actividad de 1 hora mide
+  // 102 px y muestra su hora), igual que la vista del administrador.
+  int _escalaSemanalMinutos = 30;
   bool _sidebarResumenColapsado = false;
   bool _sidebarAgendaColapsada = false;
   // Los dos sidebars de la vista semanal (filtros/resumen a la izquierda,
@@ -530,12 +536,69 @@ class _CronogramaPageState extends State<CronogramaPage> {
   }
 
   List<TareaModel> _tareasSemana(DateTime semanaBase) {
-    return _tareasFiltradas.where((t) {
-      final start = _startOfWeekMonday(semanaBase);
-      final end = start.add(const Duration(days: 7));
+    final start = _startOfWeekMonday(semanaBase);
+    final end = start.add(const Duration(days: 7));
+    return _fuenteTareas.where((t) {
       final dt = t.fechaInicio.toLocal();
-      return !dt.isBefore(start) && dt.isBefore(end);
+      return !dt.isBefore(start) && dt.isBefore(end) && _pasaFiltros(t);
     }).toList();
+  }
+
+  /// Actividades de meses vecinos cuando la semana cruza de mes (clave
+  /// 'año-mes'). El mes principal sigue en [_tareasMes].
+  final Map<String, List<TareaModel>> _tareasOtrosMeses = {};
+  final Set<String> _mesesCargando = {};
+
+  /// Todas las actividades cargadas (mes principal + meses vecinos), sin
+  /// repetir.
+  Iterable<TareaModel> get _fuenteTareas sync* {
+    final vistos = <int>{};
+    for (final t in _tareasMes) {
+      if (vistos.add(t.id)) yield t;
+    }
+    for (final lista in _tareasOtrosMeses.values) {
+      for (final t in lista) {
+        if (vistos.add(t.id)) yield t;
+      }
+    }
+  }
+
+  /// Carga en segundo plano el mes de [dia] si no es el principal, para que
+  /// una semana que cruza de mes se vea completa (igual que la vista del
+  /// administrador).
+  Future<void> _asegurarMesDe(DateTime dia) async {
+    if (dia.year == _anioActual && dia.month == _mesActual) return;
+    final clave = '${dia.year}-${dia.month}';
+    if (_tareasOtrosMeses.containsKey(clave) ||
+        _mesesCargando.contains(clave)) {
+      return;
+    }
+    _mesesCargando.add(clave);
+    try {
+      final lista = await _cronogramaApi.cronogramaMensual(
+        nit: widget.nit,
+        anio: dia.year,
+        mes: dia.month,
+        borrador: false,
+      );
+      if (!mounted) return;
+      setState(() {
+        _tareasOtrosMeses[clave] = lista.where((t) {
+          final d = t.fechaInicio.toLocal();
+          return d.year == dia.year && d.month == dia.month;
+        }).toList();
+      });
+    } catch (_) {
+      // Sin el mes vecino la semana se ve parcial; no bloquea la pantalla.
+    } finally {
+      _mesesCargando.remove(clave);
+    }
+  }
+
+  void _asegurarSemana(DateTime base) {
+    final inicio = _startOfWeekMonday(base);
+    unawaited(_asegurarMesDe(inicio));
+    unawaited(_asegurarMesDe(inicio.add(const Duration(days: 6))));
   }
 
   List<TareaModel> get _tareasFiltradas => _tareasFiltradasCache;
@@ -901,6 +964,8 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   Future<void> _cargarDatos() async {
     final silenciosa = _yaCargo;
+    // Los meses vecinos se vuelven a pedir con la semana que se esté viendo.
+    _tareasOtrosMeses.clear();
     setState(() {
       if (silenciosa) {
         _recargando = true;
@@ -994,6 +1059,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
         _aplicarHorarioConjunto(horarios: horarios, tareasMes: filtradas);
         _recalcularResumenDias();
       });
+      if (_vista == _VistaCronograma.semanal) _asegurarSemana(_semanaBase);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = AppError.messageOf(e));
@@ -1146,6 +1212,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
       return;
     }
     setState(() => _semanaBase = _semanaBase.add(Duration(days: dias)));
+    if (_vista == _VistaCronograma.semanal) _asegurarSemana(_semanaBase);
     if (_vista == _VistaCronograma.informe && _informeFiltrarSemana) {
       unawaited(_cargarInformeJerarquico());
     }
@@ -1153,6 +1220,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
 
   void _seleccionarVista(_VistaCronograma vista) {
     setState(() => _vista = vista);
+    if (vista == _VistaCronograma.semanal) _asegurarSemana(_semanaBase);
     if (vista == _VistaCronograma.informe) {
       unawaited(_cargarInformeJerarquico());
     }
@@ -2697,7 +2765,11 @@ class _CronogramaPageState extends State<CronogramaPage> {
                 addRow('supervisor', 'Supervisor', supervisorLabel);
                 rows.add(const SizedBox(height: 8));
                 addRow('operarios', 'Operarios', operarios);
-                addRow('maquinaria', 'Maquinaria y herramientas', maquinariaTxt);
+                addRow(
+                  'maquinaria',
+                  'Maquinaria y herramientas',
+                  maquinariaTxt,
+                );
                 rows.add(const SizedBox(height: 8));
                 addRow(
                   'observaciones',
@@ -4185,7 +4257,7 @@ class _CronogramaPageState extends State<CronogramaPage> {
     }
 
     if (!mounted) return;
-    if (candidatos.isEmpty) {
+    if (candidatos.isEmpty && excluida.operariosIds.isEmpty) {
       AppFeedback.showFromSnackBar(
         context,
         const SnackBar(
@@ -4195,52 +4267,40 @@ class _CronogramaPageState extends State<CronogramaPage> {
       return;
     }
 
-    final seleccionado = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.all(16),
-          children: [
-            const Text(
-              'Asignar otro operario solo para esta tarea',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'El plan preventivo no cambia: el próximo mes vuelve a programarse '
-              'con ${excluida.operariosNombres.isEmpty ? 'el operario original' : excluida.operariosNombres.join(', ')}.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 12),
-            ...candidatos.map(
-              (op) => ListTile(
-                leading: const Icon(Icons.person),
-                title: Text((op['nombre'] ?? op['id'] ?? '—').toString()),
-                onTap: () => Navigator.of(ctx).pop(op),
-              ),
-            ),
-          ],
-        ),
-      ),
+    // Uno o varios: una tarea de "A y B" puede quedar en "A y C".
+    final elegibles = candidatos.map(OperarioElegible.desdeSugerencia).toList();
+    final nuevos = await seleccionarOperarios(
+      context,
+      candidatos: elegibles,
+      actualesIds: excluida.operariosIds,
+      actualesNombres: excluida.operariosNombres,
+      titulo: 'Operarios solo para esta tarea',
+      descripcion:
+          'Marca a todas las personas que la harán. El plan preventivo no '
+          'cambia: el próximo mes vuelve a programarse con '
+          '${excluida.operariosNombres.isEmpty ? 'el operario original' : excluida.operariosNombres.join(', ')}.',
     );
 
-    if (seleccionado == null || !mounted) return;
+    if (nuevos == null || nuevos.isEmpty || !mounted) return;
 
     final motivo = await _pedirMotivoReemplazoOpcional();
     if (motivo == null || !mounted) return;
 
-    final nombreOperario =
-        (seleccionado['nombre'] ?? seleccionado['id'] ?? 'El operario')
-            .toString();
+    final nombrePorId = {
+      for (var i = 0; i < excluida.operariosIds.length; i++)
+        excluida.operariosIds[i]: i < excluida.operariosNombres.length
+            ? excluida.operariosNombres[i]
+            : excluida.operariosIds[i],
+      for (final op in elegibles) op.id: op.nombre,
+    };
+    final nombresTexto = nuevos.map((id) => nombrePorId[id] ?? id).join(' y ');
 
     setState(() => _accionExcluidaEnCurso = true);
     try {
       await _cronogramaApi.reasignarOperarioExcluidaStandby(
         nit: widget.nit,
         excluidaId: excluida.id,
-        nuevoOperarioId: seleccionado['id'].toString(),
+        nuevosOperariosIds: nuevos,
         motivo: motivo.trim().isEmpty ? null : motivo,
       );
       await _cargarDatos();
@@ -4249,7 +4309,9 @@ class _CronogramaPageState extends State<CronogramaPage> {
         context,
         SnackBar(
           content: Text(
-            'Excepción aplicada: $nombreOperario asumirá esta tarea.',
+            nuevos.length > 1
+                ? 'Excepción aplicada: $nombresTexto asumirán esta tarea.'
+                : 'Excepción aplicada: $nombresTexto asumirá esta tarea.',
           ),
         ),
       );
@@ -7313,8 +7375,20 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                             ? 'Después del almuerzo · ${t.descripcion}'
                                             : t.descripcion;
                                         final fontTitulo = tiny
-                                            ? 8.0
-                                            : (compact || narrow ? 10.0 : 12.0);
+                                            ? 11.0
+                                            : (compact || narrow ? 12.0 : 13.5);
+                                        // Igual que la vista del
+                                        // administrador: chulito, X o alerta
+                                        // según el estado, e ícono de la
+                                        // categoría antes del nombre.
+                                        final estadoTarjeta = EstadoVisual.de(
+                                          t,
+                                        );
+                                        final visualTarjeta =
+                                            CategoriaVisual.deTarea(t);
+                                        final colorIconoCategoria = esCorrectiva
+                                            ? colorBase
+                                            : visualTarjeta.acento;
                                         final mostrarHora = !compact;
                                         final operarios = t.operariosNombres
                                             .map((n) => n.trim())
@@ -7329,8 +7403,8 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                         // fijo en los TextStyle) para calcular
                                         // cuántas líneas caben sin desbordar.
                                         final reservado =
-                                            (mostrarHora ? 14.0 : 0.0) +
-                                            (mostrarOperarios ? 12.0 : 0.0);
+                                            (mostrarHora ? 16.0 : 0.0) +
+                                            (mostrarOperarios ? 14.0 : 0.0);
                                         final maxLineasTitulo =
                                             ((h - reservado) /
                                                     (fontTitulo * 1.2))
@@ -7391,8 +7465,58 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                           CrossAxisAlignment
                                                               .start,
                                                       children: [
-                                                        Text(
-                                                          titulo,
+                                                        Text.rich(
+                                                          TextSpan(
+                                                            children: [
+                                                              WidgetSpan(
+                                                                alignment:
+                                                                    PlaceholderAlignment
+                                                                        .middle,
+                                                                child: Tooltip(
+                                                                  message:
+                                                                      estadoTarjeta
+                                                                          .etiqueta,
+                                                                  child: Icon(
+                                                                    estadoTarjeta
+                                                                        .icono,
+                                                                    size:
+                                                                        fontTitulo +
+                                                                        2,
+                                                                    color: estadoTarjeta
+                                                                        .color,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                              if (!narrow)
+                                                                WidgetSpan(
+                                                                  alignment:
+                                                                      PlaceholderAlignment
+                                                                          .middle,
+                                                                  child: Padding(
+                                                                    padding:
+                                                                        const EdgeInsets.only(
+                                                                          left:
+                                                                              3,
+                                                                        ),
+                                                                    child: Icon(
+                                                                      visualTarjeta
+                                                                          .icono,
+                                                                      size:
+                                                                          fontTitulo +
+                                                                          2,
+                                                                      color:
+                                                                          colorIconoCategoria,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              TextSpan(
+                                                                text:
+                                                                    mostrarHora
+                                                                    ? ' $titulo'
+                                                                    : ' $horaIni · $titulo',
+                                                              ),
+                                                            ],
+                                                          ),
                                                           maxLines:
                                                               lineasTitulo,
                                                           overflow: TextOverflow
@@ -7420,7 +7544,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                                     .ellipsis,
                                                             style: TextStyle(
                                                               color: subtext,
-                                                              fontSize: 10,
+                                                              fontSize: 12,
                                                               height: 1.2,
                                                             ),
                                                           ),
@@ -7434,7 +7558,7 @@ class _WeekScheduleViewState extends State<_WeekScheduleView> {
                                                                     .ellipsis,
                                                             style: TextStyle(
                                                               color: subtext,
-                                                              fontSize: 9.5,
+                                                              fontSize: 11.5,
                                                               height: 1.2,
                                                             ),
                                                           ),
@@ -8050,52 +8174,13 @@ class _SidebarAgendaDia extends StatelessWidget {
     final excluidas = verExcluidasMes ? excluidasMes : excluidasDia;
 
     Widget buildTarea(TareaModel t) {
-      final ini = t.fechaInicio.toLocal();
-      final fin = t.fechaFin.toLocal();
-      final ubicacion = t.ubicacionNombre?.trim() ?? '';
-      final zonaFinal = t.elementoNombre?.trim() ?? '';
-      final contextoUbicacion = [
-        if (ubicacion.isNotEmpty) 'Ubicación: $ubicacion',
-        if (zonaFinal.isNotEmpty) 'Zona final: $zonaFinal',
-      ].join(' · ');
-      return InkWell(
+      // Misma tarjeta que la vista del administrador: color e ícono de la
+      // categoría, horario, lugar y estado con texto.
+      return ActividadCard(
+        tarea: t,
+        densidad: DensidadTarjeta.compacta,
+        ahora: DateTime.now(),
         onTap: () => onTapTarea(t),
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: AppTheme.primary.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.primary.withValues(alpha: 0.25)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                t.descripcion,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
-                ),
-              ),
-              if (contextoUbicacion.isNotEmpty) ...[
-                const SizedBox(height: 3),
-                Text(
-                  contextoUbicacion,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 10.5, color: Colors.grey.shade700),
-                ),
-              ],
-              const SizedBox(height: 6),
-              Text(
-                "${DateFormat('HH:mm').format(ini)} - ${DateFormat('HH:mm').format(fin)}",
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-              ),
-            ],
-          ),
-        ),
       );
     }
 

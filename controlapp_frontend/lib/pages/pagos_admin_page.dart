@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/pagos_admin_api.dart';
 import 'package:flutter_application_1/model/pago_admin_models.dart';
@@ -39,11 +41,22 @@ class _PagosAdminPageState extends State<PagosAdminPage> {
   bool _loadingMore = false;
   bool _conciliando = false;
   String? _error;
+  SaludPagos? _salud;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  /// Salud del webhook de Factus: informativa, si falla no bloquea la lista.
+  Future<void> _cargarSalud() async {
+    try {
+      final salud = await _api.salud();
+      if (mounted) setState(() => _salud = salud);
+    } catch (_) {
+      // La lista de pagos sigue sirviendo sin este resumen.
+    }
   }
 
   @override
@@ -71,6 +84,7 @@ class _PagosAdminPageState extends State<PagosAdminPage> {
       _loading = true;
       _error = null;
     });
+    unawaited(_cargarSalud());
     try {
       final page = await _fetch(1);
       if (!mounted) return;
@@ -202,7 +216,10 @@ class _PagosAdminPageState extends State<PagosAdminPage> {
               height: 52,
               child: ListView(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 children: <Widget>[
                   for (final filtro in _labels.keys)
                     Padding(
@@ -237,31 +254,33 @@ class _PagosAdminPageState extends State<PagosAdminPage> {
         onAction: _load,
       );
     }
-    if (_items.isEmpty) {
-      return CommerceStateView(
-        icon: _filtro == _Filtro.porRevisar
-            ? Icons.task_alt_rounded
-            : Icons.receipt_long_outlined,
-        title: _filtro == _Filtro.porRevisar
-            ? 'Nada por revisar'
-            : 'Sin pagos para mostrar',
-        message: _filtro == _Filtro.porRevisar
-            ? 'Todos los pagos recibidos se aplicaron solos.'
-            : 'Prueba con otro filtro o busca por otra referencia.',
-      );
-    }
+    // Un solo scroll: la salud del webhook va como primer elemento de la lista.
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              '$_total ${_total == 1 ? 'cobro' : 'cobros'}',
-              style: Theme.of(context).textTheme.labelMedium,
+          if (_salud != null) _SaludCard(salud: _salud!, date: _date),
+          if (_items.isEmpty)
+            CommerceStateView(
+              icon: _filtro == _Filtro.porRevisar
+                  ? Icons.task_alt_rounded
+                  : Icons.receipt_long_outlined,
+              title: _filtro == _Filtro.porRevisar
+                  ? 'Nada por revisar'
+                  : 'Sin pagos para mostrar',
+              message: _filtro == _Filtro.porRevisar
+                  ? 'Todos los pagos recibidos se aplicaron solos.'
+                  : 'Prueba con otro filtro o busca por otra referencia.',
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                '$_total ${_total == 1 ? 'cobro' : 'cobros'}',
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
             ),
-          ),
           for (final item in _items)
             _PagoCard(
               item: item,
@@ -275,6 +294,95 @@ class _PagosAdminPageState extends State<PagosAdminPage> {
                 onPressed: _loadingMore ? null : _loadMore,
                 child: Text(_loadingMore ? 'Cargando…' : 'Cargar más'),
               ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Cómo se están confirmando los pagos: por el aviso de Factus (webhook) o
+/// consultando seguido, y si el aviso está llegando.
+class _SaludCard extends StatelessWidget {
+  const _SaludCard({required this.salud, required this.date});
+
+  final SaludPagos salud;
+  final DateFormat date;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final alerta = salud.conNovedades;
+    final titulo = salud.usaWebhook
+        ? 'Pagos confirmados por aviso de Factus'
+        : 'Verificación frecuente de pagos';
+    final descripcion = salud.usaWebhook
+        ? 'Factus avisa cada pago y el sistema lo confirma consultando su API.'
+        : 'El sistema consulta a Factus seguido para detectar los pagos.';
+    return CommerceClayCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      color: alerta ? CommerceClayTokens.orangeSoft : CommerceClayTokens.mint,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                alerta ? Icons.warning_amber_rounded : Icons.bolt_rounded,
+                color: alerta ? AppTheme.red : AppTheme.primaryDark,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  titulo,
+                  style: textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(descripcion, style: textTheme.bodySmall),
+          if (salud.motivo != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                salud.motivo!,
+                style: textTheme.bodySmall?.copyWith(
+                  color: AppTheme.red,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          const SizedBox(height: 6),
+          Text(
+            !salud.webhookConfigurado
+                ? 'El aviso de Factus (webhook) no está configurado.'
+                : salud.ultimoWebhookEn == null
+                ? 'Todavía no ha llegado ningún aviso de Factus.'
+                : 'Último aviso de Factus: ${date.format(salud.ultimoWebhookEn!.toLocal())}',
+            style: textTheme.bodySmall,
+          ),
+          Text(
+            'Últimos 7 días: ${salud.confirmados7d} pago(s) confirmados, '
+            '${salud.confirmadosPorWebhook7d} por aviso de Factus.',
+            style: textTheme.bodySmall,
+          ),
+          if (salud.pagosSinWebhook24h > 0)
+            Text(
+              '${salud.pagosSinWebhook24h} pago(s) de las últimas 24 h llegaron '
+              'sin aviso: revisa la URL y la llave del webhook en Factus.',
+              style: textTheme.bodySmall?.copyWith(
+                color: AppTheme.red,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          if (salud.avisosSinProcesar > 0)
+            Text(
+              'Avisos en proceso: ${salud.avisosSinProcesar}',
+              style: textTheme.bodySmall,
             ),
         ],
       ),
@@ -411,6 +519,7 @@ class _PagoDetalleSheetState extends State<_PagoDetalleSheet> {
   String? _error;
   bool _loading = true;
   bool _resolving = false;
+  bool _verificando = false;
   bool _cambio = false;
 
   @override
@@ -468,13 +577,45 @@ class _PagoDetalleSheetState extends State<_PagoDetalleSheet> {
     }
   }
 
+  /// Consulta el recaudo en Factus ahora. El backend solo lo marca pagado si
+  /// la API de Factus lo confirma.
+  Future<void> _verificar() async {
+    final antes = _detalle?.item.estado;
+    setState(() => _verificando = true);
+    try {
+      final detalle = await widget.api.verificar(widget.cobroId);
+      if (!mounted) return;
+      setState(() {
+        _detalle = detalle;
+        _cambio = true;
+      });
+      final estado = detalle.item.estado;
+      AppFeedback.showInfo(
+        context,
+        title: estado == 'PAGADO'
+            ? 'Factus confirmó el pago'
+            : 'Consulta hecha',
+        message: estado != antes
+            ? 'El cobro quedó: ${pagoEstadoLabel(estado)}.'
+            : 'Factus todavía no reporta este pago.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      AppFeedback.showError(context, message: AppError.messageOf(error));
+    } finally {
+      if (mounted) setState(() => _verificando = false);
+    }
+  }
+
   Future<String?> _pedirMotivo(String accion) {
     final ctrl = TextEditingController();
     return showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(
-          accion == 'DEVUELTO' ? 'Marcar como devuelto' : 'Marcar como resuelto',
+          accion == 'DEVUELTO'
+              ? 'Marcar como devuelto'
+              : 'Marcar como resuelto',
         ),
         content: TextField(
           controller: ctrl,
@@ -592,6 +733,34 @@ class _PagoDetalleSheetState extends State<_PagoDetalleSheet> {
               style: textTheme.bodySmall,
             ),
           ),
+        const SizedBox(height: 14),
+        _ConfirmacionInfo(
+          item: item,
+          webhooks: _detalle!.webhooks,
+          date: _date,
+        ),
+        if (item.verificable) ...<Widget>[
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _verificando ? null : _verificar,
+            icon: _verificando
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.travel_explore_rounded),
+            label: Text(
+              _verificando ? 'Consultando a Factus…' : 'Verificar con Factus',
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Consulta el cobro en Factus ahora. Solo queda pagado si Factus '
+            'lo confirma.',
+            style: textTheme.bodySmall,
+          ),
+        ],
         if (item.requiereAccion) ...<Widget>[
           const SizedBox(height: 16),
           CommerceClayCard(
@@ -617,11 +786,15 @@ class _PagoDetalleSheetState extends State<_PagoDetalleSheet> {
                   runSpacing: 8,
                   children: <Widget>[
                     FilledButton(
-                      onPressed: _resolving ? null : () => _resolver('DEVUELTO'),
+                      onPressed: _resolving
+                          ? null
+                          : () => _resolver('DEVUELTO'),
                       child: const Text('Se devolvió el dinero'),
                     ),
                     OutlinedButton(
-                      onPressed: _resolving ? null : () => _resolver('RESUELTO'),
+                      onPressed: _resolving
+                          ? null
+                          : () => _resolver('RESUELTO'),
                       child: const Text('Se resolvió de otra forma'),
                     ),
                   ],
@@ -649,16 +822,80 @@ class _PagoDetalleSheetState extends State<_PagoDetalleSheet> {
               size: 20,
             ),
             title: Text(
-              evento.estadoNuevo != null
-                  ? '${evento.tipo} · ${pagoEstadoLabel(evento.estadoNuevo!)}'
-                  : evento.tipo,
+              evento.estadoNuevo != null &&
+                      evento.estadoNuevo != evento.estadoAnterior
+                  ? '${pagoEventoLabel(evento.tipo)} · ${pagoEstadoLabel(evento.estadoNuevo!)}'
+                  : pagoEventoLabel(evento.tipo),
             ),
             subtitle: Text(
               [
                 if (evento.detalle != null) evento.detalle!,
+                if (evento.origen != null)
+                  'Por: ${pagoOrigenLabel(evento.origen)}',
                 if (evento.creadoEn != null)
                   _date.format(evento.creadoEn!.toLocal()),
               ].join('\n'),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Cómo se confirmó el pago (toda confirmación la decide la API de Factus;
+/// esto dice qué la disparó), los avisos del webhook y el pagador.
+class _ConfirmacionInfo extends StatelessWidget {
+  const _ConfirmacionInfo({
+    required this.item,
+    required this.webhooks,
+    required this.date,
+  });
+
+  final PagoAdminItem item;
+  final List<PagoAdminWebhook> webhooks;
+  final DateFormat date;
+
+  String _fecha(DateTime value) => date.format(value.toLocal());
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final pendiente =
+        item.estado == 'CREADO' ||
+        item.estado == 'PENDIENTE' ||
+        item.estado == 'VENCIDO';
+    final lineas = <String>[
+      if (item.pagadoDetectadoEn != null)
+        'Pagado el ${_fecha(item.pagadoDetectadoEn!)}, confirmado con la API '
+            'de Factus por ${pagoOrigenLabel(item.origenConfirmacion)}.',
+      item.webhooksRecibidos == 0
+          ? 'Sin avisos de Factus para este cobro.'
+          : 'Avisos de Factus: ${item.webhooksRecibidos}'
+                '${item.webhookPrimeroEn == null ? '' : ' (el primero: ${_fecha(item.webhookPrimeroEn!)})'}',
+      if (item.ultimaVerificacionEn != null)
+        'Última consulta a Factus: ${_fecha(item.ultimaVerificacionEn!)} '
+            '(${pagoOrigenLabel(item.ultimaVerificacionOrigen)})',
+      if (pendiente && item.qrExpiraEn != null)
+        'El código vence: ${_fecha(item.qrExpiraEn!)}',
+      if (item.pagador != null) 'Pagó: ${item.pagador}',
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          'Confirmación',
+          style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 4),
+        for (final linea in lineas) Text(linea, style: textTheme.bodySmall),
+        for (final aviso in webhooks)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '• ${aviso.recibidoEn == null ? '' : _fecha(aviso.recibidoEn!)} · '
+              '${webhookResultadoLabel(aviso.resultado)}'
+              '${aviso.detalle == null ? '' : '\n  ${aviso.detalle}'}',
+              style: textTheme.bodySmall,
             ),
           ),
       ],

@@ -319,6 +319,10 @@ class ComprobanteVerificacion {
   }
 }
 
+/// Tiempo desde que se genera el código de pago hasta que se ofrece "Ya
+/// pagué" (ver PagoCobroInfo.faltaParaVerificarManual).
+const kEsperaVerificacionManual = Duration(minutes: 2);
+
 /// Cobro por Factus Pay (QR) para un pedido: reemplaza a "transfiere y sube
 /// tu comprobante" como metodo por defecto. Ver POST/GET
 /// /commerce/pedidos/:id/pago y POST .../pago/verificar ("Ya pagué").
@@ -335,20 +339,30 @@ class PagoCobroInfo {
     required this.expiraLocalEn,
     required this.creadoEn,
     required this.actualizadoEn,
+    this.brebKey,
   });
 
   final int id;
   final String canal;
   final String referenceCode;
+
   /// CREADO, PENDIENTE, PAGADO, FALLIDO, VENCIDO, ABANDONADO,
   /// PAGADO_HUERFANO, PAGADO_DUPLICADO, DISCREPANCIA o ERROR.
   final String estado;
+
   /// Ultimo estado crudo de Factus (started|ready|paid|failed|rejected).
   final String? estadoProveedor;
   final double montoEsperado;
   final String moneda;
+
   /// PNG en base64 ("data:image/png;base64,...") o null si aun no esta listo.
   final String? qrBase64;
+
+  /// Llave Bre-B del código: también se puede pagar copiándola, por el monto
+  /// exacto.
+  final String? brebKey;
+
+  /// Hasta cuándo se puede pagar este código (la vigencia real del QR).
   final DateTime? expiraLocalEn;
   final DateTime? creadoEn;
   final DateTime? actualizadoEn;
@@ -361,6 +375,19 @@ class PagoCobroInfo {
       estado == 'VENCIDO' ||
       (expiraLocalEn != null && DateTime.now().isAfter(expiraLocalEn!));
   bool get tieneQr => qrBase64 != null && qrBase64!.isNotEmpty;
+
+  /// Cuánto falta para ofrecer "Ya pagué" desde que se generó el código: el
+  /// pago se confirma solo cuando llega el aviso del pago; el botón es el
+  /// respaldo para consultar a mano si pasado un rato no se confirma.
+  Duration faltaParaVerificarManual(DateTime ahora) {
+    final desde = creadoEn;
+    if (desde == null) return Duration.zero;
+    final falta = desde.add(kEsperaVerificacionManual).difference(ahora);
+    return falta.isNegative ? Duration.zero : falta;
+  }
+
+  bool puedeVerificarManual(DateTime ahora) =>
+      faltaParaVerificarManual(ahora) == Duration.zero;
 
   Uint8List? get qrBytes {
     final raw = qrBase64;
@@ -384,6 +411,9 @@ class PagoCobroInfo {
       montoEsperado: (json['montoEsperado'] as num?)?.toDouble() ?? 0,
       moneda: json['moneda']?.toString() ?? 'COP',
       qrBase64: json['qrBase64']?.toString(),
+      brebKey: (json['brebKey']?.toString().trim().isEmpty ?? true)
+          ? null
+          : json['brebKey'].toString().trim(),
       expiraLocalEn: json['expiraLocalEn'] != null
           ? DateTime.tryParse(json['expiraLocalEn'].toString())
           : null,

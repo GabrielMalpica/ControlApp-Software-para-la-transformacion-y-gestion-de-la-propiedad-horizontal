@@ -7,6 +7,8 @@ import '../model/asistencia_model.dart';
 import '../service/app_error.dart';
 import '../service/app_feedback.dart';
 import '../service/theme.dart';
+import '../service/ubicacion_service.dart';
+import '../widgets/ayuda_ubicacion.dart';
 
 class AsistenciaCheckinPage extends StatefulWidget {
   const AsistenciaCheckinPage({super.key});
@@ -20,43 +22,80 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
 
   bool _escaneando = false;
   bool _procesando = false;
+  bool _buscandoUbicacion = false;
   AsistenciaCheckinResultado? _ultimoResultado;
   String? _error;
   DateTime? _ultimoIntento;
 
+  /// Ubicación tomada al abrir el escáner. La asistencia no se registra sin
+  /// ubicación: es la trazabilidad de dónde marcó el operario.
+  Position? _posicion;
+  FalloUbicacion? _falloUbicacion;
+
   static const String _qrPrefix = 'CTRLAPP-ASISTENCIA|';
   static const Duration _pausaEntreIntentos = Duration(seconds: 2);
 
-  Future<Position?> _obtenerUbicacion() async {
+  /// Una ubicación de hasta esta edad sirve al registrar (el operario sigue
+  /// frente al QR); si es más vieja se pide otra.
+  static const Duration _vigenciaUbicacion = Duration(minutes: 2);
+
+  @override
+  void initState() {
+    super.initState();
+    _revisarPermiso();
+  }
+
+  /// Si el permiso ya está negado se avisa desde el principio, antes de que
+  /// el operario intente escanear.
+  Future<void> _revisarPermiso() async {
+    final permiso = await UbicacionDispositivo.permiso();
+    if (!mounted || permiso != PermisoUbicacion.denegado) return;
+    setState(() => _falloUbicacion = FalloUbicacion.permisoDenegado);
+  }
+
+  /// Primero la ubicación, después la cámara: sin permiso de ubicación no se
+  /// abre el escáner.
+  Future<void> _iniciarEscaneo() async {
+    if (_buscandoUbicacion) return;
+    setState(() {
+      _buscandoUbicacion = true;
+      _falloUbicacion = null;
+      _error = null;
+    });
     try {
-      final habilitado = await Geolocator.isLocationServiceEnabled();
-      if (!habilitado) return null;
-
-      var permiso = await Geolocator.checkPermission();
-      if (permiso == LocationPermission.denied) {
-        permiso = await Geolocator.requestPermission();
-      }
-      if (permiso == LocationPermission.denied ||
-          permiso == LocationPermission.deniedForever) {
-        return null;
-      }
-
-      return await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
-        ),
-      );
-    } catch (_) {
-      return null;
+      final posicion = await UbicacionDispositivo.obtener();
+      if (!mounted) return;
+      setState(() {
+        _posicion = posicion;
+        _escaneando = true;
+      });
+    } on UbicacionException catch (e) {
+      if (!mounted) return;
+      setState(() => _falloUbicacion = e.fallo);
+    } finally {
+      if (mounted) setState(() => _buscandoUbicacion = false);
     }
+  }
+
+  Future<Position> _ubicacionParaRegistrar() async {
+    final actual = _posicion;
+    if (actual != null &&
+        DateTime.now().difference(actual.timestamp) <= _vigenciaUbicacion) {
+      return actual;
+    }
+    final nueva = await UbicacionDispositivo.obtener(
+      espera: const Duration(seconds: 15),
+    );
+    _posicion = nueva;
+    return nueva;
   }
 
   Future<void> _procesarCodigo(String raw) async {
     if (_procesando) return;
 
     final ahora = DateTime.now();
-    if (_ultimoIntento != null && ahora.difference(_ultimoIntento!) < _pausaEntreIntentos) {
+    if (_ultimoIntento != null &&
+        ahora.difference(_ultimoIntento!) < _pausaEntreIntentos) {
       return;
     }
     _ultimoIntento = ahora;
@@ -65,7 +104,8 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
     if (!valor.startsWith(_qrPrefix)) {
       setState(() {
         _escaneando = false;
-        _error = 'Este codigo QR no es de asistencia. Escanea el QR del conjunto.';
+        _error =
+            'Este codigo QR no es de asistencia. Escanea el QR del conjunto.';
       });
       return;
     }
@@ -86,14 +126,14 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
     });
 
     try {
-      final posicion = await _obtenerUbicacion();
+      final posicion = await _ubicacionParaRegistrar();
 
       final resultado = await _api.checkin(
         conjuntoId: conjuntoId,
         qrPayload: valor,
-        latitud: posicion?.latitude,
-        longitud: posicion?.longitude,
-        precisionMetros: posicion?.accuracy,
+        latitud: posicion.latitude,
+        longitud: posicion.longitude,
+        precisionMetros: posicion.accuracy,
       );
       if (!mounted) return;
       setState(() {
@@ -104,9 +144,18 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
           ? 'Entrada registrada en ${resultado.conjuntoNombre}'
           : 'Salida registrada en ${resultado.conjuntoNombre}';
       AppFeedback.showInfo(context, message: texto);
+    } on UbicacionException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _escaneando = false;
+        _falloUbicacion = e.fallo;
+      });
     } catch (e) {
       if (!mounted) return;
-      final msg = AppError.messageOf(e, fallback: 'No se pudo registrar la asistencia.');
+      final msg = AppError.messageOf(
+        e,
+        fallback: 'No se pudo registrar la asistencia.',
+      );
       setState(() {
         // Si detecta un error se detiene el escaneo en vez de seguir
         // reintentando en bucle mientras la camara siga viendo el mismo QR.
@@ -152,7 +201,10 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
                 const SizedBox(width: 8),
                 Text(
                   esEntrada ? 'Entrada registrada' : 'Salida registrada',
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
                 ),
               ],
             ),
@@ -182,7 +234,8 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
                 ],
               ),
             ),
-            if (registro.observacion != null && registro.observacion!.isNotEmpty)
+            if (registro.observacion != null &&
+                registro.observacion!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
@@ -209,7 +262,10 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: AppTheme.primary,
-        title: const Text('Marcar asistencia', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Marcar asistencia',
+          style: TextStyle(color: Colors.white),
+        ),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Padding(
@@ -250,7 +306,9 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
                         const ColoredBox(
                           color: Colors.black45,
                           child: Center(
-                            child: CircularProgressIndicator(color: Colors.white),
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                     ],
@@ -259,10 +317,14 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
               )
             else ...[
               const SizedBox(height: 24),
-              Icon(Icons.qr_code_scanner_rounded, size: 96, color: AppTheme.primary),
+              Icon(
+                Icons.qr_code_scanner_rounded,
+                size: 96,
+                color: AppTheme.primary,
+              ),
               const SizedBox(height: 16),
               const Text(
-                'Escanea el codigo QR pegado en el sitio para registrar tu entrada o salida. Debes estar en el conjunto y tener la ubicacion (GPS) activada.',
+                'Escanea el código QR pegado en el sitio para registrar tu entrada o salida. Debes estar en el conjunto y permitir la ubicación: sin ella no se registra la asistencia.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 15),
               ),
@@ -273,14 +335,28 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
-                icon: const Icon(Icons.qr_code_scanner),
-                label: const Text('Escanear QR'),
-                onPressed: () => setState(() {
-                  _escaneando = true;
-                  _error = null;
-                }),
+                icon: _buscandoUbicacion
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.qr_code_scanner),
+                label: Text(
+                  _buscandoUbicacion
+                      ? 'Buscando tu ubicación...'
+                      : 'Escanear QR',
+                ),
+                onPressed: _buscandoUbicacion ? null : _iniciarEscaneo,
               ),
               const SizedBox(height: 20),
+              if (_falloUbicacion != null)
+                _AvisoSinUbicacion(
+                  fallo: _falloUbicacion!,
+                  onReintentar: _iniciarEscaneo,
+                ),
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -294,6 +370,64 @@ class _AsistenciaCheckinPageState extends State<AsistenciaCheckinPage> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Por qué no se puede escanear todavía y cómo arreglarlo.
+class _AvisoSinUbicacion extends StatelessWidget {
+  const _AvisoSinUbicacion({required this.fallo, required this.onReintentar});
+
+  final FalloUbicacion fallo;
+  final VoidCallback onReintentar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.location_off_rounded, color: Colors.orange),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Necesitamos tu ubicación',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(UbicacionException(fallo).mensaje),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (fallo != FalloUbicacion.sinSenal)
+                OutlinedButton.icon(
+                  onPressed: () => mostrarAyudaUbicacion(context),
+                  icon: const Icon(Icons.help_outline_rounded),
+                  label: const Text('Cómo activarla'),
+                ),
+              FilledButton.icon(
+                onPressed: onReintentar,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Intentar de nuevo'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

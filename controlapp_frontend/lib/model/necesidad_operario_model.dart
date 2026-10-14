@@ -36,6 +36,36 @@ class HorarioFranja {
   }
 }
 
+/// Qué pasó en el cronograma al cambiar quien ocupa una plaza: las
+/// actividades pendientes (publicadas y del borrador) pasan al nuevo titular.
+class CambioTitularCronograma {
+  final int tareasActualizadas;
+
+  /// Actividades que quedaron a nombre de quien entra a la plaza.
+  final int tareasAsignadasAlNuevo;
+
+  /// Actividades que quedaron sin nadie (la plaza quedó vacante).
+  final int tareasSinOperario;
+  final int excluidasActualizadas;
+
+  const CambioTitularCronograma({
+    this.tareasActualizadas = 0,
+    this.tareasAsignadasAlNuevo = 0,
+    this.tareasSinOperario = 0,
+    this.excluidasActualizadas = 0,
+  });
+
+  factory CambioTitularCronograma.fromJson(Map<String, dynamic> json) {
+    int n(String k) => (json[k] as num?)?.toInt() ?? 0;
+    return CambioTitularCronograma(
+      tareasActualizadas: n('tareasActualizadas'),
+      tareasAsignadasAlNuevo: n('tareasAsignadasAlNuevo'),
+      tareasSinOperario: n('tareasSinOperario'),
+      excluidasActualizadas: n('excluidasActualizadas'),
+    );
+  }
+}
+
 /// Necesidad operativa (plaza/cargo) de un conjunto, p.ej. "Todero #1" o
 /// una plaza combinada "Todero-Salvavidas #1". Espeja
 /// ConjuntoNecesidadOperario del backend: pertenece al conjunto, y
@@ -77,6 +107,9 @@ class NecesidadOperario {
   /// Ids de las categorías habilitadas en el perfil de la plaza.
   final List<int> perfilCategoriasIds;
 
+  /// Solo en la respuesta de asignar/reemplazar/liberar al operario.
+  final CambioTitularCronograma? cambioCronograma;
+
   NecesidadOperario({
     required this.id,
     required this.conjuntoId,
@@ -97,6 +130,7 @@ class NecesidadOperario {
     this.perfilNombre,
     this.perfilActivo = true,
     this.perfilCategoriasIds = const [],
+    this.cambioCronograma,
   });
 
   bool get ocupada => operarioId != null;
@@ -151,6 +185,11 @@ class NecesidadOperario {
           .map((c) => (c as Map)['categoriaId'])
           .whereType<int>()
           .toList(),
+      cambioCronograma: json['cronograma'] is Map
+          ? CambioTitularCronograma.fromJson(
+              Map<String, dynamic>.from(json['cronograma'] as Map),
+            )
+          : null,
     );
   }
 

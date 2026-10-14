@@ -241,7 +241,7 @@ class _ResidentCartPageState extends State<ResidentCartPage> {
                                     ),
                                   ),
                                   Text(
-                                    'Al crear el pedido vas a ver un código QR para pagar. Se confirma solo, sin comprobante.',
+                                    'Al crear el pedido se genera tu código de pago.',
                                   ),
                                 ],
                               ),

@@ -1,9 +1,11 @@
 import 'dart:convert';
 
-/// Cuándo (y, si hubo señal GPS, dónde) se tomó una foto con la cámara de la
-/// app. El backend lo estampa como marca de agua abajo a la derecha antes de
-/// subir la evidencia a Drive. Las fotos adjuntadas desde la galería no lo
-/// traen: para esas solo se puede afirmar la hora de subida.
+/// Cuándo (y, si hubo señal GPS, dónde) se tomó una foto. El backend lo
+/// estampa como marca de agua abajo a la derecha antes de subir la evidencia
+/// a Drive. Las fotos de la cámara de la app siempre lo traen; las de la
+/// galería solo si su EXIF dice la hora de toma (ver
+/// `EvidenciaCamara.prepararDeGaleria`): sin eso, como las de WhatsApp, solo
+/// se puede afirmar la hora de subida.
 class CapturaEvidencia {
   final DateTime tomadaEn;
   final double? latitud;
@@ -41,8 +43,8 @@ class CapturaEvidencia {
 }
 
 /// Valor del campo multipart `evidenciasCaptura`: una entrada por archivo
-/// enviado en `files`, en el mismo orden (null si no se tomó con la cámara de
-/// la app). Devuelve null si ninguna trae datos, para no mandar el campo.
+/// enviado en `files`, en el mismo orden (null si no se sabe cuándo se tomó).
+/// Devuelve null si ninguna trae datos, para no mandar el campo.
 String? evidenciasCapturaJson(List<CapturaEvidencia?> capturas) {
   if (capturas.every((c) => c == null)) return null;
   return jsonEncode(capturas.map((c) => c?.toJson()).toList());

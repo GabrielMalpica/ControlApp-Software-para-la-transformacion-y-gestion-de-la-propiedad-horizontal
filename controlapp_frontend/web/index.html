@@ -33,6 +33,13 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <!--
+    El arranque (web/flutter_bootstrap.js) va dentro de esta página y no como
+    archivo aparte: así no queda una copia vieja en la caché del navegador que
+    siga cargando la versión anterior de la app.
+  -->
+  <script>
+    {{flutter_bootstrap_js}}
+  </script>
 </body>
 </html>

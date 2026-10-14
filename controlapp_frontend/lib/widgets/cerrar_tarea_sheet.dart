@@ -9,6 +9,7 @@ import '../model/evidencia_adjunto_model.dart';
 import '../utils/pickers/clipboard_image_capture_bridge.dart';
 import '../utils/pickers/optimizar_imagen_bridge.dart';
 import '../service/evidencia_camara_service.dart';
+import 'ayuda_ubicacion.dart';
 import '../utils/pickers/selected_upload_file.dart';
 
 import 'package:flutter_application_1/service/app_feedback.dart';
@@ -126,9 +127,9 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
     if (picked == null) return;
 
     // Web: bytes, con las fotos reducidas a 1920 px para que el cierre suba
-    // rápido (los PDF pasan igual).
+    // rápido (los PDF pasan igual) y con la hora de toma de su EXIF.
     if (kIsWeb) {
-      final optimizados = await OptimizadorImagen.optimizarTodas(
+      final optimizados = await EvidenciaCamara.prepararDeGaleria(
         picked.files
             .where((f) => f.bytes != null && f.bytes!.isNotEmpty)
             .map(
@@ -457,6 +458,7 @@ class _CerrarTareaSheetState extends State<CerrarTareaSheet> {
                           ),
                         ],
                       ),
+                      if (_puedeTomarFoto) const AvisoUbicacionEvidencias(),
                       if (_evidencias.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         ..._evidencias.map((e) {

@@ -396,18 +396,19 @@ class CronogramaApi {
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
   }
 
-  /// Cambia el operario de una excluida del cronograma publicado como excepcion
-  /// puntual: no modifica la definicion preventiva ni los periodos siguientes.
+  /// Cambia los operarios de una excluida del cronograma publicado como
+  /// excepcion puntual: no modifica la definicion preventiva ni los periodos
+  /// siguientes. [nuevosOperariosIds] es la lista completa (puede ser mas de uno).
   Future<Map<String, dynamic>> reasignarOperarioExcluidaStandby({
     required String nit,
     required int excluidaId,
-    required String nuevoOperarioId,
+    required List<String> nuevosOperariosIds,
     String? motivo,
   }) async {
     final resp = await _client.post(
       '${AppConstants.cronogramaBase}/conjuntos/$nit/cronograma/excluidas-standby/$excluidaId/reasignar-operario',
       body: {
-        'nuevoOperarioId': nuevoOperarioId,
+        'nuevosOperariosIds': nuevosOperariosIds,
         if (motivo != null && motivo.trim().isNotEmpty) 'motivo': motivo.trim(),
       },
     );

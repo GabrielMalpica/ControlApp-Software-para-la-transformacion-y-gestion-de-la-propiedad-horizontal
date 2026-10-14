@@ -19,6 +19,7 @@ import 'package:flutter_application_1/utils/pickers/clipboard_image_capture_brid
 import 'package:flutter_application_1/utils/pickers/optimizar_imagen_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 import 'package:flutter_application_1/utils/uploader_preview/preview_bridge.dart';
+import 'package:flutter_application_1/widgets/ayuda_ubicacion.dart';
 import 'package:flutter_application_1/widgets/cerrar_tarea_sheet.dart';
 import 'package:flutter_application_1/widgets/cronograma/cronograma_ui.dart';
 
@@ -169,8 +170,9 @@ class _CerrarActividadPageState extends State<CerrarActividadPage> {
       ],
     );
     if (elegidos == null) return;
-    // En web las fotos se reducen a 1920 px para que el cierre suba rápido.
-    final archivos = await OptimizadorImagen.optimizarTodas(
+    // En web las fotos se reducen a 1920 px para que el cierre suba rápido y
+    // llevan la hora de toma de su EXIF.
+    final archivos = await EvidenciaCamara.prepararDeGaleria(
       elegidos.files.map(
         (f) => SelectedUploadFile(
           name: f.name,
@@ -384,7 +386,11 @@ class _CerrarActividadPageState extends State<CerrarActividadPage> {
         titulo: 'Fotos del trabajo terminado',
         icono: Icons.photo_camera_outlined,
         ayuda: 'Recomendado: 1 o 2 fotos donde se vea el lugar.',
-        children: [_botonesFotos(), _miniaturas()],
+        children: [
+          _botonesFotos(),
+          const AvisoUbicacionEvidencias(),
+          _miniaturas(),
+        ],
       ),
       const SizedBox(height: 14),
       _Seccion(
@@ -627,7 +633,11 @@ class _CerrarActividadPageState extends State<CerrarActividadPage> {
       _Seccion(
         titulo: 'Foto (opcional)',
         icono: Icons.photo_camera_outlined,
-        children: [_botonesFotos(), _miniaturas()],
+        children: [
+          _botonesFotos(),
+          const AvisoUbicacionEvidencias(),
+          _miniaturas(),
+        ],
       ),
     ];
   }

@@ -5,6 +5,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/widgets/recursos/reprogramar_con_recursos.dart';
+import 'package:flutter_application_1/widgets/seleccionar_operarios_sheet.dart';
 import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/api/festivo_api.dart';
 import 'package:intl/intl.dart';
@@ -3508,6 +3509,7 @@ class _CronogramaClaroPageState extends State<CronogramaClaroPage> {
           ? null
           : _quitarTodosLosFiltros,
       selectorTrabajador: _selectorTrabajador(),
+      trabajadorSel: _trabajadorSel,
     );
   }
 
@@ -3597,6 +3599,7 @@ class _CronogramaClaroPageState extends State<CronogramaClaroPage> {
             ? null
             : _quitarTodosLosFiltros,
         selectorTrabajador: _selectorTrabajador(ancho: ancho - 32),
+        trabajadorSel: _trabajadorSel,
       );
     }
 
@@ -3611,7 +3614,13 @@ class _CronogramaClaroPageState extends State<CronogramaClaroPage> {
               dias: _diasSemana(),
               tareas: tareas,
               base: base,
-              trabajadores: _trabajadoresMes,
+              // Con un trabajador elegido, solo su fila (sus compartidas
+              // dicen "con …" en cada tarjeta).
+              trabajadores: _trabajadorSel == null
+                  ? _trabajadoresMes
+                  : _trabajadoresMes
+                        .where((w) => w.id == _trabajadorSel)
+                        .toList(),
               ahora: ahora,
               seleccionadaId: null,
               onAbrir: (t) => _mostrarDetalleTarea(t, context),
@@ -4758,7 +4767,7 @@ class _CronogramaClaroPageState extends State<CronogramaClaroPage> {
     }
 
     if (!mounted) return;
-    if (candidatos.isEmpty) {
+    if (candidatos.isEmpty && excluida.operariosIds.isEmpty) {
       AppFeedback.showFromSnackBar(
         context,
         const SnackBar(
@@ -4768,52 +4777,40 @@ class _CronogramaClaroPageState extends State<CronogramaClaroPage> {
       return;
     }
 
-    final seleccionado = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.all(16),
-          children: [
-            const Text(
-              'Asignar otro operario solo para esta tarea',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'El plan preventivo no cambia: el próximo mes vuelve a programarse '
-              'con ${excluida.operariosNombres.isEmpty ? 'el operario original' : excluida.operariosNombres.join(', ')}.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 12),
-            ...candidatos.map(
-              (op) => ListTile(
-                leading: const Icon(Icons.person),
-                title: Text((op['nombre'] ?? op['id'] ?? '—').toString()),
-                onTap: () => Navigator.of(ctx).pop(op),
-              ),
-            ),
-          ],
-        ),
-      ),
+    // Uno o varios: una tarea de "A y B" puede quedar en "A y C".
+    final elegibles = candidatos.map(OperarioElegible.desdeSugerencia).toList();
+    final nuevos = await seleccionarOperarios(
+      context,
+      candidatos: elegibles,
+      actualesIds: excluida.operariosIds,
+      actualesNombres: excluida.operariosNombres,
+      titulo: 'Operarios solo para esta tarea',
+      descripcion:
+          'Marca a todas las personas que la harán. El plan preventivo no '
+          'cambia: el próximo mes vuelve a programarse con '
+          '${excluida.operariosNombres.isEmpty ? 'el operario original' : excluida.operariosNombres.join(', ')}.',
     );
 
-    if (seleccionado == null || !mounted) return;
+    if (nuevos == null || nuevos.isEmpty || !mounted) return;
 
     final motivo = await _pedirMotivoReemplazoOpcional();
     if (motivo == null || !mounted) return;
 
-    final nombreOperario =
-        (seleccionado['nombre'] ?? seleccionado['id'] ?? 'El operario')
-            .toString();
+    final nombrePorId = {
+      for (var i = 0; i < excluida.operariosIds.length; i++)
+        excluida.operariosIds[i]: i < excluida.operariosNombres.length
+            ? excluida.operariosNombres[i]
+            : excluida.operariosIds[i],
+      for (final op in elegibles) op.id: op.nombre,
+    };
+    final nombresTexto = nuevos.map((id) => nombrePorId[id] ?? id).join(' y ');
 
     setState(() => _accionExcluidaEnCurso = true);
     try {
       await _cronogramaApi.reasignarOperarioExcluidaStandby(
         nit: widget.nit,
         excluidaId: excluida.id,
-        nuevoOperarioId: seleccionado['id'].toString(),
+        nuevosOperariosIds: nuevos,
         motivo: motivo.trim().isEmpty ? null : motivo,
       );
       await _cargarDatos();
@@ -4822,7 +4819,9 @@ class _CronogramaClaroPageState extends State<CronogramaClaroPage> {
         context,
         SnackBar(
           content: Text(
-            'Excepción aplicada: $nombreOperario asumirá esta tarea.',
+            nuevos.length > 1
+                ? 'Excepción aplicada: $nombresTexto asumirán esta tarea.'
+                : 'Excepción aplicada: $nombresTexto asumirá esta tarea.',
           ),
         ),
       );

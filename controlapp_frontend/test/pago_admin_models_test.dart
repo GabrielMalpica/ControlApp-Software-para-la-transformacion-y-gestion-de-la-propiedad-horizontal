@@ -97,11 +97,7 @@ void main() {
             'detalle': 'x',
             'corregida': true,
           },
-          {
-            'tipo': 'SIN_COBRO_LOCAL',
-            'referenceCode': 'WC-2',
-            'detalle': 'y',
-          },
+          {'tipo': 'SIN_COBRO_LOCAL', 'referenceCode': 'WC-2', 'detalle': 'y'},
         ],
       });
       expect(reporte.remotosPagados, 12);
@@ -114,5 +110,122 @@ void main() {
     expect(pagoEstadoLabel('PAGADO_HUERFANO'), 'Pagado sin pedido');
     expect(pagoEstadoLabel('CREADO'), 'Pendiente');
     expect(pagoEstadoLabel('OTRO'), 'OTRO');
+  });
+
+  group('trazabilidad del webhook de Factus', () {
+    test(
+      'el cobro trae como se confirmo, los avisos y el pagador recortado',
+      () {
+        final item = PagoAdminItem.fromJson(
+          _cobro(
+            extra: {
+              'estado': 'PAGADO',
+              'origenConfirmacion': 'WEBHOOK',
+              'webhooksRecibidos': 2,
+              'webhookPrimeroEn': '2026-10-14T15:00:00.000Z',
+              'ultimaVerificacionEn': '2026-10-14T15:00:02.000Z',
+              'ultimaVerificacionOrigen': 'WEBHOOK',
+              'pagadorNombre': 'Juan Pérez',
+              'pagadorTipoDocumento': 'CC',
+              'pagadorDocumentoUltimos4': '7890',
+              'verificable': false,
+            },
+          ),
+        );
+        expect(item.origenConfirmacion, 'WEBHOOK');
+        expect(item.webhooksRecibidos, 2);
+        expect(item.webhookPrimeroEn, isNotNull);
+        expect(item.pagador, 'Juan Pérez · CC ···7890');
+        expect(item.verificable, isFalse);
+      },
+    );
+
+    test('un cobro viejo sin esos campos no falla', () {
+      final item = PagoAdminItem.fromJson(_cobro());
+      expect(item.webhooksRecibidos, 0);
+      expect(item.pagador, isNull);
+      expect(item.verificable, isFalse);
+    });
+
+    test('el detalle trae las entregas del webhook', () {
+      final detalle = PagoAdminDetalle.fromJson(
+        _cobro(
+          extra: {
+            'eventos': [],
+            'webhooks': [
+              {
+                'id': 1,
+                'recibidoEn': '2026-10-14T15:00:00.000Z',
+                'estado': 'PROCESADO',
+                'resultado': 'CONFIRMADO',
+                'detalle': 'Factus confirmo el pago por API',
+                'montoReportado': 50000,
+              },
+            ],
+          },
+        ),
+      );
+      expect(detalle.webhooks, hasLength(1));
+      expect(detalle.webhooks.first.resultado, 'CONFIRMADO');
+      expect(webhookResultadoLabel('CONFIRMADO'), 'Confirmó el pago');
+      expect(webhookResultadoLabel(null), 'En proceso');
+    });
+
+    test(
+      'los eventos muestran quien disparo la consulta y la verificacion pedida por el equipo',
+      () {
+        final evento = PagoAdminEvento.fromJson({
+          'tipo': 'ACCION_MANUAL',
+          'payload': {
+            'accion': 'VERIFICAR_CON_FACTUS',
+            'nombre': 'Gerente Uno',
+            'origen': 'ADMIN',
+          },
+        });
+        expect(evento.detalle, contains('Gerente Uno'));
+        expect(evento.origen, 'ADMIN');
+        expect(pagoOrigenLabel('WEBHOOK'), contains('webhook'));
+        expect(pagoEventoLabel('WEBHOOK_RECIBIDO'), 'Aviso de Factus recibido');
+      },
+    );
+  });
+
+  group('SaludPagos', () {
+    test('modo webhook funcionando', () {
+      final salud = SaludPagos.fromJson({
+        'modoConfigurado': 'webhook',
+        'modoEfectivo': 'webhook',
+        'motivo': null,
+        'webhookConfigurado': true,
+        'ultimoWebhookEn': '2026-10-14T15:00:00.000Z',
+        'avisos24h': 3,
+        'avisosSinProcesar': 0,
+        'confirmados7d': {
+          'total': 5,
+          'porOrigen': {'WEBHOOK': 4, 'USUARIO': 1},
+        },
+        'pagosSinWebhook24h': 0,
+        'cobrosPendientes': 2,
+      });
+      expect(salud.usaWebhook, isTrue);
+      expect(salud.conNovedades, isFalse);
+      expect(salud.confirmados7d, 5);
+      expect(salud.confirmadosPorWebhook7d, 4);
+    });
+
+    test('modo degradado: el aviso no llega', () {
+      final salud = SaludPagos.fromJson({
+        'modoConfigurado': 'webhook',
+        'modoEfectivo': 'polling',
+        'motivo':
+            '1 pago(s) de las ultimas 24 h se confirmaron sin que llegara el aviso',
+        'webhookConfigurado': true,
+        'pagosSinWebhook24h': 1,
+      });
+      expect(salud.usaWebhook, isFalse);
+      expect(salud.conNovedades, isTrue);
+      expect(salud.ultimoWebhookEn, isNull);
+      expect(salud.confirmados7d, 0);
+    });
   });
 }

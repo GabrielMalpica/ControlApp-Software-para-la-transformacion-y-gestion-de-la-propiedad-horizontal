@@ -1,6 +1,9 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kReleaseMode;
+
 import '../utils/text_encoding.dart';
+import 'app_constants.dart';
 
 class AppError {
   static const String _defaultFallback = 'No se pudo completar la solicitud.';
@@ -273,6 +276,18 @@ class AppError {
     }
   }
 
+  /// En desarrollo dice a qué dirección intentó llegar la app: casi siempre
+  /// el problema es esa dirección (IP de otra red, backend apagado). En
+  /// producción no se muestra.
+  static String _destinoEnDesarrollo() {
+    if (kReleaseMode) return '';
+    try {
+      return ' (${AppConstants.baseUrl})';
+    } catch (_) {
+      return '';
+    }
+  }
+
   static String? _mapTransportError(String message) {
     final normalized = _fixMojibake(message).trim().toLowerCase();
     if (normalized.isEmpty) return null;
@@ -293,7 +308,7 @@ class AppError {
         normalized.contains('cors');
 
     if (looksLikeNetworkFailure || mentionsUrl) {
-      return 'Error al conectar con el backend. Intenta nuevamente en unos minutos.';
+      return 'Error al conectar con el backend${_destinoEnDesarrollo()}. Intenta nuevamente en unos minutos.';
     }
 
     return null;

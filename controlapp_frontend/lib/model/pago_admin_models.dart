@@ -16,6 +16,16 @@ class PagoAdminItem {
     required this.pendienteSincronizarWoo,
     required this.requiereAccion,
     required this.creadoEn,
+    this.origenConfirmacion,
+    this.webhooksRecibidos = 0,
+    this.webhookPrimeroEn,
+    this.ultimaVerificacionEn,
+    this.ultimaVerificacionOrigen,
+    this.qrExpiraEn,
+    this.pagadorNombre,
+    this.pagadorTipoDocumento,
+    this.pagadorDocumentoUltimos4,
+    this.verificable = false,
   });
 
   final int id;
@@ -33,7 +43,35 @@ class PagoAdminItem {
   final bool requiereAccion;
   final DateTime? creadoEn;
 
+  /// Qué disparó la consulta que confirmó el pago (WEBHOOK, USUARIO, WORKER,
+  /// CONCILIACION o ADMIN). Toda confirmación la decide la API de Factus.
+  final String? origenConfirmacion;
+
+  /// Avisos del webhook de Factus recibidos para este cobro.
+  final int webhooksRecibidos;
+  final DateTime? webhookPrimeroEn;
+  final DateTime? ultimaVerificacionEn;
+  final String? ultimaVerificacionOrigen;
+  final DateTime? qrExpiraEn;
+
+  /// Pagador según Factus: solo nombre y los últimos 4 del documento.
+  final String? pagadorNombre;
+  final String? pagadorTipoDocumento;
+  final String? pagadorDocumentoUltimos4;
+
+  /// Se puede pedir "Verificar con Factus" (pendiente o cerrado sin pago).
+  final bool verificable;
+
   bool get esTienda => canal == 'WOOCOMMERCE';
+
+  /// "Juan Pérez · CC ···7890", o null si Factus no informó el pagador.
+  String? get pagador {
+    if (pagadorNombre == null || pagadorNombre!.isEmpty) return null;
+    final doc = pagadorDocumentoUltimos4 == null
+        ? ''
+        : ' · ${pagadorTipoDocumento ?? 'Doc.'} ···$pagadorDocumentoUltimos4';
+    return '$pagadorNombre$doc';
+  }
 
   /// "Pedido #41", "Orden web #900" o la referencia si no hay ninguno.
   String get origen {
@@ -58,9 +96,20 @@ class PagoAdminItem {
       wooOrderId: json['wooOrderId']?.toString(),
       conjuntoNombre: json['conjuntoNombre']?.toString(),
       pagadoDetectadoEn: _fecha(json['pagadoDetectadoEn']),
-      pendienteSincronizarWoo: json['pendienteSincronizarWoo'] as bool? ?? false,
+      pendienteSincronizarWoo:
+          json['pendienteSincronizarWoo'] as bool? ?? false,
       requiereAccion: json['requiereAccion'] as bool? ?? false,
       creadoEn: _fecha(json['creadoEn']),
+      origenConfirmacion: json['origenConfirmacion']?.toString(),
+      webhooksRecibidos: (json['webhooksRecibidos'] as num?)?.toInt() ?? 0,
+      webhookPrimeroEn: _fecha(json['webhookPrimeroEn']),
+      ultimaVerificacionEn: _fecha(json['ultimaVerificacionEn']),
+      ultimaVerificacionOrigen: json['ultimaVerificacionOrigen']?.toString(),
+      qrExpiraEn: _fecha(json['qrExpiraEn']),
+      pagadorNombre: json['pagadorNombre']?.toString(),
+      pagadorTipoDocumento: json['pagadorTipoDocumento']?.toString(),
+      pagadorDocumentoUltimos4: json['pagadorDocumentoUltimos4']?.toString(),
+      verificable: json['verificable'] as bool? ?? false,
     );
   }
 }
@@ -72,6 +121,7 @@ class PagoAdminEvento {
     required this.estadoNuevo,
     required this.detalle,
     required this.creadoEn,
+    this.origen,
   });
 
   final String tipo;
@@ -82,18 +132,29 @@ class PagoAdminEvento {
   final String? detalle;
   final DateTime? creadoEn;
 
+  /// Qué disparó la consulta (WEBHOOK, USUARIO, WORKER, CONCILIACION, ADMIN).
+  final String? origen;
+
   factory PagoAdminEvento.fromJson(Map<String, dynamic> json) {
     final payload = json['payload'];
     String? detalle;
+    String? origen;
     if (payload is Map) {
-      detalle = (payload['motivo'] ?? payload['error'] ?? payload['accion'])
-          ?.toString();
+      if (payload['accion'] == 'VERIFICAR_CON_FACTUS') {
+        detalle =
+            'Verificación con Factus pedida por ${payload['nombre'] ?? 'el equipo'}';
+      } else {
+        detalle = (payload['motivo'] ?? payload['error'] ?? payload['accion'])
+            ?.toString();
+      }
+      origen = payload['origen']?.toString();
     }
     return PagoAdminEvento(
       tipo: json['tipo']?.toString() ?? '',
       estadoAnterior: json['estadoAnterior']?.toString(),
       estadoNuevo: json['estadoNuevo']?.toString(),
       detalle: detalle,
+      origen: origen,
       creadoEn: json['creadoEn'] == null
           ? null
           : DateTime.tryParse(json['creadoEn'].toString()),
@@ -101,11 +162,50 @@ class PagoAdminEvento {
   }
 }
 
+/// Una entrega del webhook de Factus para un cobro y qué pasó con ella.
+class PagoAdminWebhook {
+  const PagoAdminWebhook({
+    required this.id,
+    required this.recibidoEn,
+    required this.estado,
+    required this.resultado,
+    required this.detalle,
+    required this.montoReportado,
+  });
+
+  final int id;
+  final DateTime? recibidoEn;
+
+  /// RECIBIDO (en proceso) o PROCESADO.
+  final String estado;
+  final String? resultado;
+  final String? detalle;
+  final double? montoReportado;
+
+  factory PagoAdminWebhook.fromJson(Map<String, dynamic> json) {
+    return PagoAdminWebhook(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      recibidoEn: json['recibidoEn'] == null
+          ? null
+          : DateTime.tryParse(json['recibidoEn'].toString()),
+      estado: json['estado']?.toString() ?? '',
+      resultado: json['resultado']?.toString(),
+      detalle: json['detalle']?.toString(),
+      montoReportado: (json['montoReportado'] as num?)?.toDouble(),
+    );
+  }
+}
+
 class PagoAdminDetalle {
-  const PagoAdminDetalle({required this.item, required this.eventos});
+  const PagoAdminDetalle({
+    required this.item,
+    required this.eventos,
+    this.webhooks = const [],
+  });
 
   final PagoAdminItem item;
   final List<PagoAdminEvento> eventos;
+  final List<PagoAdminWebhook> webhooks;
 
   factory PagoAdminDetalle.fromJson(Map<String, dynamic> json) {
     return PagoAdminDetalle(
@@ -114,6 +214,74 @@ class PagoAdminDetalle {
           .whereType<Map<String, dynamic>>()
           .map(PagoAdminEvento.fromJson)
           .toList(),
+      webhooks: (json['webhooks'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(PagoAdminWebhook.fromJson)
+          .toList(),
+    );
+  }
+}
+
+/// Salud del webhook de Factus y modo de confirmación
+/// (GET /commerce/pagos/salud).
+class SaludPagos {
+  const SaludPagos({
+    required this.modoConfigurado,
+    required this.modoEfectivo,
+    required this.motivo,
+    required this.webhookConfigurado,
+    required this.ultimoWebhookEn,
+    required this.avisos24h,
+    required this.avisosSinProcesar,
+    required this.confirmados7d,
+    required this.confirmadosPorWebhook7d,
+    required this.pagosSinWebhook24h,
+    required this.cobrosPendientes,
+  });
+
+  /// "polling" o "webhook".
+  final String modoConfigurado;
+  final String modoEfectivo;
+
+  /// Por qué el modo efectivo no es el configurado (modo degradado).
+  final String? motivo;
+  final bool webhookConfigurado;
+  final DateTime? ultimoWebhookEn;
+  final int avisos24h;
+  final int avisosSinProcesar;
+  final int confirmados7d;
+  final int confirmadosPorWebhook7d;
+  final int pagosSinWebhook24h;
+  final int cobrosPendientes;
+
+  bool get usaWebhook => modoEfectivo == 'webhook';
+
+  /// Hay algo que mirar: el aviso de Factus no está llegando o hay avisos
+  /// atascados.
+  bool get conNovedades =>
+      motivo != null || pagosSinWebhook24h > 0 || avisosSinProcesar > 5;
+
+  factory SaludPagos.fromJson(Map<String, dynamic> json) {
+    final confirmados = json['confirmados7d'];
+    final porOrigen = confirmados is Map ? confirmados['porOrigen'] : null;
+    return SaludPagos(
+      modoConfigurado: json['modoConfigurado']?.toString() ?? 'polling',
+      modoEfectivo: json['modoEfectivo']?.toString() ?? 'polling',
+      motivo: json['motivo']?.toString(),
+      webhookConfigurado: json['webhookConfigurado'] as bool? ?? false,
+      ultimoWebhookEn: json['ultimoWebhookEn'] == null
+          ? null
+          : DateTime.tryParse(json['ultimoWebhookEn'].toString()),
+      avisos24h: (json['avisos24h'] as num?)?.toInt() ?? 0,
+      avisosSinProcesar: (json['avisosSinProcesar'] as num?)?.toInt() ?? 0,
+      confirmados7d: confirmados is Map
+          ? (confirmados['total'] as num?)?.toInt() ?? 0
+          : 0,
+      confirmadosPorWebhook7d: porOrigen is Map
+          ? (porOrigen['WEBHOOK'] as num?)?.toInt() ?? 0
+          : 0,
+      pagosSinWebhook24h: (json['pagosSinWebhook24h'] as num?)?.toInt() ?? 0,
+      cobrosPendientes: (json['cobrosPendientes'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -198,6 +366,76 @@ class ConciliacionReporte {
           .map(ConciliacionAnomalia.fromJson)
           .toList(),
     );
+  }
+}
+
+/// Quién disparó una consulta a Factus.
+String pagoOrigenLabel(String? origen) {
+  switch (origen) {
+    case 'WEBHOOK':
+      return 'aviso de Factus (webhook)';
+    case 'USUARIO':
+      return 'el cliente ("Ya pagué")';
+    case 'WORKER':
+      return 'verificación automática';
+    case 'CONCILIACION':
+      return 'conciliación';
+    case 'ADMIN':
+      return 'el equipo ("Verificar con Factus")';
+    default:
+      return 'sin dato';
+  }
+}
+
+/// Qué pasó con un aviso del webhook.
+String webhookResultadoLabel(String? resultado) {
+  switch (resultado) {
+    case null:
+      return 'En proceso';
+    case 'CONFIRMADO':
+      return 'Confirmó el pago';
+    case 'YA_PROCESADO':
+      return 'Repetido (ya estaba resuelto)';
+    case 'NO_CONFIRMADO_POR_API':
+      return 'Factus no lo confirmó';
+    case 'DISCREPANCIA':
+      return 'Monto distinto';
+    case 'PAGADO_DUPLICADO':
+      return 'Pago duplicado';
+    case 'PAGADO_HUERFANO':
+      return 'Pagado sin pedido';
+    case 'REFERENCIA_DESCONOCIDA':
+      return 'Referencia desconocida';
+    case 'PAYLOAD_INVALIDO':
+      return 'Aviso ilegible';
+    case 'ERROR':
+      return 'Error al procesarlo';
+    default:
+      return resultado;
+  }
+}
+
+/// Etiqueta legible del tipo de evento de la bitácora de un cobro.
+String pagoEventoLabel(String tipo) {
+  switch (tipo) {
+    case 'CREADO':
+      return 'Cobro creado';
+    case 'CONSULTA':
+      return 'Consulta a Factus';
+    case 'CAMBIO_ESTADO':
+      return 'Cambio de estado';
+    case 'CONFIRMACION_PEDIDO':
+      return 'Pedido marcado como pagado';
+    case 'SYNC_WOO':
+      return 'Tienda actualizada';
+    case 'ERROR':
+      return 'Factus no respondió';
+    case 'ACCION_MANUAL':
+      return 'Acción del equipo';
+    case 'WEBHOOK_RECIBIDO':
+      return 'Aviso de Factus recibido';
+    default:
+      return tipo;
   }
 }
 

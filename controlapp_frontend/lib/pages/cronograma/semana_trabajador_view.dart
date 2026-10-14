@@ -335,6 +335,9 @@ class SemanaMovilView extends StatelessWidget {
   /// Selector de trabajador, junto al día (el día se agrupa por trabajador).
   final Widget? selectorTrabajador;
 
+  /// Trabajador elegido en el filtro (null = todos).
+  final String? trabajadorSel;
+
   const SemanaMovilView({
     super.key,
     required this.dias,
@@ -348,6 +351,7 @@ class SemanaMovilView extends StatelessWidget {
     required this.cabecera,
     this.onQuitarFiltros,
     this.selectorTrabajador,
+    this.trabajadorSel,
   });
 
   @override
@@ -396,6 +400,7 @@ class SemanaMovilView extends StatelessWidget {
             ahora: ahora,
             seleccionadaId: seleccionadaId,
             onAbrir: onAbrir,
+            soloTrabajadorId: trabajadorSel,
           ),
         const SizedBox(height: 40),
       ],

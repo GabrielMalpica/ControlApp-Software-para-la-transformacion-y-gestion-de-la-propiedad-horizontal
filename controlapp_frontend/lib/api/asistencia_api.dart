@@ -53,8 +53,9 @@ class AsistenciaApi {
   Future<AsistenciaCheckinResultado> checkin({
     required String conjuntoId,
     required String qrPayload,
-    double? latitud,
-    double? longitud,
+    // Obligatoria: el backend no registra asistencia sin ubicación.
+    required double latitud,
+    required double longitud,
     double? precisionMetros,
   }) async {
     final resp = await _client.post(
@@ -62,8 +63,8 @@ class AsistenciaApi {
       body: {
         'conjuntoId': conjuntoId,
         'qrPayload': qrPayload,
-        if (latitud != null) 'latitud': latitud,
-        if (longitud != null) 'longitud': longitud,
+        'latitud': latitud,
+        'longitud': longitud,
         if (precisionMetros != null) 'precisionMetros': precisionMetros,
       },
     );
@@ -78,7 +79,8 @@ class AsistenciaApi {
   }) async {
     final uri = Uri.parse('$_base/grid').replace(
       queryParameters: {
-        if (conjuntoId != null && conjuntoId.isNotEmpty) 'conjuntoId': conjuntoId,
+        if (conjuntoId != null && conjuntoId.isNotEmpty)
+          'conjuntoId': conjuntoId,
         'anio': '$anio',
         'mes': '$mes',
       },
@@ -95,7 +97,8 @@ class AsistenciaApi {
   }) async {
     final uri = Uri.parse('$_base/visitas-supervisores').replace(
       queryParameters: {
-        if (conjuntoId != null && conjuntoId.isNotEmpty) 'conjuntoId': conjuntoId,
+        if (conjuntoId != null && conjuntoId.isNotEmpty)
+          'conjuntoId': conjuntoId,
         'anio': '$anio',
         'mes': '$mes',
       },
@@ -114,7 +117,8 @@ class AsistenciaApi {
   }) async {
     final uri = Uri.parse('$_base/resumen').replace(
       queryParameters: {
-        if (conjuntoId != null && conjuntoId.isNotEmpty) 'conjuntoId': conjuntoId,
+        if (conjuntoId != null && conjuntoId.isNotEmpty)
+          'conjuntoId': conjuntoId,
         'anio': '$anio',
         'mes': '$mes',
       },
@@ -131,7 +135,8 @@ class AsistenciaApi {
   }) async {
     final uri = Uri.parse('$_base/exportar').replace(
       queryParameters: {
-        if (conjuntoId != null && conjuntoId.isNotEmpty) 'conjuntoId': conjuntoId,
+        if (conjuntoId != null && conjuntoId.isNotEmpty)
+          'conjuntoId': conjuntoId,
         'anio': '$anio',
         'mes': '$mes',
       },
@@ -195,15 +200,19 @@ class AsistenciaApi {
   }) async {
     final uri = Uri.parse('$_base/turnos-extra').replace(
       queryParameters: {
-        if (conjuntoId != null && conjuntoId.isNotEmpty) 'conjuntoId': conjuntoId,
-        if (operarioId != null && operarioId.isNotEmpty) 'operarioId': operarioId,
+        if (conjuntoId != null && conjuntoId.isNotEmpty)
+          'conjuntoId': conjuntoId,
+        if (operarioId != null && operarioId.isNotEmpty)
+          'operarioId': operarioId,
         if (anio != null) 'anio': '$anio',
         if (mes != null) 'mes': '$mes',
       },
     );
     final resp = await _client.get(uri.toString());
     final data = await _decode(resp) as List<dynamic>;
-    return data.map((e) => TurnoExtra.fromJson(e as Map<String, dynamic>)).toList();
+    return data
+        .map((e) => TurnoExtra.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<TurnoExtra> crearTurnoExtra({
@@ -227,8 +236,10 @@ class AsistenciaApi {
         'fecha': fecha,
         'tipo': tipo,
         'esReemplazo': esReemplazo,
-        if (operarioReemplazadoId != null) 'operarioReemplazadoId': operarioReemplazadoId,
-        if (reemplazadoNombreLibre != null) 'reemplazadoNombreLibre': reemplazadoNombreLibre,
+        if (operarioReemplazadoId != null)
+          'operarioReemplazadoId': operarioReemplazadoId,
+        if (reemplazadoNombreLibre != null)
+          'reemplazadoNombreLibre': reemplazadoNombreLibre,
         if (motivo != null) 'motivo': motivo,
         if (valorNegociado != null) 'valorNegociado': valorNegociado,
         'turnosOrdinarios': turnosOrdinarios,

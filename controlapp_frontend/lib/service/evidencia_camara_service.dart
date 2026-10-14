@@ -1,20 +1,24 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show ValueNotifier, kIsWeb;
 import 'package:geolocator/geolocator.dart';
 
 import 'package:flutter_application_1/api/evidencia_api.dart';
+import 'package:flutter_application_1/model/evidencia_adjunto_model.dart';
+import 'package:flutter_application_1/service/ubicacion_service.dart';
 import 'package:flutter_application_1/utils/pickers/camera_capture_bridge.dart';
+import 'package:flutter_application_1/utils/pickers/exif_captura.dart';
 import 'package:flutter_application_1/utils/pickers/optimizar_imagen_bridge.dart';
 import 'package:flutter_application_1/utils/pickers/selected_upload_file.dart';
 
-/// Foto de evidencia tomada con la cámara de la app, con la hora de la toma y
-/// la ubicación GPS de ese momento cuando el dispositivo la da. El backend
-/// convierte esos datos en la marca de agua de auditoría (abajo a la
-/// derecha) antes de subir la foto a Drive.
+/// Foto de evidencia con la hora de la toma y la ubicación GPS de ese
+/// momento cuando el dispositivo la da. El backend convierte esos datos en la
+/// marca de agua de auditoría (abajo a la derecha) antes de subir la foto a
+/// Drive.
 ///
 /// La ubicación es de mejor esfuerzo: sin permiso, sin GPS o sin señal la
-/// foto se agrega igual, solo que sin coordenadas.
+/// foto se agrega igual, solo que sin coordenadas (y el cierre muestra
+/// [ubicacionNegada] para que el operario sepa por qué).
 class EvidenciaCamara {
   EvidenciaCamara._();
 
@@ -23,22 +27,28 @@ class EvidenciaCamara {
   static const Duration _esperaMaximaGps = Duration(seconds: 4);
   static const Duration _vigenciaUbicacion = Duration(minutes: 2);
 
+  /// Una foto de la galería tomada hace menos de esto se toma como recién
+  /// tomada en el sitio: lleva la ubicación actual del celular, como las de
+  /// la cámara de la app. Las más viejas solo llevan su hora de toma.
+  static const Duration recienTomada = Duration(minutes: 30);
+
+  /// true cuando el navegador o el celular negó el permiso de ubicación.
+  static final ValueNotifier<bool> ubicacionNegada = ValueNotifier(false);
+
   static Position? _ultima;
   static Future<Position?>? _enCurso;
 
-  /// Si el permiso de ubicación ya está concedido, pide una posición desde
-  /// ya para que al tomar la foto no haya que esperar al GPS. No muestra
-  /// ningún diálogo de permiso.
+  /// Se llama al abrir un cierre: pide el permiso de ubicación si todavía no
+  /// se ha preguntado y deja una posición lista, para que al tomar la foto no
+  /// haya que esperar al GPS ni aparezca el diálogo de permiso en medio de la
+  /// cámara.
   static Future<void> precalentarUbicacion() async {
-    try {
-      final permiso = await Geolocator.checkPermission();
-      if (permiso == LocationPermission.always ||
-          permiso == LocationPermission.whileInUse) {
-        unawaited(_ubicacion());
-      }
-    } catch (_) {
-      // Sin plugin de ubicación disponible: se sigue sin GPS.
+    final permiso = await UbicacionDispositivo.permiso();
+    if (permiso == PermisoUbicacion.denegado) {
+      ubicacionNegada.value = true;
+      return;
     }
+    unawaited(_ubicacion());
   }
 
   static Future<SelectedUploadFile?> tomarFoto() async {
@@ -62,17 +72,59 @@ class EvidenciaCamara {
     final foto = await optimizada;
     if (posicion == null) return foto;
 
-    // La dirección (calle, barrio, ciudad) se deja lista en el servidor
-    // mientras el operario termina el cierre; no se espera.
+    _precalentarDireccion(posicion);
+    return foto.conCaptura(
+      captura.conGps(posicion.latitude, posicion.longitude),
+    );
+  }
+
+  /// Fotos elegidas de la galería: toma del EXIF la hora en que se tomaron
+  /// (antes de reducirlas, porque al reducirlas se pierde) y, a las tomadas
+  /// hace menos de [recienTomada] que no traen GPS propio, les pone la
+  /// ubicación actual. Los PDF y las fotos sin EXIF (WhatsApp) quedan igual:
+  /// en la marca de agua solo dirán cuándo se subieron.
+  static Future<List<SelectedUploadFile>> prepararDeGaleria(
+    Iterable<SelectedUploadFile> archivos,
+  ) async {
+    final ahora = DateTime.now();
+    final conHora = [
+      for (final a in archivos)
+        a.captura != null ? a : a.conCaptura(capturaDesdeExif(a.bytes)),
+    ];
+    bool sinGpsYReciente(CapturaEvidencia? c) =>
+        c != null && !c.tieneGps && esRecienTomada(c.tomadaEn, ahora);
+
+    final optimizadas = OptimizadorImagen.optimizarTodas(conHora);
+    final posicion = conHora.any((a) => sinGpsYReciente(a.captura))
+        ? await _ubicacionDeLaFoto(_ubicacion())
+        : null;
+    final fotos = await optimizadas;
+    if (posicion == null) return fotos;
+
+    _precalentarDireccion(posicion);
+    return [
+      for (final f in fotos)
+        sinGpsYReciente(f.captura)
+            ? f.conCaptura(
+                f.captura!.conGps(posicion.latitude, posicion.longitude),
+              )
+            : f,
+    ];
+  }
+
+  static bool esRecienTomada(DateTime tomadaEn, DateTime ahora) {
+    final edad = ahora.difference(tomadaEn);
+    return edad <= recienTomada && edad >= const Duration(minutes: -1);
+  }
+
+  /// La dirección (calle, barrio, ciudad) se deja lista en el servidor
+  /// mientras el operario termina el cierre; no se espera.
+  static void _precalentarDireccion(Position posicion) {
     unawaited(
       EvidenciaApi().precalentarDireccion(
         posicion.latitude,
         posicion.longitude,
       ),
-    );
-
-    return foto.conCaptura(
-      captura.conGps(posicion.latitude, posicion.longitude),
     );
   }
 
@@ -117,26 +169,16 @@ class EvidenciaCamara {
 
   static Future<Position?> _leerUbicacion() async {
     try {
-      if (!await Geolocator.isLocationServiceEnabled()) return null;
-
-      var permiso = await Geolocator.checkPermission();
-      if (permiso == LocationPermission.denied) {
-        permiso = await Geolocator.requestPermission();
-      }
-      if (permiso == LocationPermission.denied ||
-          permiso == LocationPermission.deniedForever) {
-        return null;
-      }
-
-      final posicion = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 20),
-        ),
+      final posicion = await UbicacionDispositivo.obtener(
+        espera: const Duration(seconds: 20),
       );
       _ultima = posicion;
+      ubicacionNegada.value = false;
       return posicion;
-    } catch (_) {
+    } on UbicacionException catch (e) {
+      if (e.fallo == FalloUbicacion.permisoDenegado) {
+        ubicacionNegada.value = true;
+      }
       return null;
     }
   }

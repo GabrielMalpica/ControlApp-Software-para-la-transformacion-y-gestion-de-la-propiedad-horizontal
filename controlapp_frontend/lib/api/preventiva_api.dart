@@ -436,47 +436,54 @@ class DefinicionPreventivaApi {
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
   }
 
+  /// Deja la tarea del borrador con [nuevosOperariosIds] (la lista completa:
+  /// una tarea compartida puede pasar de "A y B" a "A y C").
   Future<Map<String, dynamic>> reasignarOperarioBorrador({
     required String nit,
     required int tareaId,
-    required int nuevoOperarioId,
+    required List<String> nuevosOperariosIds,
     required String modoAplicacion,
     required bool aplicarADefinicion,
   }) async {
     final resp = await _client.post(
       '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/tarea/$tareaId/reasignar-operario',
       body: {
-        'nuevoOperarioId': nuevoOperarioId,
+        'nuevosOperariosIds': nuevosOperariosIds,
         'modoAplicacion': modoAplicacion,
         'aplicarADefinicion': aplicarADefinicion,
       },
     );
     if (resp.statusCode != 200) {
-      throw Exception(
-        'Error reasignando operario: ${resp.statusCode} ${resp.body}',
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudo cambiar el operario de la tarea.',
       );
     }
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);
   }
 
+  /// Igual que [reasignarOperarioBorrador], para una excluida del borrador.
   Future<Map<String, dynamic>> reasignarOperarioExcluidaBorrador({
     required String nit,
     required int excluidaId,
-    required int nuevoOperarioId,
+    required List<String> nuevosOperariosIds,
     required String modoAplicacion,
     required bool aplicarADefinicion,
   }) async {
     final resp = await _client.post(
       '${AppConstants.definicionPreventivaBase}/conjuntos/$nit/preventivas/borrador/excluidas/$excluidaId/reasignar-operario',
       body: {
-        'nuevoOperarioId': nuevoOperarioId,
+        'nuevosOperariosIds': nuevosOperariosIds,
         'modoAplicacion': modoAplicacion,
         'aplicarADefinicion': aplicarADefinicion,
       },
     );
     if (resp.statusCode != 200) {
-      throw Exception(
-        'Error reasignando operario de excluida: ${resp.statusCode} ${resp.body}',
+      throw ApiException.fromResponse(
+        statusCode: resp.statusCode,
+        body: resp.body,
+        fallback: 'No se pudo cambiar el operario de la tarea excluida.',
       );
     }
     return Map<String, dynamic>.from(jsonDecode(resp.body) as Map);

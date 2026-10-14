@@ -69,6 +69,28 @@ class PagosAdminApi {
     );
   }
 
+  /// "Verificar con Factus": consulta el recaudo ahora y aplica lo que diga
+  /// la API. Nunca marca un cobro como pagado sin que Factus lo confirme.
+  Future<PagoAdminDetalle> verificar(int cobroId) async {
+    final response = await _client.post(
+      '${AppConstants.commerceBase}/pagos/$cobroId/verificar',
+    );
+    _ensureSuccess(response.statusCode, response.body);
+    return PagoAdminDetalle.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<SaludPagos> salud() async {
+    final response = await _client.get(
+      '${AppConstants.commerceBase}/pagos/salud',
+    );
+    _ensureSuccess(response.statusCode, response.body);
+    return SaludPagos.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
   Future<ConciliacionReporte?> ultimaConciliacion() async {
     final response = await _client.get(
       '${AppConstants.commerceBase}/pagos/conciliacion',
@@ -87,7 +109,9 @@ class PagosAdminApi {
     );
     _ensureSuccess(response.statusCode, response.body);
     final json = jsonDecode(response.body) as Map<String, dynamic>;
-    return ConciliacionReporte.fromJson(json['reporte'] as Map<String, dynamic>);
+    return ConciliacionReporte.fromJson(
+      json['reporte'] as Map<String, dynamic>,
+    );
   }
 
   void _ensureSuccess(int statusCode, String body) {

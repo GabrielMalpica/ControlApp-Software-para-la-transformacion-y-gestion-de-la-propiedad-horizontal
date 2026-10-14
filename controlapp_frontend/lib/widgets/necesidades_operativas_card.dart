@@ -280,6 +280,19 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
                   runSpacing: 4,
                   children: [
                     if (n.ocupada) ...[
+                      Tooltip(
+                        message:
+                            'Otra persona toma esta plaza y recibe sus '
+                            'actividades pendientes del cronograma',
+                        child: TextButton(
+                          onPressed: () => _mostrarAsignarOperario(
+                            n,
+                            todas,
+                            reemplazo: true,
+                          ),
+                          child: const Text('Reemplazar'),
+                        ),
+                      ),
                       TextButton(
                         onPressed: () => _cambiarVacante(n, todas),
                         child: const Text('Cambiar vacante'),
@@ -346,13 +359,75 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
     );
   }
 
+  /// Avisa qué cambió en el cronograma (publicado y borrador) cuando la plaza
+  /// cambia de titular. [liberada]: la plaza quedó vacante (nadie recibe).
+  void _informarCambioCronograma(
+    NecesidadOperario resultado, {
+    required String accion,
+    bool liberada = false,
+  }) {
+    final cambio = resultado.cambioCronograma;
+    if (!mounted) return;
+    final partes = <String>[accion];
+    if (cambio != null) {
+      final quien = resultado.operarioNombre ?? resultado.operarioId;
+      if (cambio.tareasAsignadasAlNuevo > 0 && quien != null) {
+        partes.add(
+          '${cambio.tareasAsignadasAlNuevo} actividad(es) pendientes del '
+          'cronograma ahora están a nombre de $quien.',
+        );
+      }
+      if (cambio.tareasSinOperario > 0) {
+        partes.add(
+          liberada
+              ? '${cambio.tareasSinOperario} actividad(es) pendientes '
+                    'quedaron sin operario hasta que asignes a alguien.'
+              : '${cambio.tareasSinOperario} actividad(es) de la plaza que '
+                    'dejó quedaron sin operario hasta que asignes a alguien '
+                    'allí.',
+        );
+      }
+    }
+    // Siempre informativo (no error), aunque el texto diga "sin operario".
+    AppFeedback.showInfo(context, message: partes.join(' '));
+  }
+
   Future<void> _liberar(NecesidadOperario n) async {
+    final quien = n.operarioNombre ?? n.operarioId ?? 'El operario';
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Liberar ${n.etiqueta}'),
+        content: Text(
+          '$quien deja la plaza. Sus actividades pendientes del cronograma '
+          '(de hoy en adelante) quedarán sin operario hasta que asignes a '
+          'alguien.\n\nSi ya tienes a la persona que lo reemplaza, usa '
+          '"Reemplazar": las actividades pasan directamente a ella.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Liberar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true || !mounted) return;
     try {
-      await _api.liberarNecesidad(
+      final resultado = await _api.liberarNecesidad(
         conjuntoNit: widget.conjuntoNit,
         necesidadId: n.id,
       );
       _reload();
+      _informarCambioCronograma(
+        resultado,
+        accion: 'Plaza liberada.',
+        liberada: true,
+      );
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
@@ -365,15 +440,20 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
     }
   }
 
+  /// Asigna un operario a una plaza vacante o, con [reemplazo], pone a otra
+  /// persona en lugar de quien la ocupa (rotación de personal). En los dos
+  /// casos sus actividades pendientes del cronograma pasan al nuevo titular.
   Future<void> _mostrarAsignarOperario(
     NecesidadOperario n,
-    List<NecesidadOperario> todas,
-  ) async {
+    List<NecesidadOperario> todas, {
+    bool reemplazo = false,
+  }) async {
     // La plaza puede exigir varios roles combinados: el candidato debe
     // tenerlos TODOS (igual que valida el backend).
     final candidatos = widget.operariosCatalogo
         .where(
           (o) =>
+              o.cedula != n.operarioId &&
               n.roles.every((r) => (o.tipoFunciones ?? const []).contains(r)),
         )
         .toList();
@@ -383,7 +463,9 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
         context,
         SnackBar(
           content: Text(
-            'Ningún operario tiene el rol ${_etiquetaRoles(n.roles)}.',
+            reemplazo
+                ? 'No hay otro operario con el rol ${_etiquetaRoles(n.roles)} para reemplazarlo.'
+                : 'Ningún operario tiene el rol ${_etiquetaRoles(n.roles)}.',
           ),
           backgroundColor: Colors.orange,
         ),
@@ -405,26 +487,48 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text('Asignar operario a ${n.etiqueta}'),
-          content: DropdownButtonFormField<String>(
-            initialValue: seleccionado,
-            items: candidatos
-                .map(
-                  (o) => DropdownMenuItem(
-                    value: o.cedula,
-                    child: Text(
-                      ocupacionActual.containsKey(o.cedula)
-                          ? '${o.nombre} (${o.cedula}) — mover desde ${ocupacionActual[o.cedula]}'
-                          : '${o.nombre} (${o.cedula})',
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => setDialogState(() => seleccionado = v),
-            decoration: const InputDecoration(
-              labelText: 'Operario',
-              border: OutlineInputBorder(),
-            ),
+          title: Text(
+            reemplazo
+                ? 'Reemplazar a ${n.operarioNombre ?? n.operarioId} en ${n.etiqueta}'
+                : 'Asignar operario a ${n.etiqueta}',
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                reemplazo
+                    ? 'La persona que elijas ocupa la plaza desde ya. Las '
+                          'actividades pendientes del cronograma publicado y '
+                          'del borrador (de hoy en adelante) pasan a ella; lo '
+                          'ya trabajado se queda con quien lo hizo.'
+                    : 'Las actividades pendientes de esta plaza en el '
+                          'cronograma (de hoy en adelante) quedarán a nombre '
+                          'de quien elijas.',
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: seleccionado,
+                items: candidatos
+                    .map(
+                      (o) => DropdownMenuItem(
+                        value: o.cedula,
+                        child: Text(
+                          ocupacionActual.containsKey(o.cedula)
+                              ? '${o.nombre} (${o.cedula}) — mover desde ${ocupacionActual[o.cedula]}'
+                              : '${o.nombre} (${o.cedula})',
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) => setDialogState(() => seleccionado = v),
+                decoration: const InputDecoration(
+                  labelText: 'Operario',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -435,7 +539,7 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
               onPressed: seleccionado == null
                   ? null
                   : () => Navigator.pop(context, true),
-              child: const Text('Asignar'),
+              child: Text(reemplazo ? 'Reemplazar' : 'Asignar'),
             ),
           ],
         ),
@@ -444,12 +548,17 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
 
     if (ok != true || seleccionado == null) return;
     try {
-      await _api.asignarOperarioNecesidad(
+      final resultado = await _api.asignarOperarioNecesidad(
         conjuntoNit: widget.conjuntoNit,
         necesidadId: n.id,
         operarioId: seleccionado!,
+        reemplazar: reemplazo,
       );
       _reload();
+      _informarCambioCronograma(
+        resultado,
+        accion: reemplazo ? 'Plaza reemplazada.' : 'Operario asignado.',
+      );
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(
@@ -547,12 +656,13 @@ class _NecesidadesOperativasCardState extends State<NecesidadesOperativasCard> {
 
     if (ok != true || seleccionado == null) return;
     try {
-      await _api.asignarOperarioNecesidad(
+      final resultado = await _api.asignarOperarioNecesidad(
         conjuntoNit: widget.conjuntoNit,
         necesidadId: seleccionado!,
         operarioId: operarioId,
       );
       _reload();
+      _informarCambioCronograma(resultado, accion: 'Cambio de plaza hecho.');
     } catch (e) {
       if (!mounted) return;
       AppFeedback.showFromSnackBar(

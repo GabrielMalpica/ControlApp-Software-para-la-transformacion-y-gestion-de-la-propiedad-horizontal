@@ -29,8 +29,10 @@ class ColumnaHoras {
   });
 }
 
-//// Cuadrícula por horas de solo lectura con tarjetas legibles: 1 hora =
-/// 80 px, ícono de categoría, hora, nombre y estado.
+/// Cuadrícula por horas de solo lectura con tarjetas legibles: ícono de
+/// categoría, hora, nombre y estado. Escala base: 1 hora = 80 px; si hay
+/// tareas muy seguidas, la escala sube sola para que ninguna tarjeta pise a
+/// la siguiente.
 ///
 /// Es un sliver: la cuadrícula completa se muestra a su altura natural y la
 /// página se desplaza con un solo scroll vertical; la fila de nombres (o
@@ -55,9 +57,21 @@ class GrillaHorasSliver extends StatefulWidget {
 }
 
 class _GrillaHorasSliverState extends State<GrillaHorasSliver> {
-  static const double _pxHora = 80;
+  static const double _pxHoraBase = 80;
+
+  /// Altura con la que una tarjeta se alcanza a leer (hora + nombre).
+  static const double _altoMinTarjeta = 40;
+
+  /// Tope de la escala (480 px por hora) para tareas de pocos minutos.
+  static const double _pxPorMinutoMax = 8;
+
+  /// Hasta dónde se mide el espacio libre debajo de cada tarjeta.
+  static const Duration _espacioMedido = Duration(minutes: 60);
   static const double _anchoHoras = 64;
   static const double _anchoMinColumna = 190;
+
+  /// Píxeles por minuto de la cuadrícula que se está dibujando.
+  double _pxMin = _pxHoraBase / 60;
 
   final _horizontal = DesplazamientoEnlazado();
 
@@ -69,15 +83,47 @@ class _GrillaHorasSliverState extends State<GrillaHorasSliver> {
 
   @override
   Widget build(BuildContext context) {
+    final calculadas = [for (final c in widget.columnas) _calcular(c)];
+
+    // Escala: la tarjeta con menos espacio libre antes de la siguiente
+    // (en su misma franja) debe quedar de al menos [_altoMinTarjeta].
+    var espacioMin = double.infinity;
+    for (final c in calculadas) {
+      for (var i = 0; i < c.tareas.length; i++) {
+        final m = _minutos(c.tareas[i].fechaInicio, c.layout[i].visualFin);
+        if (m > 0) espacioMin = math.min(espacioMin, m);
+      }
+    }
+    _pxMin = espacioMin.isFinite
+        ? (_altoMinTarjeta / espacioMin).clamp(
+            _pxHoraBase / 60,
+            _pxPorMinutoMax,
+          )
+        : _pxHoraBase / 60;
+
     var minH = 24;
     var maxH = 0;
-    for (final c in widget.columnas) {
-      for (final t in c.tareas) {
-        final i = t.fechaInicio.toLocal();
+    for (final c in calculadas) {
+      for (var i = 0; i < c.tareas.length; i++) {
+        final t = c.tareas[i];
+        final ini = t.fechaInicio.toLocal();
         final f = t.fechaFin.toLocal();
-        minH = math.min(minH, i.hour);
-        final finH = f.hour + (f.minute > 0 ? 1 : 0);
-        maxH = math.max(maxH, mismoDia(i, f) ? finH : 24);
+        minH = math.min(minH, ini.hour);
+        if (!mismoDia(ini, f)) {
+          maxH = 24;
+          continue;
+        }
+        // Incluye lo que la tarjeta ocupa de más por su altura mínima.
+        final finVisual = ini.add(
+          Duration(
+            seconds: (_altoTarjeta(t, c.layout[i]) / _pxMin * 60).ceil(),
+          ),
+        );
+        final fin = finVisual.isAfter(f) ? finVisual : f;
+        final finH = mismoDia(ini, fin)
+            ? fin.hour + (fin.minute > 0 || fin.second > 0 ? 1 : 0)
+            : 24;
+        maxH = math.max(maxH, math.min(24, finH));
       }
     }
     if (minH >= maxH) {
@@ -85,7 +131,7 @@ class _GrillaHorasSliverState extends State<GrillaHorasSliver> {
       maxH = 16;
     }
     final horas = maxH - minH;
-    final alto = horas * _pxHora;
+    final alto = horas * _pxMin * 60;
     final escala = MediaQuery.textScalerOf(context).scale(16) / 16;
     final altoTitulos = (56 * escala).clamp(56.0, 110.0);
     final altoAviso = (48 * escala).clamp(48.0, 90.0);
@@ -150,7 +196,7 @@ class _GrillaHorasSliverState extends State<GrillaHorasSliver> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _columnaHoras(minH, horas),
-                          for (final col in widget.columnas)
+                          for (final col in calculadas)
                             _columna(col, anchoCol, minH, horas),
                         ],
                       ),
@@ -294,14 +340,15 @@ class _GrillaHorasSliverState extends State<GrillaHorasSliver> {
   );
 
   Widget _columnaHoras(int minH, int horas) {
+    final pxHora = _pxMin * 60;
     return SizedBox(
       width: _anchoHoras,
-      height: horas * _pxHora + 8,
+      height: horas * pxHora + 8,
       child: Stack(
         children: [
           for (var i = 0; i <= horas; i++)
             Positioned(
-              top: i * _pxHora - (i == 0 ? 0 : 9),
+              top: i * pxHora - (i == 0 ? 0 : 9),
               right: 8,
               child: Text(
                 '${(minH + i).toString().padLeft(2, '0')}:00',
@@ -339,10 +386,16 @@ class _GrillaHorasSliverState extends State<GrillaHorasSliver> {
 
   double _top(DateTime d, int minH) {
     final l = d.toLocal();
-    return ((l.hour - minH) * 60 + l.minute) / 60 * _pxHora;
+    return ((l.hour - minH) * 60 + l.minute + l.second / 60) * _pxMin;
   }
 
-  Widget _columna(ColumnaHoras col, double ancho, int minH, int horas) {
+  static double _minutos(DateTime desde, DateTime hasta) =>
+      hasta.toLocal().difference(desde.toLocal()).inSeconds / 60;
+
+  /// Carriles de una columna. El fin visual que devuelve el layout ya viene
+  /// recortado al inicio de la siguiente tarea de la misma franja: es el
+  /// espacio máximo que puede ocupar la tarjeta sin pisar a otra.
+  _ColumnaCalculada _calcular(ColumnaHoras col) {
     final tareas = [...col.tareas]
       ..sort((a, b) => a.fechaInicio.compareTo(b.fechaInicio));
     final layout = layoutWeekDayTasks([
@@ -353,10 +406,26 @@ class _GrillaHorasSliverState extends State<GrillaHorasSliver> {
               ? t.fechaFin.toLocal()
               : t.fechaInicio.toLocal().add(const Duration(minutes: 1)),
         ),
-    ], minVisual: const Duration(minutes: 26));
+    ], minVisual: _espacioMedido);
+    return _ColumnaCalculada(col, tareas, layout);
+  }
+
+  /// Alto de la tarjeta: su duración real, al menos [_altoMinTarjeta], pero
+  /// nunca más que el espacio libre antes de la tarea siguiente.
+  double _altoTarjeta(TareaModel t, WeekLayoutOutput l) {
+    final real = math.max(1.0, _minutos(t.fechaInicio, t.fechaFin)) * _pxMin;
+    final espacio = _minutos(t.fechaInicio, l.visualFin) * _pxMin;
+    final deseado = math.max(real, _altoMinTarjeta);
+    return math.max(14.0, math.min(deseado, espacio) - 2);
+  }
+
+  Widget _columna(_ColumnaCalculada c, double ancho, int minH, int horas) {
+    final col = c.columna;
+    final tareas = c.tareas;
+    final layout = c.layout;
     return Container(
       width: ancho,
-      height: horas * _pxHora + 8,
+      height: horas * _pxMin * 60 + 8,
       decoration: BoxDecoration(
         border: Border(
           left: BorderSide(color: AppTheme.primary.withValues(alpha: 0.12)),
@@ -366,7 +435,7 @@ class _GrillaHorasSliverState extends State<GrillaHorasSliver> {
         children: [
           for (var i = 0; i <= horas; i++)
             Positioned(
-              top: i * _pxHora,
+              top: i * _pxMin * 60,
               left: 0,
               right: 0,
               child: Container(height: 1, color: const Color(0xFFE3EAE5)),
@@ -390,12 +459,8 @@ class _GrillaHorasSliverState extends State<GrillaHorasSliver> {
     final laneW = (ancho - pad * 2) / l.laneCount;
     final left = pad + laneW * l.lane;
     final width = laneW * l.laneSpan - 4;
-    final top = _top(t.fechaInicio, minH) + 2;
-    final altoReal =
-        l.visualFin.difference(t.fechaInicio.toLocal()).inMinutes /
-        60 *
-        _pxHora;
-    final alto = math.max(34.0, altoReal - 4);
+    final top = _top(t.fechaInicio, minH) + 1;
+    final alto = _altoTarjeta(t, l);
     final visual = CategoriaVisual.deTarea(t);
     final estado = EstadoVisual.de(t, ahora: widget.ahora);
     final corta = alto < 64;
@@ -447,10 +512,10 @@ class _GrillaHorasSliverState extends State<GrillaHorasSliver> {
                           Expanded(
                             child: Text(
                               '${hm.format(t.fechaInicio.toLocal())} ${t.descripcion}',
-                              maxLines: 2,
+                              maxLines: alto >= 38 ? 2 : 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 13,
+                              style: TextStyle(
+                                fontSize: alto < 24 ? 12 : 13,
                                 fontWeight: FontWeight.w700,
                                 height: 1.15,
                               ),
@@ -517,6 +582,14 @@ class _GrillaHorasSliverState extends State<GrillaHorasSliver> {
       ),
     );
   }
+}
+
+class _ColumnaCalculada {
+  final ColumnaHoras columna;
+  final List<TareaModel> tareas;
+  final List<WeekLayoutOutput> layout;
+
+  const _ColumnaCalculada(this.columna, this.tareas, this.layout);
 }
 
 /// Ayuda para construir las columnas por trabajador de un día.

@@ -34,6 +34,7 @@ import '../model/maquinaria_model.dart';
 import '../utils/frecuencia_utils.dart';
 import '../widgets/impacto_reordenamiento_dialog.dart';
 import '../widgets/maquinaria_conflict_dialog.dart';
+import '../widgets/seleccionar_operarios_sheet.dart';
 import '../widgets/cronograma_informe_jerarquico.dart';
 import '../widgets/evidencia_gallery.dart';
 import '../widgets/skeleton.dart';
@@ -2515,7 +2516,10 @@ class _CronogramaPreventivasBorradorPageState
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.precision_manufacturing_outlined, color: Colors.orange.shade800),
+          Icon(
+            Icons.precision_manufacturing_outlined,
+            color: Colors.orange.shade800,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -2532,8 +2536,13 @@ class _CronogramaPreventivasBorradorPageState
                   style: TextStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 6),
-                for (final l in lineas) Text('• $l', style: const TextStyle(fontSize: 12.5)),
-                if (resto > 0) Text('… y $resto más', style: const TextStyle(fontSize: 12.5)),
+                for (final l in lineas)
+                  Text('• $l', style: const TextStyle(fontSize: 12.5)),
+                if (resto > 0)
+                  Text(
+                    '… y $resto más',
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
               ],
             ),
           ),
@@ -4622,17 +4631,29 @@ class _CronogramaPreventivasBorradorPageState
     );
   }
 
-  Future<Map<String, dynamic>?> _seleccionarOperarioDelConjunto({
+  /// Pide los operarios de una tarea (uno o varios). Arranca con los actuales
+  /// marcados, así una tarea de "A y B" puede quedar en "A y C" sin perder a
+  /// A. Devuelve la lista final o null si se cancela.
+  Future<List<String>?> _seleccionarOperariosDelConjunto({
     required DateTime inicio,
     required DateTime fin,
-    required Set<String> actualIds,
+    required List<String> actualesIds,
+    required List<String> actualesNombres,
   }) async {
-    final operarios = await _cargarOperariosDelConjunto(
-      inicio: inicio,
-      fin: fin,
-    );
+    final List<Map<String, dynamic>> operarios;
+    try {
+      operarios = await _cargarOperariosDelConjunto(inicio: inicio, fin: fin);
+    } catch (e) {
+      if (mounted) {
+        AppFeedback.showFromSnackBar(
+          context,
+          SnackBar(content: Text(AppError.messageOf(e))),
+        );
+      }
+      return null;
+    }
     if (!mounted) return null;
-    if (operarios.isEmpty) {
+    if (operarios.isEmpty && actualesIds.isEmpty) {
       AppFeedback.showFromSnackBar(
         context,
         const SnackBar(
@@ -4644,85 +4665,49 @@ class _CronogramaPreventivasBorradorPageState
       return null;
     }
 
-    return showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => SafeArea(
-        child: ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: operarios.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (ctx, index) {
-            final item = operarios[index];
-            final id = (item['id'] ?? '').toString();
-            final esActual = actualIds.contains(id);
-            final horasSemana =
-                num.tryParse((item['horasSemana'] ?? 0).toString()) ?? 0;
-            final solapa = item['solapa'] == true;
-            final subtitulo = esActual
-                ? 'Operario actual'
-                : solapa
-                ? 'Tiene cruce en ese rango'
-                : '${formatHoursMinutes(horasSemana.round())} programadas esa semana';
-            return ListTile(
-              tileColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: Colors.grey.shade300),
-              ),
-              title: Text((item['nombre'] ?? 'Operario').toString()),
-              subtitle: Text(subtitulo),
-              trailing: esActual
-                  ? const Icon(Icons.check_circle, color: Colors.green)
-                  : solapa
-                  ? const Icon(Icons.warning, color: Colors.orange)
-                  : const Icon(Icons.chevron_right),
-              onTap: () => Navigator.pop(ctx, item),
-            );
-          },
-        ),
-      ),
+    return seleccionarOperarios(
+      context,
+      candidatos: operarios.map(OperarioElegible.desdeSugerencia).toList(),
+      actualesIds: actualesIds,
+      actualesNombres: actualesNombres,
     );
   }
 
+  String _modoAplicacionApi(_ModoCambioOperario modo) => switch (modo) {
+    _ModoCambioOperario.soloTarea => 'SOLO_TAREA',
+    _ModoCambioOperario.todoBorrador => 'TODO_BORRADOR',
+    _ModoCambioOperario.tambienDefinicion => 'TAMBIEN_DEFINICION',
+  };
+
   Future<void> _reasignarOperarioTarea(TareaModel tarea) async {
-    final actualIds = tarea.operariosIds.toSet();
-    final seleccionado = await _seleccionarOperarioDelConjunto(
+    final nuevos = await _seleccionarOperariosDelConjunto(
       inicio: tarea.fechaInicio,
       fin: tarea.fechaFin,
-      actualIds: actualIds,
+      actualesIds: tarea.operariosIds,
+      actualesNombres: tarea.operariosNombres,
     );
+    if (nuevos == null || nuevos.isEmpty || !mounted) return;
 
-    if (seleccionado == null) return;
-    if (!mounted) return;
+    final modo = await _preguntarModoCambioOperario();
+    if (modo == null || !mounted) return;
 
-    final nuevoOperarioId = int.tryParse((seleccionado['id'] ?? '').toString());
-    if (nuevoOperarioId == null) {
+    final Map<String, dynamic> res;
+    try {
+      res = await _preventivaApi.reasignarOperarioBorrador(
+        nit: widget.nit,
+        tareaId: tarea.id,
+        nuevosOperariosIds: nuevos,
+        modoAplicacion: _modoAplicacionApi(modo),
+        aplicarADefinicion: modo == _ModoCambioOperario.tambienDefinicion,
+      );
+    } catch (e) {
+      if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
-        const SnackBar(
-          content: Text(
-            'No se pudo interpretar el ID del operario seleccionado.',
-          ),
-        ),
+        SnackBar(content: Text(AppError.messageOf(e))),
       );
       return;
     }
-
-    final modo = await _preguntarModoCambioOperario();
-    if (modo == null) return;
-
-    final res = await _preventivaApi.reasignarOperarioBorrador(
-      nit: widget.nit,
-      tareaId: tarea.id,
-      nuevoOperarioId: nuevoOperarioId,
-      modoAplicacion: switch (modo) {
-        _ModoCambioOperario.soloTarea => 'SOLO_TAREA',
-        _ModoCambioOperario.todoBorrador => 'TODO_BORRADOR',
-        _ModoCambioOperario.tambienDefinicion => 'TAMBIEN_DEFINICION',
-      },
-      aplicarADefinicion: modo == _ModoCambioOperario.tambienDefinicion,
-    );
     if (!mounted) return;
     _marcarCambioManual();
 
@@ -4745,46 +4730,37 @@ class _CronogramaPreventivasBorradorPageState
   Future<void> _reasignarOperarioExcluida(
     PreventivaExcluidaBorradorModel excluida,
   ) async {
-    final actualIds = excluida.operariosIds.toSet();
     final finReferencia = excluida.fechaObjetivo.add(
       Duration(minutes: excluida.duracionMinutos),
     );
-    final seleccionado = await _seleccionarOperarioDelConjunto(
+    final nuevos = await _seleccionarOperariosDelConjunto(
       inicio: excluida.fechaObjetivo,
       fin: finReferencia,
-      actualIds: actualIds,
+      actualesIds: excluida.operariosIds,
+      actualesNombres: excluida.operariosNombres,
     );
+    if (nuevos == null || nuevos.isEmpty || !mounted) return;
 
-    if (seleccionado == null) return;
-    if (!mounted) return;
+    final modo = await _preguntarModoCambioOperario();
+    if (modo == null || !mounted) return;
 
-    final nuevoOperarioId = int.tryParse((seleccionado['id'] ?? '').toString());
-    if (nuevoOperarioId == null) {
+    final Map<String, dynamic> res;
+    try {
+      res = await _preventivaApi.reasignarOperarioExcluidaBorrador(
+        nit: widget.nit,
+        excluidaId: excluida.id,
+        nuevosOperariosIds: nuevos,
+        modoAplicacion: _modoAplicacionApi(modo),
+        aplicarADefinicion: modo == _ModoCambioOperario.tambienDefinicion,
+      );
+    } catch (e) {
+      if (!mounted) return;
       AppFeedback.showFromSnackBar(
         context,
-        const SnackBar(
-          content: Text(
-            'No se pudo interpretar el ID del operario seleccionado.',
-          ),
-        ),
+        SnackBar(content: Text(AppError.messageOf(e))),
       );
       return;
     }
-
-    final modo = await _preguntarModoCambioOperario();
-    if (modo == null) return;
-
-    final res = await _preventivaApi.reasignarOperarioExcluidaBorrador(
-      nit: widget.nit,
-      excluidaId: excluida.id,
-      nuevoOperarioId: nuevoOperarioId,
-      modoAplicacion: switch (modo) {
-        _ModoCambioOperario.soloTarea => 'SOLO_TAREA',
-        _ModoCambioOperario.todoBorrador => 'TODO_BORRADOR',
-        _ModoCambioOperario.tambienDefinicion => 'TAMBIEN_DEFINICION',
-      },
-      aplicarADefinicion: modo == _ModoCambioOperario.tambienDefinicion,
-    );
     if (!mounted) return;
     _marcarCambioManual();
 
@@ -4792,7 +4768,7 @@ class _CronogramaPreventivasBorradorPageState
     final definicionActualizada = res['definicionActualizada'] == true;
     final excluidasActualizadas =
         int.tryParse((res['excluidasActualizadas'] ?? 1).toString()) ?? 1;
-    final mensaje = warning.isNotEmpty
+    var mensaje = warning.isNotEmpty
         ? warning
         : definicionActualizada
         ? 'Operario de la excluida cambiado en $excluidasActualizadas tarea(s) del borrador y en la definición.'
@@ -4800,8 +4776,21 @@ class _CronogramaPreventivasBorradorPageState
         ? 'Operario de la excluida cambiado en $excluidasActualizadas tarea(s) de este borrador.'
         : 'Operario de la excluida cambiado solo en esta tarea.';
 
-    AppFeedback.showFromSnackBar(context, SnackBar(content: Text(mensaje)));
     await _cargarDatos();
+    if (!mounted) return;
+
+    // La excluida sigue pendiente: si el filtro de operario la escondería
+    // (p.ej. se filtraba por la persona que se quitó), se quita el filtro
+    // para que no parezca que se perdió.
+    final sigue = _excluidasMes.any((e) => e.id == excluida.id);
+    final visible = _excluidasFiltradas.any((e) => e.id == excluida.id);
+    if (sigue && !visible && _filtroOperario != 'TODOS') {
+      setState(() => _filtroOperario = 'TODOS');
+      _aplicarFiltrosYRefrescar();
+      mensaje =
+          '$mensaje Se quitó el filtro de operario para que la sigas viendo.';
+    }
+    AppFeedback.showFromSnackBar(context, SnackBar(content: Text(mensaje)));
   }
 
   void _mostrarDetalleExcluida(PreventivaExcluidaBorradorModel item) {
@@ -5193,7 +5182,11 @@ class _CronogramaPreventivasBorradorPageState
                 addRow('supervisor', 'Supervisor', supervisorLabel);
                 rows.add(const SizedBox(height: 8));
                 addRow('operarios', 'Operarios', operarios);
-                addRow('maquinaria', 'Maquinaria y herramientas', maquinariaTxt);
+                addRow(
+                  'maquinaria',
+                  'Maquinaria y herramientas',
+                  maquinariaTxt,
+                );
                 rows.add(const SizedBox(height: 8));
                 addRow(
                   'observaciones',

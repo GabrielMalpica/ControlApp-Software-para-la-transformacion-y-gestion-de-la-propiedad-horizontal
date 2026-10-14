@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_application_1/api/reporte_api.dart';
+import 'package:flutter_application_1/model/informe_detallado_opciones.dart';
 import 'package:flutter_application_1/model/reporte_model.dart';
 import 'package:flutter_application_1/pdf/pdf_download.dart';
 import 'package:flutter_application_1/service/app_error.dart';
@@ -23,6 +24,7 @@ import 'package:flutter_application_1/utils/duration_format.dart';
 import 'package:flutter_application_1/utils/evidence_utils.dart';
 import 'package:flutter_application_1/widgets/corregir_cierre_sheet.dart';
 import 'package:flutter_application_1/widgets/evidencia_gallery.dart';
+import 'package:flutter_application_1/widgets/informe_detallado_opciones_sheet.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -39,6 +41,10 @@ class ReportesDashboardPage extends StatefulWidget {
   final bool soloResumenTipos;
   final bool mostrarAnalisisInformes;
   final bool mostrarDescargaInformes;
+
+  /// El informe de gestión (solo gráficas); el detallado siempre se ofrece
+  /// si [mostrarDescargaInformes] está activo.
+  final bool mostrarInformeGestion;
   const ReportesDashboardPage({
     super.key,
     this.conjuntoIdInicial,
@@ -47,6 +53,7 @@ class ReportesDashboardPage extends StatefulWidget {
     this.soloResumenTipos = false,
     this.mostrarAnalisisInformes = true,
     this.mostrarDescargaInformes = true,
+    this.mostrarInformeGestion = true,
   });
 
   @override
@@ -65,12 +72,17 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
   bool get _soloResumenTipos => widget.soloResumenTipos;
   bool get _mostrarAnalisisInformes => widget.mostrarAnalisisInformes;
   bool get _mostrarDescargaInformes => widget.mostrarDescargaInformes;
+  bool get _mostrarInformeGestion => widget.mostrarInformeGestion;
 
   bool _loading = false;
   bool _generandoPdf = false;
   bool _generandoInforme = false;
+  // Mientras el panel de opciones está abierto el botón no responde (doble clic).
+  bool _abriendoOpciones = false;
   int _informeProgreso = 0;
   String _informeMensaje = '';
+  // Informe listo que quedó sin descargar (el usuario salió de la página).
+  InformeMensualEstado? _informeListo;
   String? _error;
 
   ReporteKpis? _kpis;
@@ -133,6 +145,9 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
         ? null
         : ref;
     _cargarTodo();
+    if (_permitirInformesPdf && _mostrarDescargaInformes) {
+      _retomarInformeActivo();
+    }
   }
 
   @override
@@ -1629,24 +1644,98 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
     }
   }
 
+  /// Abre el panel para elegir qué lleva el informe y, si el usuario confirma,
+  /// lo genera. El botón queda bloqueado mientras el panel está abierto.
+  Future<void> _abrirOpcionesInformeDetallado() async {
+    if (_generandoInforme || _abriendoOpciones) return;
+    setState(() => _abriendoOpciones = true);
+    try {
+      final opciones = await mostrarOpcionesInformeDetallado(
+        context,
+        tareas: _tareasDetalle,
+        esAdministrador: esVistaAdministrador,
+      );
+      if (opciones == null || !mounted) return;
+      setState(() => _abriendoOpciones = false);
+      await _generarInformeDetalladoPdfV2(opciones);
+    } finally {
+      if (mounted && _abriendoOpciones) {
+        setState(() => _abriendoOpciones = false);
+      }
+    }
+  }
+
   /// Informe detallado: el servidor arma el PDF en segundo plano y aqui solo se
   /// consulta su avance con peticiones cortas. Asi la app sigue usable mientras
   /// se genera y ninguna conexion se queda abierta esperando (sin timeouts).
-  Future<void> _generarInformeDetalladoPdfV2() async {
+  Future<void> _generarInformeDetalladoPdfV2(
+    OpcionesInformeDetallado opciones,
+  ) {
+    return _correrInforme(() async {
+      try {
+        return await _api.iniciarInformeMensualPdf(
+          desde: _desde,
+          hasta: _hasta,
+          conjuntoId: _esReporteGeneral ? null : _conjuntoId,
+          opciones: opciones,
+        );
+      } on InformeEnCursoException {
+        // Ya habia uno en curso (p. ej. pedido antes de salir de la pagina):
+        // se retoma ese en vez de mostrar un error.
+        final activo = await _api.informeMensualActivo();
+        if (activo == null) rethrow;
+        if (mounted) {
+          AppFeedback.showInfo(
+            context,
+            message:
+                'Ya tenías un informe generándose; te mostramos su avance. Cuando termine puedes pedir otro.',
+          );
+        }
+        return activo;
+      }
+    });
+  }
+
+  /// Al entrar a la página: si quedó un informe en curso se sigue su avance; si
+  /// quedó uno listo sin descargar, se ofrece descargarlo.
+  Future<void> _retomarInformeActivo() async {
+    try {
+      final estado = await _api.informeMensualActivo();
+      if (estado == null || estado.fallo || !mounted || _generandoInforme) {
+        return;
+      }
+      if (estado.listo) {
+        setState(() => _informeListo = estado);
+        return;
+      }
+      await _correrInforme(() async => estado);
+    } catch (_) {
+      // Best effort: si no se puede consultar, el usuario genera uno nuevo.
+    }
+  }
+
+  Future<void> _descargarInformeListo() {
+    final listo = _informeListo;
+    if (listo == null) return Future.value();
+    return _correrInforme(() async => listo);
+  }
+
+  /// Un solo flujo para generar, retomar o descargar: bloquea los botones,
+  /// consulta el avance hasta que el PDF esta listo y lo descarga.
+  Future<void> _correrInforme(
+    Future<InformeMensualEstado> Function() obtener,
+  ) async {
     if (_generandoInforme) return;
 
     setState(() {
       _generandoInforme = true;
+      _informeListo = null;
       _informeProgreso = 0;
       _informeMensaje = 'Enviando solicitud...';
     });
 
     try {
-      var estado = await _api.iniciarInformeMensualPdf(
-        desde: _desde,
-        hasta: _hasta,
-        conjuntoId: _esReporteGeneral ? null : _conjuntoId,
-      );
+      var estado = await obtener();
       _actualizarProgresoInforme(estado);
 
       final limite = DateTime.now().add(const Duration(minutes: 12));
@@ -4072,33 +4161,38 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
               children: [
                 Row(
                   children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: (_kpis == null || _generandoPdf)
-                            ? null
-                            : _generarInformeGestionPdfV2,
-                        icon: _generandoPdf
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.insights),
-                        label: Text(
-                          _generandoPdf
-                              ? 'Generando...'
-                              : 'Gestión (solo gráficas)',
+                    if (_mostrarInformeGestion) ...[
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: (_kpis == null || _generandoPdf)
+                              ? null
+                              : _generarInformeGestionPdfV2,
+                          icon: _generandoPdf
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.insights),
+                          label: Text(
+                            _generandoPdf
+                                ? 'Generando...'
+                                : 'Gestión (solo gráficas)',
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
+                      const SizedBox(width: 12),
+                    ],
                     Expanded(
                       child: ElevatedButton.icon(
-                        onPressed: (_tareasDetalle.isEmpty || _generandoInforme)
+                        onPressed:
+                            (_tareasDetalle.isEmpty ||
+                                _generandoInforme ||
+                                _abriendoOpciones)
                             ? null
-                            : _generarInformeDetalladoPdfV2,
+                            : _abrirOpcionesInformeDetallado,
                         icon: _generandoInforme
                             ? const SizedBox(
                                 width: 18,
@@ -4117,6 +4211,26 @@ class _ReportesDashboardPageState extends State<ReportesDashboardPage> {
                     ),
                   ],
                 ),
+                if (!_generandoInforme && _informeListo != null) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: AppTheme.green),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Tu informe detallado está listo para descargar.',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: _descargarInformeListo,
+                        icon: const Icon(Icons.download),
+                        label: const Text('Descargar'),
+                      ),
+                    ],
+                  ),
+                ],
                 if (_generandoInforme) ...[
                   const SizedBox(height: 12),
                   LinearProgressIndicator(

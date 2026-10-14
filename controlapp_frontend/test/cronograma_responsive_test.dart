@@ -8,6 +8,7 @@ import 'package:flutter_application_1/pages/cronograma/cronograma_hoy_view.dart'
 import 'package:flutter_application_1/pages/cronograma/grilla_horas_view.dart';
 import 'package:flutter_application_1/pages/cronograma/mes_resumen_view.dart';
 import 'package:flutter_application_1/pages/cronograma/mis_actividades_page.dart';
+import 'package:flutter_application_1/pages/cronograma/secciones_actividades.dart';
 import 'package:flutter_application_1/pages/cronograma/semana_trabajador_view.dart';
 import 'package:flutter_application_1/utils/cronograma/agrupar_actividades.dart';
 
@@ -286,5 +287,143 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.textContaining('También quedó cerrada para Operario Todero Uno'), findsOneWidget);
     }
+  });
+  testWidgets('Por horas: tareas seguidas de 10 minutos no se pisan', (tester) async {
+    await _tamano(tester, const Size(1280, 900));
+    var id = 500;
+    TareaModel corta(int h, int m, int dur, String desc) => TareaModel(
+      id: id++,
+      descripcion: desc,
+      fechaInicio: DateTime(2026, 10, 8, h, m),
+      fechaFin: DateTime(2026, 10, 8, h, m).add(Duration(minutes: dur)),
+      duracionMinutos: dur,
+      borrador: false,
+      estado: 'ASIGNADA',
+      tipo: 'PREVENTIVA',
+      ubicacionId: 1,
+      elementoId: 1,
+      ubicacionNombre: 'Piso 1',
+      elementoNombre: 'Ascensor',
+      operariosIds: const ['9'],
+      operariosNombres: const ['Yuli Palma'],
+      categoriaNombre: 'Aseo',
+      categoriaColorHex: '#1F6FB2',
+    );
+    // Como la semana de Yuli: actividades de 10 a 20 minutos una tras otra.
+    final dia = [
+      corta(17, 0, 10, 'Limpiar y desinfectar cabina'),
+      corta(17, 10, 30, 'Barrido, trapeado, limpieza de barandas'),
+      corta(17, 40, 30, 'Lavado y desinfección de baños'),
+      corta(21, 15, 10, 'Barrido, trapeado'),
+      corta(21, 25, 20, 'Barrido, trapeado'),
+      corta(21, 45, 15, 'Limpieza y desinfección'),
+      corta(22, 0, 15, 'Limpieza y desinfección'),
+      corta(22, 15, 10, 'Barrido, trapeado, limpieza de mobiliario'),
+    ];
+    await tester.pumpWidget(
+      _app(
+        CustomScrollView(
+          slivers: [
+            GrillaHorasSliver(
+              columnas: columnasPorDia(
+                dias: [DateTime(2026, 10, 8)],
+                tareas: dia,
+                ahora: _ahora,
+              ),
+              ahora: _ahora,
+              seleccionadaId: null,
+              onAbrir: (_) {},
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    final tarjetas = find.descendant(
+      of: find.byType(GrillaHorasSliver),
+      matching: find.byType(InkWell),
+    );
+    // Las que quedan fuera de la pantalla también cuentan: se recorre todo.
+    final rects = <Rect>[];
+    for (final e in tarjetas.evaluate()) {
+      final box = e.renderObject! as RenderBox;
+      rects.add(box.localToGlobal(Offset.zero) & box.size);
+    }
+    expect(rects.length, dia.length);
+    for (var i = 0; i < rects.length; i++) {
+      // Altura legible aunque la actividad dure 10 minutos.
+      expect(rects[i].height, greaterThanOrEqualTo(36), reason: 'tarjeta $i');
+      for (var j = i + 1; j < rects.length; j++) {
+        final enX = rects[i].left < rects[j].right - 1 && rects[j].left < rects[i].right - 1;
+        final enY = rects[i].top < rects[j].bottom - 0.5 && rects[j].top < rects[i].bottom - 0.5;
+        expect(enX && enY, isFalse, reason: 'tarjetas $i y $j se pisan');
+      }
+    }
+  });
+
+  testWidgets('Filtro de trabajador: solo su fila y su sección, aunque tenga compartidas', (tester) async {
+    await _tamano(tester, const Size(1280, 900));
+    final semana = _semana();
+    // "Lavado de pisos del lobby" es compartida entre los trabajadores 1 y 2.
+    await tester.pumpWidget(
+      _app(
+        CustomScrollView(
+          slivers: [
+            SemanaTrabajadorSliver(
+              dias: [for (var d = 5; d <= 10; d++) DateTime(2026, 10, d)],
+              tareas: semana.where((t) => tareaEsDe(t, '2')).toList(),
+              base: semana.where((t) => tareaEsDe(t, '2')).toList(),
+              trabajadores: trabajadoresDe(semana).where((w) => w.id == '2').toList(),
+              ahora: _ahora,
+              seleccionadaId: null,
+              onAbrir: (_) {},
+              onElegirTrabajador: (_) {},
+              festivo: (_) => null,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(EncabezadoTrabajador), findsOneWidget);
+    expect(
+      tester.widget<EncabezadoTrabajador>(find.byType(EncabezadoTrabajador)).trabajador.id,
+      '2',
+    );
+
+    final delDia = semana
+        .where((t) => mismoDia(t.fechaInicio, _ahora) && tareaEsDe(t, '2'))
+        .toList();
+    await tester.pumpWidget(
+      _app(
+        CronogramaHoyView(
+          dia: _ahora,
+          ahora: _ahora,
+          base: delDia,
+          grupo: null,
+          onGrupo: (_) {},
+          orden: OrdenHoy.porTrabajador,
+          onOrden: (_) {},
+          seleccionadaId: null,
+          onAbrir: (_) {},
+          onElegirTrabajador: (_) {},
+          cabecera: const SizedBox.shrink(),
+          trabajadorSel: '2',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byType(EncabezadoTrabajador).first,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final secciones = tester
+        .widgetList<EncabezadoTrabajador>(find.byType(EncabezadoTrabajador, skipOffstage: false))
+        .map((e) => e.trabajador.id)
+        .toSet();
+    expect(secciones, {'2'});
   });
 }

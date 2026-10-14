@@ -285,7 +285,10 @@ class _JefeOperacionesPendientesPageState
                   allowedExtensions: const ['jpg', 'jpeg', 'png'],
                 );
                 if (picked.isEmpty) return;
-                setModal(() => archivos.addAll(picked));
+                final preparados = await EvidenciaCamara.prepararDeGaleria(
+                  picked,
+                );
+                setModal(() => archivos.addAll(preparados));
                 return;
               }
 
@@ -327,7 +330,10 @@ class _JefeOperacionesPendientesPageState
                 allowedExtensions: const ['jpg', 'jpeg', 'png', 'pdf'],
               );
               if (picked.isEmpty) return;
-              setModal(() => archivos.addAll(picked));
+              final preparados = await EvidenciaCamara.prepararDeGaleria(
+                picked,
+              );
+              setModal(() => archivos.addAll(preparados));
             }
 
             void removeArchivo(int i) => setModal(() => archivos.removeAt(i));
