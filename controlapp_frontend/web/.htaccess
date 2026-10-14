@@ -1,0 +1,32 @@
+# Hostinger. Este archivo vive en controlapp_frontend/web/ y Flutter lo copia
+# a build/web en cada `flutter build web`: se sube junto con lo demás y no hay
+# que editarlo a mano en el servidor.
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Si el archivo o carpeta existe, lo sirve normal
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Todo lo demás va a index.html (para rutas de Flutter)
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Actualización automática de la app (docs/actualizacion-web.md). Estos
+# archivos tienen el mismo nombre en cada versión; Hostinger los guardaba 7
+# días en caché (max-age=604800), así que el navegador y el CDN seguían
+# entregando la versión vieja. Con "no-cache" se pueden guardar, pero se
+# revisan con el servidor cada vez: si no cambiaron, la respuesta es un 304
+# de pocos bytes; si cambiaron, llega la versión nueva.
+<FilesMatch "^(index\.html|flutter_bootstrap\.js|flutter\.js|main\.dart\.js|manifest\.json|version\.json|AssetManifest\.bin|AssetManifest\.bin\.json|AssetManifest\.json|FontManifest\.json|MaterialIcons-Regular\.otf|CupertinoIcons\.ttf|NOTICES)$">
+  <IfModule mod_expires.c>
+    ExpiresActive Off
+  </IfModule>
+  <IfModule mod_headers.c>
+    Header set Cache-Control "no-cache"
+    Header unset Expires
+  </IfModule>
+</FilesMatch>

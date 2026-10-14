@@ -169,6 +169,11 @@ class AsistenciaApi {
     return RegistroAsistenciaDia.fromJson(data);
   }
 
+  Future<void> eliminarRegistro(int id) async {
+    final resp = await _client.delete('$_base/registro/$id');
+    await _decode(resp);
+  }
+
   Future<int> bulkUpsertRegistro({
     required List<String> operarioIds,
     required String fechaInicio,

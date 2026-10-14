@@ -3,30 +3,32 @@
     "short_name": "ControlApp",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "ControlApp",
+    "background_color": "#FFFFFF",
+    "theme_color": "#0C6B43",
+    "description": "ControlApp - Control Limpieza S.A.S.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
         {
-            "src": "icons/Icon-192.png",
+            "src": "icons/control-192.png",
             "sizes": "192x192",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any"
         },
         {
-            "src": "icons/Icon-512.png",
+            "src": "icons/control-512.png",
             "sizes": "512x512",
-            "type": "image/png"
+            "type": "image/png",
+            "purpose": "any"
         },
         {
-            "src": "icons/Icon-maskable-192.png",
+            "src": "icons/control-maskable-192.png",
             "sizes": "192x192",
             "type": "image/png",
             "purpose": "maskable"
         },
         {
-            "src": "icons/Icon-maskable-512.png",
+            "src": "icons/control-maskable-512.png",
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "maskable"

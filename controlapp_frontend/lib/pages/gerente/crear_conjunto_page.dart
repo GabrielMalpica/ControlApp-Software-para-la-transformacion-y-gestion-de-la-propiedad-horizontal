@@ -719,8 +719,9 @@ class _CrearConjuntoPageState extends State<CrearConjuntoPage> {
                         decoration: const InputDecoration(
                           labelText: 'Ubicación en Google Maps (enlace)',
                           helperText:
-                              'Comparte el lugar desde Google Maps y pega el enlace. '
-                              'El QR de asistencia solo se podrá escanear en el conjunto.',
+                            'Comparte el lugar desde Google Maps y pega el enlace. '
+                            'Es necesario para habilitar la asistencia por QR y '
+                            'evitar marcaciones desde otro lugar.',
                           helperMaxLines: 3,
                           border: OutlineInputBorder(),
                         ),

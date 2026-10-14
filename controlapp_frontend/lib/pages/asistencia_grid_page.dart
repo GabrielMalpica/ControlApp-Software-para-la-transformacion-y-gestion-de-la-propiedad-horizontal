@@ -46,6 +46,10 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
     'asistencia.registrar_manual',
   );
 
+  bool get _puedeEliminar => PermissionService.instance.can(
+    'asistencia.eliminar_registro',
+  );
+
   bool get _puedeExportar => PermissionService.instance.can('asistencia.exportar');
 
   bool _exportando = false;
@@ -147,9 +151,11 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
     AsistenciaDiaCelda dia,
   ) async {
     if (dia.registro != null) {
-      final editar = await _mostrarDetalleCelda(fila, dia);
-      if (editar == true && _puedeEditar) {
+      final accion = await _mostrarDetalleCelda(fila, dia);
+      if (accion == _AccionDetalleCelda.editar && _puedeEditar) {
         await _abrirEditor(fila, dia);
+      } else if (accion == _AccionDetalleCelda.eliminar && _puedeEliminar) {
+        await _eliminarRegistro(fila, dia);
       }
       return;
     }
@@ -189,6 +195,51 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
       AppFeedback.showError(
         context,
         message: AppError.messageOf(e, fallback: 'No se pudo guardar.'),
+      );
+    }
+  }
+
+  Future<void> _eliminarRegistro(
+    AsistenciaOperarioFila fila,
+    AsistenciaDiaCelda dia,
+  ) async {
+    final registro = dia.registro;
+    if (registro == null) return;
+
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Eliminar asistencia'),
+        content: Text(
+          'Se eliminará el registro de ${fila.nombre} del ${dia.fecha}, '
+          'incluidas sus horas de entrada y salida. Si lo haces para corregir '
+          'una entrada anticipada, el próximo escaneo QR volverá a iniciar '
+          'como entrada. ¿Quieres continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmado != true) return;
+
+    try {
+      await _api.eliminarRegistro(registro.id);
+      if (!mounted) return;
+      AppFeedback.showInfo(context, message: 'Asistencia eliminada.');
+      await _cargar();
+    } catch (e) {
+      if (!mounted) return;
+      AppFeedback.showError(
+        context,
+        message: AppError.messageOf(e, fallback: 'No se pudo eliminar la asistencia.'),
       );
     }
   }
@@ -242,12 +293,12 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
     );
   }
 
-  Future<bool?> _mostrarDetalleCelda(
+  Future<_AccionDetalleCelda?> _mostrarDetalleCelda(
     AsistenciaOperarioFila fila,
     AsistenciaDiaCelda dia,
   ) {
     final registro = dia.registro;
-    return showDialog<bool>(
+    return showDialog<_AccionDetalleCelda>(
       context: context,
       builder: (_) => AlertDialog(
         title: Text('${fila.nombre} · ${dia.fecha}'),
@@ -287,13 +338,20 @@ class _AsistenciaGridPageState extends State<AsistenciaGridPage>
               ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(context),
             child: const Text('Cerrar'),
           ),
           if (_puedeEditar)
             ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () => Navigator.pop(context, _AccionDetalleCelda.editar),
               child: const Text('Editar'),
+            ),
+          if (_puedeEliminar)
+            TextButton.icon(
+              onPressed: () => Navigator.pop(context, _AccionDetalleCelda.eliminar),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Eliminar asistencia'),
+              style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
             ),
         ],
       ),
@@ -850,6 +908,8 @@ class _EdicionCelda {
   final String? observacion;
   _EdicionCelda(this.conceptoId, this.observacion);
 }
+
+enum _AccionDetalleCelda { editar, eliminar }
 
 class _EditorCeldaSheet extends StatefulWidget {
   final AsistenciaOperarioFila fila;

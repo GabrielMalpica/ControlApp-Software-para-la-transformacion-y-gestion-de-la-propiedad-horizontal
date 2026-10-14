@@ -636,7 +636,7 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
             'Ubicación (asistencia)',
             c.tieneUbicacion
                 ? 'Configurada · radio ${c.radioAsistenciaMetros} m'
-                : 'Sin configurar (el QR no valida distancia)',
+                : 'Sin configurar (asistencia QR bloqueada)',
           ),
           _infoRow('Estado', c.activo ? 'Activo' : 'Inactivo'),
           const SizedBox(height: 10),
@@ -714,7 +714,8 @@ class _DetalleConjuntoPageState extends State<DetalleConjuntoPage> {
             child: Text(
               'Abre el conjunto en Google Maps, toca Compartir y pega el enlace. '
               'Con esto el QR de asistencia solo se puede escanear estando en el '
-              'conjunto. Déjalo vacío para no validar la ubicación.',
+              'conjunto. Es necesaria para habilitar la asistencia por QR; '
+              'si falta, el registro se bloqueará.',
               style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
             ),
           ),
