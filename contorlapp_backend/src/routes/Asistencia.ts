@@ -3,6 +3,7 @@ import { Router } from "express";
 import { AsistenciaController } from "../controller/AsistenciaController";
 import { authRequired } from "../middlewares/auth.middleware";
 import { requirePermission } from "../middlewares/permission.middleware";
+import { requireRoles } from "../middlewares/role.middleware";
 import {
   requireBodyConjuntoScope,
   requireConjuntoScope,
@@ -53,6 +54,13 @@ router.get("/exportar", requirePermission("asistencia.exportar"), ctrl.exportarE
 
 // Registro manual (falta, permiso, vacaciones, etc)
 router.put("/registro", requirePermission("asistencia.registrar_manual"), ctrl.upsertRegistro);
+router.delete(
+  "/registro/:id",
+  requireRoles("gerente"),
+  requirePermission("asistencia.eliminar_registro"),
+  requireResourceScope("registroAsistencia", "id"),
+  ctrl.eliminarRegistro,
+);
 router.post(
   "/registro/bulk",
   requirePermission("asistencia.registrar_manual"),

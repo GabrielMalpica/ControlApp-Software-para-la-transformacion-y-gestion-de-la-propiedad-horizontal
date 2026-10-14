@@ -12,6 +12,7 @@ const excelService = new AsistenciaExcelService(prisma);
 const ConjuntoParam = z.object({ nit: z.string().min(1) });
 const ConceptoParam = z.object({ id: z.coerce.number().int().positive() });
 const TurnoParam = z.object({ id: z.coerce.number().int().positive() });
+const RegistroParam = z.object({ id: z.coerce.number().int().positive() });
 
 const PeriodoQuery = z.object({
   conjuntoId: z.string().min(1).optional(),
@@ -239,6 +240,21 @@ export class AsistenciaController {
         actorId: req.user?.sub ?? null,
       });
       res.json(registro);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  eliminarRegistro: RequestHandler = async (req, res, next) => {
+    try {
+      const empresaId = await empresaIdAutenticada(req);
+      const { id } = RegistroParam.parse(req.params);
+      const resultado = await service.eliminarRegistro({
+        empresaId,
+        id,
+        actor: { id: req.user?.sub ?? null, rol: req.user?.rol ?? null },
+      });
+      res.json(resultado);
     } catch (err) {
       next(err);
     }

@@ -410,6 +410,13 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
       "Permite asignar o corregir el concepto de un dia (falta, permiso, vacaciones, incapacidad, etc).",
   },
   {
+    key: "asistencia.eliminar_registro",
+    module: "asistencia",
+    moduleLabel: "Asistencia",
+    label: "Eliminar registros de asistencia",
+    description: "Permite al gerente eliminar un registro diario de asistencia o una novedad manual.",
+  },
+  {
     key: "asistencia.qr.gestionar",
     module: "asistencia",
     moduleLabel: "Asistencia",

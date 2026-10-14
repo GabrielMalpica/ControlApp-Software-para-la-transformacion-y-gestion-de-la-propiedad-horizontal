@@ -166,9 +166,8 @@ function aNumero(valor: unknown): number | null {
 /**
  * Valida la ubicación de un registro de asistencia por QR. El dispositivo
  * siempre tiene que mandarla (es la trazabilidad del registro): sin ella lanza
- * un error y no se registra nada. Si además el conjunto tiene ubicación
- * configurada, exige estar en el sitio; si no la tiene, se guarda la del
- * dispositivo sin comparar distancia (`verificada: false`). La precisión
+ * un error y no se registra nada. Si el conjunto no tiene ubicación, devuelve
+ * `verificada: false`; el flujo de check-in debe rechazar ese caso. La precisión
  * reportada por el GPS amplía un poco el radio (máx. 100 m) para no rechazar a
  * quien sí está en el sitio.
  */
@@ -187,7 +186,9 @@ export function validarUbicacionEnConjunto(params: {
 
   const lat = aNumero(params.conjunto.latitud);
   const lng = aNumero(params.conjunto.longitud);
-  if (lat == null || lng == null) return { verificada: false, distanciaMetros: null };
+  if (lat == null || lng == null || !coordenadasValidas(lat, lng)) {
+    return { verificada: false, distanciaMetros: null };
+  }
 
   const distancia = distanciaMetros(
     { latitud: lat, longitud: lng },

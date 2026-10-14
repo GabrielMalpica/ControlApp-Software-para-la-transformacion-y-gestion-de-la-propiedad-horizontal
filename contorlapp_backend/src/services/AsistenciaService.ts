@@ -365,9 +365,9 @@ export class AsistenciaService {
   /* ------------------------------- check-in -------------------------------- */
 
   /**
-   * Valida el QR del conjunto y que el dispositivo esté en el sitio (si el
-   * conjunto tiene ubicación configurada). Compartido por el check-in de
-   * operarios y de supervisores.
+   * Valida el QR del conjunto y que el dispositivo esté en el sitio. Si el
+   * conjunto no tiene coordenadas válidas, también se rechaza el registro.
+   * Compartido por el check-in de operarios y de supervisores.
    */
   private async validarQrYUbicacion(input: {
     conjuntoId: string;
@@ -396,15 +396,20 @@ export class AsistenciaService {
       throw makeHttpError(400, "El codigo QR no es valido o ya fue reemplazado. Pide uno nuevo en el sitio.");
     }
 
-    // Toda asistencia por QR queda con la ubicación del dispositivo, y si el
-    // conjunto tiene ubicación no se deja registrar desde otro lugar: así
-    // toda asistencia registrada se hizo en el sitio de trabajo.
+    // Toda asistencia por QR requiere ubicación del dispositivo y coordenadas
+    // configuradas para el conjunto; sin estas últimas no se permite registrar.
     const ubicacion = validarUbicacionEnConjunto({
       conjunto,
       latitud: input.latitud,
       longitud: input.longitud,
       precisionMetros: input.precisionMetros,
     });
+    if (!ubicacion.verificada) {
+      throw makeHttpError(
+        409,
+        "La asistencia por QR está deshabilitada porque este conjunto no tiene una ubicación válida configurada. Pídele al gerente que agregue su ubicación exacta de Google Maps.",
+      );
+    }
     return { conjunto, ubicacion };
   }
 
@@ -726,6 +731,64 @@ export class AsistenciaService {
     });
 
     return serializeRegistro(registro);
+  }
+
+  async eliminarRegistro(input: {
+    empresaId: string;
+    id: number;
+    actor: { id?: string | null; rol?: string | null };
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const registro = await tx.registroAsistencia.findFirst({
+        where: { id: input.id, operario: { empresaId: input.empresaId } },
+        select: {
+          id: true,
+          operarioId: true,
+          conjuntoId: true,
+          fecha: true,
+          conceptoId: true,
+          horaEntrada: true,
+          horaSalida: true,
+          latitudEntrada: true,
+          longitudEntrada: true,
+          latitudSalida: true,
+          longitudSalida: true,
+          origen: true,
+          observacion: true,
+          registradoPorId: true,
+          actualizadoPorId: true,
+          creadoEn: true,
+          actualizadoEn: true,
+        },
+      });
+      if (!registro) throw makeHttpError(404, "Registro de asistencia no encontrado");
+
+      await tx.registroAsistencia.delete({ where: { id: registro.id } });
+      await new AuditoriaService(tx).registrarEstricto({
+        modulo: "asistencia",
+        entidad: "RegistroAsistencia",
+        entidadId: registro.id,
+        accion: "ELIMINAR",
+        empresaId: input.empresaId,
+        conjuntoId: registro.conjuntoId,
+        actor: { id: input.actor.id ?? null, rol: input.actor.rol ?? null },
+        descripcion: `Registro de asistencia eliminado para ${registro.fecha.toISOString().slice(0, 10)}`,
+        datosAntes: {
+          ...registro,
+          fecha: registro.fecha.toISOString().slice(0, 10),
+          horaEntrada: registro.horaEntrada?.toISOString() ?? null,
+          horaSalida: registro.horaSalida?.toISOString() ?? null,
+          latitudEntrada: registro.latitudEntrada?.toString() ?? null,
+          longitudEntrada: registro.longitudEntrada?.toString() ?? null,
+          latitudSalida: registro.latitudSalida?.toString() ?? null,
+          longitudSalida: registro.longitudSalida?.toString() ?? null,
+          creadoEn: registro.creadoEn.toISOString(),
+          actualizadoEn: registro.actualizadoEn.toISOString(),
+        },
+      });
+
+      return { ok: true };
+    });
   }
 
   async bulkUpsertRegistro(input: {
