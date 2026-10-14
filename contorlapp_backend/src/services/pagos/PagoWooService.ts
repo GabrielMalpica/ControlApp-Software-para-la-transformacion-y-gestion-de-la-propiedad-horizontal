@@ -1,4 +1,4 @@
-import { CanalPago, type PagoCobro, type PrismaClient } from "@prisma/client";
+import { CanalPago, OrigenVerificacionPago, type PagoCobro, type PrismaClient } from "@prisma/client";
 import crypto from "crypto";
 import { z } from "zod";
 import { commerceHttpError } from "../CommerceAccessService";
@@ -18,6 +18,7 @@ type WooOrderPago = {
   currency?: string;
   total?: string;
   order_key?: string;
+  transaction_id?: string;
 };
 
 // Estados de la orden en los que todavia tiene sentido cobrarla / marcarla
@@ -67,7 +68,7 @@ export class PagoWooService {
 
   private async leerOrden(wooOrderId: string) {
     return wooFetch<WooOrderPago>(
-      buildWooUrl("rest", `/orders/${wooOrderId}`, { _fields: "id,status,currency,total,order_key" }),
+      buildWooUrl("rest", `/orders/${wooOrderId}`, { _fields: "id,status,currency,total,order_key,transaction_id" }),
       {},
       { requireAuth: true, timeoutMs: 8_000, failureMessage: "No pudimos consultar la orden en la tienda" },
     );
@@ -126,7 +127,7 @@ export class PagoWooService {
 
   async verificarCobro(referenceCode: string) {
     const cobro = await this.cobroWoo(referenceCode);
-    return serializarCobroWoo(await this.pagos.verificarCobro(cobro.id));
+    return serializarCobroWoo(await this.pagos.verificarCobro(cobro.id, OrigenVerificacionPago.USUARIO));
   }
 
   /** Confirmador del canal (dentro de la transaccion del cobro): solo hay
@@ -142,10 +143,18 @@ export class PagoWooService {
    * sus correos). Si la orden ya no es cobrable -cancelada mientras el cliente
    * pagaba, por ejemplo- NO se toca: el cobro queda huerfano y se alerta.
    * Lanza si Woo no responde, para que PagoService lo reintente.
+   *
+   * Puede correr mas de una vez (reintento tras un fallo o una caida): si la
+   * orden ya quedo pagada con ESTE cobro en un intento anterior, solo falta
+   * el aviso al cliente -no es un huerfano-.
    */
   async posConfirmacion(cobro: PagoCobro): Promise<void> {
     if (!cobro.wooOrderId) return;
     const orden = await this.leerOrden(cobro.wooOrderId);
+    if (orden.transaction_id === cobro.referenceCode && !ESTADOS_WOO_COBRABLES.has(orden.status)) {
+      await this.dominio.notificarPagoConfirmado(cobro);
+      return;
+    }
     if (!ESTADOS_WOO_COBRABLES.has(orden.status)) {
       await this.pagos.marcarHuerfano(
         cobro.id,

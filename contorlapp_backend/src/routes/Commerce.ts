@@ -4,6 +4,7 @@ import { CommerceLifecycleController } from "../controller/CommerceLifecycleCont
 import { CommerceOrderController } from "../controller/CommerceOrderController";
 import { CommercePointsController } from "../controller/CommercePointsController";
 import { CommerceWebhookController } from "../controller/CommerceWebhookController";
+import { FactusWebhookController } from "../controller/FactusWebhookController";
 import { PagoAdminController } from "../controller/PagoAdminController";
 import { PagoWooController } from "../controller/PagoWooController";
 import { requirePagosWooHmac } from "../middlewares/pagos-woo-hmac.middleware";
@@ -19,6 +20,7 @@ const orderController = new CommerceOrderController();
 const lifecycleController = new CommerceLifecycleController();
 const pointsController = new CommercePointsController();
 const webhookController = new CommerceWebhookController();
+const factusWebhookController = new FactusWebhookController();
 const pagoWooController = new PagoWooController();
 const pagoAdminController = new PagoAdminController();
 const strictMutationLimit = distributedRateLimit({
@@ -45,12 +47,24 @@ const pagoVerificarLimit = distributedRateLimit({
   key: (req) => `${req.user?.sub ?? req.ip ?? "sin-ip"}:${req.params.pedidoId}`,
   message: "Espera unos segundos antes de volver a verificar el pago",
 });
+// "Verificar con Factus" desde el panel: una consulta cada 10 s por cobro.
+const pagoAdminVerificarLimit = distributedRateLimit({
+  name: "commerce:pago-admin-verificar",
+  windowMs: 10 * 1000,
+  limit: 1,
+  key: (req) => `${req.user?.sub ?? req.ip ?? "sin-ip"}:${req.params.cobroId}`,
+  message: "Espera unos segundos antes de volver a verificar este cobro",
+});
 
 // Sin authRequired: WooCommerce se autentica con su propia firma HMAC
 // (verificada dentro del controller), no con un Bearer de ControlApp. Ver
 // isPublicRequest() en auth.middleware.ts, que exime justo esta ruta del
 // guard generico.
 router.post("/webhooks/woocommerce", webhookController.ordenActualizada);
+
+// Webhook de Factus Pay: sin JWT, la llave viaja en el query string y se
+// valida en el servicio (ver FactusWebhookService e isPublicRequest).
+router.post("/webhooks/factus-pay", factusWebhookController.recibir);
 
 // Plugin controlapp-factus-pay de la tienda: sin JWT, firma HMAC (ver
 // requirePagosWooHmac e isPublicRequest en auth.middleware.ts).
@@ -140,6 +154,7 @@ router.post(
 const equipoPagos = [authRequired, requireRoles("gerente", "jefe_operaciones")];
 router.get("/pagos", ...equipoPagos, requirePermission("comercio.pedidos.ver"), pagoAdminController.listar);
 router.get("/pagos/conteo", ...equipoPagos, requirePermission("comercio.pedidos.ver"), pagoAdminController.conteo);
+router.get("/pagos/salud", ...equipoPagos, requirePermission("comercio.pedidos.ver"), pagoAdminController.salud);
 router.get(
   "/pagos/reportes/recaudo",
   ...equipoPagos,
@@ -160,6 +175,13 @@ router.post(
   pagoAdminController.conciliar,
 );
 router.get("/pagos/:cobroId", ...equipoPagos, requirePermission("comercio.pedidos.ver"), pagoAdminController.obtener);
+router.post(
+  "/pagos/:cobroId/verificar",
+  ...equipoPagos,
+  requirePermission("comercio.pedidos.gestionar"),
+  pagoAdminVerificarLimit,
+  pagoAdminController.verificar,
+);
 router.post(
   "/pagos/:cobroId/resolver",
   ...equipoPagos,

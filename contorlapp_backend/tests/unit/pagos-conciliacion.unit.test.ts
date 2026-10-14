@@ -20,6 +20,7 @@ function armar(opts: {
   locales?: Record<string, any>;
   pagadosLocales?: any[];
   sinSincronizar?: any[];
+  esSandbox?: boolean;
 }) {
   const prisma: any = {
     pagoCobro: {
@@ -39,7 +40,8 @@ function armar(opts: {
     return { items: opts.paginas[idx] ?? [], page: idx + 1, lastPage: opts.paginas.length };
   });
   const alertar = jest.fn().mockResolvedValue(undefined);
-  return { service: new PagoConciliacionService(prisma, pagos as any, listar as any, alertar, 10), pagos, listar, alertar };
+  const service = new PagoConciliacionService(prisma, pagos as any, listar as any, alertar, 10, () => !!opts.esSandbox);
+  return { service, pagos, listar, alertar };
 }
 
 describe("PagoConciliacionService", () => {
@@ -82,7 +84,7 @@ describe("PagoConciliacionService", () => {
       pagadosLocales: [local()],
     });
     await service.ejecutar();
-    expect(pagos.reabrirYVerificar).toHaveBeenCalledWith(1);
+    expect(pagos.reabrirYVerificar).toHaveBeenCalledWith(1, "CONCILIACION");
   });
 
   test("recaudo con nuestro prefijo que no existe aqui: alerta; con otro prefijo se ignora", async () => {
@@ -91,6 +93,13 @@ describe("PagoConciliacionService", () => {
     expect(r.anomalias).toHaveLength(1);
     expect(r.anomalias[0]).toMatchObject({ tipo: "SIN_COBRO_LOCAL", referenceCode: "WC-zzz" });
     expect(alertar).toHaveBeenCalledTimes(1);
+  });
+
+  test("en el sandbox, un pagado sin cobro local es una prueba de otro entorno: no se reporta", async () => {
+    const { service, alertar } = armar({ paginas: [[remoto("CA-prueba-local")]], esSandbox: true });
+    const r = await service.ejecutar();
+    expect(r.anomalias).toEqual([]);
+    expect(alertar).not.toHaveBeenCalled();
   });
 
   test("monto distinto entre Factus y lo cobrado", async () => {

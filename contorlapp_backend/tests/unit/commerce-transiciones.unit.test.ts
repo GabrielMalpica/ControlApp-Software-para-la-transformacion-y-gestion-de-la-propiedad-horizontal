@@ -5,6 +5,7 @@ jest.mock("../../src/services/wooFetch", () => ({
 }));
 
 import { CommerceLifecycleService } from "../../src/services/CommerceLifecycleService";
+import { pagoService } from "../../src/services/pagos/pagoServiceInstance";
 import { wooFetch } from "../../src/services/wooFetch";
 
 const E = EstadoPedidoInterno;
@@ -147,7 +148,11 @@ describe("avisos al cliente durante el envio", () => {
       },
       pedidoAppEstadoHistorico: { create: jest.fn().mockResolvedValue({}) },
     };
-    const prisma = { $transaction: jest.fn(async (fn: (t: any) => unknown) => fn(tx)) };
+    const prisma = {
+      $transaction: jest.fn(async (fn: (t: any) => unknown) => fn(tx)),
+      // Cobros de Factus vivos del pedido (se consultan antes de cancelar).
+      pagoCobro: { findMany: jest.fn().mockResolvedValue([]) },
+    };
     const service = new CommerceLifecycleService(prisma as never);
     (service as any).access = {
       getActor: jest.fn().mockResolvedValue(actor(Rol.gerente)),
@@ -198,7 +203,11 @@ describe("el estado de la app se refleja en WordPress", () => {
       pedidoApp: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       pedidoAppEstadoHistorico: { create: jest.fn().mockResolvedValue({}) },
     };
-    const prisma = { $transaction: jest.fn(async (fn: (t: any) => unknown) => fn(tx)) };
+    const prisma = {
+      $transaction: jest.fn(async (fn: (t: any) => unknown) => fn(tx)),
+      // Cobros de Factus vivos del pedido (se consultan antes de cancelar).
+      pagoCobro: { findMany: jest.fn().mockResolvedValue([]) },
+    };
     const service = new CommerceLifecycleService(prisma as never);
     (service as any).access = {
       getActor: jest.fn().mockResolvedValue(actor(rol)),
@@ -212,7 +221,7 @@ describe("el estado de la app se refleja en WordPress", () => {
     (service as any).points = { applyAccumulation: jest.fn().mockResolvedValue(undefined) };
     const crearParaUsuarios = jest.fn().mockResolvedValue(undefined);
     (service as any).notificaciones = { crearParaUsuarios };
-    return { service, crearParaUsuarios };
+    return { service, crearParaUsuarios, prisma, tx };
   }
 
   const cambiosEnWoo = () =>
@@ -256,6 +265,36 @@ describe("el estado de la app se refleja en WordPress", () => {
     expect(cambiosEnWoo()).toEqual([
       { url: "https://tienda.test/orders/2395", body: { status: "cancelled" } },
     ]);
+  });
+
+  test("antes de cancelar un pedido con un QR vivo se pregunta a Factus: si ya lo pagaron, no se cancela", async () => {
+    const { service, prisma, tx } = servicioConWoo(Rol.administrador, E.PENDIENTE_PAGO);
+    jest.spyOn(service as any, "loadPedido").mockResolvedValue(pedido(E.PENDIENTE_PAGO, { wooOrderId: "2395" }));
+    prisma.pagoCobro.findMany.mockResolvedValue([{ id: 7 }]);
+    const verificar = jest.spyOn(pagoService, "verificarCobro").mockResolvedValue({ estado: "PAGADO" } as never);
+
+    await expect(service.transicionar("administrador-1", 41, { estadoDestino: E.CANCELADO })).rejects.toMatchObject({
+      status: 409,
+    });
+    expect(verificar).toHaveBeenCalledWith(7, "USUARIO");
+    expect(tx.pedidoApp.updateMany).not.toHaveBeenCalled();
+    verificar.mockRestore();
+  });
+
+  test("si Factus dice que el QR sigue sin pagar, el pedido se cancela normal", async () => {
+    const { service, prisma, tx } = servicioConWoo(Rol.administrador, E.PENDIENTE_PAGO);
+    jest.spyOn(service as any, "loadPedido").mockResolvedValue(pedido(E.PENDIENTE_PAGO, { wooOrderId: "2395" }));
+    jest.spyOn(service as any, "loadPedidoRecepcion").mockResolvedValue(pedido(E.PENDIENTE_PAGO, { wooOrderId: "2395" }));
+    prisma.pagoCobro.findMany.mockResolvedValue([{ id: 7 }]);
+    const verificar = jest.spyOn(pagoService, "verificarCobro").mockResolvedValue({ estado: "PENDIENTE" } as never);
+
+    await service.transicionar("administrador-1", 41, { estadoDestino: E.CANCELADO });
+
+    expect(tx.pedidoApp.updateMany).toHaveBeenCalledWith({
+      where: { id: 41, estado: E.PENDIENTE_PAGO },
+      data: { estado: E.CANCELADO },
+    });
+    verificar.mockRestore();
   });
 
   test("un pedido sin id de WooCommerce no llama a la tienda", async () => {

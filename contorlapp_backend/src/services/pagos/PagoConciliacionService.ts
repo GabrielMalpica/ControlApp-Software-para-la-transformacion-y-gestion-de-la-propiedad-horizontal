@@ -1,4 +1,4 @@
-import { EstadoCobro, type PagoCobro, type PrismaClient } from "@prisma/client";
+import { EstadoCobro, OrigenVerificacionPago, type PagoCobro, type PrismaClient } from "@prisma/client";
 import type { FactusCollection, FactusCollectionPage } from "./FactusPayClient";
 import type { PagoService } from "./PagoService";
 
@@ -20,8 +20,32 @@ export type ReporteConciliacion = {
   /** false = se corto en el tope de paginas: no se hicieron las comprobaciones "local pagado que Factus no lista". */
   completo: boolean;
   remotosPagados: number;
+  /** Cobros pagados de los ultimos 3 dias confirmados de nuevo con Factus (uno por uno). */
+  verificadosRecientes?: number;
+  /** Cobros pendientes con el QR vencido que se cerraron (sin pago en Factus). */
+  cerradosPorVencimiento?: number;
   anomalias: AnomaliaConciliacion[];
 };
+
+export type OpcionesConciliacion = {
+  /**
+   * Consulta un recaudo por referencia. Con ella la conciliacion tambien
+   * (1) vuelve a confirmar con Factus, uno por uno, los cobros pagados de los
+   * ultimos 3 dias -no depende de recorrer todo el listado, que con el tiempo
+   * pasa del tope- y (2) cierra los pendientes cuyo QR ya vencio sin pago.
+   */
+  consultar?: (referenceCode: string) => Promise<FactusCollection | null>;
+};
+
+const HORA = 3_600_000;
+// Ventana de la doble verificacion de pagados y tope por corrida.
+const VENTANA_PAGADOS_RECIENTES_MS = 72 * HORA;
+const MAX_PAGADOS_RECIENTES = 200;
+// Un QR vencido hace mas de esto ya no se puede pagar: se cierra el cobro.
+const MARGEN_VENCIDO_MS = HORA;
+// Vigencia del QR si Factus no informo qr_expires_at (FAQ de Factus: 24 h).
+const VIGENCIA_QR_MS = 24 * HORA;
+const MAX_VENCIDOS_POR_CORRIDA = 200;
 
 // Referencias que crea este sistema (ver generarReferenceCode): un recaudo
 // pagado con otro prefijo lo creo otro sistema de la misma cuenta de Factus.
@@ -38,10 +62,17 @@ const ESTADOS_REABRIBLES: EstadoCobro[] = [EstadoCobro.ABANDONADO, EstadoCobro.F
 export class PagoConciliacionService {
   constructor(
     private prisma: PrismaClient,
-    private pagos: Pick<PagoService, "verificarCobro" | "reabrirYVerificar">,
+    private pagos: Pick<PagoService, "verificarCobro" | "reabrirYVerificar" | "cerrarVencido">,
     private listar: (p: { status?: string; page?: number }) => Promise<FactusCollectionPage>,
     private alertar: (titulo: string, mensaje: string) => Promise<void>,
     private maxPaginas = Number(process.env.PAGOS_CONCILIACION_MAX_PAGINAS ?? 50),
+    /**
+     * En el sandbox de Factus un recaudo pagado sin cobro aqui no es dinero
+     * perdido: es una prueba hecha desde otro entorno (p. ej. local) con la
+     * misma cuenta. Ahi no se reporta.
+     */
+    private esSandbox: () => boolean = () => false,
+    private opciones: OpcionesConciliacion = {},
   ) {}
 
   async ejecutar(): Promise<ReporteConciliacion> {
@@ -64,7 +95,7 @@ export class PagoConciliacionService {
     for (const remoto of remotos) {
       const local = await this.prisma.pagoCobro.findUnique({ where: { referenceCode: remoto.reference_code } });
       if (!local) {
-        if (PREFIJOS_PROPIOS.some((p) => remoto.reference_code.startsWith(p))) {
+        if (!this.esSandbox() && PREFIJOS_PROPIOS.some((p) => remoto.reference_code.startsWith(p))) {
           anomalias.push({
             tipo: "SIN_COBRO_LOCAL",
             referenceCode: remoto.reference_code,
@@ -107,6 +138,9 @@ export class PagoConciliacionService {
       }
     }
 
+    const verificadosRecientes = await this.verificarPagadosRecientes(referenciasRemotas, anomalias);
+    const cerradosPorVencimiento = await this.cerrarVencidos(anomalias);
+
     const sinSincronizar = await this.prisma.pagoCobro.findMany({
       where: {
         estado: EstadoCobro.PAGADO,
@@ -128,6 +162,7 @@ export class PagoConciliacionService {
       paginasRecorridas,
       completo,
       remotosPagados: remotos.length,
+      ...(this.opciones.consultar ? { verificadosRecientes, cerradosPorVencimiento } : {}),
       anomalias,
     };
 
@@ -148,11 +183,101 @@ export class PagoConciliacionService {
     return reporte;
   }
 
+  /**
+   * Doble verificacion: los cobros que aqui quedaron pagados en los ultimos
+   * 3 dias se confirman de nuevo con Factus, uno por uno. Si Factus no los
+   * da por pagados es grave (se entrego algo sin dinero): anomalia sin
+   * correccion automatica. Si la consulta falla no se concluye nada.
+   */
+  private async verificarPagadosRecientes(listados: Set<string>, anomalias: AnomaliaConciliacion[]) {
+    const consultar = this.opciones.consultar;
+    if (!consultar) return 0;
+    const yaReportados = new Set(
+      anomalias.filter((a) => a.tipo === "PAGADO_LOCAL_NO_EN_FACTUS").map((a) => a.referenceCode),
+    );
+    const recientes = await this.prisma.pagoCobro.findMany({
+      where: {
+        estado: EstadoCobro.PAGADO,
+        pagadoDetectadoEn: { gte: new Date(Date.now() - VENTANA_PAGADOS_RECIENTES_MS) },
+      },
+      orderBy: { pagadoDetectadoEn: "desc" },
+      take: MAX_PAGADOS_RECIENTES,
+      select: { referenceCode: true },
+    });
+    let verificados = 0;
+    for (const { referenceCode } of recientes) {
+      if (yaReportados.has(referenceCode)) continue;
+      if (listados.has(referenceCode)) {
+        verificados++;
+        continue;
+      }
+      let remoto: FactusCollection | null;
+      try {
+        remoto = await consultar(referenceCode);
+      } catch {
+        continue;
+      }
+      verificados++;
+      if (remoto?.status !== "paid") {
+        anomalias.push({
+          tipo: "PAGADO_LOCAL_NO_EN_FACTUS",
+          referenceCode,
+          detalle: `Aqui figura pagado pero Factus responde ${remoto ? `"${remoto.status}"` : "que no existe"}`,
+        });
+      }
+    }
+    return verificados;
+  }
+
+  /**
+   * Cobros pendientes cuyo QR vencio hace mas de una hora: una ultima consulta
+   * y, si Factus no lo cobro, se cierran. Si lo cobro, se confirma por el
+   * camino normal. Un pago que llegara despues igual lo reabren el webhook o
+   * esta conciliacion (reabrirYVerificar).
+   */
+  private async cerrarVencidos(anomalias: AnomaliaConciliacion[]) {
+    const consultar = this.opciones.consultar;
+    if (!consultar) return 0;
+    const limite = Date.now() - MARGEN_VENCIDO_MS;
+    const vencidos = await this.prisma.pagoCobro.findMany({
+      where: {
+        estado: { in: ESTADOS_PENDIENTES_LOCALES },
+        OR: [
+          { qrExpiraEn: { lt: new Date(limite) } },
+          { qrExpiraEn: null, creadoEn: { lt: new Date(limite - VIGENCIA_QR_MS) } },
+        ],
+      },
+      orderBy: { creadoEn: "asc" },
+      take: MAX_VENCIDOS_POR_CORRIDA,
+      select: { id: true, referenceCode: true },
+    });
+    let cerrados = 0;
+    for (const cobro of vencidos) {
+      try {
+        const remoto = await consultar(cobro.referenceCode);
+        if (remoto?.status === "paid") {
+          const actualizado = await this.pagos.verificarCobro(cobro.id, OrigenVerificacionPago.CONCILIACION);
+          anomalias.push({
+            tipo: "PAGADO_EN_FACTUS_NO_LOCAL",
+            referenceCode: cobro.referenceCode,
+            detalle: `Factus lo reporta pagado con el QR ya vencido; ahora quedo ${actualizado.estado}`,
+            corregida: actualizado.estado === EstadoCobro.PAGADO,
+          });
+        } else if (await this.pagos.cerrarVencido(cobro.id, "conciliacion: el QR vencio sin pago")) {
+          cerrados++;
+        }
+      } catch {
+        // Factus no respondio: se intenta en la siguiente corrida.
+      }
+    }
+    return cerrados;
+  }
+
   private async corregir(local: PagoCobro): Promise<EstadoCobro> {
     try {
       const actualizado = ESTADOS_REABRIBLES.includes(local.estado)
-        ? await this.pagos.reabrirYVerificar(local.id)
-        : await this.pagos.verificarCobro(local.id);
+        ? await this.pagos.reabrirYVerificar(local.id, OrigenVerificacionPago.CONCILIACION)
+        : await this.pagos.verificarCobro(local.id, OrigenVerificacionPago.CONCILIACION);
       return actualizado.estado;
     } catch {
       return local.estado;

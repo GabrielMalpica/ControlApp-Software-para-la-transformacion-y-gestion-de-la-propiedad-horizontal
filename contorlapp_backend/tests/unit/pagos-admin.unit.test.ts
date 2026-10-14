@@ -36,9 +36,14 @@ function servicio() {
       findMany: jest.fn().mockResolvedValue([cobro()]),
       findFirst: jest.fn().mockResolvedValue(cobro()),
     },
+    pagoEvento: { create: jest.fn().mockResolvedValue({}) },
     $transaction: jest.fn(async (fn: any) => fn(tx)),
   };
-  return { service: new PagoAdminService(prisma), prisma, tx };
+  const pagos = {
+    verificarCobro: jest.fn().mockResolvedValue(undefined),
+    reabrirYVerificar: jest.fn().mockResolvedValue(undefined),
+  };
+  return { service: new PagoAdminService(prisma, pagos as any), prisma, tx, pagos };
 }
 
 describe("PagoAdminService", () => {
@@ -104,6 +109,78 @@ describe("PagoAdminService", () => {
     const { service, prisma } = servicio();
     prisma.pagoCobro.findFirst.mockResolvedValue(null);
     await expect(service.resolver(actor, 5, { accion: "RESUELTO", motivo: "lo resolvi a mano" })).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("el detalle muestra como se confirmo (origen, avisos del webhook, pagador recortado) sin el QR", async () => {
+    const { service, prisma } = servicio();
+    prisma.pagoCobro.findFirst.mockResolvedValue(
+      cobro({
+        estado: EstadoCobro.PAGADO,
+        origenConfirmacion: "WEBHOOK",
+        webhooksRecibidos: 2,
+        webhookPrimeroEn: new Date("2026-10-14T15:00:00Z"),
+        pagadorNombre: "Juan Perez",
+        pagadorDocumentoUltimos4: "7890",
+        qrBase64: "data:image/png;base64,AAA",
+        webhooks: [
+          {
+            id: 1,
+            recibidoEn: new Date(),
+            estado: "PROCESADO",
+            resultado: "CONFIRMADO",
+            detalle: "ok",
+            estadoReportado: "paid",
+            montoReportado: new Prisma.Decimal(50000),
+            intentos: 1,
+            procesadoEn: new Date(),
+          },
+        ],
+      }),
+    );
+
+    const detalle = await service.obtener(actor, 5);
+
+    expect(detalle).toMatchObject({
+      origenConfirmacion: "WEBHOOK",
+      webhooksRecibidos: 2,
+      pagadorNombre: "Juan Perez",
+      pagadorDocumentoUltimos4: "7890",
+      verificable: false,
+    });
+    expect(detalle.webhooks[0]).toMatchObject({ resultado: "CONFIRMADO", montoReportado: 50000 });
+    expect(Object.keys(detalle)).not.toContain("qrBase64");
+  });
+
+  test("Verificar con Factus: consulta un cobro pendiente por la via normal y deja constancia de quien lo pidio", async () => {
+    const { service, prisma, pagos } = servicio();
+    prisma.pagoCobro.findFirst.mockResolvedValue(cobro({ estado: EstadoCobro.PENDIENTE }));
+
+    await service.verificarConFactus(actor, 5);
+
+    expect(pagos.verificarCobro).toHaveBeenCalledWith(5, "ADMIN");
+    expect(pagos.reabrirYVerificar).not.toHaveBeenCalled();
+    expect(prisma.pagoEvento.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ tipo: "ACCION_MANUAL", actorId: "ger-1" }),
+    });
+  });
+
+  test("Verificar con Factus sobre un cobro fallido usa reabrir (solo reabre si Factus dice pagado)", async () => {
+    const { service, prisma, pagos } = servicio();
+    prisma.pagoCobro.findFirst.mockResolvedValue(cobro({ estado: EstadoCobro.FALLIDO }));
+
+    await service.verificarConFactus(actor, 5);
+
+    expect(pagos.reabrirYVerificar).toHaveBeenCalledWith(5, "ADMIN");
+  });
+
+  test("Verificar con Factus no aplica a un cobro ya cerrado ni a uno de otra empresa", async () => {
+    const { service, prisma, pagos } = servicio();
+    prisma.pagoCobro.findFirst.mockResolvedValue(cobro({ estado: EstadoCobro.PAGADO }));
+    await expect(service.verificarConFactus(actor, 5)).rejects.toMatchObject({ status: 409 });
+
+    prisma.pagoCobro.findFirst.mockResolvedValue(null);
+    await expect(service.verificarConFactus(actor, 5)).rejects.toMatchObject({ status: 404 });
+    expect(pagos.verificarCobro).not.toHaveBeenCalled();
   });
 
   test("reporte de recaudo suma solo lo confirmado, por dia o por canal", async () => {

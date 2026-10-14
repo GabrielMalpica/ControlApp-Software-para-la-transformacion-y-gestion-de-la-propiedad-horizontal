@@ -56,9 +56,9 @@ describe("FactusPayClient", () => {
     expect(isFactusPayConfigured()).toBe(false);
   });
 
-  test("limites documentados de Factus (10.000 - 12.000.000 COP)", () => {
-    expect(FACTUS_MONTO_MIN_COP).toBe(10_000);
-    expect(FACTUS_MONTO_MAX_COP).toBe(12_000_000);
+  test("limites documentados de Factus (1.000 - 12.100.000 COP, doc 2026-10-14)", () => {
+    expect(FACTUS_MONTO_MIN_COP).toBe(1_000);
+    expect(FACTUS_MONTO_MAX_COP).toBe(12_100_000);
   });
 
   test("se autentica antes de la primera llamada y reusa el token en la siguiente", async () => {

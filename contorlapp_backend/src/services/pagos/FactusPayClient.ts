@@ -3,8 +3,9 @@ import { cacheGet, cacheSet, cacheDelete, getRedis } from "../RedisService";
 import { FactusPayError } from "./errors";
 
 // Documentacion oficial: https://pay-developers.factus.com.co/ (Autenticacion,
-// Recaudos crear/listar/ver). No hay webhooks documentados: la confirmacion
-// del pago se hace consultando el recaudo (ver PagoService).
+// Recaudos crear/listar/ver, Webhooks). El webhook solo avisa; la
+// confirmacion del pago se decide siempre consultando el recaudo aqui (ver
+// PagoService y FactusWebhookService).
 const TOKEN_CACHE_KEY = "factus:pay:token";
 // Factus no documenta expiracion por tiempo ("un solo token activo por
 // usuario"; cada login revoca el anterior). Se cachea por precaucion y se
@@ -15,8 +16,19 @@ const LOGIN_LOCK_TTL_MS = 15_000;
 const LOGIN_LOCK_MAX_ESPERAS = 20;
 const LOGIN_LOCK_ESPERA_MS = 500;
 
-export const FACTUS_MONTO_MIN_COP = 10_000;
-export const FACTUS_MONTO_MAX_COP = 12_000_000;
+// Limites de la doc oficial ("Crear un recaudo" y Preguntas frecuentes,
+// leidas 2026-10-14; antes eran 10.000 - 12.000.000). Configurables por si
+// Factus los vuelve a cambiar; si un monto no le sirve, Factus responde 422.
+export const FACTUS_MONTO_MIN_COP = Number(process.env.FACTUS_PAY_MONTO_MIN_COP ?? 1_000);
+export const FACTUS_MONTO_MAX_COP = Number(process.env.FACTUS_PAY_MONTO_MAX_COP ?? 12_100_000);
+
+// Solo llega cuando el recaudo esta pagado y el banco ya informo quien pago;
+// si no, la llave no aparece (doc. de Webhooks, "Datos del pagador").
+export const FactusPayerSchema = z.object({
+  name: z.string().max(300).optional(),
+  document_type: z.string().max(20).optional(),
+  document_number: z.string().max(40).optional(),
+});
 
 const CollectionDataSchema = z.object({
   reference_code: z.string(),
@@ -24,6 +36,11 @@ const CollectionDataSchema = z.object({
   status: z.string(),
   created_at: z.string().optional(),
   qr: z.string().nullable().optional(),
+  // Campos informativos: si llegan con otra forma se ignoran en vez de
+  // tumbar la consulta (de eso depende confirmar el pago).
+  qr_expires_at: z.string().nullable().optional().catch(null),
+  breb_key: z.string().nullable().optional().catch(null),
+  payer: FactusPayerSchema.nullable().optional().catch(null),
 });
 
 const CollectionResponseSchema = z.object({
@@ -57,6 +74,12 @@ function getConfig() {
 export function isFactusPayConfigured(): boolean {
   const { baseUrl, email, password } = getConfig();
   return Boolean(baseUrl && email && password);
+}
+
+/** La cuenta de pruebas de Factus: sus pagos no mueven dinero real y la
+ * comparten todos los entornos que la usen (local, pruebas, produccion). */
+export function isFactusPaySandbox(): boolean {
+  return /sandbox/i.test(getConfig().baseUrl);
 }
 
 function mapUpstreamStatus(upstream: number): number {

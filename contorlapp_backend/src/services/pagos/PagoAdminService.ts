@@ -1,6 +1,14 @@
-import { CanalPago, EstadoCobro, Prisma, type PagoCobro, type PrismaClient } from "@prisma/client";
+import {
+  CanalPago,
+  EstadoCobro,
+  OrigenVerificacionPago,
+  Prisma,
+  type PagoCobro,
+  type PrismaClient,
+} from "@prisma/client";
 import { z } from "zod";
 import { commerceHttpError, type CommerceActor } from "../CommerceAccessService";
+import { ESTADOS_ACTIVOS, ESTADOS_REABRIBLES, type PagoService } from "./PagoService";
 
 // Cobros que necesitan que una persona decida (dinero recibido que no se
 // pudo aplicar solo).
@@ -37,7 +45,10 @@ export const ReporteRecaudoDTO = z.object({
 
 /** Consultas y acciones del equipo (gerente / jefe de operaciones) sobre los cobros. */
 export class PagoAdminService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private prisma: PrismaClient,
+    private pagos: Pick<PagoService, "verificarCobro" | "reabrirYVerificar">,
+  ) {}
 
   /**
    * Cobros de la empresa del actor: los de pedidos de sus conjuntos, mas los
@@ -66,6 +77,19 @@ export class PagoAdminService {
       pagadoDetectadoEn: cobro.pagadoDetectadoEn,
       pendienteSincronizarWoo: cobro.pendienteSincronizarWoo,
       requiereAccion: ESTADOS_REQUIEREN_ACCION.includes(cobro.estado),
+      // Trazabilidad: que disparo la confirmacion (siempre verificada por API),
+      // avisos del webhook y ultima consulta a Factus.
+      origenConfirmacion: cobro.origenConfirmacion,
+      webhooksRecibidos: cobro.webhooksRecibidos,
+      webhookPrimeroEn: cobro.webhookPrimeroEn,
+      ultimaVerificacionEn: cobro.ultimaVerificacionEn,
+      ultimaVerificacionOrigen: cobro.ultimaVerificacionOrigen,
+      qrExpiraEn: cobro.qrExpiraEn ?? cobro.expiraLocalEn,
+      clienteNotificadoEn: cobro.clienteNotificadoEn,
+      pagadorNombre: cobro.pagadorNombre,
+      pagadorTipoDocumento: cobro.pagadorTipoDocumento,
+      pagadorDocumentoUltimos4: cobro.pagadorDocumentoUltimos4,
+      verificable: ESTADOS_ACTIVOS.includes(cobro.estado) || ESTADOS_REABRIBLES.includes(cobro.estado),
       creadoEn: cobro.creadoEn,
       actualizadoEn: cobro.actualizadoEn,
     };
@@ -109,11 +133,24 @@ export class PagoAdminService {
       include: {
         pedidoApp: { select: { id: true, conjunto: { select: { nombre: true } } } },
         eventos: { orderBy: { creadoEn: "asc" } },
+        webhooks: { orderBy: { recibidoEn: "asc" } },
       },
     });
     if (!cobro) throw commerceHttpError(404, "Cobro no encontrado");
     return {
       ...this.serializar(cobro),
+      // Cada entrega del webhook de Factus y lo que paso con ella.
+      webhooks: (cobro.webhooks ?? []).map((w) => ({
+        id: w.id,
+        recibidoEn: w.recibidoEn,
+        estado: w.estado,
+        resultado: w.resultado,
+        detalle: w.detalle,
+        estadoReportado: w.estadoReportado,
+        montoReportado: w.montoReportado == null ? null : Number(w.montoReportado),
+        intentos: w.intentos,
+        procesadoEn: w.procesadoEn,
+      })),
       eventos: cobro.eventos.map((e) => ({
         id: e.id,
         tipo: e.tipo,
@@ -158,6 +195,34 @@ export class PagoAdminService {
         },
       });
     });
+    return this.obtener(actor, cobro.id);
+  }
+
+  /**
+   * "Verificar con Factus": consulta el recaudo ahora mismo y aplica lo que
+   * responda la API, por el camino normal (monto, pedido, duplicados). Nunca
+   * marca un cobro como pagado sin que Factus lo confirme. Queda en la
+   * bitacora quien lo pidio.
+   */
+  async verificarConFactus(actor: CommerceActor, cobroId: number) {
+    const cobro = await this.prisma.pagoCobro.findFirst({ where: { AND: [{ id: cobroId }, this.alcance(actor)] } });
+    if (!cobro) throw commerceHttpError(404, "Cobro no encontrado");
+    const reabrible = ESTADOS_REABRIBLES.includes(cobro.estado);
+    if (!reabrible && !ESTADOS_ACTIVOS.includes(cobro.estado)) {
+      throw commerceHttpError(409, "Este cobro ya esta cerrado: no hay nada que verificar con Factus");
+    }
+    await this.prisma.pagoEvento.create({
+      data: {
+        cobroId: cobro.id,
+        tipo: "ACCION_MANUAL",
+        estadoAnterior: cobro.estado,
+        estadoNuevo: cobro.estado,
+        payload: { accion: "VERIFICAR_CON_FACTUS", nombre: actor.nombre, origen: OrigenVerificacionPago.ADMIN },
+        actorId: actor.id,
+      },
+    });
+    if (reabrible) await this.pagos.reabrirYVerificar(cobro.id, OrigenVerificacionPago.ADMIN);
+    else await this.pagos.verificarCobro(cobro.id, OrigenVerificacionPago.ADMIN);
     return this.obtener(actor, cobro.id);
   }
 

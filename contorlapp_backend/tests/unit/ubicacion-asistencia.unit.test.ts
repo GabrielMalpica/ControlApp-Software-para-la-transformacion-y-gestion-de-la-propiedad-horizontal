@@ -88,12 +88,12 @@ describe("distanciaMetros / validarUbicacionEnConjunto", () => {
     ).toBe(true);
   });
 
-  test("conjunto sin ubicación configurada no exige nada", () => {
-    const r = validarUbicacionEnConjunto({
-      conjunto: { nombre: "Sin ubicación", latitud: null, longitud: null, radioAsistenciaMetros: 150 },
-      latitud: null,
-      longitud: null,
-    });
+  test("conjunto sin ubicación configurada: exige la del dispositivo pero no compara distancia", () => {
+    const sinUbicacion = { nombre: "Sin ubicación", latitud: null, longitud: null, radioAsistenciaMetros: 150 };
+    expect(() => validarUbicacionEnConjunto({ conjunto: sinUbicacion, latitud: null, longitud: null })).toThrow(
+      /Necesitamos tu ubicación/,
+    );
+    const r = validarUbicacionEnConjunto({ conjunto: sinUbicacion, latitud: 6.2, longitud: -75.5 });
     expect(r).toEqual({ verificada: false, distanciaMetros: null });
   });
 });
@@ -209,5 +209,12 @@ describe("AsistenciaService.checkin (operario) - ubicación", () => {
   test("sin ubicación no lo deja registrar cuando el conjunto tiene ubicación", async () => {
     const service = new AsistenciaService(construirPrisma());
     await expect(service.checkin({ ...base })).rejects.toMatchObject({ status: 400 });
+  });
+
+  test("sin ubicación tampoco lo deja registrar aunque el conjunto no tenga ubicación", async () => {
+    const prisma = construirPrisma({ conLat: false });
+    const service = new AsistenciaService(prisma);
+    await expect(service.checkin({ ...base })).rejects.toMatchObject({ status: 400 });
+    expect(prisma.conjunto.findUnique).toHaveBeenCalled();
   });
 });

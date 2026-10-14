@@ -89,8 +89,9 @@ const SABADO_FESTIVO = new Date(2026, 3, 4); // día de descanso del conjunto L-
 const MIERCOLES_FESTIVO = new Date(2026, 3, 1); // día que sí se trabaja
 
 const QR = "CTRLAPP-ASISTENCIA|C-1|tok-1";
+// Toda asistencia por QR lleva la ubicación del dispositivo (obligatoria).
 const checkin = (service: AsistenciaService) =>
-  service.checkin({ operarioId: "op-1", conjuntoId: "C-1", qrPayload: QR });
+  service.checkin({ operarioId: "op-1", conjuntoId: "C-1", qrPayload: QR, latitud: 4.7, longitud: -74.05 });
 
 describe("AsistenciaService.checkin - festivos y día de descanso", () => {
   function congelarFecha(fecha: Date) {

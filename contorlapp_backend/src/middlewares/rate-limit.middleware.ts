@@ -37,13 +37,20 @@ function localIncrement(key: string, windowMs: number) {
   return { count: current.count, resetMs: current.expiresAt - now };
 }
 
+/**
+ * Suma un intento a la ventana `name`/`identity` (Redis o, sin Redis, local)
+ * y devuelve cuantos van. Para limitar solo ciertos intentos -p. ej. los
+ * webhooks con llave invalida- sin contar los legitimos.
+ */
+export async function contarEnVentana(name: string, identity: string, windowMs: number) {
+  const key = `ratelimit:${name}:${identity.trim().toLowerCase() || "anonimo"}`;
+  return (await incrementWindow(key, windowMs)) ?? localIncrement(key, windowMs);
+}
+
 export function distributedRateLimit(options: RateLimitOptions): RequestHandler {
   return async (req, res, next) => {
     try {
-      const identity = options.key(req).trim().toLowerCase() || "anonimo";
-      const key = `ratelimit:${options.name}:${identity}`;
-      const state =
-        (await incrementWindow(key, options.windowMs)) ?? localIncrement(key, options.windowMs);
+      const state = await contarEnVentana(options.name, options.key(req), options.windowMs);
 
       res.setHeader("RateLimit-Limit", String(options.limit));
       res.setHeader("RateLimit-Remaining", String(Math.max(0, options.limit - state.count)));

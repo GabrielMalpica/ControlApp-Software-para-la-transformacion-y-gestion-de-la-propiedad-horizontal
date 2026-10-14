@@ -44,6 +44,25 @@ function cargarFuente(): FuenteVectorial {
   return fuente;
 }
 
+/**
+ * Se llama al arrancar el servidor. Sin la fuente ninguna evidencia queda con
+ * marca de agua (cada cierre solo deja un aviso por foto), así que se avisa
+ * una vez, fuerte y con la causa, para no descubrirlo días después.
+ */
+export function verificarFuenteMarcaAgua(): boolean {
+  try {
+    cargarFuente();
+    return true;
+  } catch (err) {
+    console.error(
+      `[marca-agua] No se encontró la fuente ${RUTA_FUENTE}: las evidencias se subirán SIN marca de agua. ` +
+        "El despliegue debe incluir la carpeta contorlapp_backend/assets.",
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
+}
+
 /** Una foto tomada dentro de la app después de esta tolerancia en el futuro
  * (reloj del celular adelantado) no se toma como hora válida. */
 const TOLERANCIA_FUTURO_MS = 10 * 60 * 1000;

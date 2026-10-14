@@ -1,4 +1,11 @@
-import { CanalPago, EstadoCobro, Prisma, type PagoCobro, type PrismaClient } from "@prisma/client";
+import {
+  CanalPago,
+  EstadoCobro,
+  OrigenVerificacionPago,
+  Prisma,
+  type PagoCobro,
+  type PrismaClient,
+} from "@prisma/client";
 import crypto from "crypto";
 import {
   crearCobroFactus,
@@ -8,22 +15,22 @@ import {
   FACTUS_MONTO_MAX_COP,
   type FactusCollection,
 } from "./FactusPayClient";
-import { FactusPayError, PedidoNoConfirmableError } from "./errors";
-import { siguienteEsperaMs } from "./backoff";
+import { detalleErrorPagos, FactusPayError, PedidoNoConfirmableError } from "./errors";
+import { siguienteEsperaMs, VIGENCIA_QR_POR_DEFECTO_MS } from "./backoff";
+import { datosPagador, fechaFactus } from "./datosRecaudo";
 
 type TransactionClient = Prisma.TransactionClient;
 
-// No documentado por Factus: cuanto dura un QR. Se usa como referencia local
-// para mostrar "vencido" en la UI y ofrecer un QR nuevo; el cobro se sigue
-// verificando igual (ver backoff.ts) porque Factus no ofrece anularlo.
-const EXPIRA_LOCAL_MIN = Number(process.env.FACTUS_PAY_EXPIRA_MIN ?? 30);
 // Cuando el recaudo todavia no tiene QR (status "started"), Factus lo genera
 // casi de inmediato: conviene reconsultar pronto en vez de esperar el primer
 // escalon del backoff normal.
 const VERIFICACION_INMEDIATA_MS = 2_000;
+// Cuanto dura el reclamo de un cobro mientras se consulta a Factus (lo usan
+// el worker y el webhook para no consultar el mismo cobro a la vez).
+const RECLAMO_MS = 30_000;
 
-const ESTADOS_ACTIVOS: EstadoCobro[] = [EstadoCobro.CREADO, EstadoCobro.PENDIENTE, EstadoCobro.VENCIDO];
-const ESTADOS_TERMINALES: EstadoCobro[] = [
+export const ESTADOS_ACTIVOS: EstadoCobro[] = [EstadoCobro.CREADO, EstadoCobro.PENDIENTE, EstadoCobro.VENCIDO];
+export const ESTADOS_TERMINALES: EstadoCobro[] = [
   EstadoCobro.PAGADO,
   EstadoCobro.FALLIDO,
   EstadoCobro.ABANDONADO,
@@ -34,6 +41,9 @@ const ESTADOS_TERMINALES: EstadoCobro[] = [
   EstadoCobro.DEVUELTO,
   EstadoCobro.RESUELTO,
 ];
+// Terminales sin dinero recibido: solo una respuesta "paid" de Factus los
+// reabre (ver reabrirYVerificar).
+export const ESTADOS_REABRIBLES: EstadoCobro[] = [EstadoCobro.ABANDONADO, EstadoCobro.FALLIDO, EstadoCobro.ERROR];
 
 export type CrearCobroInput = {
   canal: CanalPago;
@@ -46,6 +56,7 @@ export type CrearCobroInput = {
 
 export type ConfirmadorPagoContexto = {
   cobroId: number;
+  canal: CanalPago;
   pedidoAppId: number | null;
   wooOrderId: string | null;
   usuarioId: string | null;
@@ -67,7 +78,8 @@ export type ConfirmadorPago = (tx: TransactionClient, contexto: ConfirmadorPagoC
  * y pedido/orden ya quedaron en PAGADO de forma durable). Aqui van los
  * avisos de red -notificar al cliente, reflejar el pago en WooCommerce- que
  * no deben decidir si el pago se confirma o no: si fallan, el cobro sigue
- * PAGADO igual (best-effort, ver PagoService.ejecutarPosConfirmacion).
+ * PAGADO igual y el worker los reintenta (ver pendienteSincronizarWoo). Puede
+ * correr mas de una vez para el mismo cobro: debe ser idempotente.
  */
 export type PosConfirmacionPago = (cobro: PagoCobro) => Promise<void>;
 
@@ -83,6 +95,10 @@ export type PosFalloPago = (cobro: PagoCobro) => Promise<void>;
  * manual (huerfano, duplicado o con un monto distinto al esperado). */
 export type AlertadorAccionManual = (cobro: PagoCobro, motivo: string) => Promise<void>;
 
+/** Cuanto esperar para volver a consultar un cobro pendiente (null = dejar
+ * de consultarlo). Ver SaludPagosService.esperaSegunModo. */
+export type CalendarioVerificacion = (cobro: PagoCobro, ahora: Date) => number | null;
+
 export function generarReferenceCode(prefijo = "CA"): string {
   const limpio = prefijo.replace(/[^A-Za-z0-9]/g, "").slice(0, 10) || "CA";
   return `${limpio}-${crypto.randomUUID().replace(/-/g, "")}`.slice(0, 100);
@@ -94,12 +110,19 @@ export function generarReferenceCode(prefijo = "CA"): string {
  * pedido ni de una orden de WooCommerce -eso lo resuelve el confirmador que
  * cada canal registra con registrarConfirmador- para que esta clase se
  * pueda probar y operar sin esas dependencias.
+ *
+ * Varias vias consultan el mismo cobro a la vez (worker, "Ya pague",
+ * webhook, conciliacion), asi que toda escritura de estado es condicional al
+ * estado de origen: una respuesta vieja de Factus ("ready") nunca pisa un
+ * cobro que otra via ya confirmo.
  */
 export class PagoService {
   private confirmadores = new Map<CanalPago, ConfirmadorPago>();
   private posConfirmaciones = new Map<CanalPago, PosConfirmacionPago>();
   private posFallos = new Map<CanalPago, PosFalloPago>();
   private alertador: AlertadorAccionManual | null = null;
+  private calendario: CalendarioVerificacion = (cobro, ahora) =>
+    siguienteEsperaMs(ahora.getTime() - cobro.creadoEn.getTime());
 
   constructor(private prisma: PrismaClient) {}
 
@@ -117,6 +140,12 @@ export class PagoService {
 
   registrarAlertador(handler: AlertadorAccionManual) {
     this.alertador = handler;
+  }
+
+  /** Reemplaza el backoff de siempre (p. ej. por el calendario disperso del
+   * modo webhook, ver services/pagos/wiring.ts). */
+  registrarCalendario(calendario: CalendarioVerificacion) {
+    this.calendario = calendario;
   }
 
   async obtenerCobro(cobroId: number) {
@@ -159,8 +188,15 @@ export class PagoService {
         usuarioId: input.usuarioId ?? null,
         montoEsperado: new Prisma.Decimal(monto),
         estado: EstadoCobro.CREADO,
-        expiraLocalEn: new Date(ahora.getTime() + EXPIRA_LOCAL_MIN * 60_000),
-        proximaVerificacion: ahora,
+        // Hasta cuando la app muestra el QR como vigente (y no ofrece otro):
+        // la vigencia por defecto de Factus hasta que informe `qr_expires_at`
+        // (ver datosRemotos). Un QR "vencido" en la app debe estarlo tambien
+        // en Factus: si no, el cliente podria pagar dos codigos.
+        expiraLocalEn: new Date(ahora.getTime() + VIGENCIA_QR_POR_DEFECTO_MS),
+        // La primera consulta la hace este mismo request (crearEnFactusYAplicar),
+        // que deja agendada la siguiente; el worker solo lo toma si el proceso
+        // se cae antes de terminar.
+        proximaVerificacion: new Date(ahora.getTime() + 30_000),
       },
     });
     await this.registrarEvento(this.prisma, cobro.id, "CREADO", null, EstadoCobro.CREADO, { montoEsperado: monto });
@@ -188,18 +224,23 @@ export class PagoService {
     try {
       remoto = await crearCobroFactus(cobro.referenceCode, Number(cobro.montoEsperado));
     } catch (error) {
-      await this.registrarFalloConsulta(cobro, error);
+      await this.registrarFalloConsulta(cobro, error, OrigenVerificacionPago.USUARIO);
       throw error;
     }
-    return this.aplicarRespuestaFactus(cobro, remoto);
+    return this.aplicarRespuestaFactus(cobro, remoto, OrigenVerificacionPago.USUARIO);
   }
 
   /**
-   * Fuerza una consulta a Factus ahora mismo (usada por el boton "Ya pague"
-   * y por el worker de conciliacion). No hace nada si el cobro ya esta en un
-   * estado terminal.
+   * Consulta a Factus ahora mismo y aplica lo que responda. La usan el worker,
+   * el boton "Ya pague", el webhook y la conciliacion (`origen` queda en la
+   * bitacora). No hace nada si el cobro ya esta en un estado terminal: asi
+   * "Ya pague" sobre un cobro que el webhook ya confirmo responde sin llamar
+   * a Factus.
    */
-  async verificarCobro(cobroId: number): Promise<PagoCobro> {
+  async verificarCobro(
+    cobroId: number,
+    origen: OrigenVerificacionPago = OrigenVerificacionPago.WORKER,
+  ): Promise<PagoCobro> {
     const cobro = await this.prisma.pagoCobro.findUniqueOrThrow({ where: { id: cobroId } });
     if (ESTADOS_TERMINALES.includes(cobro.estado)) return cobro;
 
@@ -213,25 +254,103 @@ export class PagoService {
         remoto = await crearCobroFactus(cobro.referenceCode, Number(cobro.montoEsperado));
       }
     } catch (error) {
-      return this.registrarFalloConsulta(cobro, error);
+      return this.registrarFalloConsulta(cobro, error, origen);
     }
-    return this.aplicarRespuestaFactus(cobro, remoto);
+    return this.aplicarRespuestaFactus(cobro, remoto, origen);
   }
 
   /**
-   * Para la conciliacion: Factus dice que un cobro esta pagado aunque aqui
-   * quedo ABANDONADO o FALLIDO (estados terminales que verificarCobro ya no
-   * consulta). Lo reabre y lo verifica de nuevo por el camino normal.
+   * La conciliacion (o el webhook) dice que un cobro esta pagado aunque aqui
+   * quedo ABANDONADO, FALLIDO o ERROR (terminales que verificarCobro ya no
+   * consulta). Consulta a Factus y SOLO si la API responde "paid" lo reabre
+   * y lo confirma por el camino normal; si no, lo deja como estaba -un aviso
+   * falso no reabre nada ni repite el aviso de pago fallido-.
    */
-  async reabrirYVerificar(cobroId: number): Promise<PagoCobro> {
-    await this.prisma.pagoCobro.updateMany({
-      where: { id: cobroId, estado: { in: [EstadoCobro.ABANDONADO, EstadoCobro.FALLIDO] } },
+  async reabrirYVerificar(
+    cobroId: number,
+    origen: OrigenVerificacionPago = OrigenVerificacionPago.CONCILIACION,
+  ): Promise<PagoCobro> {
+    const actual = await this.prisma.pagoCobro.findUniqueOrThrow({ where: { id: cobroId } });
+    if (!ESTADOS_REABRIBLES.includes(actual.estado)) return this.verificarCobro(cobroId, origen);
+
+    let remoto: FactusCollection | null;
+    try {
+      remoto = await consultarCobroFactus(actual.referenceCode);
+    } catch (error) {
+      await this.registrarEvento(this.prisma, cobroId, "ERROR", actual.estado, actual.estado, {
+        error: this.mensajeError(error),
+        origen,
+      });
+      return actual;
+    }
+    if (!remoto || remoto.status !== "paid") {
+      await this.registrarEvento(this.prisma, cobroId, "CONSULTA", actual.estado, actual.estado, {
+        estadoProveedor: remoto?.status ?? "no_existe",
+        origen,
+      });
+      return actual;
+    }
+
+    const reabierto = await this.prisma.pagoCobro.updateMany({
+      where: { id: cobroId, estado: actual.estado },
       data: { estado: EstadoCobro.PENDIENTE },
     });
-    await this.registrarEvento(this.prisma, cobroId, "ACCION_MANUAL", null, EstadoCobro.PENDIENTE, {
-      motivo: "conciliacion: Factus reporta el recaudo pagado",
+    if (reabierto.count === 0) return this.prisma.pagoCobro.findUniqueOrThrow({ where: { id: cobroId } });
+    await this.registrarEvento(this.prisma, cobroId, "ACCION_MANUAL", actual.estado, EstadoCobro.PENDIENTE, {
+      motivo:
+        origen === OrigenVerificacionPago.WEBHOOK
+          ? "webhook: Factus confirma el recaudo pagado"
+          : "conciliacion: Factus confirma el recaudo pagado",
+      origen,
     });
-    return this.verificarCobro(cobroId);
+    const pendiente = await this.prisma.pagoCobro.findUniqueOrThrow({ where: { id: cobroId } });
+    return this.aplicarRespuestaFactus(pendiente, remoto, origen);
+  }
+
+  /**
+   * Reclama un cobro activo por un momento para consultarlo sin que otra via
+   * (worker, otra entrega del webhook) lo consulte a la vez. false si ya
+   * esta reclamado o ya no esta activo.
+   */
+  async reclamarParaVerificar(cobroId: number): Promise<boolean> {
+    const ahora = new Date();
+    const res = await this.prisma.pagoCobro.updateMany({
+      where: {
+        id: cobroId,
+        estado: { in: ESTADOS_ACTIVOS },
+        OR: [{ lockedUntil: null }, { lockedUntil: { lt: ahora } }],
+      },
+      data: { lockedUntil: new Date(ahora.getTime() + RECLAMO_MS) },
+    });
+    return res.count > 0;
+  }
+
+  /**
+   * Cierra un cobro pendiente cuyo QR ya vencio sin pago (la conciliacion lo
+   * llama despues de una ultima consulta). Si Factus lo cobra igual, el
+   * webhook o la conciliacion lo reabren por reabrirYVerificar.
+   */
+  async cerrarVencido(cobroId: number, motivo: string): Promise<boolean> {
+    const actual = await this.prisma.pagoCobro.findUniqueOrThrow({ where: { id: cobroId } });
+    const res = await this.prisma.pagoCobro.updateMany({
+      where: { id: cobroId, estado: { in: ESTADOS_ACTIVOS } },
+      data: { estado: EstadoCobro.ABANDONADO, proximaVerificacion: null, lockedUntil: null },
+    });
+    if (res.count === 0) return false;
+    await this.registrarEvento(this.prisma, cobroId, "CAMBIO_ESTADO", actual.estado, EstadoCobro.ABANDONADO, {
+      motivo,
+      origen: OrigenVerificacionPago.CONCILIACION,
+    });
+    return true;
+  }
+
+  /** Suelta el reclamo de reclamarParaVerificar cuando la consulta fallo
+   * con un error inesperado (si termina bien, la propia escritura lo suelta). */
+  async liberarReclamo(cobroId: number): Promise<void> {
+    await this.prisma.pagoCobro.updateMany({
+      where: { id: cobroId, lockedUntil: { not: null } },
+      data: { lockedUntil: null },
+    });
   }
 
   /** Toma hasta `limite` cobros listos para verificar y marca un lock corto
@@ -251,7 +370,7 @@ export class PagoService {
     const ids = candidatos.map((c) => c.id);
     if (!ids.length) return [];
 
-    const lockedUntil = new Date(ahora.getTime() + 30_000);
+    const lockedUntil = new Date(ahora.getTime() + RECLAMO_MS);
     await this.prisma.pagoCobro.updateMany({
       where: { id: { in: ids }, OR: [{ lockedUntil: null }, { lockedUntil: { lt: ahora } }] },
       data: { lockedUntil },
@@ -265,13 +384,10 @@ export class PagoService {
     let errores = 0;
     for (const id of ids) {
       try {
-        await this.verificarCobro(id);
+        await this.verificarCobro(id, OrigenVerificacionPago.WORKER);
       } catch (error) {
         errores++;
-        console.error("[pagos] fallo al verificar un cobro", {
-          cobroId: id,
-          name: error instanceof Error ? error.name : "Error",
-        });
+        console.error("[pagos] fallo al verificar un cobro", { cobroId: id, ...detalleErrorPagos(error) });
       }
     }
     await this.reintentarPosConfirmaciones();
@@ -280,9 +396,10 @@ export class PagoService {
 
   /**
    * Reintenta los avisos posteriores (reflejar el pago en WooCommerce,
-   * notificar) de los cobros que ya quedaron PAGADO pero cuyo aviso fallo
-   * (pendienteSincronizarWoo). El dinero y el pedido ya estan bien; esto solo
-   * pone al dia a la tienda. Espera 60 s entre intentos del mismo cobro.
+   * notificar) de los cobros que ya quedaron PAGADO pero cuyos avisos no
+   * terminaron (pendienteSincronizarWoo): porque fallaron o porque el
+   * proceso se cayo justo despues de confirmar. El dinero y el pedido ya
+   * estan bien; esto solo pone al dia lo demas. Espera 60 s entre intentos.
    */
   async reintentarPosConfirmaciones(limite = 10): Promise<void> {
     const cobros = await this.prisma.pagoCobro.findMany({
@@ -296,7 +413,10 @@ export class PagoService {
     });
     for (const cobro of cobros as PagoCobro[]) {
       const hook = this.posConfirmaciones.get(cobro.canal);
-      if (!hook) continue;
+      if (!hook) {
+        await this.prisma.pagoCobro.update({ where: { id: cobro.id }, data: { pendienteSincronizarWoo: false } });
+        continue;
+      }
       try {
         await hook(cobro);
         await this.prisma.pagoCobro.update({ where: { id: cobro.id }, data: { pendienteSincronizarWoo: false } });
@@ -339,26 +459,49 @@ export class PagoService {
     return cobro;
   }
 
-  private async aplicarRespuestaFactus(cobroActual: PagoCobro, remoto: FactusCollection): Promise<PagoCobro> {
+  /** Lo que Factus informa del recaudo y se guarda en cualquier respuesta. */
+  private datosRemotos(cobroActual: PagoCobro, remoto: FactusCollection, origen: OrigenVerificacionPago) {
+    const qrExpiraEn = fechaFactus(remoto.qr_expires_at) ?? cobroActual.qrExpiraEn;
+    return {
+      estadoProveedor: remoto.status,
+      montoProveedor: new Prisma.Decimal(remoto.amount),
+      qrBase64: remoto.qr ?? cobroActual.qrBase64,
+      qrExpiraEn,
+      // La vigencia que ve el cliente es la real de Factus cuando se conoce.
+      expiraLocalEn: qrExpiraEn ?? cobroActual.expiraLocalEn,
+      brebKey: remoto.breb_key ?? cobroActual.brebKey,
+      ...datosPagador(remoto.payer),
+      ultimaVerificacionEn: new Date(),
+      ultimaVerificacionOrigen: origen,
+    };
+  }
+
+  private async aplicarRespuestaFactus(
+    cobroActual: PagoCobro,
+    remoto: FactusCollection,
+    origen: OrigenVerificacionPago,
+  ): Promise<PagoCobro> {
     if (remoto.status === "paid") {
-      return this.confirmarPago(cobroActual, remoto);
+      return this.confirmarPago(cobroActual, remoto, origen);
     }
 
     if (remoto.status === "failed" || remoto.status === "rejected") {
-      const actualizado = await this.prisma.pagoCobro.update({
-        where: { id: cobroActual.id },
+      const res = await this.prisma.pagoCobro.updateMany({
+        where: { id: cobroActual.id, estado: { in: ESTADOS_ACTIVOS } },
         data: {
+          ...this.datosRemotos(cobroActual, remoto, origen),
           estado: EstadoCobro.FALLIDO,
-          estadoProveedor: remoto.status,
-          montoProveedor: new Prisma.Decimal(remoto.amount),
-          qrBase64: remoto.qr ?? cobroActual.qrBase64,
           proximaVerificacion: null,
           lockedUntil: null,
           intentosVerificacion: { increment: 1 },
         },
       });
+      const actualizado = await this.prisma.pagoCobro.findUniqueOrThrow({ where: { id: cobroActual.id } });
+      // Otra via ya lo cerro mientras se consultaba (p. ej. lo confirmo).
+      if (res.count === 0) return actualizado;
       await this.registrarEvento(this.prisma, cobroActual.id, "CAMBIO_ESTADO", cobroActual.estado, EstadoCobro.FALLIDO, {
         estadoProveedor: remoto.status,
+        origen,
       });
       await this.ejecutarPosFallo(actualizado);
       return actualizado;
@@ -366,55 +509,61 @@ export class PagoService {
 
     // "started" o "ready": sigue pendiente de pago.
     const ahora = new Date();
-    const edadMs = ahora.getTime() - cobroActual.creadoEn.getTime();
-    const espera = !remoto.qr ? VERIFICACION_INMEDIATA_MS : siguienteEsperaMs(edadMs);
-    const vencidoLocal = cobroActual.expiraLocalEn != null && ahora > cobroActual.expiraLocalEn;
+    const datos = this.datosRemotos(cobroActual, remoto, origen);
+    const conDatos = { ...cobroActual, qrExpiraEn: datos.qrExpiraEn, expiraLocalEn: datos.expiraLocalEn };
+    const espera = !remoto.qr ? VERIFICACION_INMEDIATA_MS : this.calendario(conDatos, ahora);
+    const vencidoLocal = conDatos.expiraLocalEn != null && ahora > conDatos.expiraLocalEn;
 
     const nuevoEstado =
       espera == null ? EstadoCobro.ABANDONADO : vencidoLocal ? EstadoCobro.VENCIDO : EstadoCobro.PENDIENTE;
     const proximaVerificacion = espera == null ? null : new Date(ahora.getTime() + espera);
 
-    const actualizado = await this.prisma.pagoCobro.update({
-      where: { id: cobroActual.id },
+    const res = await this.prisma.pagoCobro.updateMany({
+      where: { id: cobroActual.id, estado: { in: ESTADOS_ACTIVOS } },
       data: {
+        ...datos,
         estado: nuevoEstado,
-        estadoProveedor: remoto.status,
-        montoProveedor: new Prisma.Decimal(remoto.amount),
-        qrBase64: remoto.qr ?? cobroActual.qrBase64,
         proximaVerificacion,
         lockedUntil: null,
         intentosVerificacion: { increment: 1 },
       },
     });
+    const actualizado = await this.prisma.pagoCobro.findUniqueOrThrow({ where: { id: cobroActual.id } });
+    if (res.count === 0) return actualizado;
     await this.registrarEvento(
       this.prisma,
       cobroActual.id,
       nuevoEstado !== cobroActual.estado ? "CAMBIO_ESTADO" : "CONSULTA",
       cobroActual.estado,
       nuevoEstado,
-      { estadoProveedor: remoto.status },
+      { estadoProveedor: remoto.status, origen },
     );
     return actualizado;
   }
 
-  private async confirmarPago(cobroActual: PagoCobro, remoto: FactusCollection): Promise<PagoCobro> {
+  private async confirmarPago(
+    cobroActual: PagoCobro,
+    remoto: FactusCollection,
+    origen: OrigenVerificacionPago,
+  ): Promise<PagoCobro> {
     const montoProveedor = new Prisma.Decimal(remoto.amount);
     if (!montoProveedor.equals(cobroActual.montoEsperado)) {
-      const actualizado = await this.prisma.pagoCobro.update({
-        where: { id: cobroActual.id },
+      const res = await this.prisma.pagoCobro.updateMany({
+        where: { id: cobroActual.id, estado: { notIn: ESTADOS_TERMINALES } },
         data: {
+          ...this.datosRemotos(cobroActual, remoto, origen),
           estado: EstadoCobro.DISCREPANCIA,
-          estadoProveedor: remoto.status,
-          montoProveedor,
-          qrBase64: remoto.qr ?? cobroActual.qrBase64,
           proximaVerificacion: null,
           lockedUntil: null,
         },
       });
+      const actualizado = await this.prisma.pagoCobro.findUniqueOrThrow({ where: { id: cobroActual.id } });
+      if (res.count === 0) return actualizado;
       await this.registrarEvento(this.prisma, cobroActual.id, "CAMBIO_ESTADO", cobroActual.estado, EstadoCobro.DISCREPANCIA, {
         motivo: "monto_distinto",
         montoEsperado: cobroActual.montoEsperado.toString(),
         montoProveedor: montoProveedor.toString(),
+        origen,
       });
       await this.avisarAccionManual(actualizado, "El monto que confirmo Factus no coincide con el del pedido");
       return actualizado;
@@ -432,9 +581,14 @@ export class PagoService {
 
     // Los avisos de red (notificar, reflejar en Woo) NO van dentro de la
     // transaccion: solo decidirian mas lento, no si el pago se confirma. Se
-    // juntan aqui y se disparan best-effort despues de que la transaccion
-    // ya cerro (ver el bloque final de este metodo).
+    // disparan despues de que la transaccion cerro; lo que si queda dentro
+    // es la marca de que faltan (pendienteSincronizarWoo), para que una
+    // caida justo despues del commit no los pierda.
     let avisoAccionManual: string | null = null;
+    // Solo la via que gano el claim corre los avisos: las demas (worker,
+    // "Ya pague" y webhook a la vez) encuentran el cobro ya PAGADO y no
+    // deben notificar otra vez.
+    let confirmadoAqui = false;
 
     const resultado = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${claveLock})::bigint)`;
@@ -442,21 +596,22 @@ export class PagoService {
       const claim = await tx.pagoCobro.updateMany({
         where: { id: cobroActual.id, estado: { notIn: ESTADOS_TERMINALES } },
         data: {
+          ...this.datosRemotos(cobroActual, remoto, origen),
           estado: EstadoCobro.PAGADO,
-          estadoProveedor: remoto.status,
-          montoProveedor,
-          qrBase64: remoto.qr ?? cobroActual.qrBase64,
           pagadoDetectadoEn: new Date(),
+          origenConfirmacion: origen,
+          pendienteSincronizarWoo: this.posConfirmaciones.has(cobroActual.canal),
           proximaVerificacion: null,
           lockedUntil: null,
         },
       });
       const actualizado = await tx.pagoCobro.findUniqueOrThrow({ where: { id: cobroActual.id } });
-      // Otro proceso ya resolvio este mismo cobro (worker + "Ya pague" a la vez).
+      // Otra via ya resolvio este mismo cobro (worker + "Ya pague" + webhook a la vez).
       if (claim.count === 0) return actualizado;
 
       await this.registrarEvento(tx, cobroActual.id, "CAMBIO_ESTADO", cobroActual.estado, EstadoCobro.PAGADO, {
         estadoProveedor: remoto.status,
+        origen,
       });
 
       const otroPagado = cobroActual.pedidoAppId
@@ -471,7 +626,7 @@ export class PagoService {
       if (otroPagado) {
         const duplicado = await tx.pagoCobro.update({
           where: { id: cobroActual.id },
-          data: { estado: EstadoCobro.PAGADO_DUPLICADO },
+          data: { estado: EstadoCobro.PAGADO_DUPLICADO, pendienteSincronizarWoo: false },
         });
         await this.registrarEvento(tx, cobroActual.id, "CAMBIO_ESTADO", EstadoCobro.PAGADO, EstadoCobro.PAGADO_DUPLICADO, {
           otroCobroId: otroPagado.id,
@@ -481,11 +636,15 @@ export class PagoService {
       }
 
       const confirmador = this.confirmadores.get(cobroActual.canal);
-      if (!confirmador) return actualizado;
+      if (!confirmador) {
+        confirmadoAqui = true;
+        return actualizado;
+      }
 
       try {
         await confirmador(tx, {
           cobroId: cobroActual.id,
+          canal: cobroActual.canal,
           pedidoAppId: cobroActual.pedidoAppId,
           wooOrderId: cobroActual.wooOrderId,
           usuarioId: cobroActual.usuarioId,
@@ -497,7 +656,7 @@ export class PagoService {
         if (error instanceof PedidoNoConfirmableError) {
           const huerfano = await tx.pagoCobro.update({
             where: { id: cobroActual.id },
-            data: { estado: EstadoCobro.PAGADO_HUERFANO },
+            data: { estado: EstadoCobro.PAGADO_HUERFANO, pendienteSincronizarWoo: false },
           });
           await this.registrarEvento(
             tx,
@@ -515,32 +674,43 @@ export class PagoService {
         throw error;
       }
 
+      confirmadoAqui = true;
       return actualizado;
     });
 
     if (avisoAccionManual) {
       await this.avisarAccionManual(resultado, avisoAccionManual);
-    } else if (resultado.estado === EstadoCobro.PAGADO) {
+    } else if (confirmadoAqui && resultado.pendienteSincronizarWoo) {
       await this.ejecutarPosConfirmacion(resultado);
+      return this.prisma.pagoCobro.findUniqueOrThrow({ where: { id: resultado.id } });
     }
     return resultado;
   }
 
   /** Ver PosConfirmacionPago: corre solo si el pago quedo realmente
-   * confirmado (no duplicado ni huerfano), best-effort. */
+   * confirmado (no duplicado ni huerfano). Si termina bien apaga la marca de
+   * avisos pendientes; si falla, la deja y el worker reintenta. */
   private async ejecutarPosConfirmacion(cobro: PagoCobro) {
     const hook = this.posConfirmaciones.get(cobro.canal);
     if (!hook) return;
     try {
       await hook(cobro);
+      await this.prisma.pagoCobro.updateMany({
+        where: { id: cobro.id, pendienteSincronizarWoo: true },
+        data: { pendienteSincronizarWoo: false },
+      });
     } catch (error) {
       console.error("[pagos] fallo el aviso posterior a la confirmacion del pago", {
         cobroId: cobro.id,
         name: error instanceof Error ? error.name : "Error",
       });
-      // El pago ya esta confirmado; el worker reintenta el aviso.
+      // El pago ya esta confirmado; el worker reintenta el aviso (la marca ya
+      // quedo puesta en la transaccion; esto solo renueva actualizadoEn).
       await this.prisma.pagoCobro
-        .update({ where: { id: cobro.id }, data: { pendienteSincronizarWoo: true } })
+        .updateMany({
+          where: { id: cobro.id, estado: EstadoCobro.PAGADO },
+          data: { pendienteSincronizarWoo: true },
+        })
         .catch(() => undefined);
     }
   }
@@ -561,7 +731,11 @@ export class PagoService {
     }
   }
 
-  private async registrarFalloConsulta(cobro: PagoCobro, error: unknown): Promise<PagoCobro> {
+  private async registrarFalloConsulta(
+    cobro: PagoCobro,
+    error: unknown,
+    origen: OrigenVerificacionPago,
+  ): Promise<PagoCobro> {
     const ahora = new Date();
     const edadMs = ahora.getTime() - cobro.creadoEn.getTime();
     const esRateLimit = error instanceof FactusPayError && error.status === 429;
@@ -569,17 +743,25 @@ export class PagoService {
     const proximaVerificacion =
       espera == null ? null : new Date(ahora.getTime() + (esRateLimit ? espera * 2 : espera));
 
-    const actualizado = await this.prisma.pagoCobro.update({
-      where: { id: cobro.id },
+    // Condicional: si otra via ya cerro el cobro mientras esta consulta
+    // fallaba, no se le cambia nada (antes se reescribia el estado leido al
+    // principio y podia devolver un PAGADO a pendiente).
+    const res = await this.prisma.pagoCobro.updateMany({
+      where: { id: cobro.id, estado: { in: ESTADOS_ACTIVOS } },
       data: {
         intentosVerificacion: { increment: 1 },
         proximaVerificacion,
-        estado: espera == null ? EstadoCobro.ABANDONADO : cobro.estado,
+        ...(espera == null ? { estado: EstadoCobro.ABANDONADO } : {}),
         lockedUntil: null,
+        ultimaVerificacionEn: ahora,
+        ultimaVerificacionOrigen: origen,
       },
     });
+    const actualizado = await this.prisma.pagoCobro.findUniqueOrThrow({ where: { id: cobro.id } });
+    if (res.count === 0) return actualizado;
     await this.registrarEvento(this.prisma, cobro.id, "ERROR", cobro.estado, actualizado.estado, {
       error: this.mensajeError(error),
+      origen,
     });
     return actualizado;
   }
@@ -597,7 +779,7 @@ export class PagoService {
     }
   }
 
-  private async registrarEvento(
+  async registrarEvento(
     client: PrismaClient | TransactionClient,
     cobroId: number,
     tipo: string,

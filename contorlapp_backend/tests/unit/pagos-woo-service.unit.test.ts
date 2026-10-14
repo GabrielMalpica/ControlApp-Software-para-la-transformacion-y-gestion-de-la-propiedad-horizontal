@@ -127,7 +127,7 @@ describe("PagoWooService consulta y verificacion", () => {
   test("verificarCobro devuelve el cobro ya actualizado", async () => {
     const { service, pagos } = servicio();
     const res = await service.verificarCobro("WC-abc");
-    expect(pagos.verificarCobro).toHaveBeenCalledWith(3);
+    expect(pagos.verificarCobro).toHaveBeenCalledWith(3, "USUARIO");
     expect(res.pagado).toBe(true);
   });
 });
@@ -157,6 +157,17 @@ describe("PagoWooService.posConfirmacion", () => {
 
     expect(pagos.marcarHuerfano).toHaveBeenCalledWith(3, expect.stringContaining("cancelled"));
     expect(woo.mock.calls.some((c) => (c[1] as RequestInit)?.method === "PUT")).toBe(false);
+  });
+
+  test("reintento: si la orden ya quedo pagada con este cobro, solo avisa (no es huerfano)", async () => {
+    const { service, dominio, pagos } = servicio();
+    woo.mockResolvedValue(orden({ status: "processing", transaction_id: "WC-abc" }));
+
+    await service.posConfirmacion(cobro({ estado: EstadoCobro.PAGADO }));
+
+    expect(pagos.marcarHuerfano).not.toHaveBeenCalled();
+    expect(woo.mock.calls.some((c) => (c[1] as RequestInit)?.method === "PUT")).toBe(false);
+    expect(dominio.notificarPagoConfirmado).toHaveBeenCalled();
   });
 
   test("si Woo no responde lanza, para que PagoService reintente", async () => {
@@ -196,6 +207,7 @@ describe("PagoWooService.posConfirmacion", () => {
     const tx: any = {};
     const base = {
       cobroId: 3,
+      canal: CanalPago.WOOCOMMERCE,
       wooOrderId: "900",
       montoEsperado: new Prisma.Decimal(1),
       referenceCode: "WC-abc",

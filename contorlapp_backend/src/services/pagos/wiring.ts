@@ -3,6 +3,8 @@ import { prisma } from "../../db/prisma";
 import { CommerceLifecycleService } from "../CommerceLifecycleService";
 import { pagoService } from "./pagoServiceInstance";
 import { PagoWooService } from "./PagoWooService";
+import { esperaSegunModo } from "./SaludPagosService";
+import { saludPagos } from "./saludPagosInstance";
 
 /**
  * Conecta el nucleo de pagos (PagoService, sin reglas de negocio propias)
@@ -26,6 +28,10 @@ pagoService.registrarPosConfirmacion(CanalPago.CONTROLAPP, (cobro) =>
 );
 pagoService.registrarPosFallo(CanalPago.CONTROLAPP, (cobro) => lifecycle.avisarPagoFallidoPorFactus(cobro));
 pagoService.registrarAlertador((cobro, motivo) => lifecycle.alertarAccionManualPago(cobro, motivo));
+
+// Cada cuanto se reconsulta un cobro pendiente: sondeo frecuente o, con el
+// webhook como via principal y funcionando, unas pocas consultas de respaldo.
+pagoService.registrarCalendario((cobro, ahora) => esperaSegunModo(saludPagos.modoEfectivo(), cobro, ahora));
 
 // Canal de la tienda web (plugin controlapp-factus-pay).
 const pagosWoo = new PagoWooService(prisma, pagoService, lifecycle);

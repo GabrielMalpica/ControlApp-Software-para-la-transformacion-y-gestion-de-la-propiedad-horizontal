@@ -1,6 +1,8 @@
 import {
   CanalPago,
+  EstadoCobro,
   EstadoPedidoInterno,
+  OrigenVerificacionPago,
   Prisma,
   Rol,
   TipoMovimientoInsumo,
@@ -32,7 +34,7 @@ import {
   type VerificacionComprobante,
 } from "../utils/comprobanteParser";
 import { pagoService } from "./pagos/pagoServiceInstance";
-import type { ConfirmadorPagoContexto } from "./pagos/PagoService";
+import { ESTADOS_ACTIVOS, type ConfirmadorPagoContexto } from "./pagos/PagoService";
 import { PedidoNoConfirmableError } from "./pagos/errors";
 
 type TransactionClient = Prisma.TransactionClient;
@@ -344,6 +346,8 @@ export class CommerceLifecycleService {
       montoEsperado: Number(cobro.montoEsperado),
       moneda: cobro.moneda,
       qrBase64: cobro.qrBase64,
+      // Llave Bre-B del QR: tambien se puede pagar copiandola, por el monto exacto.
+      brebKey: cobro.brebKey,
       expiraLocalEn: cobro.expiraLocalEn,
       creadoEn: cobro.creadoEn,
       actualizadoEn: cobro.actualizadoEn,
@@ -405,7 +409,7 @@ export class CommerceLifecycleService {
     });
     if (!cobro) throw commerceHttpError(404, "Este pedido todavia no tiene un cobro generado");
 
-    const actualizado = await pagoService.verificarCobro(cobro.id);
+    const actualizado = await pagoService.verificarCobro(cobro.id, OrigenVerificacionPago.USUARIO);
     return this.serializeCobro(actualizado);
   }
 
@@ -413,12 +417,12 @@ export class CommerceLifecycleService {
    * Confirmador que PagoService llama, DENTRO de su propia transaccion,
    * cuando Factus confirma un pago del canal CONTROLAPP (ver
    * services/pagos/wiring.ts). Solo mueve el pedido si sigue
-   * PENDIENTE_PAGO -si ya no puede confirmarse (cancelado, ya pagado por
-   * otra via, etc.) lanza PedidoNoConfirmableError para que PagoService deje
-   * el cobro como huerfano en vez de reintentar para siempre-. Los avisos
-   * (notificacion al cliente, reflejar el pago en WooCommerce) son best
-   * effort y van DESPUES de que esta transaccion cierre: ver
-   * avisarPagoConfirmadoPorFactus.
+   * PENDIENTE_PAGO y el cobro es por lo que el pedido debe -si ya no puede
+   * confirmarse (cancelado, ya pagado por otra via, monto que no cuadra)
+   * lanza PedidoNoConfirmableError para que PagoService deje el cobro como
+   * huerfano en vez de reintentar para siempre-. Los avisos (notificacion al
+   * cliente, reflejar el pago en WooCommerce) van DESPUES de que esta
+   * transaccion cierre: ver avisarPagoConfirmadoPorFactus.
    */
   async confirmarPagoSistema(tx: TransactionClient, contexto: ConfirmadorPagoContexto): Promise<void> {
     if (!contexto.pedidoAppId) {
@@ -426,13 +430,33 @@ export class CommerceLifecycleService {
     }
     const pedido = await tx.pedidoApp.findUnique({
       where: { id: contexto.pedidoAppId },
-      select: { id: true, estado: true, usuarioId: true, wooOrderId: true },
+      select: {
+        id: true,
+        estado: true,
+        usuarioId: true,
+        wooOrderId: true,
+        total: true,
+        pagarAhora: true,
+        moneda: true,
+      },
     });
     if (!pedido) {
       throw new PedidoNoConfirmableError(`el pedido #${contexto.pedidoAppId} ya no existe`);
     }
     if (pedido.estado !== EstadoPedidoInterno.PENDIENTE_PAGO) {
       throw new PedidoNoConfirmableError(`el pedido #${pedido.id} ya esta en estado ${pedido.estado}`);
+    }
+    // Defensa adicional: el monto del cobro ya se comparo con lo que confirmo
+    // Factus; aqui se compara con lo que el pedido debe HOY (crearPago cobra
+    // pagarAhora si es mayor que 0, si no el total). Solo en el canal de la
+    // app: en la tienda el cobro es por el total de la orden de Woo.
+    if (contexto.canal === CanalPago.CONTROLAPP) {
+      const debe = new Prisma.Decimal(Number(pedido.pagarAhora) > 0 ? pedido.pagarAhora : pedido.total);
+      if (!debe.equals(contexto.montoEsperado) || (pedido.moneda ?? "COP") !== "COP") {
+        throw new PedidoNoConfirmableError(
+          `el cobro es por ${contexto.montoEsperado.toString()} y el pedido #${pedido.id} debe ${debe.toString()} ${pedido.moneda}`,
+        );
+      }
     }
 
     const claim = await tx.pedidoApp.updateMany({
@@ -457,7 +481,8 @@ export class CommerceLifecycleService {
 
   /** Aviso al cliente y a WooCommerce de que Factus ya confirmo el pago
    * (registrado como "pos-confirmacion" en PagoService: corre DESPUES de que
-   * la transaccion de confirmarPagoSistema ya cerro). Best-effort. */
+   * la transaccion de confirmarPagoSistema ya cerro, y se reintenta si
+   * falla o si el proceso se cayo antes de correrlo). */
   async avisarPagoConfirmadoPorFactus(cobro: PagoCobro): Promise<void> {
     if (!cobro.pedidoAppId) return;
     const pedido = await this.prisma.pedidoApp.findUnique({
@@ -466,20 +491,9 @@ export class CommerceLifecycleService {
     });
     if (!pedido) return;
 
-    // pendienteSincronizarWoo=true significa que PagoService ya nos llamo una
-    // vez y el paso de Woo fallo: esto es un reintento. No se vuelve a
-    // notificar al cliente (no es idempotente, saldrian avisos duplicados);
-    // solo se reintenta reflejar el pago en Woo.
-    if (!cobro.pendienteSincronizarWoo) {
-      try {
-        await this.notificarAvance(pedido.usuarioId, cobro.pedidoAppId, EstadoPedidoInterno.PAGADO);
-      } catch (error) {
-        console.error("[pagos] no se pudo notificar el pago confirmado", {
-          pedidoId: cobro.pedidoAppId,
-          name: error instanceof Error ? error.name : "Error",
-        });
-      }
-    }
+    // En un reintento (Woo fallo antes) el cliente ya fue avisado: el claim
+    // sobre clienteNotificadoEn evita la notificacion duplicada.
+    await this.notificarPagoUnaVez(cobro, pedido.usuarioId);
 
     if (pedido.wooOrderId) {
       // A proposito SIN try/catch: si falla, PagoService.ejecutarPosConfirmacion
@@ -618,7 +632,33 @@ export class CommerceLifecycleService {
       select: { usuarioId: true },
     });
     if (!pedido) return;
-    await this.notificarAvance(pedido.usuarioId, cobro.pedidoAppId, EstadoPedidoInterno.PAGADO);
+    await this.notificarPagoUnaVez(cobro, pedido.usuarioId);
+  }
+
+  /**
+   * "Tu pago fue confirmado" una sola vez por cobro, aunque los avisos
+   * posteriores se reintenten: claim atomico sobre clienteNotificadoEn.
+   * Best-effort: si la notificacion falla se libera el claim (un reintento
+   * posterior la vuelve a intentar) y no se interrumpe el resto de avisos.
+   */
+  private async notificarPagoUnaVez(cobro: PagoCobro, usuarioId: string) {
+    if (!cobro.pedidoAppId) return;
+    const claim = await this.prisma.pagoCobro.updateMany({
+      where: { id: cobro.id, clienteNotificadoEn: null },
+      data: { clienteNotificadoEn: new Date() },
+    });
+    if (claim.count === 0) return;
+    try {
+      await this.notificarAvance(usuarioId, cobro.pedidoAppId, EstadoPedidoInterno.PAGADO);
+    } catch (error) {
+      await this.prisma.pagoCobro
+        .updateMany({ where: { id: cobro.id }, data: { clienteNotificadoEn: null } })
+        .catch(() => undefined);
+      console.error("[pagos] no se pudo notificar el pago confirmado", {
+        pedidoId: cobro.pedidoAppId,
+        name: error instanceof Error ? error.name : "Error",
+      });
+    }
   }
 
   /**
@@ -1236,6 +1276,20 @@ export class CommerceLifecycleService {
       );
     }
 
+    // Factus no permite anular un QR (vale 24 h): antes de cancelar un pedido
+    // que espera pago se pregunta a Factus si ya lo pagaron. Si si, el pago
+    // se confirma por el camino normal y no se cancela.
+    if (
+      dto.estadoDestino === EstadoPedidoInterno.CANCELADO &&
+      initial.estado === EstadoPedidoInterno.PENDIENTE_PAGO &&
+      (await this.pagadoAntesDeCancelar(initial.id, actor.rol))
+    ) {
+      throw commerceHttpError(
+        409,
+        "El pago de este pedido ya se recibio, asi que no se puede cancelar. Actualiza el detalle del pedido.",
+      );
+    }
+
     // Confirmar la recepcion cierra el pedido: pasa por "recibido" (se suma al
     // inventario y queda verificada la entrega) y termina "entregado", sin
     // pedirle al cliente un segundo paso. Los dos quedan en el historial.
@@ -1333,6 +1387,20 @@ export class CommerceLifecycleService {
     }
 
     return this.getPedido(userId, pedidoId);
+  }
+
+  /** true si algun cobro vivo del pedido resulta pagado al consultarlo ahora en Factus. */
+  private async pagadoAntesDeCancelar(pedidoId: number, rol: Rol): Promise<boolean> {
+    const vivos = await this.prisma.pagoCobro.findMany({
+      where: { pedidoAppId: pedidoId, estado: { in: ESTADOS_ACTIVOS } },
+      select: { id: true },
+    });
+    const origen = ROLES_INTERNOS.has(rol) ? OrigenVerificacionPago.ADMIN : OrigenVerificacionPago.USUARIO;
+    for (const { id } of vivos) {
+      const cobro = await pagoService.verificarCobro(id, origen);
+      if (cobro.estado === EstadoCobro.PAGADO) return true;
+    }
+    return false;
   }
 
   /** Guarda el estado que tiene el pedido en Woo, sin cambiar el estado del pedido en la app. */

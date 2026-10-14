@@ -23,6 +23,9 @@ import { bootstrapNotificacionesSchema } from "./services/NotificacionService";
 import { iniciarConciliacionPeriodica, iniciarPagoReconciler } from "./services/pagos/PagoReconciler";
 import { ejecutarConciliacion, fechaUltimaConciliacion } from "./services/pagos/conciliacionInstance";
 import { pagoService } from "./services/pagos/pagoServiceInstance";
+import { factusWebhook } from "./services/pagos/factusWebhookInstance";
+import { saludPagos } from "./services/pagos/saludPagosInstance";
+import { verificarFuenteMarcaAgua } from "./utils/marca_agua_evidencia";
 // Efecto secundario: registra en pagoService los callbacks de dominio de
 // pedidos (confirmar el pago, avisar, alertar). Debe importarse antes de que
 // el worker de abajo empiece a procesar cobros.
@@ -42,6 +45,11 @@ avisarBaseDeDatos();
 
 const app = express();
 app.set("trust proxy", 1);
+// Webhook de Factus Pay: lo mandan siempre las mismas IPs de Factus (una
+// entrega por pago), asi que no entra en el limite global por IP; el
+// endpoint limita por su cuenta los intentos con llave invalida.
+const RUTA_WEBHOOK_FACTUS = "/commerce/webhooks/factus-pay";
+const esWebhookFactus = (req: Request) => req.path === RUTA_WEBHOOK_FACTUS;
 const rateLimitDigest = (...parts: string[]) =>
   createHash("sha256").update(parts.join("\u0000")).digest("hex");
 const configuredOrigins = [
@@ -98,24 +106,24 @@ app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 300,
-    skip: isTaskClosingRequest,
+    skip: (req) => isTaskClosingRequest(req) || esWebhookFactus(req),
     standardHeaders: "draft-7",
     legacyHeaders: false,
     message: { ok: false, message: "Demasiadas solicitudes. Intenta nuevamente en unos minutos" },
   }),
 );
-app.use(
-  express.json({
-    limit: "1mb",
-    // Guarda el cuerpo crudo (antes de parsear) para el webhook de
-    // WooCommerce: su firma HMAC se calcula sobre los bytes exactos que
-    // envio, no sobre el JSON re-serializado -que podria no ser identico
-    // byte a byte (orden de llaves, espacios, etc).
-    verify: (req, _res, buf) => {
-      (req as Request).rawBody = buf;
-    },
-  }),
-);
+// Guarda el cuerpo crudo (antes de parsear) para el webhook de
+// WooCommerce: su firma HMAC se calcula sobre los bytes exactos que
+// envio, no sobre el JSON re-serializado -que podria no ser identico
+// byte a byte (orden de llaves, espacios, etc). El de Factus lo usa para
+// el hash de auditoria de cada aviso.
+const guardarRawBody = (req: Request, _res: Response, buf: Buffer) => {
+  req.rawBody = buf;
+};
+// El aviso de Factus trae poco mas que el QR en base64: limite propio, mas
+// bajo que el general (el parser global no vuelve a leer un cuerpo ya leido).
+app.use(RUTA_WEBHOOK_FACTUS, express.json({ limit: "256kb", verify: guardarRawBody }));
+app.use(express.json({ limit: "1mb", verify: guardarRawBody }));
 
 const loginIpLimit = distributedRateLimit({
   name: "auth:login:ip",
@@ -618,10 +626,15 @@ const HOST = process.env.HOST || "0.0.0.0";
     console.error("No se pudo inicializar tabla de notificaciones:", e);
   }
 
-  // Reemplaza al webhook que Factus no ofrece: verifica en segundo plano los
-  // cobros pendientes (ver docs/pagos-factus.md). Confirmadores por canal se
-  // registran donde vive cada dominio (CommerceLifecycleController, etc.).
-  const detenerWorker = iniciarPagoReconciler(pagoService);
+  verificarFuenteMarcaAgua();
+
+  // Verifica en segundo plano los cobros pendientes y retoma los avisos del
+  // webhook de Factus que quedaron sin procesar (ver docs/pagos-factus.md).
+  // Confirmadores por canal se registran en services/pagos/wiring.ts.
+  const detenerWorker = iniciarPagoReconciler(pagoService, {
+    barrerWebhooks: () => factusWebhook.barrerPendientes(),
+    evaluarSalud: () => saludPagos.evaluarSiToca(),
+  });
   const detenerConciliacion = iniciarConciliacionPeriodica({
     ejecutar: ejecutarConciliacion,
     ultima: fechaUltimaConciliacion,

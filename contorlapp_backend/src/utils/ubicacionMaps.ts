@@ -164,11 +164,13 @@ function aNumero(valor: unknown): number | null {
 }
 
 /**
- * Valida que el dispositivo esté en el conjunto. Si el conjunto no tiene
- * ubicación configurada no se exige nada (`verificada: false`). Si la tiene y
- * el dispositivo no manda ubicación, o está lejos, lanza un error para que no
- * se registre la asistencia. La precisión reportada por el GPS amplía un poco
- * el radio (máx. 100 m) para no rechazar a quien sí está en el sitio.
+ * Valida la ubicación de un registro de asistencia por QR. El dispositivo
+ * siempre tiene que mandarla (es la trazabilidad del registro): sin ella lanza
+ * un error y no se registra nada. Si además el conjunto tiene ubicación
+ * configurada, exige estar en el sitio; si no la tiene, se guarda la del
+ * dispositivo sin comparar distancia (`verificada: false`). La precisión
+ * reportada por el GPS amplía un poco el radio (máx. 100 m) para no rechazar a
+ * quien sí está en el sitio.
  */
 export function validarUbicacionEnConjunto(params: {
   conjunto: UbicacionConjunto;
@@ -176,16 +178,16 @@ export function validarUbicacionEnConjunto(params: {
   longitud?: number | null;
   precisionMetros?: number | null;
 }): { verificada: boolean; distanciaMetros: number | null } {
-  const lat = aNumero(params.conjunto.latitud);
-  const lng = aNumero(params.conjunto.longitud);
-  if (lat == null || lng == null) return { verificada: false, distanciaMetros: null };
-
   if (params.latitud == null || params.longitud == null) {
     throw httpError(
       400,
       "Necesitamos tu ubicación para registrar la asistencia. Activa el GPS, da permiso de ubicación a la app e inténtalo de nuevo.",
     );
   }
+
+  const lat = aNumero(params.conjunto.latitud);
+  const lng = aNumero(params.conjunto.longitud);
+  if (lat == null || lng == null) return { verificada: false, distanciaMetros: null };
 
   const distancia = distanciaMetros(
     { latitud: lat, longitud: lng },

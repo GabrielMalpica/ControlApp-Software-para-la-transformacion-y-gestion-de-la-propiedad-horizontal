@@ -396,8 +396,9 @@ export class AsistenciaService {
       throw makeHttpError(400, "El codigo QR no es valido o ya fue reemplazado. Pide uno nuevo en el sitio.");
     }
 
-    // Si el conjunto tiene ubicación, no se deja registrar desde otro lugar:
-    // así toda asistencia registrada se hizo en el sitio de trabajo.
+    // Toda asistencia por QR queda con la ubicación del dispositivo, y si el
+    // conjunto tiene ubicación no se deja registrar desde otro lugar: así
+    // toda asistencia registrada se hizo en el sitio de trabajo.
     const ubicacion = validarUbicacionEnConjunto({
       conjunto,
       latitud: input.latitud,

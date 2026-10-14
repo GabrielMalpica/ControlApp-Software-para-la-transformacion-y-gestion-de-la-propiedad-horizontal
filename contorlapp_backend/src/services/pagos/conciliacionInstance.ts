@@ -1,7 +1,7 @@
 import { prisma } from "../../db/prisma";
 import { CommerceLifecycleService } from "../CommerceLifecycleService";
 import { cacheGet, cacheSet } from "../RedisService";
-import { listarCobrosFactus } from "./FactusPayClient";
+import { consultarCobroFactus, isFactusPaySandbox, listarCobrosFactus } from "./FactusPayClient";
 import { PagoConciliacionService, type ReporteConciliacion } from "./PagoConciliacionService";
 import { pagoService } from "./pagoServiceInstance";
 
@@ -13,6 +13,9 @@ export const pagoConciliacion = new PagoConciliacionService(
   pagoService,
   listarCobrosFactus,
   (titulo, mensaje) => lifecycle.alertarConciliacion(titulo, mensaje),
+  undefined,
+  isFactusPaySandbox,
+  { consultar: consultarCobroFactus },
 );
 
 /** Corre la conciliacion y guarda el reporte (7 dias) para consultarlo despues. */

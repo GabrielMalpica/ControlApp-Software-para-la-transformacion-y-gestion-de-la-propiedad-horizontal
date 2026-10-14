@@ -1,7 +1,8 @@
 import { Prisma } from "@prisma/client";
 
 /**
- * Prisma "de mentira" para PagoCobro/PagoEvento: solo lo que PagoService usa
+ * Prisma "de mentira" para PagoCobro/PagoEvento/PagoWebhookFactus: solo lo
+ * que PagoService y FactusWebhookService usan
  * (create, findFirst, findUnique[OrThrow], findMany, update, updateMany,
  * $transaction con rollback real si el callback lanza). No reemplaza una
  * prueba de integracion contra Postgres -en particular no reproduce el
@@ -61,11 +62,13 @@ function aplicarData(fila: Row, data: Record<string, unknown>): Row {
   for (const [clave, valor] of Object.entries(data)) {
     if (valor && typeof valor === "object" && "increment" in (valor as Record<string, unknown>)) {
       nueva[clave] = (nueva[clave] ?? 0) + (valor as { increment: number }).increment;
+    } else if (valor && typeof valor === "object" && "decrement" in (valor as Record<string, unknown>)) {
+      nueva[clave] = (nueva[clave] ?? 0) - (valor as { decrement: number }).decrement;
     } else {
       nueva[clave] = valor;
     }
   }
-  if (!("actualizadoEn" in data)) nueva.actualizadoEn = new Date();
+  if ("actualizadoEn" in fila && !("actualizadoEn" in data)) nueva.actualizadoEn = new Date();
   return nueva;
 }
 
@@ -95,15 +98,22 @@ function proyectar(fila: Row, select?: Record<string, boolean>) {
 export function crearFakePagosPrisma() {
   let cobros: Row[] = [];
   let eventos: Row[] = [];
+  let webhooks: Row[] = [];
   let nextCobroId = 1;
   let nextEventoId = 1;
+  let nextWebhookId = 1;
 
   function snapshot() {
-    return { cobros: cobros.map((f) => ({ ...f })), eventos: eventos.map((f) => ({ ...f })) };
+    return {
+      cobros: cobros.map((f) => ({ ...f })),
+      eventos: eventos.map((f) => ({ ...f })),
+      webhooks: webhooks.map((f) => ({ ...f })),
+    };
   }
-  function restaurar(foto: { cobros: Row[]; eventos: Row[] }) {
+  function restaurar(foto: { cobros: Row[]; eventos: Row[]; webhooks: Row[] }) {
     cobros = foto.cobros;
     eventos = foto.eventos;
+    webhooks = foto.webhooks;
   }
 
   function crearApi(): any {
@@ -125,6 +135,17 @@ export function crearFakePagosPrisma() {
             lockedUntil: null,
             pagadoDetectadoEn: null,
             pendienteSincronizarWoo: false,
+            clienteNotificadoEn: null,
+            origenConfirmacion: null,
+            ultimaVerificacionEn: null,
+            ultimaVerificacionOrigen: null,
+            webhookPrimeroEn: null,
+            webhooksRecibidos: 0,
+            qrExpiraEn: null,
+            brebKey: null,
+            pagadorNombre: null,
+            pagadorTipoDocumento: null,
+            pagadorDocumentoUltimos4: null,
             pedidoAppId: null,
             wooOrderId: null,
             usuarioId: null,
@@ -150,13 +171,13 @@ export function crearFakePagosPrisma() {
           if (typeof take === "number") filas = filas.slice(0, take);
           return filas.map((f) => proyectar(f, select));
         },
-        findUnique: async ({ where }: { where: { id: number } }) => {
-          const fila = cobros.find((f) => f.id === where.id);
+        findUnique: async ({ where }: { where: Row }) => {
+          const fila = cobros.find((f) => cumpleWhere(f, where));
           return fila ? { ...fila } : null;
         },
-        findUniqueOrThrow: async ({ where }: { where: { id: number } }) => {
-          const fila = cobros.find((f) => f.id === where.id);
-          if (!fila) throw new Error(`PagoCobro ${where.id} no existe`);
+        findUniqueOrThrow: async ({ where }: { where: Row }) => {
+          const fila = cobros.find((f) => cumpleWhere(f, where));
+          if (!fila) throw new Error(`PagoCobro ${JSON.stringify(where)} no existe`);
           return { ...fila };
         },
         update: async ({ where, data }: { where: { id: number }; data: Row }) => {
@@ -182,6 +203,57 @@ export function crearFakePagosPrisma() {
           return { ...fila };
         },
       },
+      pagoWebhookFactus: {
+        create: async ({ data }: { data: Row }) => {
+          const fila: Row = {
+            id: nextWebhookId++,
+            recibidoEn: new Date(),
+            referenceCode: null,
+            cobroId: null,
+            payload: null,
+            montoReportado: null,
+            estadoReportado: null,
+            ip: null,
+            estado: "RECIBIDO",
+            resultado: null,
+            detalle: null,
+            intentos: 0,
+            lockedUntil: null,
+            procesadoEn: null,
+            ...data,
+          };
+          webhooks.push(fila);
+          return { ...fila };
+        },
+        findUniqueOrThrow: async ({ where }: { where: Row }) => {
+          const fila = webhooks.find((f) => cumpleWhere(f, where));
+          if (!fila) throw new Error(`PagoWebhookFactus ${JSON.stringify(where)} no existe`);
+          return { ...fila };
+        },
+        findMany: async ({ where, orderBy, take, select }: { where?: Row; orderBy?: Row; take?: number; select?: Row }) => {
+          let filas = ordenar(
+            webhooks.filter((f) => cumpleWhere(f, where)),
+            orderBy,
+          );
+          if (typeof take === "number") filas = filas.slice(0, take);
+          return filas.map((f) => proyectar(f, select));
+        },
+        update: async ({ where, data }: { where: { id: number }; data: Row }) => {
+          const idx = webhooks.findIndex((f) => f.id === where.id);
+          if (idx === -1) throw new Error(`PagoWebhookFactus ${where.id} no existe`);
+          webhooks[idx] = aplicarData(webhooks[idx], data);
+          return { ...webhooks[idx] };
+        },
+        updateMany: async ({ where, data }: { where?: Row; data: Row }) => {
+          let count = 0;
+          webhooks = webhooks.map((f) => {
+            if (!cumpleWhere(f, where)) return f;
+            count++;
+            return aplicarData(f, data);
+          });
+          return { count };
+        },
+      },
       $executeRaw: async () => 0,
       $transaction: async (callback: (tx: any) => Promise<unknown>) => {
         const foto = snapshot();
@@ -195,6 +267,7 @@ export function crearFakePagosPrisma() {
       _debug: {
         cobros: () => cobros.map((f) => ({ ...f })),
         eventos: () => eventos.map((f) => ({ ...f })),
+        webhooks: () => webhooks.map((f) => ({ ...f })),
       },
     };
   }

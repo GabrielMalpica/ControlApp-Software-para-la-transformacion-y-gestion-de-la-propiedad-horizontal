@@ -4,8 +4,10 @@ import { prisma } from "../db/prisma";
 import { CommerceAccessService } from "../services/CommerceAccessService";
 import { ejecutarConciliacion, ultimoReporteConciliacion } from "../services/pagos/conciliacionInstance";
 import { PagoAdminService } from "../services/pagos/PagoAdminService";
+import { pagoService } from "../services/pagos/pagoServiceInstance";
+import { saludPagos } from "../services/pagos/saludPagosInstance";
 
-const service = new PagoAdminService(prisma);
+const service = new PagoAdminService(prisma, pagoService);
 const access = new CommerceAccessService(prisma);
 const CobroParamDTO = z.object({ cobroId: z.coerce.number().int().positive() });
 
@@ -42,6 +44,24 @@ export class PagoAdminController {
     try {
       const { cobroId } = CobroParamDTO.parse(req.params);
       res.json(await service.resolver(await this.actor(req.user!.sub), cobroId, req.body));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  verificar: RequestHandler = async (req, res, next) => {
+    try {
+      const { cobroId } = CobroParamDTO.parse(req.params);
+      res.json(await service.verificarConFactus(await this.actor(req.user!.sub), cobroId));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  /** Salud del webhook de Factus y modo de confirmacion (ver SaludPagosService). */
+  salud: RequestHandler = async (_req, res, next) => {
+    try {
+      res.json(await saludPagos.resumen());
     } catch (error) {
       next(error);
     }

@@ -10,6 +10,15 @@ export class FactusPayError extends Error {
   }
 }
 
+/** Lo que se puede contar en el log de un error de pagos sin exponer nada
+ * sensible: el mensaje (propio o de Factus) y los codigos HTTP. */
+export function detalleErrorPagos(error: unknown) {
+  if (error instanceof FactusPayError) {
+    return { name: error.name, message: error.message, status: error.status, upstreamStatus: error.upstreamStatus };
+  }
+  return { name: error instanceof Error ? error.name : "Error" };
+}
+
 /**
  * La lanza un confirmador de pago (ver PagoService.registrarConfirmador)
  * cuando Factus confirmo el pago pero el pedido/orden ya no puede pasar a

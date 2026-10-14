@@ -80,11 +80,25 @@ describe("confirmarPagoSistema (confirmador registrado en PagoService)", () => {
   function contexto(overrides: Record<string, unknown> = {}) {
     return {
       cobroId: 7,
+      canal: CanalPago.CONTROLAPP,
       pedidoAppId: 41,
       wooOrderId: null,
       usuarioId: "admin-1",
       montoEsperado: new Prisma.Decimal(50000),
       referenceCode: "CA-abc",
+      ...overrides,
+    };
+  }
+
+  function pendiente(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 41,
+      estado: E.PENDIENTE_PAGO,
+      usuarioId: "admin-1",
+      wooOrderId: "2395",
+      total: new Prisma.Decimal(50000),
+      pagarAhora: new Prisma.Decimal(0),
+      moneda: "COP",
       ...overrides,
     };
   }
@@ -120,7 +134,7 @@ describe("confirmarPagoSistema (confirmador registrado en PagoService)", () => {
     const service = new CommerceLifecycleService({} as never);
     const tx: any = {
       pedidoApp: {
-        findUnique: jest.fn().mockResolvedValue({ id: 41, estado: E.PENDIENTE_PAGO, usuarioId: "admin-1", wooOrderId: null }),
+        findUnique: jest.fn().mockResolvedValue(pendiente({ wooOrderId: null })),
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
     };
@@ -133,7 +147,7 @@ describe("confirmarPagoSistema (confirmador registrado en PagoService)", () => {
     const historial = jest.fn().mockResolvedValue({});
     const tx: any = {
       pedidoApp: {
-        findUnique: jest.fn().mockResolvedValue({ id: 41, estado: E.PENDIENTE_PAGO, usuarioId: "admin-1", wooOrderId: "2395" }),
+        findUnique: jest.fn().mockResolvedValue(pendiente()),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       pedidoAppEstadoHistorico: { create: historial },
@@ -155,6 +169,51 @@ describe("confirmarPagoSistema (confirmador registrado en PagoService)", () => {
         motivo: expect.stringContaining("CA-abc"),
       }),
     });
+  });
+
+  test("un cobro de la app por un monto distinto al que debe el pedido no lo confirma", async () => {
+    const service = new CommerceLifecycleService({} as never);
+    const tx: any = {
+      pedidoApp: {
+        findUnique: jest.fn().mockResolvedValue(pendiente({ total: new Prisma.Decimal(80000) })),
+        updateMany: jest.fn(),
+      },
+    };
+
+    await expect(service.confirmarPagoSistema(tx, contexto())).rejects.toThrow(PedidoNoConfirmableError);
+    expect(tx.pedidoApp.updateMany).not.toHaveBeenCalled();
+  });
+
+  test("con pagarAhora (servicios) el cobro debe ser por pagarAhora, no por el total", async () => {
+    const service = new CommerceLifecycleService({} as never);
+    const tx: any = {
+      pedidoApp: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(pendiente({ total: new Prisma.Decimal(200000), pagarAhora: new Prisma.Decimal(50000) })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      pedidoAppEstadoHistorico: { create: jest.fn().mockResolvedValue({}) },
+    };
+
+    await service.confirmarPagoSistema(tx, contexto());
+    expect(tx.pedidoApp.updateMany).toHaveBeenCalled();
+  });
+
+  test("en el canal de la tienda no se compara con el pedido (el cobro es por el total de la orden de Woo)", async () => {
+    const service = new CommerceLifecycleService({} as never);
+    const tx: any = {
+      pedidoApp: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(pendiente({ total: new Prisma.Decimal(200000), pagarAhora: new Prisma.Decimal(50000) })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      pedidoAppEstadoHistorico: { create: jest.fn().mockResolvedValue({}) },
+    };
+
+    await service.confirmarPagoSistema(tx, contexto({ canal: CanalPago.WOOCOMMERCE, montoEsperado: new Prisma.Decimal(200000) }));
+    expect(tx.pedidoApp.updateMany).toHaveBeenCalled();
   });
 });
 
@@ -248,7 +307,7 @@ describe("crearPago / obtenerPago / verificarPago", () => {
 
     const resultado = await service.verificarPago("admin-1", 41);
 
-    expect(verificarCobro).toHaveBeenCalledWith(7);
+    expect(verificarCobro).toHaveBeenCalledWith(7, "USUARIO");
     expect(resultado.estado).toBe(EstadoCobro.PAGADO);
   });
 });
@@ -257,7 +316,11 @@ describe("avisos posteriores a la confirmacion del pago", () => {
   const woo = wooFetch as jest.MockedFunction<typeof wooFetch>;
 
   function servicio() {
-    const prisma: any = { pedidoApp: { findUnique: jest.fn() } };
+    const prisma: any = {
+      pedidoApp: { findUnique: jest.fn() },
+      // Claim de clienteNotificadoEn: por defecto, nadie habia avisado aun.
+      pagoCobro: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
     const service = new CommerceLifecycleService(prisma as never);
     const crearParaUsuarios = jest.fn().mockResolvedValue(undefined);
     (service as any).notificaciones = { crearParaUsuarios };
@@ -299,14 +362,35 @@ describe("avisos posteriores a la confirmacion del pago", () => {
     expect(crearParaUsuarios).toHaveBeenCalled();
   });
 
-  test("en un reintento (pendienteSincronizarWoo=true) no se vuelve a notificar, solo se reintenta Woo", async () => {
+  test("en un reintento (el cliente ya fue avisado) no se vuelve a notificar, solo se reintenta Woo", async () => {
     const { service, prisma, crearParaUsuarios } = servicio();
     prisma.pedidoApp.findUnique.mockResolvedValue({ usuarioId: "admin-1", wooOrderId: "2395" });
+    prisma.pagoCobro.updateMany.mockResolvedValue({ count: 0 });
     woo.mockResolvedValue({});
 
     await service.avisarPagoConfirmadoPorFactus(cobro({ pendienteSincronizarWoo: true }) as never);
 
+    expect(prisma.pagoCobro.updateMany).toHaveBeenCalledWith({
+      where: { id: 7, clienteNotificadoEn: null },
+      data: { clienteNotificadoEn: expect.any(Date) },
+    });
     expect(crearParaUsuarios).not.toHaveBeenCalled();
+    expect(woo.mock.calls[0][1]).toMatchObject({ method: "PUT" });
+  });
+
+  test("si la notificacion falla se libera el claim y Woo se refleja igual", async () => {
+    const { service, prisma, crearParaUsuarios } = servicio();
+    prisma.pedidoApp.findUnique.mockResolvedValue({ usuarioId: "admin-1", wooOrderId: "2395" });
+    crearParaUsuarios.mockRejectedValue(new Error("db"));
+    woo.mockResolvedValue({});
+    jest.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await service.avisarPagoConfirmadoPorFactus(cobro() as never);
+
+    expect(prisma.pagoCobro.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 7 },
+      data: { clienteNotificadoEn: null },
+    });
     expect(woo.mock.calls[0][1]).toMatchObject({ method: "PUT" });
   });
 

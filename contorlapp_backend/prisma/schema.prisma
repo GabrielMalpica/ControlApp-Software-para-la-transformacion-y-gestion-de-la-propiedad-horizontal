@@ -83,6 +83,17 @@ enum EstadoCobro {
   RESUELTO
 }
 
+// Que disparo una consulta a Factus sobre un cobro. Toda confirmacion se
+// decide con la respuesta de la API; esto solo dice quien la pidio (ver
+// docs/pagos-factus.md, "Webhook").
+enum OrigenVerificacionPago {
+  WEBHOOK
+  USUARIO
+  WORKER
+  CONCILIACION
+  ADMIN
+}
+
 enum EstadoCivil {
   SOLTERO
   CASADO
@@ -2533,9 +2544,10 @@ model PedidoAppEstadoHistorico {
 /**
  * Un cobro creado en Factus Pay (recaudo) para un pedido de ControlApp o una
  * orden de WooCommerce. Es el registro central de pagos: PagoService lo crea
- * al pedir el QR, el worker (PagoReconciler) lo actualiza consultando a
- * Factus, y confirmarPagoSistema en CommerceLifecycleService lo usa para
- * mover el pedido a PAGADO. Ver docs/pagos-factus.md.
+ * al pedir el QR, lo actualiza consultando a Factus (cuando llega el webhook,
+ * con "Ya pague" o desde el worker PagoReconciler), y confirmarPagoSistema en
+ * CommerceLifecycleService lo usa para mover el pedido a PAGADO. Ver
+ * docs/pagos-factus.md.
  */
 model PagoCobro {
   id            Int       @id @default(autoincrement())
@@ -2568,14 +2580,36 @@ model PagoCobro {
   lockedUntil          DateTime?
 
   pagadoDetectadoEn       DateTime?
-  // Si Factus confirmo el pago pero fallo la sincronizacion con WooCommerce
-  // despues del commit, el worker la reintenta con este flag.
+  // Avisos posteriores al pago (notificar, reflejar en WooCommerce) que
+  // faltan: se pone en true en la MISMA transaccion que confirma el pago y
+  // se apaga cuando los avisos terminan, asi una caida entre el commit y
+  // los avisos no los pierde (el worker los reintenta).
   pendienteSincronizarWoo Boolean   @default(false)
+  // Cuando se le aviso al cliente que el pago quedo confirmado (una sola vez).
+  clienteNotificadoEn     DateTime?
+
+  // Quien disparo la verificacion que confirmo el pago, y la ultima consulta.
+  origenConfirmacion       OrigenVerificacionPago?
+  ultimaVerificacionEn     DateTime?
+  ultimaVerificacionOrigen OrigenVerificacionPago?
+  // Avisos del webhook de Factus para este cobro (cada entrega cuenta).
+  webhookPrimeroEn         DateTime?
+  webhooksRecibidos        Int                     @default(0)
+
+  // Datos que devuelve Factus: vencimiento real del QR y llave Bre-B.
+  qrExpiraEn DateTime?
+  brebKey    String?
+
+  // Pagador segun Factus. Solo los ultimos 4 caracteres del documento.
+  pagadorNombre            String?
+  pagadorTipoDocumento     String?
+  pagadorDocumentoUltimos4 String?
 
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
-  eventos PagoEvento[]
+  eventos  PagoEvento[]
+  webhooks PagoWebhookFactus[]
 
   @@index([estado, proximaVerificacion])
   @@index([pedidoAppId])
@@ -2604,6 +2638,45 @@ model PagoEvento {
 
   @@index([cobroId, creadoEn])
   @@map("PagoEvento")
+}
+
+/**
+ * Bandeja de entrada del webhook de Factus Pay: cada POST con la llave valida
+ * queda aqui ANTES de responder 200 (Factus no reenvia lo que ya respondimos
+ * con 2xx). El webhook no confirma nada por si solo -su cuerpo no viene
+ * firmado-: solo dispara una verificacion por API del cobro. El worker retoma
+ * las filas que quedaron RECIBIDO (proceso caido, cobro ocupado, Factus sin
+ * confirmar todavia). Ver FactusWebhookService y docs/pagos-factus.md.
+ */
+model PagoWebhookFactus {
+  id            Int        @id @default(autoincrement())
+  recibidoEn    DateTime   @default(now())
+  // Referencia que dice el cuerpo (sin verificar). null si no se pudo leer.
+  referenceCode String?
+  cobro         PagoCobro? @relation(fields: [cobroId], references: [id], onDelete: SetNull)
+  cobroId       Int?
+
+  bodySha256      String
+  // Cuerpo saneado: sin el QR y con el documento del pagador recortado.
+  payload         Json?
+  montoReportado  Decimal? @db.Decimal(14, 2)
+  estadoReportado String?
+  ip              String?
+
+  // RECIBIDO | PROCESADO
+  estado      String    @default("RECIBIDO")
+  // CONFIRMADO | YA_PROCESADO | NO_CONFIRMADO_POR_API | DISCREPANCIA | PAGADO_DUPLICADO |
+  // PAGADO_HUERFANO | REFERENCIA_DESCONOCIDA | PAYLOAD_INVALIDO | ERROR
+  resultado   String?
+  detalle     String?
+  intentos    Int       @default(0)
+  lockedUntil DateTime?
+  procesadoEn DateTime?
+
+  @@index([estado, recibidoEn])
+  @@index([referenceCode])
+  @@index([cobroId])
+  @@map("PagoWebhookFactus")
 }
 
 model ConfigPuntosConjunto {
