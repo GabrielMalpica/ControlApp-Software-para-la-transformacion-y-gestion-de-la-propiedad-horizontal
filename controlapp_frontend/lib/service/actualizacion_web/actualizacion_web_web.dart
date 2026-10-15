@@ -18,6 +18,15 @@ class ActualizacionWeb {
     }
   }
 
+  /// Fecha de publicación (Last-Modified de main.dart.js) de la versión que
+  /// se está usando, tal como la guardó el arranque al abrir la app.
+  static String? fechaVersion() {
+    final valor = globalContext.getProperty<JSAny?>(
+      'controlappFechaVersionWeb'.toJS,
+    );
+    return valor.isA<JSString>() ? (valor as JSString).toDart : null;
+  }
+
   /// Baja de nuevo lo que no cambia de nombre entre versiones y recarga.
   static Future<void> actualizar() async {
     if (globalContext.has('controlappActualizar')) {

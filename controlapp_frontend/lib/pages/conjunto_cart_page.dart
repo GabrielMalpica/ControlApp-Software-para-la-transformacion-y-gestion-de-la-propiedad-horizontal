@@ -5,6 +5,7 @@ import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/conjunto_order_models.dart';
 import 'package:flutter_application_1/pages/commerce_order_detail_page.dart';
 import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
+import 'package:flutter_application_1/pages/saldos_page.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/conjunto_cart_service.dart';
@@ -277,6 +278,7 @@ class _ConjuntoCartPageState extends State<ConjuntoCartPage> {
                     child: ListView(
                       padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
                       children: <Widget>[
+                        const SaldoPendienteBanner(),
                         CommerceHeroCard(
                           eyebrow: 'Compra operativa',
                           title: 'Abastecimiento listo',

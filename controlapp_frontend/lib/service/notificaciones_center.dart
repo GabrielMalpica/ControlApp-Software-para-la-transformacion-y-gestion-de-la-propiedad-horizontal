@@ -28,6 +28,12 @@ class NotificacionesCenter with WidgetsBindingObserver {
   final ValueNotifier<NotificacionModel?> pedidoActualizado =
       ValueNotifier<NotificacionModel?>(null);
 
+  /// Última notificación nueva sobre un saldo de servicio (pendiente o
+  /// pagado). La pantalla del saldo y el aviso de "saldo pendiente" la
+  /// escuchan para recargarse sin polling propio.
+  final ValueNotifier<NotificacionModel?> saldoActualizado =
+      ValueNotifier<NotificacionModel?>(null);
+
   Timer? _timer;
   bool _cargando = false;
   bool _observando = false;
@@ -113,6 +119,9 @@ class NotificacionesCenter with WidgetsBindingObserver {
           } else if (n.tipo.startsWith('pedido_') &&
               n.referenciaTipo == 'PedidoApp') {
             pedidoActualizado.value = n;
+          } else if (n.tipo.startsWith('saldo_servicio_') &&
+              n.referenciaTipo == 'SaldoServicio') {
+            saldoActualizado.value = n;
           }
         }
       }

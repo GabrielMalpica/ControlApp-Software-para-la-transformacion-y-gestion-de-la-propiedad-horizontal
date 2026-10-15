@@ -14,9 +14,17 @@
     return respuesta.headers.get('etag') || respuesta.headers.get('last-modified');
   }
 
-  function versionPublicada() {
+  // `guardarFecha`: al abrir la app se guarda la fecha de publicación de la
+  // versión cargada, que la app muestra como "Versión de la app" (login y
+  // perfil) para saber qué versión tiene cada quien.
+  function versionPublicada(guardarFecha) {
     return fetch('main.dart.js', { method: 'HEAD', cache: 'no-store' })
-      .then(versionDe)
+      .then(function (respuesta) {
+        if (guardarFecha && respuesta && respuesta.ok) {
+          window.controlappFechaVersionWeb = respuesta.headers.get('last-modified');
+        }
+        return versionDe(respuesta);
+      })
       .catch(function () { return null; });
   }
 
@@ -85,7 +93,7 @@
   })[0];
 
   // `flutter run` (desarrollo) no compila con dart2js: no hay nada que versionar.
-  var lista = compilacion ? versionPublicada() : Promise.resolve(null);
+  var lista = compilacion ? versionPublicada(true) : Promise.resolve(null);
   lista.then(function (version) {
     if (!version) return null;
     window.controlappVersionWeb = version;

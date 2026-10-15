@@ -5,7 +5,9 @@ import 'package:flutter_application_1/model/conjunto_model.dart';
 import 'package:flutter_application_1/model/inventario_activo_model.dart';
 import 'package:flutter_application_1/pages/cumpleanos_page.dart';
 import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
+import 'package:flutter_application_1/pages/mora_clientes_page.dart';
 import 'package:flutter_application_1/pages/pagos_admin_page.dart';
+import 'package:flutter_application_1/pages/solicitudes_web_page.dart';
 import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
 import 'package:flutter_application_1/pages/compartidos/reportes_dashboard_page.dart';
 import 'package:flutter_application_1/pages/festivos_page.dart';
@@ -30,6 +32,7 @@ import 'package:flutter_application_1/pages/gerente/zonificacion_page.dart';
 import 'package:flutter_application_1/pages/inventario_activos_page.dart';
 import 'package:flutter_application_1/pages/inventario_page.dart';
 import 'package:flutter_application_1/pages/preventivas_page.dart';
+import 'package:flutter_application_1/service/permission_service.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/logout.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
@@ -910,6 +913,25 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           Icons.qr_code_2_rounded,
           AppTheme.primaryDark,
           () => _abrirYRecargar(const PagosAdminPage()),
+        ),
+        if (PermissionService.instance.can('comercio.mora.ver'))
+          _Tile(
+            "Clientes en mora",
+            Icons.account_balance_wallet_outlined,
+            Colors.redAccent,
+            () => _abrirYRecargar(
+              MoraClientesPage(
+                puedeGestionar: PermissionService.instance.can(
+                  'comercio.mora.gestionar',
+                ),
+              ),
+            ),
+          ),
+        _Tile(
+          "Solicitudes de la web",
+          Icons.how_to_reg_outlined,
+          Colors.indigo,
+          () => _abrirYRecargar(const SolicitudesWebPage()),
         ),
         _Tile("Reporte conjunto", Icons.bar_chart, AppTheme.green, () {
           Navigator.push(

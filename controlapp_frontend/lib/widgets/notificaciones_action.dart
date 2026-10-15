@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_application_1/model/notificacion_model.dart';
 import 'package:flutter_application_1/pages/commerce_order_detail_page.dart';
+import 'package:flutter_application_1/pages/saldos_page.dart';
 import 'package:flutter_application_1/service/notificaciones_center.dart';
 import 'package:intl/intl.dart';
 
@@ -91,6 +92,22 @@ class _NotificacionesActionState extends State<NotificacionesAction> {
                                   try {
                                     await _center.marcarLeida(n.id);
                                   } catch (_) {}
+                                }
+                                // Un aviso de saldo de servicio abre ese
+                                // saldo para pagarlo.
+                                final saldoId =
+                                    n.referenciaTipo == 'SaldoServicio'
+                                    ? n.referenciaId
+                                    : null;
+                                if (saldoId != null) {
+                                  panel.pop();
+                                  await pantalla.push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) =>
+                                          SaldoPagoPage(saldoId: saldoId),
+                                    ),
+                                  );
+                                  return;
                                 }
                                 // Un aviso de pedido (pago confirmado, en
                                 // preparación, en camino) abre ese pedido.

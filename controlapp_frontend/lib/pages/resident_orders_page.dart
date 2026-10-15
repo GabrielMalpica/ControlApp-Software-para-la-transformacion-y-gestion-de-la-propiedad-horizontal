@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/api/resident_orders_api.dart';
 import 'package:flutter_application_1/model/resident_order_models.dart';
 import 'package:flutter_application_1/pages/commerce_order_detail_page.dart';
+import 'package:flutter_application_1/pages/saldos_page.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/commerce_clay.dart';
@@ -146,6 +147,7 @@ class _ResidentOrdersPageState extends State<ResidentOrdersPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
         children: <Widget>[
+          const SaldoPendienteBanner(),
           CommerceHeroCard(
             eyebrow: 'Seguimiento',
             title: active == 0

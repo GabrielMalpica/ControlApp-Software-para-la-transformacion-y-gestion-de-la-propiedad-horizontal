@@ -8,6 +8,7 @@ import 'package:flutter_application_1/service/notificaciones_center.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/animated_fade_slide.dart';
 import 'package:flutter_application_1/widgets/password_dialogs.dart';
+import 'package:flutter_application_1/widgets/version_web_texto.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -272,6 +273,7 @@ class _LoginPageState extends State<LoginPage> {
                     label: Text(_loading ? 'Ingresando...' : 'Ingresar'),
                   ),
                 ),
+                const VersionWebTexto(),
               ],
             ),
           ),

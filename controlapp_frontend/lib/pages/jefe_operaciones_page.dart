@@ -16,7 +16,9 @@ import 'package:flutter_application_1/pages/reportes_page.dart';
 import 'package:flutter_application_1/pages/inventario_activos_page.dart';
 import 'package:flutter_application_1/pages/tareas_page.dart';
 import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
+import 'package:flutter_application_1/pages/mora_clientes_page.dart';
 import 'package:flutter_application_1/pages/pagos_admin_page.dart';
+import 'package:flutter_application_1/pages/solicitudes_web_page.dart';
 import 'package:flutter_application_1/pages/conjunto_orders_page.dart';
 import 'package:flutter_application_1/service/app_constants.dart';
 import 'package:flutter_application_1/service/app_error.dart';
@@ -441,6 +443,34 @@ class _JefeOperacionesPageState extends State<JefeOperacionesPage> {
             MaterialPageRoute(builder: (_) => const PagosAdminPage()),
           );
         }),
+        if (_can('comercio.mora.ver'))
+          _JefeTile(
+            'Clientes en mora',
+            Icons.account_balance_wallet_outlined,
+            Colors.redAccent,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => MoraClientesPage(
+                    puedeGestionar: _can('comercio.mora.gestionar'),
+                  ),
+                ),
+              );
+            },
+          ),
+        if (_can('web.solicitudes.ver'))
+          _JefeTile(
+            'Solicitudes de la web',
+            Icons.how_to_reg_outlined,
+            Colors.indigo,
+            () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SolicitudesWebPage()),
+              );
+            },
+          ),
       ]),
       _JefeSection('Analisis y control', [
         if (_can('reportes.ver'))

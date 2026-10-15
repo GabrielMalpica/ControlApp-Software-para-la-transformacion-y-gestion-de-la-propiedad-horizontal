@@ -4,6 +4,7 @@ import 'package:flutter_application_1/api/resident_orders_api.dart';
 import 'package:flutter_application_1/model/resident_order_models.dart';
 import 'package:flutter_application_1/pages/commerce_order_detail_page.dart';
 import 'package:flutter_application_1/pages/resident_orders_page.dart';
+import 'package:flutter_application_1/pages/saldos_page.dart';
 import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/resident_cart_service.dart';
@@ -185,6 +186,7 @@ class _ResidentCartPageState extends State<ResidentCartPage> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
                     children: <Widget>[
+                      const SaldoPendienteBanner(),
                       CommerceHeroCard(
                         eyebrow: 'Tu compra',
                         title: 'Todo listo para pedir',

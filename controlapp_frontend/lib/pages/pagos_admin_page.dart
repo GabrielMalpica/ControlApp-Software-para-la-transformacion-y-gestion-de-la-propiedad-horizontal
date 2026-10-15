@@ -478,7 +478,7 @@ class _PagoCard extends StatelessWidget {
             style: textTheme.bodyMedium,
           ),
           Text(
-            '${item.esTienda ? 'Tienda web' : 'App'} · ${item.creadoEn == null ? '' : date.format(item.creadoEn!.toLocal())}',
+            '${item.canalLabel} · ${item.creadoEn == null ? '' : date.format(item.creadoEn!.toLocal())}',
             style: textTheme.bodySmall,
           ),
           if (item.requiereAccion)

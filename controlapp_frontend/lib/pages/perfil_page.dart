@@ -3,6 +3,7 @@ import 'package:flutter_application_1/api/auth_api.dart';
 import 'package:flutter_application_1/model/profile_models.dart';
 import 'package:flutter_application_1/pages/commerce_catalog_page.dart';
 import 'package:flutter_application_1/pages/resident_cart_page.dart';
+import 'package:flutter_application_1/pages/saldos_page.dart';
 import 'package:flutter_application_1/pages/resident_orders_page.dart';
 import 'package:flutter_application_1/pages/points_page.dart';
 import 'package:flutter_application_1/service/app_error.dart';
@@ -10,6 +11,7 @@ import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/cambiar_contrasena_action.dart';
 import 'package:flutter_application_1/widgets/notificaciones_action.dart';
 import 'package:flutter_application_1/widgets/skeleton.dart';
+import 'package:flutter_application_1/widgets/version_web_texto.dart';
 
 class PerfilPage extends StatefulWidget {
   const PerfilPage({super.key});
@@ -267,6 +269,20 @@ class _PerfilPageState extends State<PerfilPage> {
                                 icon: const Icon(Icons.receipt_long_outlined),
                                 label: const Text('Mis pedidos'),
                               ),
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const SaldosPage(),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.account_balance_wallet_outlined,
+                                ),
+                                label: const Text('Mis saldos'),
+                              ),
                             ],
                           ),
                         ],
@@ -312,6 +328,7 @@ class _PerfilPageState extends State<PerfilPage> {
                     style: theme.textTheme.bodySmall,
                     textAlign: TextAlign.center,
                   ),
+                  const VersionWebTexto(),
                 ],
               ),
             ),

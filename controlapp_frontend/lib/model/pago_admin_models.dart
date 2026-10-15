@@ -64,6 +64,13 @@ class PagoAdminItem {
 
   bool get esTienda => canal == 'WOOCOMMERCE';
 
+  /// Dónde se originó el cobro: tienda web, app o el saldo de un servicio.
+  String get canalLabel => switch (canal) {
+    'WOOCOMMERCE' => 'Tienda web',
+    'SALDO_SERVICIO' => 'Saldo de servicio',
+    _ => 'App',
+  };
+
   /// "Juan Pérez · CC ···7890", o null si Factus no informó el pagador.
   String? get pagador {
     if (pagadorNombre == null || pagadorNombre!.isEmpty) return null;

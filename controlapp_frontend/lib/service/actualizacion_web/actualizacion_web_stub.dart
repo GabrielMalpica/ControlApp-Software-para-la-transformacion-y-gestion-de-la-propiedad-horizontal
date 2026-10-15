@@ -3,4 +3,6 @@ class ActualizacionWeb {
   static Future<bool> hayVersionNueva() async => false;
 
   static Future<void> actualizar() async {}
+
+  static String? fechaVersion() => null;
 }
