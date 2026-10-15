@@ -16,7 +16,7 @@ import { pagadorSaneado } from "./datosRecaudo";
 import { detalleErrorPagos } from "./errors";
 
 // Referencias que crea este sistema (generarReferenceCode): CA- app, WC- tienda.
-const PREFIJOS_PROPIOS = ["CA-", "WC-"];
+const PREFIJOS_PROPIOS = ["CA-", "WC-", "SA-"];
 // Factus aconseja una llave de 32 caracteres o mas (doc. de Webhooks, §1).
 const LLAVE_MIN_CARACTERES = 32;
 // Si Factus avisa "paid" pero su API todavia no lo confirma (o no responde),

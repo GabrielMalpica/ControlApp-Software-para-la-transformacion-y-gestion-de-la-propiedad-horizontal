@@ -49,7 +49,7 @@ const MAX_VENCIDOS_POR_CORRIDA = 200;
 
 // Referencias que crea este sistema (ver generarReferenceCode): un recaudo
 // pagado con otro prefijo lo creo otro sistema de la misma cuenta de Factus.
-const PREFIJOS_PROPIOS = ["CA-", "WC-"];
+const PREFIJOS_PROPIOS = ["CA-", "WC-", "SA-"];
 const ESTADOS_PENDIENTES_LOCALES: EstadoCobro[] = [EstadoCobro.CREADO, EstadoCobro.PENDIENTE, EstadoCobro.VENCIDO];
 const ESTADOS_REABRIBLES: EstadoCobro[] = [EstadoCobro.ABANDONADO, EstadoCobro.FALLIDO, EstadoCobro.ERROR];
 

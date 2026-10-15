@@ -409,3 +409,76 @@ describe("recepcion: el detalle de los insumos es fijo para quien compra", () =>
     expect(json.items[0]).toMatchObject({ cantidad: 2, cantidadRecibida: 1, novedadRecepcion: "Una caja rota" });
   });
 });
+
+describe("recepcion: factor que no quedo guardado al comprar", () => {
+  // Sanitabs: un solo insumo (pastillas) con respaldo 1; cada variacion trae su cantidad.
+  const sanitabs120 = () => ({
+    ...item(1, "Sanitabs (120)", 1, 1, SANITABS),
+    wooProductId: 220,
+    wooVariationId: 225,
+    wooFactorInventario: null as Prisma.Decimal | null,
+  });
+
+  const conTienda = (s: ReturnType<typeof servicio>, getProduct: jest.Mock) => {
+    s.prisma.pedidoAppItem = { updateMany: jest.fn().mockResolvedValue({ count: 1 }) };
+    (s.service as any).catalog = { getProduct };
+    return s;
+  };
+
+  const variacion = (id: number, factor: number | null) => ({
+    id,
+    insumoConfig: { modo: "unidad", unidad: "pastilla", compartido: true, factorConversion: factor },
+  });
+
+  test("al confirmar, toma de la tienda el factor de la variacion (tarro de 120 = 120 pastillas)", async () => {
+    const getProduct = jest.fn().mockResolvedValue({ variations: [variacion(224, 60), variacion(225, 120)] });
+    const s = conTienda(servicio(Rol.administrador, pedido({ items: [sanitabs120()] })), getProduct);
+
+    await recibir(s);
+
+    expect(getProduct).toHaveBeenCalledWith(220);
+    expect(s.prisma.pedidoAppItem.updateMany).toHaveBeenCalledWith({
+      where: { id: 1, wooFactorInventario: null },
+      data: { wooFactorInventario: D(120) },
+    });
+    expect(s.inventarioIncrementos).toEqual([{ insumoId: 7, cantidad: "120" }]);
+  });
+
+  test("la vista previa ya muestra las 120 pastillas", async () => {
+    const getProduct = jest.fn().mockResolvedValue({ variations: [variacion(225, 120)] });
+    const s = conTienda(servicio(Rol.administrador, pedido({ items: [sanitabs120()] })), getProduct);
+
+    const preview: any = await s.service.previewRecepcion("administrador-1", 41);
+
+    expect(preview.items[0]).toMatchObject({ cantidadInventario: 120, factorDesdeWoo: true });
+  });
+
+  test("un factor ya guardado al comprar no se vuelve a consultar ni se cambia", async () => {
+    const getProduct = jest.fn();
+    const s = conTienda(servicio(Rol.administrador), getProduct);
+
+    await recibir(s);
+
+    expect(getProduct).not.toHaveBeenCalled();
+    expect(s.prisma.pedidoAppItem.updateMany).not.toHaveBeenCalled();
+  });
+
+  test("si la tienda no responde, la recepcion sigue con el factor de respaldo", async () => {
+    const getProduct = jest.fn().mockRejectedValue(new Error("La tienda tardo demasiado"));
+    const s = conTienda(servicio(Rol.administrador, pedido({ items: [sanitabs120()] })), getProduct);
+
+    await recibir(s);
+
+    expect(s.prisma.pedidoAppItem.updateMany).not.toHaveBeenCalled();
+    expect(s.inventarioIncrementos).toEqual([{ insumoId: 7, cantidad: "1" }]);
+  });
+
+  test("una variacion sin cantidad en la tienda tampoco inventa un factor", async () => {
+    const getProduct = jest.fn().mockResolvedValue({ variations: [variacion(225, null)] });
+    const s = conTienda(servicio(Rol.administrador, pedido({ items: [sanitabs120()] })), getProduct);
+
+    await recibir(s);
+
+    expect(s.prisma.pedidoAppItem.updateMany).not.toHaveBeenCalled();
+  });
+});

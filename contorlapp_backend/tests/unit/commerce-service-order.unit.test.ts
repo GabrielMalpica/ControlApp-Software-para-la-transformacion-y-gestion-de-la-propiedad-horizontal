@@ -66,6 +66,7 @@ describe("CommerceOrderService - orden de servicio", () => {
       ],
     };
     const prisma = {
+      saldoServicio: { findMany: jest.fn().mockResolvedValue([]) },
       usuario: {
         findUnique: jest.fn().mockResolvedValue({
           id: "resident-1",
@@ -175,5 +176,45 @@ describe("CommerceOrderService - orden de servicio", () => {
       ]),
     );
     expect(result.pagarAhora).toBe(67000);
+  });
+
+  test("con el saldo de un servicio ya prestado sin pagar no deja crear el pedido", async () => {
+    const prisma = {
+      saldoServicio: {
+        findMany: jest.fn().mockResolvedValue([{ id: 1, montoSaldo: 35000, wooOrderId: "77" }]),
+      },
+      usuario: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: "resident-1",
+          nombre: "Rosa Perez",
+          correo: "rosa@example.test",
+          telefono: 3001112233n,
+          rol: Rol.residente,
+          residente: { id: "res-1", conjuntoId: "900-1", conjunto: { nit: "900-1", nombre: "Los Pinos" } },
+        }),
+      },
+      pedidoApp: { findUnique: jest.fn().mockResolvedValue(null), findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const service = new CommerceOrderService(prisma as never);
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as typeof fetch;
+
+    await expect(
+      service.createResidentOrder("resident-1", {
+        idempotencyKey: "cart-service-2",
+        direccionEntrega: "Apto 501, Torre 2",
+        metodoPago: "bre_b",
+        items: [{ productId: 77, quantity: 1 }],
+      }),
+    ).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/saldo pendiente de \$35\.000/) });
+    // Se busca por cuenta, correo y telefono, y no se llega a crear nada en Woo.
+    expect(prisma.saldoServicio.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [{ usuarioId: "resident-1" }, { clienteCorreo: "rosa@example.test" }, { clienteTelefono: "3001112233" }],
+        }),
+      }),
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,4 @@
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 import crypto from "crypto";
 import { cacheGet, cacheSet } from "../services/RedisService";
 
@@ -19,6 +19,59 @@ export function firmarPagoWoo(
     .digest("hex");
 }
 
+export type RechazoFirma = { status: number; message: string };
+
+/** Encabezados de firma presentes y timestamp dentro de la ventana (sin mirar la firma). */
+export function revisarEncabezadosFirma(req: Request): RechazoFirma | null {
+  const timestamp = String(req.header("x-controlapp-timestamp") ?? "");
+  const nonce = String(req.header("x-controlapp-nonce") ?? "");
+  const firma = String(req.header("x-controlapp-signature") ?? "");
+  const ts = Number(timestamp);
+  if (!timestamp || !nonce || !firma || !Number.isFinite(ts) || nonce.length > 100) {
+    return { status: 401, message: "Firma invalida" };
+  }
+  if (Math.abs(Date.now() / 1000 - ts) > TOLERANCIA_SEGUNDOS) {
+    return { status: 401, message: "Firma vencida" };
+  }
+  return null;
+}
+
+/**
+ * Valida una firma de los plugins de WordPress (encabezados x-controlapp-*):
+ * timestamp reciente, HMAC de `timestamp.nonce.METODO.ruta.cuerpo` y nonce de
+ * un solo uso. Devuelve null si es valida o el rechazo a responder.
+ */
+export async function validarFirmaControlApp(
+  req: Request,
+  opciones: { secret: string; cuerpo: string; prefijoNonce: string },
+): Promise<RechazoFirma | null> {
+  const rechazo = revisarEncabezadosFirma(req);
+  if (rechazo) return rechazo;
+
+  const timestamp = String(req.header("x-controlapp-timestamp"));
+  const nonce = String(req.header("x-controlapp-nonce"));
+  const firma = String(req.header("x-controlapp-signature"));
+  const esperada = firmarPagoWoo(opciones.secret, {
+    timestamp,
+    nonce,
+    method: req.method,
+    path: req.originalUrl.split("?")[0],
+    body: opciones.cuerpo,
+  });
+  const a = Buffer.from(esperada, "utf8");
+  const b = Buffer.from(firma, "utf8");
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return { status: 401, message: "Firma invalida" };
+  }
+
+  const clave = `${opciones.prefijoNonce}${nonce}`;
+  if (await cacheGet<boolean>(clave)) {
+    return { status: 401, message: "Solicitud repetida" };
+  }
+  await cacheSet(clave, true, NONCE_TTL_SEGUNDOS);
+  return null;
+}
+
 /**
  * Autentica al plugin de WooCommerce (controlapp-factus-pay) en las rutas
  * /commerce/pagos/woo/*, que no llevan JWT: firma HMAC + timestamp reciente +
@@ -32,40 +85,15 @@ export const requirePagosWooHmac: RequestHandler = async (req, res, next) => {
       return;
     }
 
-    const timestamp = String(req.header("x-controlapp-timestamp") ?? "");
-    const nonce = String(req.header("x-controlapp-nonce") ?? "");
-    const firma = String(req.header("x-controlapp-signature") ?? "");
-    const ts = Number(timestamp);
-    if (!timestamp || !nonce || !firma || !Number.isFinite(ts) || nonce.length > 100) {
-      res.status(401).json({ message: "Firma invalida" });
-      return;
-    }
-    if (Math.abs(Date.now() / 1000 - ts) > TOLERANCIA_SEGUNDOS) {
-      res.status(401).json({ message: "Firma vencida" });
-      return;
-    }
-
-    const body = req.rawBody ? req.rawBody.toString("utf8") : "";
-    const esperada = firmarPagoWoo(secret, {
-      timestamp,
-      nonce,
-      method: req.method,
-      path: req.originalUrl.split("?")[0],
-      body,
+    const rechazo = await validarFirmaControlApp(req, {
+      secret,
+      cuerpo: req.rawBody ? req.rawBody.toString("utf8") : "",
+      prefijoNonce: "pagos:woo:nonce:",
     });
-    const a = Buffer.from(esperada, "utf8");
-    const b = Buffer.from(firma, "utf8");
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-      res.status(401).json({ message: "Firma invalida" });
+    if (rechazo) {
+      res.status(rechazo.status).json({ message: rechazo.message });
       return;
     }
-
-    const clave = `pagos:woo:nonce:${nonce}`;
-    if (await cacheGet<boolean>(clave)) {
-      res.status(401).json({ message: "Solicitud repetida" });
-      return;
-    }
-    await cacheSet(clave, true, NONCE_TTL_SEGUNDOS);
     next();
   } catch (error) {
     next(error);

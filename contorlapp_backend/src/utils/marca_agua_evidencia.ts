@@ -6,13 +6,13 @@
 // qué distancia del conjunto.
 //
 // El texto se dibuja como trazos vectoriales a partir de la fuente Roboto que
-// viaja con el backend (assets/fonts): no depende de que el servidor tenga
-// fuentes instaladas, que en contenedores mínimos suele no ser así.
+// va dentro del código (fuente_roboto_bold.ts): no depende de que el servidor
+// tenga fuentes instaladas ni de que el despliegue copie la carpeta assets.
 import fs from "fs";
-import path from "path";
 import sharp from "sharp";
 import { z } from "zod";
 import { direccionGpsSinDemora, type DireccionGps } from "./direccion_gps";
+import { ROBOTO_BOLD_TTF_BASE64 } from "./fuente_roboto_bold";
 import { distanciaMetros } from "./ubicacionMaps";
 
 type TrazoGlifo = {
@@ -32,15 +32,13 @@ type FuenteVectorial = {
   };
 };
 
-const RUTA_FUENTE = path.resolve(__dirname, "../../assets/fonts/Roboto-Bold.ttf");
-
 let fuente: FuenteVectorial | null = null;
 
 function cargarFuente(): FuenteVectorial {
   if (fuente) return fuente;
   // fontkit no publica tipos: solo usamos lo declarado arriba.
   const fontkit = require("fontkit") as { create(buffer: Buffer): FuenteVectorial };
-  fuente = fontkit.create(fs.readFileSync(RUTA_FUENTE));
+  fuente = fontkit.create(Buffer.from(ROBOTO_BOLD_TTF_BASE64, "base64"));
   return fuente;
 }
 
@@ -55,8 +53,7 @@ export function verificarFuenteMarcaAgua(): boolean {
     return true;
   } catch (err) {
     console.error(
-      `[marca-agua] No se encontró la fuente ${RUTA_FUENTE}: las evidencias se subirán SIN marca de agua. ` +
-        "El despliegue debe incluir la carpeta contorlapp_backend/assets.",
+      "[marca-agua] No se pudo cargar la fuente de la marca de agua: las evidencias se subirán SIN marca.",
       err instanceof Error ? err.message : err,
     );
     return false;

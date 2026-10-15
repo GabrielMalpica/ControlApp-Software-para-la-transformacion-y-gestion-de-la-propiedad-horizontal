@@ -84,6 +84,7 @@ describe("confirmarPagoSistema (confirmador registrado en PagoService)", () => {
       pedidoAppId: 41,
       wooOrderId: null,
       usuarioId: "admin-1",
+      saldoServicioId: null,
       montoEsperado: new Prisma.Decimal(50000),
       referenceCode: "CA-abc",
       ...overrides,

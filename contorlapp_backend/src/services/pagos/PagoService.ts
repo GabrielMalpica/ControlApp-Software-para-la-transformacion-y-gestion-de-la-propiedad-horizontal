@@ -51,6 +51,8 @@ export type CrearCobroInput = {
   pedidoAppId?: number;
   wooOrderId?: string;
   usuarioId?: string;
+  // Obligatorio en el canal SALDO_SERVICIO: el saldo que paga el cobro.
+  saldoServicioId?: number;
   referencePrefix?: string;
 };
 
@@ -60,6 +62,7 @@ export type ConfirmadorPagoContexto = {
   pedidoAppId: number | null;
   wooOrderId: string | null;
   usuarioId: string | null;
+  saldoServicioId: number | null;
   montoEsperado: Prisma.Decimal;
   referenceCode: string;
 };
@@ -165,6 +168,9 @@ export class PagoService {
     if (!input.pedidoAppId && !input.wooOrderId) {
       throw new FactusPayError("Falta asociar el cobro a un pedido o a una orden", 500);
     }
+    if ((input.canal === CanalPago.SALDO_SERVICIO) !== Boolean(input.saldoServicioId)) {
+      throw new FactusPayError("Un cobro de saldo debe ir asociado a su saldo (y solo ese)", 500);
+    }
 
     const monto = Math.round(input.montoEsperado * 100) / 100;
     if (monto < FACTUS_MONTO_MIN_COP || monto > FACTUS_MONTO_MAX_COP) {
@@ -186,6 +192,7 @@ export class PagoService {
         pedidoAppId: input.pedidoAppId ?? null,
         wooOrderId: input.wooOrderId ?? null,
         usuarioId: input.usuarioId ?? null,
+        saldoServicioId: input.saldoServicioId ?? null,
         montoEsperado: new Prisma.Decimal(monto),
         estado: EstadoCobro.CREADO,
         // Hasta cuando la app muestra el QR como vigente (y no ofrece otro):
@@ -205,12 +212,20 @@ export class PagoService {
   }
 
   private async buscarCobroVigente(
-    input: { pedidoAppId?: number; wooOrderId?: string },
+    input: { canal: CanalPago; pedidoAppId?: number; wooOrderId?: string; saldoServicioId?: number },
     monto: number,
   ): Promise<PagoCobro | null> {
+    // El cobro del saldo y el del pedido (anticipo) son de la misma orden pero
+    // no se reemplazan entre si.
+    const porDuenio: Prisma.PagoCobroWhereInput = input.saldoServicioId
+      ? { saldoServicioId: input.saldoServicioId }
+      : {
+          ...(input.pedidoAppId ? { pedidoAppId: input.pedidoAppId } : { wooOrderId: input.wooOrderId }),
+          canal: { not: CanalPago.SALDO_SERVICIO },
+        };
     return this.prisma.pagoCobro.findFirst({
       where: {
-        ...(input.pedidoAppId ? { pedidoAppId: input.pedidoAppId } : { wooOrderId: input.wooOrderId }),
+        ...porDuenio,
         estado: { in: ESTADOS_ACTIVOS },
         expiraLocalEn: { gt: new Date() },
         montoEsperado: new Prisma.Decimal(monto),
@@ -614,15 +629,31 @@ export class PagoService {
         origen,
       });
 
-      const otroPagado = cobroActual.pedidoAppId
+      // Duplicado = otro cobro PAGADO por lo mismo: el mismo saldo, o el mismo
+      // pedido/orden sin contar el saldo (anticipo + saldo es lo normal).
+      const otroPagado = cobroActual.saldoServicioId
         ? await tx.pagoCobro.findFirst({
-            where: { id: { not: cobroActual.id }, estado: EstadoCobro.PAGADO, pedidoAppId: cobroActual.pedidoAppId },
+            where: { id: { not: cobroActual.id }, estado: EstadoCobro.PAGADO, saldoServicioId: cobroActual.saldoServicioId },
           })
-        : cobroActual.wooOrderId
+        : cobroActual.pedidoAppId
           ? await tx.pagoCobro.findFirst({
-              where: { id: { not: cobroActual.id }, estado: EstadoCobro.PAGADO, wooOrderId: cobroActual.wooOrderId },
+              where: {
+                id: { not: cobroActual.id },
+                estado: EstadoCobro.PAGADO,
+                pedidoAppId: cobroActual.pedidoAppId,
+                canal: { not: CanalPago.SALDO_SERVICIO },
+              },
             })
-          : null;
+          : cobroActual.wooOrderId
+            ? await tx.pagoCobro.findFirst({
+                where: {
+                  id: { not: cobroActual.id },
+                  estado: EstadoCobro.PAGADO,
+                  wooOrderId: cobroActual.wooOrderId,
+                  canal: { not: CanalPago.SALDO_SERVICIO },
+                },
+              })
+            : null;
       if (otroPagado) {
         const duplicado = await tx.pagoCobro.update({
           where: { id: cobroActual.id },
@@ -648,6 +679,7 @@ export class PagoService {
           pedidoAppId: cobroActual.pedidoAppId,
           wooOrderId: cobroActual.wooOrderId,
           usuarioId: cobroActual.usuarioId,
+          saldoServicioId: cobroActual.saldoServicioId,
           montoEsperado: cobroActual.montoEsperado,
           referenceCode: cobroActual.referenceCode,
         });

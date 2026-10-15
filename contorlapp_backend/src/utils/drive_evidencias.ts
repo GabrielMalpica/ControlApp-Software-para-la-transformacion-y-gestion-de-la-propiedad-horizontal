@@ -163,17 +163,30 @@ export async function uploadEvidenciaToDrive(params: {
 
   const nombreDestino = params.subcarpeta ? safeName(params.subcarpeta) : monthFolderLabel(params.fecha);
 
+  const fileId = await subirEnCarpetas(drive, rootId, [carpetaConjunto, nombreDestino], params);
+  return `https://drive.google.com/file/d/${fileId}/view`;
+}
+
+/** Sube un archivo a raiz/segmento1/segmento2/... (creando las carpetas que falten) y devuelve su id. */
+async function subirEnCarpetas(
+  drive: ReturnType<typeof getDrive>,
+  rootId: string,
+  segmentos: string[],
+  archivo: { filePath: string; fileName: string; mimeType: string },
+): Promise<string> {
   const subir = async () => {
-    const conjuntoFolderId = await carpeta(drive, rootId, carpetaConjunto);
-    const destinoFolderId = await carpeta(drive, conjuntoFolderId, nombreDestino);
+    let parentId = rootId;
+    for (const nombre of segmentos) {
+      parentId = await carpeta(drive, parentId, nombre);
+    }
     return drive.files.create({
       requestBody: {
-        name: safeName(params.fileName),
-        parents: [destinoFolderId],
+        name: safeName(archivo.fileName),
+        parents: [parentId],
       },
       media: {
-        mimeType: params.mimeType,
-        body: fs.createReadStream(params.filePath),
+        mimeType: archivo.mimeType,
+        body: fs.createReadStream(archivo.filePath),
       },
       fields: "id",
     });
@@ -192,8 +205,42 @@ export async function uploadEvidenciaToDrive(params: {
 
   const file = res.data as DriveFile;
   if (!file.id) throw new Error("No se pudo obtener id del archivo en Drive");
+  return file.id;
+}
 
-  return `https://drive.google.com/file/d/${file.id}/view`;
+/** Carpeta de Drive donde caen los archivos que llegan desde la página web. */
+export const CARPETA_DRIVE_PAGINA_WEB = "Página web";
+const CARPETAS_CASO_WEB = {
+  conjunto: "Conjuntos registrados",
+  trabajador: "Postulaciones de trabajadores",
+} as const;
+export type CasoArchivoWeb = keyof typeof CARPETAS_CASO_WEB;
+
+/**
+ * Documentos de los formularios de la página web (registro de conjuntos y
+ * postulación de trabajadores), para que no ocupen el almacenamiento de
+ * WordPress. Quedan en raiz/Página web/{caso}/{carpeta}, una carpeta por
+ * conjunto o postulante. La raiz es DRIVE_REGISTROS_ROOT_ID o, si no está,
+ * la misma de las evidencias.
+ */
+export async function uploadArchivoWebToDrive(params: {
+  filePath: string;
+  fileName: string;
+  mimeType: string;
+  caso: CasoArchivoWeb;
+  carpeta: string;
+}): Promise<{ fileId: string }> {
+  const rootId = process.env.DRIVE_REGISTROS_ROOT_ID?.trim() || process.env.DRIVE_EVIDENCIAS_ROOT_ID;
+  if (!rootId) throw new Error("DRIVE_EVIDENCIAS_ROOT_ID no está definida");
+
+  const carpetaCaso = safeName(params.carpeta).slice(0, 120) || "Sin nombre";
+  const fileId = await subirEnCarpetas(
+    getDrive(),
+    rootId,
+    [CARPETA_DRIVE_PAGINA_WEB, CARPETAS_CASO_WEB[params.caso], carpetaCaso],
+    params,
+  );
+  return { fileId };
 }
 
 /**
@@ -263,6 +310,22 @@ export function extraerDriveId(raw: string): string | null {
     if (m) return m[1];
   }
   return null;
+}
+
+/**
+ * Manda a la papelera de Drive un archivo de la pagina web (p. ej. los
+ * documentos de una postulacion borrada desde ControlApp). No se borra del
+ * todo: Drive lo deja recuperable 30 dias. Si ya no existe se considera hecho.
+ */
+export async function enviarArchivoWebAPapelera(fileId: string): Promise<void> {
+  const drive = getDrive();
+  try {
+    await drive.files.update({ fileId, requestBody: { trashed: true }, supportsAllDrives: true });
+  } catch (err: any) {
+    const status = err?.code ?? err?.response?.status;
+    if (status === 404) return;
+    throw err;
+  }
 }
 
 /**

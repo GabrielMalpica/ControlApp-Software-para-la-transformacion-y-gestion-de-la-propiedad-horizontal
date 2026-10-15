@@ -286,6 +286,42 @@ describe("PagoService", () => {
     expect(alertador).toHaveBeenCalledTimes(1);
   });
 
+  test("el cobro del saldo de un servicio no es duplicado del anticipo; dos pagos del mismo saldo si", async () => {
+    crearCobroFactus.mockImplementation(async (referenceCode: string) => coleccion({ reference_code: referenceCode, status: "ready", qr: "x" }));
+    consultarCobroFactus.mockImplementation(async (referenceCode: string) =>
+      coleccion({ reference_code: referenceCode, status: "paid", amount: referenceCode.startsWith("SA-") ? 35_000 : 36_000 }),
+    );
+    const prisma = crearFakePagosPrisma();
+    const service = new PagoService(prisma);
+    const confirmaSaldo = jest.fn().mockResolvedValue(undefined);
+    service.registrarConfirmador(CanalPago.SALDO_SERVICIO, confirmaSaldo);
+    service.registrarAlertador(jest.fn().mockResolvedValue(undefined));
+
+    const anticipo = await service.crearCobro({ canal: CanalPago.WOOCOMMERCE, montoEsperado: 36_000, wooOrderId: "2434" });
+    expect((await service.verificarCobro(anticipo.id)).estado).toBe(EstadoCobro.PAGADO);
+
+    const saldo = { canal: CanalPago.SALDO_SERVICIO, montoEsperado: 35_000, wooOrderId: "2434", saldoServicioId: 1, referencePrefix: "SA" };
+    const uno = await service.crearCobro(saldo);
+    expect(uno.id).not.toBe(anticipo.id);
+    expect((await service.verificarCobro(uno.id)).estado).toBe(EstadoCobro.PAGADO);
+    expect(confirmaSaldo).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ saldoServicioId: 1 }));
+
+    const dos = await service.crearCobro(saldo);
+    expect((await service.verificarCobro(dos.id)).estado).toBe(EstadoCobro.PAGADO_DUPLICADO);
+    expect(confirmaSaldo).toHaveBeenCalledTimes(1);
+  });
+
+  test("un cobro de saldo exige su saldo, y solo el canal de saldo lo lleva", async () => {
+    const service = new PagoService(crearFakePagosPrisma());
+    await expect(
+      service.crearCobro({ canal: CanalPago.SALDO_SERVICIO, montoEsperado: 35_000, wooOrderId: "1" }),
+    ).rejects.toThrow(FactusPayError);
+    await expect(
+      service.crearCobro({ canal: CanalPago.WOOCOMMERCE, montoEsperado: 35_000, wooOrderId: "1", saldoServicioId: 3 }),
+    ).rejects.toThrow(FactusPayError);
+    expect(crearCobroFactus).not.toHaveBeenCalled();
+  });
+
   test("si el confirmador falla por un error real, el cobro no queda pagado y puede reintentarse", async () => {
     crearCobroFactus.mockResolvedValue(coleccion({ status: "ready", qr: "x" }));
     const prisma = crearFakePagosPrisma();

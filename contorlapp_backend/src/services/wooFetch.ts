@@ -1,4 +1,14 @@
-export type WooApiNamespace = "store" | "rest" | "plugin";
+// plugin = cl-servicios-reserva (cl/v1), clmk = marketplace de operarios,
+// clx = registro de conjuntos (control_registro_conjuntos).
+export type WooApiNamespace = "store" | "rest" | "plugin" | "clmk" | "clx";
+
+const WOO_NAMESPACE_PREFIX: Record<WooApiNamespace, string> = {
+  store: "/wp-json/wc/store/v1",
+  rest: "/wp-json/wc/v3",
+  plugin: "/wp-json/cl/v1",
+  clmk: "/wp-json/clmk/v1",
+  clx: "/wp-json/clx/v1",
+};
 
 export class WooFetchError extends Error {
   constructor(
@@ -58,12 +68,7 @@ export function buildWooUrl(
   path: string,
   query: Record<string, string | number | boolean | undefined> = {},
 ) {
-  const prefix =
-    namespace === "store"
-      ? "/wp-json/wc/store/v1"
-      : namespace === "rest"
-        ? "/wp-json/wc/v3"
-        : "/wp-json/cl/v1";
+  const prefix = WOO_NAMESPACE_PREFIX[namespace];
   const safePath = path.startsWith("/") ? path : `/${path}`;
   const url = new URL(`${getWooBaseUrl()}${prefix}${safePath}`);
   for (const [key, value] of Object.entries(query)) {

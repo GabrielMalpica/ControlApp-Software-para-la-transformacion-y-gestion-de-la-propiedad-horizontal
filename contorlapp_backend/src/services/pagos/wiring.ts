@@ -3,6 +3,7 @@ import { prisma } from "../../db/prisma";
 import { CommerceLifecycleService } from "../CommerceLifecycleService";
 import { pagoService } from "./pagoServiceInstance";
 import { PagoWooService } from "./PagoWooService";
+import { saldoServicio } from "./saldoServicioInstance";
 import { esperaSegunModo } from "./SaludPagosService";
 import { saludPagos } from "./saludPagosInstance";
 
@@ -40,3 +41,10 @@ pagoService.registrarConfirmador(CanalPago.WOOCOMMERCE, (tx, contexto) =>
 );
 pagoService.registrarPosConfirmacion(CanalPago.WOOCOMMERCE, (cobro) => pagosWoo.posConfirmacion(cobro));
 pagoService.registrarPosFallo(CanalPago.WOOCOMMERCE, (cobro) => pagosWoo.posFallo(cobro));
+
+// Saldo de servicios pagados con anticipo (app y tienda). Un cobro fallido no
+// necesita aviso: el saldo sigue pendiente y se puede generar otro codigo.
+pagoService.registrarConfirmador(CanalPago.SALDO_SERVICIO, (tx, contexto) =>
+  saldoServicio.confirmarEnDominio(tx, contexto),
+);
+pagoService.registrarPosConfirmacion(CanalPago.SALDO_SERVICIO, (cobro) => saldoServicio.posConfirmacion(cobro));

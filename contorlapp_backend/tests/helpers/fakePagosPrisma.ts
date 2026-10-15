@@ -149,6 +149,7 @@ export function crearFakePagosPrisma() {
             pedidoAppId: null,
             wooOrderId: null,
             usuarioId: null,
+            saldoServicioId: null,
             creadoEn: ahora,
             actualizadoEn: ahora,
             ...data,

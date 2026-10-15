@@ -50,6 +50,14 @@ app.set("trust proxy", 1);
 // endpoint limita por su cuenta los intentos con llave invalida.
 const RUTA_WEBHOOK_FACTUS = "/commerce/webhooks/factus-pay";
 const esWebhookFactus = (req: Request) => req.path === RUTA_WEBHOOK_FACTUS;
+// Subidas del plugin puente de WordPress: todas llegan desde la IP del
+// servidor de la pagina web, asi que tienen su propio limite en la ruta
+// (ver Commerce.ts) en lugar del global por IP y del de subidas.
+const esSubidaArchivoWeb = (req: Request) =>
+  req.method === "POST" && req.path === "/commerce/web/archivos";
+// Plugin de pagos de la tienda (controlapp-factus-pay): igual que las subidas,
+// todo llega desde la IP del servidor de WordPress; limite propio en Commerce.ts.
+const esPluginPagosWoo = (req: Request) => req.path.startsWith("/commerce/pagos/woo/");
 const rateLimitDigest = (...parts: string[]) =>
   createHash("sha256").update(parts.join("\u0000")).digest("hex");
 const configuredOrigins = [
@@ -106,7 +114,8 @@ app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 300,
-    skip: (req) => isTaskClosingRequest(req) || esWebhookFactus(req),
+    skip: (req) =>
+      isTaskClosingRequest(req) || esWebhookFactus(req) || esSubidaArchivoWeb(req) || esPluginPagosWoo(req),
     standardHeaders: "draft-7",
     legacyHeaders: false,
     message: { ok: false, message: "Demasiadas solicitudes. Intenta nuevamente en unos minutos" },
@@ -184,7 +193,7 @@ app.get("/ping", async (_req: Request, res: Response, next: NextFunction) => {
 /* -------------------------------- rutas ---------------------------------- */
 app.use(authRequiredUnlessPublic);
 app.use((req, res, next) => {
-  if (!req.is("multipart/form-data") || isTaskClosingRequest(req)) {
+  if (!req.is("multipart/form-data") || isTaskClosingRequest(req) || esSubidaArchivoWeb(req)) {
     next();
     return;
   }
@@ -413,8 +422,10 @@ function sendError(
 }
 
 /* ----------------------- middleware de error (tipado) --------------------- */
-const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   console.error("[api-error]", {
+    // Sin la query: puede traer llaves (p. ej. el webhook de Factus).
+    ruta: `${req.method} ${req.originalUrl.split("?")[0]}`,
     name: err instanceof Error ? err.name : "Error",
     status: typeof err?.status === "number" ? err.status : undefined,
     code: typeof err?.code === "string" ? err.code : undefined,

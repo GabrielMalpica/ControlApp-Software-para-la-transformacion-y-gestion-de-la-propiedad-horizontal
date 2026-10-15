@@ -453,6 +453,38 @@ const PERMISSION_CATALOG: PermissionDefinition[] = [
     description:
       "Permite confirmar el pago (tras revisar el comprobante), mapear insumos, confirmar recepcion y avanzar el estado de los pedidos de conjunto.",
   },
+  {
+    key: "comercio.mora.ver",
+    module: "comercio",
+    moduleLabel: "Compra de insumos",
+    label: "Ver clientes en mora",
+    description:
+      "Permite ver quién debe el saldo de un servicio ya prestado (nombre, contacto y dirección) y está bloqueado para pedir.",
+  },
+  {
+    key: "comercio.mora.gestionar",
+    module: "comercio",
+    moduleLabel: "Compra de insumos",
+    label: "Registrar pagos de saldo por fuera",
+    description:
+      "Permite marcar como pagado el saldo de un servicio que se pagó por fuera (efectivo, transferencia directa), lo que levanta el bloqueo.",
+  },
+  {
+    key: "web.solicitudes.ver",
+    module: "web",
+    moduleLabel: "Página web",
+    label: "Ver solicitudes de la página web",
+    description:
+      "Permite consultar las postulaciones de trabajadores y los conjuntos registrados en la página web, con sus fotos y documentos. Las aprobaciones se hacen en WordPress.",
+  },
+  {
+    key: "web.solicitudes.gestionar",
+    module: "web",
+    moduleLabel: "Página web",
+    label: "Gestionar postulaciones de la página web",
+    description:
+      "Permite marcar postulaciones de trabajadores como revisadas y borrar las que no sirven (se borra la cuenta en la página y sus documentos pasan a la papelera de Drive).",
+  },
 ];
 
 const ALL_PERMISSION_KEYS = new Set(PERMISSION_CATALOG.map((item) => item.key));
@@ -503,6 +535,8 @@ const PERMISSIONS_THAT_GRANT_ACCESS: Readonly<Record<string, readonly string[]>>
   ],
   "plan_esperanza.acceso": ["plan_esperanza.configurar"],
   "comercio.pedidos.ver": ["comercio.pedidos.gestionar"],
+  "comercio.mora.ver": ["comercio.mora.gestionar"],
+  "web.solicitudes.ver": ["web.solicitudes.gestionar"],
   "asistencia.ver": [
     "asistencia.registrar_manual",
     "asistencia.qr.gestionar",
@@ -581,6 +615,10 @@ const DEFAULT_PERMISSIONS_BY_ROLE: Record<Rol, Set<string>> = {
     "asistencia.exportar",
     "comercio.pedidos.ver",
     "comercio.pedidos.gestionar",
+    "comercio.mora.ver",
+    "comercio.mora.gestionar",
+    "web.solicitudes.ver",
+    "web.solicitudes.gestionar",
   ]),
   [Rol.supervisor]: new Set([
     "asistencia.marcar",

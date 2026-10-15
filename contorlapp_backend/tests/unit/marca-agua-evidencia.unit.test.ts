@@ -190,6 +190,30 @@ describe("lineasMarcaAgua", () => {
   });
 });
 
+describe("fuente de la marca de agua", () => {
+  it("va dentro del código: estampa aunque el despliegue no copie assets/fonts", async () => {
+    // Producción (Dockerfile sin la carpeta assets) dio ENOENT con cada foto.
+    const leerArchivo = fs.readFileSync;
+    const espia = jest.spyOn(fs, "readFileSync").mockImplementation(((ruta: fs.PathOrFileDescriptor, ...resto: unknown[]) => {
+      if (String(ruta).endsWith(".ttf")) {
+        throw Object.assign(new Error(`ENOENT: no such file or directory, open '${ruta}'`), { code: "ENOENT" });
+      }
+      return (leerArchivo as (...args: unknown[]) => unknown)(ruta, ...resto);
+    }) as typeof fs.readFileSync);
+    try {
+      let modulo!: typeof import("../../src/utils/marca_agua_evidencia");
+      jest.isolateModules(() => {
+        modulo = require("../../src/utils/marca_agua_evidencia");
+      });
+      expect(modulo.verificarFuenteMarcaAgua()).toBe(true);
+      const salida = await modulo.estamparMarcaAgua(await fotoNegra(800, 600), ["14 oct 2026 7:22:58 p. m."]);
+      expect(await brillo(salida, { left: 560, top: 540, width: 220, height: 50 })).toBeGreaterThan(20);
+    } finally {
+      espia.mockRestore();
+    }
+  });
+});
+
 describe("estamparMarcaAgua", () => {
   it("escribe el texto abajo a la derecha y conserva tamaño y formato", async () => {
     const original = await fotoNegra(800, 600);

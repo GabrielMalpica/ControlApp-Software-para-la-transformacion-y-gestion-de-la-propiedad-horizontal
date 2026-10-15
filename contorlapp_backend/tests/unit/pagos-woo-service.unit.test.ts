@@ -110,6 +110,53 @@ describe("PagoWooService.crearCobro", () => {
     });
   });
 
+  const servicio50 = (over: Record<string, unknown> = {}) =>
+    orden({
+      total: "180000.00",
+      meta_data: [
+        { key: "_clsr_pay_choice", value: "deposit" },
+        { key: "_clsr_pay_now", value: "90000" },
+      ],
+      line_items: [{ meta_data: [{ key: "Fecha del servicio", value: "2026-10-20" }, { key: "Pago", value: "Anticipo" }] }],
+      ...over,
+    });
+
+  test("servicio con anticipo: cobra el anticipo de la orden, no el total", async () => {
+    const { service, pagos } = servicio();
+    woo.mockResolvedValue(servicio50());
+    await service.crearCobro({ wooOrderId: "900", orderKey: "wc_order_key" });
+    expect(pagos.crearCobro).toHaveBeenCalledWith(expect.objectContaining({ montoEsperado: 90000 }));
+  });
+
+  test("solo productos: cobra el total aunque la orden diga deposit (valor por defecto)", async () => {
+    const { service, pagos } = servicio();
+    woo.mockResolvedValue(servicio50({ line_items: [{ meta_data: [] }, {}] }));
+    await service.crearCobro({ wooOrderId: "900", orderKey: "wc_order_key" });
+    expect(pagos.crearCobro).toHaveBeenCalledWith(expect.objectContaining({ montoEsperado: 180000 }));
+  });
+
+  test("servicio al 100 % o anticipo invalido: cobra el total", async () => {
+    const { service, pagos } = servicio();
+    woo.mockResolvedValue(
+      servicio50({ line_items: [{ meta_data: [{ key: "Pago", value: "100%" }] }] }),
+    );
+    await service.crearCobro({ wooOrderId: "900", orderKey: "wc_order_key" });
+    expect(pagos.crearCobro).toHaveBeenLastCalledWith(expect.objectContaining({ montoEsperado: 180000 }));
+
+    for (const payNow of ["", "0", "180000", "999999", "abc"]) {
+      woo.mockResolvedValue(
+        servicio50({
+          meta_data: [
+            { key: "_clsr_pay_choice", value: "deposit" },
+            { key: "_clsr_pay_now", value: payNow },
+          ],
+        }),
+      );
+      await service.crearCobro({ wooOrderId: "900", orderKey: "wc_order_key" });
+      expect(pagos.crearCobro).toHaveBeenLastCalledWith(expect.objectContaining({ montoEsperado: 180000 }));
+    }
+  });
+
   test("un wooOrderId no numerico se rechaza", async () => {
     const { service } = servicio();
     await expect(service.crearCobro({ wooOrderId: "../x", orderKey: "k" })).rejects.toThrow();
@@ -122,6 +169,15 @@ describe("PagoWooService consulta y verificacion", () => {
     pagos.obtenerCobroPorReferencia.mockResolvedValue(cobro({ canal: CanalPago.CONTROLAPP }));
     await expect(service.obtenerCobro("CA-1")).rejects.toMatchObject({ status: 404 });
     await expect(service.verificarCobro("CA-1")).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("expone la llave Bre-B y cuando se genero, para pagar sin escanear", async () => {
+    const { service, pagos } = servicio();
+    const creadoEn = new Date("2026-10-15T15:00:00Z");
+    pagos.obtenerCobroPorReferencia.mockResolvedValue(cobro({ brebKey: "@FCWHUYLIV2MWUEUESTONH", creadoEn }));
+    const res = await service.obtenerCobro("WC-abc");
+    expect(res).toMatchObject({ brebKey: "@FCWHUYLIV2MWUEUESTONH", creadoEn });
+    expect(Object.keys(res)).not.toContain("lockedUntil");
   });
 
   test("verificarCobro devuelve el cobro ya actualizado", async () => {
@@ -147,6 +203,16 @@ describe("PagoWooService.posConfirmacion", () => {
     });
     expect(dominio.notificarPagoConfirmado).toHaveBeenCalled();
     expect(pagos.marcarHuerfano).not.toHaveBeenCalled();
+  });
+
+  test("anticipo: la nota de la orden dice cuanto queda de saldo", async () => {
+    const { service } = servicio();
+    woo.mockResolvedValue(orden({ total: "180000.00" }));
+
+    await service.posConfirmacion(cobro({ estado: EstadoCobro.PAGADO, montoEsperado: new Prisma.Decimal(90000) }));
+
+    const nota = woo.mock.calls.find((c) => String(c[0]).endsWith("/notes"));
+    expect(JSON.parse((nota![1] as RequestInit).body as string).note).toMatch(/Anticipo de \$90\.000; saldo pendiente \$90\.000/);
   });
 
   test("orden cancelada mientras se pagaba: NO se toca y el cobro queda huerfano", async () => {
@@ -209,6 +275,7 @@ describe("PagoWooService.posConfirmacion", () => {
       cobroId: 3,
       canal: CanalPago.WOOCOMMERCE,
       wooOrderId: "900",
+      saldoServicioId: null,
       montoEsperado: new Prisma.Decimal(1),
       referenceCode: "WC-abc",
     };

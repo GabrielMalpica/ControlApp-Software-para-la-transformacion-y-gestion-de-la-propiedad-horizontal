@@ -960,6 +960,46 @@ export class CommerceLifecycleService {
     }
   }
 
+  /**
+   * Items que quedaron sin factor congelado al comprar (wooFactorInventario
+   * null): pasa si en ese momento la tienda no entrego los datos del plugin
+   * (plugin desactivado, Woo caido). En un insumo compartido (Sanitabs de 5,
+   * 30, 60 y 120 pastillas) el respaldo del insumo es 1, asi que sin esto un
+   * tarro de 120 sumaba 1 pastilla. Se lee de Woo FUERA de la transaccion de
+   * inventario y se guarda en el item para que la confirmacion lo use. Un
+   * factor ya congelado nunca se toca.
+   */
+  private async completarFactoresDesdeWoo(
+    items: Array<{
+      id: number;
+      wooProductId: number | null;
+      wooVariationId: number | null;
+      wooFactorInventario: Prisma.Decimal | null;
+    }>,
+  ) {
+    const productos = new Map<number, Awaited<ReturnType<WooCommerceCatalogService["getProduct"]>> | null>();
+    for (const item of items) {
+      if (item.wooFactorInventario != null || !item.wooProductId) continue;
+      if (!productos.has(item.wooProductId)) {
+        // Tienda no disponible: queda el factor de respaldo del insumo.
+        productos.set(item.wooProductId, await this.catalog.getProduct(item.wooProductId).catch(() => null));
+      }
+      const product = productos.get(item.wooProductId);
+      if (!product) continue;
+      const config = item.wooVariationId
+        ? product.variations.find((v) => v.id === item.wooVariationId)?.insumoConfig
+        : product.insumoConfig;
+      const factor = config?.factorConversion;
+      if (typeof factor !== "number" || !(factor > 0)) continue;
+      const valor = new Prisma.Decimal(factor);
+      await this.prisma.pedidoAppItem.updateMany({
+        where: { id: item.id, wooFactorInventario: null },
+        data: { wooFactorInventario: valor },
+      });
+      item.wooFactorInventario = valor;
+    }
+  }
+
   private async resolveMappings(
     client: TransactionClient | PrismaClient,
     pedido: PedidoRecepcion,
@@ -1042,6 +1082,7 @@ export class CommerceLifecycleService {
     }
     await this.access.assertConjuntoAccess(actor, pedido.conjuntoId);
 
+    if (!pedido.entradaInventarioAplicada) await this.completarFactoresDesdeWoo(pedido.items);
     const mappings = await this.resolveMappings(this.prisma, pedido, true);
     // Configurar o corregir insumos es del equipo de Control SAS: quien compra
     // ve el detalle fijo -viene de WooCommerce- y solo reporta lo que llego.
@@ -1304,6 +1345,9 @@ export class CommerceLifecycleService {
       dto.estadoDestino === EstadoPedidoInterno.RECIBIDO && initial.tipo === TipoPedidoApp.CONJUNTO
         ? this.normalizarRecepcion(initial.items, dto.recepcion)
         : null;
+    // Antes de abrir la transaccion (llama a la tienda): si se confirma sin
+    // haber abierto la vista previa, igual se suma con el factor de Woo.
+    if (recepcion && !initial.entradaInventarioAplicada) await this.completarFactoresDesdeWoo(initial.items);
 
     await this.prisma.$transaction(async (tx) => {
       const pedido = await this.loadPedidoRecepcion(tx, pedidoId);

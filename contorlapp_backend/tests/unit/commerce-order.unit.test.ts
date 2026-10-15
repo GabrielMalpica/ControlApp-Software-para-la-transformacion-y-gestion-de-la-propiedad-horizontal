@@ -84,6 +84,7 @@ describe("CommerceOrderService - pedidos de conjunto", () => {
 
   test("crea una orden de administrador con metadatos y persistencia CONJUNTO", async () => {
     const prisma = {
+      saldoServicio: { findMany: jest.fn().mockResolvedValue([]) },
       usuario: {
         findUnique: jest.fn().mockResolvedValue({
           id: "admin-1",
@@ -163,6 +164,7 @@ describe("CommerceOrderService - pedidos de conjunto", () => {
 
   test("impide que un gerente compre para un conjunto de otra empresa", async () => {
     const prisma = {
+      saldoServicio: { findMany: jest.fn().mockResolvedValue([]) },
       usuario: {
         findUnique: jest.fn().mockResolvedValue({
           id: "gerente-1",
@@ -199,6 +201,7 @@ describe("CommerceOrderService - pedidos de conjunto", () => {
 
   test("rechaza servicios aunque lleguen manipulados desde el cliente", async () => {
     const prisma = {
+      saldoServicio: { findMany: jest.fn().mockResolvedValue([]) },
       usuario: {
         findUnique: jest.fn().mockResolvedValue({
           id: "admin-1",
@@ -245,6 +248,7 @@ describe("CommerceOrderService - pedidos de conjunto", () => {
 
   test("lista solo pedidos de conjuntos pertenecientes a la empresa del jefe", async () => {
     const prisma = {
+      saldoServicio: { findMany: jest.fn().mockResolvedValue([]) },
       usuario: {
         findUnique: jest.fn().mockResolvedValue({
           id: "jefe-1",

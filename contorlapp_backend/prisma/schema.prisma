@@ -60,6 +60,18 @@ enum TipoMovimientoPuntos {
 enum CanalPago {
   CONTROLAPP
   WOOCOMMERCE
+  // Lo que falta de un servicio pagado con anticipo (ver SaldoServicio).
+  SALDO_SERVICIO
+}
+
+// Saldo de un servicio pagado con anticipo: nace cuando el servicio termina
+// (todas sus reservas cerradas y al menos una completada) y bloquea nuevos
+// pedidos del cliente hasta que se pague. Ver docs/saldos-servicio.md.
+enum EstadoSaldoServicio {
+  PENDIENTE
+  PAGADO
+  // Lo registro una persona (efectivo, transferencia por fuera, acuerdo).
+  PAGADO_POR_FUERA
 }
 
 // Ciclo de vida de un cobro creado en Factus Pay (ver PagoService). CREADO y
@@ -2562,6 +2574,9 @@ model PagoCobro {
   // Ordenes de WooCommerce sin PedidoApp (compras directas en la tienda).
   wooOrderId  String?
   usuarioId   String?
+  // Solo canal SALDO_SERVICIO: el saldo que paga este cobro.
+  saldoServicio   SaldoServicio? @relation(fields: [saldoServicioId], references: [id], onDelete: SetNull)
+  saldoServicioId Int?
 
   montoEsperado  Decimal  @db.Decimal(14, 2)
   montoProveedor Decimal? @db.Decimal(14, 2)
@@ -2614,7 +2629,75 @@ model PagoCobro {
   @@index([estado, proximaVerificacion])
   @@index([pedidoAppId])
   @@index([wooOrderId])
+  @@index([saldoServicioId])
   @@map("PagoCobro")
+}
+
+/**
+ * Lo que falta por pagar de un servicio pagado con anticipo. Uno por orden de
+ * WooCommerce (las de la app tambien son ordenes de Woo). El monto lo calcula
+ * el backend leyendo la orden (total - anticipo), nunca lo manda el cliente.
+ * Mientras este PENDIENTE, el cliente (por cuenta, correo o telefono) no puede
+ * hacer pedidos nuevos en la app ni en la tienda. Ver SaldoServicioService.
+ */
+model SaldoServicio {
+  id          Int     @id @default(autoincrement())
+  wooOrderId  String  @unique
+  pedidoAppId Int?
+  // Cuenta de ControlApp del pedido (si se hizo desde la app).
+  usuarioId   String?
+
+  // Datos de la orden al terminar el servicio (para la lista de mora).
+  // Correo en minusculas y telefono con los ultimos 10 digitos: asi se
+  // comparan al bloquear.
+  clienteNombre    String
+  clienteCorreo    String?
+  clienteTelefono  String?
+  clienteDireccion String?
+  servicios        String
+
+  totalOrden  Decimal             @db.Decimal(14, 2)
+  pagadoAntes Decimal             @db.Decimal(14, 2)
+  montoSaldo  Decimal             @db.Decimal(14, 2)
+  estado      EstadoSaldoServicio @default(PENDIENTE)
+
+  servicioTerminadoEn DateTime
+  pagadoEn            DateTime?
+  // Cobro de Factus que lo pago (estado PAGADO).
+  cobroPagoId         Int?
+  // Pago registrado a mano (PAGADO_POR_FUERA): quien, cuando y por que.
+  resueltoPorId       String?
+  resueltoPorNombre   String?
+  resolucionMotivo    String?
+  clienteAvisadoEn    DateTime?
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  cobros      PagoCobro[]
+  incidencias SaldoServicioIncidencia[]
+
+  @@index([estado, usuarioId])
+  @@index([estado, clienteCorreo])
+  @@index([estado, clienteTelefono])
+  @@index([pedidoAppId])
+  @@map("SaldoServicio")
+}
+
+/**
+ * Pedido de la tienda hecho por alguien con un saldo pendiente sin que se
+ * pudiera verificar al momento (el servidor no respondio): el pedido entro y
+ * queda aqui para revisarlo en la lista de mora.
+ */
+model SaldoServicioIncidencia {
+  id              Int           @id @default(autoincrement())
+  saldoServicio   SaldoServicio @relation(fields: [saldoServicioId], references: [id], onDelete: Cascade)
+  saldoServicioId Int
+  wooOrderId      String
+  creadoEn        DateTime      @default(now())
+
+  @@unique([saldoServicioId, wooOrderId])
+  @@map("SaldoServicioIncidencia")
 }
 
 /**

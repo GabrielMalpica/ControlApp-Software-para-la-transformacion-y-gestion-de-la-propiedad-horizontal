@@ -11,6 +11,7 @@ import {
   type CommerceServiceConfig,
   WooCommerceCatalogService,
 } from "./WooCommerceCatalogService";
+import { asegurarSinMora } from "./pagos/SaldoServicioService";
 import { cacheDelete } from "./RedisService";
 import { buildWooUrl, getWooBaseUrl, wooFetch } from "./wooFetch";
 
@@ -673,6 +674,8 @@ export class CommerceOrderService {
       dto.idempotencyKey,
     );
     if (existing) return existing;
+    // Con el saldo de un servicio ya prestado sin pagar no se puede pedir.
+    await asegurarSinMora(this.prisma, userId);
     const orderItems = await this.resolveOrderItems(dto.items);
     const total = orderItems.reduce((sum, item) => sum + item.subtotal, 0);
     const serviceSummary = this.getServiceSummary(orderItems);
@@ -795,6 +798,7 @@ export class CommerceOrderService {
       dto.idempotencyKey,
     );
     if (existing) return existing;
+    await asegurarSinMora(this.prisma, userId);
     const orderItems = await this.resolveOrderItems(dto.items, { conjuntoOrder: true });
     const total = orderItems.reduce((sum, item) => sum + item.subtotal, 0);
     const serviceSummary = this.getServiceSummary(orderItems);

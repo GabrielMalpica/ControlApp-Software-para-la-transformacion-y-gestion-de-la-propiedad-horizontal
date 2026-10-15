@@ -33,16 +33,21 @@ function isPublicRequest(method: string, path: string): boolean {
   // del handler -esto solo lo exime del guard generico de Bearer token.
   if (method === "POST" && path === "/commerce/webhooks/woocommerce") return true;
 
+  // Plugin puente controlapp-archivos-drive (formularios de la pagina web):
+  // firma HMAC con el hash del archivo (ver web-archivos-hmac.middleware).
+  if (method === "POST" && path === "/commerce/web/archivos") return true;
+
   // Factus Pay no manda Bearer: autentica con la llave del query string,
   // verificada en FactusWebhookService (y el aviso nunca confirma un pago
   // por si solo: se verifica por API).
   if (method === "POST" && path === "/commerce/webhooks/factus-pay") return true;
 
-  // Plugin controlapp-factus-pay de la tienda: se autentica con HMAC + nonce
-  // (ver requirePagosWooHmac), no con un JWT.
+  // Plugin controlapp-factus-pay de la tienda (cobros, saldos de servicios y
+  // consulta de mora): se autentica con HMAC + nonce (ver requirePagosWooHmac
+  // en cada ruta de Commerce.ts), no con un JWT.
   return (
     (method === "POST" || method === "GET") &&
-    path.startsWith("/commerce/pagos/woo/cobros")
+    path.startsWith("/commerce/pagos/woo/")
   );
 }
 

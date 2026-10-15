@@ -12,6 +12,8 @@ export const CrearCobroWooDTO = z.object({
   orderKey: z.string().trim().min(1).max(100),
 });
 
+type WooMeta = { key?: string; value?: unknown };
+
 type WooOrderPago = {
   id: number;
   status: string;
@@ -19,12 +21,43 @@ type WooOrderPago = {
   total?: string;
   order_key?: string;
   transaction_id?: string;
+  meta_data?: WooMeta[];
+  line_items?: Array<{ meta_data?: WooMeta[] }>;
 };
 
 // Estados de la orden en los que todavia tiene sentido cobrarla / marcarla
 // pagada. Cualquier otro (cancelada, reembolsada, ya pagada por otra via) es
 // un pago que necesita revision manual.
 const ESTADOS_WOO_COBRABLES = new Set(["pending", "failed", "on-hold", "pago-ocr"]);
+
+function meta(lista: WooMeta[] | undefined, clave: string) {
+  return lista?.find((m) => m.key === clave)?.value;
+}
+
+/**
+ * Cuanto se cobra de una orden de la tienda. Los servicios del plugin de
+ * reservas (cl-servicios-reserva) dejan en cada item "Pago" = "Anticipo" o
+ * "100%", y en la orden `_clsr_pay_choice` y `_clsr_pay_now` (lo que se paga
+ * ahora, ya redondeado). Si la orden tiene servicios con anticipo se cobra
+ * ese anticipo; si no -productos, o servicios al 100 %- el total. Ojo:
+ * `_clsr_pay_choice` vale "deposit" por defecto tambien en ordenes de solo
+ * productos, por eso se miran los items.
+ */
+export function montoACobrarWoo(orden: Pick<WooOrderPago, "total" | "meta_data" | "line_items">) {
+  const total = Number(orden.total);
+  const pagos = (orden.line_items ?? []).map((item) => meta(item.meta_data, "Pago")).filter(Boolean);
+  const conAnticipo = pagos.includes("Anticipo") && !pagos.includes("100%");
+  if (!conAnticipo || meta(orden.meta_data, "_clsr_pay_choice") !== "deposit") {
+    return { monto: total, anticipo: false };
+  }
+  const anticipo = Number(meta(orden.meta_data, "_clsr_pay_now"));
+  // Un anticipo que no tiene sentido (vacio, 0, mayor o igual al total) no se
+  // cobra: se cobra el total, que es lo que el cliente ve en el pedido.
+  if (!Number.isFinite(anticipo) || anticipo <= 0 || anticipo >= total) {
+    return { monto: total, anticipo: false };
+  }
+  return { monto: Math.round(anticipo * 100) / 100, anticipo: true };
+}
 
 /** Contrato con el plugin controlapp-factus-pay (nunca expone campos internos). */
 export function serializarCobroWoo(cobro: PagoCobro) {
@@ -36,7 +69,10 @@ export function serializarCobroWoo(cobro: PagoCobro) {
     montoEsperado: Number(cobro.montoEsperado),
     moneda: cobro.moneda,
     qrBase64: cobro.qrBase64,
+    // Llave Bre-B del QR: tambien se puede pagar copiandola, por el monto exacto.
+    brebKey: cobro.brebKey,
     expiraLocalEn: cobro.expiraLocalEn,
+    creadoEn: cobro.creadoEn,
     pagado: cobro.estado === "PAGADO",
   };
 }
@@ -68,7 +104,9 @@ export class PagoWooService {
 
   private async leerOrden(wooOrderId: string) {
     return wooFetch<WooOrderPago>(
-      buildWooUrl("rest", `/orders/${wooOrderId}`, { _fields: "id,status,currency,total,order_key,transaction_id" }),
+      buildWooUrl("rest", `/orders/${wooOrderId}`, {
+        _fields: "id,status,currency,total,order_key,transaction_id,meta_data,line_items",
+      }),
       {},
       { requireAuth: true, timeoutMs: 8_000, failureMessage: "No pudimos consultar la orden en la tienda" },
     );
@@ -91,6 +129,8 @@ export class PagoWooService {
     if (!Number.isFinite(total) || total <= 0) {
       throw commerceHttpError(422, "La orden no tiene un total valido para cobrar");
     }
+    // Servicios con anticipo: se cobra el anticipo; lo demas, el total.
+    const { monto } = montoACobrarWoo(orden);
 
     // Una orden creada desde la app tambien es una orden de Woo: se enlaza al
     // pedido para que el pago lo mueva a PAGADO y avise al cliente.
@@ -104,7 +144,7 @@ export class PagoWooService {
 
     const cobro = await this.pagos.crearCobro({
       canal: CanalPago.WOOCOMMERCE,
-      montoEsperado: total,
+      montoEsperado: monto,
       pedidoAppId: pedido?.id,
       wooOrderId: dto.wooOrderId,
       usuarioId: pedido?.usuarioId,
@@ -115,7 +155,8 @@ export class PagoWooService {
 
   private async cobroWoo(referenceCode: string) {
     const cobro = await this.pagos.obtenerCobroPorReferencia(referenceCode);
-    if (!cobro || cobro.canal !== CanalPago.WOOCOMMERCE) {
+    // La tienda tambien consulta los cobros del saldo de un servicio.
+    if (!cobro || (cobro.canal !== CanalPago.WOOCOMMERCE && cobro.canal !== CanalPago.SALDO_SERVICIO)) {
       throw commerceHttpError(404, "Cobro no encontrado");
     }
     return cobro;
@@ -171,13 +212,21 @@ export class PagoWooService {
       },
       { requireAuth: true, timeoutMs: 8_000 },
     );
+    // Un anticipo deja la orden pagada (como "Confirmado - manual" en el flujo
+    // con comprobante); el saldo queda en la nota para quien preste el servicio.
+    const pagado = Number(cobro.montoEsperado);
+    const saldo = Math.round((Number(orden.total) - pagado) * 100) / 100;
+    const detalle =
+      saldo > 0
+        ? ` Anticipo de $${pagado.toLocaleString("es-CO")}; saldo pendiente $${saldo.toLocaleString("es-CO")}.`
+        : "";
     try {
       await wooFetch(
         buildWooUrl("rest", `/orders/${cobro.wooOrderId}/notes`),
         {
           method: "POST",
           body: JSON.stringify({
-            note: `Pago confirmado automaticamente por Factus Pay (referencia ${cobro.referenceCode}).`,
+            note: `Pago confirmado automaticamente por Factus Pay (referencia ${cobro.referenceCode}).${detalle}`,
             customer_note: false,
           }),
         },

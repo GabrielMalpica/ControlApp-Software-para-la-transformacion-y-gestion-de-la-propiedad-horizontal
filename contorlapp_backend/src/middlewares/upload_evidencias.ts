@@ -160,6 +160,34 @@ const comprobanteSingle = (fieldName: string): RequestHandler => {
   };
 };
 
+// Documentos que llegan desde los formularios de la pagina web (los plugins
+// limitan a 5-8 MB; aqui un poco mas de margen).
+const MAX_ARCHIVO_WEB_MB = 10;
+const archivoWebUpload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: MAX_ARCHIVO_WEB_MB * 1024 * 1024, files: 1, fields: 5 },
+});
+
+export const uploadArchivoWeb = {
+  single: (fieldName: string): RequestHandler[] => [
+    (req, res, next) => {
+      archivoWebUpload.single(fieldName)(req, res, (error?: unknown) => {
+        if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+          next({
+            ok: false,
+            status: 413,
+            message: `El archivo supera el tamaño máximo permitido de ${MAX_ARCHIVO_WEB_MB} MB.`,
+          });
+          return;
+        }
+        next(error);
+      });
+    },
+    validateMagicBytes,
+  ],
+};
+
 export const uploadComprobante = {
   single: (fieldName: string): RequestHandler[] => [
     comprobanteSingle(fieldName),
