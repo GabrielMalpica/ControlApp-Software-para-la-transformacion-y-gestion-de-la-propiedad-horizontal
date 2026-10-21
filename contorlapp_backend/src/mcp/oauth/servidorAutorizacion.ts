@@ -110,6 +110,26 @@ function campo(body: unknown, nombre: string): string {
   return typeof valor === "string" ? valor : Array.isArray(valor) ? String(valor[0] ?? "") : "";
 }
 
+/**
+ * client_id de la peticion al token. Si el cliente se autentica con
+ * private_key_jwt (RFC 7523) puede omitirlo y llevarlo solo en la asercion.
+ * La firma no se verifica: aqui todos son clientes publicos y lo que protege
+ * el canje es el codigo ligado al cliente + PKCE (o el refresh token).
+ */
+function clientIdDePeticion(body: unknown): string {
+  const directo = campo(body, "client_id");
+  if (directo) return directo;
+  if (campo(body, "client_assertion_type") !== "urn:ietf:params:oauth:client-assertion-type:jwt-bearer") return "";
+  const partes = campo(body, "client_assertion").split(".");
+  if (partes.length !== 3 || partes[1].length > 4_096) return "";
+  try {
+    const carga = JSON.parse(Buffer.from(partes[1], "base64url").toString("utf8")) as Record<string, unknown>;
+    return typeof carga.iss === "string" && carga.iss === carga.sub ? carga.iss : "";
+  } catch {
+    return "";
+  }
+}
+
 async function mcpActivo(deps: DependenciasOAuth): Promise<boolean> {
   return deps.config.habilitado && (await flagsMcp(deps.prisma)).habilitado;
 }
@@ -517,7 +537,7 @@ export function crearRouterOAuth(deps: DependenciasOAuth): Router {
         return errorOAuth(res, 503, "temporarily_unavailable", "La conexión con IA está desactivada.");
       }
       const grantType = campo(req.body, "grant_type");
-      const clientId = campo(req.body, "client_id");
+      const clientId = clientIdDePeticion(req.body);
       const resource = campo(req.body, "resource").replace(/\/+$/, "");
       if (resource && resource.toLowerCase() !== config.recurso.toLowerCase()) {
         return errorOAuth(res, 400, "invalid_target", "Recurso desconocido.");
@@ -623,7 +643,7 @@ export function crearRouterOAuth(deps: DependenciasOAuth): Router {
           where: { tokenHash: hashSha256(token) },
           select: { conexionId: true, conexion: { select: { clienteId: true, estado: true } } },
         });
-        const clientId = campo(req.body, "client_id");
+        const clientId = clientIdDePeticion(req.body);
         if (fila && (!clientId || fila.conexion.clienteId === clientId) && fila.conexion.estado === "ACTIVA") {
           await revocarConexion(fila.conexionId, "REVOCADA_POR_CLIENTE");
         }

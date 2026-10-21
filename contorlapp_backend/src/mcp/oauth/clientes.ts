@@ -73,9 +73,16 @@ function validarDocumento(clientId: string, documento: unknown): ClienteOAuth {
     ? doc.redirect_uris.filter((uri): uri is string => typeof uri === "string")
     : [];
   if (!redirectUris.length) throw new Error("El documento no declara redirect_uris");
+  // Solo clientes publicos con PKCE (lo que anunciamos en los metadatos). Un
+  // cliente puede preferir otro metodo y aceptar "none" en la lista de
+  // soportados (ChatGPT declara private_key_jwt y ["none", "private_key_jwt"]).
   const metodo = doc.token_endpoint_auth_method;
-  // Solo clientes publicos con PKCE (lo que anunciamos en los metadatos).
-  if (metodo != null && metodo !== "none") throw new Error("Metodo de autenticacion no soportado");
+  const soportados = Array.isArray(doc.token_endpoint_auth_methods_supported)
+    ? doc.token_endpoint_auth_methods_supported
+    : [];
+  if (metodo != null && metodo !== "none" && !soportados.includes("none")) {
+    throw new Error("Metodo de autenticacion no soportado");
+  }
   const nombre =
     typeof doc.client_name === "string" && doc.client_name.trim()
       ? doc.client_name.trim().slice(0, 80)

@@ -144,6 +144,39 @@ describe("clientes (CIMD)", () => {
     expect(ok).toMatchObject({ nombre: "ChatGPT", origen: "cimd" });
   });
 
+  test("acepta un cliente que prefiere otro metodo pero soporta 'none' (documento real de ChatGPT)", async () => {
+    const id = "https://chatgpt.com/oauth/client.json";
+    const responder = (doc: object) => (async () => new Response(JSON.stringify(doc))) as unknown as typeof fetch;
+    const prisma = crearFakeMcpPrisma();
+    const ok = await resolverCliente(
+      c,
+      prisma,
+      id,
+      responder({
+        client_id: id,
+        client_name: "ChatGPT",
+        redirect_uris: ["https://chatgpt.com/connector_platform_oauth_redirect"],
+        token_endpoint_auth_method: "private_key_jwt",
+        token_endpoint_auth_methods_supported: ["none", "private_key_jwt"],
+      }),
+    );
+    expect(ok).toMatchObject({ nombre: "ChatGPT", origen: "cimd" });
+    limpiarCacheClientes();
+    expect(
+      await resolverCliente(
+        c,
+        prisma,
+        id,
+        responder({
+          client_id: id,
+          redirect_uris: ["https://chatgpt.com/connector_platform_oauth_redirect"],
+          token_endpoint_auth_method: "private_key_jwt",
+          token_endpoint_auth_methods_supported: ["private_key_jwt"],
+        }),
+      ),
+    ).toBeNull();
+  });
+
   test("un client_id fuera de la lista ni se descarga", async () => {
     const fetchEspia = jest.fn() as unknown as typeof fetch;
     expect(await resolverCliente(c, crearFakeMcpPrisma(), "https://evil.example/c.json", fetchEspia)).toBeNull();

@@ -162,6 +162,11 @@ async function canjear(app: any, code: string, verifier: string) {
     });
 }
 
+function asercionCliente(clientId: string): string {
+  const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  return `${b64({ alg: "RS256", typ: "JWT" })}.${b64({ iss: clientId, sub: clientId, aud: "x" })}.firma`;
+}
+
 async function conectar(app: any, scopes?: string[]) {
   const { code, verifier } = await autorizar(app, { scopes });
   const token = await canjear(app, code, verifier);
@@ -357,6 +362,29 @@ describe("autorizacion", () => {
     expect(reuso.body.error).toBe("invalid_grant");
     // Un codigo reusado corta la conexion.
     expect(prisma.mcpConexion.filas[0].estado).toBe("REVOCADA");
+  });
+
+  test("canje con client_assertion (private_key_jwt) sin client_id: vale el iss, pero sigue exigiendo PKCE", async () => {
+    const { app } = montar();
+    const { code, verifier } = await autorizar(app);
+    const enviar = (codeVerifier: string, clientId: string) =>
+      request(app)
+        .post("/oauth/token")
+        .set("X-Forwarded-For", nuevaIp())
+        .type("form")
+        .send({
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: CLAUDE_REDIRECT,
+          client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+          client_assertion: asercionCliente(clientId),
+          code_verifier: codeVerifier,
+        });
+    expect((await enviar(verifier, "https://chatgpt.com/oauth/client.json")).body.error).toBe("invalid_grant");
+    expect((await enviar(pkce().verifier, CLAUDE_ID)).body.error).toBe("invalid_grant");
+    const ok = await enviar(verifier, CLAUDE_ID);
+    expect(ok.status).toBe(200);
+    expect(ok.body.access_token).toBeTruthy();
   });
 });
 
