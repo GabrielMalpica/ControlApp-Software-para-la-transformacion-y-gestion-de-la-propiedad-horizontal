@@ -1,10 +1,11 @@
-import { RequestHandler } from "express";
+import { Request, RequestHandler } from "express";
 import { z } from "zod";
 
 import { prisma } from "../db/prisma";
 import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
 import { AsistenciaService } from "../services/AsistenciaService";
 import { AsistenciaExcelService } from "../services/AsistenciaExcelService";
+import { alcanceConjuntos, exigirConjuntoEnAlcance } from "../aplicacion/alcanceConjuntos";
 
 const service = new AsistenciaService(prisma);
 const excelService = new AsistenciaExcelService(prisma);
@@ -80,6 +81,31 @@ const ActualizarTurnoExtraBody = z.object({
   turnosDominicales: z.coerce.number().int().min(0).max(31).optional(),
   estado: z.enum(["PENDIENTE", "PAGADO", "CANCELADO"]).optional(),
 });
+
+// El administrador solo ve la asistencia de sus conjuntos: sin conjuntoId se
+// limita a ellos y uno ajeno responde 404. El resto de roles, toda la empresa.
+async function alcanceVerificado(req: Request, empresaId: string, conjuntoId?: string) {
+  const alcance = await alcanceConjuntos(prisma, {
+    usuarioId: String(req.user?.sub ?? ""),
+    rol: String(req.user?.rol ?? ""),
+    empresaId,
+  });
+  exigirConjuntoEnAlcance(alcance, conjuntoId);
+  return alcance;
+}
+
+async function periodoDe(req: Request) {
+  const empresaId = await empresaIdAutenticada(req);
+  const query = PeriodoQuery.parse(req.query);
+  const alcance = await alcanceVerificado(req, empresaId, query.conjuntoId);
+  return {
+    empresaId,
+    conjuntoId: query.conjuntoId ?? null,
+    alcance,
+    anio: query.anio,
+    mes: query.mes,
+  };
+}
 
 export class AsistenciaController {
   listarConceptos: RequestHandler = async (req, res, next) => {
@@ -157,14 +183,7 @@ export class AsistenciaController {
 
   getVisitasSupervisores: RequestHandler = async (req, res, next) => {
     try {
-      const empresaId = await empresaIdAutenticada(req);
-      const query = PeriodoQuery.parse(req.query);
-      const data = await service.getVisitasSupervisores({
-        empresaId,
-        conjuntoId: query.conjuntoId ?? null,
-        anio: query.anio,
-        mes: query.mes,
-      });
+      const data = await service.getVisitasSupervisores(await periodoDe(req));
       res.json(data);
     } catch (err) {
       next(err);
@@ -173,14 +192,7 @@ export class AsistenciaController {
 
   getGrid: RequestHandler = async (req, res, next) => {
     try {
-      const empresaId = await empresaIdAutenticada(req);
-      const query = PeriodoQuery.parse(req.query);
-      const grid = await service.getGrid({
-        empresaId,
-        conjuntoId: query.conjuntoId ?? null,
-        anio: query.anio,
-        mes: query.mes,
-      });
+      const grid = await service.getGrid(await periodoDe(req));
       res.json(grid);
     } catch (err) {
       next(err);
@@ -189,14 +201,7 @@ export class AsistenciaController {
 
   getResumen: RequestHandler = async (req, res, next) => {
     try {
-      const empresaId = await empresaIdAutenticada(req);
-      const query = PeriodoQuery.parse(req.query);
-      const resumen = await service.getResumen({
-        empresaId,
-        conjuntoId: query.conjuntoId ?? null,
-        anio: query.anio,
-        mes: query.mes,
-      });
+      const resumen = await service.getResumen(await periodoDe(req));
       res.json(resumen);
     } catch (err) {
       next(err);
@@ -205,16 +210,10 @@ export class AsistenciaController {
 
   exportarExcel: RequestHandler = async (req, res, next) => {
     try {
-      const empresaId = await empresaIdAutenticada(req);
-      const query = PeriodoQuery.parse(req.query);
-      const buffer = await excelService.exportar({
-        empresaId,
-        conjuntoId: query.conjuntoId ?? null,
-        anio: query.anio,
-        mes: query.mes,
-      });
+      const periodo = await periodoDe(req);
+      const buffer = await excelService.exportar(periodo);
 
-      const nombreArchivo = `asistencia_${query.anio}_${String(query.mes).padStart(2, "0")}.xlsx`;
+      const nombreArchivo = `asistencia_${periodo.anio}_${String(periodo.mes).padStart(2, "0")}.xlsx`;
       res.setHeader(
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -284,7 +283,8 @@ export class AsistenciaController {
     try {
       const empresaId = await empresaIdAutenticada(req);
       const query = TurnosExtraQuery.parse(req.query);
-      const items = await service.listarTurnosExtra({ empresaId, ...query });
+      const alcance = await alcanceVerificado(req, empresaId, query.conjuntoId);
+      const items = await service.listarTurnosExtra({ empresaId, ...query, alcance });
       res.json(items);
     } catch (err) {
       next(err);

@@ -4,6 +4,8 @@ import {
   DiaSemana,
 } from "@prisma/client";
 
+import { camposFueraDeEdicionRapida, EditarUsuarioDTO } from "./Usuario";
+
 
 /** Mismo tipo de ID que en Prisma: Int (misma FK que Usuario.id) */
 export type OperarioId = number;
@@ -75,8 +77,13 @@ export const CrearOperarioDTO = z.object({
     .default([]),
 });
 
-/** Edición parcial */
+/**
+ * Edicion rapida (PATCH /gerente/operarios/:id). Hoy el servicio aplica nombre,
+ * correo y funciones; la empresa, el rol, el estado y la contrasena se rechazan.
+ */
 export const EditarOperarioDTO = z.object({
+  nombre: EditarUsuarioDTO.shape.nombre,
+  correo: EditarUsuarioDTO.shape.correo,
   funciones: z.array(z.nativeEnum(TipoFuncion)).nonempty().optional(),
   cursoSalvamentoAcuatico: z.boolean().optional(),
   urlEvidenciaSalvamento: z.string().url().optional().nullable(),
@@ -88,7 +95,6 @@ export const EditarOperarioDTO = z.object({
   fechaSalida: z.coerce.date().optional().nullable(),
   fechaUltimasVacaciones: z.coerce.date().optional().nullable(),
   observaciones: z.string().optional().nullable(),
-  empresaId: z.string().min(3).optional(),
   disponibilidadPeriodos: z
     .array(
       z.object({
@@ -101,6 +107,7 @@ export const EditarOperarioDTO = z.object({
       }),
     )
     .optional(),
+  ...camposFueraDeEdicionRapida,
 });
 
 /** Cierre en bloque de tareas abiertas (previo a un traslado de conjunto) */

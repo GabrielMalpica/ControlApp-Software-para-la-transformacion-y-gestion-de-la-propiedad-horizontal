@@ -12,6 +12,7 @@ import {
   type RegistroAuditoria,
   type TrazabilidadEntidad,
 } from "../model/Auditoria";
+import { origenAuditoriaActual } from "../utils/contextoAuditoria";
 
 /** Cliente Prisma o cliente de transaccion: la auditoria debe poder escribir dentro de un $transaction. */
 type ClientePrisma = PrismaClient | Prisma.TransactionClient;
@@ -38,8 +39,24 @@ function normalizarActor(actor?: ActorAuditoria | null): ActorAuditoria | null {
   return { id, rol, nombre };
 }
 
+/**
+ * Metadata del evento mas el canal de origen (p. ej. la conexion y la
+ * herramienta del MCP), si la accion corre dentro de un contexto de origen.
+ */
+function metadataConOrigen(evento: RegistroAuditoria): unknown {
+  const contexto = origenAuditoriaActual();
+  if (!contexto) return evento.metadataJson;
+  const base = evento.metadataJson;
+  if (base == null) return { canal: contexto.metadata };
+  if (typeof base === "object" && !Array.isArray(base)) {
+    return { ...(base as Record<string, unknown>), canal: contexto.metadata };
+  }
+  return { valor: base, canal: contexto.metadata };
+}
+
 function aDatosCreate(evento: RegistroAuditoria): Prisma.AuditoriaEventoCreateManyInput {
   const actor = normalizarActor(evento.actor);
+  const contexto = origenAuditoriaActual();
   return {
     modulo: evento.modulo,
     entidad: evento.entidad,
@@ -50,11 +67,11 @@ function aDatosCreate(evento: RegistroAuditoria): Prisma.AuditoriaEventoCreateMa
     actorId: actor?.id ?? null,
     actorRol: actor?.rol ?? null,
     actorNombre: actor?.nombre ?? null,
-    origen: evento.origen ?? OrigenAuditoria.USUARIO,
+    origen: evento.origen ?? contexto?.origen ?? OrigenAuditoria.USUARIO,
     descripcion: evento.descripcion ?? null,
     datosAntes: comoJson(evento.datosAntes),
     datosDespues: comoJson(evento.datosDespues),
-    metadataJson: comoJson(evento.metadataJson),
+    metadataJson: comoJson(metadataConOrigen(evento)),
     periodoAnio: evento.periodoAnio ?? null,
     periodoMes: evento.periodoMes ?? null,
   };

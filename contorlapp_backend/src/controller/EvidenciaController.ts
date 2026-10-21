@@ -1,6 +1,9 @@
 // src/controller/EvidenciaController.ts
 import { RequestHandler } from "express";
 import { z } from "zod";
+import { prisma } from "../db/prisma";
+import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
+import { EvidenciaAccesoService } from "../services/EvidenciaAccesoService";
 import { buscarDireccionGps } from "../utils/direccion_gps";
 import { getEvidenciaStream } from "../utils/drive_evidencias";
 
@@ -15,6 +18,9 @@ const DireccionQuerySchema = z.object({
 });
 
 export class EvidenciaController {
+  // Una sola instancia: junta en una consulta las fotos que se piden a la vez.
+  private acceso = new EvidenciaAccesoService(prisma);
+
   // GET /evidencias/direccion?lat=&lng=
   // La app la pide apenas se toma una foto de evidencia, en segundo plano:
   // así, al cerrar la tarea, la dirección de la marca de agua ya está en
@@ -29,9 +35,17 @@ export class EvidenciaController {
   };
 
   // GET /evidencias/:fileId
+  // Solo si el archivo es de una tarea, diagnóstico o comprobante que el
+  // usuario ya puede ver; si no, 404 sin confirmar que existe.
   obtener: RequestHandler = async (req, res, next) => {
     try {
       const { fileId } = FileIdParamSchema.parse(req.params);
+      const empresaId = await empresaIdAutenticada(req);
+      await this.acceso.autorizar(fileId, {
+        id: String(req.user?.sub ?? "").trim(),
+        rol: String(req.user?.rol ?? "").trim(),
+        empresaId,
+      });
       const { stream, mimeType } = await getEvidenciaStream(fileId);
 
       res.setHeader("Content-Type", mimeType);

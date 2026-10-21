@@ -1,7 +1,11 @@
 import { RequestHandler } from "express";
 import { prisma } from "../db/prisma";
 import { z } from "zod";
-import { TareaService } from "../services/TareaServices";
+import {
+  TareaService,
+  conSupervisorPorDefecto,
+  type ActorConsultaTareas,
+} from "../services/TareaServices";
 import { empresaIdAutenticada } from "../middlewares/tenant.middleware";
 
 const IdParamSchema = z.object({
@@ -18,6 +22,17 @@ async function actorAutenticado(req: any): Promise<{ id: string; rol: string; no
   return { id, rol, nombre: usuario?.nombre ?? null };
 }
 
+/**
+ * Quien consulta o modifica, tal como viene en el token: define el alcance de
+ * lectura y el de modificación (ver `alcanceMutacionTareasPorRol`).
+ */
+function actorDeConsulta(req: any): ActorConsultaTareas {
+  return {
+    id: String(req.user?.sub ?? "").trim(),
+    rol: String(req.user?.rol ?? "").trim(),
+  };
+}
+
 export class TareaController {
 
   // POST /tareas  (correctiva por defecto)
@@ -26,7 +41,7 @@ export class TareaController {
       const empresaId = await empresaIdAutenticada(req);
       const creada = await TareaService.crearTareaCorrectiva(
         prisma,
-        req.body,
+        conSupervisorPorDefecto(actorDeConsulta(req), req.body),
         empresaId,
       );
       res.status(201).json(creada);
@@ -39,7 +54,12 @@ export class TareaController {
   listarTareas: RequestHandler = async (req, res, next) => {
     try {
       const empresaId = await empresaIdAutenticada(req);
-      const list = await TareaService.listarTareas(prisma, req.query, empresaId);
+      const list = await TareaService.listarTareas(
+        prisma,
+        req.query,
+        empresaId,
+        actorDeConsulta(req),
+      );
       res.json(list);
     } catch (err) {
       next(err);
@@ -51,7 +71,12 @@ export class TareaController {
     try {
       const { id } = IdParamSchema.parse(req.params);
       const empresaId = await empresaIdAutenticada(req);
-      const tarea = await TareaService.obtenerTarea(prisma, id, empresaId);
+      const tarea = await TareaService.obtenerTarea(
+        prisma,
+        id,
+        empresaId,
+        actorDeConsulta(req),
+      );
       res.json(tarea);
     } catch (err) {
       next(err);
@@ -68,6 +93,7 @@ export class TareaController {
         id,
         req.body,
         empresaId,
+        actorDeConsulta(req),
       );
       res.json(tarea);
     } catch (err) {
@@ -80,7 +106,7 @@ export class TareaController {
     try {
       const { id } = IdParamSchema.parse(req.params);
       const empresaId = await empresaIdAutenticada(req);
-      await TareaService.eliminarTarea(prisma, id, empresaId);
+      await TareaService.eliminarTarea(prisma, id, empresaId, actorDeConsulta(req));
       res.status(204).send();
     } catch (err) {
       next(err);

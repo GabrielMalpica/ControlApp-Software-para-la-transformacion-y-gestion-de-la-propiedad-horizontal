@@ -3,6 +3,7 @@ import {
   PrismaClient,
   Prisma,
   EstadoTarea,
+  Rol,
   TipoTarea,
   TipoMovimientoInsumo,
 } from "@prisma/client";
@@ -74,7 +75,7 @@ const RechazarDTO = z.object({
   observacion: z.string().min(3).max(500),
 });
 
-function recursoFueraDeEmpresa(): Error & { status: number } {
+export function recursoFueraDeEmpresa(): Error & { status: number } {
   const error = new Error("Recurso no encontrado") as Error & {
     status: number;
   };
@@ -82,39 +83,187 @@ function recursoFueraDeEmpresa(): Error & { status: number } {
   return error;
 }
 
-async function validarRelacionesDeTarea(params: {
+/** Quien consulta por la ruta genérica /tarea (el controller lo toma de `req.user`). */
+export type ActorConsultaTareas = { id: string; rol: string };
+
+/**
+ * Tope de filas de `GET /tarea` y `GET /tarea-correctiva/conjuntos/:nit/tareas`:
+ * sin él, una sola llamada sacaba todas las tareas.
+ */
+export const LIMITE_MAX_TAREAS = 500;
+
+const ListarTareasDTO = FiltroTareaDTO.extend({
+  limite: z.coerce.number().int().min(1).max(LIMITE_MAX_TAREAS).optional(),
+});
+
+/** Query de `GET /tarea-correctiva/conjuntos/:nit/tareas` (todo llega como texto). */
+const RangoTareasConjuntoDTO = z.object({
+  desde: z.coerce.date().optional(),
+  hasta: z.coerce.date().optional(),
+  tipo: z.nativeEnum(TipoTarea).optional(),
+  limite: z.coerce.number().int().min(1).max(LIMITE_MAX_TAREAS).optional(),
+});
+
+/**
+ * Qué tareas puede leer cada rol por `GET /tarea` y `GET /tarea/:id`, siempre
+ * dentro de la empresa autenticada:
+ * - gerente y jefe de operaciones: toda la empresa;
+ * - administrador: solo las de sus conjuntos (`Conjunto.administradorId`);
+ * - supervisor: las que tiene a cargo (`Tarea.supervisorId`), la misma regla
+ *   de `/supervisor/tareas` y de su cierre; el modelo no le asigna conjuntos;
+ * - operario: las publicadas donde está asignado (`Tarea.operarios`), como
+ *   `/operario/operarios/:id/tareas`.
+ * Otro rol no lee tareas aunque le hayan dado el permiso.
+ */
+export function alcanceTareasPorRol(
+  actor: ActorConsultaTareas,
+  empresaId: string,
+): Prisma.TareaWhereInput {
+  switch (actor.rol) {
+    case Rol.gerente:
+    case Rol.jefe_operaciones:
+      return { conjunto: { empresaId } };
+    case Rol.administrador:
+      return { conjunto: { empresaId, administradorId: actor.id } };
+    case Rol.supervisor:
+      return { conjunto: { empresaId }, supervisorId: actor.id };
+    case Rol.operario:
+      return {
+        conjunto: { empresaId },
+        borrador: false,
+        operarios: { some: { id: actor.id } },
+      };
+    default: {
+      const error = new Error("No tiene acceso a las tareas.") as Error & {
+        status: number;
+      };
+      error.status = 403;
+      throw error;
+    }
+  }
+}
+
+/**
+ * Qué tareas puede modificar cada rol (editar, eliminar, corregir cierre)
+ * por `/tarea/:id`, `/gerente/tareas/:tareaId` y `/tarea-correctiva/tareas/:id`:
+ * las mismas que puede leer por `alcanceTareasPorRol`, nunca más, así nadie
+ * cambia una tarea que no ve. Fuera de alcance responde 404, igual que si no
+ * existiera.
+ * - gerente y jefe de operaciones: toda la empresa;
+ * - administrador: las de sus conjuntos;
+ * - supervisor: solo las que tiene a cargo (`Tarea.supervisorId`);
+ * - operario: nunca por estas rutas (las inicia y cierra por las suyas): 403
+ *   antes de buscar la tarea.
+ * El permiso (`tareas.crear`, `cronograma.correctivas_programar`,
+ * `tareas.editar_cierre`) lo sigue exigiendo la ruta; esto solo acota sobre
+ * qué tareas se usa.
+ */
+export function alcanceMutacionTareasPorRol(
+  actor: ActorConsultaTareas,
+  empresaId: string,
+): Prisma.TareaWhereInput {
+  if (actor.rol === Rol.operario) {
+    const error = new Error("No tiene permiso para modificar tareas.") as Error & {
+      status: number;
+    };
+    error.status = 403;
+    throw error;
+  }
+  return alcanceTareasPorRol(actor, empresaId);
+}
+
+/**
+ * Para servicios que también se llaman sin actor (`GerenteService`): con
+ * actor aplica `alcanceMutacionTareasPorRol`; sin actor es una llamada
+ * interna (p. ej. revertir una tarea recién creada) y solo cuenta la empresa.
+ * Las rutas HTTP siempre pasan el actor.
+ */
+export function alcanceMutacionTareasDeServicio(
+  actor: { id?: string | null; rol?: string | null } | null | undefined,
+  empresaId: string | null | undefined,
+): Prisma.TareaWhereInput {
+  if (actor) {
+    return alcanceMutacionTareasPorRol(
+      { id: String(actor.id ?? "").trim(), rol: String(actor.rol ?? "").trim() },
+      String(empresaId ?? "").trim(),
+    );
+  }
+  return empresaId ? { conjunto: { empresaId } } : {};
+}
+
+/**
+ * Si una edición cambia el conjunto de la tarea, el destino también debe
+ * quedar en el alcance de quien edita: existir en su empresa y, para el
+ * administrador, ser uno de sus conjuntos (lo mismo que exige crear por
+ * `POST /tarea`). Si no, 404.
+ */
+export async function exigirConjuntoDestinoEnAlcance(
+  prisma: PrismaClient,
+  actor: { id?: string | null; rol?: string | null } | null | undefined,
+  empresaId: string | null | undefined,
+  conjuntoId: string,
+): Promise<void> {
+  const conjunto = await prisma.conjunto.findFirst({
+    where: {
+      nit: conjuntoId,
+      ...(empresaId ? { empresaId } : {}),
+      ...(actor?.rol === Rol.administrador
+        ? { administradorId: String(actor.id ?? "").trim() }
+        : {}),
+    },
+    select: { nit: true },
+  });
+  if (!conjunto) throw recursoFueraDeEmpresa();
+}
+
+/**
+ * Al crear una tarea, el supervisor que no elige supervisor queda a cargo de
+ * ella. Si no, la tarea nacería fuera de su alcance de modificación y no
+ * podría moverla ni editarla en su cronograma.
+ */
+export function conSupervisorPorDefecto<T>(actor: ActorConsultaTareas, payload: T): T {
+  if (actor.rol !== Rol.supervisor || !actor.id) return payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  const actual = (payload as { supervisorId?: unknown }).supervisorId;
+  if (actual != null && String(actual).trim() !== "") return payload;
+  return { ...payload, supervisorId: actor.id };
+}
+
+/**
+ * Los ids que trae un alta o una edición deben ser de la tarea: la ubicación
+ * del conjunto y el elemento de esa ubicación (`lugar`), el supervisor de la
+ * empresa y los operarios de la empresa asignados al conjunto (los mismos que
+ * ofrece el formulario). Solo se revisa lo que se indica: una edición que no
+ * cambia el lugar pasa `lugar: null`. Cualquier id ajeno responde 404, igual
+ * que si no existiera.
+ */
+export async function validarRelacionesDeTarea(params: {
   prisma: PrismaClient;
   empresaId: string;
   conjuntoId: string;
-  ubicacionId: number;
-  elementoId: number;
+  lugar: { ubicacionId: number; elementoId: number } | null;
   supervisorId?: string | null;
   operariosIds: string[];
 }): Promise<void> {
-  const {
-    prisma,
-    empresaId,
-    conjuntoId,
-    ubicacionId,
-    elementoId,
-    supervisorId,
-  } = params;
+  const { prisma, empresaId, conjuntoId, lugar, supervisorId } = params;
   const operariosIds = [...new Set(params.operariosIds)];
 
   const [conjunto, supervisor, operariosValidos] = await Promise.all([
-    prisma.conjunto.findFirst({
-      where: {
-        nit: conjuntoId,
-        empresaId,
-        ubicaciones: {
-          some: {
-            id: ubicacionId,
-            elementos: { some: { id: elementoId } },
+    lugar
+      ? prisma.conjunto.findFirst({
+          where: {
+            nit: conjuntoId,
+            empresaId,
+            ubicaciones: {
+              some: {
+                id: lugar.ubicacionId,
+                elementos: { some: { id: lugar.elementoId } },
+              },
+            },
           },
-        },
-      },
-      select: { nit: true },
-    }),
+          select: { nit: true },
+        })
+      : Promise.resolve({ nit: conjuntoId }),
     supervisorId
       ? prisma.supervisor.findFirst({
           where: { id: supervisorId, empresaId },
@@ -222,8 +371,7 @@ export class TareaService {
       prisma,
       empresaId,
       conjuntoId: dto.conjuntoId,
-      ubicacionId: dto.ubicacionId,
-      elementoId: dto.elementoId,
+      lugar: { ubicacionId: dto.ubicacionId, elementoId: dto.elementoId },
       supervisorId: dto.supervisorId,
       operariosIds: operarios,
     });
@@ -348,19 +496,21 @@ export class TareaService {
     return toTareaPublica(creada);
   }
 
-  // ✏️ Editar tarea
+  // ✏️ Editar tarea (solo dentro del alcance de modificación del rol)
   static async editarTarea(
     prisma: PrismaClient,
     id: number,
     payload: unknown,
     empresaId: string,
+    actor: ActorConsultaTareas,
   ) {
+    const alcance = alcanceMutacionTareasPorRol(actor, empresaId);
     const dto = EditarTareaDTO.parse(payload);
 
     if (dto.conjuntoId === null) throw recursoFueraDeEmpresa();
 
     const actual = await prisma.tarea.findFirst({
-      where: { id, conjunto: { empresaId } },
+      where: { AND: [{ id }, alcance] },
       select: {
         conjuntoId: true,
         ubicacionId: true,
@@ -374,6 +524,10 @@ export class TareaService {
     });
     if (!actual?.conjuntoId) throw recursoFueraDeEmpresa();
 
+    if (dto.conjuntoId && dto.conjuntoId !== actual.conjuntoId) {
+      await exigirConjuntoDestinoEnAlcance(prisma, actor, empresaId, dto.conjuntoId);
+    }
+
     const conjuntoIdFinal = dto.conjuntoId ?? actual.conjuntoId;
     const operariosFinal =
       dto.operariosIds?.map(String) ?? actual.operarios.map((o) => o.id);
@@ -382,8 +536,10 @@ export class TareaService {
       prisma,
       empresaId,
       conjuntoId: conjuntoIdFinal,
-      ubicacionId: dto.ubicacionId ?? actual.ubicacionId,
-      elementoId: dto.elementoId ?? actual.elementoId,
+      lugar: {
+        ubicacionId: dto.ubicacionId ?? actual.ubicacionId,
+        elementoId: dto.elementoId ?? actual.elementoId,
+      },
       supervisorId:
         dto.supervisorId !== undefined
           ? dto.supervisorId
@@ -513,29 +669,35 @@ export class TareaService {
     return toTareaPublica(actualizada);
   }
 
-  // 🔍 Obtener una tarea
+  // 🔍 Obtener una tarea (fuera del alcance del rol responde igual que si no
+  // existiera: 404)
   static async obtenerTarea(
     prisma: PrismaClient,
     id: number,
     empresaId: string,
+    actor: ActorConsultaTareas,
   ) {
     const tarea = await prisma.tarea.findFirst({
-      where: { id, conjunto: { empresaId } },
+      where: { AND: [{ id }, alcanceTareasPorRol(actor, empresaId)] },
       select: tareaPublicSelect,
     });
-    if (!tarea) throw new Error("Tarea no encontrada.");
+    if (!tarea) throw recursoFueraDeEmpresa();
     return toTareaPublica(tarea);
   }
 
-  // 📋 Listar tareas con filtros
+  // 📋 Listar tareas con filtros, dentro del alcance del rol y con tope
   static async listarTareas(
     prisma: PrismaClient,
     payloadFiltro: unknown | undefined,
     empresaId: string,
+    actor: ActorConsultaTareas,
   ) {
-    const filtro = payloadFiltro ? FiltroTareaDTO.parse(payloadFiltro) : {};
+    const alcance = alcanceTareasPorRol(actor, empresaId);
+    const filtro = ListarTareasDTO.parse(payloadFiltro ?? {});
 
-    const where: any = { conjunto: { empresaId } };
+    // Los filtros van aparte del alcance: un `operarioId` o `conjuntoId`
+    // pedido solo puede acotar, nunca reemplazar la regla del rol.
+    const where: any = {};
 
     if (filtro.conjuntoId) where.conjuntoId = filtro.conjuntoId;
     if (filtro.ubicacionId) where.ubicacionId = filtro.ubicacionId;
@@ -567,22 +729,52 @@ export class TareaService {
     }
 
     const tareas = await prisma.tarea.findMany({
-      where,
+      where: { AND: [alcance, where] },
       select: tareaPublicSelect,
       orderBy: [{ fechaInicio: "desc" }, { id: "desc" }],
+      take: filtro.limite ?? LIMITE_MAX_TAREAS,
     });
 
     return tareas.map(toTareaPublica);
   }
 
-  // 🗑️ Eliminar tarea (con regla de negocio)
+  // 📅 Tareas de un conjunto que se cruzan con un rango (opcional), dentro
+  // del alcance de lectura del rol y con el mismo tope de `GET /tarea`. Antes
+  // vivía con Prisma directo en el router de /tarea-correctiva.
+  static async listarTareasDeConjuntoPorRango(
+    prisma: PrismaClient,
+    conjuntoId: string,
+    payloadFiltro: unknown | undefined,
+    empresaId: string,
+    actor: ActorConsultaTareas,
+  ) {
+    const alcance = alcanceTareasPorRol(actor, empresaId);
+    const filtro = RangoTareasConjuntoDTO.parse(payloadFiltro ?? {});
+
+    const where: Prisma.TareaWhereInput = {
+      conjuntoId,
+      ...(filtro.tipo ? { tipo: filtro.tipo } : {}),
+      // Se cruza con el rango: termina después de `desde` y empieza antes de `hasta`.
+      ...(filtro.desde ? { fechaFin: { gte: filtro.desde } } : {}),
+      ...(filtro.hasta ? { fechaInicio: { lte: filtro.hasta } } : {}),
+    };
+
+    return prisma.tarea.findMany({
+      where: { AND: [alcance, where] },
+      orderBy: [{ fechaInicio: "asc" }, { id: "asc" }],
+      take: filtro.limite ?? LIMITE_MAX_TAREAS,
+    });
+  }
+
+  // 🗑️ Eliminar tarea (con regla de negocio, dentro del alcance del rol)
   static async eliminarTarea(
     prisma: PrismaClient,
     id: number,
     empresaId: string,
+    actor: ActorConsultaTareas,
   ) {
     const tarea = await prisma.tarea.findFirst({
-      where: { id, conjunto: { empresaId } },
+      where: { AND: [{ id }, alcanceMutacionTareasPorRol(actor, empresaId)] },
       select: {
         id: true,
         estado: true,
@@ -590,7 +782,7 @@ export class TareaService {
       },
     });
 
-    if (!tarea) throw new Error("Tarea no encontrada.");
+    if (!tarea) throw recursoFueraDeEmpresa();
 
     // 🔒 Reglas de negocio (ajústalas a tu gusto)
     if (
@@ -670,10 +862,11 @@ export class TareaService {
     empresaId: string,
     actor: { id: string; rol: string; nombre?: string | null },
   ) {
+    const alcance = alcanceMutacionTareasPorRol(actor, empresaId);
     const dto = CorregirCierreDTO.parse(payload ?? {});
 
     const tarea = await prisma.tarea.findFirst({
-      where: { id: tareaId, conjunto: { empresaId } },
+      where: { AND: [{ id: tareaId }, alcance] },
       select: {
         id: true,
         estado: true,
@@ -688,7 +881,7 @@ export class TareaService {
       },
     });
 
-    if (!tarea) throw new Error("Tarea no encontrada.");
+    if (!tarea) throw recursoFueraDeEmpresa();
 
     const estadosCorregibles = new Set<EstadoTarea>([
       EstadoTarea.APROBADA,

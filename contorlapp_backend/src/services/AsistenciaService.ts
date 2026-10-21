@@ -5,6 +5,23 @@ import { AuditoriaService } from "./AuditoriaService";
 import { diaSemanaFromDate, obtenerCalendariosOperarios, obtenerHorariosEfectivosOperarios } from "../utils/operarioAvailability";
 import type { DiaCalendarioPlaza } from "../utils/calendarioPlazaCore";
 import { validarUbicacionEnConjunto } from "../utils/ubicacionMaps";
+import {
+  conjuntoEnAlcance,
+  filtroConjuntoEnAlcance,
+  type AlcanceConjuntos,
+} from "../aplicacion/alcanceConjuntos";
+
+/**
+ * Consulta mensual de asistencia. `alcance` son los conjuntos que puede ver
+ * quien consulta (el administrador, solo los suyos); null = toda la empresa.
+ */
+type PeriodoAsistencia = {
+  empresaId: string;
+  conjuntoId?: string | null;
+  alcance?: AlcanceConjuntos;
+  anio: number;
+  mes: number;
+};
 
 function makeHttpError(status: number, message: string) {
   const err = new Error(message) as Error & { status: number };
@@ -610,12 +627,7 @@ export class AsistenciaService {
    * Visitas de supervisores del mes: una fila por visita y un resumen por
    * supervisor con cuántas veces fue (entradas) y cuántas cerró (salidas).
    */
-  async getVisitasSupervisores(input: {
-    empresaId: string;
-    conjuntoId?: string | null;
-    anio: number;
-    mes: number;
-  }) {
+  async getVisitasSupervisores(input: PeriodoAsistencia) {
     const totalDias = daysInMonth(input.anio, input.mes);
     const primerDia = new Date(Date.UTC(input.anio, input.mes - 1, 1));
     const ultimoDia = new Date(Date.UTC(input.anio, input.mes - 1, totalDias));
@@ -624,7 +636,7 @@ export class AsistenciaService {
       where: {
         fecha: { gte: primerDia, lte: ultimoDia },
         supervisor: { empresaId: input.empresaId },
-        ...(input.conjuntoId ? { conjuntoId: input.conjuntoId } : {}),
+        ...filtroConjuntoEnAlcance(input.alcance ?? null, input.conjuntoId),
       },
       include: {
         supervisor: { select: { id: true, usuario: { select: { nombre: true } } } },
@@ -864,22 +876,29 @@ export class AsistenciaService {
 
   /* ---------------------------------- grid ---------------------------------- */
 
-  async getGrid(input: { empresaId: string; conjuntoId?: string | null; anio: number; mes: number }) {
+  async getGrid(input: PeriodoAsistencia) {
     await this.ensureConceptosSeed(input.empresaId);
 
     const totalDias = daysInMonth(input.anio, input.mes);
     const primerDia = new Date(Date.UTC(input.anio, input.mes - 1, 1));
     const ultimoDia = new Date(Date.UTC(input.anio, input.mes - 1, totalDias));
+    const alcance = input.alcance ?? null;
 
     if (input.conjuntoId) {
-      const conjuntoActivo = await this.prisma.conjunto.findFirst({
-        where: { nit: input.conjuntoId, empresaId: input.empresaId, activo: true },
-        select: { nit: true },
-      });
+      const conjuntoActivo = conjuntoEnAlcance(alcance, input.conjuntoId)
+        ? await this.prisma.conjunto.findFirst({
+            where: { nit: input.conjuntoId, empresaId: input.empresaId, activo: true },
+            select: { nit: true },
+          })
+        : null;
       if (!conjuntoActivo) {
         return { anio: input.anio, mes: input.mes, totalDias, operarios: [], gruposPorConjunto: null };
       }
     }
+
+    // Operarios de qué conjuntos: el pedido, los del alcance (administrador:
+    // solo los suyos) o, sin ninguno de los dos, toda la empresa.
+    const nitFiltro = input.conjuntoId || (alcance === null ? null : { in: alcance });
 
     const operarioWhere: Prisma.OperarioWhereInput = {
       empresaId: input.empresaId,
@@ -887,14 +906,14 @@ export class AsistenciaService {
       AND: [
         { fechaIngreso: { lte: ultimoDia } },
         { OR: [{ fechaSalida: null }, { fechaSalida: { gte: primerDia } }] },
-        ...(input.conjuntoId
+        ...(nitFiltro != null
           ? [
               {
                 OR: [
-                  { conjuntos: { some: { nit: input.conjuntoId, activo: true } } },
+                  { conjuntos: { some: { nit: nitFiltro, activo: true } } },
                   {
                     registrosAsistencia: {
-                      some: { conjuntoId: input.conjuntoId, fecha: { gte: primerDia, lte: ultimoDia } },
+                      some: { conjuntoId: nitFiltro, fecha: { gte: primerDia, lte: ultimoDia } },
                     },
                   },
                 ],
@@ -910,7 +929,11 @@ export class AsistenciaService {
         id: true,
         funciones: true,
         usuario: { select: { nombre: true, rol: true } },
-        conjuntos: { where: { activo: true }, select: { nit: true, nombre: true } },
+        // El administrador no ve los nombres de conjuntos de otros clientes.
+        conjuntos: {
+          where: { activo: true, ...(alcance === null ? {} : { nit: { in: alcance } }) },
+          select: { nit: true, nombre: true },
+        },
       },
       orderBy: { usuario: { nombre: "asc" } },
     });
@@ -1050,7 +1073,7 @@ export class AsistenciaService {
 
   /* -------------------------------- resumen --------------------------------- */
 
-  async getResumen(input: { empresaId: string; conjuntoId?: string | null; anio: number; mes: number }) {
+  async getResumen(input: PeriodoAsistencia) {
     const grid = await this.getGrid(input);
 
     const CODIGOS_TRABAJADO = new Set(["A", "DFC", "DFP"]);
@@ -1114,7 +1137,7 @@ export class AsistenciaService {
       where: {
         empresaId: input.empresaId,
         fecha: { gte: primerDia, lte: ultimoDia },
-        ...(input.conjuntoId ? { conjuntoId: input.conjuntoId } : {}),
+        ...filtroConjuntoEnAlcance(input.alcance ?? null, input.conjuntoId),
       },
       include: {
         operario: { select: { id: true, usuario: { select: { nombre: true } } } },
@@ -1151,13 +1174,14 @@ export class AsistenciaService {
   async listarTurnosExtra(input: {
     empresaId: string;
     conjuntoId?: string | null;
+    alcance?: AlcanceConjuntos;
     operarioId?: string | null;
     anio?: number;
     mes?: number;
   }) {
     const where: Prisma.TurnoExtraWhereInput = {
       empresaId: input.empresaId,
-      ...(input.conjuntoId ? { conjuntoId: input.conjuntoId } : {}),
+      ...filtroConjuntoEnAlcance(input.alcance ?? null, input.conjuntoId),
       ...(input.operarioId ? { operarioId: input.operarioId } : {}),
     };
 

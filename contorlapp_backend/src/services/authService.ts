@@ -1,21 +1,52 @@
 import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
-import { randomUUID } from "crypto";
 import { EstadoPedidoInterno, Prisma, Rol, type PrismaClient } from "@prisma/client";
+import type { ActorAuditoria } from "../model/Auditoria";
+import { motivoRechazoGestionUsuario } from "../utils/jerarquiaRoles";
+import {
+  DURACION_TOKEN_APP_SEG,
+  duracionTokenWebSeg,
+  firmarTokenSesion,
+} from "../utils/jwtSesion";
+import { AuditoriaService } from "./AuditoriaService";
 import { PermissionService } from "./PermissionService";
+import {
+  cerrarTodasLasSesiones,
+  crearSesionRefresh,
+  invalidarEstadoSesion,
+  rotarSesionRefresh,
+  type SesionRefreshEmitida,
+} from "./SesionService";
 
 const PEDIDO_COMPLETADO_STATES = [
   EstadoPedidoInterno.RECIBIDO,
   EstadoPedidoInterno.ENTREGADO,
 ] as const;
 
-type HttpError = Error & { status: number };
+type HttpError = Error & { status: number; code?: string };
 
-function makeHttpError(status: number, message: string): HttpError {
+function makeHttpError(status: number, message: string, code?: string): HttpError {
   const err = new Error(message) as HttpError;
   err.status = status;
+  if (code) err.code = code;
   return err;
 }
+
+export type OpcionesSesion = {
+  /** Web: token corto en memoria + cookie HttpOnly de renovacion. */
+  sesionWeb?: boolean;
+  userAgent?: string | null;
+};
+
+export type SesionEmitida = {
+  token: string;
+  tokenExpiraEn: Date;
+  user: Awaited<ReturnType<AuthService["obtenerSesionUsuario"]>>;
+  /** Solo sesion web: el controller lo pone en la cookie y nunca en el cuerpo. */
+  refresh?: SesionRefreshEmitida;
+};
+
+export const MENSAJE_RECUPERACION_DESACTIVADA =
+  "Por seguridad, la contraseña ya no se recupera con correo y cédula. Pide a tu gerente o jefe de operaciones que la restablezca desde ControlApp; al entrar te pedirá crear una nueva.";
 
 export class AuthService {
   private permissionService: PermissionService;
@@ -103,7 +134,19 @@ export class AuthService {
     return this.buildSessionUser(usuario);
   }
 
-  async login(correo: string, contrasena: string) {
+  async login(correo: string, contrasena: string, opciones: OpcionesSesion = {}) {
+    const usuario = await this.verificarCredenciales(correo, contrasena);
+    return this.emitirSesion(usuario.id, opciones);
+  }
+
+  /**
+   * Correo + contrasena de ControlApp. La usan el login de la app y el del
+   * servidor de autorizacion del MCP (misma regla para ambos).
+   */
+  async verificarCredenciales(
+    correo: string,
+    contrasena: string,
+  ): Promise<{ id: string; nombre: string; rol: string }> {
     const credencialesInvalidas = "Credenciales inválidas";
 
     const usuario = await this.prisma.usuario.findFirst({
@@ -120,42 +163,96 @@ export class AuthService {
     const ok = await bcrypt.compare(contrasena, usuario.contrasena);
     if (!ok) throw makeHttpError(401, credencialesInvalidas);
 
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) throw makeHttpError(500, "JWT_SECRET no está configurado");
+    // Despues de validar la contrasena: un tercero sin ella no puede saber si
+    // la cuenta existe o esta inactiva.
+    if (!usuario.activo) {
+      throw makeHttpError(403, "Tu usuario está inactivo. Comunícate con tu gerente.");
+    }
 
-    const sessionUser = await this.buildSessionUser({
-      id: usuario.id,
-      nombre: usuario.nombre,
-      correo: usuario.correo,
-      rol: usuario.rol,
-      requiereCambioContrasena: usuario.requiereCambioContrasena,
+    return { id: usuario.id, nombre: usuario.nombre, rol: usuario.rol };
+  }
+
+  /**
+   * Emite una sesion para un usuario ya autenticado: JWT (8 h en la app, corto
+   * en web) y, en web, un token de renovacion para la cookie HttpOnly.
+   */
+  async emitirSesion(usuarioId: string, opciones: OpcionesSesion = {}): Promise<SesionEmitida> {
+    const usuario = await this.usuarioParaSesion(usuarioId);
+    const user = await this.buildSessionUser(usuario);
+    const refresh = opciones.sesionWeb
+      ? await crearSesionRefresh(this.prisma, {
+          usuarioId: usuario.id,
+          versionSesion: usuario.versionSesion,
+          userAgent: opciones.userAgent,
+        })
+      : undefined;
+
+    return { ...this.firmarSesion(usuario, user.empresaId, opciones.sesionWeb === true), user, refresh };
+  }
+
+  /** Renueva la sesion web con el token de la cookie (que tambien rota). */
+  async refrescarSesionWeb(tokenRefresh: string, userAgent?: string | null): Promise<SesionEmitida> {
+    const rotado = await rotarSesionRefresh(this.prisma, tokenRefresh, userAgent);
+    const usuario = await this.usuarioParaSesion(rotado.usuarioId);
+    const user = await this.buildSessionUser(usuario);
+    return {
+      ...this.firmarSesion(usuario, user.empresaId, true),
+      user,
+      refresh: { token: rotado.token, expiraEn: rotado.expiraEn },
+    };
+  }
+
+  private async usuarioParaSesion(usuarioId: string) {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: usuarioId },
+      select: {
+        id: true,
+        nombre: true,
+        correo: true,
+        rol: true,
+        activo: true,
+        requiereCambioContrasena: true,
+        versionSesion: true,
+      },
     });
+    if (!usuario || !usuario.activo) {
+      throw makeHttpError(401, "Tu sesión expiró. Inicia sesión de nuevo.", "SESION_INVALIDA");
+    }
+    return usuario;
+  }
 
-    const token = jwt.sign(
+  private firmarSesion(
+    usuario: { id: string; rol: string; correo: string; versionSesion: number },
+    empresaId: string,
+    sesionWeb: boolean,
+  ) {
+    const firmado = firmarTokenSesion(
       {
-        sub: usuario.id,
+        usuarioId: usuario.id,
         rol: usuario.rol,
         correo: usuario.correo,
-        empresaId: sessionUser.empresaId || undefined,
+        empresaId,
+        versionSesion: usuario.versionSesion,
       },
-      jwtSecret,
-      { expiresIn: "8h", jwtid: randomUUID() },
+      sesionWeb ? duracionTokenWebSeg() : DURACION_TOKEN_APP_SEG,
     );
+    return { token: firmado.token, tokenExpiraEn: firmado.expiraEn };
+  }
 
-    return {
-      token,
-      user: sessionUser,
-    };
+  /** Cierra todas las sesiones del usuario (todos sus dispositivos). */
+  async cerrarTodasLasSesiones(usuarioId: string): Promise<void> {
+    await cerrarTodasLasSesiones(this.prisma, usuarioId, "CIERRE_POR_USUARIO");
   }
 
   async cambiarContrasena(
     userId: string,
     contrasenaActual: string,
-    nuevaContrasena: string
-  ) {
+    nuevaContrasena: string,
+    opciones: OpcionesSesion = {},
+  ): Promise<SesionEmitida> {
     const usuario = await this.prisma.usuario.findUnique({
       where: { id: userId },
-      select: { id: true, contrasena: true, activo: true },
+      select: { id: true, contrasena: true, activo: true, rol: true, nombre: true },
     });
 
     if (!usuario) throw makeHttpError(404, "Usuario no encontrado");
@@ -185,9 +282,15 @@ export class AuthService {
         requiereCambioContrasena: false,
       },
     });
+
+    return this.renovarTrasCambioDeContrasena(usuario, "CAMBIAR_CONTRASENA", opciones);
   }
 
-  async cambiarContrasenaInicial(userId: string, nuevaContrasena: string) {
+  async cambiarContrasenaInicial(
+    userId: string,
+    nuevaContrasena: string,
+    opciones: OpcionesSesion = {},
+  ): Promise<SesionEmitida> {
     const usuario = await this.prisma.usuario.findUnique({
       where: { id: userId },
       select: {
@@ -195,6 +298,8 @@ export class AuthService {
         contrasena: true,
         activo: true,
         requiereCambioContrasena: true,
+        rol: true,
+        nombre: true,
       },
     });
 
@@ -220,48 +325,35 @@ export class AuthService {
         requiereCambioContrasena: false,
       },
     });
+
+    return this.renovarTrasCambioDeContrasena(usuario, "CAMBIAR_CONTRASENA_INICIAL", opciones);
   }
 
-  async recuperarContrasena(
-    correo: string,
-    id: string,
-    nuevaContrasena: string
-  ) {
-    const usuario = await this.prisma.usuario.findUnique({
-      where: { correo },
-      select: { id: true, contrasena: true, activo: true },
+  /**
+   * Tras cambiar la propia contrasena se cierran las sesiones de todos los
+   * dispositivos (alguien pudo conocer la anterior) y este recibe una nueva,
+   * para no obligar a volver a iniciar sesion aqui.
+   */
+  private async renovarTrasCambioDeContrasena(
+    usuario: { id: string; rol: string; nombre: string },
+    accion: string,
+    opciones: OpcionesSesion,
+  ): Promise<SesionEmitida> {
+    await cerrarTodasLasSesiones(this.prisma, usuario.id, accion);
+    await this.auditarSeguridad({
+      usuarioId: usuario.id,
+      accion,
+      actor: { id: usuario.id, rol: usuario.rol, nombre: usuario.nombre },
+      descripcion: "El usuario cambió su contraseña; se cerraron sus otras sesiones.",
     });
-
-    if (!usuario || usuario.id !== id) {
-      throw makeHttpError(
-        404,
-        "No encontramos un usuario con ese correo y cedula"
-      );
-    }
-    if (!usuario.activo) throw makeHttpError(403, "Usuario inactivo");
-
-    const okNuevaIgual = await bcrypt.compare(
-      nuevaContrasena,
-      usuario.contrasena
-    );
-    if (okNuevaIgual) {
-      throw makeHttpError(
-        400,
-        "La nueva contrasena debe ser diferente a la anterior"
-      );
-    }
-
-    const hash = await bcrypt.hash(nuevaContrasena, 10);
-    await this.prisma.usuario.update({
-      where: { id: usuario.id },
-      data: { contrasena: hash },
-    });
+    return this.emitirSesion(usuario.id, opciones);
   }
 
   async cambiarContrasenaUsuarioPorGerente(
     actorUserId: string,
     targetUserId: string,
-    nuevaContrasena: string
+    nuevaContrasena: string,
+    empresaId?: string | null,
   ) {
     if (actorUserId === targetUserId) {
       throw makeHttpError(
@@ -273,11 +365,11 @@ export class AuthService {
     const [actor, usuario] = await Promise.all([
       this.prisma.usuario.findUnique({
         where: { id: actorUserId },
-        select: { id: true, activo: true },
+        select: { id: true, activo: true, rol: true, nombre: true },
       }),
       this.prisma.usuario.findUnique({
         where: { id: targetUserId },
-        select: { id: true, contrasena: true, activo: true, nombre: true },
+        select: { id: true, contrasena: true, activo: true, nombre: true, rol: true },
       }),
     ]);
 
@@ -285,6 +377,16 @@ export class AuthService {
     if (!actor.activo) throw makeHttpError(403, "Usuario solicitante inactivo");
     if (!usuario) throw makeHttpError(404, "Usuario no encontrado");
     if (!usuario.activo) throw makeHttpError(403, "El usuario objetivo esta inactivo");
+
+    // Misma jerarquia que la gestion de usuarios (GerenteServices): un gerente
+    // restablece la de cualquiera, incluido otro gerente para recuperar su
+    // acceso; los demas solo la de roles estrictamente inferiores al suyo.
+    const rechazo = motivoRechazoGestionUsuario({
+      actor: { id: actor.id, rol: actor.rol },
+      objetivoId: usuario.id,
+      rolActual: usuario.rol,
+    });
+    if (rechazo) throw makeHttpError(403, rechazo);
 
     const okNuevaIgual = await bcrypt.compare(
       nuevaContrasena,
@@ -297,13 +399,42 @@ export class AuthService {
       );
     }
 
+    // Queda como temporal: el usuario debe cambiarla al entrar (el backend no
+    // le deja hacer nada mas) y todas sus sesiones abiertas se cierran.
     const hash = await bcrypt.hash(nuevaContrasena, 10);
     await this.prisma.usuario.update({
       where: { id: targetUserId },
-      data: { contrasena: hash },
+      data: { contrasena: hash, requiereCambioContrasena: true },
+    });
+    await cerrarTodasLasSesiones(this.prisma, targetUserId, "CONTRASENA_RESTABLECIDA");
+    await this.auditarSeguridad({
+      usuarioId: targetUserId,
+      empresaId,
+      accion: "RESTABLECER_CONTRASENA",
+      actor: { id: actor.id, rol: actor.rol, nombre: actor.nombre },
+      descripcion: `${actor.nombre} restableció la contraseña de ${usuario.nombre} (${usuario.rol}); se cerraron sus sesiones y deberá crear una nueva al entrar.`,
     });
 
     return { ok: true, nombre: usuario.nombre };
+  }
+
+  private async auditarSeguridad(evento: {
+    usuarioId: string;
+    accion: string;
+    actor: ActorAuditoria;
+    descripcion: string;
+    empresaId?: string | null;
+  }): Promise<void> {
+    await invalidarEstadoSesion(evento.usuarioId);
+    await new AuditoriaService(this.prisma).registrar({
+      modulo: "SEGURIDAD",
+      entidad: "Usuario",
+      entidadId: evento.usuarioId,
+      accion: evento.accion,
+      empresaId: evento.empresaId ?? null,
+      actor: evento.actor,
+      descripcion: evento.descripcion,
+    });
   }
 
   async obtenerResumenPerfil(userId: string) {

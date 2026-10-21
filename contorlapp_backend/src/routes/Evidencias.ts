@@ -13,8 +13,9 @@ router.use(authRequired);
 router.get("/direccion", controller.direccion);
 
 // GET /evidencias/:fileId -> streamea el binario de una evidencia desde Drive.
-// Cualquier usuario autenticado puede pedirla: el scope "drive.file" de la
-// cuenta de servicio ya limita el acceso solo a archivos que ella subió.
+// El controller la sirve solo si el archivo es de una tarea, diagnóstico del
+// Plan Esperanza o comprobante que el usuario puede ver (EvidenciaAccesoService);
+// los documentos de la página web van por /commerce/web/archivos/:fileId.
 router.get("/:fileId", controller.obtener);
 
 export default router;

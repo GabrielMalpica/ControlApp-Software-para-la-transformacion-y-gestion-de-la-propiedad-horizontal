@@ -12,6 +12,11 @@ type RateLimitOptions = {
 const localWindows = new Map<string, { count: number; expiresAt: number }>();
 const MAX_LOCAL_WINDOWS = 10_000;
 
+/** Solo para pruebas: olvida las ventanas locales (sin Redis). */
+export function reiniciarVentanasLocales(): void {
+  localWindows.clear();
+}
+
 function pruneLocalWindows(now: number) {
   if (localWindows.size < MAX_LOCAL_WINDOWS) return;
   for (const [key, value] of localWindows) {

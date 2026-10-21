@@ -16,12 +16,16 @@ export function requirePermission(...permissions: string[]): RequestHandler {
         return;
       }
 
-      if (role === "gerente" && !req.user?.empresaId?.trim()) {
-        const defaults = PermissionService.defaultPermissionsForRole(Rol.gerente);
-        if (permissions.some((permission) => defaults.has(permission))) {
-          next();
-          return;
-        }
+      // Un gerente recien creado aun no tiene empresa: solo puede crearla. Antes
+      // este atajo le concedia cualquier permiso del gerente sin empresa, lo que
+      // dependia de que cada servicio fallara cerrado por su cuenta.
+      if (
+        role === Rol.gerente &&
+        !req.user?.empresaId?.trim() &&
+        permissions.includes("empresa.gestionar")
+      ) {
+        next();
+        return;
       }
 
       const empresaId =

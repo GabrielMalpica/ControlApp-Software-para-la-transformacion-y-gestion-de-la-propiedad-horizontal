@@ -1,6 +1,8 @@
 // src/models/administrador.ts
 import { z } from "zod";
 
+import { camposFueraDeEdicionRapida, EditarUsuarioDTO } from "./Usuario";
+
 /** Mismo tipo que Usuario.id */
 export type AdministradorId = number;
 
@@ -28,11 +30,51 @@ export const CrearAdministradorDTO = z.object({
 });
 
 /**
- * DTO para edición — actualmente no hay campos editables,
- * pero se deja preparado por consistencia estructural.
+ * Edicion rapida (PATCH /gerente/administradores/:id): solo datos personales.
+ * Rol, estado y contrasena van por la edicion completa del usuario; los conjuntos,
+ * por la asignacion o el reemplazo de administradores. Jornada y patron se quedan
+ * fuera porque se normalizan juntos en `editarUsuario`.
  */
-export const EditarAdministradorDTO = z.object({
-  // Si luego agregas campos (ej. empresaId, conjuntoId, etc.), van aquí
+export const EditarAdministradorDTO = EditarUsuarioDTO.pick({
+  nombre: true,
+  correo: true,
+  telefono: true,
+  fechaNacimiento: true,
+  direccion: true,
+  estadoCivil: true,
+  numeroHijos: true,
+  padresVivos: true,
+  tipoSangre: true,
+  eps: true,
+  fondoPensiones: true,
+  tallaCamisa: true,
+  tallaPantalon: true,
+  tallaCalzado: true,
+  tipoContrato: true,
+}).extend(camposFueraDeEdicionRapida);
+
+/** POST /gerente/administradores/reemplazos */
+export const ReemplazarAdministradoresDTO = z.object({
+  reemplazos: z
+    .array(
+      z.object({
+        conjuntoId: z.string().trim().min(3),
+        nuevoAdminId: z.number().int().positive(),
+      }),
+    )
+    .superRefine((reemplazos, ctx) => {
+      const vistos = new Set<string>();
+      for (const { conjuntoId } of reemplazos) {
+        if (vistos.has(conjuntoId)) {
+          ctx.addIssue({
+            code: "custom",
+            message: `El conjunto ${conjuntoId} aparece más de una vez en los reemplazos.`,
+          });
+          return;
+        }
+        vistos.add(conjuntoId);
+      }
+    }),
 });
 
 /* ===================== SELECT PARA PRISMA ===================== */

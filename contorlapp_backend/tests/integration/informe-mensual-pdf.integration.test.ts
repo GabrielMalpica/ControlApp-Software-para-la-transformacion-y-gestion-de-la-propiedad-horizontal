@@ -5,11 +5,18 @@ import path from 'path';
 import request from 'supertest';
 
 const conjuntoFindFirstMock = jest.fn();
+// Conjuntos del administrador (alcance): el del informe es suyo.
+const conjuntoFindManyMock = jest.fn(async () => [{ nit: '900904193-8' }]);
 let usuarioActual = 'usuario-1';
 let rolActual = 'gerente';
 
 jest.mock('../../src/db/prisma', () => ({
-  prisma: { conjunto: { findFirst: (...args: any[]) => conjuntoFindFirstMock(...args) } },
+  prisma: {
+    conjunto: {
+      findFirst: (...args: any[]) => conjuntoFindFirstMock(...args),
+      findMany: (...args: any[]) => (conjuntoFindManyMock as any)(...args),
+    },
+  },
 }));
 
 jest.mock('../../src/middlewares/auth.middleware', () => ({
@@ -242,6 +249,7 @@ describe('Informe mensual en PDF (HTTP)', () => {
     expect(params.rolSolicitante).toBe('administrador');
     expect(params.opciones.campos).toMatchObject({ motivoRechazo: false, cerradoPor: false });
     expect(params.usuarioId).toBe('usuario-10');
+    expect(params.alcance).toEqual(['900904193-8']);
   });
 
   afterAll(() => {

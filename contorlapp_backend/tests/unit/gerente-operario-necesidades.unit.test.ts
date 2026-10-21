@@ -1,5 +1,7 @@
 import { GerenteService } from "../../src/services/GerenteServices";
 
+const GERENTE = { id: "G-1", rol: "gerente" };
+
 function makeFakePrisma() {
   // "1" a propósito: GerenteService.editarOperario recibe operarioId numérico
   // y hace operarioId.toString() antes de tocar Prisma; se usa el mismo id
@@ -53,7 +55,16 @@ function makeFakePrisma() {
       }),
     },
     $transaction: async (fn: any) => fn(prisma),
-    usuario: { update: jest.fn().mockResolvedValue({}) },
+    usuario: {
+      // El actor (gerente) y el operario editado: la jerarquia de roles los consulta.
+      findUnique: jest.fn(async ({ where }: any) =>
+        where.id === GERENTE.id
+          ? { id: GERENTE.id, rol: "gerente", activo: true }
+          : { id: where.id, nombre: "Operario", rol: "operario", activo: true, operario: { funciones: ["TODERO"] } },
+      ),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    auditoriaEvento: { create: jest.fn().mockResolvedValue({}) },
   };
 
   return { prisma, necesidades, operarioUpdates };
@@ -62,7 +73,7 @@ function makeFakePrisma() {
 describe("GerenteService: necesidades operativas al trasladar/editar un operario", () => {
   test("trasladarOperario libera cualquier plaza que el operario ocupaba", async () => {
     const { prisma, necesidades } = makeFakePrisma();
-    const service = new GerenteService(prisma, "EMP-1");
+    const service = new GerenteService(prisma, "EMP-1", GERENTE);
 
     const result = await service.trasladarOperario("1", { conjuntoId: "C-DESTINO" });
 
@@ -86,7 +97,7 @@ describe("GerenteService: necesidades operativas al trasladar/editar un operario
 
   test("editarOperario rechaza quitar un rol que una plaza ocupada exige", async () => {
     const { prisma } = makeFakePrisma();
-    const service = new GerenteService(prisma, "EMP-1");
+    const service = new GerenteService(prisma, "EMP-1", GERENTE);
 
     // op-1 ocupa Todero #1 (rol TODERO); intenta quedarse solo con SALVAVIDAS.
     await expect(
@@ -96,7 +107,7 @@ describe("GerenteService: necesidades operativas al trasladar/editar un operario
 
   test("editarOperario permite el cambio si el rol de la plaza se conserva", async () => {
     const { prisma } = makeFakePrisma();
-    const service = new GerenteService(prisma, "EMP-1");
+    const service = new GerenteService(prisma, "EMP-1", GERENTE);
 
     await service.editarOperario(1 as any, { funciones: ["TODERO", "SALVAVIDAS"] });
 
@@ -115,7 +126,7 @@ describe("GerenteService: necesidades operativas al trasladar/editar un operario
       roles: ["TODERO", "SALVAVIDAS"],
       etiqueta: "Todero-Salvavidas #1",
     });
-    const service = new GerenteService(prisma, "EMP-1");
+    const service = new GerenteService(prisma, "EMP-1", GERENTE);
 
     // Le queda TODERO pero pierde SALVAVIDAS, que la plaza combinada exige.
     await expect(

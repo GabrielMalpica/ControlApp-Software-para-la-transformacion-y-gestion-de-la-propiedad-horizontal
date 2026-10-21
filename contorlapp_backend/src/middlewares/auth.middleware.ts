@@ -1,16 +1,10 @@
-import { RequestHandler } from "express";
-import jwt from "jsonwebtoken";
+import { Request, RequestHandler } from "express";
+import { prisma } from "../db/prisma";
 import { isTokenRevoked } from "../services/RedisService";
+import { estadoSesionUsuario, motivoSesionInvalida } from "../services/SesionService";
+import { verificarTokenSesion, type AuthPayload } from "../utils/jwtSesion";
 
-export type AuthPayload = {
-  sub: string;
-  rol: string;
-  correo: string;
-  empresaId?: string;
-  jti?: string;
-  iat?: number;
-  exp?: number;
-};
+export type { AuthPayload } from "../utils/jwtSesion";
 
 function isPublicRequest(method: string, path: string): boolean {
   if (method === "GET" && (path === "/" || path === "/ping")) return true;
@@ -18,6 +12,13 @@ function isPublicRequest(method: string, path: string): boolean {
     method === "POST" &&
     (path === "/auth/login" || path === "/auth/recuperar-contrasena")
   ) {
+    return true;
+  }
+
+  // Renovacion de la sesion web: se autentica con la cookie HttpOnly, no con
+  // Bearer (el token en memoria ya pudo vencer). El logout tambien llega con
+  // token vencido y debe poder cerrar la cookie; cada uno valida por su cuenta.
+  if (method === "POST" && (path === "/auth/refresh" || path === "/auth/logout")) {
     return true;
   }
 
@@ -51,6 +52,21 @@ function isPublicRequest(method: string, path: string): boolean {
   );
 }
 
+/**
+ * Con una contrasena temporal pendiente el token solo sirve para cambiarla
+ * (y para leer la sesion o cerrarla). Antes esto solo lo hacia cumplir el
+ * frontend: por API se podia usar la cuenta sin cambiarla.
+ */
+function permitidaConCambioPendiente(req: Request): boolean {
+  const path = req.originalUrl.split("?")[0];
+  const method = req.method.toUpperCase();
+  if (method === "GET" && path === "/auth/me") return true;
+  return (
+    method === "POST" &&
+    ["/auth/cambiar-contrasena-inicial", "/auth/logout", "/auth/logout-todas"].includes(path)
+  );
+}
+
 declare global {
   namespace Express {
     interface Request {
@@ -62,26 +78,59 @@ declare global {
   }
 }
 
-export const authRequired: RequestHandler = async (req, res, next) => {
+function bearer(req: Request): string | null {
   const header = req.headers.authorization;
+  if (!header || !header.startsWith("Bearer ")) return null;
+  return header.replace("Bearer ", "").trim() || null;
+}
 
-  if (!header || !header.startsWith("Bearer ")) {
+export const authRequired: RequestHandler = async (req, res, next) => {
+  // Varios routers declaran authRequired ademas del cierre global: si ya se
+  // valido en esta peticion, no se repite.
+  if (req.user) {
+    next();
+    return;
+  }
+
+  const token = bearer(req);
+  if (!token) {
     res.status(401).json({ message: "Token requerido" });
     return;
   }
 
-  const token = header.replace("Bearer ", "").trim();
+  let payload: AuthPayload;
+  try {
+    payload = verificarTokenSesion(token);
+  } catch {
+    res.status(401).json({ message: "Token inválido o expirado" });
+    return;
+  }
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET as string) as AuthPayload;
     if (payload.jti && (await isTokenRevoked(payload.jti))) {
       res.status(401).json({ message: "Token revocado" });
       return;
     }
+
+    const estado = await estadoSesionUsuario(prisma, payload.sub);
+    const motivo = motivoSesionInvalida(payload, estado);
+    if (motivo) {
+      res.status(401).json({ message: motivo, code: "SESION_INVALIDA" });
+      return;
+    }
+
+    if (estado?.requiereCambioContrasena && !permitidaConCambioPendiente(req)) {
+      res.status(403).json({
+        message: "Debes cambiar tu contraseña temporal antes de continuar.",
+        code: "CAMBIO_CONTRASENA_REQUERIDO",
+      });
+      return;
+    }
+
     req.user = payload;
     next();
-  } catch {
-    res.status(401).json({ message: "Token inválido o expirado" });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -91,18 +140,18 @@ export const authOptional: RequestHandler = async (req, _res, next) => {
     return;
   }
 
-  const header = req.headers.authorization;
-
-  if (!header || !header.startsWith("Bearer ")) {
+  const token = bearer(req);
+  if (!token) {
     next();
     return;
   }
 
-  const token = header.replace("Bearer ", "").trim();
-
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET as string) as AuthPayload;
-    req.user = payload.jti && (await isTokenRevoked(payload.jti)) ? undefined : payload;
+    const payload = verificarTokenSesion(token);
+    const revocado = payload.jti ? await isTokenRevoked(payload.jti) : false;
+    const estado = revocado ? null : await estadoSesionUsuario(prisma, payload.sub);
+    req.user =
+      !revocado && !motivoSesionInvalida(payload, estado) ? payload : undefined;
   } catch {
     req.user = undefined;
   }

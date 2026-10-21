@@ -161,21 +161,30 @@ export const EditarTareaDTO = z.object({
   liberarRecursosOcupados: z.boolean().optional(),
 });
 
-/** Filtros para listar/consultar tareas */
+/** Booleano de query string ("true"/"false"/"1"/"0"); también acepta un booleano real. */
+const BooleanoQueryDTO = z.union([
+  z.boolean(),
+  z.enum(["true", "false", "1", "0"]).transform((v) => v === "true" || v === "1"),
+]);
+
+/**
+ * Filtros para listar/consultar tareas. Llegan por query string (todo es
+ * texto), así que los números y el booleano se convierten aquí.
+ */
 export const FiltroTareaDTO = z.object({
   conjuntoId: z.string().optional(),
   supervisorId: z.string().optional(),
   operarioId: z.string().optional(),
-  ubicacionId: z.number().int().optional(),
-  elementoId: z.number().int().optional(),
+  ubicacionId: z.coerce.number().int().optional(),
+  elementoId: z.coerce.number().int().optional(),
 
   tipo: z.nativeEnum(TipoTarea).optional(),
   frecuencia: z.nativeEnum(Frecuencia).optional(),
   estado: z.nativeEnum(EstadoTarea).optional(),
-  borrador: z.boolean().optional(),
+  borrador: BooleanoQueryDTO.optional(),
 
-  periodoAnio: z.number().int().optional(),
-  periodoMes: z.number().int().min(1).max(12).optional(),
+  periodoAnio: z.coerce.number().int().optional(),
+  periodoMes: z.coerce.number().int().min(1).max(12).optional(),
 
   grupoPlanId: z.string().uuid().optional(),
 

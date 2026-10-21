@@ -118,6 +118,22 @@ describe('Pruebas funcionales backend', () => {
     expect((result as any).nombre).toBe('Conjunto Palmas Editado');
   });
 
+  test('PF2b - Editar conjunto ignora empresaId (no se cambia de empresa por edición)', async () => {
+    const update = jest.fn().mockResolvedValue({});
+    const prisma: any = {
+      conjunto: {
+        update,
+        findUnique: jest.fn().mockResolvedValue({ nit: 'C-100', nombre: 'X' }),
+      },
+    };
+    const service = new GerenteService(prisma);
+
+    await service.editarConjunto('C-100', { nombre: 'Conjunto X', empresaId: 'OTRA-EMPRESA' });
+
+    expect(update).toHaveBeenCalled();
+    expect(update.mock.calls[0][0].data.empresa).toBeUndefined();
+  });
+
   test('PF3 - Gestión de tareas: crea una tarea preventiva/correctiva con prioridad', async () => {
     const prisma: any = {
       // Sin periodos de disponibilidad registrados: el operario no tiene restricciones.

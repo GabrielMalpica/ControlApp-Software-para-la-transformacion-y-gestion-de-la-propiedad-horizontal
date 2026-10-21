@@ -26,10 +26,12 @@ import { pagoService } from "./services/pagos/pagoServiceInstance";
 import { factusWebhook } from "./services/pagos/factusWebhookInstance";
 import { saludPagos } from "./services/pagos/saludPagosInstance";
 import { verificarFuenteMarcaAgua } from "./utils/marca_agua_evidencia";
+import { esOrigenPermitido } from "./utils/origenesPermitidos";
 // Efecto secundario: registra en pagoService los callbacks de dominio de
 // pedidos (confirmar el pago, avisar, alertar). Debe importarse antes de que
 // el worker de abajo empiece a procesar cobros.
 import "./services/pagos/wiring";
+import { registroDeAcceso } from "./middlewares/access-log.middleware";
 import { authRequiredUnlessPublic } from "./middlewares/auth.middleware";
 import { distributedRateLimit } from "./middlewares/rate-limit.middleware";
 import {
@@ -60,36 +62,9 @@ const esSubidaArchivoWeb = (req: Request) =>
 const esPluginPagosWoo = (req: Request) => req.path.startsWith("/commerce/pagos/woo/");
 const rateLimitDigest = (...parts: string[]) =>
   createHash("sha256").update(parts.join("\u0000")).digest("hex");
-const configuredOrigins = [
-  ...(process.env.CORS_ALLOWED_ORIGINS ?? "").split(","),
-  process.env.FRONTEND_WEB_URL ?? "",
-]
-  .map((origin) => origin.trim())
-  .filter(Boolean)
-  .map((origin) => {
-    try {
-      return new URL(origin).origin;
-    } catch {
-      return "";
-    }
-  })
-  .filter(Boolean);
-const allowedOrigins = new Set(configuredOrigins);
-const isDevLocalOrigin = (origin: string) => {
-  if (process.env.NODE_ENV === "production") return false;
-  try {
-    const url = new URL(origin);
-    return (
-      ["http:", "https:"].includes(url.protocol) &&
-      ["localhost", "127.0.0.1", "::1"].includes(url.hostname)
-    );
-  } catch {
-    return false;
-  }
-};
 const corsOptions = {
   origin: (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
-    if (!origin || allowedOrigins.has(origin) || isDevLocalOrigin(origin)) {
+    if (!origin || esOrigenPermitido(origin)) {
       callback(null, true);
       return;
     }
@@ -102,6 +77,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(helmet());
+app.use(registroDeAcceso);
 app.use(compression());
 app.use((req, res, next) => {
   if (!isTaskClosingRequest(req)) {
@@ -156,11 +132,28 @@ const passwordRecoveryLimit = distributedRateLimit({
       String(req.body?.correo ?? "sin-correo").trim().toLowerCase(),
     ),
 });
+// Renovacion de la sesion web: una por pestana cada ~15 min es lo normal.
+const sessionRefreshLimit = distributedRateLimit({
+  name: "auth:refresh:ip",
+  windowMs: 60_000,
+  limit: 30,
+  key: (req) => req.ip ?? "sin-ip",
+});
 const publicCatalogLimit = distributedRateLimit({
   name: "commerce:catalogo",
   windowMs: 60_000,
   limit: 60,
   key: (req) => req.ip ?? "sin-ip",
+});
+// Tope de escrituras por usuario, sume las IPs que sume: una persona no
+// hace cientos de cambios en minutos; un script o un agente con un token
+// robado si. El cierre de tareas tiene su propio limite.
+const userMutationLimit = distributedRateLimit({
+  name: "mutaciones:usuario",
+  windowMs: 15 * 60_000,
+  limit: 300,
+  key: (req) => req.user?.sub ?? req.ip ?? "sin-ip",
+  message: "Has realizado demasiados cambios seguidos. Espera unos minutos e intenta de nuevo",
 });
 const uploadLimit = distributedRateLimit({
   name: "uploads",
@@ -171,6 +164,7 @@ const uploadLimit = distributedRateLimit({
 
 app.use("/auth/login", loginIpLimit, loginEmailLimit);
 app.use("/auth/recuperar-contrasena", passwordRecoveryLimit);
+app.use("/auth/refresh", sessionRefreshLimit);
 app.use("/commerce/catalogo", publicCatalogLimit);
 app.set("json replacer", (_k: string, v: unknown) =>
   typeof v === "bigint" ? v.toString() : v,
@@ -192,6 +186,13 @@ app.get("/ping", async (_req: Request, res: Response, next: NextFunction) => {
 
 /* -------------------------------- rutas ---------------------------------- */
 app.use(authRequiredUnlessPublic);
+app.use((req, res, next) => {
+  if (!req.user || ["GET", "HEAD", "OPTIONS"].includes(req.method) || isTaskClosingRequest(req)) {
+    next();
+    return;
+  }
+  userMutationLimit(req, res, next);
+});
 app.use((req, res, next) => {
   if (!req.is("multipart/form-data") || isTaskClosingRequest(req) || esSubidaArchivoWeb(req)) {
     next();
@@ -638,6 +639,15 @@ const HOST = process.env.HOST || "0.0.0.0";
   }
 
   verificarFuenteMarcaAgua();
+
+  if (process.env.NODE_ENV === "production" && !String(process.env.REDIS_URL ?? "").trim()) {
+    // Sin Redis cada replica tiene su propio cache: el logout de un token y los
+    // limites de tasa no se comparten y se pierden al reiniciar. Cerrar todas
+    // las sesiones sigue funcionando (versionSesion vive en la BD).
+    console.warn(
+      "[seguridad] REDIS_URL no esta configurada en produccion: la revocacion de tokens y los limites de tasa quedan locales a este proceso.",
+    );
+  }
 
   // Verifica en segundo plano los cobros pendientes y retoma los avisos del
   // webhook de Factus que quedaron sin procesar (ver docs/pagos-factus.md).

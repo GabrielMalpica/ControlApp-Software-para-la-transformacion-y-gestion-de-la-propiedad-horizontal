@@ -150,10 +150,11 @@ export class DefinicionTareaPreventivaController {
   publicarCronograma = async (req: Request, res: Response) => {
     const conjuntoId = req.params.nit;
 
-    const anio = Number(req.body.anio ?? req.query.anio);
-    const mes = Number(req.body.mes ?? req.query.mes);
+    const body = req.body ?? {};
+    const anio = Number(body.anio ?? req.query.anio);
+    const mes = Number(body.mes ?? req.query.mes);
 
-    const consolidarRaw = (req.body.consolidar ?? req.query.consolidar) as
+    const consolidarRaw = (body.consolidar ?? req.query.consolidar) as
       | string
       | boolean
       | undefined;

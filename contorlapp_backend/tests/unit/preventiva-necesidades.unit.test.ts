@@ -1,5 +1,6 @@
 import { DiaSemana } from "@prisma/client";
 import { DefinicionTareaPreventivaService } from "../../src/services/DefinicionTareaPreventivaService";
+import { CatalogoOperativoService } from "../../src/services/CatalogoOperativoService";
 
 function makeFakePrisma() {
   const necesidadesSeed = [
@@ -10,6 +11,9 @@ function makeFakePrisma() {
       etiqueta: "Salvavidas #1",
       horarioEspecial: true,
       horarios: [{ dia: DiaSemana.DOMINGO }],
+      trabajaFestivos: true,
+      festivoHoraApertura: "10:00",
+      festivoHoraCierre: "18:00",
     },
     { id: 999, conjuntoId: "OTRO-CONJUNTO", etiqueta: "Otro", horarioEspecial: false, horarios: [] },
   ];
@@ -32,6 +36,20 @@ function makeFakePrisma() {
         frecuencia: "SEMANAL",
         diaSemanaProgramado: DiaSemana.MARTES,
         necesidades: [],
+      },
+    ],
+    [
+      30,
+      {
+        id: 30,
+        conjuntoId: "C-1",
+        frecuencia: "MENSUAL",
+        diaSemanaProgramado: null,
+        diaMesProgramado: 1,
+        fechasProgramadasJson: null,
+        categoriaId: 6,
+        necesidades: [{ id: 501 }],
+        operarios: [{ id: "op-501" }],
       },
     ],
   ]);
@@ -119,6 +137,40 @@ describe("DefinicionTareaPreventivaService: necesidadesIds", () => {
   });
 });
 
+describe("DefinicionTareaPreventivaService: edición con incompatibilidad heredada", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  test("permite editar otro campo si las necesidades recibidas son las mismas que ya estaban guardadas", async () => {
+    const { prisma } = makeFakePrisma();
+    const validarCategoria = jest
+      .spyOn(CatalogoOperativoService.prototype, "validarCategoriaDeDefinicion")
+      .mockRejectedValue(new Error("La plaza heredada no admite la categoría"));
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await expect(
+      service.actualizar("C-1", 30, {
+        descripcion: "Descripción corregida",
+        necesidadesIds: [501],
+        operariosIds: ["op-501"],
+      }),
+    ).resolves.toMatchObject({ descripcion: "Descripción corregida" });
+    expect(validarCategoria).not.toHaveBeenCalled();
+  });
+
+  test("sigue validando cuando se cambia de plaza", async () => {
+    const { prisma } = makeFakePrisma();
+    const validarCategoria = jest
+      .spyOn(CatalogoOperativoService.prototype, "validarCategoriaDeDefinicion")
+      .mockRejectedValue(new Error("La plaza nueva no admite la categoría"));
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await expect(
+      service.actualizar("C-1", 30, { necesidadesIds: [502] }),
+    ).rejects.toThrow("La plaza nueva no admite la categoría");
+    expect(validarCategoria).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("DefinicionTareaPreventivaService: compatibilidad día programado vs horario de la necesidad", () => {
   test("crear() rechaza un día SEMANAL que la plaza (sin horario especial) no trabaja según el horario general", async () => {
     const { prisma } = makeFakePrisma();
@@ -174,6 +226,42 @@ describe("DefinicionTareaPreventivaService: compatibilidad día programado vs ho
     });
 
     expect(creadas).toHaveLength(1);
+  });
+
+  test("crear() acepta FESTIVO si la plaza trabaja festivos y tiene horario", async () => {
+    const { prisma, creadas } = makeFakePrisma();
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await service.crear({
+      conjuntoId: "C-1",
+      ubicacionId: 1,
+      elementoId: 2,
+      descripcion: "Actividad solo festivos",
+      frecuencia: "SEMANAL",
+      diaSemanaProgramado: "FESTIVO",
+      duracionMinutosFija: 60,
+      necesidadesIds: [502],
+    });
+
+    expect(creadas).toHaveLength(1);
+  });
+
+  test("crear() rechaza FESTIVO si la plaza no tiene horario festivo", async () => {
+    const { prisma } = makeFakePrisma();
+    const service = new DefinicionTareaPreventivaService(prisma);
+
+    await expect(
+      service.crear({
+        conjuntoId: "C-1",
+        ubicacionId: 1,
+        elementoId: 2,
+        descripcion: "Actividad solo festivos",
+        frecuencia: "SEMANAL",
+        diaSemanaProgramado: "FESTIVO",
+        duracionMinutosFija: 60,
+        necesidadesIds: [501],
+      }),
+    ).rejects.toThrow(/trabajen festivos/);
   });
 
   test("crear() con frecuencia MENSUAL no valida el día (el día de semana varía cada mes)", async () => {

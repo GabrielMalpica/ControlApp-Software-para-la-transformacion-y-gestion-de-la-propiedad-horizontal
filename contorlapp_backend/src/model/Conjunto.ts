@@ -174,7 +174,8 @@ export const EditarConjuntoDTO = z.object({
   direccion: z.string().min(3).optional(),
   correo: z.string().email().optional(),
   administradorId: z.string().min(3).optional().nullable(),
-  empresaId: z.string().min(3).optional().nullable(),
+  // Sin empresaId: un conjunto no cambia de empresa por edición (zod descarta
+  // el campo si llega).
 
   fechaInicioContrato: z.coerce.date().optional().nullable(),
   fechaFinContrato: z.coerce.date().optional().nullable(),

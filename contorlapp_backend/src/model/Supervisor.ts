@@ -1,6 +1,8 @@
 // src/models/supervisor.ts
 import { z } from "zod";
 
+import { camposFueraDeEdicionRapida, EditarUsuarioDTO } from "./Usuario";
+
 /** Dominio base según Prisma */
 export interface SupervisorDominio {
   id: string; // mismo ID que Usuario.id
@@ -16,9 +18,14 @@ export const CrearSupervisorDTO = z.object({
   Id: z.string().min(1, "El id (cédula) del usuario es obligatorio"),
 });
 
-/** Editar supervisor (solo empresa por ahora) */
+/**
+ * Edicion rapida (PATCH /gerente/supervisores/:id): nombre y correo. La empresa
+ * del supervisor no se mueve desde el cliente: siempre es la de la sesion.
+ */
 export const EditarSupervisorDTO = z.object({
-  empresaId: z.string().min(3).optional(),
+  nombre: EditarUsuarioDTO.shape.nombre,
+  correo: EditarUsuarioDTO.shape.correo,
+  ...camposFueraDeEdicionRapida,
 });
 
 export const VeredictoSupervisorDTO = z.object({

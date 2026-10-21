@@ -44,6 +44,14 @@ function permutaciones<T>(base: T[], n: number): T[][] {
 }
 
 describe("compararOrdenProgramacion", () => {
+  it("conserva las tareas propias antes de las reasignadas por capacidad", () => {
+    const lista = [
+      t(1, { ...PISCINAS, reasignadaAutomaticamente: true }),
+      t(2, { ...BASICO, reasignadaAutomaticamente: false }),
+    ];
+    expect(ids(lista)).toEqual([2, 1]);
+  });
+
   it("ordena por categoría y luego por orden interno (piscinas: shock, aspirado, vidrio, mobiliario)", () => {
     const lista = [
       t(4, { ...PISCINAS, ordenEnCategoria: 4 }),

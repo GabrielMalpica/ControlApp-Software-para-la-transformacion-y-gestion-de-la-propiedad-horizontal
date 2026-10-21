@@ -20,10 +20,14 @@ function construirPrisma(opts: {
 
   const prisma: any = {
     conjunto: {
+      // Con ubicación configurada: sin ella la asistencia por QR se rechaza.
       findUnique: jest.fn().mockResolvedValue({
         nit: "C-1",
         nombre: "Conjunto Uno",
         qrAsistenciaToken: "tok-1",
+        latitud: 4.7,
+        longitud: -74.05,
+        radioAsistenciaMetros: 150,
       }),
     },
     operario: {

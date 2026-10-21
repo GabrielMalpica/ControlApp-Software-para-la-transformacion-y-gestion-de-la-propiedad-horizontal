@@ -25,6 +25,7 @@ import {
   type FotoCargada,
 } from "./InformeMensualPdf";
 import { ReporteService } from "./ReporteService";
+import type { AlcanceConjuntos } from "../aplicacion/alcanceConjuntos";
 
 // Se reexporta porque las pruebas del informe lo importan desde aqui.
 export { extraerDriveId };
@@ -133,6 +134,8 @@ function nombreArchivoSeguro(v: string): string {
 export type ParametrosInforme = {
   prisma: PrismaClient;
   empresaId: string;
+  /** Conjuntos visibles de quien lo pidió (null = toda la empresa). */
+  alcance?: AlcanceConjuntos;
   conjuntoId?: string;
   desde: Date;
   hasta: Date;
@@ -165,7 +168,7 @@ async function recolectarDatos(
   reportar: ReportarProgreso,
 ): Promise<InformeMensual> {
   reportar(5, "Consultando las tareas del periodo");
-  const reportes = new ReporteService(p.prisma, p.empresaId);
+  const reportes = new ReporteService(p.prisma, p.empresaId, p.alcance ?? null);
   const detalle: any = await reportes.reporteMensualDetalle({
     desde: p.desde,
     hasta: p.hasta,

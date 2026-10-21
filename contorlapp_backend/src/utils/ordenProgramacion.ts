@@ -10,6 +10,8 @@ export type DatosOrdenProgramacion = {
   ordenEnCategoria: number | null | undefined;
   /** Prioridad de selección: solo desempata, nunca reordena categorías. */
   prioridad: number;
+  /** Las tareas propias de la plaza se conservan antes que las rescatadas. */
+  reasignadaAutomaticamente?: boolean;
   definicionId: number | null | undefined;
   /** Horario previo (ms): conserva el orden relativo existente en empates totales. */
   fechaInicioMs: number;
@@ -36,6 +38,8 @@ export function compararOrdenProgramacion(
   const aTieneCategoria = a.categoriaOrden != null;
   const bTieneCategoria = b.categoriaOrden != null;
   return (
+    Number(a.reasignadaAutomaticamente === true) -
+      Number(b.reasignadaAutomaticamente === true) ||
     valor(a.categoriaOrden) - valor(b.categoriaOrden) ||
     valor(a.categoriaId) - valor(b.categoriaId) ||
     valor(aTieneCategoria ? a.ordenEnCategoria : null) -

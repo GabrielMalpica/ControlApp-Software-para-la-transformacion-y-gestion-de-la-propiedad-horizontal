@@ -1,4 +1,12 @@
 import { Prisma, Rol, type PrismaClient } from "@prisma/client";
+import {
+  AccionAuditoria,
+  EntidadAuditoria,
+  ModuloAuditoria,
+  type ActorAuditoria,
+} from "../model/Auditoria";
+import { describirActor } from "../utils/auditoria";
+import { AuditoriaService } from "./AuditoriaService";
 import { cached, cacheDelete } from "./RedisService";
 
 type PermissionDefinition = {
@@ -662,6 +670,23 @@ function normalizeRole(value: string | Rol | null | undefined): Rol | null {
   return ROLE_ORDER.find((item) => item === role) ?? null;
 }
 
+/** Permisos efectivos: los del rol por defecto con las excepciones guardadas de la empresa. */
+function aplicarOverrides(
+  defaults: ReadonlySet<string>,
+  overrides: ReadonlyArray<{ permiso: string; permitido: boolean }>,
+): Set<string> {
+  const effective = new Set(defaults);
+  for (const override of overrides) {
+    if (!PermissionService.isValidPermission(override.permiso)) continue;
+    if (override.permitido) {
+      effective.add(override.permiso);
+    } else {
+      effective.delete(override.permiso);
+    }
+  }
+  return effective;
+}
+
 function ensureEmpresaId(value: string | null | undefined): string {
   const empresaId = String(value ?? "").trim();
   if (!empresaId) {
@@ -794,7 +819,7 @@ export class PermissionService {
     empresaId: string,
     normalizedRole: Rol,
   ): Promise<Set<string>> {
-    const effective = PermissionService.defaultPermissionsForRole(normalizedRole);
+    const defaults = PermissionService.defaultPermissionsForRole(normalizedRole);
 
     let overrides: Array<{ permiso: string; permitido: boolean }> = [];
 
@@ -808,22 +833,13 @@ export class PermissionService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === "P2021"
       ) {
-        return effective;
+        return defaults;
       }
 
       throw error;
     }
 
-    for (const override of overrides) {
-      if (!PermissionService.isValidPermission(override.permiso)) continue;
-      if (override.permitido) {
-        effective.add(override.permiso);
-      } else {
-        effective.delete(override.permiso);
-      }
-    }
-
-    return effective;
+    return aplicarOverrides(defaults, overrides);
   }
 
   async getEffectivePermissionsForUser(params: {
@@ -876,7 +892,11 @@ export class PermissionService {
     };
   }
 
-  async replacePermissionMatrix(empresaId: string, input: PermissionMatrixInput) {
+  async replacePermissionMatrix(
+    empresaId: string,
+    input: PermissionMatrixInput,
+    actor?: ActorAuditoria | null,
+  ) {
     const payloadRoles = Object.keys(input)
       .map((role) => normalizeRole(role))
       .filter((role): role is Rol => role != null && role !== Rol.gerente);
@@ -888,7 +908,12 @@ export class PermissionService {
     const uniqueRoles = [...new Set(payloadRoles)];
 
     await this.prisma.$transaction(async (tx) => {
+      let overridesAntes: Array<{ rol: string; permiso: string; permitido: boolean }> = [];
       try {
+        overridesAntes = await tx.permisoRol.findMany({
+          where: { empresaId, rol: { in: uniqueRoles } },
+          select: { rol: true, permiso: true, permitido: true },
+        });
         await tx.permisoRol.deleteMany({
           where: {
             empresaId,
@@ -909,15 +934,25 @@ export class PermissionService {
       }
 
       const rows: Array<{ empresaId: string; rol: Rol; permiso: string; permitido: boolean }> = [];
+      const cambios: Array<{ rol: Rol; permiso: string; antes: boolean; despues: boolean }> = [];
 
       for (const role of uniqueRoles) {
         const defaults = PermissionService.defaultPermissionsForRole(role);
         const roleMatrix = input[role] ?? {};
+        const efectivosAntes = aplicarOverrides(
+          defaults,
+          overridesAntes.filter((override) => override.rol === role),
+        );
 
         for (const item of PERMISSION_CATALOG) {
           const rawValue = roleMatrix[item.key];
           const value = rawValue == null ? defaults.has(item.key) : rawValue === true;
           const defaultValue = defaults.has(item.key);
+          const valorAntes = efectivosAntes.has(item.key);
+
+          if (value !== valorAntes) {
+            cambios.push({ rol: role, permiso: item.key, antes: valorAntes, despues: value });
+          }
 
           if (value !== defaultValue) {
             rows.push({
@@ -945,6 +980,37 @@ export class PermissionService {
 
           throw error;
         }
+      }
+
+      if (cambios.length > 0) {
+        const otorgados = cambios.filter((c) => c.despues).map((c) => `${c.rol}:${c.permiso}`);
+        const revocados = cambios.filter((c) => !c.despues).map((c) => `${c.rol}:${c.permiso}`);
+        const porRol = (valor: "antes" | "despues") =>
+          cambios.reduce<Record<string, Record<string, boolean>>>((acc, c) => {
+            (acc[c.rol] ??= {})[c.permiso] = c[valor];
+            return acc;
+          }, {});
+
+        await new AuditoriaService(tx).registrarEstricto({
+          modulo: ModuloAuditoria.SEGURIDAD,
+          entidad: EntidadAuditoria.PERMISOS_ROL,
+          entidadId: empresaId,
+          accion: AccionAuditoria.ACTUALIZAR_PERMISOS,
+          empresaId,
+          actor: actor ?? null,
+          descripcion:
+            `${describirActor(actor)} cambió la matriz de permisos: ` +
+            [
+              otorgados.length ? `otorgó ${otorgados.join(", ")}` : "",
+              revocados.length ? `revocó ${revocados.join(", ")}` : "",
+            ]
+              .filter(Boolean)
+              .join("; ") +
+            ".",
+          datosAntes: porRol("antes"),
+          datosDespues: porRol("despues"),
+          metadataJson: { roles: uniqueRoles, otorgados, revocados },
+        });
       }
     });
 

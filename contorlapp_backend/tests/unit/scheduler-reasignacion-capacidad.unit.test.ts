@@ -52,6 +52,7 @@ type PlazaFake = {
   categorias: number[];
   /** Ventana LUNES de la plaza (horario especial). */
   lunes: [string, string];
+  lunesDescanso?: [string, string];
 };
 
 function construirPrisma(opts: { defs: DefFake[]; plazas: PlazaFake[] }) {
@@ -131,6 +132,19 @@ function construirPrisma(opts: { defs: DefFake[]; plazas: PlazaFake[] }) {
             operario: p.operarioId
               ? { id: p.operarioId, usuario: { nombre: nombrePorOperario.get(p.operarioId) } }
               : null,
+            horarioEspecial: true,
+            horarios: [{
+              dia: DiaSemana.LUNES,
+              horaApertura: p.lunes[0],
+              horaCierre: p.lunes[1],
+              descansoInicio: p.lunesDescanso?.[0] ?? null,
+              descansoFin: p.lunesDescanso?.[1] ?? null,
+            }],
+            trabajaFestivos: false,
+            festivoHoraApertura: null,
+            festivoHoraCierre: null,
+            festivoDescansoInicio: null,
+            festivoDescansoFin: null,
           }));
         }
         // Consulta de horarios efectivos por operario.
@@ -143,7 +157,12 @@ function construirPrisma(opts: { defs: DefFake[]; plazas: PlazaFake[] }) {
             horarioEspecial: true,
             horarios:
               diaFiltro === DiaSemana.LUNES
-                ? [{ horaApertura: p.lunes[0], horaCierre: p.lunes[1], descansoInicio: null, descansoFin: null }]
+                ? [{
+                    horaApertura: p.lunes[0],
+                    horaCierre: p.lunes[1],
+                    descansoInicio: p.lunesDescanso?.[0] ?? null,
+                    descansoFin: p.lunesDescanso?.[1] ?? null,
+                  }]
                 : [],
             trabajaFestivos: false,
             festivoHoraApertura: null,
@@ -285,7 +304,7 @@ const excluidaPorDesc = (prisma: any, descripcion: string) =>
  * Conjunto X con dos plazas (marzo de 2026; lunes: 2, 9, 16, 23 y 30):
  *  - Todero (op-T): solo LUNES 07:00-09:00 (120 min por lunes). 5 tareas de
  *    120 min llenan sus 5 lunes.
- *  - Todero-Salvavidas (op-S): solo LUNES 07:00-11:00 (240 min por lunes);
+ *  - Todero-Salvavidas (op-S): solo LUNES 10:00-18:00, con almuerzo 12-13;
  *    habilitado para Poda, Jardinería, Mant. básico y Salvamento (no Piscinas).
  */
 const TODERO: PlazaFake = {
@@ -302,7 +321,8 @@ const TODERO_SALVAVIDAS: PlazaFake = {
   etiqueta: "Todero-Salvavidas #1",
   operarioId: "op-S",
   categorias: [PODA, JARDINERIA, BASICO, SALVAMENTO],
-  lunes: ["07:00", "11:00"],
+  lunes: ["10:00", "18:00"],
+  lunesDescanso: ["12:00", "13:00"],
 };
 
 // Las que llenan el mes del Todero: duran 120 y por eso se procesan primero.
@@ -326,7 +346,7 @@ describe("generarBorradorMensual - reasignación por capacidades", () => {
         { id: 12, descripcion: "Jardineria B", operarioId: "op-T", duracion: 60, categoriaId: JARDINERIA },
         { id: 13, descripcion: "Mantenimiento C", operarioId: "op-T", duracion: 60, categoriaId: BASICO },
         // No caben en ninguna ventana de 4 h => exclusión real
-        { id: 14, descripcion: "Poda gigante", operarioId: "op-T", duracion: 300, categoriaId: PODA },
+        { id: 14, descripcion: "Poda gigante", operarioId: "op-T", duracion: 480, categoriaId: PODA },
         // El Todero-Salvavidas NO tiene Piscinas => exclusión real
         { id: 15, descripcion: "Piscina extra", operarioId: "op-T", duracion: 60, categoriaId: PISCINAS },
         // Tarea propia del Todero-Salvavidas: ocupa capacidad parcial el lunes 2
@@ -347,6 +367,8 @@ describe("generarBorradorMensual - reasignación por capacidades", () => {
     // 2) Exclusiones reales: sin recurso compatible o sin espacio.
     expect(excluidaPorDesc(prisma, "Poda gigante")).toBeDefined();
     expect(excluidaPorDesc(prisma, "Piscina extra")).toBeDefined();
+    expect(excluidaPorDesc(prisma, "Poda gigante").motivoTipo).toBe("SIN_HUECO");
+    expect(excluidaPorDesc(prisma, "Piscina extra").motivoTipo).toBe("SIN_CANDIDATAS");
     for (const desc of ["Poda A", "Poda B", "Jardineria B", "Mantenimiento C"]) {
       expect(excluidaPorDesc(prisma, desc)).toBeUndefined();
     }
@@ -368,17 +390,23 @@ describe("generarBorradorMensual - reasignación por capacidades", () => {
     const reasignaciones = novedades.filter((n: any) => n.tipo === "REASIGNADA_POR_CAPACIDAD");
     expect(reasignaciones).toHaveLength(4);
     expect(novedades.some((n: any) => n.tipo === "SIN_CANDIDATAS" && n.descripcion === "Poda A")).toBe(false);
-    expect(novedades.some((n: any) => n.tipo === "SIN_CANDIDATAS" && n.descripcion === "Poda gigante")).toBe(true);
+    expect(novedades.some((n: any) => n.tipo === "SIN_HUECO" && n.descripcion === "Poda gigante")).toBe(true);
 
-    // 5) Orden del día del Todero-Salvavidas: categoría y luego orden interno
-    //    (Poda A -> Poda B -> ... -> Salvamento), todo el lunes 2 por cercanía.
+    // 5) La tarea propia de la plaza queda primero; el rescate usa el horario
+    //    disponible después del almuerzo.
     const lunes2 = tareasDe(prisma, "op-S")
       .filter((t: any) => fechaClave(t.fechaInicio) === "2026-03-02")
       .sort((a: any, b: any) => +a.fechaInicio - +b.fechaInicio);
-    expect(lunes2.map((t: any) => t.descripcion)).toEqual(["Poda A", "Poda B", "Turno salvamento"]);
-    expect(hhmm(lunes2[0].fechaInicio)).toBe("07:00");
-    expect(hhmm(lunes2[1].fechaInicio)).toBe("08:00");
-    expect(hhmm(lunes2[2].fechaInicio)).toBe("09:00");
+    expect(lunes2.map((t: any) => t.descripcion)).toEqual([
+      "Turno salvamento",
+      "Poda A",
+      "Poda B",
+      "Jardineria B",
+      "Mantenimiento C",
+    ]);
+    expect(hhmm(lunes2[0].fechaInicio)).toBe("10:00");
+    expect(hhmm(lunes2[1].fechaInicio)).toBe("13:00");
+    expect(hhmm(lunes2[2].fechaInicio)).toBe("14:00");
   });
 
   test("ningún operario queda con tareas solapadas ni fuera de su ventana", async () => {
@@ -397,11 +425,17 @@ describe("generarBorradorMensual - reasignación por capacidades", () => {
       for (let i = 1; i < lista.length; i++) {
         expect(+lista[i].fechaInicio).toBeGreaterThanOrEqual(+lista[i - 1].fechaFin);
       }
-      const fin = op === "op-T" ? "09:00" : "11:00";
+      const inicio = op === "op-T" ? "07:00" : "10:00";
+      const fin = op === "op-T" ? "09:00" : "18:00";
       for (const t of lista) {
         expect(t.fechaInicio.getDay()).toBe(1); // solo lunes
-        expect(hhmm(t.fechaInicio) >= "07:00").toBe(true);
+        expect(hhmm(t.fechaInicio) >= inicio).toBe(true);
         expect(hhmm(t.fechaFin) <= fin).toBe(true);
+        if (op === "op-S") {
+          expect(
+            hhmm(t.fechaFin) <= "12:00" || hhmm(t.fechaInicio) >= "13:00",
+          ).toBe(true);
+        }
       }
     }
   });
@@ -411,7 +445,8 @@ describe("generarBorradorMensual - reasignación por capacidades", () => {
       plazas: [TODERO, TODERO_SALVAVIDAS],
       defs: [
         ...RELLENO_TODERO,
-        // 120 (salvamento) + 4 x 60 = 360 min > 240 del lunes 2
+        // La tarea propia y las cuatro rescatadas caben el mismo lunes en los
+        // espacios disponibles antes y después del almuerzo.
         { id: 10, descripcion: "Poda A", operarioId: "op-T", duracion: 60, categoriaId: PODA, ordenEnCategoria: 1 },
         { id: 11, descripcion: "Poda B", operarioId: "op-T", duracion: 60, categoriaId: PODA, ordenEnCategoria: 2 },
         { id: 12, descripcion: "Jardineria B", operarioId: "op-T", duracion: 60, categoriaId: JARDINERIA },
@@ -422,8 +457,7 @@ describe("generarBorradorMensual - reasignación por capacidades", () => {
     const fechas = ["Poda A", "Poda B", "Jardineria B", "Mantenimiento C"].map((d) =>
       fechaClave(tareaPorDesc(prisma, d).fechaInicio),
     );
-    expect(fechas.filter((f) => f === "2026-03-02")).toHaveLength(2); // caben 2 el lunes objetivo
-    expect(fechas.filter((f) => f === "2026-03-09")).toHaveLength(2); // el resto, el lunes siguiente
+    expect(fechas.filter((f) => f === "2026-03-02")).toHaveLength(4);
     expect(prisma.excluidasCreadas.filter((e: any) => e.estado === "PENDIENTE")).toHaveLength(0);
   });
 

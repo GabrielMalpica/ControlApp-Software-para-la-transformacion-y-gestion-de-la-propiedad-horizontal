@@ -275,6 +275,17 @@ enum DiaSemana {
   DOMINGO
 }
 
+enum DiaProgramado {
+  LUNES
+  MARTES
+  MIERCOLES
+  JUEVES
+  VIERNES
+  SABADO
+  DOMINGO
+  FESTIVO
+}
+
 enum TipoTarea {
   PREVENTIVA
   CORRECTIVA
@@ -521,6 +532,10 @@ model Usuario {
   rol                      String
   activo                   Boolean @default(true)
   requiereCambioContrasena Boolean @default(false)
+  // Viaja en el JWT (claim `sv`). Subirla cierra todas las sesiones del
+  // usuario: cada peticion compara el claim con este valor (ver
+  // SesionService).
+  versionSesion            Int     @default(0)
 
   telefono        BigInt
   fechaNacimiento DateTime
@@ -550,6 +565,34 @@ model Usuario {
   movimientosPuntos   MovimientoPuntos[]
   cambiosEstadoPedido PedidoAppEstadoHistorico[] @relation("PedidoEstadoCambiadoPor")
   notificaciones      Notificacion[]
+  sesionesRefresh     SesionRefresh[]
+  mcpConexiones       McpConexion[]
+}
+
+/**
+ * Tokens de renovacion de la sesion web (cookie HttpOnly). Cada uso rota el
+ * token: se marca `usadoEn` y se crea otro en la misma `familiaId`. Presentar
+ * un token ya usado indica robo y revoca toda la familia. Solo se guarda el
+ * hash SHA-256 del token, nunca el valor.
+ */
+model SesionRefresh {
+  id               String    @id @default(uuid())
+  familiaId        String
+  usuarioId        String
+  usuario          Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tokenHash        String    @unique
+  versionSesion    Int
+  creadoEn         DateTime  @default(now())
+  expiraEn         DateTime
+  familiaExpiraEn  DateTime
+  usadoEn          DateTime?
+  revocadoEn       DateTime?
+  motivoRevocacion String?
+  userAgent        String?
+
+  @@index([familiaId])
+  @@index([usuarioId])
+  @@index([expiraEn])
 }
 
 model Notificacion {
@@ -650,6 +693,9 @@ model Gerente {
   usuario   Usuario  @relation(fields: [id], references: [id], onDelete: Cascade)
   empresa   Empresa? @relation(fields: [empresaId], references: [nit])
   empresaId String?
+  // Acceso por IA (MCP). Desactivado por defecto: lo habilita el equipo
+  // tecnico a pedido del gerente (scripts/mcp-gerente.ts).
+  mcpHabilitado Boolean @default(false)
 
   @@map("Gerente")
 }
@@ -1907,7 +1953,9 @@ model DefinicionTareaPreventiva {
   frecuencia            Frecuencia
   // Prioridad de SELECCIÓN (1 alta, 2 media, 3 baja): qué entra primero al mes.
   prioridad             Int        @default(2)
-  diaSemanaProgramado   DiaSemana?
+  diaSemanaProgramado   DiaProgramado?
+  // Para DIARIA, null/vacío conserva todas las jornadas laborables de la plaza.
+  diasSemanaProgramados Json?
   diaMesProgramado      Int?
   fechasProgramadasJson Json?
 
@@ -2013,7 +2061,7 @@ model Tarea {
 
   // Origen preventivo (trazabilidad hacia la definición que la generó)
   definicionId        Int?
-  diaSemanaProgramado DiaSemana?
+  diaSemanaProgramado DiaProgramado?
 
   // Copia (snapshot) de la categoría/orden de la definición al generar, para
   // ordenar el día y conservar el historial aunque la definición cambie.
@@ -2106,7 +2154,7 @@ model PreventivaExcluidaBorrador {
 
   descripcion         String
   frecuencia          Frecuencia?
-  diaSemanaProgramado DiaSemana?
+  diaSemanaProgramado DiaProgramado?
   prioridad           Int         @default(2)
   duracionMinutos     Int
 
@@ -2875,4 +2923,154 @@ model DiagnosticoArea {
   @@unique([planEsperanzaId, elementoId])
   @@index([elementoId])
   @@map("DiagnosticoArea")
+}
+
+/**
+ * =========================================
+ * MODELOS - INTEGRACIONES IA (MCP, solo gerentes)
+ * Ver docs/mcp/arquitectura.md.
+ * =========================================
+ */
+
+/// Una autorizacion de un gerente a un cliente de IA (Claude, ChatGPT...).
+/// Revocarla corta el acceso de ese cliente; nunca se borra (auditoria).
+model McpConexion {
+  id               String    @id @default(uuid())
+  usuarioId        String
+  usuario          Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  empresaId        String
+  clienteId        String
+  clienteNombre    String
+  redirectUri      String
+  scopes           String[]
+  estado           String    @default("ACTIVA")
+  creadaEn         DateTime  @default(now())
+  // Ultimo consentimiento del gerente: la conexion vence 30 dias despues
+  // (hay que volver a autorizarla desde el cliente de IA).
+  autorizadaEn     DateTime  @default(now())
+  actualizadaEn    DateTime  @updatedAt
+  ultimoUsoEn      DateTime?
+  revocadaEn       DateTime?
+  revocadaPorId    String?
+  motivoRevocacion String?
+
+  codigos        McpCodigoAutorizacion[]
+  refreshTokens  McpRefreshToken[]
+  confirmaciones McpConfirmacion[]
+
+  @@unique([usuarioId, clienteId])
+  @@index([empresaId, estado])
+}
+
+/// Peticion /oauth/authorize en curso (login y consentimiento). Vive minutos.
+model McpSolicitudAutorizacion {
+  id                String   @id
+  clienteId         String
+  clienteNombre     String
+  redirectUri       String
+  state             String?
+  codeChallenge     String
+  scopesSolicitados String[]
+  resource          String
+  csrf              String
+  usuarioId         String?
+  creadaEn          DateTime @default(now())
+  expiraEn          DateTime
+
+  @@index([expiraEn])
+}
+
+/// Codigo de autorizacion (PKCE S256), de un solo uso. Solo se guarda el hash.
+model McpCodigoAutorizacion {
+  codigoHash    String      @id
+  conexionId    String
+  conexion      McpConexion @relation(fields: [conexionId], references: [id], onDelete: Cascade)
+  clienteId     String
+  redirectUri   String
+  codeChallenge String
+  resource      String
+  scopes        String[]
+  creadoEn      DateTime    @default(now())
+  expiraEn      DateTime
+  usadoEn       DateTime?
+
+  @@index([conexionId])
+}
+
+/// Refresh token rotativo: cada uso crea otro; reusar uno ya usado revoca la conexion.
+model McpRefreshToken {
+  id         String      @id @default(uuid())
+  conexionId String
+  conexion   McpConexion @relation(fields: [conexionId], references: [id], onDelete: Cascade)
+  tokenHash  String      @unique
+  scopes     String[]
+  creadoEn   DateTime    @default(now())
+  expiraEn   DateTime
+  usadoEn    DateTime?
+  revocadoEn DateTime?
+
+  @@index([conexionId])
+}
+
+/// Clientes registrados por DCR (RFC 7591). Desactivado por defecto
+/// (MCP_DCR_HABILITADO); los clientes normales se identifican por CIMD.
+model McpClienteRegistrado {
+  clientId     String   @id
+  nombre       String
+  redirectUris String[]
+  creadoEn     DateTime @default(now())
+}
+
+/// Bitacora de cada herramienta ejecutada por MCP. Sin FK a la conexion para
+/// que sobreviva aunque se borre el usuario. Solo insercion.
+model McpInvocacion {
+  id                   BigInt   @id @default(autoincrement())
+  conexionId           String
+  usuarioId            String
+  empresaId            String
+  clienteId            String
+  herramienta          String
+  nivelRiesgo          String
+  resultado            String
+  codigo               String?
+  mensaje              String?
+  parametrosHash       String
+  parametrosRedactados Json?
+  entidadesAfectadas   Json?
+  confirmacionId       String?
+  latenciaMs           Int
+  ip                   String?
+  userAgent            String?
+  creadoEn             DateTime @default(now())
+
+  @@index([conexionId, creadoEn])
+  @@index([usuarioId, creadoEn])
+  @@index([empresaId, creadoEn])
+}
+
+/// Operacion previsualizada que espera confirmacion (y, si es de alto
+/// riesgo, aprobacion del gerente dentro de ControlApp).
+model McpConfirmacion {
+  id                       String      @id @default(uuid())
+  conexionId               String
+  conexion                 McpConexion @relation(fields: [conexionId], references: [id], onDelete: Cascade)
+  usuarioId                String
+  empresaId                String
+  operacion                String
+  parametros               Json
+  parametrosHash           String
+  resumen                  String
+  impacto                  Json
+  impactoHash              String
+  requiereAprobacionHumana Boolean     @default(false)
+  estado                   String      @default("PENDIENTE")
+  creadaEn                 DateTime    @default(now())
+  expiraEn                 DateTime
+  decididaPorId            String?
+  decididaEn               DateTime?
+  ejecutadaEn              DateTime?
+  resultado                Json?
+
+  @@index([usuarioId, estado])
+  @@index([conexionId, estado])
 }

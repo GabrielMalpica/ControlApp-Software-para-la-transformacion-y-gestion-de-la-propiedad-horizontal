@@ -3,6 +3,7 @@ import {
   PrismaClient,
   Prisma,
   DiaSemana,
+  DiaProgramado,
   TipoTarea,
   Frecuencia,
   EstadoTarea,
@@ -664,7 +665,7 @@ type CrearTareaPayload = {
   // origen preventivo (trazabilidad hacia la definicion que la genero)
   definicionId?: number | null;
   ocurrenciaPlanId?: string | null;
-  diaSemanaProgramado?: DiaSemana | null;
+  diaSemanaProgramado?: DiaProgramado | null;
 
   prioridad: number;
   supervisorId?: string | null;

@@ -188,22 +188,27 @@ export class EmpresaService {
     const d2 = this.startOfDayLocal(dto.hasta);
     const d2Next = new Date(d2.getTime() + 24 * 60 * 60 * 1000);
 
-    // 1) borrar rango
-    await prisma.festivo.deleteMany({
-      where: { pais: dto.pais, fecha: { gte: d1, lt: d2Next } },
-    });
-
-    // 2) crear set nuevo (normalizado)
-    if (dto.fechas.length) {
-      await prisma.festivo.createMany({
-        data: dto.fechas.map((f) => ({
-          pais: dto.pais,
-          fecha: this.startOfDayLocal(f.fecha),
-          nombre: f.nombre ?? null,
-        })),
-        skipDuplicates: true, // por si acaso
+    // Borrar y crear en una sola transaccion: si la creacion falla, el rango
+    // no queda sin festivos (afectan asistencia, compensatorios y cronograma
+    // de todas las empresas, porque la tabla es global).
+    await prisma.$transaction(async (tx) => {
+      // 1) borrar rango
+      await tx.festivo.deleteMany({
+        where: { pais: dto.pais, fecha: { gte: d1, lt: d2Next } },
       });
-    }
+
+      // 2) crear set nuevo (normalizado)
+      if (dto.fechas.length) {
+        await tx.festivo.createMany({
+          data: dto.fechas.map((f) => ({
+            pais: dto.pais,
+            fecha: this.startOfDayLocal(f.fecha),
+            nombre: f.nombre ?? null,
+          })),
+          skipDuplicates: true, // por si acaso
+        });
+      }
+    });
 
     return { ok: true, total: dto.fechas.length };
   }

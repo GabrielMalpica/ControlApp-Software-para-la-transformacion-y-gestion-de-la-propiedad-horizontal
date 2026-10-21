@@ -5,7 +5,9 @@ import { Rol } from "@prisma/client";
 import { prisma } from "../db/prisma";
 import { GerenteService } from "../services/GerenteServices";
 import { PermissionService } from "../services/PermissionService";
+import { conSupervisorPorDefecto } from "../services/TareaServices";
 import { ListarUsuariosDTO, UsuarioIdParam } from "../model/Gerente";
+import { extraerActorAuditoriaConNombre } from "../utils/auditoria";
 
 // â”€â”€ Schemas de params simples â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const IdParam = z.object({ id: z.coerce.number().int().positive() });
@@ -36,16 +38,6 @@ const AsignarOperarioBody = z.object({
   operarioId: z.number().int().positive(),
 });
 
-// Para reemplazos masivos de administradores
-const ReemplazosBody = z.object({
-  reemplazos: z.array(
-    z.object({
-      conjuntoId: z.string().min(3),
-      nuevoAdminId: z.number().int().positive(),
-    }),
-  ),
-});
-
 // Actualizar lÃ­mite de horas semanales
 const LimiteHorasBody = z.object({
   limiteHorasSemana: z.coerce.number().int().min(1).max(84),
@@ -66,6 +58,30 @@ const permissionService = new PermissionService(prisma);
 
 function serviceFor(req: Parameters<RequestHandler>[0]) {
   return new GerenteService(prisma, req.user?.empresaId);
+}
+
+/** Para gestionar usuarios: el servicio aplica la jerarquia de roles y audita con este actor. */
+async function serviceConActor(req: Parameters<RequestHandler>[0]) {
+  const actor = await extraerActorAuditoriaConNombre(req);
+  return new GerenteService(prisma, req.user?.empresaId, actor);
+}
+
+/**
+ * Para crear/editar/eliminar tareas: siempre con actor, asi el servicio limita
+ * la tarea al alcance del rol (sin usuario en el token no hay rol y editar o
+ * eliminar se rechaza).
+ */
+async function serviceParaTareas(req: Parameters<RequestHandler>[0]) {
+  const actor = (await extraerActorAuditoriaConNombre(req)) ?? { id: null, rol: null };
+  return new GerenteService(prisma, req.user?.empresaId, actor);
+}
+
+/** Quien crea una tarea, tal como viene en el token. */
+function actorDeTareas(req: Parameters<RequestHandler>[0]) {
+  return {
+    id: String(req.user?.sub ?? "").trim(),
+    rol: String(req.user?.rol ?? "").trim(),
+  };
 }
 
 export class GerenteController {
@@ -103,7 +119,8 @@ export class GerenteController {
         Rol.gerente,
       );
 
-      const updated = await permissionService.replacePermissionMatrix(empresaId, matrix);
+      const actor = await extraerActorAuditoriaConNombre(req);
+      const updated = await permissionService.replacePermissionMatrix(empresaId, matrix, actor);
       res.json(updated);
     } catch (err) {
       next(err);
@@ -133,7 +150,8 @@ export class GerenteController {
   // â”€â”€ Usuarios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   crearUsuario: RequestHandler = async (req, res, next) => {
     try {
-      const out = await serviceFor(req).crearUsuario(req.body);
+      const service = await serviceConActor(req);
+      const out = await service.crearUsuario(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -143,7 +161,8 @@ export class GerenteController {
   editarUsuario: RequestHandler = async (req, res, next) => {
     try {
       const { id } = UsuarioIdParam.parse(req.params);
-      const out = await serviceFor(req).editarUsuario(id, req.body);
+      const service = await serviceConActor(req);
+      const out = await service.editarUsuario(id, req.body);
       res.json(out);
     } catch (err) {
       next(err);
@@ -243,7 +262,8 @@ export class GerenteController {
   // â”€â”€ Roles / Perfiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   asignarGerente: RequestHandler = async (req, res, next) => {
     try {
-      const out = await serviceFor(req).asignarGerente(req.body);
+      const service = await serviceConActor(req);
+      const out = await service.asignarGerente(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -252,7 +272,8 @@ export class GerenteController {
 
   asignarAdministrador: RequestHandler = async (req, res, next) => {
     try {
-      const out = await serviceFor(req).asignarAdministrador(req.body);
+      const service = await serviceConActor(req);
+      const out = await service.asignarAdministrador(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -261,7 +282,8 @@ export class GerenteController {
 
   asignarJefeOperaciones: RequestHandler = async (req, res, next) => {
     try {
-      const out = await serviceFor(req).asignarJefeOperaciones(req.body);
+      const service = await serviceConActor(req);
+      const out = await service.asignarJefeOperaciones(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -270,7 +292,8 @@ export class GerenteController {
 
   asignarSupervisor: RequestHandler = async (req, res, next) => {
     try {
-      const out = await serviceFor(req).asignarSupervisor(req.body);
+      const service = await serviceConActor(req);
+      const out = await service.asignarSupervisor(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -299,7 +322,8 @@ export class GerenteController {
 
   asignarOperario: RequestHandler = async (req, res, next) => {
     try {
-      const out = await serviceFor(req).asignarOperario(req.body);
+      const service = await serviceConActor(req);
+      const out = await service.asignarOperario(req.body);
       res.status(201).json(out);
     } catch (err) {
       next(err);
@@ -433,14 +457,16 @@ export class GerenteController {
   // â”€â”€ Tareas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   asignarTarea: RequestHandler = async (req, res, next) => {
     try {
-      const body: any = req.body ?? {};
+      const body: any = conSupervisorPorDefecto(actorDeTareas(req), req.body ?? {});
+      // Con actor: el administrador solo crea en sus conjuntos (fuera, 404).
+      const service = await serviceParaTareas(req);
 
       const tipo = String(body?.tipo ?? "CORRECTIVA").toUpperCase();
       const prioridad = Number(body?.prioridad ?? 2);
 
       // âœ… 1) Correctiva P1/P2/P3: entra por reglas de conflicto/reemplazo
       if (tipo === "CORRECTIVA" && [1, 2, 3].includes(prioridad)) {
-        const r: any = await serviceFor(req).crearCorrectivaConReglas(body);
+        const r: any = await service.crearCorrectivaConReglas(body);
 
         // A) Creada sin reemplazo
         if (r.ok && r.mode === "CREADA_SIN_REEMPLAZO") {
@@ -545,7 +571,7 @@ export class GerenteController {
       }
 
       // âœ… 2) No es P1: asignaciÃ³n normal (incluye validaciÃ³n solapes/sugerencias)
-      const out: any = await serviceFor(req).asignarTarea(body);
+      const out: any = await service.asignarTarea(body);
 
       const status = out?.ok === true ? 201 : 200;
       res.status(status).json(out);
@@ -557,12 +583,19 @@ export class GerenteController {
 
   asignarTareaConReemplazo = async (req: any, res: any) => {
     try {
-      const out = await serviceFor(req).asignarTareaConReemplazoV2(req.body);
+      const body = req.body ?? {};
+      const service = await serviceParaTareas(req);
+      const out = await service.asignarTareaConReemplazoV2({
+        ...body,
+        tarea: conSupervisorPorDefecto(actorDeTareas(req), body.tarea),
+      });
       if (out?.ok === false) return res.status(400).json(out);
       return res.status(200).json(out);
     } catch (e: any) {
+      // Un error con estado 4xx (p. ej. 404 fuera de alcance) lo conserva.
+      const status = Number(e?.status);
       return res
-        .status(400)
+        .status(status >= 400 && status < 500 ? status : 400)
         .json({ ok: false, message: e?.message ?? String(e) });
     }
   };
@@ -570,7 +603,9 @@ export class GerenteController {
   editarTarea: RequestHandler = async (req, res, next) => {
     try {
       const { tareaId } = TareaIdParam.parse(req.params);
-      const out = await serviceFor(req).editarTarea(tareaId, req.body);
+      // Con actor: el servicio limita la edición al alcance de su rol.
+      const service = await serviceParaTareas(req);
+      const out = await service.editarTarea(tareaId, req.body);
       res.json(out);
     } catch (err) {
       next(err);
@@ -581,7 +616,8 @@ export class GerenteController {
   eliminarAdministrador: RequestHandler = async (req, res, next) => {
     try {
       const { adminId } = AdminIdParam.parse(req.params);
-      await serviceFor(req).eliminarAdministrador(adminId.toString());
+      const service = await serviceConActor(req);
+      await service.eliminarAdministrador(adminId.toString());
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -590,8 +626,9 @@ export class GerenteController {
 
   reemplazarAdminEnVariosConjuntos: RequestHandler = async (req, res, next) => {
     try {
-      const { reemplazos } = ReemplazosBody.parse(req.body);
-      await serviceFor(req).reemplazarAdminEnVariosConjuntos(reemplazos);
+      // El servicio valida el body (ReemplazarAdministradoresDTO), la jerarquia y audita.
+      const service = await serviceConActor(req);
+      await service.reemplazarAdminEnVariosConjuntos(req.body);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -601,7 +638,8 @@ export class GerenteController {
   eliminarOperario: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
-      await serviceFor(req).eliminarOperario(operarioId.toString());
+      const service = await serviceConActor(req);
+      await service.eliminarOperario(operarioId.toString());
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -611,7 +649,8 @@ export class GerenteController {
   eliminarSupervisor: RequestHandler = async (req, res, next) => {
     try {
       const { supervisorId } = SupervisorIdParam.parse(req.params);
-      await serviceFor(req).eliminarSupervisor(supervisorId.toString());
+      const service = await serviceConActor(req);
+      await service.eliminarSupervisor(supervisorId.toString());
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -622,7 +661,8 @@ export class GerenteController {
     try {
       const supervisorId = String(req.params.supervisorId ?? "").trim();
       if (!supervisorId) throw new Error("Cédula de supervisor obligatoria.");
-      const result = await serviceFor(req).reemplazarSupervisorYEliminar(
+      const service = await serviceConActor(req);
+      const result = await service.reemplazarSupervisorYEliminar(
         supervisorId,
         req.body,
       );
@@ -635,7 +675,8 @@ export class GerenteController {
   eliminarUsuario: RequestHandler = async (req, res, next) => {
     try {
       const { id } = UsuarioIdParam.parse(req.params);
-      await serviceFor(req).eliminarUsuario(id);
+      const service = await serviceConActor(req);
+      await service.eliminarUsuario(id);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -672,7 +713,8 @@ export class GerenteController {
   eliminarTarea: RequestHandler = async (req, res, next) => {
     try {
       const { tareaId } = TareaIdParam.parse(req.params);
-      await serviceFor(req).eliminarTarea(prisma, tareaId);
+      const service = await serviceParaTareas(req);
+      await service.eliminarTarea(prisma, tareaId);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -683,7 +725,8 @@ export class GerenteController {
   editarAdministrador: RequestHandler = async (req, res, next) => {
     try {
       const { adminId } = AdminIdParam.parse(req.params);
-      await serviceFor(req).editarAdministrador(adminId, req.body);
+      const service = await serviceConActor(req);
+      await service.editarAdministrador(adminId, req.body);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -693,7 +736,8 @@ export class GerenteController {
   editarOperario: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
-      await serviceFor(req).editarOperario(operarioId, req.body);
+      const service = await serviceConActor(req);
+      await service.editarOperario(operarioId, req.body);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -703,7 +747,8 @@ export class GerenteController {
   editarSupervisor: RequestHandler = async (req, res, next) => {
     try {
       const { supervisorId } = SupervisorIdParam.parse(req.params);
-      await serviceFor(req).editarSupervisor(supervisorId, req.body);
+      const service = await serviceConActor(req);
+      await service.editarSupervisor(supervisorId, req.body);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -739,7 +784,8 @@ export class GerenteController {
   trasladarOperario: RequestHandler = async (req, res, next) => {
     try {
       const { operarioId } = OperarioIdParam.parse(req.params);
-      const out = await serviceFor(req).trasladarOperario(
+      const service = await serviceConActor(req);
+      const out = await service.trasladarOperario(
         operarioId.toString(),
         req.body,
       );

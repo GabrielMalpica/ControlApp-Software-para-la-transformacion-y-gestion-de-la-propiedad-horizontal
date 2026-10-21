@@ -29,6 +29,7 @@ import NotificacionesRoutes from "./Notificaciones";
 import PlanEsperanzaRoutes from "./PlanEsperanza";
 import CommerceRoutes from "./Commerce";
 import EvidenciaRoutes from "./Evidencias";
+import IntegracionesIaRoutes from "./IntegracionesIa";
 
 const rutas = Router();
 
@@ -62,5 +63,6 @@ rutas.use('/notificaciones', NotificacionesRoutes);
 rutas.use('/plan-esperanza', PlanEsperanzaRoutes);
 rutas.use('/commerce', CommerceRoutes);
 rutas.use('/evidencias', EvidenciaRoutes);
+rutas.use('/integraciones-ia', IntegracionesIaRoutes);
 
 export default rutas;

@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import type { PrismaClient } from "@prisma/client";
 
 import { AsistenciaService } from "./AsistenciaService";
+import type { AlcanceConjuntos } from "../aplicacion/alcanceConjuntos";
 
 const DIA_SEMANA_LETRA = ["D", "L", "M", "M", "J", "V", "S"];
 
@@ -47,6 +48,8 @@ export class AsistenciaExcelService {
   async exportar(input: {
     empresaId: string;
     conjuntoId?: string | null;
+    /** Conjuntos visibles de quien exporta (null = toda la empresa). */
+    alcance?: AlcanceConjuntos;
     anio: number;
     mes: number;
   }): Promise<Buffer> {
@@ -56,6 +59,7 @@ export class AsistenciaExcelService {
       this.asistencia.listarTurnosExtra({
         empresaId: input.empresaId,
         conjuntoId: input.conjuntoId,
+        alcance: input.alcance,
         anio: input.anio,
         mes: input.mes,
       }),

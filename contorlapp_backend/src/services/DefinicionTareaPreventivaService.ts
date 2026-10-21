@@ -12,6 +12,7 @@ import {
   EstadoTarea,
   Frecuencia,
   DiaSemana,
+  DiaProgramado,
   Rol,
   TipoFuncion,
 } from "@prisma/client";
@@ -271,7 +272,7 @@ type ExcluidaSnapshot = {
   ocurrenciaPlanId?: string | null;
   descripcion: string;
   frecuencia?: Frecuencia | null;
-  diaSemanaProgramado?: DiaSemana | null;
+  diaSemanaProgramado?: DiaProgramado | null;
   prioridad: number;
   duracionMinutos: number;
   fechaObjetivo: Date;
@@ -1476,13 +1477,15 @@ export class DefinicionTareaPreventivaService {
 
   private validarProgramacionFrecuencia(params: {
     frecuencia: Frecuencia;
-    diaSemanaProgramado?: DiaSemana | null;
+    diaSemanaProgramado?: DiaProgramado | null;
+    diasSemanaProgramados?: DiaSemana[] | null;
     diaMesProgramado?: number | null;
     fechasProgramadasJson?: string[] | null;
   }) {
     const {
       frecuencia,
       diaSemanaProgramado,
+      diasSemanaProgramados,
       diaMesProgramado,
       fechasProgramadasJson,
     } = params;
@@ -1493,6 +1496,17 @@ export class DefinicionTareaPreventivaService {
 
     if (frecuencia === Frecuencia.QUINCENAL && !diaSemanaProgramado) {
       throw new Error("Las preventivas quincenales deben tener un día de la semana programado.");
+    }
+
+    if (
+      diaSemanaProgramado === DiaProgramado.FESTIVO &&
+      frecuencia !== Frecuencia.SEMANAL
+    ) {
+      throw new Error("FESTIVO solo se puede usar en preventivas semanales.");
+    }
+
+    if (frecuencia !== Frecuencia.DIARIA && diasSemanaProgramados?.length) {
+      throw new Error("Los días seleccionados solo aplican a preventivas diarias.");
     }
 
     if (frecuencia === Frecuencia.MENSUAL && !diaMesProgramado) {
@@ -2862,11 +2876,11 @@ export class DefinicionTareaPreventivaService {
   /**
    * Segunda pasada del scheduler: conserva el dia y los recursos de cada
    * tarea, y reempaca las horas del dia por orden de programacion:
-   * categoria (su ordenProgramacion) -> orden interno dentro de la categoria
-   * -> prioridad de seleccion -> definicion. Nunca cambia que tareas quedaron
-   * seleccionadas ni quien las ejecuta. Las tareas sin categoria activa van al
-   * final del dia. Los componentes sin operarios en comun pueden permanecer
-   * en paralelo.
+   * tareas propias de la plaza -> tareas rescatadas por capacidad -> categoria
+   * (su ordenProgramacion) -> orden interno -> prioridad de seleccion ->
+   * definicion. Nunca cambia que tareas quedaron seleccionadas ni quien las
+   * ejecuta. Los componentes sin operarios en comun pueden permanecer en
+   * paralelo.
    */
   private async reordenarBorradorGeneradoPorCategoria(params: {
     conjuntoId: string;
@@ -2960,6 +2974,7 @@ export class DefinicionTareaPreventivaService {
         categoriaId: vigente?.id ?? null,
         ordenEnCategoria: estricto ? tarea.ordenEnCategoria : null,
         prioridad: estricto ? Number(tarea.prioridad ?? 2) : 0,
+        reasignadaAutomaticamente: tarea.reasignadaAutomaticamente,
         definicionId: estricto ? tarea.definicionId : null,
         fechaInicioMs: +tarea.fechaInicio,
         id: tarea.id,
@@ -3232,6 +3247,7 @@ export class DefinicionTareaPreventivaService {
     const plazasDb = await this.prisma.conjuntoNecesidadOperario.findMany({
       where: { conjuntoId, activo: true },
       include: {
+        horarios: true,
         perfil: {
           select: { activo: true, categorias: { select: { categoriaId: true } } },
         },
@@ -3297,6 +3313,37 @@ export class DefinicionTareaPreventivaService {
 
     const inicioMes = new Date(periodoAnio, periodoMes - 1, 1);
     const finMes = new Date(periodoAnio, periodoMes, 0, 23, 59, 59, 999);
+    const horariosConjunto = await this.prisma.conjuntoHorario.findMany({
+      where: { conjuntoId },
+    });
+    const resolverVentanaPlaza = (plaza: any) => {
+      const horariosPorDia = new Map<DiaSemana, HorarioDia>();
+      const filasHorario = plaza.horarioEspecial
+        ? plaza.horarios ?? []
+        : horariosConjunto;
+      for (const h of filasHorario) {
+        horariosPorDia.set(h.dia, {
+          startMin: toMin(h.horaApertura),
+          endMin: toMin(h.horaCierre),
+          descansoStartMin: h.descansoInicio ? toMin(h.descansoInicio) : undefined,
+          descansoEndMin: h.descansoFin ? toMin(h.descansoFin) : undefined,
+        });
+      }
+      const festivoHorario =
+        plaza.trabajaFestivos && plaza.festivoHoraApertura && plaza.festivoHoraCierre
+          ? {
+              startMin: toMin(plaza.festivoHoraApertura),
+              endMin: toMin(plaza.festivoHoraCierre),
+              descansoStartMin: plaza.festivoDescansoInicio
+                ? toMin(plaza.festivoDescansoInicio)
+                : undefined,
+              descansoEndMin: plaza.festivoDescansoFin
+                ? toMin(plaza.festivoDescansoFin)
+                : undefined,
+            }
+          : null;
+      return { horariosPorDia, festivoHorario };
+    };
     const inicioDia = (fecha: Date) =>
       new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()).getTime();
 
@@ -3315,6 +3362,22 @@ export class DefinicionTareaPreventivaService {
           plazas,
         }).filter((p) => !operariosDuenos.includes(p.operarioId as string));
         if (!alternativas.length) {
+          const motivoTipo = "SIN_CANDIDATAS";
+          const motivoMensaje =
+            "No hay otra plaza ocupada cuyo perfil esté habilitado para esta categoría.";
+          await this.prisma.preventivaExcluidaBorrador.update({
+            where: { id: excluida.id },
+            data: { motivoTipo, motivoMensaje },
+          });
+          excluida.motivoTipo = motivoTipo;
+          excluida.motivoMensaje = motivoMensaje;
+          const novedad = params.novedades.find(
+            (n: any) => n.defId === def.id && n.fecha === dayKey(excluida.fechaObjetivo),
+          ) as any;
+          if (novedad) {
+            novedad.tipo = motivoTipo;
+            novedad.mensaje = motivoMensaje;
+          }
           resultado.sinRecursoCompatible++;
           continue;
         }
@@ -3339,9 +3402,14 @@ export class DefinicionTareaPreventivaService {
         };
         const opciones: Opcion[] = [];
         for (const plaza of alternativas) {
+          const plazaDestino = plazaPorId.get(plaza.id);
+          if (!plazaDestino) continue;
           const altIds = [plaza.operarioId as string];
-          const horarios = await this.horariosPorDiaParaOperarios(conjuntoId, altIds);
-          const festivoHorario = await this.festivoHorarioParaOperarios(conjuntoId, altIds);
+          // El rescate se calcula desde la plaza destino elegida, no desde el
+          // horario general del conjunto ni desde un operario de origen.
+          const { horariosPorDia: horarios, festivoHorario } = resolverVentanaPlaza(
+            plazaDestino,
+          );
           const diasDescanso = await this.diasDescansoParaOperarios(
             conjuntoId,
             altIds,
@@ -3390,6 +3458,22 @@ export class DefinicionTareaPreventivaService {
           });
         }
         if (!opciones.length) {
+          const motivoTipo = "SIN_HUECO";
+          const motivoMensaje =
+            "Hay una plaza compatible, pero no tiene un intervalo disponible dentro de su horario de trabajo.";
+          await this.prisma.preventivaExcluidaBorrador.update({
+            where: { id: excluida.id },
+            data: { motivoTipo, motivoMensaje },
+          });
+          excluida.motivoTipo = motivoTipo;
+          excluida.motivoMensaje = motivoMensaje;
+          const novedad = params.novedades.find(
+            (n: any) => n.defId === def.id && n.fecha === dayKey(excluida.fechaObjetivo),
+          ) as any;
+          if (novedad) {
+            novedad.tipo = motivoTipo;
+            novedad.mensaje = motivoMensaje;
+          }
           resultado.sinRecursoCompatible++;
           continue;
         }
@@ -4139,7 +4223,7 @@ export class DefinicionTareaPreventivaService {
     conjuntoId: string;
     necesidadesIds: number[];
     frecuencia: Frecuencia;
-    diaSemanaProgramado?: DiaSemana | null;
+    diaSemanaProgramado?: DiaProgramado | null;
     fechasProgramadasJson?: string[] | null;
   }): Promise<void> {
     const {
@@ -4151,12 +4235,37 @@ export class DefinicionTareaPreventivaService {
     } = params;
     if (!necesidadesIds.length) return;
 
+    if (frecuencia === Frecuencia.SEMANAL && diaSemanaProgramado === DiaProgramado.FESTIVO) {
+      const plazas = await this.prisma.conjuntoNecesidadOperario.findMany({
+        where: { id: { in: necesidadesIds }, conjuntoId },
+        select: {
+          etiqueta: true,
+          trabajaFestivos: true,
+          festivoHoraApertura: true,
+          festivoHoraCierre: true,
+        },
+      });
+      const noFestivas = plazas.filter(
+        (plaza) =>
+          !plaza.trabajaFestivos ||
+          !plaza.festivoHoraApertura ||
+          !plaza.festivoHoraCierre,
+      );
+      if (noFestivas.length) {
+        throw new Error(
+          `La programación FESTIVO requiere que todas las plazas trabajen festivos y tengan horario configurado: ${noFestivas.map((p) => p.etiqueta).join(", ")}.`,
+        );
+      }
+      return;
+    }
+
     const diasRequeridos = new Set<DiaSemana>();
     if (
       (frecuencia === Frecuencia.SEMANAL || frecuencia === Frecuencia.QUINCENAL) &&
-      diaSemanaProgramado
+      diaSemanaProgramado &&
+      diaSemanaProgramado !== DiaProgramado.FESTIVO
     ) {
-      diasRequeridos.add(diaSemanaProgramado);
+      diasRequeridos.add(diaSemanaProgramado as unknown as DiaSemana);
     }
     for (const fecha of fechasProgramadasJson ?? []) {
       diasRequeridos.add(diaSemanaFromDate(new Date(`${fecha}T00:00:00`)));
@@ -4297,6 +4406,9 @@ export class DefinicionTareaPreventivaService {
         dto.categoriaId != null ? (dto.ordenEnCategoria ?? null) : null,
 
       diaSemanaProgramado: dto.diaSemanaProgramado ?? null,
+      diasSemanaProgramados: dto.diasSemanaProgramados?.length
+        ? (dto.diasSemanaProgramados as unknown as Prisma.InputJsonValue)
+        : null,
       diaMesProgramado: dto.diaMesProgramado ?? null,
       fechasProgramadasJson: dto.fechasProgramadasJson
         ? (dto.fechasProgramadasJson as unknown as Prisma.InputJsonValue)
@@ -4430,6 +4542,7 @@ export class DefinicionTareaPreventivaService {
       select: {
         frecuencia: true,
         diaSemanaProgramado: true,
+        diasSemanaProgramados: true,
         diaMesProgramado: true,
         fechasProgramadasJson: true,
         categoriaId: true,
@@ -4450,10 +4563,15 @@ export class DefinicionTareaPreventivaService {
       dto.fechasProgramadasJson === undefined
         ? ((actual.fechasProgramadasJson as string[] | null | undefined) ?? null)
         : dto.fechasProgramadasJson;
+    const diasSemanaEfectivos: DiaSemana[] | null =
+      dto.diasSemanaProgramados === undefined
+        ? ((actual.diasSemanaProgramados as DiaSemana[] | null | undefined) ?? null)
+        : dto.diasSemanaProgramados;
 
     this.validarProgramacionFrecuencia({
       frecuencia: frecuenciaEfectiva,
       diaSemanaProgramado: diaSemanaEfectivo,
+      diasSemanaProgramados: diasSemanaEfectivos,
       diaMesProgramado:
         dto.diaMesProgramado === undefined ? actual.diaMesProgramado : dto.diaMesProgramado,
       fechasProgramadasJson: fechasEfectivas,
@@ -4478,10 +4596,28 @@ export class DefinicionTareaPreventivaService {
     const categoriaIdEfectiva: number | null =
       dto.categoriaId === undefined ? (actual.categoriaId ?? null) : dto.categoriaId;
     const categoriaCambio = dto.categoriaId !== undefined && dto.categoriaId !== actual.categoriaId;
+    const mismosIds = (actuales: string[], solicitados: Array<string | number>) => {
+      const actualesNormalizados = Array.from(new Set(actuales.map(String))).sort();
+      const solicitadosNormalizados = Array.from(new Set(solicitados.map(String))).sort();
+      return actualesNormalizados.length === solicitadosNormalizados.length &&
+        actualesNormalizados.every((id, index) => id === solicitadosNormalizados[index]);
+    };
+    const necesidadesCambian = dto.necesidadesIds !== undefined &&
+      !mismosIds(
+        actual.necesidades.map((n: { id: number }) => String(n.id)),
+        dto.necesidadesIds ?? [],
+      );
+    const operariosCambian = (dto as any).operariosIds !== undefined &&
+      !mismosIds(
+        actual.operarios.map((o: { id: string }) => o.id),
+        (dto as any).operariosIds ?? [],
+      );
     const responsablesCambian =
-      dto.necesidadesIds !== undefined ||
-      (dto as any).operariosIds !== undefined ||
-      (dto as any).responsableSugeridoId !== undefined;
+      necesidadesCambian ||
+      operariosCambian ||
+      ((dto as any).responsableSugeridoId !== undefined &&
+        String((dto as any).responsableSugeridoId ?? "") !==
+          String((actual.operarios[0]?.id ?? "")));
     if (categoriaIdEfectiva != null && (categoriaCambio || responsablesCambian)) {
       const operariosEfectivos: string[] =
         (dto as any).operariosIds !== undefined
@@ -4557,6 +4693,12 @@ export class DefinicionTareaPreventivaService {
             : new Prisma.Decimal(dto.rendimientoBase),
 
       diaSemanaProgramado: (dto as any).diaSemanaProgramado ?? undefined,
+      diasSemanaProgramados:
+        (dto as any).diasSemanaProgramados === undefined
+          ? undefined
+          : (dto as any).diasSemanaProgramados?.length
+            ? ((dto as any).diasSemanaProgramados as Prisma.InputJsonValue)
+            : null,
       diaMesProgramado: (dto as any).diaMesProgramado ?? undefined,
       fechasProgramadasJson:
         (dto as any).fechasProgramadasJson === undefined
@@ -5607,7 +5749,7 @@ export class DefinicionTareaPreventivaService {
         // de motivos de exclusión.
         const { operariosIds, necesidadesVacantes } = this.operariosIdsDeDefinicion(def);
         if (necesidadesVacantes) {
-          const diasEsperados = pickDaysByFrecuencia(fechasDelMes, def);
+          const diasEsperados = pickDaysByFrecuencia(fechasDelMes, def, festivosSet);
           const prioridadDef = Number((def as any).prioridad ?? 2);
           const durMinDef = estimarDuracionDefinicionMin(def, tamanoBloqueMinutos);
           const mensaje = `La(s) plaza(s) requeridas por '${def.descripcion}' no tienen operario asignado.`;
@@ -5648,7 +5790,7 @@ export class DefinicionTareaPreventivaService {
           operariosIds,
         );
 
-        const diasFrecuencia = pickDaysByFrecuencia(fechasDelMes, def);
+        const diasFrecuencia = pickDaysByFrecuencia(fechasDelMes, def, festivosSet);
         const puedeTrabajarFestivo = festivoHorarioDef != null;
         // Días de descanso compensatorio de estas plazas: bloquean igual que
         // un festivo no trabajable (ver diasDescansoParaOperarios).
@@ -10481,14 +10623,26 @@ export function estimarDuracionDefinicionMin(
   return minutosEstimados ?? tamanoBloqueMinutos;
 }
 
-export function pickDaysByFrecuencia(days: Date[], def: any): Date[] {
+export function pickDaysByFrecuencia(
+  days: Date[],
+  def: any,
+  festivosSet: ReadonlySet<string> = new Set<string>(),
+): Date[] {
   switch (def.frecuencia) {
-    case Frecuencia.DIARIA:
-      return days;
+    case Frecuencia.DIARIA: {
+      const diasSeleccionados = Array.isArray(def.diasSemanaProgramados)
+        ? new Set<DiaSemana>(def.diasSemanaProgramados)
+        : null;
+      if (!diasSeleccionados?.size) return days;
+      return days.filter((dia) => diasSeleccionados.has(dateToDiaSemana(dia)));
+    }
 
     case Frecuencia.SEMANAL: {
       const dia = def.diaSemanaProgramado ?? DiaSemana.LUNES;
-      const target = diaSemanaToJsDay(dia);
+      if (dia === DiaProgramado.FESTIVO) {
+        return days.filter((d) => festivosSet.has(dayKey(d)));
+      }
+      const target = diaSemanaToJsDay(dia as unknown as DiaSemana);
       return days.filter((d) => d.getDay() === target);
     }
 
@@ -10496,7 +10650,7 @@ export function pickDaysByFrecuencia(days: Date[], def: any): Date[] {
       // Igual que SEMANAL pero cada dos semanas: se conservan la 1a y la 3a
       // ocurrencia del dia elegido dentro del mes (14 dias exactos de separacion).
       if (def.diaSemanaProgramado) {
-        const target = diaSemanaToJsDay(def.diaSemanaProgramado);
+        const target = diaSemanaToJsDay(def.diaSemanaProgramado as unknown as DiaSemana);
         const ocurrencias = days.filter((d) => d.getDay() === target);
         return ocurrencias.filter((_, index) => index % 2 === 0 && index < 4);
       }

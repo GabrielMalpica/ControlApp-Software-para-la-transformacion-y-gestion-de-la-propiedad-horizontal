@@ -1,5 +1,4 @@
 import express from "express";
-import jwt from "jsonwebtoken";
 import request from "supertest";
 import * as XLSX from "xlsx";
 
@@ -13,8 +12,19 @@ jest.mock("../../src/services/GerenteServices", () => ({
   })),
 }));
 jest.mock("../../src/db/prisma", () => ({ prisma: {} }));
+// La sesion se valida contra la BD en cada peticion; aqui la BD es un stub.
+jest.mock("../../src/services/SesionService", () => ({
+  ...jest.requireActual("../../src/services/SesionService"),
+  estadoSesionUsuario: jest.fn().mockResolvedValue({
+    activo: true,
+    rol: "gerente",
+    versionSesion: 0,
+    requiereCambioContrasena: false,
+  }),
+}));
 
 import gerenteRouter from "../../src/routes/Gerente";
+import { firmarTokenSesion } from "../../src/utils/jwtSesion";
 
 function sampleBuffer(): Buffer {
   const workbook = XLSX.utils.book_new();
@@ -55,10 +65,16 @@ describe("Endpoints de carga masiva de conjunto", () => {
 
   beforeAll(() => {
     process.env.JWT_SECRET = secret;
-    token = jwt.sign(
-      { sub: "gerente-1", rol: "gerente", correo: "gerente@test.com" },
-      secret,
-    );
+    token = firmarTokenSesion(
+      {
+        usuarioId: "gerente-1",
+        rol: "gerente",
+        correo: "gerente@test.com",
+        empresaId: "900-EMP",
+        versionSesion: 0,
+      },
+      3_600,
+    ).token;
   });
 
   test("POST recibe buffer multipart y devuelve resumen con errores", async () => {

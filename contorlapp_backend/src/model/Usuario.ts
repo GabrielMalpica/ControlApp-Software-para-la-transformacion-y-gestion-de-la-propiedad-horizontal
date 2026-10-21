@@ -156,6 +156,22 @@ export const EditarUsuarioDTO = z.object({
     .optional(),
 });
 
+const noSeEditaAqui = (message: string) =>
+  z.custom<never>(() => false, { error: message }).optional();
+
+/**
+ * Las ediciones rapidas (PATCH /gerente/administradores|operarios|supervisores/:id)
+ * rechazan estos campos en vez de ignorarlos. Rol, estado y contrasena solo se
+ * cambian con `PATCH /gerente/usuarios/:id`, que aplica la jerarquia, sincroniza el
+ * perfil e invalida la sesion; la empresa nunca viene del cliente.
+ */
+export const camposFueraDeEdicionRapida = {
+  rol: noSeEditaAqui("El rol se cambia desde la edición completa del usuario."),
+  activo: noSeEditaAqui("Activar o desactivar se hace desde la edición completa del usuario."),
+  contrasena: noSeEditaAqui("La contraseña se cambia desde la edición completa del usuario."),
+  empresaId: noSeEditaAqui("La empresa no se puede cambiar: siempre es la de tu sesión."),
+};
+
 /** ---------- SELECT reutilizable para Prisma (oculta contrasena) ---------- */
 export const usuarioPublicSelect = {
   id: true,

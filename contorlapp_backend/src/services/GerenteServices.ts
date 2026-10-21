@@ -25,13 +25,25 @@ import {
   AccionAuditoria,
   EntidadAuditoria,
   ModuloAuditoria,
+  type ActorAuditoria,
+  type RegistroAuditoria,
 } from "../model/Auditoria";
 import { AuditoriaService } from "./AuditoriaService";
+import { describirActor } from "../utils/auditoria";
+import {
+  etiquetaRol,
+  motivoRechazoGestionUsuario,
+  normalizarRol,
+} from "../utils/jerarquiaRoles";
 
 import { CrearGerenteDTO } from "../model/Gerente";
-import { CrearAdministradorDTO } from "../model/Administrador";
+import {
+  CrearAdministradorDTO,
+  EditarAdministradorDTO,
+  ReemplazarAdministradoresDTO,
+} from "../model/Administrador";
 import { CrearJefeOperacionesDTO } from "../model/JefeOperaciones";
-import { CrearSupervisorDTO } from "../model/Supervisor";
+import { CrearSupervisorDTO, EditarSupervisorDTO } from "../model/Supervisor";
 import {
   CrearOperarioDTO,
   EditarOperarioDTO,
@@ -56,6 +68,12 @@ import {
   reservarRecursosDeTareaManual,
   reubicarReservasDeTarea,
 } from "./ReservaRecursoService";
+import {
+  alcanceMutacionTareasDeServicio,
+  exigirConjuntoDestinoEnAlcance,
+  recursoFueraDeEmpresa,
+  validarRelacionesDeTarea,
+} from "./TareaServices";
 
 import { CrearTareaDTO, EditarTareaDTO } from "../model/Tarea";
 import {
@@ -101,6 +119,8 @@ import {
   operariosPuedenTrabajarFestivo,
 } from "../utils/operarioAvailability";
 import { PermissionService } from "./PermissionService";
+import { invalidarEstadoSesion } from "./SesionService";
+import { invalidarEstadoMcp } from "../mcp/estado";
 import { resolverCoordenadasDesdeMaps } from "../utils/ubicacionMaps";
 import {
   normalizeCell,
@@ -219,6 +239,66 @@ function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
+/** Campos del usuario que se guardan en auditoria. Nunca la contrasena ni su hash. */
+const usuarioAuditoriaSelect = {
+  id: true,
+  nombre: true,
+  correo: true,
+  rol: true,
+  activo: true,
+  telefono: true,
+  fechaNacimiento: true,
+  direccion: true,
+  estadoCivil: true,
+  numeroHijos: true,
+  padresVivos: true,
+  tipoSangre: true,
+  eps: true,
+  fondoPensiones: true,
+  tallaCamisa: true,
+  tallaPantalon: true,
+  tallaCalzado: true,
+  tipoContrato: true,
+  jornadaLaboral: true,
+  patronJornada: true,
+} as const;
+
+type UsuarioAuditable = Record<string, unknown> & {
+  id: string;
+  nombre?: string | null;
+  rol: string;
+  activo?: boolean | null;
+};
+
+/** Copia JSON-segura (BigInt y fechas a texto) de los campos auditables de un usuario. */
+function snapshotUsuario(row: Record<string, unknown>): Record<string, unknown> {
+  const salida: Record<string, unknown> = {};
+  for (const campo of Object.keys(usuarioAuditoriaSelect)) {
+    if (!(campo in row)) continue;
+    const valor = row[campo];
+    salida[campo] =
+      typeof valor === "bigint"
+        ? valor.toString()
+        : valor instanceof Date
+          ? valor.toISOString()
+          : (valor ?? null);
+  }
+  return salida;
+}
+
+function describirUsuario(usuario: { id: string; nombre?: string | null }): string {
+  const nombre = String(usuario.nombre ?? "").trim();
+  return nombre ? `${nombre} (${usuario.id})` : usuario.id;
+}
+
+function errorProhibido(message: string): Error {
+  return Object.assign(new Error(message), { status: 403 });
+}
+
+function errorConEstado(status: number, message: string): Error {
+  return Object.assign(new Error(message), { status });
+}
+
 function normalizarPatronJornada(
   jornadaLaboral: JornadaLaboral | null | undefined,
   patronJornada: PatronJornada | null | undefined,
@@ -258,8 +338,213 @@ export class GerenteService {
   constructor(
     private prisma: PrismaClient,
     private readonly empresaIdAutenticada?: string,
+    /** Quien hace la peticion. Obligatorio para gestionar usuarios; el resto no lo usa. */
+    private readonly actor?: ActorAuditoria,
   ) {
     this.permissionService = new PermissionService(prisma);
+  }
+
+  /**
+   * Regla de jerarquia para gestionar usuarios. Vive en el servicio y no solo en
+   * la ruta porque `usuarios.gestionar` se puede delegar desde la matriz de
+   * permisos. El rol del actor se lee de la base y no del token, por si cambio
+   * despues de iniciar sesion. Un rechazo queda en auditoria (best-effort).
+   */
+  private async asegurarJerarquia(params: {
+    operacion: string;
+    usuarioId: string;
+    /** true al crear: el usuario aun no existe y no puede ser el propio actor. */
+    nuevo?: boolean;
+    rolActual?: string | null;
+    rolNuevo?: string | null;
+    cambiaActivo?: boolean;
+    elimina?: boolean;
+  }): Promise<void> {
+    const actorId = String(this.actor?.id ?? "").trim();
+    let motivo: string | null;
+
+    if (!actorId) {
+      motivo = "No se pudo identificar quién hace el cambio. Vuelve a iniciar sesión.";
+    } else {
+      const actor = await this.prisma.usuario.findUnique({
+        where: { id: actorId },
+        select: { rol: true, activo: true },
+      });
+      motivo =
+        !actor || actor.activo === false
+          ? "Tu usuario no está activo para gestionar usuarios."
+          : motivoRechazoGestionUsuario({
+              actor: { id: actorId, rol: actor.rol },
+              objetivoId: params.nuevo ? null : params.usuarioId,
+              rolActual: params.rolActual,
+              rolNuevo: params.rolNuevo,
+              cambiaActivo: params.cambiaActivo,
+              elimina: params.elimina,
+            });
+    }
+
+    if (!motivo) return;
+
+    await new AuditoriaService(this.prisma).registrar({
+      modulo: ModuloAuditoria.SEGURIDAD,
+      entidad: EntidadAuditoria.USUARIO,
+      entidadId: params.usuarioId,
+      accion: AccionAuditoria.GESTION_DENEGADA,
+      empresaId: this.empresaIdAutenticada ?? null,
+      actor: this.actor ?? null,
+      descripcion: `${describirActor(this.actor)} intentó ${params.operacion} ${params.usuarioId} y se rechazó: ${motivo}`,
+      metadataJson: {
+        operacion: params.operacion,
+        rolActual: params.rolActual ?? null,
+        rolNuevo: params.rolNuevo ?? null,
+        cambiaActivo: params.cambiaActivo ?? false,
+        elimina: params.elimina ?? false,
+        motivo,
+      },
+    });
+    throw errorProhibido(motivo);
+  }
+
+  /**
+   * Evento de gestion de usuarios dentro de la transaccion de la operacion: si
+   * la auditoria no se puede escribir, el cambio tampoco se aplica.
+   */
+  private async auditarUsuarios(
+    tx: Prisma.TransactionClient,
+    evento: Omit<RegistroAuditoria, "actor" | "empresaId">,
+  ): Promise<void> {
+    await new AuditoriaService(tx).registrarEstricto({
+      empresaId: this.empresaIdAutenticada ?? null,
+      actor: this.actor ?? null,
+      ...evento,
+    });
+  }
+
+  /**
+   * Una edicion puede dejar hasta tres eventos: datos (EDITAR), rol
+   * (CAMBIAR_ROL, en SEGURIDAD) y estado (ACTIVAR/DESACTIVAR). Solo se guardan
+   * los campos que cambiaron.
+   */
+  private async auditarEdicionUsuario(
+    tx: Prisma.TransactionClient,
+    antesRow: UsuarioAuditable,
+    despuesRow: UsuarioAuditable | null,
+    extra: Record<string, unknown> = {},
+    /** Campos del perfil (p. ej. funciones del operario) que no estan en Usuario. */
+    cambiosPerfil: Record<string, { antes: unknown; despues: unknown }> = {},
+  ): Promise<void> {
+    if (!despuesRow) return;
+    const antes = snapshotUsuario(antesRow);
+    const despues = snapshotUsuario(despuesRow);
+    const quien = describirActor(this.actor);
+    const objetivo = describirUsuario(despuesRow);
+
+    const camposEditados = Object.keys(despues).filter(
+      (campo) => campo !== "rol" && campo !== "activo" && antes[campo] !== despues[campo],
+    );
+    const camposPerfil = Object.keys(cambiosPerfil);
+    const extraConDatos = Object.fromEntries(
+      Object.entries(extra).filter(([, valor]) => valor !== undefined && valor !== false),
+    );
+
+    if (camposEditados.length || camposPerfil.length || Object.keys(extraConDatos).length) {
+      await this.auditarUsuarios(tx, {
+        modulo: ModuloAuditoria.PERSONAL,
+        entidad: EntidadAuditoria.USUARIO,
+        entidadId: despuesRow.id,
+        accion: AccionAuditoria.EDITAR,
+        descripcion: `${quien} editó al usuario ${objetivo}.`,
+        datosAntes: {
+          ...Object.fromEntries(camposEditados.map((c) => [c, antes[c]])),
+          ...Object.fromEntries(camposPerfil.map((c) => [c, cambiosPerfil[c].antes])),
+        },
+        datosDespues: {
+          ...Object.fromEntries(camposEditados.map((c) => [c, despues[c]])),
+          ...Object.fromEntries(camposPerfil.map((c) => [c, cambiosPerfil[c].despues])),
+        },
+        metadataJson: { campos: [...camposEditados, ...camposPerfil], ...extraConDatos },
+      });
+    }
+
+    if (antes.rol !== despues.rol) {
+      await this.auditarUsuarios(tx, {
+        modulo: ModuloAuditoria.SEGURIDAD,
+        entidad: EntidadAuditoria.USUARIO,
+        entidadId: despuesRow.id,
+        accion: AccionAuditoria.CAMBIAR_ROL,
+        descripcion: `${quien} cambió el rol de ${objetivo} de ${etiquetaRol(String(antes.rol))} a ${etiquetaRol(String(despues.rol))}.`,
+        datosAntes: { rol: antes.rol },
+        datosDespues: { rol: despues.rol },
+      });
+    }
+
+    if (antes.activo !== despues.activo) {
+      await this.auditarUsuarios(tx, {
+        modulo: ModuloAuditoria.PERSONAL,
+        entidad: EntidadAuditoria.USUARIO,
+        entidadId: despuesRow.id,
+        accion: despues.activo ? AccionAuditoria.ACTIVAR : AccionAuditoria.DESACTIVAR,
+        descripcion: `${quien} ${despues.activo ? "activó" : "desactivó"} al usuario ${objetivo}.`,
+        datosAntes: { activo: antes.activo },
+        datosDespues: { activo: despues.activo },
+      });
+    }
+  }
+
+  private async auditarAsignacionPerfil(
+    tx: Prisma.TransactionClient,
+    usuario: { id: string; nombre?: string | null; rol: string },
+    perfil: Rol,
+    metadata: Record<string, unknown> = {},
+  ): Promise<void> {
+    await this.auditarUsuarios(tx, {
+      modulo: ModuloAuditoria.PERSONAL,
+      entidad: EntidadAuditoria.USUARIO,
+      entidadId: usuario.id,
+      accion: AccionAuditoria.ASIGNAR_PERFIL,
+      descripcion: `${describirActor(this.actor)} asignó el perfil de ${etiquetaRol(perfil)} a ${describirUsuario(usuario)}.`,
+      datosDespues: { perfil },
+      metadataJson: Object.keys(metadata).length ? metadata : undefined,
+    });
+  }
+
+  /**
+   * Valida la jerarquia antes de eliminar y devuelve los datos del usuario para
+   * auditar dentro de la transaccion de borrado. Si el usuario no existe se deja
+   * que la eliminacion falle como antes.
+   */
+  private async prepararEliminacionUsuario(
+    usuarioId: string,
+    rolEsperado: Rol,
+  ): Promise<UsuarioAuditable | null> {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id: usuarioId },
+      select: usuarioAuditoriaSelect,
+    });
+    await this.asegurarJerarquia({
+      operacion: "eliminar al usuario",
+      usuarioId,
+      rolActual: usuario?.rol ?? rolEsperado,
+      elimina: true,
+    });
+    return usuario;
+  }
+
+  private async auditarEliminacionUsuario(
+    tx: Prisma.TransactionClient,
+    usuario: UsuarioAuditable | null,
+    metadata: Record<string, unknown> = {},
+  ): Promise<void> {
+    if (!usuario) return;
+    await this.auditarUsuarios(tx, {
+      modulo: ModuloAuditoria.PERSONAL,
+      entidad: EntidadAuditoria.USUARIO,
+      entidadId: usuario.id,
+      accion: AccionAuditoria.ELIMINAR,
+      descripcion: `${describirActor(this.actor)} eliminó al usuario ${describirUsuario(usuario)} (${etiquetaRol(usuario.rol)}).`,
+      datosAntes: snapshotUsuario(usuario),
+      metadataJson: Object.keys(metadata).length ? metadata : undefined,
+    });
   }
 
   private async obtenerEmpresaIdParaCambioRol(
@@ -847,6 +1132,12 @@ export class GerenteService {
 
   async crearUsuario(payload: unknown) {
     const dto = CrearUsuarioDTO.parse(payload);
+    await this.asegurarJerarquia({
+      operacion: "crear el usuario",
+      usuarioId: dto.id,
+      nuevo: true,
+      rolNuevo: dto.rol,
+    });
 
     const [existeId, existeCorreo] = await Promise.all([
       this.prisma.usuario.findUnique({ where: { id: dto.id } }),
@@ -862,31 +1153,44 @@ export class GerenteService {
 
     const hash = await bcrypt.hash(dto.contrasena, 10);
 
-    const creado = await this.prisma.usuario.create({
-      data: {
-        id: dto.id,
-        nombre: dto.nombre,
-        correo: dto.correo,
-        contrasena: hash,
-        rol: dto.rol,
-        telefono: dto.telefono,
-        fechaNacimiento: dto.fechaNacimiento,
-        direccion: dto.direccion,
-        estadoCivil: dto.estadoCivil,
-        numeroHijos: dto.numeroHijos,
-        padresVivos: dto.padresVivos,
-        tipoSangre: dto.tipoSangre,
-        eps: dto.eps,
-        fondoPensiones: dto.fondoPensiones,
-        tallaCamisa: dto.tallaCamisa,
-        tallaPantalon: dto.tallaPantalon,
-        tallaCalzado: dto.tallaCalzado,
-        tipoContrato: dto.tipoContrato,
-        jornadaLaboral: dto.jornadaLaboral,
-        activo: dto.activo ?? true,
-        patronJornada: normalizarPatronJornada(dto.jornadaLaboral, dto.patronJornada),
-      },
-      select: usuarioPublicSelect,
+    const creado = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.usuario.create({
+        data: {
+          id: dto.id,
+          nombre: dto.nombre,
+          correo: dto.correo,
+          contrasena: hash,
+          rol: dto.rol,
+          telefono: dto.telefono,
+          fechaNacimiento: dto.fechaNacimiento,
+          direccion: dto.direccion,
+          estadoCivil: dto.estadoCivil,
+          numeroHijos: dto.numeroHijos,
+          padresVivos: dto.padresVivos,
+          tipoSangre: dto.tipoSangre,
+          eps: dto.eps,
+          fondoPensiones: dto.fondoPensiones,
+          tallaCamisa: dto.tallaCamisa,
+          tallaPantalon: dto.tallaPantalon,
+          tallaCalzado: dto.tallaCalzado,
+          tipoContrato: dto.tipoContrato,
+          jornadaLaboral: dto.jornadaLaboral,
+          activo: dto.activo ?? true,
+          patronJornada: normalizarPatronJornada(dto.jornadaLaboral, dto.patronJornada),
+        },
+        select: usuarioPublicSelect,
+      });
+
+      await this.auditarUsuarios(tx, {
+        modulo: ModuloAuditoria.PERSONAL,
+        entidad: EntidadAuditoria.USUARIO,
+        entidadId: dto.id,
+        accion: AccionAuditoria.CREAR,
+        descripcion: `${describirActor(this.actor)} creó al usuario ${describirUsuario(dto)} con rol ${etiquetaRol(dto.rol)}.`,
+        datosDespues: snapshotUsuario(row),
+      });
+
+      return row;
     });
 
     return toUsuarioPublico(creado);
@@ -898,17 +1202,9 @@ export class GerenteService {
       this.validarDisponibilidadOperarioPeriodos(dto.disponibilidadPeriodos);
     }
 
-    if (dto.correo) {
-      const otro = await this.prisma.usuario.findUnique({
-        where: { correo: dto.correo },
-      });
-      if (otro && (otro as any).id !== id)
-        throw new Error("EMAIL_YA_REGISTRADO");
-    }
-
     const actual = await this.prisma.usuario.findUnique({
       where: { id },
-      select: { id: true, rol: true },
+      select: usuarioAuditoriaSelect,
     });
     if (!actual) {
       throw new Error("Usuario no encontrado");
@@ -916,6 +1212,21 @@ export class GerenteService {
 
     const currentRole = String(actual.rol).trim().toLowerCase() as Rol;
     const nextRole = dto.rol ?? currentRole;
+    await this.asegurarJerarquia({
+      operacion: "editar el usuario",
+      usuarioId: id,
+      rolActual: currentRole,
+      rolNuevo: nextRole,
+      cambiaActivo: dto.activo !== undefined && dto.activo !== actual.activo,
+    });
+
+    if (dto.correo) {
+      const otro = await this.prisma.usuario.findUnique({
+        where: { correo: dto.correo },
+      });
+      if (otro && (otro as any).id !== id)
+        throw new Error("EMAIL_YA_REGISTRADO");
+    }
     if (dto.conjuntoId && nextRole !== Rol.administrador) {
       throw new Error("Solo se puede asignar un conjunto a un administrador.");
     }
@@ -948,10 +1259,15 @@ export class GerenteService {
 
     await this.prisma.$transaction(async (tx) => {
       await this.sincronizarPerfilRol(tx, id, currentRole, nextRole);
-      await tx.usuario.update({
+      const despues = await tx.usuario.update({
         where: { id },
         data,
-        select: usuarioPublicSelect,
+        select: usuarioAuditoriaSelect,
+      });
+      await this.auditarEdicionUsuario(tx, actual, despues, {
+        contrasenaCambiada: Boolean(dto.contrasena),
+        conjuntoAsignado: dto.conjuntoId,
+        periodosDisponibilidad: dto.disponibilidadPeriodos?.length,
       });
 
       if (dto.conjuntoId && empresaIdConjunto) {
@@ -999,6 +1315,10 @@ export class GerenteService {
       }
     });
 
+    // Rol, activo o contrasena pudieron cambiar: la sesion abierta del usuario
+    // lo nota en la proxima peticion, sin esperar a que venza el cache.
+    await invalidarEstadoSesion(id);
+    await invalidarEstadoMcp({ usuarioId: id });
     return this.prisma.usuario.findUnique({ where: { id }, select: usuarioPublicSelect });
   }
 
@@ -1013,12 +1333,22 @@ export class GerenteService {
     ]);
     if (!empresa) throw new Error("Ã¢ÂÅ’ Empresa no encontrada con ese NIT.");
     if (!usuario) throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
+    await this.asegurarJerarquia({
+      operacion: "asignar el perfil de gerente al usuario",
+      usuarioId: dto.Id,
+      rolActual: usuario.rol,
+      rolNuevo: Rol.gerente,
+    });
     if (usuario.rol !== Rol.gerente)
       throw new Error("El usuario no tiene rol 'gerente'.");
 
-    return this.prisma.gerente.create({
-      data: { id: dto.Id, empresaId },
-      include: { usuario: true, empresa: true },
+    return this.prisma.$transaction(async (tx) => {
+      const perfil = await tx.gerente.create({
+        data: { id: dto.Id, empresaId },
+        include: { usuario: { select: usuarioPublicSelect }, empresa: true },
+      });
+      await this.auditarAsignacionPerfil(tx, usuario, Rol.gerente);
+      return perfil;
     });
   }
 
@@ -1028,6 +1358,12 @@ export class GerenteService {
       where: { id: dto.Id },
     });
     if (!usuario) throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
+    await this.asegurarJerarquia({
+      operacion: "asignar el perfil de administrador al usuario",
+      usuarioId: dto.Id,
+      rolActual: usuario.rol,
+      rolNuevo: Rol.administrador,
+    });
     if (usuario.rol !== Rol.administrador)
       throw new Error("El usuario no tiene rol 'administrador'.");
 
@@ -1042,13 +1378,17 @@ export class GerenteService {
         throw new Error("El conjunto ya tiene un administrador asignado.");
       }
 
-      return tx.administrador.create({
+      const perfil = await tx.administrador.create({
         data: {
           id: dto.Id,
           conjuntos: { connect: { nit: conjunto.nit } },
         },
-        include: { usuario: true, conjuntos: true },
+        include: { usuario: { select: usuarioPublicSelect }, conjuntos: true },
       });
+      await this.auditarAsignacionPerfil(tx, usuario, Rol.administrador, {
+        conjuntoId: conjunto.nit,
+      });
+      return perfil;
     }, { isolationLevel: "Serializable" });
   }
 
@@ -1063,15 +1403,25 @@ export class GerenteService {
 
     if (!empresa) throw new Error("Ã¢ÂÅ’ No hay empresa registrada.");
     if (!usuario) throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
+    await this.asegurarJerarquia({
+      operacion: "asignar el perfil de jefe de operaciones al usuario",
+      usuarioId: dto.Id,
+      rolActual: usuario.rol,
+      rolNuevo: Rol.jefe_operaciones,
+    });
     if (usuario.rol !== Rol.jefe_operaciones)
       throw new Error("El usuario no tiene rol 'jefe_operaciones'.");
 
-    return this.prisma.jefeOperaciones.create({
-      data: {
-        id: dto.Id, // FK al Usuario
-        empresaId: empresa.nit, // Ã°Å¸â€˜Ë† usamos el NIT de la empresa
-      },
-      include: { usuario: true, empresa: true },
+    return this.prisma.$transaction(async (tx) => {
+      const perfil = await tx.jefeOperaciones.create({
+        data: {
+          id: dto.Id, // FK al Usuario
+          empresaId: empresa.nit, // Ã°Å¸â€˜Ë† usamos el NIT de la empresa
+        },
+        include: { usuario: { select: usuarioPublicSelect }, empresa: true },
+      });
+      await this.auditarAsignacionPerfil(tx, usuario, Rol.jefe_operaciones);
+      return perfil;
     });
   }
 
@@ -1086,15 +1436,25 @@ export class GerenteService {
 
     if (!empresa) throw new Error("Ã¢ÂÅ’ No hay empresa registrada.");
     if (!usuario) throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
+    await this.asegurarJerarquia({
+      operacion: "asignar el perfil de supervisor al usuario",
+      usuarioId: dto.Id,
+      rolActual: usuario.rol,
+      rolNuevo: Rol.supervisor,
+    });
     if (usuario.rol !== Rol.supervisor)
       throw new Error("El usuario no tiene rol 'supervisor'.");
 
-    return this.prisma.supervisor.create({
-      data: {
-        id: dto.Id,
-        empresaId: empresa.nit,
-      },
-      include: { usuario: true, empresa: true },
+    return this.prisma.$transaction(async (tx) => {
+      const perfil = await tx.supervisor.create({
+        data: {
+          id: dto.Id,
+          empresaId: empresa.nit,
+        },
+        include: { usuario: { select: usuarioPublicSelect }, empresa: true },
+      });
+      await this.auditarAsignacionPerfil(tx, usuario, Rol.supervisor);
+      return perfil;
     });
   }
 
@@ -1110,41 +1470,53 @@ export class GerenteService {
 
     if (!empresa) throw new Error("Ã¢ÂÅ’ No hay empresa registrada.");
     if (!usuario) throw new Error("Ã¢ÂÅ’ Usuario no encontrado.");
+    await this.asegurarJerarquia({
+      operacion: "asignar el perfil de operario al usuario",
+      usuarioId: dto.Id,
+      rolActual: usuario.rol,
+      rolNuevo: Rol.operario,
+    });
     if (usuario.rol !== Rol.operario)
       throw new Error("El usuario no tiene rol 'operario'.");
 
-    return this.prisma.operario.create({
-      data: {
-        id: dto.Id,
-        empresaId: empresa.nit,
-        funciones: dto.funciones as TipoFuncion[],
+    return this.prisma.$transaction(async (tx) => {
+      const perfil = await tx.operario.create({
+        data: {
+          id: dto.Id,
+          empresaId: empresa.nit,
+          funciones: dto.funciones as TipoFuncion[],
 
-        cursoSalvamentoAcuatico: dto.cursoSalvamentoAcuatico,
-        urlEvidenciaSalvamento: dto.urlEvidenciaSalvamento ?? null,
+          cursoSalvamentoAcuatico: dto.cursoSalvamentoAcuatico,
+          urlEvidenciaSalvamento: dto.urlEvidenciaSalvamento ?? null,
 
-        cursoAlturas: dto.cursoAlturas,
-        urlEvidenciaAlturas: dto.urlEvidenciaAlturas ?? null,
+          cursoAlturas: dto.cursoAlturas,
+          urlEvidenciaAlturas: dto.urlEvidenciaAlturas ?? null,
 
-        examenIngreso: dto.examenIngreso,
-        urlEvidenciaExamenIngreso: dto.urlEvidenciaExamenIngreso ?? null,
+          examenIngreso: dto.examenIngreso,
+          urlEvidenciaExamenIngreso: dto.urlEvidenciaExamenIngreso ?? null,
 
-        fechaIngreso: dto.fechaIngreso,
-        fechaSalida: dto.fechaSalida ?? null,
-        fechaUltimasVacaciones: dto.fechaUltimasVacaciones ?? null,
-        observaciones: dto.observaciones ?? null,
-        disponibilidadPeriodos: dto.disponibilidadPeriodos.length
-          ? {
-              create: dto.disponibilidadPeriodos.map((item) => ({
-                fechaInicio: item.fechaInicio,
-                fechaFin: item.fechaFin ?? null,
-                trabajaDomingo: item.trabajaDomingo,
-                diaDescanso: item.diaDescanso ?? null,
-                observaciones: item.observaciones ?? null,
-              })),
-            }
-          : undefined,
-      },
-      select: operarioPublicSelect,
+          fechaIngreso: dto.fechaIngreso,
+          fechaSalida: dto.fechaSalida ?? null,
+          fechaUltimasVacaciones: dto.fechaUltimasVacaciones ?? null,
+          observaciones: dto.observaciones ?? null,
+          disponibilidadPeriodos: dto.disponibilidadPeriodos.length
+            ? {
+                create: dto.disponibilidadPeriodos.map((item) => ({
+                  fechaInicio: item.fechaInicio,
+                  fechaFin: item.fechaFin ?? null,
+                  trabajaDomingo: item.trabajaDomingo,
+                  diaDescanso: item.diaDescanso ?? null,
+                  observaciones: item.observaciones ?? null,
+                })),
+              }
+            : undefined,
+        },
+        select: operarioPublicSelect,
+      });
+      await this.auditarAsignacionPerfil(tx, usuario, Rol.operario, {
+        funciones: dto.funciones,
+      });
+      return perfil;
     });
   }
 
@@ -1762,16 +2134,6 @@ export class GerenteService {
           };
     }
 
-    if (dto.empresaId !== undefined) {
-      data.empresa = dto.empresaId
-        ? {
-            connect: { nit: dto.empresaId },
-          }
-        : {
-            disconnect: true,
-          };
-    }
-
     if (dto.fechaInicioContrato !== undefined) {
       data.fechaInicioContrato = dto.fechaInicioContrato;
     }
@@ -2213,6 +2575,11 @@ export class GerenteService {
     ]);
     if (!operario) throw new Error("Operario no encontrado.");
     if (!conjuntoDestino) throw new Error("Conjunto destino no encontrado.");
+    await this.asegurarJerarquia({
+      operacion: "trasladar al operario",
+      usuarioId: operarioId,
+      rolActual: Rol.operario,
+    });
 
     const yaEstaSoloAhi =
       operario.conjuntos.length === 1 &&
@@ -2243,7 +2610,7 @@ export class GerenteService {
       // ya está cerrado por la validación de arriba; esto alcanza al borrador).
       const plazasOcupadas = await tx.conjuntoNecesidadOperario.findMany({
         where: { operarioId, activo: true },
-        select: { id: true, conjuntoId: true },
+        select: { id: true, conjuntoId: true, etiqueta: true },
       });
       await tx.conjuntoNecesidadOperario.updateMany({
         where: { operarioId, activo: true },
@@ -2260,6 +2627,25 @@ export class GerenteService {
       await tx.operario.update({
         where: { id: operarioId },
         data: { conjuntos: { set: [{ nit: dto.conjuntoId }] } },
+      });
+
+      const conjuntosAntes = operario.conjuntos.map((c) => c.nit);
+      await this.auditarUsuarios(tx, {
+        modulo: ModuloAuditoria.PERSONAL,
+        entidad: EntidadAuditoria.OPERARIO,
+        entidadId: operarioId,
+        accion: AccionAuditoria.TRASLADAR,
+        conjuntoId: dto.conjuntoId,
+        descripcion: `${describirActor(this.actor)} trasladó al operario ${operarioId} de ${conjuntosAntes.join(", ") || "ningún conjunto"} a ${dto.conjuntoId}${plazasOcupadas.length ? `; quedaron vacantes ${plazasOcupadas.length} plaza(s)` : ""}.`,
+        datosAntes: { conjuntos: conjuntosAntes },
+        datosDespues: { conjuntos: [dto.conjuntoId] },
+        metadataJson: {
+          plazasLiberadas: plazasOcupadas.map((p) => ({
+            id: p.id,
+            conjuntoId: p.conjuntoId,
+            etiqueta: p.etiqueta,
+          })),
+        },
       });
     });
 
@@ -3019,6 +3405,38 @@ export class GerenteService {
     return out;
   }
 
+  /**
+   * Una tarea nueva solo se crea dentro del alcance de quien la pide: el
+   * conjunto en su empresa y, si es administrador, uno de los suyos; la
+   * ubicación y el elemento de ese conjunto; el supervisor y los operarios de
+   * la empresa (los operarios, además, del conjunto). Si no, 404 igual que si
+   * no existiera, antes de mirar la agenda del conjunto. Sin empresa es una
+   * llamada interna (el cronograma) que ya parte de datos del conjunto.
+   */
+  private async exigirAltaDeTareaEnAlcance(
+    dto: {
+      conjuntoId?: string | null;
+      ubicacionId: number;
+      elementoId: number;
+      supervisorId?: string | null;
+    },
+    operariosIds: string[],
+  ): Promise<void> {
+    const empresaId = String(this.empresaIdAutenticada ?? "").trim();
+    if (!empresaId) return;
+    if (!dto.conjuntoId) throw recursoFueraDeEmpresa();
+
+    await exigirConjuntoDestinoEnAlcance(this.prisma, this.actor, empresaId, dto.conjuntoId);
+    await validarRelacionesDeTarea({
+      prisma: this.prisma,
+      empresaId,
+      conjuntoId: dto.conjuntoId,
+      lugar: { ubicacionId: dto.ubicacionId, elementoId: dto.elementoId },
+      supervisorId: dto.supervisorId,
+      operariosIds,
+    });
+  }
+
   async asignarTarea(payload: unknown) {
     const asignadorId = this.extraerAsignadorId(payload);
     const dto = CrearTareaDTO.parse(payload);
@@ -3027,6 +3445,7 @@ export class GerenteService {
     const operariosIds =
       dto.operariosIds?.map(String) ??
       (dto.operarioId ? [String(dto.operarioId)] : []);
+    await this.exigirAltaDeTareaEnAlcance(dto, operariosIds);
     const noLaborable = await this.validarFechaLaborable(inicio, {
       conjuntoId: dto.conjuntoId,
       operariosIds,
@@ -3263,6 +3682,7 @@ export class GerenteService {
     const operariosIds =
       dto.operariosIds?.map(String) ??
       (dto.operarioId ? [String(dto.operarioId)] : []);
+    await this.exigirAltaDeTareaEnAlcance(dto, operariosIds);
     const noLaborable = await this.validarFechaLaborable(inicio, {
       conjuntoId: dto.conjuntoId,
       operariosIds,
@@ -3342,7 +3762,13 @@ export class GerenteService {
 
         if (solapeInconsistente) {
           try {
-            await this.eliminarTarea(this.prisma as any, createdId);
+            // Reversión interna, sin actor: la tarea recién creada se borra
+            // aunque quede fuera de su alcance de modificación (p. ej. un
+            // supervisor que la dejó a cargo de otro).
+            await new GerenteService(this.prisma, this.empresaIdAutenticada).eliminarTarea(
+              this.prisma as any,
+              createdId,
+            );
           } catch {
             return {
               ok: false,
@@ -3551,6 +3977,8 @@ export class GerenteService {
     const operariosIds =
       dto.operariosIds?.map(String) ??
       (dto.operarioId ? [String(dto.operarioId)] : []);
+    // También acota `reemplazarIds`: solo se buscan en este conjunto.
+    await this.exigirAltaDeTareaEnAlcance(dto, operariosIds);
     const noLaborable = await this.validarFechaLaborable(inicio, {
       conjuntoId: dto.conjuntoId,
       operariosIds,
@@ -4326,12 +4754,15 @@ export class GerenteService {
   }
 
   async editarTarea(tareaId: number, payload: unknown) {
+    // Solo tareas dentro del alcance de modificación del actor (el mismo de
+    // lectura de /tarea; supervisor: las que tiene a cargo). Fuera: 404.
+    const alcance = alcanceMutacionTareasDeServicio(this.actor, this.empresaIdAutenticada);
     const asignadorId = this.extraerAsignadorId(payload);
     const dto = EditarTareaDTO.parse(payload);
     const data: Prisma.TareaUpdateInput = {};
 
-    const tareaAntes = await this.prisma.tarea.findUnique({
-      where: { id: tareaId },
+    const tareaAntes = await this.prisma.tarea.findFirst({
+      where: { AND: [{ id: tareaId }, alcance] },
       select: {
         id: true,
         descripcion: true,
@@ -4350,12 +4781,53 @@ export class GerenteService {
       },
     });
 
-    if (!tareaAntes) {
-      return {
-        ok: false,
-        reason: "TAREA_NO_ENCONTRADA",
-        message: "La tarea que intentas editar no existe.",
-      };
+    if (!tareaAntes) throw recursoFueraDeEmpresa();
+    // Sin conjunto la tarea saldría de la empresa (y del alcance de todos).
+    if (dto.conjuntoId === null) throw recursoFueraDeEmpresa();
+
+    // Moverla de conjunto: el destino también debe estar en su alcance.
+    const cambiaConjunto =
+      dto.conjuntoId !== undefined && dto.conjuntoId !== tareaAntes.conjuntoId;
+    if (dto.conjuntoId && cambiaConjunto) {
+      await exigirConjuntoDestinoEnAlcance(
+        this.prisma,
+        this.actor,
+        this.empresaIdAutenticada,
+        dto.conjuntoId,
+      );
+    }
+
+    // Los ids que cambian deben ser de la tarea (ver validarRelacionesDeTarea).
+    // Lo que no cambia no se revisa, así una tarea con datos antiguos se
+    // sigue moviendo de horario; si cambia el conjunto, todo lo que queda en
+    // ella debe ser del nuevo.
+    const empresaId = String(this.empresaIdAutenticada ?? "").trim();
+    const conjuntoFinal = dto.conjuntoId ?? tareaAntes.conjuntoId;
+    if (empresaId && conjuntoFinal) {
+      const ubicacionFinal = dto.ubicacionId ?? tareaAntes.ubicacionId;
+      const elementoFinal = dto.elementoId ?? tareaAntes.elementoId;
+      const cambiaLugar =
+        cambiaConjunto ||
+        ubicacionFinal !== tareaAntes.ubicacionId ||
+        elementoFinal !== tareaAntes.elementoId;
+      const operariosAntes = new Set(tareaAntes.operarios.map((o) => o.id));
+      const operariosFinales =
+        dto.operariosIds ?? tareaAntes.operarios.map((o) => o.id);
+
+      await validarRelacionesDeTarea({
+        prisma: this.prisma,
+        empresaId,
+        conjuntoId: conjuntoFinal,
+        lugar: cambiaLugar
+          ? { ubicacionId: ubicacionFinal, elementoId: elementoFinal }
+          : null,
+        // El supervisor es de la empresa, no del conjunto: basta si cambia.
+        supervisorId:
+          dto.supervisorId !== tareaAntes.supervisorId ? dto.supervisorId : null,
+        operariosIds: cambiaConjunto
+          ? operariosFinales
+          : operariosFinales.filter((id) => !operariosAntes.has(id)),
+      });
     }
 
     const mergedInicio = dto.fechaInicio ?? tareaAntes.fechaInicio;
@@ -4642,34 +5114,123 @@ export class GerenteService {
   /* ===================== ELIMINACIONES con REGLAS ===================== */
 
   async eliminarAdministrador(adminId: string) {
+    const objetivo = await this.prepararEliminacionUsuario(
+      adminId.toString(),
+      Rol.administrador,
+    );
     const asignaciones = await this.prisma.conjunto.findMany({
       where: { administradorId: adminId.toString() },
     });
     if (asignaciones.length > 0) {
       throw new Error("Ã¢ÂÅ’ El administrador tiene conjuntos asignados.");
     }
-    await this.prisma.usuario.delete({ where: { id: adminId.toString() } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.usuario.delete({ where: { id: adminId.toString() } });
+      await this.auditarEliminacionUsuario(tx, objetivo);
+    });
   }
 
-  async reemplazarAdminEnVariosConjuntos(
-    reemplazos: { conjuntoId: string; nuevoAdminId: number }[],
-  ) {
+  /**
+   * Cambia el administrador de varios conjuntos en una sola transaccion: o se
+   * aplican todos o ninguno. Los conjuntos deben ser de la empresa autenticada y
+   * cada administrador nuevo debe existir, tener rol y perfil de administrador,
+   * estar activo y no tener conjuntos de otra empresa.
+   */
+  async reemplazarAdminEnVariosConjuntos(payload: unknown) {
+    const { reemplazos } = ReemplazarAdministradoresDTO.parse(payload);
     if (reemplazos.length === 0) return;
-    const empresaId = await this.resolverEmpresaNit();
-    for (const { conjuntoId, nuevoAdminId } of reemplazos) {
-      const conjunto = await this.prisma.conjunto.findFirst({
-        where: { nit: conjuntoId, empresaId },
-        select: { nit: true },
-      });
-      if (!conjunto) throw new Error("Conjunto no encontrado.");
-      await this.prisma.conjunto.update({
-        where: { nit: conjuntoId },
-        data: { administradorId: nuevoAdminId.toString() },
+
+    const adminIds = [...new Set(reemplazos.map((r) => r.nuevoAdminId.toString()))];
+    for (const usuarioId of adminIds) {
+      await this.asegurarJerarquia({
+        operacion: "asignar conjuntos al administrador",
+        usuarioId,
+        rolActual: Rol.administrador,
       });
     }
+
+    const empresaId = await this.resolverEmpresaNit();
+    await this.prisma.$transaction(async (tx) => {
+      const [conjuntos, admins] = await Promise.all([
+        tx.conjunto.findMany({
+          where: { nit: { in: reemplazos.map((r) => r.conjuntoId) }, empresaId },
+          select: {
+            nit: true,
+            nombre: true,
+            administradorId: true,
+            administrador: { select: { usuario: { select: { nombre: true } } } },
+          },
+        }),
+        tx.usuario.findMany({
+          where: { id: { in: adminIds } },
+          select: {
+            id: true,
+            nombre: true,
+            rol: true,
+            activo: true,
+            administrador: { select: { conjuntos: { select: { empresaId: true } } } },
+          },
+        }),
+      ]);
+      const conjuntoPorNit = new Map(conjuntos.map((c) => [c.nit, c]));
+      const adminPorId = new Map(admins.map((a) => [a.id, a]));
+
+      for (const { conjuntoId } of reemplazos) {
+        if (!conjuntoPorNit.has(conjuntoId)) {
+          throw errorConEstado(404, `Conjunto ${conjuntoId} no encontrado en la empresa.`);
+        }
+      }
+      for (const id of adminIds) {
+        const admin = adminPorId.get(id);
+        // Sin conjuntos todavia no tiene empresa; con conjuntos, todos deben ser de esta.
+        const esAdministradorDeLaEmpresa =
+          admin != null &&
+          normalizarRol(admin.rol) === Rol.administrador &&
+          admin.administrador != null &&
+          admin.administrador.conjuntos.every((c) => c.empresaId === empresaId);
+        if (!admin || !esAdministradorDeLaEmpresa) {
+          throw errorConEstado(404, `No hay un administrador con id ${id} en la empresa.`);
+        }
+        if (!admin.activo) {
+          throw errorConEstado(
+            400,
+            `El administrador ${describirUsuario(admin)} está inactivo; actívalo antes de asignarle conjuntos.`,
+          );
+        }
+      }
+
+      const quien = describirActor(this.actor);
+      for (const { conjuntoId, nuevoAdminId } of reemplazos) {
+        const conjunto = conjuntoPorNit.get(conjuntoId)!;
+        const admin = adminPorId.get(nuevoAdminId.toString())!;
+        if (conjunto.administradorId === admin.id) continue;
+
+        await tx.conjunto.update({
+          where: { nit: conjuntoId },
+          data: { administradorId: admin.id },
+        });
+        const anterior = conjunto.administradorId
+          ? ` en reemplazo de ${describirUsuario({
+              id: conjunto.administradorId,
+              nombre: conjunto.administrador?.usuario.nombre,
+            })}`
+          : "";
+        await this.auditarUsuarios(tx, {
+          modulo: ModuloAuditoria.PERSONAL,
+          entidad: EntidadAuditoria.USUARIO,
+          entidadId: admin.id,
+          accion: AccionAuditoria.REEMPLAZAR,
+          conjuntoId,
+          descripcion: `${quien} asignó a ${describirUsuario(admin)} como administrador del conjunto ${conjunto.nombre} (${conjuntoId})${anterior}.`,
+          datosAntes: { administradorId: conjunto.administradorId },
+          datosDespues: { administradorId: admin.id },
+        });
+      }
+    });
   }
 
   async eliminarOperario(operarioId: string) {
+    const objetivo = await this.prepararEliminacionUsuario(operarioId, Rol.operario);
     const tareasActivas = await this.prisma.tarea.findMany({
       where: {
         operarios: { some: { id: operarioId } },
@@ -4748,10 +5309,12 @@ export class GerenteService {
       await tx.usuario.delete({
         where: { id: operarioId },
       });
+      await this.auditarEliminacionUsuario(tx, objetivo);
     });
   }
 
   async eliminarSupervisor(supervisorId: string) {
+    const objetivo = await this.prepararEliminacionUsuario(supervisorId, Rol.supervisor);
     await this.prisma.$transaction(async (tx) => {
       // 1) Borrar el JefeOperaciones (si existe)
       await tx.supervisor.deleteMany({
@@ -4762,6 +5325,7 @@ export class GerenteService {
       await tx.usuario.delete({
         where: { id: supervisorId },
       });
+      await this.auditarEliminacionUsuario(tx, objetivo);
     });
   }
 
@@ -4772,6 +5336,7 @@ export class GerenteService {
     if (supervisorId === supervisorDestinoId) {
       throw new Error("Selecciona un supervisor diferente.");
     }
+    const objetivo = await this.prepararEliminacionUsuario(supervisorId, Rol.supervisor);
 
     const empresaId = await this.resolverEmpresaNit();
     return this.prisma.$transaction(async (tx) => {
@@ -4813,16 +5378,26 @@ export class GerenteService {
       await tx.supervisor.delete({ where: { id: supervisorId } });
       await tx.usuario.delete({ where: { id: supervisorId } });
 
-      return {
+      const reasignadas = {
         tareas: tareas.count,
         preventivas: preventivas.count,
         visitas: visitas.count,
         borradores: borradores.count,
       };
+      await this.auditarEliminacionUsuario(tx, objetivo, {
+        supervisorDestinoId,
+        reasignadas,
+      });
+
+      return reasignadas;
     }, { isolationLevel: "Serializable" });
   }
 
   async eliminarJefeOperaciones(jefeOperacionesId: string) {
+    const objetivo = await this.prepararEliminacionUsuario(
+      jefeOperacionesId,
+      Rol.jefe_operaciones,
+    );
     await this.prisma.$transaction(async (tx) => {
       // 1) Borrar el JefeOperaciones (si existe)
       await tx.jefeOperaciones.deleteMany({
@@ -4833,10 +5408,15 @@ export class GerenteService {
       await tx.usuario.delete({
         where: { id: jefeOperacionesId },
       });
+      await this.auditarEliminacionUsuario(tx, objetivo);
     });
   }
 
-  async eliminarResidente(residenteId: string) {
+  /**
+   * Sin regla de jerarquia propia: tambien la usa la gestion de residentes del
+   * administrador. `eliminarUsuario` valida la jerarquia y pasa `objetivo` para auditar.
+   */
+  async eliminarResidente(residenteId: string, objetivo: UsuarioAuditable | null = null) {
     await this.prisma.$transaction(async (tx) => {
       await tx.residente.deleteMany({
         where: { id: residenteId },
@@ -4844,13 +5424,18 @@ export class GerenteService {
       await tx.usuario.delete({
         where: { id: residenteId },
       });
+      await this.auditarEliminacionUsuario(tx, objetivo);
     });
   }
 
   async eliminarUsuario(id: string): Promise<void> {
-    const usuario = await this.prisma.usuario.findUnique({ where: { id } });
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { id },
+      select: { id: true, rol: true },
+    });
     if (!usuario) return;
 
+    // Cada eliminacion por rol valida la jerarquia y audita dentro de su transaccion.
     switch (usuario.rol as Rol) {
       case Rol.administrador:
         await this.eliminarAdministrador(id);
@@ -4864,13 +5449,22 @@ export class GerenteService {
       case Rol.jefe_operaciones:
         await this.eliminarJefeOperaciones(id);
         break;
-      case Rol.residente:
-        await this.eliminarResidente(id);
+      case Rol.residente: {
+        const objetivo = await this.prepararEliminacionUsuario(id, Rol.residente);
+        await this.eliminarResidente(id, objetivo);
         break;
-      default:
-        await this.prisma.usuario.delete({ where: { id } });
+      }
+      default: {
+        const objetivo = await this.prepararEliminacionUsuario(id, Rol.gerente);
+        await this.prisma.$transaction(async (tx) => {
+          await tx.usuario.delete({ where: { id } });
+          await this.auditarEliminacionUsuario(tx, objetivo);
+        });
         break;
+      }
     }
+    await invalidarEstadoSesion(id);
+    await invalidarEstadoMcp({ usuarioId: id });
   }
 
   async eliminarMaquinaria(maquinariaId: number) {
@@ -4892,8 +5486,11 @@ export class GerenteService {
   }
 
   async eliminarTarea(prisma: PrismaClient, id: number) {
-    const tarea = await prisma.tarea.findUnique({
-      where: { id },
+    // Mismo alcance de modificación que editarTarea; fuera de él, 404.
+    const tarea = await prisma.tarea.findFirst({
+      where: {
+        AND: [{ id }, alcanceMutacionTareasDeServicio(this.actor, this.empresaIdAutenticada)],
+      },
       select: {
         id: true,
         estado: true,
@@ -4901,7 +5498,7 @@ export class GerenteService {
       },
     });
 
-    if (!tarea) throw new Error("Tarea no encontrada.");
+    if (!tarea) throw recursoFueraDeEmpresa();
 
     // Ã°Å¸â€â€™ Reglas de negocio (ajÃƒÂºstalas a tu gusto)
     if (
@@ -4960,22 +5557,44 @@ export class GerenteService {
   /* ===================== EDICIONES RÃƒÂPIDAS (compat) ===================== */
 
   async editarAdministrador(adminId: number, payload: unknown) {
-    const dto = EditarUsuarioDTO.parse(payload);
-    const data: any = { ...dto };
-    if (dto.contrasena) {
-      data.contrasena = await bcrypt.hash(dto.contrasena, 10);
-    } else {
-      delete data.contrasena;
-    }
-    await this.prisma.usuario.update({
-      where: { id: adminId.toString() },
-      data,
+    // Solo datos personales: rol, activo, contrasena o empresaId hacen fallar la validacion.
+    const data = EditarAdministradorDTO.parse(payload);
+    const id = adminId.toString();
+    const actual = await this.prisma.usuario.findUnique({
+      where: { id },
+      select: usuarioAuditoriaSelect,
+    });
+    await this.asegurarJerarquia({
+      operacion: "editar el usuario",
+      usuarioId: id,
+      rolActual: actual?.rol ?? Rol.administrador,
+    });
+    if (Object.keys(data).length === 0) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      const despues = await tx.usuario.update({
+        where: { id },
+        data,
+        select: usuarioAuditoriaSelect,
+      });
+      if (actual) {
+        await this.auditarEdicionUsuario(tx, actual, despues);
+      }
     });
   }
 
   async editarOperario(operarioId: number, payload: unknown) {
     const dto = EditarOperarioDTO.parse(payload);
     const idOperario = operarioId.toString();
+    const actual = await this.prisma.usuario.findUnique({
+      where: { id: idOperario },
+      select: { ...usuarioAuditoriaSelect, operario: { select: { funciones: true } } },
+    });
+    await this.asegurarJerarquia({
+      operacion: "editar al operario",
+      usuarioId: idOperario,
+      rolActual: actual?.rol ?? Rol.operario,
+    });
 
     const data: any = {};
     if (dto.funciones) {
@@ -5001,47 +5620,69 @@ export class GerenteService {
       data.funciones = funcionesNuevas;
     }
 
-    if ((payload as any).nombre || (payload as any).correo) {
-      const uData: any = {};
-      if ((payload as any).nombre) uData.nombre = (payload as any).nombre;
-      if ((payload as any).correo) uData.correo = (payload as any).correo;
-      await this.prisma.usuario.update({
-        where: { id: idOperario },
-        data: uData,
-      });
-    }
+    const uData: any = {};
+    if (dto.nombre) uData.nombre = dto.nombre;
+    if (dto.correo) uData.correo = dto.correo;
+    if (Object.keys(uData).length === 0 && Object.keys(data).length === 0) return;
 
-    if (Object.keys(data).length === 0) return;
-    await this.prisma.operario.update({
-      where: { id: idOperario },
-      data,
+    await this.prisma.$transaction(async (tx) => {
+      const despues = Object.keys(uData).length
+        ? await tx.usuario.update({
+            where: { id: idOperario },
+            data: uData,
+            select: usuarioAuditoriaSelect,
+          })
+        : actual;
+
+      if (Object.keys(data).length) {
+        await tx.operario.update({
+          where: { id: idOperario },
+          data,
+        });
+      }
+
+      if (!actual) return;
+      const funcionesAntes = [...(actual.operario?.funciones ?? [])].sort();
+      const funcionesDespues = data.funciones ? [...data.funciones].sort() : funcionesAntes;
+      await this.auditarEdicionUsuario(
+        tx,
+        actual,
+        despues,
+        {},
+        funcionesAntes.join() !== funcionesDespues.join()
+          ? { funciones: { antes: funcionesAntes, despues: funcionesDespues } }
+          : {},
+      );
     });
   }
 
   async editarSupervisor(supervisorId: number, payload: unknown) {
-    const dto = z
-      .object({
-        empresaId: z.string().min(3).optional(),
-        nombre: z.string().optional(),
-        correo: z.string().email().optional(),
-      })
-      .parse(payload);
+    const dto = EditarSupervisorDTO.parse(payload);
+    const id = supervisorId.toString();
+    const actual = await this.prisma.usuario.findUnique({
+      where: { id },
+      select: usuarioAuditoriaSelect,
+    });
+    await this.asegurarJerarquia({
+      operacion: "editar al supervisor",
+      usuarioId: id,
+      rolActual: actual?.rol ?? Rol.supervisor,
+    });
 
-    if (dto.nombre || dto.correo) {
-      const uData: any = {};
-      if (dto.nombre) uData.nombre = dto.nombre;
-      if (dto.correo) uData.correo = dto.correo;
-      await this.prisma.usuario.update({
-        where: { id: supervisorId.toString() },
+    const uData: { nombre?: string; correo?: string } = {};
+    if (dto.nombre) uData.nombre = dto.nombre;
+    if (dto.correo) uData.correo = dto.correo;
+    if (Object.keys(uData).length === 0) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      const despues = await tx.usuario.update({
+        where: { id },
         data: uData,
+        select: usuarioAuditoriaSelect,
       });
-    }
-
-    if (dto.empresaId) {
-      await this.prisma.supervisor.update({
-        where: { id: supervisorId.toString() },
-        data: { empresaId: dto.empresaId },
-      });
-    }
+      if (actual) {
+        await this.auditarEdicionUsuario(tx, actual, despues);
+      }
+    });
   }
 }

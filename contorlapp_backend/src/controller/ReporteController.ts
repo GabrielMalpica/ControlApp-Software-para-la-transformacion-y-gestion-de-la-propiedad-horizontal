@@ -15,9 +15,29 @@ import {
   normalizarOpciones,
   opcionesPorDefecto,
 } from "../services/InformeMensualOpciones";
+import {
+  alcanceConjuntos,
+  claveAlcance,
+  exigirConjuntoEnAlcance,
+} from "../aplicacion/alcanceConjuntos";
 
-async function serviceFor(req: Request) {
-  return new ReporteService(prisma, await empresaIdAutenticada(req));
+/** Empresa y conjuntos visibles del usuario autenticado. */
+async function alcanceDe(req: Request) {
+  const empresaId = await empresaIdAutenticada(req);
+  const alcance = await alcanceConjuntos(prisma, {
+    usuarioId: usuarioIdDe(req),
+    rol: String(req.user?.rol ?? ""),
+    empresaId,
+  });
+  return { empresaId, alcance };
+}
+
+// El administrador solo ve sus conjuntos: sin conjuntoId se limita a ellos y
+// uno ajeno responde 404.
+async function serviceFor(req: Request, conjuntoId?: string) {
+  const { empresaId, alcance } = await alcanceDe(req);
+  exigirConjuntoEnAlcance(alcance, conjuntoId);
+  return new ReporteService(prisma, empresaId, alcance);
 }
 
 function logPerf(nombre: string, inicio: number, detalle?: string) {
@@ -123,7 +143,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await (await serviceFor(req)).kpis(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).kpis(q);
       logPerf("Reporte KPIs", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -136,7 +156,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await (await serviceFor(req)).serieDiariaPorEstado(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).serieDiariaPorEstado(q);
       logPerf("Reporte serie diaria", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -149,7 +169,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await (await serviceFor(req)).compromisosDashboard(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).compromisosDashboard(q);
       logPerf("Reporte compromisos", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -175,7 +195,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await (await serviceFor(req)).resumenPorOperario(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).resumenPorOperario(q);
       logPerf("Reporte por operario", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -188,7 +208,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await (await serviceFor(req)).duracionPromedioPorEstado(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).duracionPromedioPorEstado(q);
       logPerf(
         "Reporte duracion promedio",
         inicio,
@@ -206,7 +226,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await (await serviceFor(req)).reporteMensualDetalle(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).reporteMensualDetalle(q);
       logPerf("Reporte mensual detalle", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -220,7 +240,10 @@ export class ReporteController {
     try {
       const body = InformeMensualPdfBody.parse(req.body);
       const usuarioId = usuarioIdDe(req);
-      const empresaId = await empresaIdAutenticada(req);
+      const { empresaId, alcance } = await alcanceDe(req);
+      // Sin conjuntoId el informe es de todos los conjuntos visibles: los del
+      // administrador o toda la empresa para el equipo interno.
+      exigirConjuntoEnAlcance(alcance, body.conjuntoId);
 
       if (body.conjuntoId) {
         const conjunto = await prisma.conjunto.findFirst({
@@ -243,6 +266,7 @@ export class ReporteController {
       const clave = [
         empresaId,
         body.conjuntoId ?? "*",
+        claveAlcance(alcance),
         claveDia(body.desde),
         claveDia(body.hasta),
         rolSolicitante || "*",
@@ -254,6 +278,7 @@ export class ReporteController {
         ejecutar: crearEjecutorInforme({
           prisma,
           empresaId,
+          alcance,
           conjuntoId: body.conjuntoId,
           desde: body.desde,
           hasta: body.hasta,
@@ -353,7 +378,7 @@ export class ReporteController {
             ? undefined
             : raw.soloActivas === "true" || raw.soloActivas === "1",
       };
-      const out = await (await serviceFor(req)).zonificacionPreventivas(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).zonificacionPreventivas(q);
       logPerf(
         "Reporte zonificacion preventivas",
         inicio,
@@ -397,7 +422,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await (await serviceFor(req)).usoDeInsumosPorFecha(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).usoDeInsumosPorFecha(q);
       logPerf("Reporte insumos", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -410,7 +435,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = EstadoQuery.parse(req.query);
-      const out = await (await serviceFor(req)).tareasPorEstado(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).tareasPorEstado(q);
       logPerf(
         `Reporte tareas estado ${q.estado}`,
         inicio,
@@ -427,7 +452,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = EstadoQuery.parse(req.query);
-      const out = await (await serviceFor(req)).tareasConDetalle(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).tareasConDetalle(q);
       logPerf(
         `Reporte tareas detalle ${q.estado}`,
         inicio,
@@ -444,7 +469,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await (await serviceFor(req)).usoMaquinariaTop(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).usoMaquinariaTop(q);
       logPerf("Reporte top maquinaria", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {
@@ -457,7 +482,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await (await serviceFor(req)).usoHerramientaTop(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).usoHerramientaTop(q);
       logPerf(
         "Reporte top herramientas",
         inicio,
@@ -474,7 +499,7 @@ export class ReporteController {
     const inicio = Date.now();
     try {
       const q = RangoConConjuntoOpcionalQuery.parse(req.query);
-      const out = await (await serviceFor(req)).conteoPorTipo(q);
+      const out = await (await serviceFor(req, q.conjuntoId)).conteoPorTipo(q);
       logPerf("Reporte tipos", inicio, await detalleConjunto(q.conjuntoId));
       res.json(out);
     } catch (err) {

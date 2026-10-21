@@ -2,6 +2,7 @@
 import { z } from "zod";
 import {
   DiaSemana,
+  DiaProgramado,
   Frecuencia,
   TipoMaquinaria,
   UnidadCalculo,
@@ -26,7 +27,8 @@ export interface DefinicionTareaPreventivaDominio {
   frecuencia: Frecuencia;
   prioridad: number;
 
-  diaSemanaProgramado?: DiaSemana | null;
+  diaSemanaProgramado?: DiaProgramado | null;
+  diasSemanaProgramados?: DiaSemana[] | null;
   diaMesProgramado?: number | null;
   fechasProgramadasJson?: string[] | null;
 
@@ -152,7 +154,8 @@ export const CrearDefinicionPreventivaDTO = z
     ordenEnCategoria: z.number().int().min(1).max(9999).optional().nullable(),
 
     // programación específica
-    diaSemanaProgramado: z.nativeEnum(DiaSemana).optional().nullable(),
+    diaSemanaProgramado: z.nativeEnum(DiaProgramado).optional().nullable(),
+    diasSemanaProgramados: z.array(z.nativeEnum(DiaSemana)).optional(),
     diaMesProgramado: z.number().int().min(1).max(31).optional().nullable(),
     fechasProgramadasJson: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
 
@@ -219,7 +222,8 @@ export const EditarDefinicionPreventivaDTO = z.object({
   categoriaId: z.number().int().positive().optional().nullable(),
   ordenEnCategoria: z.number().int().min(1).max(9999).optional().nullable(),
 
-  diaSemanaProgramado: z.nativeEnum(DiaSemana).optional().nullable(),
+  diaSemanaProgramado: z.nativeEnum(DiaProgramado).optional().nullable(),
+  diasSemanaProgramados: z.array(z.nativeEnum(DiaSemana)).optional().nullable(),
   diaMesProgramado: z.number().int().min(1).max(31).optional().nullable(),
   fechasProgramadasJson: z
     .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
@@ -385,6 +389,7 @@ export const definicionPreventivaPublicSelect = {
   prioridad: true,
 
   diaSemanaProgramado: true,
+  diasSemanaProgramados: true,
   diaMesProgramado: true,
   fechasProgramadasJson: true,
 

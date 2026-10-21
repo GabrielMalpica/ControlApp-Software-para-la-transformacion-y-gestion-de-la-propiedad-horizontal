@@ -11,6 +11,10 @@ export const ModuloAuditoria = {
   PREVENTIVA: "PREVENTIVA",
   EXCLUIDA: "EXCLUIDA",
   RECURSOS: "RECURSOS",
+  /** Altas, ediciones, perfiles, traslados y retiros de usuarios. */
+  PERSONAL: "PERSONAL",
+  /** Cambios de rol, matriz de permisos e intentos de gestión rechazados. */
+  SEGURIDAD: "SEGURIDAD",
 } as const;
 
 export type ModuloAuditoria = (typeof ModuloAuditoria)[keyof typeof ModuloAuditoria];
@@ -22,6 +26,9 @@ export const EntidadAuditoria = {
   CRONOGRAMA_PERIODO: "CronogramaPeriodo",
   RESERVA_RECURSO: "ReservaRecurso",
   EMPRESA: "Empresa",
+  USUARIO: "Usuario",
+  OPERARIO: "Operario",
+  PERMISOS_ROL: "PermisoRol",
 } as const;
 
 export type EntidadAuditoria = (typeof EntidadAuditoria)[keyof typeof EntidadAuditoria];
@@ -51,6 +58,13 @@ export const AccionAuditoria = {
   REEMPLAZAR_RESERVA_RECURSO: "REEMPLAZAR_RESERVA_RECURSO",
   BLOQUEAR_MANTENIMIENTO: "BLOQUEAR_MANTENIMIENTO",
   CONFIGURAR_LOGISTICA_RECURSOS: "CONFIGURAR_LOGISTICA_RECURSOS",
+  CAMBIAR_ROL: "CAMBIAR_ROL",
+  ACTIVAR: "ACTIVAR",
+  DESACTIVAR: "DESACTIVAR",
+  ASIGNAR_PERFIL: "ASIGNAR_PERFIL",
+  TRASLADAR: "TRASLADAR",
+  ACTUALIZAR_PERMISOS: "ACTUALIZAR_PERMISOS",
+  GESTION_DENEGADA: "GESTION_DENEGADA",
 } as const;
 
 export type AccionAuditoria = (typeof AccionAuditoria)[keyof typeof AccionAuditoria];
@@ -59,6 +73,8 @@ export const OrigenAuditoria = {
   USUARIO: "USUARIO",
   SCHEDULER: "SCHEDULER",
   CRON: "CRON",
+  /** Herramienta ejecutada por un cliente de IA (MCP) en nombre de un gerente. */
+  MCP: "MCP",
 } as const;
 
 export type OrigenAuditoria = (typeof OrigenAuditoria)[keyof typeof OrigenAuditoria];

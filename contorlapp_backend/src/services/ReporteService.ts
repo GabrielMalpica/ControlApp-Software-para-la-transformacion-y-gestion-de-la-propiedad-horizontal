@@ -9,6 +9,10 @@ import {
 } from "../utils/elementoHierarchy";
 import { cached } from "./RedisService";
 import { getFestivosSet, ymdLocal } from "../utils/schedulerUtils";
+import {
+  filtroConjuntoEnAlcance,
+  type AlcanceConjuntos,
+} from "../aplicacion/alcanceConjuntos";
 
 /** ======================
  * DTOs
@@ -517,7 +521,15 @@ function toOutInsumoRow(i: InsumoAgg) {
 }
 
 export class ReporteService {
-  constructor(private prisma: PrismaClient, private empresaId: string) {}
+  /**
+   * `alcance` limita los reportes a esos conjuntos de la empresa (el
+   * administrador solo ve los suyos); `null` es toda la empresa.
+   */
+  constructor(
+    private prisma: PrismaClient,
+    private empresaId: string,
+    private alcance: AlcanceConjuntos = null,
+  ) {}
 
   /**
    * Lista de conjuntoId de la empresa autenticada. Antes cada reporte
@@ -537,16 +549,30 @@ export class ReporteService {
     });
   }
 
+  /** Conjuntos de la empresa que este usuario puede ver. */
+  private async conjuntoIdsVisibles(): Promise<string[]> {
+    const deEmpresa = await this.conjuntoIdsDeEmpresa();
+    const alcance = this.alcance;
+    return alcance === null
+      ? deEmpresa
+      : deEmpresa.filter((nit) => alcance.includes(nit));
+  }
+
+  /** Filtro por conjunto de las consultas que no pasan por soloPublicadas. */
+  private filtroConjunto(conjuntoId?: string) {
+    return filtroConjuntoEnAlcance(this.alcance, conjuntoId);
+  }
+
   private async soloPublicadas(
     where: Record<string, unknown> & { conjuntoId?: string },
   ): Promise<Record<string, unknown>> {
-    const conjuntoIds = await this.conjuntoIdsDeEmpresa();
+    const conjuntoIds = await this.conjuntoIdsVisibles();
 
     if (where.conjuntoId) {
       // Un conjuntoId especifico: se conserva la igualdad, pero solo si
-      // pertenece a la empresa autenticada (mismo scope que antes daba el
-      // JOIN con conjunto.empresaId). Si no pertenece, "in: []" nunca
-      // matchea ninguna fila, igual que antes el JOIN no encontraba nada.
+      // pertenece a la empresa autenticada y al alcance del usuario (mismo
+      // scope que antes daba el JOIN con conjunto.empresaId). Si no
+      // pertenece, "in: []" nunca matchea ninguna fila.
       return {
         ...where,
         borrador: false,
@@ -1064,7 +1090,7 @@ export class ReporteService {
 
     const items = await this.prisma.compromisoConjunto.findMany({
       where: {
-        ...(conjuntoId ? { conjuntoId } : {}),
+        ...this.filtroConjunto(conjuntoId),
         conjunto: { empresaId: this.empresaId },
         creadaEn: { lte: hasta },
         OR: [{ cerradaEn: null }, { cerradaEn: { gte: desde } }],
@@ -1272,7 +1298,10 @@ export class ReporteService {
     let where: any;
     if (conjuntoId) {
       const inventario = await this.prisma.inventario.findFirst({
-        where: { conjuntoId, conjunto: { empresaId: this.empresaId } },
+        where: {
+          ...this.filtroConjunto(conjuntoId),
+          conjunto: { empresaId: this.empresaId },
+        },
         select: { id: true },
       });
       if (!inventario) throw new Error("Inventario no encontrado");
@@ -1284,9 +1313,13 @@ export class ReporteService {
       };
     } else {
       // Sin conjuntoId: agrega en una sola consulta todo el uso de insumos
-      // de la empresa, en lugar de que el cliente pida conjunto por conjunto.
+      // de la empresa (o de los conjuntos del administrador), en lugar de
+      // que el cliente pida conjunto por conjunto.
       where = {
-        inventario: { conjunto: { empresaId: this.empresaId } },
+        inventario: {
+          ...this.filtroConjunto(),
+          conjunto: { empresaId: this.empresaId },
+        },
         fecha: { gte: desde, lte: hasta },
         tipo: "SALIDA" as any,
       };
@@ -1401,7 +1434,7 @@ export class ReporteService {
       RangoConConjuntoOpcionalDTO.parse(payload);
 
     const filtroTarea = {
-      ...(conjuntoId ? { conjuntoId } : {}),
+      ...this.filtroConjunto(conjuntoId),
       conjunto: { empresaId: this.empresaId },
     };
 
@@ -1420,7 +1453,7 @@ export class ReporteService {
           tipo: "TAREA",
           estado: "FINALIZADA",
           usoInicio: { gte: desde, lte: hasta },
-          ...(conjuntoId ? { conjuntoId } : {}),
+          ...this.filtroConjunto(conjuntoId),
         },
         select: { tareaId: true, maquinariaId: true },
       }),
@@ -1473,7 +1506,7 @@ export class ReporteService {
       RangoConConjuntoOpcionalDTO.parse(payload);
 
     const filtroTarea = {
-      ...(conjuntoId ? { conjuntoId } : {}),
+      ...this.filtroConjunto(conjuntoId),
       conjunto: { empresaId: this.empresaId },
     };
 
@@ -1490,7 +1523,7 @@ export class ReporteService {
           tipo: "TAREA",
           estado: "FINALIZADA",
           usoInicio: { gte: desde, lte: hasta },
-          ...(conjuntoId ? { conjuntoId } : {}),
+          ...this.filtroConjunto(conjuntoId),
         },
         select: {
           tareaId: true,
@@ -2170,7 +2203,7 @@ export class ReporteService {
 
     const defs = await this.prisma.definicionTareaPreventiva.findMany({
       where: {
-        ...(conjuntoId ? { conjuntoId } : {}),
+        ...this.filtroConjunto(conjuntoId),
         conjunto: { empresaId: this.empresaId },
         ...(soloActivas ? { activo: true } : {}),
         creadoEn: { gte: desde, lte: hasta },
