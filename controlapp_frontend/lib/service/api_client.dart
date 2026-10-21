@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_application_1/service/app_constants.dart';
+import 'package:flutter_application_1/service/cliente_credenciales_bridge.dart';
 import 'package:flutter_application_1/service/session_service.dart';
 import 'package:http/http.dart' as http;
 
@@ -41,6 +42,26 @@ class ApiClient {
       headers: await _headers(),
       body: body != null ? jsonEncode(body) : null,
     );
+  }
+
+  /// POST que en web viaja con credenciales: lo usan las rutas de /auth que
+  /// ponen o borran la cookie HttpOnly de la sesion (login, cambio de
+  /// contrasena, logout). En movil es un POST normal.
+  Future<http.Response> postConCredenciales(
+    String urlOrPath, {
+    Object? body,
+  }) async {
+    final uri = _uri(urlOrPath);
+    final client = crearClienteConCredenciales();
+    try {
+      return await client.post(
+        uri,
+        headers: await _headers(),
+        body: body != null ? jsonEncode(body) : null,
+      );
+    } finally {
+      client.close();
+    }
   }
 
   Future<http.Response> put(String urlOrPath, {Object? body}) async {

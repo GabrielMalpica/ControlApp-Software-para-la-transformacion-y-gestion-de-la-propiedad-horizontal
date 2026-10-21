@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_1/model/notificacion_model.dart';
 import 'package:flutter_application_1/service/app_router.dart';
 import 'package:flutter_application_1/service/notificaciones_center.dart';
+import 'package:flutter_application_1/service/session_service.dart';
 import 'package:flutter_application_1/service/theme.dart';
 import 'package:flutter_application_1/widgets/aviso_version_nueva.dart';
 
@@ -13,6 +14,11 @@ class MyApp extends StatefulWidget {
   static final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
 
+  /// Global: permite volver al login cuando la sesion vence fuera de una
+  /// pagina concreta (renovacion fallida de la sesion web).
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
+
   @override
   State<MyApp> createState() => _MyAppState();
 }
@@ -22,6 +28,7 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     NotificacionesCenter.instance.stockBajoNueva.addListener(_onStockBajoNueva);
+    SessionService.sesionExpirada.addListener(_onSesionExpirada);
   }
 
   @override
@@ -29,7 +36,22 @@ class _MyAppState extends State<MyApp> {
     NotificacionesCenter.instance.stockBajoNueva.removeListener(
       _onStockBajoNueva,
     );
+    SessionService.sesionExpirada.removeListener(_onSesionExpirada);
     super.dispose();
+  }
+
+  Future<void> _onSesionExpirada() async {
+    NotificacionesCenter.instance.stop();
+    await SessionService().clear();
+    final navigator = MyApp.navigatorKey.currentState;
+    if (navigator == null) return;
+    navigator.pushNamedAndRemoveUntil(AppRouter.login, (route) => false);
+    MyApp.scaffoldMessengerKey.currentState?.showSnackBar(
+      const SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text('Tu sesión expiró. Inicia sesión de nuevo.'),
+      ),
+    );
   }
 
   void _onStockBajoNueva() {
@@ -70,6 +92,7 @@ class _MyAppState extends State<MyApp> {
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: MyApp.scaffoldMessengerKey,
+      navigatorKey: MyApp.navigatorKey,
       initialRoute: AppRouter.splash,
       routes: AppRouter.routes,
       builder: (context, child) =>

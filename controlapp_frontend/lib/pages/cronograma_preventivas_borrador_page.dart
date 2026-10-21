@@ -1864,11 +1864,13 @@ class _CronogramaPreventivasBorradorPageState
 
       if (n.tipo == 'SIN_CANDIDATAS') {
         final extra = (n.mensaje ?? '').trim();
+        final detalle = extra.isEmpty
+            ? 'No se encontrÃ³ una tarea candidata para reemplazar, por eso no hubo reemplazo.'
+            : extra;
         return '$desc\n$pr\nFecha: $fecha\n'
-            'No se encontro una tarea candidata para reemplazar, por eso no hubo reemplazo.\n'
+            '$detalle\n'
             '${reglaPrioridad(n.prioridad)}\n'
-            'La novedad queda registrada en el informe.'
-            '${extra.isEmpty ? '' : '\n$extra'}';
+            'La novedad queda registrada en el informe.';
       }
 
       if (n.tipo == 'REASIGNADA_POR_CAPACIDAD') {
@@ -1879,10 +1881,12 @@ class _CronogramaPreventivasBorradorPageState
 
       if (n.tipo == 'SIN_HUECO') {
         final extra = (n.mensaje ?? '').trim();
+        final detalle = extra.isEmpty
+            ? 'No se encontrÃ³ hueco en agenda y no se ejecutÃ³ reemplazo.'
+            : extra;
         return '$desc\n$pr\nFecha: $fecha\n'
-            'No se encontro hueco en agenda y no se ejecuto reemplazo.\n'
-            '${reglaPrioridad(n.prioridad)}'
-            '${extra.isEmpty ? '' : '\n$extra'}';
+            '$detalle\n'
+            '${reglaPrioridad(n.prioridad)}';
       }
 
       final msg = (n.mensaje ?? '').trim();

@@ -200,18 +200,7 @@ class _LoginPageState extends State<LoginPage> {
                   child: TextButton.icon(
                     onPressed: _loading
                         ? null
-                        : () => showRecoverPasswordDialog(
-                            context,
-                            initialCorreo: _correoCtrl.text.trim(),
-                            onSuccess:
-                                ({
-                                  required String correo,
-                                  required String nuevaContrasena,
-                                }) {
-                                  _correoCtrl.text = correo;
-                                  _passCtrl.text = nuevaContrasena;
-                                },
-                          ),
+                        : () => showRecoverPasswordDialog(context),
                     icon: const Icon(Icons.key_rounded, size: 18),
                     label: const Text('Recuperar acceso'),
                   ),

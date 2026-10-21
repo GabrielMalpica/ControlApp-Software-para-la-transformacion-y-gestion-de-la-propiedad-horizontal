@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -5,8 +6,20 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_constants.dart';
+import 'cliente_credenciales_bridge.dart';
 
+/// Sesion del usuario.
+///
+/// En web el token de acceso vive SOLO en memoria (no lo puede leer otra
+/// pestana, una extension ni un agente que inspeccione el almacenamiento) y
+/// dura poco: antes de que venza, o al recargar la pagina, se renueva con la
+/// cookie HttpOnly que puso el backend al iniciar sesion (`/auth/refresh`).
+/// En movil el token sigue en almacenamiento seguro.
 class SessionService {
+  /// Margen para renovar antes de que el token venza.
+  static const _margenRenovacion = Duration(seconds: 60);
+  static Future<bool>? _renovacionEnCurso;
+
   // Keys
   static const _kToken = 'auth_token';
   static const _kRol = 'auth_rol';
@@ -54,10 +67,9 @@ class SessionService {
 
     if (kIsWeb) {
       final prefs = await SharedPreferences.getInstance();
-      // El backend autentica con bearer token y no ofrece una cookie de
-      // renovacion. Persistirlo evita que una recarga conserve el perfil pero
-      // deje todas las peticiones sin Authorization.
-      await prefs.setString(_kToken, token);
+      // El token no se persiste en web: tras una recarga se renueva con la
+      // cookie HttpOnly. Se borra el que dejaban versiones anteriores.
+      await prefs.remove(_kToken);
       await prefs.setString(_kRol, rol);
       await prefs.setString(_kCorreo, correo);
       await prefs.setString(_kNombre, nombre);
@@ -158,17 +170,110 @@ class SessionService {
     );
   }
 
-  Future<String?> getToken() async {
-    if (_memToken != null && _memToken!.isNotEmpty) return _memToken;
+  /// Se incrementa cuando una sesion web abierta no se pudo renovar: la app
+  /// vuelve al login (ver MyApp) en vez de dejar fallar cada peticion.
+  static final ValueNotifier<int> sesionExpirada = ValueNotifier<int>(0);
 
+  Future<String?> getToken() async {
     if (kIsWeb) {
-      final prefs = await SharedPreferences.getInstance();
-      _memToken = prefs.getString(_kToken);
-      return _memToken;
+      if (_vigente(_memToken)) return _memToken;
+      final teniaSesion = _memToken != null && _memToken!.isNotEmpty;
+      final renovada = await renovarSesionWeb();
+      if (!renovada && teniaSesion) sesionExpirada.value++;
+      return _vigente(_memToken) ? _memToken : null;
     }
 
+    if (_memToken != null && _memToken!.isNotEmpty) return _memToken;
     _memToken = await _secure.read(key: _kToken);
     return _memToken;
+  }
+
+  /// Guarda en memoria un token recien emitido (login, cambio de contrasena).
+  Future<void> setToken(String token) async {
+    _memToken = token;
+    if (!kIsWeb) await _secure.write(key: _kToken, value: token);
+  }
+
+  /// Renueva la sesion web con la cookie HttpOnly. Varias llamadas a la vez
+  /// comparten una sola renovacion. Devuelve false si no hay sesion que
+  /// renovar (cookie vencida, revocada o bloqueada por el navegador).
+  Future<bool> renovarSesionWeb() {
+    if (!kIsWeb) return Future.value(false);
+    return _renovacionEnCurso ??= _renovar().whenComplete(() {
+      _renovacionEnCurso = null;
+    });
+  }
+
+  Future<bool> _renovar({bool reintento = false}) async {
+    final client = crearClienteConCredenciales();
+    try {
+      final resp = await client.post(
+        Uri.parse('${AppConstants.baseUrl}/auth/refresh'),
+        headers: const {'Accept': 'application/json'},
+      );
+      // Otra pestana renovo con la misma cookie hace un instante: el
+      // navegador ya tiene la nueva, basta con reintentar.
+      if (resp.statusCode == 409 && !reintento) {
+        await Future<void>.delayed(const Duration(milliseconds: 700));
+        return await _renovar(reintento: true);
+      }
+      if (resp.statusCode != 200) {
+        _memToken = null;
+        return false;
+      }
+
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final token = data['token']?.toString() ?? '';
+      final user = data['user'];
+      if (token.isEmpty || user is! Map<String, dynamic>) {
+        _memToken = null;
+        return false;
+      }
+      _memToken = token;
+      await saveProfile(
+        rol: user['rol']?.toString() ?? '',
+        correo: user['correo']?.toString() ?? '',
+        nombre: user['nombre']?.toString() ?? '',
+        userId: user['id']?.toString() ?? '',
+        empresaId: user['empresaId']?.toString() ?? '',
+        conjuntoId: user['conjuntoId']?.toString() ?? '',
+        permissions: (user['permissions'] as List<dynamic>? ?? const [])
+            .map((item) => item.toString())
+            .toList(),
+        requiereCambioContrasena: user['requiereCambioContrasena'] == true,
+      );
+      return true;
+    } catch (_) {
+      // Sin red: se conserva el token en memoria si aun sirve.
+      return _vigente(_memToken);
+    } finally {
+      client.close();
+    }
+  }
+
+  /// True si el JWT existe y no vence dentro del margen de renovacion.
+  static bool _vigente(String? token) {
+    if (token == null || token.isEmpty) return false;
+    final exp = expiracionDeToken(token);
+    if (exp == null) return true;
+    return exp.isAfter(DateTime.now().add(_margenRenovacion));
+  }
+
+  /// Fecha `exp` de un JWT, o null si no se puede leer.
+  @visibleForTesting
+  static DateTime? expiracionDeToken(String token) {
+    final partes = token.split('.');
+    if (partes.length != 3) return null;
+    try {
+      final payload = utf8.decode(
+        base64Url.decode(base64Url.normalize(partes[1])),
+      );
+      final exp = (jsonDecode(payload) as Map<String, dynamic>)['exp'];
+      if (exp is! num) return null;
+      return DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<String?> getUserId() async {

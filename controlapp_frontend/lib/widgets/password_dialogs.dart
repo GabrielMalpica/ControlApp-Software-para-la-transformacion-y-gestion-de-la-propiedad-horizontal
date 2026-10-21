@@ -5,9 +5,6 @@ import 'package:flutter_application_1/service/app_error.dart';
 import 'package:flutter_application_1/service/app_feedback.dart';
 import 'package:flutter_application_1/service/theme.dart';
 
-typedef RecoverPasswordSuccess =
-    void Function({required String correo, required String nuevaContrasena});
-
 String _normalizeException(Object e, {required String fallback}) {
   return AppError.messageOf(e, fallback: fallback);
 }
@@ -196,196 +193,33 @@ Future<void> showChangePasswordDialog(BuildContext context) async {
   }
 }
 
-Future<void> showRecoverPasswordDialog(
-  BuildContext context, {
-  String? initialCorreo,
-  RecoverPasswordSuccess? onSuccess,
-}) async {
-  final authApi = AuthApi();
-  final correoCtrl = TextEditingController(text: initialCorreo ?? '');
-  final cedulaCtrl = TextEditingController();
-  final newCtrl = TextEditingController();
-  final confirmCtrl = TextEditingController();
-
-  bool loading = false;
-  bool showNew = false;
-  bool showConfirm = false;
-  String? formError;
-
-  String? validate() {
-    final correo = correoCtrl.text.trim();
-    final cedula = cedulaCtrl.text.trim();
-    final newPass = newCtrl.text;
-    final confirm = confirmCtrl.text;
-
-    if (correo.isEmpty || !correo.contains('@')) {
-      return 'Ingresa un correo valido.';
-    }
-    if (cedula.length < 5) return 'Ingresa tu cedula.';
-    if (newPass.length < 8) {
-      return 'La nueva contrasena debe tener minimo 8 caracteres.';
-    }
-    if (newPass != confirm) return 'La confirmacion no coincide.';
-    return null;
-  }
-
-  final ok = await showDialog<bool>(
+/// La recuperacion con correo + cedula se desactivo por seguridad (cualquiera
+/// que conociera esos dos datos tomaba la cuenta). Ahora la restablece un
+/// gerente o jefe de operaciones y al entrar se pide crear una nueva.
+Future<void> showRecoverPasswordDialog(BuildContext context) async {
+  await showDialog<void>(
     context: context,
-    barrierDismissible: false,
     builder: (dialogContext) {
-      return StatefulBuilder(
-        builder: (ctx, setModalState) {
-          Future<void> submit() async {
-            if (loading) return;
-
-            final err = validate();
-            if (err != null) {
-              setModalState(() => formError = err);
-              return;
-            }
-
-            setModalState(() {
-              loading = true;
-              formError = null;
-            });
-
-            try {
-              await authApi.recuperarContrasena(
-                correo: correoCtrl.text.trim(),
-                cedula: cedulaCtrl.text.trim(),
-                nuevaContrasena: newCtrl.text,
-              );
-              if (!dialogContext.mounted) return;
-              Navigator.of(dialogContext).pop(true);
-            } catch (e) {
-              if (!dialogContext.mounted) return;
-              setModalState(
-                () => formError = _normalizeException(
-                  e,
-                  fallback: 'No se pudo recuperar la contrasena.',
-                ),
-              );
-            } finally {
-              if (dialogContext.mounted) {
-                setModalState(() => loading = false);
-              }
-            }
-          }
-
-          return AlertDialog(
-            title: const Text('Recuperar contrasena'),
-            content: SizedBox(
-              width: (MediaQuery.sizeOf(ctx).width * 0.9).clamp(0, 380),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Valida correo y cedula para restablecer tu acceso.',
-                      style: TextStyle(fontSize: 13, color: Colors.black54),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: correoCtrl,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        labelText: 'Correo',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: cedulaCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Cedula',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: newCtrl,
-                      obscureText: !showNew,
-                      decoration: InputDecoration(
-                        labelText: 'Nueva contrasena',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          onPressed: () =>
-                              setModalState(() => showNew = !showNew),
-                          icon: Icon(
-                            showNew ? Icons.visibility_off : Icons.visibility,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: confirmCtrl,
-                      obscureText: !showConfirm,
-                      onSubmitted: (_) => submit(),
-                      decoration: InputDecoration(
-                        labelText: 'Confirmar nueva contrasena',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          onPressed: () =>
-                              setModalState(() => showConfirm = !showConfirm),
-                          icon: Icon(
-                            showConfirm
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (formError != null) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        formError!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: loading
-                    ? null
-                    : () => Navigator.of(dialogContext).pop(false),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: loading ? null : submit,
-                child: loading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Restablecer'),
-              ),
-            ],
-          );
-        },
+      return AlertDialog(
+        title: const Text('Recuperar acceso'),
+        content: SizedBox(
+          width: (MediaQuery.sizeOf(dialogContext).width * 0.9).clamp(0, 380),
+          child: const Text(
+            'Por seguridad, la contraseña ya no se recupera desde aquí. '
+            'Pide a tu gerente o jefe de operaciones que la restablezca en '
+            'ControlApp. Te dará una contraseña temporal y, al entrar, la app '
+            'te pedirá crear una nueva.',
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Entendido'),
+          ),
+        ],
       );
     },
   );
-
-  final correo = correoCtrl.text.trim();
-  final nueva = newCtrl.text;
-  correoCtrl.dispose();
-  cedulaCtrl.dispose();
-  newCtrl.dispose();
-  confirmCtrl.dispose();
-
-  if (ok == true && context.mounted) {
-    AppFeedback.showInfo(
-      context,
-      message: 'Contraseña restablecida. Ya puedes iniciar sesión.',
-    );
-    onSuccess?.call(correo: correo, nuevaContrasena: nueva);
-  }
 }
 
 Future<void> showManagerResetPasswordDialog(
@@ -550,7 +384,9 @@ Future<void> showManagerResetPasswordDialog(
   if (ok == true && context.mounted) {
     AppFeedback.showInfo(
       context,
-      message: 'Contrasena actualizada correctamente para $nombreUsuario.',
+      message:
+          'Contraseña temporal asignada a $nombreUsuario. Sus sesiones abiertas '
+          'se cerraron y deberá crear una nueva al entrar.',
     );
   }
 }

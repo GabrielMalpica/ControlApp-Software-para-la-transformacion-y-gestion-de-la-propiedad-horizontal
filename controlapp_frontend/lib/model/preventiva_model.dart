@@ -156,6 +156,7 @@ class DefinicionPreventiva {
   final int? ordenEnCategoria;
 
   final String? diaSemanaProgramado;
+  final List<String> diasSemanaProgramados;
   final int? diaMesProgramado;
   final List<DateTime> fechasProgramadas;
 
@@ -207,6 +208,7 @@ class DefinicionPreventiva {
     this.categoria,
     this.ordenEnCategoria,
     this.diaSemanaProgramado,
+    this.diasSemanaProgramados = const [],
     this.diaMesProgramado,
     this.fechasProgramadas = const [],
     this.unidadCalculo,
@@ -271,6 +273,9 @@ class DefinicionPreventiva {
 
       // programación
       diaSemanaProgramado: json['diaSemanaProgramado']?.toString(),
+      diasSemanaProgramados: ((json['diasSemanaProgramados'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(),
       diaMesProgramado: _toInt(json['diaMesProgramado']),
       fechasProgramadas: ((json['fechasProgramadasJson'] as List?) ?? const [])
           .map((e) => DateTime.tryParse(e.toString()))
@@ -391,6 +396,7 @@ class DefinicionPreventivaRequest {
   final int? ordenEnCategoria;
 
   final String? diaSemanaProgramado;
+  final List<String>? diasSemanaProgramados;
   final int? diaMesProgramado;
   final List<String>? fechasProgramadasJson;
 
@@ -436,6 +442,7 @@ class DefinicionPreventivaRequest {
     this.categoriaId,
     this.ordenEnCategoria,
     this.diaSemanaProgramado,
+    this.diasSemanaProgramados,
     this.diaMesProgramado,
     this.fechasProgramadasJson,
     this.unidadCalculo,
@@ -473,6 +480,8 @@ class DefinicionPreventivaRequest {
 
     // programación
     if (diaSemanaProgramado != null) 'diaSemanaProgramado': diaSemanaProgramado,
+    if (diasSemanaProgramados != null)
+      'diasSemanaProgramados': diasSemanaProgramados,
     if (diaMesProgramado != null) 'diaMesProgramado': diaMesProgramado,
     if (fechasProgramadasJson != null && fechasProgramadasJson!.isNotEmpty)
       'fechasProgramadasJson': fechasProgramadasJson,

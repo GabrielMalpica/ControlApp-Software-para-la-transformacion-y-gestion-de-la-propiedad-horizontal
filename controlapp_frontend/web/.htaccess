@@ -30,3 +30,22 @@
     Header unset Expires
   </IfModule>
 </FilesMatch>
+
+# Content-Security-Policy: limita lo que puede cargar y ejecutar la página si
+# alguien logra inyectarle un script (docs/actualizacion-web.md, "Content-
+# Security-Policy", explica cada fuente y cómo ampliarla).
+#
+# - La primera línea ya se aplica: nadie puede meter la app en un iframe
+#   ajeno, ni usar <object>/<embed>, ni cambiar el <base> de la página.
+# - La segunda es la política completa en modo "Report-Only": el navegador no
+#   bloquea nada, solo avisa en la consola lo que habría bloqueado. Cuando en
+#   producción no aparezcan avisos en los flujos principales, se pasa a
+#   obligatoria (pasos en el documento).
+#
+# Después de cada `flutter build web` hay que correr
+# `node scripts/csp-web.js --api <API_BASE_URL>`: el hash 'sha256-…' del
+# arranque en línea cambia al actualizar Flutter o editar flutter_bootstrap.js.
+<IfModule mod_headers.c>
+  Header always set Content-Security-Policy "frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
+  Header always set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-9i9JjpDe9zrtwIIXIISna/AmLyBRupY1tHQK7wJeU/M=' 'sha256-+M0fGRkOqgYlCQCff9oNQn6k6a7Si4Et8iofLMceadE=' https://www.gstatic.com/flutter-canvaskit/ https://unpkg.com/@zxing/library@0.21.3; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://controlsas.com.co; font-src 'self' https://fonts.gstatic.com/s/; connect-src 'self' https://api.controlsas.com.co https://controlsas.com.co https://www.gstatic.com/flutter-canvaskit/ https://fonts.gstatic.com/s/ blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+</IfModule>

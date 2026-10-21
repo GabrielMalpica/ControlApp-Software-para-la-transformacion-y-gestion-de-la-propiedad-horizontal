@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_application_1/model/auth_models.dart';
 import 'package:flutter_application_1/model/profile_models.dart';
 import 'package:flutter_application_1/service/api_client.dart';
@@ -18,9 +19,15 @@ class AuthApi {
     required String correo,
     required String contrasena,
   }) async {
-    final resp = await _client.post(
+    // En web se pide sesion con cookie HttpOnly de renovacion: el token
+    // queda solo en memoria (ver SessionService).
+    final resp = await _client.postConCredenciales(
       '/auth/login',
-      body: {'correo': correo.trim().toLowerCase(), 'contrasena': contrasena},
+      body: {
+        'correo': correo.trim().toLowerCase(),
+        'contrasena': contrasena,
+        'sesionWeb': kIsWeb,
+      },
     );
 
     if (resp.statusCode != 200) {
@@ -29,12 +36,19 @@ class AuthApi {
       );
     }
 
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    final result = LoginResponse.fromJson(data);
-
+    final result = await _guardarSesion(resp.body);
     if (result.token.isEmpty) {
       throw Exception('Login correcto pero no llego token.');
     }
+    return result;
+  }
+
+  /// Guarda la sesion que devuelve el backend (login o cambio de contrasena,
+  /// que cierra las demas sesiones y entrega una nueva a este dispositivo).
+  Future<LoginResponse> _guardarSesion(String body) async {
+    final data = jsonDecode(body) as Map<String, dynamic>;
+    final result = LoginResponse.fromJson(data);
+    if (result.token.isEmpty) return result;
 
     await _session.saveSession(
       token: result.token,
@@ -47,7 +61,6 @@ class AuthApi {
       permissions: result.user.permissions,
       requiereCambioContrasena: result.user.requiereCambioContrasena,
     );
-
     return result;
   }
 
@@ -90,11 +103,12 @@ class AuthApi {
     required String contrasenaActual,
     required String nuevaContrasena,
   }) async {
-    final resp = await _client.post(
+    final resp = await _client.postConCredenciales(
       '/auth/cambiar-contrasena',
       body: {
         'contrasenaActual': contrasenaActual,
         'nuevaContrasena': nuevaContrasena,
+        'sesionWeb': kIsWeb,
       },
     );
 
@@ -106,14 +120,17 @@ class AuthApi {
         ),
       );
     }
+
+    // El backend cerro las demas sesiones y entrego una nueva para este equipo.
+    await _guardarSesion(resp.body);
   }
 
   Future<void> cambiarContrasenaInicial({
     required String nuevaContrasena,
   }) async {
-    final resp = await _client.post(
+    final resp = await _client.postConCredenciales(
       '/auth/cambiar-contrasena-inicial',
-      body: {'nuevaContrasena': nuevaContrasena},
+      body: {'nuevaContrasena': nuevaContrasena, 'sesionWeb': kIsWeb},
     );
 
     if (resp.statusCode != 200) {
@@ -125,6 +142,9 @@ class AuthApi {
       );
     }
 
+    // La sesion anterior queda cerrada: se guarda la nueva que entrega el
+    // backend (ya sin cambio de contrasena pendiente).
+    await _guardarSesion(resp.body);
     await _session.setRequirePasswordChange(false);
   }
 
@@ -147,31 +167,14 @@ class AuthApi {
     }
   }
 
-  Future<void> recuperarContrasena({
-    required String correo,
-    required String cedula,
-    required String nuevaContrasena,
-  }) async {
-    final resp = await _client.post(
-      '/auth/recuperar-contrasena',
-      body: {
-        'correo': correo.trim().toLowerCase(),
-        'id': cedula.trim(),
-        'nuevaContrasena': nuevaContrasena,
-      },
-    );
-
-    if (resp.statusCode != 200) {
-      throw Exception(
-        _serverMessage(
-          resp.body,
-          fallback: 'No se pudo recuperar la contrasena.',
-        ),
-      );
-    }
-  }
-
+  /// Cierra la sesion en el servidor (revoca el token y la cookie web) y
+  /// luego en este dispositivo. Si el servidor no responde, igual se limpia.
   Future<void> logout() async {
+    try {
+      await _client.postConCredenciales('/auth/logout');
+    } catch (_) {
+      // Mejor esfuerzo: sin red el token vence solo.
+    }
     await _session.clear();
   }
 }

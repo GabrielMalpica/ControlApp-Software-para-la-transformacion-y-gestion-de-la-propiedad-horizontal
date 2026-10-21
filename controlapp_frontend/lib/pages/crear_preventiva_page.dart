@@ -144,12 +144,23 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
   bool get _frecuenciaUsaDiaSemana =>
       frecuenciasPorDiaSemana.contains(_frecuencia);
 
+  bool get _frecuenciaUsaDiasSeleccionables =>
+      _frecuenciaUsaDiaSemana || _frecuencia == 'DIARIA';
+
+  List<String> get _opcionesDiasSeleccionables =>
+      _frecuencia == 'SEMANAL' ? diasSemanaOpciones : diasSemanaNormales;
+
   /// Solo SEMANAL admite varios dias; QUINCENAL se ejecuta un unico dia cada 14.
   bool get _usaSelectorMultipleSemanal =>
       frecuenciasMultiDiaSemana.contains(_frecuencia);
 
   /// Texto de ayuda bajo el selector de dias, segun frecuencia y modo.
   String _ayudaDiasSemana() {
+    if (_frecuencia == 'DIARIA') {
+      return _diasSemanaProgramados.isEmpty
+          ? 'Sin días seleccionados, se genera una tarea en cada jornada laborable de la plaza.'
+          : 'La tarea se genera solo en los días seleccionados y laborables para la plaza.';
+    }
     if (!_usaSelectorMultipleSemanal) {
       return 'La preventiva quincenal se ejecuta cada 14 días: '
           'la 1ª y la 3ª ocurrencia del día elegido dentro del mes.';
@@ -428,8 +439,10 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       _diasSemanaProgramados
         ..clear()
         ..addAll(
-          existente.diaSemanaProgramado == null ||
-                  existente.diaSemanaProgramado!.isEmpty
+          existente.frecuencia == 'DIARIA'
+              ? existente.diasSemanaProgramados
+              : existente.diaSemanaProgramado == null ||
+                    existente.diaSemanaProgramado!.isEmpty
               ? const <String>[]
               : [existente.diaSemanaProgramado!],
         );
@@ -571,6 +584,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
       if (_diasSemanaProgramados.isEmpty) {
         _diasSemanaProgramados.add('LUNES');
       }
+      _diaMesProgramado = null;
+      _fechasProgramadas.clear();
+    } else if (_frecuencia == 'DIARIA') {
       _diaMesProgramado = null;
       _fechasProgramadas.clear();
     } else if (_frecuenciaUsaDiaMes) {
@@ -1039,6 +1055,9 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
         diaSemanaProgramado: _frecuenciaUsaDiaSemana
             ? diaSemanaProgramado
             : null,
+        diasSemanaProgramados: _frecuencia == 'DIARIA'
+            ? diasSemanaSeleccionados
+            : null,
         diaMesProgramado: _frecuenciaUsaDiaMes ? _diaMesProgramado : null,
         fechasProgramadasJson: _frecuenciaUsaFechasExplicitas
             ? _fechasProgramadas.map(_fmtFechaProgramada).toList()
@@ -1420,11 +1439,13 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                     ),
                     const SizedBox(height: 12),
 
-                    if (_frecuenciaUsaDiaSemana) ...[
+                    if (_frecuenciaUsaDiasSeleccionables) ...[
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          _usaSelectorMultipleSemanal
+                          _frecuencia == 'DIARIA'
+                              ? 'Días laborables'
+                              : _usaSelectorMultipleSemanal
                               ? 'Días de la semana'
                               : 'Día de la semana',
                           style: Theme.of(context).textTheme.titleSmall,
@@ -1436,7 +1457,7 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         child: Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: diasSemanaOpciones.map((dia) {
+                          children: _opcionesDiasSeleccionables.map((dia) {
                             final selected = _diasSemanaProgramados.contains(
                               dia,
                             );
@@ -1464,7 +1485,8 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                               ),
                               onSelected: (value) {
                                 setState(() {
-                                  if (!_usaSelectorMultipleSemanal) {
+                                  if (!_usaSelectorMultipleSemanal &&
+                                      _frecuencia != 'DIARIA') {
                                     // Un solo dia: al elegir otro se deselecciona el anterior.
                                     if (value) {
                                       _diasSemanaProgramados
@@ -2024,7 +2046,8 @@ class _CrearEditarPreventivaPageState extends State<CrearEditarPreventivaPage> {
                         child: Text(
                           'La tarea se asigna a quien ocupe este cargo. Si se '
                           'reemplaza al operario de la plaza, no hace falta '
-                          'editar esta preventiva.',
+                          'editar esta preventiva. Los operarios directos no '
+                          'cambian la asignación mientras haya cargos vinculados.',
                           style: TextStyle(fontSize: 12, color: Colors.black54),
                         ),
                       ),

@@ -47,6 +47,17 @@ const List<String> diasSemanaOpciones = [
   'VIERNES',
   'SABADO',
   'DOMINGO',
+  'FESTIVO',
+];
+
+const List<String> diasSemanaNormales = [
+  'LUNES',
+  'MARTES',
+  'MIERCOLES',
+  'JUEVES',
+  'VIERNES',
+  'SABADO',
+  'DOMINGO',
 ];
 
 const Map<String, String> _diasSemanaLabel = {
@@ -57,6 +68,7 @@ const Map<String, String> _diasSemanaLabel = {
   'VIERNES': 'viernes',
   'SABADO': 'sábado',
   'DOMINGO': 'domingo',
+  'FESTIVO': 'festivo',
 };
 
 const Map<String, String> _frecuenciaLabel = {

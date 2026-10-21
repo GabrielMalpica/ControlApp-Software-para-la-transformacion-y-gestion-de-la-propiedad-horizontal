@@ -18,6 +18,7 @@ import 'package:flutter_application_1/pages/gerente/compromisos_page.dart';
 import 'package:flutter_application_1/pages/gerente/compromisos_por_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/consignas_valor_agregado_page.dart';
 import 'package:flutter_application_1/pages/gerente/gestion_permisos_page.dart';
+import 'package:flutter_application_1/pages/gerente/integraciones_ia_page.dart';
 import 'package:flutter_application_1/pages/gerente/mapa_conjunto_page.dart';
 import 'package:flutter_application_1/pages/gerente/carga_residentes_page.dart';
 import 'package:flutter_application_1/pages/gerente/carga_conjunto_page.dart';
@@ -887,6 +888,15 @@ class _GerenteDashboardPageState extends State<GerenteDashboardPage> {
           () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const GestionPermisosPage()),
+          ),
+        ),
+        _Tile(
+          "Integraciones IA",
+          Icons.smart_toy_outlined,
+          Colors.deepPurple,
+          () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const IntegracionesIaPage()),
           ),
         ),
       ]),
